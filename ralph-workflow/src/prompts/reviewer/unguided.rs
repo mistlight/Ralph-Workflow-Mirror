@@ -6,12 +6,12 @@
 //! - Stack detection did not identify a recognized language/framework
 //! - A "fresh eyes" perspective is needed without framework-specific bias
 //! - Reviewing general code quality, goal alignment, and acceptance criteria
+//! - Agent compatibility requires simplified prompts (e.g., GLM, ZhipuAI)
 //!
 //! Available prompt types:
-//! - **Simple review**: Minimal, vague prompt for unbiased perspective
-//! - **Detailed review**: Actionable output with severity levels
-//! - **Incremental review**: Focus only on recently changed files
-//! - **Universal review**: Simplified prompt for agent compatibility
+//! - **Detailed review**: Uses standard_review template (when no guidelines available)
+//! - **Incremental review**: DEPRECATED - now uses standard_review template
+//! - **Universal review**: Simplified prompt for maximum agent compatibility
 
 use super::super::partials::get_shared_partials;
 use super::super::types::ContextLevel;
@@ -54,26 +54,25 @@ fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) 
 ///
 /// # Arguments
 ///
-/// * `context` - The context level (minimal or normal)
+/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 #[cfg(test)]
 pub fn prompt_detailed_review_without_guidelines_with_diff(
-    context: ContextLevel,
+    _context: ContextLevel,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
-    let template_content = match context {
-        ContextLevel::Minimal => include_str!("templates/detailed_review_minimal.txt"),
-        ContextLevel::Normal => include_str!("templates/detailed_review_normal.txt"),
-    };
+    // NOTE: ContextLevel is now ignored - we use the consolidated standard_review template
+    // The "detailed_review" template has been deprecated as it relied on non-existent partials
+    let template_content = include_str!("templates/standard_review.txt");
     let variables = HashMap::from([
-        ("MODE", "DETAILED REVIEW MODE".to_string()),
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),
+        ("GUIDELINES", "".to_string()), // No guidelines for unguided review
     ]);
     load_template_str(template_content, &variables)
 }
@@ -86,80 +85,68 @@ pub fn prompt_detailed_review_without_guidelines_with_diff(
 /// # Arguments
 ///
 /// * `template_context` - Template context containing the template registry
-/// * `context` - The context level (minimal or normal)
+/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_detailed_review_without_guidelines_with_diff_with_context(
     template_context: &TemplateContext,
-    context: ContextLevel,
+    _context: ContextLevel,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
-    let template_name = match context {
-        ContextLevel::Minimal => "detailed_review_minimal",
-        ContextLevel::Normal => "detailed_review_normal",
-    };
+    // NOTE: ContextLevel is now ignored - we use the consolidated standard_review template
+    // The "detailed_review" template has been deprecated as it relied on non-existent partials
+    let template_name = "standard_review";
 
     let tmpl_content = template_context
         .registry()
         .get_template(template_name)
-        .unwrap_or_else(|_| {
-            match context {
-                ContextLevel::Minimal => include_str!("templates/detailed_review_minimal.txt"),
-                ContextLevel::Normal => include_str!("templates/detailed_review_normal.txt"),
-            }
-            .to_string()
-        });
+        .unwrap_or_else(|_| include_str!("templates/standard_review.txt").to_string());
 
     let variables = HashMap::from([
-        ("MODE", "DETAILED REVIEW MODE".to_string()),
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),
+        ("GUIDELINES", "".to_string()), // No guidelines for unguided review
     ]);
     load_template_str(&tmpl_content, &variables)
 }
 
 /// Generate incremental review prompt with diff included directly, using template registry.
 ///
-/// This version uses the template registry which supports user template overrides.
+/// DEPRECATED: Incremental review now uses the standard_review template.
+/// The incremental concept was redundant with the existing baseline tracking.
 ///
 /// # Arguments
 ///
 /// * `template_context` - Template context containing the template registry
-/// * `context` - The context level (minimal or normal)
+/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_incremental_review_with_diff_with_context(
     template_context: &TemplateContext,
-    context: ContextLevel,
+    _context: ContextLevel,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
-    let template_name = match context {
-        ContextLevel::Minimal => "incremental_review_minimal",
-        ContextLevel::Normal => "incremental_review_normal",
-    };
+    // NOTE: ContextLevel is now ignored - we use the consolidated standard_review template
+    // The "incremental_review" template has been deprecated - baseline tracking provides this functionality
+    let template_name = "standard_review";
 
     let tmpl_content = template_context
         .registry()
         .get_template(template_name)
-        .unwrap_or_else(|_| {
-            match context {
-                ContextLevel::Minimal => include_str!("templates/incremental_review_minimal.txt"),
-                ContextLevel::Normal => include_str!("templates/incremental_review_normal.txt"),
-            }
-            .to_string()
-        });
+        .unwrap_or_else(|_| include_str!("templates/standard_review.txt").to_string());
 
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),
+        ("GUIDELINES", "".to_string()), // No guidelines for incremental review
     ]);
     load_template_str(&tmpl_content, &variables)
 }
@@ -172,32 +159,24 @@ pub fn prompt_incremental_review_with_diff_with_context(
 /// # Arguments
 ///
 /// * `template_context` - Template context containing the template registry
-/// * `context` - The context level (minimal or normal)
+/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_universal_review_with_diff_with_context(
     template_context: &TemplateContext,
-    context: ContextLevel,
+    _context: ContextLevel,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
-    let template_name = match context {
-        ContextLevel::Minimal => "universal_review_minimal",
-        ContextLevel::Normal => "universal_review_normal",
-    };
+    // NOTE: ContextLevel is now ignored - we use the consolidated universal_review template
+    let template_name = "universal_review";
 
     let tmpl_content = template_context
         .registry()
         .get_template(template_name)
-        .unwrap_or_else(|_| {
-            match context {
-                ContextLevel::Minimal => include_str!("templates/universal_review_minimal.txt"),
-                ContextLevel::Normal => include_str!("templates/universal_review_normal.txt"),
-            }
-            .to_string()
-        });
+        .unwrap_or_else(|_| include_str!("templates/universal_review.txt").to_string());
 
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),

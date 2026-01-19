@@ -262,15 +262,64 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         // ============================================================================
-        // Reviewer Templates
+        // Reviewer Templates (Consolidated - 4 primary templates)
         // ============================================================================
+        //
+        // CONSOLIDATION: Templates have been consolidated from 12 (6 types × 2 context levels)
+        // to 4 primary templates. The "minimal context" concept has been deprecated as it
+        // provided no real value - reviewers should read changed files for context.
+        //
+        // Primary templates:
+        // - standard_review: Default balanced review (most common)
+        // - comprehensive_review: Priority-ordered thorough review
+        // - security_review: OWASP Top 10 focused review
+        // - universal_review: Simplified prompt for problematic agents (GLM, ZhipuAI)
 
+        // Primary consolidated templates
+        m.insert(
+            "standard_review",
+            EmbeddedTemplate {
+                name: "standard_review",
+                content: include_str!("reviewer/templates/standard_review.txt"),
+                description: "Standard balanced review with comprehensive checklist (DEFAULT)",
+            },
+        );
+
+        m.insert(
+            "comprehensive_review",
+            EmbeddedTemplate {
+                name: "comprehensive_review",
+                content: include_str!("reviewer/templates/comprehensive_review.txt"),
+                description: "Comprehensive priority-ordered review (12 categories)",
+            },
+        );
+
+        m.insert(
+            "security_review",
+            EmbeddedTemplate {
+                name: "security_review",
+                content: include_str!("reviewer/templates/security_review.txt"),
+                description: "Security-focused review (OWASP Top 10)",
+            },
+        );
+
+        m.insert(
+            "universal_review",
+            EmbeddedTemplate {
+                name: "universal_review",
+                content: include_str!("reviewer/templates/universal_review.txt"),
+                description: "Simplified review for maximum agent compatibility",
+            },
+        );
+
+        // Legacy aliases - deprecated templates point to consolidated versions
+        // These exist for backward compatibility with user template overrides
         m.insert(
             "detailed_review_minimal",
             EmbeddedTemplate {
                 name: "detailed_review_minimal",
-                content: include_str!("reviewer/templates/detailed_review_minimal.txt"),
-                description: "Detailed review mode (minimal context)",
+                content: include_str!("reviewer/templates/standard_review.txt"),
+                description: "[DEPRECATED] Use standard_review instead",
             },
         );
 
@@ -278,8 +327,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "detailed_review_normal",
             EmbeddedTemplate {
                 name: "detailed_review_normal",
-                content: include_str!("reviewer/templates/detailed_review_normal.txt"),
-                description: "Detailed review mode (normal context)",
+                content: include_str!("reviewer/templates/standard_review.txt"),
+                description: "[DEPRECATED] Use standard_review instead",
             },
         );
 
@@ -287,8 +336,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "incremental_review_minimal",
             EmbeddedTemplate {
                 name: "incremental_review_minimal",
-                content: include_str!("reviewer/templates/incremental_review_minimal.txt"),
-                description: "Incremental review (changed files only, minimal context)",
+                content: include_str!("reviewer/templates/standard_review.txt"),
+                description: "[DEPRECATED] Use standard_review instead",
             },
         );
 
@@ -296,8 +345,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "incremental_review_normal",
             EmbeddedTemplate {
                 name: "incremental_review_normal",
-                content: include_str!("reviewer/templates/incremental_review_normal.txt"),
-                description: "Incremental review (changed files only, normal context)",
+                content: include_str!("reviewer/templates/standard_review.txt"),
+                description: "[DEPRECATED] Use standard_review instead",
             },
         );
 
@@ -305,8 +354,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "universal_review_minimal",
             EmbeddedTemplate {
                 name: "universal_review_minimal",
-                content: include_str!("reviewer/templates/universal_review_minimal.txt"),
-                description: "Universal review (all file types, minimal context)",
+                content: include_str!("reviewer/templates/universal_review.txt"),
+                description: "[DEPRECATED] Use universal_review instead",
             },
         );
 
@@ -314,8 +363,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "universal_review_normal",
             EmbeddedTemplate {
                 name: "universal_review_normal",
-                content: include_str!("reviewer/templates/universal_review_normal.txt"),
-                description: "Universal review (all file types, normal context)",
+                content: include_str!("reviewer/templates/universal_review.txt"),
+                description: "[DEPRECATED] Use universal_review instead",
             },
         );
 
@@ -323,8 +372,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "standard_review_minimal",
             EmbeddedTemplate {
                 name: "standard_review_minimal",
-                content: include_str!("reviewer/templates/standard_review_minimal.txt"),
-                description: "Standard review (balanced, minimal context)",
+                content: include_str!("reviewer/templates/standard_review.txt"),
+                description: "[DEPRECATED] Use standard_review instead",
             },
         );
 
@@ -332,8 +381,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "standard_review_normal",
             EmbeddedTemplate {
                 name: "standard_review_normal",
-                content: include_str!("reviewer/templates/standard_review_normal.txt"),
-                description: "Standard review (balanced, normal context)",
+                content: include_str!("reviewer/templates/standard_review.txt"),
+                description: "[DEPRECATED] Use standard_review instead",
             },
         );
 
@@ -341,8 +390,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "comprehensive_review_minimal",
             EmbeddedTemplate {
                 name: "comprehensive_review_minimal",
-                content: include_str!("reviewer/templates/comprehensive_review_minimal.txt"),
-                description: "Comprehensive review (thorough, minimal context)",
+                content: include_str!("reviewer/templates/comprehensive_review.txt"),
+                description: "[DEPRECATED] Use comprehensive_review instead",
             },
         );
 
@@ -350,8 +399,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "comprehensive_review_normal",
             EmbeddedTemplate {
                 name: "comprehensive_review_normal",
-                content: include_str!("reviewer/templates/comprehensive_review_normal.txt"),
-                description: "Comprehensive review (thorough, normal context)",
+                content: include_str!("reviewer/templates/comprehensive_review.txt"),
+                description: "[DEPRECATED] Use comprehensive_review instead",
             },
         );
 
@@ -359,8 +408,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "security_review_minimal",
             EmbeddedTemplate {
                 name: "security_review_minimal",
-                content: include_str!("reviewer/templates/security_review_minimal.txt"),
-                description: "Security-focused review (OWASP, minimal context)",
+                content: include_str!("reviewer/templates/security_review.txt"),
+                description: "[DEPRECATED] Use security_review instead",
             },
         );
 
@@ -368,8 +417,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             "security_review_normal",
             EmbeddedTemplate {
                 name: "security_review_normal",
-                content: include_str!("reviewer/templates/security_review_normal.txt"),
-                description: "Security-focused review (OWASP, normal context)",
+                content: include_str!("reviewer/templates/security_review.txt"),
+                description: "[DEPRECATED] Use security_review instead",
             },
         );
 
@@ -460,5 +509,55 @@ mod tests {
         assert!(get_embedded_template("fix_mode_fallback").is_some());
         assert!(get_embedded_template("conflict_resolution_fallback").is_some());
         assert!(get_embedded_template("commit_message_fallback").is_some());
+    }
+
+    #[test]
+    fn test_consolidated_reviewer_templates_exist() {
+        // Verify the 4 consolidated reviewer templates exist
+        assert!(get_embedded_template("standard_review").is_some());
+        assert!(get_embedded_template("comprehensive_review").is_some());
+        assert!(get_embedded_template("security_review").is_some());
+        assert!(get_embedded_template("universal_review").is_some());
+    }
+
+    #[test]
+    fn test_consolidated_reviewer_templates_have_review_checklist() {
+        // Standard review should have the review coverage checklist
+        let standard = get_embedded_template("standard_review").unwrap();
+        assert!(
+            standard.contains("REVIEW COVERAGE CHECKLIST"),
+            "Standard review template should have review checklist"
+        );
+
+        // Comprehensive review should have review categories
+        let comprehensive = get_embedded_template("comprehensive_review").unwrap();
+        assert!(
+            comprehensive.contains("REVIEW CATEGORIES"),
+            "Comprehensive review template should have review categories"
+        );
+
+        // Security review should have OWASP categories
+        let security = get_embedded_template("security_review").unwrap();
+        assert!(
+            security.contains("OWASP TOP 10"),
+            "Security review template should have OWASP Top 10"
+        );
+    }
+
+    #[test]
+    fn test_deprecated_templates_point_to_consolidated() {
+        // Legacy templates should have same content as consolidated versions
+        let standard = get_embedded_template("standard_review").unwrap();
+        let standard_minimal = get_embedded_template("standard_review_minimal").unwrap();
+        let standard_normal = get_embedded_template("standard_review_normal").unwrap();
+
+        assert_eq!(
+            standard, standard_minimal,
+            "standard_review_minimal should point to standard_review"
+        );
+        assert_eq!(
+            standard, standard_normal,
+            "standard_review_normal should point to standard_review"
+        );
     }
 }

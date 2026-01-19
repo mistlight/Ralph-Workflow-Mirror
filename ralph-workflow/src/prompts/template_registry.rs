@@ -274,10 +274,15 @@ mod tests {
     #[test]
     fn test_get_reviewer_template() {
         let registry = TemplateRegistry::new(None);
-        let result = registry.get_template("standard_review_normal");
+        // Test consolidated template
+        let result = registry.get_template("standard_review");
         assert!(result.is_ok());
         let content = result.unwrap();
         assert!(!content.is_empty());
+
+        // Legacy template should also work (backward compatibility)
+        let result_legacy = registry.get_template("standard_review_normal");
+        assert!(result_legacy.is_ok());
     }
 
     #[test]

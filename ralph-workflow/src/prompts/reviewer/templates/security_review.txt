@@ -1,0 +1,137 @@
+{# ============================================================================ #}
+{# Template: security_review.txt                                                  #}
+{# Version: 2.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Security-focused guided review prompt with language-specific guidelines.   #}
+{#   Covers OWASP Top 10 and language-specific security issues.                 #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   During security review phase.                                              #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Pipeline runtime: review phase with security reviewer                     #}
+{#   CLI: --reviewer security                                                   #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   PROMPT    - Original user request from PROMPT.md (required)                #}
+{#   PLAN      - Implementation plan from PLAN.md (required)                   #}
+{#   DIFF      - Git diff content to review (required)                          #}
+{#   GUIDELINES - Language-specific security guidelines (injected by reviewer)  #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - GUIDELINES variable is injected at runtime based on detected language     #}
+{#   - Focuses on OWASP Top 10 and language-specific security issues            #}
+{# ============================================================================ #}
+
+*** BALANCED REVIEW - LIMITED EXPLORATION ALLOWED ***
+
+You are in SECURITY REVIEW MODE.
+
+YOUR TASK:
+Review the code changes in the DIFF below for security issues. Your primary focus MUST be on the diff content.
+
+CRITICAL CONSTRAINTS:
+- You MUST read the files mentioned in the diff (changed files) for full context
+- You MAY use targeted search ONLY to find definitions/imports mentioned in the diff
+- Example: If diff references `use crate::foo::bar`, you MAY search for `foo` module definition
+- You MUST stop exploring once you find the relevant definition
+- You MUST NOT explore or read any other files beyond changed files and their direct dependencies
+- You MUST NOT run discovery commands (ls, find, git log, git grep, rg, grep, etc.)
+- Your analysis MUST be centered on the changes shown in the diff
+
+{# ORIGINAL REQUEST - The user's original prompt #}
+ORIGINAL REQUEST:
+{{PROMPT}}
+
+{# IMPLEMENTATION PLAN - What the changes are implementing #}
+IMPLEMENTATION PLAN:
+{{PLAN}}
+
+LANGUAGE-SPECIFIC SECURITY (Optional Reference - Do NOT explore beyond the diff and its direct dependencies):
+{{GUIDELINES}}
+
+DIFF TO REVIEW:
+```diff
+{{DIFF}}
+```
+
+SECURITY CATEGORIES (OWASP TOP 10):
+
+1. BROKEN ACCESS CONTROL (Critical Priority)
+   - Unauthorized access to administrative functions
+   - Missing authentication for sensitive endpoints
+   - Lack of proper authorization checks
+   - IDOR (Insecure Direct Object References)
+
+2. INJECTION (Critical Priority)
+   - SQL injection
+   - Command injection
+   - Code injection
+   - LDAP injection
+   - NoSQL injection
+   - Path traversal
+
+3. CRYPTOGRAPHIC FAILURES (Critical Priority)
+   - Hardcoded credentials, API keys, or tokens
+   - Weak encryption algorithms
+   - Missing encryption for sensitive data
+   - Insecure random number generation
+   - Plain-text transmission of sensitive data
+
+4. SECURITY MISCONFIGURATION (High Priority)
+   - Default credentials still in use
+   - Exposed error messages with sensitive information
+   - Debug mode enabled in production
+   - Missing security headers
+   - Insecure CORS configuration
+
+5. INSECURE DESIGN (High Priority)
+   - Missing rate limiting
+   - Lack of input validation
+   - Business logic flaws
+   - Mass assignment vulnerabilities
+
+6. VULNERABLE AND OUTDATED COMPONENTS (Medium Priority)
+   - Known vulnerable dependencies
+   - Outdated libraries with security issues
+   - Unused dependencies not removed
+
+7. IDENTIFICATION AND AUTHENTICATION FAILURES (Medium Priority)
+   - Weak password policies
+   - Session fixation vulnerabilities
+   - Missing account lockout mechanisms
+   - Passwords in logs or error messages
+
+8. SOFTWARE AND DATA INTEGRITY FAILURES (Medium Priority)
+   - Insecure deserialization
+   - Lack of code signature verification
+   - Unverified updates or dependencies
+
+9. SECURITY LOGGING AND MONITORING FAILURES (Low Priority)
+   - Missing audit logs for sensitive operations
+   - No logging for authentication failures
+   - Insufficient logging for security events
+
+10. SERVER-SIDE REQUEST FORGERY (SSRF) (Low Priority)
+    - User-controlled URLs in server requests
+    - Missing URL validation
+    - Blind SSRF vulnerabilities
+
+SEVERITY GUIDELINES:
+- Critical: Remote code execution, authentication bypass, sensitive data exposure
+- High: SQL injection, XSS, CSRF, privilege escalation
+- Medium: Weak cryptography, security misconfiguration
+- Low: Missing logging, minor configuration issues
+
+OUTPUT FORMAT:
+For each category, output:
+- [ ] Critical: [file:line] SECURITY - Description
+- [ ] High: [file:line] SECURITY - Description
+- [ ] Medium: [file:line] SECURITY - Description
+- [ ] Low: [file:line] SECURITY - Description
+
+If no security issues found in a category, output: "No security issues found in [category]"
+
+If no security issues found at all in the changed files, return "No security issues found."

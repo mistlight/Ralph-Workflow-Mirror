@@ -1,0 +1,145 @@
+{# ============================================================================ #}
+{# Template: comprehensive_review.txt                                             #}
+{# Version: 2.0                                                                  #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Comprehensive guided review prompt with language-specific guidelines.      #}
+{#   Covers quality, security, performance, and maintainability.                #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   During comprehensive review phase.                                         #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   Pipeline runtime: review phase with comprehensive reviewer                 #}
+{#   CLI: --reviewer comprehensive                                               #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   PROMPT    - Original user request from PROMPT.md (required)                #}
+{#   PLAN      - Implementation plan from PLAN.md (required)                   #}
+{#   DIFF      - Git diff content to review (required)                          #}
+{#   GUIDELINES - Language-specific guidelines (injected by reviewer)           #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - GUIDELINES variable is injected at runtime based on detected language     #}
+{#   - Priority-ordered checks: security, performance, maintainability          #}
+{#   - LIMITED exploration allowed for files mentioned in the diff              #}
+{# ============================================================================ #}
+
+*** BALANCED REVIEW - LIMITED EXPLORATION ALLOWED ***
+
+You are in COMPREHENSIVE REVIEW MODE.
+
+YOUR TASK:
+Review the code changes in the DIFF below thoroughly. Your primary focus MUST be on the diff content.
+
+CRITICAL CONSTRAINTS:
+- You MUST read the files mentioned in the diff (changed files) for full context
+- You MAY use targeted search ONLY to find definitions/imports mentioned in the diff
+- Example: If diff references `use crate::foo::bar`, you MAY search for `foo` module definition
+- You MUST stop exploring once you find the relevant definition
+- You MUST NOT explore or read any other files beyond changed files and their direct dependencies
+- You MUST NOT run discovery commands (ls, find, git log, git grep, rg, grep, etc.)
+- Your analysis MUST be centered on the changes shown in the diff
+
+{# ORIGINAL REQUEST - The user's original prompt #}
+ORIGINAL REQUEST:
+{{PROMPT}}
+
+{# IMPLEMENTATION PLAN - What the changes are implementing #}
+IMPLEMENTATION PLAN:
+{{PLAN}}
+
+LANGUAGE-SPECIFIC CHECKS (Priority-Ordered) (Optional Reference - Do NOT explore beyond the diff and its direct dependencies):
+{{GUIDELINES}}
+
+DIFF TO REVIEW:
+```diff
+{{DIFF}}
+```
+
+REVIEW CATEGORIES (Check each category - output "No issues found in [category]" if none):
+
+1. CORRECTNESS (Critical Priority)
+   - Logic errors and edge cases
+   - Algorithm correctness
+   - Input validation and error handling
+   - Boundary conditions (null, empty, negative values)
+
+2. SECURITY (Critical Priority)
+   - Injection vulnerabilities (SQL, command, code injection)
+   - Authentication and authorization issues
+   - Sensitive data exposure (passwords, tokens, keys)
+   - OWASP Top 10 for the language/framework
+
+3. SECRETS MANAGEMENT (Critical Priority)
+   - Hardcoded credentials, API keys, or tokens
+   - Secrets loaded from environment/config (not hardcoded)
+   - Sensitive data not logged or exposed in errors
+   - Proper secrets rotation and management
+
+4. CONCURRENCY (High Priority)
+   - Shared mutable state properly synchronized
+   - Potential deadlocks (lock ordering issues)
+   - Race conditions in concurrent code
+   - Thread safety of data structures
+
+5. RESOURCE MANAGEMENT (High Priority)
+   - Resources properly closed/released (files, connections, handles)
+   - No resource leaks in error paths
+   - Proper cleanup on early returns
+   - Memory leak prevention
+
+6. PERFORMANCE (Medium Priority)
+   - Inefficient algorithms or data structures
+   - Unnecessary database queries or API calls
+   - Caching opportunities
+   - Large memory allocations
+
+7. MAINTAINABILITY (Medium Priority)
+   - Code clarity and naming conventions
+   - Code duplication
+   - Function/class complexity and length
+   - Comments and documentation quality
+
+8. TESTING (Medium Priority)
+   - Test coverage for new/changed code
+   - Edge case handling in tests
+   - Test clarity and organization
+
+9. ERROR HANDLING (Medium Priority)
+   - Proper error propagation
+   - Error message clarity with context
+   - Graceful degradation
+   - Errors logged appropriately
+
+10. TYPE SAFETY & VALIDATION (Medium Priority)
+    - Proper use of types (avoiding magic values, strings for everything)
+    - Input validation at boundaries
+    - Null/undefined handling
+
+11. OBSERVABILITY (Low Priority)
+    - Errors logged with context
+    - Critical operations have appropriate logging
+    - Metrics for important operations
+
+12. API DESIGN (Low Priority)
+    - API follows consistent naming conventions
+    - Breaking changes are clearly documented
+    - Parameter validation
+    - Return type consistency
+
+SEVERITY GUIDELINES:
+- Critical: Security vulnerabilities, secrets exposure, data loss, crashes, major logic errors
+- High: Concurrency issues, resource leaks, significant performance problems
+- Medium: Minor bugs, unclear code, missing edge cases, validation issues
+- Low: Style issues, minor improvements, observability gaps
+
+OUTPUT FORMAT:
+For each category, output:
+- [ ] Critical: [file:line] Description
+- [ ] High: [file:line] Description
+- [ ] Medium: [file:line] Description
+- [ ] Low: [file:line] Description
+
+If no issues found in a category, output: "No issues found in [category]"

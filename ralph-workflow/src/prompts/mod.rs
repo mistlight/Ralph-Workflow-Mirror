@@ -215,8 +215,10 @@ mod tests {
             "",
             "",
         );
-        assert!(result.contains("fresh eyes"));
-        assert!(result.contains("DETAILED REVIEW MODE"));
+        // NOTE: The detailed_review template has been deprecated and now uses standard_review
+        // The test should verify the new template behavior
+        assert!(result.contains("REVIEW MODE"));
+        assert!(result.contains("CRITICAL CONSTRAINTS"));
     }
 
     #[test]
