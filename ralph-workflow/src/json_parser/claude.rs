@@ -1119,16 +1119,57 @@ impl ClaudeParser {
                 // Check for Result events to handle GLM/ccs-glm duplicate event bug
                 // Some agents emit both success and error_during_execution results
                 let should_skip_result = if trimmed.starts_with('{') {
-                    if let Ok(ClaudeEvent::Result { subtype, .. }) =
-                        serde_json::from_str::<ClaudeEvent>(trimmed)
+                    // First, check if the JSON has an 'errors' field with actual error messages.
+                    // This is important because Claude events can have either 'error' (string)
+                    // or 'errors' (array of strings), and we need to check both.
+                    let has_errors_with_content =
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                            // Check for 'errors' array with at least one non-empty string
+                            json.get("errors")
+                                .and_then(|v| v.as_array())
+                                .is_some_and(|arr| {
+                                    arr.iter()
+                                        .any(|e| e.as_str().is_some_and(|s| !s.trim().is_empty()))
+                                })
+                        } else {
+                            false
+                        };
+
+                    if let Ok(ClaudeEvent::Result {
+                        subtype,
+                        duration_ms,
+                        error,
+                        ..
+                    }) = serde_json::from_str::<ClaudeEvent>(trimmed)
                     {
-                        // Suppress error_during_execution if we've already seen a success result
                         let is_error_result = subtype.as_deref() != Some("success");
-                        if is_error_result && seen_success_result {
+
+                        // Suppress spurious GLM error events based on these characteristics:
+                        // 1. Error event (subtype != "success")
+                        // 2. duration_ms is 0 or very small (< 100ms, indicating synthetic event)
+                        // 3. error field is null or empty (no actual error message)
+                        // 4. NO 'errors' field with actual error messages (this indicates a real error)
+                        //
+                        // These criteria identify the spurious error_during_execution events
+                        // that GLM emits when exiting with code 1 despite producing valid output.
+                        //
+                        // We DON'T suppress if there's an 'errors' array with content, because
+                        // that indicates a real error condition that the user should see.
+                        let is_spurious_glm_error = is_error_result
+                            && duration_ms.unwrap_or(0) < 100
+                            && (error.is_none() || error.as_ref().is_some_and(|e| e.is_empty()))
+                            && !has_errors_with_content;
+
+                        if is_spurious_glm_error && seen_success_result {
+                            // Error after success - suppress (original fix)
                             true
                         } else if subtype.as_deref() == Some("success") {
                             seen_success_result = true;
                             false
+                        } else if is_spurious_glm_error {
+                            // Spurious error BEFORE success - still suppress based on characteristics
+                            // This handles the reverse-order case where error arrives first
+                            true
                         } else {
                             false
                         }
