@@ -234,18 +234,18 @@ pub fn truncate_diff_for_review(
     let diff_size = diff.len();
 
     // Level 1: Full diff fits
+    // Parse file count for consistent metadata even when returning early
+    let files = parse_diff_to_files(&diff);
+    let total_file_count = files.len();
+
     if diff_size <= max_full_diff_size {
         return DiffReviewContent {
             content: diff,
             truncation_level: DiffTruncationLevel::Full,
-            total_file_count: 0,
+            total_file_count,
             shown_file_count: None,
         };
     }
-
-    // Parse the diff into files for processing
-    let files = parse_diff_to_files(&diff);
-    let total_file_count = files.len();
 
     // Level 2: Abbreviated diff with semantic prioritization
     let abbreviated = truncate_diff_semantically(&diff, &files, max_abbreviated_size);
@@ -291,17 +291,17 @@ fn prioritize_file_path(path: &str) -> i32 {
     use std::path::Path;
     let path_lower = path.to_lowercase();
 
-    // Helper function for case-insensitive extension check
-    let has_ext = |ext: &str| -> bool {
-        Path::new(path)
+    // Helper function for case-insensitive file extension check
+    let has_ext_lower = |ext: &str| -> bool {
+        Path::new(&path_lower)
             .extension()
             .and_then(std::ffi::OsStr::to_str)
             .is_some_and(|e| e.eq_ignore_ascii_case(ext))
     };
 
-    // Helper function for case-insensitive file extension check on path_lower
-    let has_ext_lower = |ext: &str| -> bool {
-        Path::new(&path_lower)
+    // Helper function for case-insensitive extension check on original path
+    let has_ext = |ext: &str| -> bool {
+        Path::new(path)
             .extension()
             .and_then(std::ffi::OsStr::to_str)
             .is_some_and(|e| e.eq_ignore_ascii_case(ext))
@@ -989,8 +989,8 @@ mod tests {
         let diff = "diff --git a/file.rs b/file.rs\n+ new line\n- old line";
         let result = truncate_diff_for_review(diff.to_string(), 10_000, 5_000, 1_000);
         assert_eq!(result.truncation_level, DiffTruncationLevel::Full);
-        // total_file_count is 0 for full diffs (no parsing needed)
-        assert_eq!(result.total_file_count, 0);
+        // total_file_count is parsed for consistent metadata
+        assert_eq!(result.total_file_count, 1);
         assert_eq!(result.shown_file_count, None);
     }
 
