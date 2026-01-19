@@ -147,6 +147,7 @@ impl RebaseErrorKind {
     }
 
     /// Returns whether this error can potentially be recovered automatically.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn is_recoverable(&self) -> bool {
         match self {
             // These are generally recoverable with automatic retry or cleanup
@@ -177,6 +178,7 @@ impl RebaseErrorKind {
     }
 
     /// Returns the category number (1-5) for this error.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn category(&self) -> u8 {
         match self {
             RebaseErrorKind::InvalidRevision { .. }
@@ -583,193 +585,6 @@ fn extract_conflict_files(output: &str) -> Vec<String> {
     files
 }
 
-/// Validate pre-rebase conditions.
-///
-/// This function checks all Category 1 failure modes before attempting
-/// a rebase operation. Returns an error kind if any validation fails.
-///
-/// # Arguments
-///
-/// * `upstream_branch` - The branch to rebase onto
-///
-/// # Returns
-///
-/// Returns `Ok(())` if all validations pass, or `RebaseErrorKind` if
-/// any validation fails.
-pub fn validate_rebase_preconditions(_upstream_branch: &str) -> Result<(), RebaseErrorKind> {
-    // Check for dirty working tree
-    check_dirty_working_tree()?;
-
-    // Check for concurrent operations
-    check_concurrent_operations()?;
-
-    // Check repository state
-    validate_repository_state()?;
-
-    // Check environment
-    validate_environment()?;
-
-    // Check for lock files
-    check_lock_files()?;
-
-    Ok(())
-}
-
-/// Check if the working tree is dirty.
-///
-/// Returns an error if there are unstaged or staged changes.
-fn check_dirty_working_tree() -> Result<(), RebaseErrorKind> {
-    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
-        details: "Cannot open repository".to_string(),
-    })?;
-
-    // Check for unstaged changes
-    let status_res = repo.statuses(None);
-    match status_res {
-        Ok(statuses) => {
-            for entry in statuses.iter() {
-                let status = entry.status();
-                if status.is_wt_new()
-                    || status.is_wt_modified()
-                    || status.is_wt_renamed()
-                    || status.is_wt_typechange()
-                    || status.is_index_new()
-                    || status.is_index_modified()
-                    || status.is_index_renamed()
-                    || status.is_index_typechange()
-                {
-                    return Err(RebaseErrorKind::DirtyWorkingTree);
-                }
-            }
-            Ok(())
-        }
-        Err(_) => Err(RebaseErrorKind::RepositoryCorrupt {
-            details: "Cannot get repository status".to_string(),
-        }),
-    }
-}
-
-/// Check for concurrent Git operations.
-///
-/// Returns an error if there's a rebase, merge, cherry-pick, revert,
-/// or bisect in progress.
-fn check_concurrent_operations() -> Result<(), RebaseErrorKind> {
-    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
-        details: "Cannot open repository".to_string(),
-    })?;
-
-    let state = repo.state();
-
-    match state {
-        git2::RepositoryState::Clean => Ok(()),
-        git2::RepositoryState::Rebase
-        | git2::RepositoryState::RebaseMerge
-        | git2::RepositoryState::RebaseInteractive => Err(RebaseErrorKind::ConcurrentOperation {
-            operation: "rebase".to_string(),
-        }),
-        git2::RepositoryState::Merge => Err(RebaseErrorKind::ConcurrentOperation {
-            operation: "merge".to_string(),
-        }),
-        git2::RepositoryState::CherryPick => Err(RebaseErrorKind::ConcurrentOperation {
-            operation: "cherry-pick".to_string(),
-        }),
-        git2::RepositoryState::Revert => Err(RebaseErrorKind::ConcurrentOperation {
-            operation: "revert".to_string(),
-        }),
-        git2::RepositoryState::Bisect => Err(RebaseErrorKind::ConcurrentOperation {
-            operation: "bisect".to_string(),
-        }),
-        _ => Err(RebaseErrorKind::ConcurrentOperation {
-            operation: format!("{:?}", state),
-        }),
-    }
-}
-
-/// Validate repository state.
-///
-/// Checks for repository corruption and other integrity issues.
-fn validate_repository_state() -> Result<(), RebaseErrorKind> {
-    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
-        details: "Cannot open repository".to_string(),
-    })?;
-
-    // Try to read the HEAD to verify repository integrity
-    let head_result = repo.head();
-    match head_result {
-        Ok(_) => Ok(()),
-        Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => Ok(()), // Empty repo is ok
-        Err(e) => Err(RebaseErrorKind::RepositoryCorrupt {
-            details: format!("Cannot read HEAD: {e}"),
-        }),
-    }
-}
-
-/// Validate environment configuration.
-///
-/// Checks that Git identity is configured and editor is available.
-fn validate_environment() -> Result<(), RebaseErrorKind> {
-    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
-        details: "Cannot open repository".to_string(),
-    })?;
-
-    // Check for user.name
-    let config = repo
-        .config()
-        .map_err(|_| RebaseErrorKind::EnvironmentFailure {
-            reason: "Cannot read Git configuration".to_string(),
-        })?;
-
-    let has_user_name = config.get_string("user.name").is_ok();
-    let has_user_email = config.get_string("user.email").is_ok();
-
-    if !has_user_name || !has_user_email {
-        return Err(RebaseErrorKind::EnvironmentFailure {
-            reason: if !has_user_name && !has_user_email {
-                "Git user.name and user.email are not configured".to_string()
-            } else if !has_user_name {
-                "Git user.name is not configured".to_string()
-            } else {
-                "Git user.email is not configured".to_string()
-            },
-        });
-    }
-
-    Ok(())
-}
-
-/// Check for stale lock files.
-///
-/// Returns an error if there are stale lock files that might block
-/// the rebase operation.
-fn check_lock_files() -> Result<(), RebaseErrorKind> {
-    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
-        details: "Cannot open repository".to_string(),
-    })?;
-
-    let git_dir = repo.path();
-
-    // Check for common lock files
-    let lock_files = [
-        "index.lock",
-        "HEAD.lock",
-        "packed-refs.lock",
-        "refs/heads/master.lock",
-        "refs/heads/main.lock",
-        "config.lock",
-    ];
-
-    for lock_file in lock_files {
-        let lock_path = git_dir.join(lock_file);
-        if lock_path.exists() {
-            return Err(RebaseErrorKind::ConcurrentOperation {
-                operation: format!("stale lock file: {lock_file}"),
-            });
-        }
-    }
-
-    Ok(())
-}
-
 /// Perform a rebase onto the specified upstream branch.
 ///
 /// This function rebases the current branch onto the specified upstream branch.
@@ -931,6 +746,7 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
         ))),
     }
 }
+
 
 /// Abort the current rebase operation.
 ///
@@ -1343,84 +1159,4 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_validate_rebase_preconditions_returns_result() {
-        // Test that validate_rebase_preconditions returns a Result
-        let result = validate_rebase_preconditions("main");
-        // Should succeed (returns (), not error) in a clean repo
-        // May fail if there are uncommitted changes, which is expected
-        match result {
-            Ok(()) => {}
-            Err(RebaseErrorKind::DirtyWorkingTree) => {
-                // This is ok - it means the test repo has uncommitted changes
-            }
-            Err(_) => {
-                // Other errors indicate a problem
-                panic!("Unexpected validation error");
-            }
-        }
-    }
-
-    #[test]
-    fn test_check_dirty_working_tree() {
-        // Test that check_dirty_working_tree returns a Result
-        let result = check_dirty_working_tree();
-        // May fail if there are uncommitted changes, which is expected
-        match result {
-            Ok(()) => {}
-            Err(RebaseErrorKind::DirtyWorkingTree) => {
-                // This is ok - it means the test repo has uncommitted changes
-            }
-            Err(_) => {
-                // Other errors indicate a problem
-                panic!("Unexpected validation error");
-            }
-        }
-    }
-
-    #[test]
-    fn test_check_concurrent_operations() {
-        // Test that check_concurrent_operations returns a Result
-        let result = check_concurrent_operations();
-        // Should succeed unless there's an actual rebase/merge in progress
-        assert!(
-            result.is_ok() || matches!(result, Err(RebaseErrorKind::ConcurrentOperation { .. }))
-        );
-    }
-
-    #[test]
-    fn test_validate_repository_state() {
-        // Test that validate_repository_state returns a Result
-        let result = validate_repository_state();
-        // Should succeed in a normal repo
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_validate_environment() {
-        // Test that validate_environment returns a Result
-        let result = validate_environment();
-        // Should succeed if git is configured
-        // May fail if user.name/user.email are not set
-        match result {
-            Ok(()) => {}
-            Err(RebaseErrorKind::EnvironmentFailure { .. }) => {
-                // This is ok - git identity may not be configured in test environment
-            }
-            Err(_) => {
-                // Other errors indicate a problem
-                panic!("Unexpected validation error");
-            }
-        }
-    }
-
-    #[test]
-    fn test_check_lock_files() {
-        // Test that check_lock_files returns a Result
-        let result = check_lock_files();
-        // Should succeed unless there are actual lock files
-        assert!(
-            result.is_ok() || matches!(result, Err(RebaseErrorKind::ConcurrentOperation { .. }))
-        );
-    }
 }

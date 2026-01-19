@@ -12,6 +12,7 @@ mod gemini_parser_tests;
 mod git;
 mod logger;
 mod opencode_parser_tests;
+mod rebase;
 mod test_timeout;
 mod test_traits;
 mod workflows;

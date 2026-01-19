@@ -14,6 +14,7 @@ use super::rebase_checkpoint::{
 };
 
 /// Default maximum number of recovery attempts.
+#[cfg(any(test, feature = "test-utils"))]
 const DEFAULT_MAX_RECOVERY_ATTEMPTS: u32 = 3;
 
 /// State machine for fault-tolerant rebase operations.
@@ -26,7 +27,8 @@ const DEFAULT_MAX_RECOVERY_ATTEMPTS: u32 = 3;
 pub struct RebaseStateMachine {
     /// Current checkpoint state
     checkpoint: RebaseCheckpoint,
-    /// Maximum number of recovery attempts
+    /// Maximum number of recovery attempts (only used in tests)
+    #[cfg(any(test, feature = "test-utils"))]
     max_recovery_attempts: u32,
 }
 
@@ -39,6 +41,7 @@ impl RebaseStateMachine {
     pub fn new(upstream_branch: String) -> Self {
         Self {
             checkpoint: RebaseCheckpoint::new(upstream_branch),
+            #[cfg(any(test, feature = "test-utils"))]
             max_recovery_attempts: DEFAULT_MAX_RECOVERY_ATTEMPTS,
         }
     }
@@ -65,6 +68,7 @@ impl RebaseStateMachine {
             })?;
             Ok(Self {
                 checkpoint,
+                #[cfg(any(test, feature = "test-utils"))]
                 max_recovery_attempts: DEFAULT_MAX_RECOVERY_ATTEMPTS,
             })
         } else {
@@ -73,6 +77,7 @@ impl RebaseStateMachine {
     }
 
     /// Set the maximum number of recovery attempts.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn with_max_recovery_attempts(mut self, max: u32) -> Self {
         self.max_recovery_attempts = max;
         self
@@ -122,6 +127,7 @@ impl RebaseStateMachine {
     /// Check if recovery is possible.
     ///
     /// Returns `true` if the error count is below the maximum recovery attempts.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn can_recover(&self) -> bool {
         self.checkpoint.error_count < self.max_recovery_attempts
     }
@@ -129,6 +135,7 @@ impl RebaseStateMachine {
     /// Check if the rebase should be aborted.
     ///
     /// Returns `true` if the error count has exceeded the maximum recovery attempts.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn should_abort(&self) -> bool {
         self.checkpoint.error_count >= self.max_recovery_attempts
     }
@@ -136,11 +143,13 @@ impl RebaseStateMachine {
     /// Check if all conflicts have been resolved.
     ///
     /// Returns `true` if all conflicted files have been marked as resolved.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn all_conflicts_resolved(&self) -> bool {
         self.checkpoint.all_conflicts_resolved()
     }
 
     /// Get the current checkpoint.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn checkpoint(&self) -> &RebaseCheckpoint {
         &self.checkpoint
     }
@@ -156,6 +165,7 @@ impl RebaseStateMachine {
     }
 
     /// Get the number of unresolved conflicts.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn unresolved_conflict_count(&self) -> usize {
         self.checkpoint.unresolved_conflict_count()
     }
@@ -166,6 +176,7 @@ impl RebaseStateMachine {
     }
 
     /// Force abort and save the aborted state.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn abort(mut self) -> io::Result<()> {
         self.checkpoint = self
             .checkpoint
@@ -176,6 +187,7 @@ impl RebaseStateMachine {
 }
 
 /// Actions that can be taken during recovery.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryAction {
     /// Continue with the rebase operation.

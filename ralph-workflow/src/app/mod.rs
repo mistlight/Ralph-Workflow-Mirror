@@ -44,7 +44,7 @@ use crate::git_helpers::{
     abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
     get_default_branch, get_repo_root, get_start_commit_summary, is_main_or_master_branch,
     rebase_onto, require_git_repo, reset_start_commit, save_start_commit, start_agent_phase,
-    RebaseResult,
+    RebaseResult, RebaseStateMachine,
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
@@ -977,6 +977,9 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 ///
 /// This function is called before the development phase starts to ensure
 /// the feature branch is up-to-date with the default branch.
+///
+/// Uses a state machine for fault tolerance and automatic recovery from
+/// interruptions or failures.
 fn run_initial_rebase(
     _args: &Args,
     config: &crate::config::Config,
@@ -986,71 +989,59 @@ fn run_initial_rebase(
 ) -> anyhow::Result<()> {
     logger.header("Pre-development rebase", Colors::cyan);
 
-    match run_rebase_to_default(logger, colors) {
+    // Get the default branch for rebasing
+    let default_branch = get_default_branch()?;
+
+    // Try to load an existing state machine or create a new one
+    let mut state_machine: RebaseStateMachine =
+        match RebaseStateMachine::load_or_create(default_branch.clone()) {
+            Ok(machine) => machine,
+            Err(e) => {
+                logger.warn(&format!("Failed to load rebase state machine: {e}"));
+                // Fall back to basic rebase without state machine
+                return run_fallback_rebase(logger, colors, config, template_context);
+            }
+        };
+
+    // Check if we're resuming from an interrupted rebase
+    let phase = state_machine.phase().clone();
+    if phase != crate::git_helpers::RebasePhase::NotStarted {
+        logger.info(&format!("Resuming rebase from phase: {:?}", phase));
+    }
+
+    // Run rebase with state machine
+    match run_rebase_with_state_machine(
+        &mut state_machine,
+        logger,
+        colors,
+        config,
+        template_context,
+    ) {
         Ok(RebaseResult::Success) => {
             logger.success("Rebase completed successfully");
+            // Clear checkpoint on success
+            let _ = state_machine.clear_checkpoint();
             Ok(())
         }
         Ok(RebaseResult::NoOp { reason }) => {
             logger.info(&format!("No rebase needed: {reason}"));
+            // Clear checkpoint on no-op
+            let _ = state_machine.clear_checkpoint();
+            Ok(())
+        }
+        Ok(RebaseResult::Conflicts(_conflicts)) => {
+            // Conflicts were resolved during state machine processing
+            logger.success("Rebase completed successfully after conflict resolution");
+            let _ = state_machine.clear_checkpoint();
             Ok(())
         }
         Ok(RebaseResult::Failed(err)) => {
             logger.error(&format!("Rebase failed: {err}"));
             anyhow::bail!("Rebase failed: {err}")
         }
-        Ok(RebaseResult::Conflicts(_conflicts)) => {
-            // Get the actual conflicted files
-            let conflicted_files = get_conflicted_files()?;
-            if conflicted_files.is_empty() {
-                logger.warn("Rebase reported conflicts but no conflicted files found");
-                let _ = abort_rebase();
-                return Ok(());
-            }
-
-            logger.warn(&format!(
-                "Rebase resulted in {} conflict(s), attempting AI resolution",
-                conflicted_files.len()
-            ));
-
-            // Attempt to resolve conflicts with AI
-            match try_resolve_conflicts_with_fallback(
-                &conflicted_files,
-                config,
-                template_context,
-                logger,
-                colors,
-            ) {
-                Ok(true) => {
-                    // Conflicts resolved, continue the rebase
-                    logger.info("Continuing rebase after conflict resolution");
-                    match continue_rebase() {
-                        Ok(()) => {
-                            logger.success("Rebase completed successfully after AI resolution");
-                            Ok(())
-                        }
-                        Err(e) => {
-                            logger.warn(&format!("Failed to continue rebase: {e}"));
-                            let _ = abort_rebase();
-                            Ok(()) // Continue anyway - conflicts were resolved
-                        }
-                    }
-                }
-                Ok(false) => {
-                    // AI resolution failed
-                    logger.warn("AI conflict resolution failed, aborting rebase");
-                    let _ = abort_rebase();
-                    Ok(()) // Continue pipeline - don't block on rebase failure
-                }
-                Err(e) => {
-                    logger.error(&format!("Conflict resolution error: {e}"));
-                    let _ = abort_rebase();
-                    Ok(()) // Continue pipeline
-                }
-            }
-        }
         Err(e) => {
             logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            // Don't abort - continue pipeline
             Ok(())
         }
     }
@@ -1060,6 +1051,9 @@ fn run_initial_rebase(
 ///
 /// This function is called after the review phase completes to ensure
 /// the feature branch is still up-to-date with the default branch.
+///
+/// Uses a state machine for fault tolerance and automatic recovery from
+/// interruptions or failures.
 fn run_post_review_rebase(
     _args: &Args,
     config: &crate::config::Config,
@@ -1069,71 +1063,59 @@ fn run_post_review_rebase(
 ) -> anyhow::Result<()> {
     logger.header("Post-review rebase", Colors::cyan);
 
-    match run_rebase_to_default(logger, colors) {
+    // Get the default branch for rebasing
+    let default_branch = get_default_branch()?;
+
+    // Try to load an existing state machine or create a new one
+    let mut state_machine: RebaseStateMachine =
+        match RebaseStateMachine::load_or_create(default_branch.clone()) {
+            Ok(machine) => machine,
+            Err(e) => {
+                logger.warn(&format!("Failed to load rebase state machine: {e}"));
+                // Fall back to basic rebase without state machine
+                return run_fallback_rebase(logger, colors, config, template_context);
+            }
+        };
+
+    // Check if we're resuming from an interrupted rebase
+    let phase = state_machine.phase().clone();
+    if phase != crate::git_helpers::RebasePhase::NotStarted {
+        logger.info(&format!("Resuming rebase from phase: {:?}", phase));
+    }
+
+    // Run rebase with state machine
+    match run_rebase_with_state_machine(
+        &mut state_machine,
+        logger,
+        colors,
+        config,
+        template_context,
+    ) {
         Ok(RebaseResult::Success) => {
             logger.success("Rebase completed successfully");
+            // Clear checkpoint on success
+            let _ = state_machine.clear_checkpoint();
             Ok(())
         }
         Ok(RebaseResult::NoOp { reason }) => {
             logger.info(&format!("No rebase needed: {reason}"));
+            // Clear checkpoint on no-op
+            let _ = state_machine.clear_checkpoint();
+            Ok(())
+        }
+        Ok(RebaseResult::Conflicts(_conflicts)) => {
+            // Conflicts were resolved during state machine processing
+            logger.success("Rebase completed successfully after conflict resolution");
+            let _ = state_machine.clear_checkpoint();
             Ok(())
         }
         Ok(RebaseResult::Failed(err)) => {
             logger.error(&format!("Rebase failed: {err}"));
             anyhow::bail!("Rebase failed: {err}")
         }
-        Ok(RebaseResult::Conflicts(_conflicts)) => {
-            // Get the actual conflicted files
-            let conflicted_files = get_conflicted_files()?;
-            if conflicted_files.is_empty() {
-                logger.warn("Rebase reported conflicts but no conflicted files found");
-                let _ = abort_rebase();
-                return Ok(());
-            }
-
-            logger.warn(&format!(
-                "Rebase resulted in {} conflict(s), attempting AI resolution",
-                conflicted_files.len()
-            ));
-
-            // Attempt to resolve conflicts with AI
-            match try_resolve_conflicts_with_fallback(
-                &conflicted_files,
-                config,
-                template_context,
-                logger,
-                colors,
-            ) {
-                Ok(true) => {
-                    // Conflicts resolved, continue the rebase
-                    logger.info("Continuing rebase after conflict resolution");
-                    match continue_rebase() {
-                        Ok(()) => {
-                            logger.success("Rebase completed successfully after AI resolution");
-                            Ok(())
-                        }
-                        Err(e) => {
-                            logger.warn(&format!("Failed to continue rebase: {e}"));
-                            let _ = abort_rebase();
-                            Ok(()) // Continue anyway - conflicts were resolved
-                        }
-                    }
-                }
-                Ok(false) => {
-                    // AI resolution failed
-                    logger.warn("AI conflict resolution failed, aborting rebase");
-                    let _ = abort_rebase();
-                    Ok(()) // Continue pipeline - don't block on rebase failure
-                }
-                Err(e) => {
-                    logger.error(&format!("Conflict resolution error: {e}"));
-                    let _ = abort_rebase();
-                    Ok(()) // Continue pipeline
-                }
-            }
-        }
         Err(e) => {
             logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            // Don't abort - continue pipeline
             Ok(())
         }
     }
@@ -1454,4 +1436,402 @@ fn write_resolved_files(
 
     logger.success(&format!("Successfully resolved {files_written} file(s)"));
     Ok(files_written)
+}
+
+/// Run rebase with fault tolerance using state machine.
+///
+/// This function performs a rebase with automatic recovery from
+/// interruptions and failures. It uses the state machine to track
+/// progress and can resume from checkpoints.
+///
+/// # Arguments
+///
+/// * `state_machine` - Mutable reference to the rebase state machine
+/// * `logger` - Logger for output
+/// * `colors` - Color formatting
+/// * `config` - Application configuration
+/// * `template_context` - Template context for prompts
+///
+/// # Returns
+///
+/// Returns `Ok(RebaseResult)` indicating the outcome, or an error.
+fn run_rebase_with_state_machine(
+    state_machine: &mut RebaseStateMachine,
+    logger: &Logger,
+    colors: Colors,
+    config: &crate::config::Config,
+    template_context: &TemplateContext,
+) -> anyhow::Result<RebaseResult> {
+    use crate::git_helpers::RebasePhase;
+
+    let upstream_branch = state_machine.upstream_branch().to_string();
+    logger.info(&format!(
+        "Rebasing onto {}{}{}",
+        colors.cyan(),
+        upstream_branch,
+        colors.reset()
+    ));
+
+    // Transition to pre-rebase check
+    state_machine.transition_to(RebasePhase::PreRebaseCheck)?;
+
+    // Perform the rebase operation
+    state_machine.transition_to(RebasePhase::RebaseInProgress)?;
+
+    // Get the rebase result and handle each case
+    match rebase_onto(&upstream_branch) {
+        Ok(RebaseResult::Success) => {
+            state_machine.transition_to(RebasePhase::RebaseComplete)?;
+            Ok(RebaseResult::Success)
+        }
+        Ok(RebaseResult::NoOp { reason }) => {
+            state_machine.transition_to(RebasePhase::RebaseComplete)?;
+            Ok(RebaseResult::NoOp { reason })
+        }
+        Ok(RebaseResult::Conflicts(files)) => {
+            state_machine.transition_to(RebasePhase::ConflictDetected)?;
+            for file in &files {
+                state_machine.record_conflict(file.clone());
+            }
+
+            logger.warn(&format!(
+                "Rebase resulted in {} conflict(s), attempting AI resolution",
+                files.len()
+            ));
+
+            // Attempt to resolve conflicts with AI
+            let resolution_result = try_resolve_conflicts_with_state_machine(
+                state_machine,
+                config,
+                template_context,
+                logger,
+                colors,
+            )?;
+
+            if resolution_result {
+                // Conflicts resolved, continue the rebase
+                state_machine.transition_to(RebasePhase::CompletingRebase)?;
+                logger.info("Continuing rebase after conflict resolution");
+                match continue_rebase() {
+                    Ok(()) => {
+                        state_machine.transition_to(RebasePhase::RebaseComplete)?;
+                        Ok(RebaseResult::Success)
+                    }
+                    Err(e) => {
+                        state_machine.record_error(format!("Failed to continue rebase: {e}"));
+                        logger.warn(&format!("Failed to continue rebase: {e}"));
+                        let _ = abort_rebase();
+                        Ok(RebaseResult::Failed(
+                            crate::git_helpers::RebaseErrorKind::ReferenceUpdateFailed {
+                                reason: format!("Failed to continue: {e}"),
+                            },
+                        ))
+                    }
+                }
+            } else {
+                // AI resolution failed
+                state_machine.record_error("AI conflict resolution failed".to_string());
+                logger.warn("AI conflict resolution failed, aborting rebase");
+                let _ = abort_rebase();
+                Ok(RebaseResult::Failed(
+                    crate::git_helpers::RebaseErrorKind::ContentConflict { files },
+                ))
+            }
+        }
+        Ok(RebaseResult::Failed(err)) => {
+            state_machine.record_error(err.description());
+            state_machine.transition_to(RebasePhase::RebaseAborted)?;
+            Ok(RebaseResult::Failed(err))
+        }
+        Err(e) => {
+            state_machine.record_error(format!("Rebase error: {e}"));
+            Err(e.into())
+        }
+    }
+}
+
+/// Fallback rebase without state machine.
+///
+/// This function provides a fallback path when the state machine
+/// cannot be initialized or loaded. It uses the old direct rebase
+/// approach.
+fn run_fallback_rebase(
+    logger: &Logger,
+    colors: Colors,
+    config: &crate::config::Config,
+    template_context: &TemplateContext,
+) -> anyhow::Result<()> {
+    logger.warn("Using fallback rebase mode (state machine unavailable)");
+
+    match run_rebase_to_default(logger, colors) {
+        Ok(RebaseResult::Success) => {
+            logger.success("Rebase completed successfully");
+            Ok(())
+        }
+        Ok(RebaseResult::NoOp { reason }) => {
+            logger.info(&format!("No rebase needed: {reason}"));
+            Ok(())
+        }
+        Ok(RebaseResult::Failed(err)) => {
+            logger.error(&format!("Rebase failed: {err}"));
+            anyhow::bail!("Rebase failed: {err}")
+        }
+        Ok(RebaseResult::Conflicts(_conflicts)) => {
+            let conflicted_files = get_conflicted_files()?;
+            if conflicted_files.is_empty() {
+                logger.warn("Rebase reported conflicts but no conflicted files found");
+                let _ = abort_rebase();
+                return Ok(());
+            }
+
+            logger.warn(&format!(
+                "Rebase resulted in {} conflict(s), attempting AI resolution",
+                conflicted_files.len()
+            ));
+
+            match try_resolve_conflicts_with_fallback(
+                &conflicted_files,
+                config,
+                template_context,
+                logger,
+                colors,
+            ) {
+                Ok(true) => {
+                    logger.info("Continuing rebase after conflict resolution");
+                    match continue_rebase() {
+                        Ok(()) => {
+                            logger.success("Rebase completed successfully after AI resolution");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            logger.warn(&format!("Failed to continue rebase: {e}"));
+                            let _ = abort_rebase();
+                            Ok(())
+                        }
+                    }
+                }
+                Ok(false) => {
+                    logger.warn("AI conflict resolution failed, aborting rebase");
+                    let _ = abort_rebase();
+                    Ok(())
+                }
+                Err(e) => {
+                    logger.error(&format!("Conflict resolution error: {e}"));
+                    let _ = abort_rebase();
+                    Ok(())
+                }
+            }
+        }
+        Err(e) => {
+            logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            Ok(())
+        }
+    }
+}
+
+/// Attempt to resolve conflicts with state machine tracking.
+///
+/// This function performs AI-assisted conflict resolution with a mini dev cycle:
+/// 1. AI attempts initial conflict resolution
+/// 2. Resolution is validated (no markers remain, syntax is valid)
+/// 3. If validation fails, fix with additional context
+/// 4. Repeat until resolution succeeds or max attempts reached
+///
+/// # Arguments
+///
+/// * `state_machine` - Mutable reference to the rebase state machine
+/// * `config` - Application configuration
+/// * `template_context` - Template context for prompts
+/// * `logger` - Logger for output
+/// * `colors` - Color formatting
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if conflicts were resolved, `Ok(false)` if resolution failed.
+fn try_resolve_conflicts_with_state_machine(
+    state_machine: &mut RebaseStateMachine,
+    config: &crate::config::Config,
+    template_context: &TemplateContext,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<bool> {
+    use crate::git_helpers::RebasePhase;
+
+    // Get the actual conflicted files
+    let conflicted_files = get_conflicted_files()?;
+    if conflicted_files.is_empty() {
+        logger.warn("No conflicted files found despite conflict state");
+        return Ok(false);
+    }
+
+    // Transition to conflict resolution phase
+    state_machine.transition_to(RebasePhase::ConflictResolutionInProgress)?;
+
+    // Maximum iterations for the review/fix cycle
+    let max_iterations = 3;
+
+    for iteration in 1..=max_iterations {
+        logger.info(&format!(
+            "Conflict resolution cycle {iteration}/{max_iterations}",
+            iteration = iteration,
+            max_iterations = max_iterations
+        ));
+
+        // Collect conflict info and build prompt
+        let conflicts = collect_conflict_info_or_error(&conflicted_files, logger)?;
+        let resolution_prompt = if iteration == 1 {
+            // First attempt: use standard prompt
+            build_resolution_prompt(&conflicts, template_context)
+        } else {
+            // Retry: add context about previous failures
+            format!(
+                "{}\n\n## Previous Resolution Failed\n\n\
+                 Your previous resolution attempt was not successful. \
+                 Please ensure:\n\
+                 1. ALL conflict markers (<<<<<<<, =======, >>>>>>>) are removed\n\
+                 2. The code is syntactically valid\n\
+                 3. You preserve the intent of BOTH sides where possible\n\n{}",
+                build_resolution_prompt(&conflicts, template_context),
+                if iteration == max_iterations {
+                    "This is your final attempt. If conflicts remain, manual intervention will be required."
+                } else {
+                    "Please try again with a careful review of the conflicts."
+                }
+            )
+        };
+
+        // Run AI conflict resolution
+        match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
+            Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
+                // Agent provided JSON output - parse and write files
+                let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
+                write_resolved_files(&resolved_files, logger)?;
+
+                // Validate the resolution
+                if validate_conflict_resolution(logger, &conflicted_files)? {
+                    // Mark files as resolved
+                    for path in resolved_files.keys() {
+                        state_machine.record_resolution(path.clone());
+                    }
+                    logger.success(&format!(
+                        "All conflicts resolved successfully after {} cycle(s)",
+                        iteration
+                    ));
+                    return Ok(true);
+                }
+
+                // Validation failed - record error and continue to next iteration
+                state_machine.record_error(format!(
+                    "Conflict resolution validation failed, cycle {iteration}/{max_iterations}",
+                    iteration = iteration,
+                    max_iterations = max_iterations
+                ));
+                logger.warn("Resolution validation failed, retrying...");
+            }
+            Ok(ConflictResolutionResult::FileEditsOnly) => {
+                // Agent resolved conflicts by editing files directly
+                logger.info("Agent resolved conflicts via file edits (no JSON output)");
+
+                // Validate the resolution
+                if validate_conflict_resolution(logger, &conflicted_files)? {
+                    // Mark all original conflicted files as resolved
+                    for file in &conflicted_files {
+                        state_machine.record_resolution(file.clone());
+                    }
+                    logger.success(&format!(
+                        "All conflicts resolved successfully after {} cycle(s)",
+                        iteration
+                    ));
+                    return Ok(true);
+                }
+
+                // Validation failed - record error and continue to next iteration
+                state_machine.record_error(format!(
+                    "Conflict resolution validation failed, cycle {iteration}/{max_iterations}",
+                    iteration = iteration,
+                    max_iterations = max_iterations
+                ));
+                logger.warn("Resolution validation failed, retrying...");
+            }
+            Ok(ConflictResolutionResult::Failed) | Err(_) => {
+                logger.warn("AI conflict resolution attempt failed");
+
+                // If this is the last iteration, don't retry
+                if iteration >= max_iterations {
+                    break;
+                }
+            }
+        }
+    }
+
+    // All iterations exhausted - try to continue rebase anyway
+    // User may have manually resolved conflicts
+    logger.info("Resolution cycles exhausted, checking for manual resolution...");
+    match crate::git_helpers::continue_rebase() {
+        Ok(()) => {
+            logger.info("Successfully continued rebase (possibly with manual resolution)");
+            // Mark all conflicts as resolved
+            for file in &conflicted_files {
+                state_machine.record_resolution(file.clone());
+            }
+            Ok(true)
+        }
+        Err(rebase_err) => {
+            logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
+            Ok(false)
+        }
+    }
+}
+
+/// Validate that conflict resolution was successful.
+///
+/// Checks that:
+/// 1. No conflict markers remain in files
+/// 2. Git reports no conflicted files
+///
+/// # Arguments
+///
+/// * `logger` - Logger for output
+/// * `original_conflicts` - List of originally conflicted files
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if validation passes, `Ok(false)` if conflicts remain.
+fn validate_conflict_resolution(
+    logger: &Logger,
+    original_conflicts: &[String],
+) -> anyhow::Result<bool> {
+    use std::fs;
+
+    // Check each originally conflicted file for conflict markers
+    for path in original_conflicts {
+        match fs::read_to_string(path) {
+            Ok(content) => {
+                // Check for conflict markers
+                if content.contains("<<<<<<<")
+                    || content.contains("=======")
+                    || content.contains(">>>>>>>")
+                {
+                    logger.warn(&format!("File {} still contains conflict markers", path));
+                    return Ok(false);
+                }
+            }
+            Err(e) => {
+                logger.warn(&format!("Failed to read file {}: {}", path, e));
+                return Ok(false);
+            }
+        }
+    }
+
+    // Verify with git that no conflicts remain
+    let remaining_conflicts = get_conflicted_files()?;
+    if !remaining_conflicts.is_empty() {
+        logger.warn(&format!(
+            "Git still reports {} conflicted file(s)",
+            remaining_conflicts.len()
+        ));
+        return Ok(false);
+    }
+
+    Ok(true)
 }
