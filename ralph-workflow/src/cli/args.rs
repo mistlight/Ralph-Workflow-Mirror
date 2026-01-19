@@ -286,6 +286,13 @@ pub struct TemplateCommands {
     )]
     pub list: bool,
 
+    /// List all templates including deprecated ones
+    #[arg(
+        long,
+        help = "List all Agent Prompt templates including deprecated ones"
+    )]
+    pub list_all: bool,
+
     /// Extract variables from a template
     #[arg(
         long,
@@ -346,6 +353,10 @@ pub struct CommitDisplayFlags {
         hide = true
     )]
     pub reset_start_commit: bool,
+
+    /// Show the current baseline state and exit
+    #[arg(long, help = "Show current review baseline and start commit state")]
+    pub show_baseline: bool,
 }
 
 /// Recovery command flags.

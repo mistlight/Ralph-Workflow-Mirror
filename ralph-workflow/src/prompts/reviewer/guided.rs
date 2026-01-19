@@ -42,24 +42,23 @@ fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) 
 ///
 /// # Arguments
 ///
-/// * `context` - The context level (minimal or normal)
+/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `guidelines` - The language-specific review guidelines
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 #[cfg(test)]
 pub fn prompt_reviewer_review_with_guidelines_and_diff(
-    context: ContextLevel,
+    _context: ContextLevel,
     guidelines: &ReviewGuidelines,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
     let guidelines_section = guidelines.format_for_prompt();
-    let template_content = match context {
-        ContextLevel::Minimal => include_str!("templates/standard_review_minimal.txt"),
-        ContextLevel::Normal => include_str!("templates/standard_review_normal.txt"),
-    };
+    // NOTE: ContextLevel is now ignored - we use the consolidated standard_review.txt
+    // The "minimal" context concept has been deprecated as it provided no real value
+    let template_content = include_str!("templates/standard_review.txt");
 
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
@@ -79,35 +78,28 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff(
 /// # Arguments
 ///
 /// * `template_context` - Template context containing the template registry
-/// * `context` - The context level (minimal or normal)
+/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `guidelines` - The language-specific review guidelines
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_reviewer_review_with_guidelines_and_diff_with_context(
     template_context: &TemplateContext,
-    context: ContextLevel,
+    _context: ContextLevel,
     guidelines: &ReviewGuidelines,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
     let guidelines_section = guidelines.format_for_prompt();
-    let template_name = match context {
-        ContextLevel::Minimal => "standard_review_minimal",
-        ContextLevel::Normal => "standard_review_normal",
-    };
+    // NOTE: ContextLevel is now ignored - we use the consolidated standard_review template
+    // The "minimal" context concept has been deprecated as it provided no real value
+    let template_name = "standard_review";
 
     let tmpl_content = template_context
         .registry()
         .get_template(template_name)
-        .unwrap_or_else(|_| {
-            match context {
-                ContextLevel::Minimal => include_str!("templates/standard_review_minimal.txt"),
-                ContextLevel::Normal => include_str!("templates/standard_review_normal.txt"),
-            }
-            .to_string()
-        });
+        .unwrap_or_else(|_| include_str!("templates/standard_review.txt").to_string());
 
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
@@ -127,35 +119,27 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff_with_context(
 /// # Arguments
 ///
 /// * `template_context` - Template context containing the template registry
-/// * `context` - The context level (minimal or normal)
+/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `guidelines` - The language-specific review guidelines
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_comprehensive_review_with_diff_with_context(
     template_context: &TemplateContext,
-    context: ContextLevel,
+    _context: ContextLevel,
     guidelines: &ReviewGuidelines,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
     let priority_section = guidelines.format_for_prompt_with_priorities();
-    let template_name = match context {
-        ContextLevel::Minimal => "comprehensive_review_minimal",
-        ContextLevel::Normal => "comprehensive_review_normal",
-    };
+    // NOTE: ContextLevel is now ignored - we use the consolidated comprehensive_review template
+    let template_name = "comprehensive_review";
 
     let tmpl_content = template_context
         .registry()
         .get_template(template_name)
-        .unwrap_or_else(|_| {
-            match context {
-                ContextLevel::Minimal => include_str!("templates/comprehensive_review_minimal.txt"),
-                ContextLevel::Normal => include_str!("templates/comprehensive_review_normal.txt"),
-            }
-            .to_string()
-        });
+        .unwrap_or_else(|_| include_str!("templates/comprehensive_review.txt").to_string());
 
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
@@ -175,35 +159,27 @@ pub fn prompt_comprehensive_review_with_diff_with_context(
 /// # Arguments
 ///
 /// * `template_context` - Template context containing the template registry
-/// * `context` - The context level (minimal or normal)
+/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `guidelines` - The language-specific review guidelines
 /// * `diff` - The git diff to review (changes since pipeline start)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_security_focused_review_with_diff_with_context(
     template_context: &TemplateContext,
-    context: ContextLevel,
+    _context: ContextLevel,
     guidelines: &ReviewGuidelines,
     diff: &str,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
     let security_section = guidelines.format_for_prompt();
-    let template_name = match context {
-        ContextLevel::Minimal => "security_review_minimal",
-        ContextLevel::Normal => "security_review_normal",
-    };
+    // NOTE: ContextLevel is now ignored - we use the consolidated security_review template
+    let template_name = "security_review";
 
     let tmpl_content = template_context
         .registry()
         .get_template(template_name)
-        .unwrap_or_else(|_| {
-            match context {
-                ContextLevel::Minimal => include_str!("templates/security_review_minimal.txt"),
-                ContextLevel::Normal => include_str!("templates/security_review_normal.txt"),
-            }
-            .to_string()
-        });
+        .unwrap_or_else(|_| include_str!("templates/security_review.txt").to_string());
 
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),

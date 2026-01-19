@@ -3,8 +3,8 @@
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
-{#   Common "CRITICAL: You have NO access" header for review modes.           #}
-{#   Used to prevent agents from attempting to read files or explore.          #}
+{#   Common header for review modes with limited exploration policy.            #}
+{#   Allows reviewers to read files in the diff for context only.              #}
 {#                                                                             #}
 {# USAGE:                                                                      #}
 {#   {{> shared/_critical_header}}                                             #}
@@ -16,18 +16,18 @@
 {#   - This partial is self-contained and requires no other partials           #}
 {# ============================================================================ #}
 
-*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+*** BALANCED REVIEW - LIMITED EXPLORATION ALLOWED ***
 
 You are in {{MODE}}.
 
-CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
-
 YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+Review the code changes in the DIFF below thoroughly. Your primary focus MUST be on the diff content.
 
 CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-- DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.
+- You MUST focus your review PRIMARILY on the code changes shown in the DIFF below
+- You MAY read files mentioned in the diff (changed files) for additional context ONLY
+- You MUST NOT explore or read any other files in the repository beyond those in the diff
+- You MUST NOT run discovery commands (ls, find, git log, git grep, rg, grep, etc.)
+- Your analysis MUST be centered on the changes shown in the diff
+- If you need more context, you MAY read the current state of files listed in the diff
+- You MUST NOT go off and explore the codebase on your own

@@ -15,7 +15,9 @@ use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::files::extract_issues;
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
-use crate::git_helpers::{git_snapshot, CommitResultFallback};
+use crate::git_helpers::{
+    get_baseline_summary, git_snapshot, update_review_baseline, CommitResultFallback,
+};
 use crate::logger::{print_progress, Logger};
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
@@ -113,6 +115,28 @@ pub fn run_review_phase(
         ));
         print_progress(j, ctx.config.reviewer_reviews, "Review-Fix cycles");
 
+        // Display baseline information
+        match get_baseline_summary() {
+            Ok(summary) => {
+                if ctx.config.verbosity.is_debug() {
+                    // Show detailed baseline information in verbose mode
+                    ctx.logger.info(&summary.format_detailed());
+                } else {
+                    ctx.logger.info(&summary.format_compact());
+                }
+                if summary.is_stale {
+                    ctx.logger.warn(&format!(
+                        "Baseline is stale ({} commits behind). Consider updating the baseline to focus the review on recent changes.",
+                        summary.commits_since
+                    ));
+                }
+            }
+            Err(e) => {
+                ctx.logger
+                    .warn(&format!("Unable to retrieve baseline information: {e}"));
+            }
+        }
+
         // PRE-FLIGHT VALIDATION: Check environment before running review
         match pre_flight_review_check(
             ctx.logger,
@@ -134,6 +158,11 @@ pub fn run_review_phase(
                 ));
             }
         }
+
+        // NOTE: Review baseline is NOT captured here. For the first cycle, we use
+        // start_commit (via ReviewBaseline::NotSet fallback). For subsequent cycles,
+        // we use the baseline that was updated after the previous fix pass.
+        // This ensures the reviewer sees actual changes rather than an empty diff.
 
         // REVIEW PASS
         update_status("Reviewing code", ctx.config.isolation_mode)?;
@@ -176,6 +205,14 @@ pub fn run_review_phase(
 
         // Run fix pass
         run_fix_pass(ctx, j, reviewer_context)?;
+
+        // UPDATE REVIEW BASELINE: Move baseline forward after fixes
+        // This ensures the next review cycle sees only new changes
+        if let Err(e) = update_review_baseline() {
+            ctx.logger.warn(&format!(
+                "Failed to update review baseline: {e}. Next review may see old changes."
+            ));
+        }
 
         // Check for changes and create commit if modified
         prev_snap = handle_post_fix_commit(ctx, &prev_snap)?;

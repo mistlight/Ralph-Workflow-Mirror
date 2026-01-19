@@ -150,7 +150,7 @@ pub fn load_start_point() -> io::Result<StartPoint> {
     if raw.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "Starting commit file is empty",
+            "Starting commit file is empty. Run 'ralph --reset-start-commit' to fix.",
         ));
     }
 
@@ -164,13 +164,32 @@ pub fn load_start_point() -> io::Result<StartPoint> {
     let oid = git2::Oid::from_str(raw).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Invalid OID format: {raw}"),
+            format!(
+                "Invalid OID format in {}: '{}'. Run 'ralph --reset-start-commit' to fix.",
+                START_COMMIT_FILE, raw
+            ),
         )
     })?;
 
     // Ensure the commit still exists in this repository (history may have been rewritten).
-    let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
-    repo.find_commit(oid).map_err(|e| to_io_error(&e))?;
+    let repo = git2::Repository::discover(".").map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Git repository error: {e}. Run 'ralph --reset-start-commit' to fix."),
+        )
+    })?;
+
+    repo.find_commit(oid).map_err(|e| {
+        let err_msg = e.message();
+        if err_msg.contains("not found") || err_msg.contains("invalid") {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Start commit '{}' no longer exists (history rewritten). Run 'ralph --reset-start-commit' to fix.", raw),
+            )
+        } else {
+            to_io_error(&e)
+        }
+    })?;
 
     Ok(StartPoint::Commit(oid))
 }
@@ -191,6 +210,100 @@ pub fn reset_start_commit() -> io::Result<()> {
     // fail on empty repositories where there is no HEAD commit to reference.
     let oid = get_current_head_oid()?;
     write_start_commit_with_oid(&oid)
+}
+
+/// Start commit summary for display.
+///
+/// Contains information about the start commit for user display.
+#[derive(Debug, Clone)]
+pub struct StartCommitSummary {
+    /// The start commit OID (short form, or None if not set).
+    pub start_oid: Option<String>,
+    /// Number of commits since start commit.
+    pub commits_since: usize,
+    /// Whether the start commit is stale (>10 commits behind).
+    pub is_stale: bool,
+}
+
+impl StartCommitSummary {
+    /// Format a compact version for inline display.
+    pub fn format_compact(&self) -> String {
+        match &self.start_oid {
+            Some(oid) => {
+                let short_oid = &oid[..8.min(oid.len())];
+                if self.is_stale {
+                    format!(
+                        "Start: {} (+{} commits, STALE)",
+                        short_oid, self.commits_since
+                    )
+                } else if self.commits_since > 0 {
+                    format!("Start: {} (+{} commits)", short_oid, self.commits_since)
+                } else {
+                    format!("Start: {}", short_oid)
+                }
+            }
+            None => "Start: not set".to_string(),
+        }
+    }
+}
+
+/// Get a summary of the start commit state for display.
+///
+/// Returns a `StartCommitSummary` containing information about the current
+/// start commit, commits since start, and staleness status.
+pub fn get_start_commit_summary() -> io::Result<StartCommitSummary> {
+    let start_oid = match load_start_point()? {
+        StartPoint::Commit(oid) => Some(oid.to_string()),
+        StartPoint::EmptyRepo => None,
+    };
+
+    let (commits_since, is_stale) = if let Some(ref oid) = start_oid {
+        let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
+
+        // Get HEAD commit
+        let head_oid = get_current_head_oid()?;
+        let head_commit = repo
+            .find_commit(git2::Oid::from_str(&head_oid).map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidData, "Invalid HEAD OID format")
+            })?)
+            .map_err(|e| to_io_error(&e))?;
+
+        let start_commit_oid = git2::Oid::from_str(oid)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid start OID format"))?;
+
+        let start_commit = repo
+            .find_commit(start_commit_oid)
+            .map_err(|e| to_io_error(&e))?;
+
+        // Count commits between start and HEAD
+        let mut revwalk = repo.revwalk().map_err(|e| to_io_error(&e))?;
+        revwalk
+            .push(head_commit.id())
+            .map_err(|e| to_io_error(&e))?;
+
+        let mut count = 0;
+        for commit_id in revwalk {
+            let commit_id = commit_id.map_err(|e| to_io_error(&e))?;
+            if commit_id == start_commit.id() {
+                break;
+            }
+            count += 1;
+            if count > 1000 {
+                break;
+            }
+        }
+
+        let is_stale = count > 10;
+        (count, is_stale)
+    } else {
+        (0, false)
+    };
+
+    Ok(StartCommitSummary {
+        start_oid,
+        commits_since,
+        is_stale,
+    })
 }
 
 #[cfg(test)]

@@ -1,47 +1,41 @@
 {# ============================================================================ #}
-{# Template: incremental_review_normal.txt                                      #}
-{# Version: 1.0                                                                  #}
+{# Template: universal_review.txt                                                #}
+{# Version: 2.0                                                                  #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
-{#   Prompt for incremental reviewer review mode with normal context.          #}
-{#   Focuses on recently changed files only.                                    #}
+{#   Simplified/universal review prompt for maximum agent compatibility.       #}
+{#   Uses simpler language and explicit output templates.                       #}
 {#                                                                             #}
 {# WHEN USED:                                                                  #}
-{#   During incremental review phase with normal context level.                 #}
-{#                                                                             #}
-{# TRIGGER:                                                                    #}
-{#   Pipeline runtime: review phase with incremental reviewer and normal context  #}
+{#   For agents with known compatibility issues (e.g., GLM, ZhipuAI).            #}
+{#   Can be forced via --force-universal-prompt flag.                           #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
 {#   PROMPT - Original user request from PROMPT.md (required)                   #}
 {#   PLAN   - Implementation plan from PLAN.md (required)                      #}
-{#   DIFF   - Git diff content to review (required)                             #}
+{#   DIFF    - Git diff content to review (required)                          #}
 {#                                                                             #}
 {# NOTES:                                                                      #}
-{#   - Incremental review focuses only on recent changes                        #}
-{#   - Uses inline PROMPT/PLAN/DIFF (no partials)                               #}
+{#   - Designed for agents with weaker instruction-following                    #}
+{#   - Uses simple, explicit instructions                                       #}
 {# ============================================================================ #}
 
 *** BALANCED REVIEW - LIMITED EXPLORATION ALLOWED ***
 
-You are in INCREMENTAL REVIEW MODE.
+REVIEW TASK
 
 YOUR TASK:
 Review the code changes in the DIFF below thoroughly. Your primary focus MUST be on the diff content.
 
-INPUTS TO READ:
-- DIFF below - Changes since the start of this pipeline
-- You MAY read the current state of files listed in the diff for context ONLY
-
 CRITICAL CONSTRAINTS:
-- You MUST focus your review PRIMARILY on the code changes shown in the DIFF below
-- You MAY read files mentioned in the diff (changed files) for additional context ONLY
-- You MUST NOT explore or read any other files in the repository beyond those in the diff
+- You MUST read the files mentioned in the diff (changed files) for full context
+- You MAY use targeted search ONLY to find definitions/imports mentioned in the diff
+- Example: If diff references `use crate::foo::bar`, you MAY search for `foo` module definition
+- You MUST stop exploring once you find the relevant definition
+- You MUST NOT explore or read any other files beyond changed files and their direct dependencies
 - You MUST NOT run discovery commands (ls, find, git log, git grep, rg, grep, etc.)
 - Your analysis MUST be centered on the changes shown in the diff
-- If you need more context, you MAY read the current state of files listed in the diff
-- You MUST NOT go off and explore the codebase on your own
 
 {# ORIGINAL REQUEST - The user's original prompt #}
 ORIGINAL REQUEST:
@@ -51,13 +45,25 @@ ORIGINAL REQUEST:
 IMPLEMENTATION PLAN:
 {{PLAN}}
 
+Review for:
+- Bugs, errors, security issues
+- Missing tests
+- Code quality and style
+
 DIFF TO REVIEW:
 ```diff
 {{DIFF}}
 ```
 
-OUTPUT (prioritized checklist):
+OUTPUT FORMAT
+
+Return your findings using this format:
+
 - [ ] Critical: [file:line] Description
 - [ ] High: [file:line] Description
 - [ ] Medium: [file:line] Description
 - [ ] Low: [file:line] Description
+
+If no issues found in the changed files, return exactly: "No issues found."
+
+IMPORTANT: Use the format [file:line] for each issue.

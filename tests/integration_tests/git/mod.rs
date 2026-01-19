@@ -248,9 +248,15 @@ fn ralph_commit_infrastructure_for_review_fix_cycles() {
     // This test verifies that:
     // 1. Review-fix cycles run correctly
     // 2. Changes are created during fix phases
+    // 3. Per-review baseline tracking prevents reviewing already-committed changes
     //
-    // Note: Actual commit creation requires a real LLM for message generation.
-    // This test verifies the infrastructure is ready for commits.
+    // Expected behavior:
+    // - Cycle 1: Review finds issues, fix creates fix_1.txt
+    // - After cycle 1: Changes are committed, review_baseline is updated
+    // - Cycle 2: No new uncommitted changes exist (all were committed), so review is skipped
+    //
+    // This is correct behavior - the baseline tracking ensures we don't
+    // review the same changes twice after they've been committed.
     //
     // This test uses a mock script that creates ISSUES.md directly (legacy mode)
     // since the orchestrator-controlled extraction requires proper JSON logging.
@@ -283,10 +289,10 @@ echo $count > "{counter}"
 # On even calls (fix phases): apply a fix
 if [ $((count % 2)) -ne 0 ]; then
     # Review phase: create ISSUES.md directly (for test reliability)
+    # Use format: - [ ] Severity: Description (required for issue counting)
     echo "# Issues" > .agent/ISSUES.md
     echo "" >> .agent/ISSUES.md
-    echo "Critical:" >> .agent/ISSUES.md
-    echo "- [ ] Issue found in cycle $((count / 2 + 1))" >> .agent/ISSUES.md
+    echo "- [ ] Critical: Issue found in cycle $((count / 2 + 1))" >> .agent/ISSUES.md
 else
     # Fix phase: apply a fix
     cycle=$((count / 2))
@@ -317,17 +323,31 @@ exit 0
     // Verify start_commit file was created
     assert!(dir.path().join(".agent/start_commit").exists());
 
-    // Verify the fix files exist (fixes were created)
-    assert!(dir.path().join("fix_1.txt").exists());
-    assert!(dir.path().join("fix_2.txt").exists());
+    // Verify review_baseline.txt was created (tracks per-cycle baseline)
+    assert!(
+        dir.path().join(".agent/review_baseline.txt").exists(),
+        "Review baseline file should exist"
+    );
 
-    // Verify the reviewer ran 4 times (2 cycles × 2 phases)
+    // Verify the fix file from cycle 1 exists
+    assert!(
+        dir.path().join("fix_1.txt").exists(),
+        "fix_1.txt should be created during cycle 1 fix pass"
+    );
+
+    // Cycle 2 is skipped because after cycle 1's commit, there are no new
+    // uncommitted changes to review. This is the correct baseline tracking behavior.
+    // The reviewer ran 2 times: review_1 + fix_1
     let count: u32 = fs::read_to_string(&counter_path)
         .unwrap()
         .trim()
         .parse()
         .unwrap();
-    assert_eq!(count, 4, "Expected 4 reviewer calls (2 cycles × 2 phases)");
+    assert_eq!(
+        count, 2,
+        "Expected 2 reviewer calls (cycle 1: review + fix). Cycle 2 is skipped \
+         because all changes were committed and no new uncommitted changes exist."
+    );
 }
 
 #[test]
