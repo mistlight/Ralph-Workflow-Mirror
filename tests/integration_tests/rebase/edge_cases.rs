@@ -1171,7 +1171,12 @@ fn validate_git_version_requirements() {
     use std::process::Command;
 
     // Check that we have a Git version that supports required features
-    let output = Command::new("git").args(["--version"]).output();
+    // Explicitly set current directory to avoid race condition where test's temp
+    // directory is cleaned up before the command runs, causing "getcwd" errors.
+    let output = Command::new("git")
+        .args(["--version"])
+        .current_dir("/")
+        .output();
 
     match output {
         Ok(result) => {
