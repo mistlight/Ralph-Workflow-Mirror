@@ -1,6 +1,5 @@
 use predicates::prelude::*;
 use std::fs;
-use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
 use crate::common::ralph_cmd;
@@ -35,11 +34,11 @@ fn ralph_init_creates_config_file() {
         assert!(!config_path.exists());
 
         // Run ralph --init-legacy
-        let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
-        cmd.current_dir(dir_path).arg("--init-legacy");
-
-        let output = cmd.output().unwrap();
-        assert!(output.status.success());
+        let output = ralph_cmd()
+            .current_dir(dir_path)
+            .arg("--init-legacy")
+            .assert()
+            .success();
 
         // Config file should now exist
         assert!(config_path.exists());
@@ -52,7 +51,8 @@ fn ralph_init_creates_config_file() {
         assert!(content.contains("[agent_chain]"));
 
         // Output should indicate file was created
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let output_bytes = output.get_output().stdout.clone();
+        let stdout = String::from_utf8_lossy(&output_bytes);
         assert!(stdout.contains("Created"));
     });
 }
@@ -75,18 +75,19 @@ reviewer = ["codex"]
         fs::write(dir_path.join(".agent/agents.toml"), custom_config).unwrap();
 
         // Run ralph --init-legacy
-        let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
-        cmd.current_dir(dir_path).arg("--init-legacy");
-
-        let output = cmd.output().unwrap();
-        assert!(output.status.success());
+        let output = ralph_cmd()
+            .current_dir(dir_path)
+            .arg("--init-legacy")
+            .assert()
+            .success();
 
         // Config file should still contain original content
         let content = fs::read_to_string(dir_path.join(".agent/agents.toml")).unwrap();
         assert_eq!(content, custom_config);
 
         // Output should indicate file already exists
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let output_bytes = output.get_output().stdout.clone();
+        let stdout = String::from_utf8_lossy(&output_bytes);
         assert!(stdout.contains("already exists"));
     });
 }
@@ -111,21 +112,20 @@ fn ralph_first_run_creates_config_and_exits() {
         assert!(!unified_config_path.exists());
 
         // Run ralph --init-global (unified config)
-        let mut cmd = StdCommand::new(crate::common::ralph_bin_path());
-        cmd.current_dir(dir_path)
+        let output = ralph_cmd()
+            .current_dir(dir_path)
             .env("XDG_CONFIG_HOME", &config_home)
-            .arg("--init-global");
-
-        let output = cmd.output().unwrap();
+            .arg("--init-global")
+            .assert()
+            .success();
 
         // Should exit successfully after creating the config
-        assert!(output.status.success());
-
         // Unified config file should now exist
         assert!(unified_config_path.exists());
 
         // Output should indicate file was created or already exists
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let output_bytes = output.get_output().stdout.clone();
+        let stdout = String::from_utf8_lossy(&output_bytes);
         assert!(stdout.contains("unified config"));
     });
 }
