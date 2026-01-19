@@ -120,9 +120,9 @@ pub fn run_review_phase(
                     ctx.reviewer_agent,
                     ctx.logger,
                     &ctx.run_context,
-                );
-
-            let builder = builder.with_execution_history(ctx.execution_history.clone());
+                )
+                .with_execution_history(ctx.execution_history.clone())
+                .with_prompt_history(ctx.clone_prompt_history());
 
             if let Some(checkpoint) = builder.build() {
                 let _ = save_checkpoint(&checkpoint);
@@ -199,6 +199,12 @@ pub fn run_review_phase(
                 None
             },
         );
+
+        // Capture the review prompt for checkpoint/resume
+        if !review_prompt.is_empty() {
+            let prompt_key = format!("review_{}", j);
+            ctx.capture_prompt(&prompt_key, &review_prompt);
+        }
 
         // Check if the review prompt is empty (e.g., due to diff retrieval failure)
         // If so, skip the review and fix passes but still check for git changes
@@ -925,6 +931,10 @@ fn run_fix_pass(
         ctx.template_context,
         prompt_config,
     );
+
+    // Capture the fix prompt for checkpoint/resume
+    let prompt_key = format!("fix_{}", j);
+    ctx.capture_prompt(&prompt_key, &fix_prompt);
 
     // Log the fix prompt details for debugging (when verbose)
     if ctx.config.verbosity.is_debug() {

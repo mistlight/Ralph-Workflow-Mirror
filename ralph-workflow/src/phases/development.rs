@@ -96,9 +96,9 @@ pub fn run_development_phase(
                     ctx.reviewer_agent,
                     ctx.logger,
                     &ctx.run_context,
-                );
-
-            let builder = builder.with_execution_history(ctx.execution_history.clone());
+                )
+                .with_execution_history(ctx.execution_history.clone())
+                .with_prompt_history(ctx.clone_prompt_history());
 
             if let Some(checkpoint) = builder.build() {
                 let _ = save_checkpoint(&checkpoint);
@@ -136,6 +136,10 @@ pub fn run_development_phase(
             ctx.template_context,
             prompt_config,
         );
+
+        // Capture the prompt for checkpoint/resume
+        let prompt_key = format!("development_{}", i);
+        ctx.capture_prompt(&prompt_key, &prompt);
 
         let dev_start_time = Instant::now();
 
@@ -249,9 +253,9 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
                 ctx.reviewer_agent,
                 ctx.logger,
                 &ctx.run_context,
-            );
-
-        let builder = builder.with_execution_history(ctx.execution_history.clone());
+            )
+            .with_execution_history(ctx.execution_history.clone())
+            .with_prompt_history(ctx.clone_prompt_history());
 
         if let Some(checkpoint) = builder.build() {
             let _ = save_checkpoint(&checkpoint);
@@ -277,6 +281,10 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
             .map(|content| PromptConfig::new().with_prompt_md(content))
             .unwrap_or_default(),
     );
+
+    // Capture the planning prompt for checkpoint/resume
+    let prompt_key = format!("planning_{}", iteration);
+    ctx.capture_prompt(&prompt_key, &plan_prompt);
 
     let log_dir = format!(".agent/logs/planning_{iteration}");
     let mut runtime = PipelineRuntime {

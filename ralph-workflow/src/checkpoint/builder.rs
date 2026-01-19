@@ -238,6 +238,25 @@ impl CheckpointBuilder {
         self
     }
 
+    /// Set the entire prompt history from a HashMap.
+    ///
+    /// This is useful when transferring prompts from a PhaseContext.
+    ///
+    /// # Arguments
+    ///
+    /// * `history` - HashMap of prompt keys to prompt text
+    pub fn with_prompt_history(
+        mut self,
+        history: std::collections::HashMap<String, String>,
+    ) -> Self {
+        self.prompt_history = if history.is_empty() {
+            None
+        } else {
+            Some(history)
+        };
+        self
+    }
+
     /// Build the checkpoint.
     ///
     /// Returns None if required fields (phase, agent configs) are missing.
@@ -357,6 +376,80 @@ mod tests {
         assert_eq!(
             review_depth_to_string(ReviewDepth::Incremental),
             Some("incremental".to_string())
+        );
+    }
+
+    #[test]
+    fn test_builder_with_prompt_history() {
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false);
+        let dev_config =
+            AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
+        let rev_config =
+            AgentConfigSnapshot::new("rev".into(), "cmd".into(), "-o".into(), None, true);
+
+        let mut prompts = std::collections::HashMap::new();
+        prompts.insert(
+            "development_1".to_string(),
+            "Implement feature X".to_string(),
+        );
+
+        let checkpoint = CheckpointBuilder::new()
+            .phase(PipelinePhase::Development, 2, 5)
+            .reviewer_pass(1, 2)
+            .agents("dev", "rev")
+            .cli_args(cli_args)
+            .developer_config(dev_config)
+            .reviewer_config(rev_config)
+            .with_prompt_history(prompts)
+            .build()
+            .unwrap();
+
+        assert_eq!(checkpoint.phase, PipelinePhase::Development);
+        assert!(checkpoint.prompt_history.is_some());
+        let history = checkpoint.prompt_history.as_ref().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(
+            history.get("development_1"),
+            Some(&"Implement feature X".to_string())
+        );
+    }
+
+    #[test]
+    fn test_builder_with_prompt_history_multiple() {
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false);
+        let dev_config =
+            AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
+        let rev_config =
+            AgentConfigSnapshot::new("rev".into(), "cmd".into(), "-o".into(), None, true);
+
+        let mut prompts = std::collections::HashMap::new();
+        prompts.insert(
+            "development_1".to_string(),
+            "Implement feature X".to_string(),
+        );
+        prompts.insert("review_1".to_string(), "Review the changes".to_string());
+
+        let checkpoint = CheckpointBuilder::new()
+            .phase(PipelinePhase::Development, 2, 5)
+            .reviewer_pass(1, 2)
+            .agents("dev", "rev")
+            .cli_args(cli_args)
+            .developer_config(dev_config)
+            .reviewer_config(rev_config)
+            .with_prompt_history(prompts)
+            .build()
+            .unwrap();
+
+        assert!(checkpoint.prompt_history.is_some());
+        let history = checkpoint.prompt_history.as_ref().unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            history.get("development_1"),
+            Some(&"Implement feature X".to_string())
+        );
+        assert_eq!(
+            history.get("review_1"),
+            Some(&"Review the changes".to_string())
         );
     }
 }

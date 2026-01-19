@@ -682,6 +682,7 @@ fn create_phase_context_with_config<'ctx>(
         template_context: &ctx.template_context,
         run_context: run_context.clone(),
         execution_history: crate::checkpoint::execution_history::ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
     }
 }
 

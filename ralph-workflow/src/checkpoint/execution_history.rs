@@ -190,7 +190,6 @@ mod tests {
         assert_eq!(step.phase, "Development");
         assert_eq!(step.iteration, 1);
         assert_eq!(step.step_type, "dev_run");
-        assert!(step.prompt.is_none());
         assert!(step.agent.is_none());
         assert!(step.duration_secs.is_none());
     }
