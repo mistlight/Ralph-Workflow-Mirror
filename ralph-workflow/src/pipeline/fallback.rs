@@ -120,7 +120,9 @@ fn handle_agent_error(
     if is_glm_agent
         && matches!(
             error_kind,
-            AgentErrorKind::AgentSpecificQuirk | AgentErrorKind::ToolExecutionFailed
+            AgentErrorKind::AgentSpecificQuirk
+                | AgentErrorKind::RetryableAgentQuirk
+                | AgentErrorKind::ToolExecutionFailed
         )
     {
         runtime.logger.warn(&format!(

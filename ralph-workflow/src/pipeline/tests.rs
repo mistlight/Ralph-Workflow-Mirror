@@ -105,7 +105,7 @@ fn setup_test_registry_with_fallback(
 
 #[cfg(unix)]
 #[test]
-fn run_with_fallback_does_not_retry_problematic_glm_reviewer() {
+fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
     let dir = tempfile::tempdir().unwrap();
 
     let (fail_script, ok_script, fail_count, ok_count) = create_test_scripts(dir.path());
@@ -150,9 +150,11 @@ fn run_with_fallback_does_not_retry_problematic_glm_reviewer() {
         .lines()
         .count();
     let ok_invocations = std::fs::read_to_string(&ok_count).unwrap().lines().count();
+    // GLM with unknown error (empty stderr) is now retried max_retries times before fallback
+    // max_retries = 3 means the loop runs for retry in 0..3 = 3 total attempts
     assert_eq!(
-        fail_invocations, 1,
-        "problematic agent should not be retried"
+        fail_invocations, 3,
+        "GLM agent with unknown error should be retried max_retries times before fallback"
     );
     assert_eq!(ok_invocations, 1, "fallback agent should run once");
 }

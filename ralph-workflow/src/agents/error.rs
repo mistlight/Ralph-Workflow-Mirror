@@ -58,6 +58,8 @@ pub enum AgentErrorKind {
     ToolExecutionFailed,
     /// Known agent-specific behavioral quirk - should fallback with specific advice.
     AgentSpecificQuirk,
+    /// Agent-specific issue that may be transient - should retry before falling back.
+    RetryableAgentQuirk,
     /// Other transient error - retry.
     Transient,
     /// Permanent failure - do not retry.
@@ -74,6 +76,7 @@ impl AgentErrorKind {
                 | Self::NetworkError
                 | Self::Timeout
                 | Self::InvalidResponse
+                | Self::RetryableAgentQuirk
                 | Self::Transient
         )
     }
@@ -114,12 +117,12 @@ impl AgentErrorKind {
     /// Get suggested wait time in milliseconds before retry.
     pub const fn suggested_wait_ms(self) -> u64 {
         match self {
-            Self::RateLimited => 5000,               // Rate limit: wait 5 seconds
-            Self::ApiUnavailable => 3000,            // Server issue: wait 3 seconds
-            Self::NetworkError => 2000,              // Network: wait 2 seconds
-            Self::Timeout | Self::Transient => 1000, // Timeout/Transient: short wait
-            Self::InvalidResponse => 500,            // Bad response: quick retry
-            _ => 0,                                  // No wait for non-retryable errors
+            Self::RateLimited => 5000,    // Rate limit: wait 5 seconds
+            Self::ApiUnavailable => 3000, // Server issue: wait 3 seconds
+            Self::NetworkError => 2000,   // Network: wait 2 seconds
+            Self::Timeout | Self::Transient | Self::RetryableAgentQuirk => 1000, // Timeout/Transient: short wait
+            Self::InvalidResponse => 500, // Bad response: quick retry
+            _ => 0,                       // No wait for non-retryable errors
         }
     }
 
@@ -138,6 +141,7 @@ impl AgentErrorKind {
             Self::Timeout => "Request timed out",
             Self::ToolExecutionFailed => "Tool execution failed (e.g., file write)",
             Self::AgentSpecificQuirk => "Known agent-specific issue",
+            Self::RetryableAgentQuirk => "Agent-specific issue (may be transient)",
             Self::Transient => "Transient error",
             Self::Permanent => "Permanent error",
         }
@@ -179,6 +183,9 @@ impl AgentErrorKind {
             }
             Self::AgentSpecificQuirk => {
                 "Known agent-specific issue. Switching to alternative agent. Tip: See docs/agent-compatibility.md"
+            }
+            Self::RetryableAgentQuirk => {
+                "Agent-specific issue that may be transient. Retrying... Tip: See docs/agent-compatibility.md"
             }
             Self::Transient => "Temporary issue. Will retry automatically.",
             Self::Permanent => {
@@ -226,14 +233,38 @@ impl AgentErrorKind {
 
         // If we know this is a GLM-like agent and it failed with exit code 1
         // (and we haven't matched a specific error pattern above),
-        // classify it as AgentSpecificQuirk to trigger fallback instead of retry.
+        // classify based on stderr content:
+        // - If stderr is empty or contains only generic messages, treat as RetryableAgentQuirk
+        // - If stderr contains specific error patterns, it will be caught by check_agent_specific_quirks below
         let is_problematic_agent =
             agent_name.is_some_and(is_glm_like_agent) || model_flag.is_some_and(is_glm_like_agent);
 
         if is_problematic_agent && exit_code == 1 {
-            // GLM and similar agents often exit with code 1 for various issues.
-            // Treating as AgentSpecificQuirk ensures faster fallback.
-            return Self::AgentSpecificQuirk;
+            // Check if stderr has known problematic patterns that indicate unrecoverable issues
+            let has_known_problematic_pattern = stderr_lower.contains("permission")
+                || stderr_lower.contains("denied")
+                || stderr_lower.contains("unauthorized")
+                || stderr_lower.contains("auth")
+                || stderr_lower.contains("token")
+                || stderr_lower.contains("limit")
+                || stderr_lower.contains("quota")
+                || stderr_lower.contains("disk")
+                || stderr_lower.contains("space")
+                // Agent-specific known patterns (from check_agent_specific_quirks)
+                || (stderr_lower.contains("glm") && stderr_lower.contains("failed"))
+                || (stderr_lower.contains("ccs") && stderr_lower.contains("failed"))
+                || (stderr_lower.contains("glm")
+                    && (stderr_lower.contains("permission")
+                        || stderr_lower.contains("denied")
+                        || stderr_lower.contains("unauthorized")));
+
+            if has_known_problematic_pattern {
+                // Known issue - should fallback
+                return Self::AgentSpecificQuirk;
+            }
+
+            // Unknown error - may be transient, should retry
+            return Self::RetryableAgentQuirk;
         }
 
         if let Some(err) = Self::check_agent_specific_quirks(&stderr_lower, exit_code) {
@@ -480,6 +511,7 @@ mod tests {
         assert!(AgentErrorKind::Timeout.should_retry());
         assert!(AgentErrorKind::InvalidResponse.should_retry());
         assert!(AgentErrorKind::Transient.should_retry());
+        assert!(AgentErrorKind::RetryableAgentQuirk.should_retry());
 
         assert!(!AgentErrorKind::AuthFailure.should_retry());
         assert!(!AgentErrorKind::CommandNotFound.should_retry());
@@ -574,8 +606,28 @@ mod tests {
         // It should NOT match patterns that are handled above
         assert_eq!(classify(1, "some random error"), AgentErrorKind::Transient);
 
+        // GLM with unknown error (no specific pattern) should be RetryableAgentQuirk
         assert_eq!(
             AgentErrorKind::classify_with_agent(1, "some random error", Some("ccs/glm"), None),
+            AgentErrorKind::RetryableAgentQuirk
+        );
+
+        // GLM with known problematic patterns - permission denied is caught by check_tool_failures first
+        assert_eq!(
+            AgentErrorKind::classify_with_agent(1, "permission denied", Some("ccs/glm"), None),
+            AgentErrorKind::ToolExecutionFailed // Caught by earlier check
+        );
+        assert_eq!(
+            AgentErrorKind::classify_with_agent(1, "token limit exceeded", Some("ccs/glm"), None),
+            AgentErrorKind::TokenExhausted // Caught by earlier check
+        );
+        assert_eq!(
+            AgentErrorKind::classify_with_agent(1, "disk full", Some("ccs/glm"), None),
+            AgentErrorKind::DiskFull // Caught by earlier check (disk pattern)
+        );
+        // GLM mentioned in stderr with "failed" - AgentSpecificQuirk
+        assert_eq!(
+            AgentErrorKind::classify_with_agent(1, "glm failed", Some("ccs/glm"), None),
             AgentErrorKind::AgentSpecificQuirk
         );
     }

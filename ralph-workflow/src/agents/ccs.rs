@@ -1175,16 +1175,30 @@ mod tests {
 
     #[test]
     fn test_glm_error_classification() {
-        // Verify that GLM exit code 1 is classified as AgentSpecificQuirk
+        // GLM exit code 1 behavior:
+        // - Empty/unknown stderr -> RetryableAgentQuirk (should retry)
+        // - Known problematic patterns -> AgentSpecificQuirk or ToolExecutionFailed (both trigger fallback)
         use crate::agents::error::AgentErrorKind;
 
+        // Empty stderr - unknown error, should retry
         let error = AgentErrorKind::classify_with_agent(1, "", Some("ccs/glm"), None);
-        assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
+        assert_eq!(error, AgentErrorKind::RetryableAgentQuirk);
 
+        // Generic error message - unknown pattern, should retry
         let error = AgentErrorKind::classify_with_agent(1, "some error", Some("glm"), None);
+        assert_eq!(error, AgentErrorKind::RetryableAgentQuirk);
+
+        // GLM mentioned in stderr - known issue, should fallback
+        let error = AgentErrorKind::classify_with_agent(1, "glm failed", Some("ccs"), Some("glm"));
         assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
 
-        let error = AgentErrorKind::classify_with_agent(1, "glm failed", Some("ccs"), Some("glm"));
+        // Permission denied - caught by check_tool_failures first, should fallback
+        // (ToolExecutionFailed also triggers fallback, just via a different code path)
+        let error = AgentErrorKind::classify_with_agent(1, "permission denied", Some("ccs/glm"), None);
+        assert_eq!(error, AgentErrorKind::ToolExecutionFailed);
+
+        // CCS/GLM with failed message - known issue, should fallback
+        let error = AgentErrorKind::classify_with_agent(1, "ccs glm failed", Some("ccs/glm"), None);
         assert_eq!(error, AgentErrorKind::AgentSpecificQuirk);
     }
 
