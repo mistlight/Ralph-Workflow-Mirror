@@ -882,9 +882,13 @@ fn handle_rebase_only(
             logger.success("Rebase completed successfully");
             Ok(())
         }
-        Ok(RebaseResult::NoOp) => {
-            logger.info("No rebase needed (already up-to-date)");
+        Ok(RebaseResult::NoOp { reason }) => {
+            logger.info(&format!("No rebase needed: {reason}"));
             Ok(())
+        }
+        Ok(RebaseResult::Failed(err)) => {
+            logger.error(&format!("Rebase failed: {err}"));
+            anyhow::bail!("Rebase failed: {err}")
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
             // Get the actual conflicted files
@@ -987,9 +991,13 @@ fn run_initial_rebase(
             logger.success("Rebase completed successfully");
             Ok(())
         }
-        Ok(RebaseResult::NoOp) => {
-            logger.info("No rebase needed (already up-to-date or on main branch)");
+        Ok(RebaseResult::NoOp { reason }) => {
+            logger.info(&format!("No rebase needed: {reason}"));
             Ok(())
+        }
+        Ok(RebaseResult::Failed(err)) => {
+            logger.error(&format!("Rebase failed: {err}"));
+            anyhow::bail!("Rebase failed: {err}")
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
             // Get the actual conflicted files
@@ -1066,9 +1074,13 @@ fn run_post_review_rebase(
             logger.success("Rebase completed successfully");
             Ok(())
         }
-        Ok(RebaseResult::NoOp) => {
-            logger.info("No rebase needed (already up-to-date or on main branch)");
+        Ok(RebaseResult::NoOp { reason }) => {
+            logger.info(&format!("No rebase needed: {reason}"));
             Ok(())
+        }
+        Ok(RebaseResult::Failed(err)) => {
+            logger.error(&format!("Rebase failed: {err}"));
+            anyhow::bail!("Rebase failed: {err}")
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
             // Get the actual conflicted files

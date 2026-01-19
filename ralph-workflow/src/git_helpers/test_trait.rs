@@ -476,9 +476,16 @@ mod tests {
 
     #[test]
     fn test_rebase_result_no_op() {
-        let mock = MockGit::new().with_rebase_onto(Ok(RebaseResult::NoOp));
+        let mock = MockGit::new().with_rebase_onto(Ok(RebaseResult::NoOp {
+            reason: "test".to_string(),
+        }));
         let result = GitOps::rebase_onto(&mock, "main").unwrap();
-        assert_eq!(result, RebaseResult::NoOp);
+        assert_eq!(
+            result,
+            RebaseResult::NoOp {
+                reason: "test".to_string()
+            }
+        );
     }
 
     #[test]

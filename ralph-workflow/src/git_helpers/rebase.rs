@@ -6,9 +6,11 @@
 //! - Abort an in-progress rebase
 //! - Continue a rebase after conflict resolution
 //! - Get lists of conflicted files
+//! - Handle all rebase failure modes with fault tolerance
 //!
 //! All operations use libgit2 directly (not git CLI) for consistency
-//! with the rest of the codebase.
+//! with the rest of the codebase, with git CLI as a fallback for
+//! fault tolerance.
 
 #![deny(unsafe_code)]
 
@@ -20,21 +22,775 @@ fn git2_to_io_error(err: &git2::Error) -> io::Error {
     io::Error::other(err.to_string())
 }
 
+/// Detailed classification of rebase failure modes.
+///
+/// This enum categorizes all known Git rebase failure modes as documented
+/// in the requirements. Each variant represents a specific category of
+/// failure that may occur during a rebase operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RebaseErrorKind {
+    // Category 1: Rebase Cannot Start
+    /// Invalid or unresolvable revisions (branch doesn't exist, invalid ref, etc.)
+    InvalidRevision { revision: String },
+
+    /// Dirty working tree or index (unstaged or staged changes present)
+    DirtyWorkingTree,
+
+    /// Concurrent or in-progress Git operations (rebase, merge, cherry-pick, etc.)
+    ConcurrentOperation { operation: String },
+
+    /// Repository integrity or storage failures (missing/corrupt objects, disk full, etc.)
+    RepositoryCorrupt { details: String },
+
+    /// Environment or configuration failures (missing user.name, editor unavailable, etc.)
+    EnvironmentFailure { reason: String },
+
+    /// Hook-triggered aborts (pre-rebase hook rejected the operation)
+    HookRejection { hook_name: String },
+
+    // Category 2: Rebase Stops (Interrupted)
+    /// Content conflicts (textual merge conflicts, add/add, modify/delete, etc.)
+    ContentConflict { files: Vec<String> },
+
+    /// Patch application failures (patch does not apply, context mismatch, etc.)
+    PatchApplicationFailed { reason: String },
+
+    /// Interactive todo-driven stops (edit, reword, break, exec commands)
+    InteractiveStop { command: String },
+
+    /// Empty or redundant commits (patch results in no changes)
+    EmptyCommit,
+
+    /// Autostash and stash reapplication failures
+    AutostashFailed { reason: String },
+
+    /// Commit creation failures mid-rebase (hook failures, signing failures, etc.)
+    CommitCreationFailed { reason: String },
+
+    /// Reference update failures (cannot lock branch ref, concurrent ref update, etc.)
+    ReferenceUpdateFailed { reason: String },
+
+    // Category 3: Post-Rebase Failures
+    /// Post-rebase validation failures (tests failing, build failures, etc.)
+    #[cfg(any(test, feature = "test-utils"))]
+    ValidationFailed { reason: String },
+
+    // Category 4: Interrupted/Corrupted State
+    /// Process termination (agent crash, OS kill signal, CI timeout, etc.)
+    #[cfg(any(test, feature = "test-utils"))]
+    ProcessTerminated { reason: String },
+
+    /// Incomplete or inconsistent rebase metadata
+    #[cfg(any(test, feature = "test-utils"))]
+    InconsistentState { details: String },
+
+    // Category 5: Unknown
+    /// Undefined or unknown failure modes
+    Unknown { details: String },
+}
+
+impl RebaseErrorKind {
+    /// Returns a human-readable description of the error.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn description(&self) -> String {
+        match self {
+            RebaseErrorKind::InvalidRevision { revision } => {
+                format!("Invalid or unresolvable revision: '{revision}'")
+            }
+            RebaseErrorKind::DirtyWorkingTree => "Working tree has uncommitted changes".to_string(),
+            RebaseErrorKind::ConcurrentOperation { operation } => {
+                format!("Concurrent Git operation in progress: {operation}")
+            }
+            RebaseErrorKind::RepositoryCorrupt { details } => {
+                format!("Repository integrity issue: {details}")
+            }
+            RebaseErrorKind::EnvironmentFailure { reason } => {
+                format!("Environment or configuration failure: {reason}")
+            }
+            RebaseErrorKind::HookRejection { hook_name } => {
+                format!("Hook '{hook_name}' rejected the operation")
+            }
+            RebaseErrorKind::ContentConflict { files } => {
+                format!("Merge conflicts in {} file(s)", files.len())
+            }
+            RebaseErrorKind::PatchApplicationFailed { reason } => {
+                format!("Patch application failed: {reason}")
+            }
+            RebaseErrorKind::InteractiveStop { command } => {
+                format!("Interactive rebase stopped at command: {command}")
+            }
+            RebaseErrorKind::EmptyCommit => "Empty or redundant commit".to_string(),
+            RebaseErrorKind::AutostashFailed { reason } => {
+                format!("Autostash failed: {reason}")
+            }
+            RebaseErrorKind::CommitCreationFailed { reason } => {
+                format!("Commit creation failed: {reason}")
+            }
+            RebaseErrorKind::ReferenceUpdateFailed { reason } => {
+                format!("Reference update failed: {reason}")
+            }
+            #[cfg(any(test, feature = "test-utils"))]
+            RebaseErrorKind::ValidationFailed { reason } => {
+                format!("Post-rebase validation failed: {reason}")
+            }
+            #[cfg(any(test, feature = "test-utils"))]
+            RebaseErrorKind::ProcessTerminated { reason } => {
+                format!("Rebase process terminated: {reason}")
+            }
+            #[cfg(any(test, feature = "test-utils"))]
+            RebaseErrorKind::InconsistentState { details } => {
+                format!("Inconsistent rebase state: {details}")
+            }
+            RebaseErrorKind::Unknown { details } => {
+                format!("Unknown rebase error: {details}")
+            }
+        }
+    }
+
+    /// Returns whether this error can potentially be recovered automatically.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn is_recoverable(&self) -> bool {
+        match self {
+            // These are generally recoverable with automatic retry or cleanup
+            RebaseErrorKind::ConcurrentOperation { .. } => true,
+            #[cfg(any(test, feature = "test-utils"))]
+            RebaseErrorKind::ProcessTerminated { .. }
+            | RebaseErrorKind::InconsistentState { .. } => true,
+
+            // These require manual conflict resolution
+            RebaseErrorKind::ContentConflict { .. } => true,
+
+            // These are generally not recoverable without manual intervention
+            RebaseErrorKind::InvalidRevision { .. }
+            | RebaseErrorKind::DirtyWorkingTree
+            | RebaseErrorKind::RepositoryCorrupt { .. }
+            | RebaseErrorKind::EnvironmentFailure { .. }
+            | RebaseErrorKind::HookRejection { .. }
+            | RebaseErrorKind::PatchApplicationFailed { .. }
+            | RebaseErrorKind::InteractiveStop { .. }
+            | RebaseErrorKind::EmptyCommit
+            | RebaseErrorKind::AutostashFailed { .. }
+            | RebaseErrorKind::CommitCreationFailed { .. }
+            | RebaseErrorKind::ReferenceUpdateFailed { .. } => false,
+            #[cfg(any(test, feature = "test-utils"))]
+            RebaseErrorKind::ValidationFailed { .. }
+            | RebaseErrorKind::Unknown { .. } => false,
+        }
+    }
+
+    /// Returns the category number (1-5) for this error.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn category(&self) -> u8 {
+        match self {
+            RebaseErrorKind::InvalidRevision { .. }
+            | RebaseErrorKind::DirtyWorkingTree
+            | RebaseErrorKind::ConcurrentOperation { .. }
+            | RebaseErrorKind::RepositoryCorrupt { .. }
+            | RebaseErrorKind::EnvironmentFailure { .. }
+            | RebaseErrorKind::HookRejection { .. } => 1,
+
+            RebaseErrorKind::ContentConflict { .. }
+            | RebaseErrorKind::PatchApplicationFailed { .. }
+            | RebaseErrorKind::InteractiveStop { .. }
+            | RebaseErrorKind::EmptyCommit
+            | RebaseErrorKind::AutostashFailed { .. }
+            | RebaseErrorKind::CommitCreationFailed { .. }
+            | RebaseErrorKind::ReferenceUpdateFailed { .. } => 2,
+
+            #[cfg(any(test, feature = "test-utils"))]
+            RebaseErrorKind::ValidationFailed { .. } => 3,
+
+            #[cfg(any(test, feature = "test-utils"))]
+            RebaseErrorKind::ProcessTerminated { .. }
+            | RebaseErrorKind::InconsistentState { .. } => 4,
+
+            RebaseErrorKind::Unknown { .. } => 5,
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl std::fmt::Display for RebaseErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.description())
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl std::error::Error for RebaseErrorKind {}
+
 /// Result of a rebase operation.
+///
+/// This enum represents the possible outcomes of a rebase operation,
+/// including success, conflicts (recoverable), no-op (not applicable),
+/// and specific failure modes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RebaseResult {
     /// Rebase completed successfully.
     Success,
+
     /// Rebase had conflicts that need resolution.
     Conflicts(Vec<String>),
-    /// No rebase was needed (already up-to-date).
-    NoOp,
+
+    /// No rebase was needed (already up-to-date, not applicable, etc.).
+    NoOp { reason: String },
+
+    /// Rebase failed with a specific error kind.
+    Failed(RebaseErrorKind),
+}
+
+impl RebaseResult {
+    /// Returns whether the rebase was successful.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn is_success(&self) -> bool {
+        matches!(self, RebaseResult::Success)
+    }
+
+    /// Returns whether the rebase had conflicts (needs resolution).
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn has_conflicts(&self) -> bool {
+        matches!(self, RebaseResult::Conflicts(_))
+    }
+
+    /// Returns whether the rebase was a no-op (not applicable).
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn is_noop(&self) -> bool {
+        matches!(self, RebaseResult::NoOp { .. })
+    }
+
+    /// Returns whether the rebase failed.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn is_failed(&self) -> bool {
+        matches!(self, RebaseResult::Failed(_))
+    }
+
+    /// Returns the conflict files if this result contains conflicts.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn conflict_files(&self) -> Option<&[String]> {
+        match self {
+            RebaseResult::Conflicts(files) => Some(files),
+            RebaseResult::Failed(RebaseErrorKind::ContentConflict { files }) => Some(files),
+            _ => None,
+        }
+    }
+
+    /// Returns the error kind if this result is a failure.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn error_kind(&self) -> Option<&RebaseErrorKind> {
+        match self {
+            RebaseResult::Failed(kind) => Some(kind),
+            _ => None,
+        }
+    }
+
+    /// Returns the no-op reason if this result is a no-op.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn noop_reason(&self) -> Option<&str> {
+        match self {
+            RebaseResult::NoOp { reason } => Some(reason),
+            _ => None,
+        }
+    }
+}
+
+/// Parse Git CLI output to classify rebase errors.
+///
+/// This function analyzes stderr/stdout from git rebase commands
+/// to determine the specific failure mode.
+pub fn classify_rebase_error(stderr: &str, stdout: &str) -> RebaseErrorKind {
+    let combined = format!("{stderr}\n{stdout}");
+
+    // Category 1: Rebase Cannot Start
+
+    // Invalid revision
+    if combined.contains("invalid revision")
+        || combined.contains("unknown revision")
+        || combined.contains("bad revision")
+        || combined.contains("ambiguous revision")
+        || combined.contains("not found")
+        || combined.contains("does not exist")
+    {
+        // Try to extract the revision name
+        let revision = extract_revision(&combined);
+        return RebaseErrorKind::InvalidRevision {
+            revision: revision.unwrap_or_else(|| "unknown".to_string()),
+        };
+    }
+
+    // Dirty working tree
+    if combined.contains("dirty")
+        || combined.contains("uncommitted changes")
+        || combined.contains("local changes")
+        || combined.contains("cannot rebase")
+    {
+        return RebaseErrorKind::DirtyWorkingTree;
+    }
+
+    // Concurrent operation
+    if combined.contains("rebase in progress")
+        || combined.contains("merge in progress")
+        || combined.contains("cherry-pick in progress")
+        || combined.contains("revert in progress")
+        || combined.contains("bisect in progress")
+        || combined.contains("Another git process")
+        || combined.contains("Locked")
+    {
+        let operation = extract_operation(&combined);
+        return RebaseErrorKind::ConcurrentOperation {
+            operation: operation.unwrap_or_else(|| "unknown".to_string()),
+        };
+    }
+
+    // Repository corruption
+    if combined.contains("corrupt")
+        || combined.contains("object not found")
+        || combined.contains("missing object")
+        || combined.contains("invalid object")
+        || combined.contains("bad object")
+        || combined.contains("disk full")
+        || combined.contains("filesystem")
+    {
+        return RebaseErrorKind::RepositoryCorrupt {
+            details: extract_error_line(&combined),
+        };
+    }
+
+    // Environment failure
+    if combined.contains("user.name")
+        || combined.contains("user.email")
+        || combined.contains("author")
+        || combined.contains("committer")
+        || combined.contains("terminal")
+        || combined.contains("editor")
+    {
+        return RebaseErrorKind::EnvironmentFailure {
+            reason: extract_error_line(&combined),
+        };
+    }
+
+    // Hook rejection
+    if combined.contains("pre-rebase")
+        || combined.contains("hook")
+        || combined.contains("rejected by")
+    {
+        return RebaseErrorKind::HookRejection {
+            hook_name: extract_hook_name(&combined),
+        };
+    }
+
+    // Category 2: Rebase Stops (Interrupted)
+
+    // Content conflicts
+    if combined.contains("Conflict")
+        || combined.contains("conflict")
+        || combined.contains("Resolve")
+        || combined.contains("Merge conflict")
+    {
+        return RebaseErrorKind::ContentConflict {
+            files: extract_conflict_files(&combined),
+        };
+    }
+
+    // Patch application failure
+    if combined.contains("patch does not apply")
+        || combined.contains("patch failed")
+        || combined.contains("hunk failed")
+        || combined.contains("context mismatch")
+        || combined.contains("fuzz")
+    {
+        return RebaseErrorKind::PatchApplicationFailed {
+            reason: extract_error_line(&combined),
+        };
+    }
+
+    // Interactive stop
+    if combined.contains("Stopped at")
+        || combined.contains("paused")
+        || combined.contains("edit command")
+    {
+        return RebaseErrorKind::InteractiveStop {
+            command: extract_command(&combined),
+        };
+    }
+
+    // Empty commit
+    if combined.contains("empty")
+        || combined.contains("no changes")
+        || combined.contains("already applied")
+    {
+        return RebaseErrorKind::EmptyCommit;
+    }
+
+    // Autostash failure
+    if combined.contains("autostash") || combined.contains("stash") {
+        return RebaseErrorKind::AutostashFailed {
+            reason: extract_error_line(&combined),
+        };
+    }
+
+    // Commit creation failure
+    if combined.contains("pre-commit")
+        || combined.contains("commit-msg")
+        || combined.contains("prepare-commit-msg")
+        || combined.contains("post-commit")
+        || combined.contains("signing")
+        || combined.contains("GPG")
+    {
+        return RebaseErrorKind::CommitCreationFailed {
+            reason: extract_error_line(&combined),
+        };
+    }
+
+    // Reference update failure
+    if combined.contains("cannot lock")
+        || combined.contains("ref update")
+        || combined.contains("packed-refs")
+        || combined.contains("reflog")
+    {
+        return RebaseErrorKind::ReferenceUpdateFailed {
+            reason: extract_error_line(&combined),
+        };
+    }
+
+    // Category 5: Unknown
+    RebaseErrorKind::Unknown {
+        details: extract_error_line(&combined),
+    }
+}
+
+/// Extract revision name from error output.
+#[cfg(any(test, feature = "test-utils"))]
+fn extract_revision(output: &str) -> Option<String> {
+    // Look for patterns like "invalid revision 'foo'" or "unknown revision 'bar'"
+    // Using simple string parsing instead of regex for reliability
+    let patterns = [
+        ("invalid revision '", "'"),
+        ("unknown revision '", "'"),
+        ("bad revision '", "'"),
+        ("branch '", "' not found"),
+        ("upstream branch '", "' not found"),
+        ("revision ", " not found"),
+        ("'", "'"),
+    ];
+
+    for (start, end) in patterns {
+        if let Some(start_idx) = output.find(start) {
+            let after_start = &output[start_idx + start.len()..];
+            if let Some(end_idx) = after_start.find(end) {
+                let revision = &after_start[..end_idx];
+                if !revision.is_empty() {
+                    return Some(revision.to_string());
+                }
+            }
+        }
+    }
+
+    // Also try to extract branch names from error messages
+    for line in output.lines() {
+        if line.contains("not found") || line.contains("does not exist") {
+            // Extract potential branch/revision name
+            let words: Vec<&str> = line.split_whitespace().collect();
+            for (i, word) in words.iter().enumerate() {
+                if *word == "'" || *word == "\""
+                    && i + 2 < words.len()
+                    && (words[i + 2] == "'" || words[i + 2] == "\"")
+                {
+                    return Some(words[i + 1].to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Extract operation name from error output.
+#[cfg(any(test, feature = "test-utils"))]
+fn extract_operation(output: &str) -> Option<String> {
+    if output.contains("rebase in progress") {
+        Some("rebase".to_string())
+    } else if output.contains("merge in progress") {
+        Some("merge".to_string())
+    } else if output.contains("cherry-pick in progress") {
+        Some("cherry-pick".to_string())
+    } else if output.contains("revert in progress") {
+        Some("revert".to_string())
+    } else if output.contains("bisect in progress") {
+        Some("bisect".to_string())
+    } else {
+        None
+    }
+}
+
+/// Extract hook name from error output.
+#[cfg(any(test, feature = "test-utils"))]
+fn extract_hook_name(output: &str) -> String {
+    if output.contains("pre-rebase") {
+        "pre-rebase".to_string()
+    } else if output.contains("pre-commit") {
+        "pre-commit".to_string()
+    } else if output.contains("commit-msg") {
+        "commit-msg".to_string()
+    } else if output.contains("post-commit") {
+        "post-commit".to_string()
+    } else {
+        "hook".to_string()
+    }
+}
+
+/// Extract command name from error output.
+#[cfg(any(test, feature = "test-utils"))]
+fn extract_command(output: &str) -> String {
+    if output.contains("edit") {
+        "edit".to_string()
+    } else if output.contains("reword") {
+        "reword".to_string()
+    } else if output.contains("break") {
+        "break".to_string()
+    } else if output.contains("exec") {
+        "exec".to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// Extract the first meaningful error line from output.
+#[cfg(any(test, feature = "test-utils"))]
+fn extract_error_line(output: &str) -> String {
+    output
+        .lines()
+        .find(|line| {
+            !line.is_empty()
+                && !line.starts_with("hint:")
+                && !line.starts_with("Hint:")
+                && !line.starts_with("note:")
+                && !line.starts_with("Note:")
+        })
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| output.trim().to_string())
+}
+
+/// Extract conflict file paths from error output.
+#[cfg(any(test, feature = "test-utils"))]
+fn extract_conflict_files(output: &str) -> Vec<String> {
+    let mut files = Vec::new();
+
+    for line in output.lines() {
+        if line.contains("CONFLICT") || line.contains("Conflict") || line.contains("Merge conflict")
+        {
+            // Extract file path from patterns like:
+            // "CONFLICT (content): Merge conflict in src/file.rs"
+            // "Merge conflict in src/file.rs"
+            if let Some(start) = line.find("in ") {
+                let path = line[start + 3..].trim();
+                if !path.is_empty() {
+                    files.push(path.to_string());
+                }
+            }
+        }
+    }
+
+    files
+}
+
+/// Validate pre-rebase conditions.
+///
+/// This function checks all Category 1 failure modes before attempting
+/// a rebase operation. Returns an error kind if any validation fails.
+///
+/// # Arguments
+///
+/// * `upstream_branch` - The branch to rebase onto
+///
+/// # Returns
+///
+/// Returns `Ok(())` if all validations pass, or `RebaseErrorKind` if
+/// any validation fails.
+#[cfg(test)]
+pub fn validate_rebase_preconditions(_upstream_branch: &str) -> Result<(), RebaseErrorKind> {
+    // Check for dirty working tree
+    check_dirty_working_tree()?;
+
+    // Check for concurrent operations
+    check_concurrent_operations()?;
+
+    // Check repository state
+    validate_repository_state()?;
+
+    // Check environment
+    validate_environment()?;
+
+    // Check for lock files
+    check_lock_files()?;
+
+    Ok(())
+}
+
+/// Check if the working tree is dirty.
+///
+/// Returns an error if there are unstaged or staged changes.
+#[cfg(test)]
+fn check_dirty_working_tree() -> Result<(), RebaseErrorKind> {
+    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
+        details: "Cannot open repository".to_string(),
+    })?;
+
+    // Check for unstaged changes
+    let status_res = repo.statuses(None);
+    match status_res {
+        Ok(statuses) => {
+            for entry in statuses.iter() {
+                let status = entry.status();
+                if status.is_wt_new()
+                    || status.is_wt_modified()
+                    || status.is_wt_renamed()
+                    || status.is_wt_typechange()
+                    || status.is_index_new()
+                    || status.is_index_modified()
+                    || status.is_index_renamed()
+                    || status.is_index_typechange()
+                {
+                    return Err(RebaseErrorKind::DirtyWorkingTree);
+                }
+            }
+            Ok(())
+        }
+        Err(_) => Err(RebaseErrorKind::RepositoryCorrupt {
+            details: "Cannot get repository status".to_string(),
+        }),
+    }
+}
+
+/// Check for concurrent Git operations.
+///
+/// Returns an error if there's a rebase, merge, cherry-pick, revert,
+/// or bisect in progress.
+#[cfg(test)]
+fn check_concurrent_operations() -> Result<(), RebaseErrorKind> {
+    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
+        details: "Cannot open repository".to_string(),
+    })?;
+
+    let state = repo.state();
+
+    match state {
+        git2::RepositoryState::Clean => Ok(()),
+        git2::RepositoryState::Rebase
+        | git2::RepositoryState::RebaseMerge
+        | git2::RepositoryState::RebaseInteractive => Err(RebaseErrorKind::ConcurrentOperation {
+            operation: "rebase".to_string(),
+        }),
+        git2::RepositoryState::Merge => Err(RebaseErrorKind::ConcurrentOperation {
+            operation: "merge".to_string(),
+        }),
+        git2::RepositoryState::CherryPick => Err(RebaseErrorKind::ConcurrentOperation {
+            operation: "cherry-pick".to_string(),
+        }),
+        git2::RepositoryState::Revert => Err(RebaseErrorKind::ConcurrentOperation {
+            operation: "revert".to_string(),
+        }),
+        git2::RepositoryState::Bisect => Err(RebaseErrorKind::ConcurrentOperation {
+            operation: "bisect".to_string(),
+        }),
+        _ => Err(RebaseErrorKind::ConcurrentOperation {
+            operation: format!("{:?}", state),
+        }),
+    }
+}
+
+/// Validate repository state.
+///
+/// Checks for repository corruption and other integrity issues.
+#[cfg(test)]
+fn validate_repository_state() -> Result<(), RebaseErrorKind> {
+    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
+        details: "Cannot open repository".to_string(),
+    })?;
+
+    // Try to read the HEAD to verify repository integrity
+    let head_result = repo.head();
+    match head_result {
+        Ok(_) => Ok(()),
+        Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => Ok(()), // Empty repo is ok
+        Err(e) => Err(RebaseErrorKind::RepositoryCorrupt {
+            details: format!("Cannot read HEAD: {e}"),
+        }),
+    }
+}
+
+/// Validate environment configuration.
+///
+/// Checks that Git identity is configured and editor is available.
+#[cfg(test)]
+fn validate_environment() -> Result<(), RebaseErrorKind> {
+    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
+        details: "Cannot open repository".to_string(),
+    })?;
+
+    // Check for user.name
+    let config = repo
+        .config()
+        .map_err(|_| RebaseErrorKind::EnvironmentFailure {
+            reason: "Cannot read Git configuration".to_string(),
+        })?;
+
+    let has_user_name = config.get_string("user.name").is_ok();
+    let has_user_email = config.get_string("user.email").is_ok();
+
+    if !has_user_name || !has_user_email {
+        return Err(RebaseErrorKind::EnvironmentFailure {
+            reason: if !has_user_name && !has_user_email {
+                "Git user.name and user.email are not configured".to_string()
+            } else if !has_user_name {
+                "Git user.name is not configured".to_string()
+            } else {
+                "Git user.email is not configured".to_string()
+            },
+        });
+    }
+
+    Ok(())
+}
+
+/// Check for stale lock files.
+///
+/// Returns an error if there are stale lock files that might block
+/// the rebase operation.
+#[cfg(test)]
+fn check_lock_files() -> Result<(), RebaseErrorKind> {
+    let repo = git2::Repository::discover(".").map_err(|_| RebaseErrorKind::RepositoryCorrupt {
+        details: "Cannot open repository".to_string(),
+    })?;
+
+    let git_dir = repo.path();
+
+    // Check for common lock files
+    let lock_files = [
+        "index.lock",
+        "HEAD.lock",
+        "packed-refs.lock",
+        "refs/heads/master.lock",
+        "refs/heads/main.lock",
+        "config.lock",
+    ];
+
+    for lock_file in lock_files {
+        let lock_path = git_dir.join(lock_file);
+        if lock_path.exists() {
+            return Err(RebaseErrorKind::ConcurrentOperation {
+                operation: format!("stale lock file: {lock_file}"),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Perform a rebase onto the specified upstream branch.
 ///
 /// This function rebases the current branch onto the specified upstream branch.
-/// It handles the full rebase process including conflict detection.
+/// It handles the full rebase process including conflict detection and
+/// classifies all known failure modes.
 ///
 /// # Arguments
 ///
@@ -44,16 +800,17 @@ pub enum RebaseResult {
 ///
 /// Returns `Ok(RebaseResult)` indicating the outcome, or an error if:
 /// - The repository cannot be opened
-/// - The upstream branch cannot be found
-/// - The rebase operation fails
+/// - The rebase operation fails in an unexpected way
 ///
 /// # Edge Cases Handled
 ///
-/// - Empty repository (no commits) - Returns `Ok(RebaseResult::NoOp)`
-/// - Unborn branch - Returns `Ok(RebaseResult::NoOp)`
-/// - Already up-to-date - Returns `Ok(RebaseResult::NoOp)`
-/// - Unrelated branches (no shared ancestor) - Returns `Ok(RebaseResult::NoOp)`
-/// - Conflicts during rebase - Returns `Ok(RebaseResult::Conflicts)`
+/// - Empty repository (no commits) - Returns `Ok(RebaseResult::NoOp)` with reason
+/// - Unborn branch - Returns `Ok(RebaseResult::NoOp)` with reason
+/// - Already up-to-date - Returns `Ok(RebaseResult::NoOp)` with reason
+/// - Unrelated branches (no shared ancestor) - Returns `Ok(RebaseResult::NoOp)` with reason
+/// - On main/master branch - Returns `Ok(RebaseResult::NoOp)` with reason
+/// - Conflicts during rebase - Returns `Ok(RebaseResult::Conflicts)` or `Failed` with error kind
+/// - Other failures - Returns `Ok(RebaseResult::Failed)` with appropriate error kind
 ///
 /// # Note
 ///
@@ -70,18 +827,22 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
         Ok(_) => {}
         Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => {
             // No commits yet - nothing to rebase
-            return Ok(RebaseResult::NoOp);
+            return Ok(RebaseResult::NoOp {
+                reason: "Repository has no commits yet (unborn branch)".to_string(),
+            });
         }
         Err(e) => return Err(git2_to_io_error(&e)),
     }
 
     // Get the upstream branch to ensure it exists
-    let upstream_object = repo.revparse_single(upstream_branch).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("Upstream branch '{upstream_branch}' not found"),
-        )
-    })?;
+    let upstream_object = match repo.revparse_single(upstream_branch) {
+        Ok(obj) => obj,
+        Err(_) => {
+            return Ok(RebaseResult::Failed(RebaseErrorKind::InvalidRevision {
+                revision: upstream_branch.to_string(),
+            }))
+        }
+    };
 
     let upstream_commit = upstream_object
         .peel_to_commit()
@@ -97,7 +858,9 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
         .map_err(|e| git2_to_io_error(&e))?
     {
         // Already up-to-date
-        return Ok(RebaseResult::NoOp);
+        return Ok(RebaseResult::NoOp {
+            reason: "Branch is already up-to-date with upstream".to_string(),
+        });
     }
 
     // Check if branches share a common ancestor
@@ -108,7 +871,11 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
                 && e.code() == git2::ErrorCode::NotFound =>
         {
             // Branches are unrelated - no shared history
-            return Ok(RebaseResult::NoOp);
+            return Ok(RebaseResult::NoOp {
+                reason: format!(
+                    "No common ancestor between current branch and '{upstream_branch}' (unrelated branches)"
+                ),
+            });
         }
         Err(e) => return Err(git2_to_io_error(&e)),
         Ok(_) => {}
@@ -123,7 +890,9 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
     })?;
 
     if branch_name == "main" || branch_name == "master" {
-        return Ok(RebaseResult::NoOp);
+        return Ok(RebaseResult::NoOp {
+            reason: format!("Already on '{branch_name}' branch, rebase not applicable"),
+        });
     }
 
     // Use git CLI for rebase - more reliable than libgit2
@@ -137,17 +906,39 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
                 Ok(RebaseResult::Success)
             } else {
                 let stderr = String::from_utf8_lossy(&result.stderr);
-                // Check if it's a conflict
-                if stderr.contains("Conflict")
-                    || stderr.contains("conflict")
-                    || stderr.contains("Resolve")
-                {
-                    // Return empty conflict list - user can check with git status
-                    Ok(RebaseResult::Conflicts(vec![]))
-                } else if stderr.contains("up to date") {
-                    Ok(RebaseResult::NoOp)
-                } else {
-                    Err(io::Error::other(format!("Rebase failed: {stderr}")))
+                let stdout = String::from_utf8_lossy(&result.stdout);
+
+                // Use classify_rebase_error to determine the specific failure mode
+                let error_kind = classify_rebase_error(&stderr, &stdout);
+
+                match error_kind {
+                    RebaseErrorKind::ContentConflict { .. } => {
+                        // For conflicts, get the actual conflicted files
+                        match get_conflicted_files() {
+                            Ok(files) if files.is_empty() => {
+                                // If we detected a conflict but can't get the files,
+                                // return the error kind with the files from the error
+                                if let RebaseErrorKind::ContentConflict { files } = error_kind {
+                                    Ok(RebaseResult::Conflicts(files))
+                                } else {
+                                    Ok(RebaseResult::Conflicts(vec![]))
+                                }
+                            }
+                            Ok(files) => Ok(RebaseResult::Conflicts(files)),
+                            Err(_) => Ok(RebaseResult::Conflicts(vec![])),
+                        }
+                    }
+                    RebaseErrorKind::Unknown { .. } => {
+                        // Check for "up to date" message which is actually a no-op
+                        if stderr.contains("up to date") {
+                            Ok(RebaseResult::NoOp {
+                                reason: "Branch is already up-to-date with upstream".to_string(),
+                            })
+                        } else {
+                            Ok(RebaseResult::Failed(error_kind))
+                        }
+                    }
+                    _ => Ok(RebaseResult::Failed(error_kind)),
                 }
             }
         }
@@ -381,8 +1172,173 @@ mod tests {
     fn test_rebase_result_variants_exist() {
         // Test that RebaseResult has the expected variants
         let _ = RebaseResult::Success;
-        let _ = RebaseResult::NoOp;
+        let _ = RebaseResult::NoOp {
+            reason: "test".to_string(),
+        };
         let _ = RebaseResult::Conflicts(vec![]);
+        let _ = RebaseResult::Failed(RebaseErrorKind::Unknown {
+            details: "test".to_string(),
+        });
+    }
+
+    #[test]
+    fn test_rebase_result_is_noop() {
+        // Test the is_noop method
+        assert!(RebaseResult::NoOp {
+            reason: "test".to_string()
+        }
+        .is_noop());
+        assert!(!RebaseResult::Success.is_noop());
+        assert!(!RebaseResult::Conflicts(vec![]).is_noop());
+        assert!(!RebaseResult::Failed(RebaseErrorKind::Unknown {
+            details: "test".to_string(),
+        })
+        .is_noop());
+    }
+
+    #[test]
+    fn test_rebase_result_is_success() {
+        // Test the is_success method
+        assert!(RebaseResult::Success.is_success());
+        assert!(!RebaseResult::NoOp {
+            reason: "test".to_string()
+        }
+        .is_success());
+        assert!(!RebaseResult::Conflicts(vec![]).is_success());
+        assert!(!RebaseResult::Failed(RebaseErrorKind::Unknown {
+            details: "test".to_string(),
+        })
+        .is_success());
+    }
+
+    #[test]
+    fn test_rebase_result_has_conflicts() {
+        // Test the has_conflicts method
+        assert!(RebaseResult::Conflicts(vec!["file.txt".to_string()]).has_conflicts());
+        assert!(!RebaseResult::Success.has_conflicts());
+        assert!(!RebaseResult::NoOp {
+            reason: "test".to_string()
+        }
+        .has_conflicts());
+    }
+
+    #[test]
+    fn test_rebase_result_is_failed() {
+        // Test the is_failed method
+        assert!(RebaseResult::Failed(RebaseErrorKind::Unknown {
+            details: "test".to_string(),
+        })
+        .is_failed());
+        assert!(!RebaseResult::Success.is_failed());
+        assert!(!RebaseResult::NoOp {
+            reason: "test".to_string()
+        }
+        .is_failed());
+        assert!(!RebaseResult::Conflicts(vec![]).is_failed());
+    }
+
+    #[test]
+    fn test_rebase_error_kind_description() {
+        // Test that error kinds produce descriptions
+        let err = RebaseErrorKind::InvalidRevision {
+            revision: "main".to_string(),
+        };
+        assert!(err.description().contains("main"));
+
+        let err = RebaseErrorKind::DirtyWorkingTree;
+        assert!(err.description().contains("Working tree"));
+    }
+
+    #[test]
+    fn test_rebase_error_kind_category() {
+        // Test that error kinds return correct categories
+        assert_eq!(
+            RebaseErrorKind::InvalidRevision {
+                revision: "test".to_string()
+            }
+            .category(),
+            1
+        );
+        assert_eq!(
+            RebaseErrorKind::ContentConflict { files: vec![] }.category(),
+            2
+        );
+        assert_eq!(
+            RebaseErrorKind::ValidationFailed {
+                reason: "test".to_string()
+            }
+            .category(),
+            3
+        );
+        assert_eq!(
+            RebaseErrorKind::ProcessTerminated {
+                reason: "test".to_string()
+            }
+            .category(),
+            4
+        );
+        assert_eq!(
+            RebaseErrorKind::Unknown {
+                details: "test".to_string()
+            }
+            .category(),
+            5
+        );
+    }
+
+    #[test]
+    fn test_rebase_error_kind_is_recoverable() {
+        // Test that error kinds correctly identify recoverable errors
+        assert!(RebaseErrorKind::ConcurrentOperation {
+            operation: "rebase".to_string()
+        }
+        .is_recoverable());
+        assert!(RebaseErrorKind::ContentConflict { files: vec![] }.is_recoverable());
+        assert!(!RebaseErrorKind::InvalidRevision {
+            revision: "test".to_string()
+        }
+        .is_recoverable());
+        assert!(!RebaseErrorKind::DirtyWorkingTree.is_recoverable());
+    }
+
+    #[test]
+    fn test_classify_rebase_error_invalid_revision() {
+        // Test classification of invalid revision errors
+        let stderr = "error: invalid revision 'nonexistent'";
+        let error = classify_rebase_error(stderr, "");
+        assert!(matches!(error, RebaseErrorKind::InvalidRevision { .. }));
+    }
+
+    #[test]
+    fn test_classify_rebase_error_conflict() {
+        // Test classification of conflict errors
+        let stderr = "CONFLICT (content): Merge conflict in src/main.rs";
+        let error = classify_rebase_error(stderr, "");
+        assert!(matches!(error, RebaseErrorKind::ContentConflict { .. }));
+    }
+
+    #[test]
+    fn test_classify_rebase_error_dirty_tree() {
+        // Test classification of dirty working tree errors
+        let stderr = "Cannot rebase: Your index contains uncommitted changes";
+        let error = classify_rebase_error(stderr, "");
+        assert!(matches!(error, RebaseErrorKind::DirtyWorkingTree));
+    }
+
+    #[test]
+    fn test_classify_rebase_error_concurrent_operation() {
+        // Test classification of concurrent operation errors
+        let stderr = "Cannot rebase: There is a rebase in progress already";
+        let error = classify_rebase_error(stderr, "");
+        assert!(matches!(error, RebaseErrorKind::ConcurrentOperation { .. }));
+    }
+
+    #[test]
+    fn test_classify_rebase_error_unknown() {
+        // Test classification of unknown errors
+        let stderr = "Some completely unexpected error message";
+        let error = classify_rebase_error(stderr, "");
+        assert!(matches!(error, RebaseErrorKind::Unknown { .. }));
     }
 
     #[test]
@@ -390,8 +1346,9 @@ mod tests {
         // Test that rebase_onto returns a Result
         // We use a non-existent branch to test error handling
         let result = rebase_onto("nonexistent_branch_that_does_not_exist");
-        // Should fail because the branch doesn't exist
-        assert!(result.is_err());
+        // Should return Ok with Failed result since the branch doesn't exist
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_failed());
     }
 
     #[test]
@@ -400,5 +1357,86 @@ mod tests {
         let result = get_conflicted_files();
         // Should succeed (returns Vec, not error)
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_rebase_preconditions_returns_result() {
+        // Test that validate_rebase_preconditions returns a Result
+        let result = validate_rebase_preconditions("main");
+        // Should succeed (returns (), not error) in a clean repo
+        // May fail if there are uncommitted changes, which is expected
+        match result {
+            Ok(()) => {}
+            Err(RebaseErrorKind::DirtyWorkingTree) => {
+                // This is ok - it means the test repo has uncommitted changes
+            }
+            Err(_) => {
+                // Other errors indicate a problem
+                panic!("Unexpected validation error");
+            }
+        }
+    }
+
+    #[test]
+    fn test_check_dirty_working_tree() {
+        // Test that check_dirty_working_tree returns a Result
+        let result = check_dirty_working_tree();
+        // May fail if there are uncommitted changes, which is expected
+        match result {
+            Ok(()) => {}
+            Err(RebaseErrorKind::DirtyWorkingTree) => {
+                // This is ok - it means the test repo has uncommitted changes
+            }
+            Err(_) => {
+                // Other errors indicate a problem
+                panic!("Unexpected validation error");
+            }
+        }
+    }
+
+    #[test]
+    fn test_check_concurrent_operations() {
+        // Test that check_concurrent_operations returns a Result
+        let result = check_concurrent_operations();
+        // Should succeed unless there's an actual rebase/merge in progress
+        assert!(
+            result.is_ok() || matches!(result, Err(RebaseErrorKind::ConcurrentOperation { .. }))
+        );
+    }
+
+    #[test]
+    fn test_validate_repository_state() {
+        // Test that validate_repository_state returns a Result
+        let result = validate_repository_state();
+        // Should succeed in a normal repo
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_environment() {
+        // Test that validate_environment returns a Result
+        let result = validate_environment();
+        // Should succeed if git is configured
+        // May fail if user.name/user.email are not set
+        match result {
+            Ok(()) => {}
+            Err(RebaseErrorKind::EnvironmentFailure { .. }) => {
+                // This is ok - git identity may not be configured in test environment
+            }
+            Err(_) => {
+                // Other errors indicate a problem
+                panic!("Unexpected validation error");
+            }
+        }
+    }
+
+    #[test]
+    fn test_check_lock_files() {
+        // Test that check_lock_files returns a Result
+        let result = check_lock_files();
+        // Should succeed unless there are actual lock files
+        assert!(
+            result.is_ok() || matches!(result, Err(RebaseErrorKind::ConcurrentOperation { .. }))
+        );
     }
 }

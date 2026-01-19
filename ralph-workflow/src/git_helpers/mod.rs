@@ -12,7 +12,7 @@
 //! - [`review_baseline`] - Per-review-cycle baseline tracking
 //! - [`wrapper`] - Agent phase git wrapper for safe concurrent execution
 //! - [`branch`] - Branch detection and default branch resolution
-//! - Rebase operations are provided via the `rebase` module functions
+//! - [`rebase`] - Rebase operations with fault tolerance
 
 #![deny(unsafe_code)]
 
@@ -20,6 +20,8 @@ pub mod branch;
 mod hooks;
 pub mod identity;
 mod rebase;
+#[cfg(any(test, feature = "test-utils"))]
+mod rebase_checkpoint;
 mod repo;
 mod review_baseline;
 mod start_commit;
@@ -35,8 +37,15 @@ pub use branch::{get_default_branch, is_main_or_master_branch};
 pub use hooks::uninstall_hooks;
 pub use rebase::{
     abort_rebase, continue_rebase, get_conflict_markers_for_file, get_conflicted_files,
-    rebase_onto, RebaseResult,
+    rebase_onto, RebaseErrorKind, RebaseResult,
 };
+
+// Re-export checkpoint types for future use (test-utils only)
+#[cfg(test)]
+pub use rebase_checkpoint::{RebaseCheckpoint, RebasePhase};
+
+#[cfg(feature = "test-utils")]
+pub use rebase_checkpoint::{RebaseCheckpoint, RebasePhase};
 pub use repo::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
     validate_and_truncate_diff, CommitResultFallback,
