@@ -273,6 +273,9 @@ fn ralph_review_baseline_updated_after_fix() {
     write_file(dir.path().join("initial.txt"), "initial content");
     let _ = commit_all(&repo, "initial commit");
 
+    // Create an uncommitted change to trigger the review phase
+    write_file(dir.path().join("initial.txt"), "updated content");
+
     // Run review-fix cycle
     let mut cmd = ralph_cmd();
     base_env(&mut cmd)
@@ -282,7 +285,9 @@ fn ralph_review_baseline_updated_after_fix() {
         .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
         .env(
             "RALPH_REVIEWER_CMD",
-            "sh -c 'mkdir -p .agent && echo \"- [ ] Issue found\" > .agent/ISSUES.md && echo \"feat: review\" > .agent/commit-message.txt'",
+            // Output JSON result event to avoid retry loop
+            // Must use format: - [ ] <Severity>: <description>
+            "sh -c 'mkdir -p .agent && printf \"{\\\"type\\\":\\\"result\\\",\\\"result\\\":\\\"- [ ] Critical: Issue found\\\"}\"\\n && echo \"feat: review\" > .agent/commit-message.txt'",
         );
 
     cmd.assert().success();
@@ -476,11 +481,14 @@ else
     echo "Call $count: no review_baseline" >> "{log}"
 fi
 
-# For review phases (odd calls), create issues
+# For review phases (odd calls), output JSON result with issues
 if [ $((count % 2)) -ne 0 ]; then
-    echo "- [ ] Issue cycle $count" > .agent/ISSUES.md
+    # Must use format: - [ ] <Severity>: <description>
+    printf '{{"type":"result","result":"- [ ] Critical: Issue cycle %s"}}\n' "$count"
 fi
 
+# Always create commit message for pipeline to complete
+echo "feat: baseline test" > .agent/commit-message.txt
 exit 0
 "#,
             log = state_log.display()
@@ -546,7 +554,9 @@ fn ralph_handles_large_diff() {
         .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
         .env(
             "RALPH_REVIEWER_CMD",
-            "sh -c 'mkdir -p .agent && echo \"# No issues\" > .agent/ISSUES.md'",
+            // Output JSON result event - using "No issues" format that triggers early exit
+            // Must use format: - [ ] <Severity>: <description>
+            "sh -c 'mkdir -p .agent && printf \"{\\\"type\\\":\\\"result\\\",\\\"result\\\":\\\"No issues found\\\"}\"\\n && echo \"feat: large diff\" > .agent/commit-message.txt'",
         );
 
     // Should complete without crashing, even with large diff
@@ -575,8 +585,10 @@ mkdir -p .agent
 # Create an external change (new file) during the review process
 echo "external change" > external.txt
 
-# Create issues for the fix pass
-echo "- [ ] Issue found" > .agent/ISSUES.md
+# Output JSON result with issues for the fix pass
+# Must use format: - [ ] <Severity>: <description>
+printf '{{"type":"result","result":"- [ ] Critical: Issue found"}}\n'
+echo "feat: external changes" > .agent/commit-message.txt
 exit 0
 "#,
     )

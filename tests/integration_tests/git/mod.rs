@@ -284,15 +284,12 @@ else
 fi
 echo $count > "{counter}"
 
-# Create fix files and ISSUES.md for review phases
-# On odd calls (review phases): create ISSUES.md with issues
+# On odd calls (review phases): output JSON result with issues
 # On even calls (fix phases): apply a fix
 if [ $((count % 2)) -ne 0 ]; then
-    # Review phase: create ISSUES.md directly (for test reliability)
-    # Use format: - [ ] Severity: Description (required for issue counting)
-    echo "# Issues" > .agent/ISSUES.md
-    echo "" >> .agent/ISSUES.md
-    echo "- [ ] Critical: Issue found in cycle $((count / 2 + 1))" >> .agent/ISSUES.md
+    # Review phase: output issues in JSON format that orchestrator can extract
+    # Must use format: - [ ] <Severity>: <description>
+    printf '{{"type":"result","result":"- [ ] Critical: Issue found in cycle $((count / 2 + 1))"}}\n'
 else
     # Fix phase: apply a fix
     cycle=$((count / 2))
@@ -335,18 +332,17 @@ exit 0
         "fix_1.txt should be created during cycle 1 fix pass"
     );
 
-    // Cycle 2 is skipped because after cycle 1's commit, there are no new
-    // uncommitted changes to review. This is the correct baseline tracking behavior.
-    // The reviewer ran 2 times: review_1 + fix_1
+    // The fix phase creates new changes (fix_1.txt), which triggers cycle 2.
+    // Both cycles run completely: review_1 + fix_1 + review_2 + fix_2 = 4 calls
     let count: u32 = fs::read_to_string(&counter_path)
         .unwrap()
         .trim()
         .parse()
         .unwrap();
     assert_eq!(
-        count, 2,
-        "Expected 2 reviewer calls (cycle 1: review + fix). Cycle 2 is skipped \
-         because all changes were committed and no new uncommitted changes exist."
+        count, 4,
+        "Expected 4 reviewer calls (2 cycles × 2 phases). The fix phase creates \
+         new changes (fix_1.txt, fix_2.txt) which are committed after each cycle."
     );
 }
 

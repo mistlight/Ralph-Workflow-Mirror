@@ -21,6 +21,8 @@ This **MUST** be followed when dealing with integration tests
 
 Do not assume anything about external dependency, if you need to interact with an external API, you must use context7, if that fails, research the official documentation by going to the website through playwright.
 
+Do not create ANY files in the root directory or documentation directory unless prompt is about documentation creation. You have to update outdated documentation though.
+
 ---
 
 # DO NOT OVERRIDE UNLESS THE PROMPT IS ABOUT CLIPPY

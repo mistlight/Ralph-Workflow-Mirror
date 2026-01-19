@@ -118,15 +118,15 @@ fi
 echo $count > "{counter}"
 
 # On odd calls (review phases): output JSON result with issues
-# On even calls (fix phases): output JSON result indicating completion
+# On even calls (fix phases): just create commit message
 if [ $((count % 2)) -ne 0 ]; then
     # Review phase: output issues in JSON format that orchestrator can extract
-    printf '{{"type":"result","result":"# Issues\\n\\nCritical:\\n- [ ] [initial.txt:1] Issue found"}}\n'
-else
-    # Fix phase: output completion message
-    printf '{{"type":"result","result":"Fixed the issue in initial.txt"}}\n'
+    # Must use format: - [ ] <Severity>: <description>
+    printf '{{"type":"result","result":"- [ ] Critical: [initial.txt:1] Issue found"}}\n'
 fi
 
+# Always create commit message for pipeline to complete
+echo "feat: test" > .agent/commit-message.txt
 exit 0
 "##,
             counter = counter_path.display()
@@ -188,15 +188,16 @@ else
 fi
 echo $count > "{counter}"
 
-# On odd calls (review phases): create ISSUES.md with issues
-# On even calls (fix phases): just run
+# On odd calls (review phases): output JSON result with issues
+# On even calls (fix phases): just create commit message
 if [ $((count % 2)) -ne 0 ]; then
-    echo "# Issues" > .agent/ISSUES.md
-    echo "" >> .agent/ISSUES.md
-    echo "Critical:" >> .agent/ISSUES.md
-    echo "- [ ] Issue found" >> .agent/ISSUES.md
+    # Review phase: output issues in JSON format that orchestrator can extract
+    # Must use format: - [ ] <Severity>: <description>
+    printf '{{"type":"result","result":"- [ ] Critical: Issue found"}}\n'
 fi
 
+# Always create commit message for pipeline to complete
+echo "feat: test" > .agent/commit-message.txt
 exit 0
 "##,
             counter = counter_path.display()
@@ -668,33 +669,25 @@ else
     echo "Call $count: ISSUES.md missing" >> "{log}"
 fi
 
-case $count in
-    1) # Review1 - ISSUES.md should be missing at start
-        if [ -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md should not exist at start of Review1!" >> "{log}"
-        fi
-        echo "- [ ] Issue from Review1" > .agent/ISSUES.md
-        ;;
-    2) # Fix1 - ISSUES.md should exist from Review1
-        if [ ! -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md missing during Fix1!" >> "{log}"
-            exit 1
-        fi
-        ;;
-    3) # Review2 - ISSUES.md should be MISSING (deleted after Fix1)
-        if [ -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md should have been deleted after Fix1!" >> "{log}"
-            exit 1
-        fi
-        echo "- [ ] Issue from Review2" > .agent/ISSUES.md
-        ;;
-    4) # Fix2 - ISSUES.md should exist from Review2
-        if [ ! -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md missing during Fix2!" >> "{log}"
-            exit 1
-        fi
-        ;;
-esac
+# Output JSON with issues on review phases (odd calls)
+# Must use format: - [ ] <Severity>: <description>
+if [ $((count % 2)) -ne 0 ]; then
+    case $count in
+        1) # Review1 - ISSUES.md should be missing at start
+            if [ -f .agent/ISSUES.md ]; then
+                echo "ERROR: ISSUES.md should not exist at start of Review1!" >> "{log}"
+            fi
+            printf '{{"type":"result","result":"- [ ] Critical: Issue from Review1"}}\n'
+            ;;
+        3) # Review2 - ISSUES.md should be MISSING (deleted after Fix1)
+            if [ -f .agent/ISSUES.md ]; then
+                echo "ERROR: ISSUES.md should have been deleted after Fix1!" >> "{log}"
+                exit 1
+            fi
+            printf '{{"type":"result","result":"- [ ] Critical: Issue from Review2"}}\n'
+            ;;
+    esac
+fi
 
 # Always create commit message
 echo "feat: cycle $count" > .agent/commit-message.txt
@@ -778,47 +771,33 @@ else
     echo "Call $count: ISSUES.md missing" >> "{log}"
 fi
 
-case $count in
-    1) # Review1
-        if [ -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md should not exist at Review1!" >> "{log}"
-            exit 1
-        fi
-        echo "- [ ] Issue from Review1" > .agent/ISSUES.md
-        ;;
-    2) # Fix1
-        if [ ! -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md missing during Fix1!" >> "{log}"
-            exit 1
-        fi
-        ;;
-    3) # Review2
-        if [ -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md not deleted after Fix1!" >> "{log}"
-            exit 1
-        fi
-        echo "- [ ] Issue from Review2" > .agent/ISSUES.md
-        ;;
-    4) # Fix2
-        if [ ! -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md missing during Fix2!" >> "{log}"
-            exit 1
-        fi
-        ;;
-    5) # Review3
-        if [ -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md not deleted after Fix2!" >> "{log}"
-            exit 1
-        fi
-        echo "- [ ] Issue from Review3" > .agent/ISSUES.md
-        ;;
-    6) # Fix3
-        if [ ! -f .agent/ISSUES.md ]; then
-            echo "ERROR: ISSUES.md missing during Fix3!" >> "{log}"
-            exit 1
-        fi
-        ;;
-esac
+# Output JSON with issues on review phases (odd calls)
+# Must use format: - [ ] <Severity>: <description>
+if [ $((count % 2)) -ne 0 ]; then
+    case $count in
+        1) # Review1
+            if [ -f .agent/ISSUES.md ]; then
+                echo "ERROR: ISSUES.md should not exist at Review1!" >> "{log}"
+                exit 1
+            fi
+            printf '{{"type":"result","result":"- [ ] Critical: Issue from Review1"}}\n'
+            ;;
+        3) # Review2
+            if [ -f .agent/ISSUES.md ]; then
+                echo "ERROR: ISSUES.md not deleted after Fix1!" >> "{log}"
+                exit 1
+            fi
+            printf '{{"type":"result","result":"- [ ] Critical: Issue from Review2"}}\n'
+            ;;
+        5) # Review3
+            if [ -f .agent/ISSUES.md ]; then
+                echo "ERROR: ISSUES.md not deleted after Fix2!" >> "{log}"
+                exit 1
+            fi
+            printf '{{"type":"result","result":"- [ ] Critical: Issue from Review3"}}\n'
+            ;;
+    esac
+fi
 
 echo "feat: N=3 test" > .agent/commit-message.txt
 exit 0
