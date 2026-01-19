@@ -7,6 +7,7 @@
 //! - Loading agent registry data from unified config
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
+use crate::agents::{RetryTimerProvider, TestRetryTimer};
 use crate::cli::{
     apply_args_to_config, handle_extended_help, handle_generate_completion, handle_init_global,
     handle_init_legacy, handle_init_prompt, handle_list_work_guides, handle_smart_init, Args,
@@ -16,6 +17,7 @@ use crate::git_helpers::get_repo_root;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Result of configuration initialization.
 pub struct ConfigInitResult {
@@ -163,6 +165,13 @@ fn load_agent_registry(
     let mut registry = AgentRegistry::new().map_err(|e| {
         anyhow::anyhow!("Failed to load built-in default agents config (examples/agents.toml): {e}")
     })?;
+
+    // Check for test mode via environment variable
+    // When enabled, use TestRetryTimer for immediate retries (no actual sleep)
+    if std::env::var("RALPH_TEST_MODE").is_ok() {
+        let test_timer: Arc<dyn RetryTimerProvider> = Arc::new(TestRetryTimer::new());
+        registry.set_retry_timer(test_timer);
+    }
 
     let mut sources = Vec::new();
 

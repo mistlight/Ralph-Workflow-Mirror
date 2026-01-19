@@ -366,13 +366,22 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
 /// This is done by the orchestrator, not the agent, using fallback-aware commit
 /// generation which tries multiple agents if needed.
 fn handle_commit_after_development(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {
+    // Check if we should skip LLM commit message generation (for testing)
+    // RALPH_TEST_MODE=1 bypasses the LLM call and uses a hardcoded fallback
+    let test_mode = std::env::var("RALPH_TEST_MODE").ok().as_deref() == Some("1");
+
     // Get the primary commit agent from the registry
     let commit_agent = get_primary_commit_agent(ctx);
 
     if let Some(agent) = commit_agent {
-        ctx.logger.info(&format!(
-            "Creating commit with auto-generated message (agent: {agent})..."
-        ));
+        if test_mode {
+            ctx.logger
+                .info("Creating commit with hardcoded message (test mode)...");
+        } else {
+            ctx.logger.info(&format!(
+                "Creating commit with auto-generated message (agent: {agent})..."
+            ));
+        }
 
         // Get the diff for commit message generation
         let diff = match crate::git_helpers::git_diff() {
@@ -388,7 +397,20 @@ fn handle_commit_after_development(ctx: &mut PhaseContext<'_>) -> anyhow::Result
         let git_name = ctx.config.git_user_name.as_deref();
         let git_email = ctx.config.git_user_email.as_deref();
 
-        match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
+        let result = if test_mode {
+            // In test mode, use hardcoded fallback directly (no LLM call)
+            use crate::git_helpers::CommitResultFallback;
+            use crate::phases::commit::HARDCODED_FALLBACK_COMMIT;
+            match crate::git_helpers::git_commit(HARDCODED_FALLBACK_COMMIT, git_name, git_email) {
+                Ok(Some(oid)) => CommitResultFallback::Success(oid),
+                Ok(None) => CommitResultFallback::NoChanges,
+                Err(e) => CommitResultFallback::Failed(format!("Failed to create commit: {e}")),
+            }
+        } else {
+            commit_with_generated_message(&diff, &agent, git_name, git_email, ctx)
+        };
+
+        match result {
             CommitResultFallback::Success(oid) => {
                 ctx.logger
                     .success(&format!("Commit created successfully: {oid}"));

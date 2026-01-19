@@ -65,7 +65,7 @@ const MAX_SAFE_PROMPT_SIZE: usize = 200_000;
 /// - Deterministic fallback from diff failed
 ///
 /// This ensures the commit process NEVER fails completely.
-const HARDCODED_FALLBACK_COMMIT: &str = "chore: automated commit";
+pub(crate) const HARDCODED_FALLBACK_COMMIT: &str = "chore: automated commit";
 
 /// Get the maximum safe prompt size for a specific agent.
 ///

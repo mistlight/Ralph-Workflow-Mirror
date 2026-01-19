@@ -7,7 +7,9 @@ use std::{env, path::PathBuf};
 /// This function locates the ralph binary built by Cargo.
 pub fn ralph_cmd() -> assert_cmd::Command {
     let bin_path = ralph_bin_path();
-    assert_cmd::Command::new(bin_path)
+    let mut cmd = assert_cmd::Command::new(bin_path);
+    cmd.env("RALPH_TEST_MODE", "1"); // Enable test mode for immediate retries
+    cmd
 }
 
 /// Get the path to the ralph binary as a String

@@ -321,6 +321,7 @@ fn spawn_agent_process(
     argv: &[String],
 ) -> io::Result<Result<Child, CommandResult>> {
     match command
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

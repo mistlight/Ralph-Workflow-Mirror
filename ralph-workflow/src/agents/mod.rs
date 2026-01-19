@@ -65,6 +65,7 @@ pub mod fallback;
 mod parser;
 mod providers;
 mod registry;
+mod retry_timer;
 
 // Re-export public types for crate-level access
 pub use ccs::is_ccs_ref;
@@ -78,6 +79,7 @@ pub use providers::{
     auth_failure_advice, strip_model_flag_prefix, validate_model_flag, OpenCodeProviderType,
 };
 pub use registry::AgentRegistry;
+pub use retry_timer::{RetryTimerProvider, TestRetryTimer};
 
 #[cfg(test)]
 mod tests {

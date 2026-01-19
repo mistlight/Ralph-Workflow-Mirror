@@ -124,6 +124,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_simplified",
                 content: include_str!("templates/commit_simplified.txt"),
                 description: "Simplified commit prompt with direct instructions",
+                deprecated: false,
             },
         );
 

@@ -15,7 +15,8 @@ use test_helpers::{commit_all, init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
-    cmd.env("RALPH_INTERACTIVE", "0")
+    cmd.arg("--skip-rebase")
+        .env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
         // Ensure git identity is set

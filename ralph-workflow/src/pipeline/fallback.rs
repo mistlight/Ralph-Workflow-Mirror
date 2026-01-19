@@ -1,10 +1,11 @@
 //! Fallback logic for agent execution with retries.
 
-use crate::agents::{is_glm_like_agent, AgentErrorKind, JsonParserType};
+use crate::agents::{is_glm_like_agent, AgentErrorKind, JsonParserType, RetryTimerProvider};
 use crate::common::{format_argv_for_log, split_command, truncate_text};
 use crate::logger::Logger;
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
 
 use super::prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
 
@@ -59,6 +60,8 @@ pub struct AgentAttemptConfig<'a> {
     pub fallback_config: &'a crate::agents::fallback::FallbackConfig,
     /// Optional callback to validate output after execution (`exit_code=0`)
     pub output_validator: Option<OutputValidator>,
+    /// Retry timer provider for controlling sleep behavior
+    pub retry_timer: Arc<dyn RetryTimerProvider>,
 }
 
 /// Log GLM-specific diagnostic output (only on first try to avoid spam).
@@ -176,22 +179,34 @@ fn handle_agent_error(
     error_kind
 }
 
-/// Log retry message and wait before next retry.
-fn log_retry_message(
-    display_name: &str,
-    model_suffix: &str,
+/// Parameters for retry message logging.
+struct RetryMessageParams<'a> {
+    display_name: &'a str,
+    model_suffix: &'a str,
     retry: u32,
     max_retries: u32,
     error_kind: AgentErrorKind,
     retry_delay_ms: u64,
+}
+
+/// Log retry message and wait before next retry.
+fn log_retry_message(
+    params: RetryMessageParams<'_>,
     logger: &Logger,
+    retry_timer: &Arc<dyn RetryTimerProvider>,
 ) {
     logger.info(&format!(
-        "Retrying '{display_name}{model_suffix}' (attempt {}/{max_retries})",
-        retry + 1
+        "Retrying '{}{}' (attempt {}/{})",
+        params.display_name,
+        params.model_suffix,
+        params.retry + 1,
+        params.max_retries
     ));
-    let wait_ms = error_kind.suggested_wait_ms().max(retry_delay_ms);
-    std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+    let wait_ms = params
+        .error_kind
+        .suggested_wait_ms()
+        .max(params.retry_delay_ms);
+    retry_timer.sleep(std::time::Duration::from_millis(wait_ms));
 }
 
 /// Validate agent output after successful execution (`exit_code=0`).
@@ -287,13 +302,16 @@ pub fn try_agent_with_retries(
                         // Retry with the same agent
                         runtime.logger.info("Retrying due to validation failure...");
                         log_retry_message(
-                            config.display_name,
-                            &model_suffix,
-                            retry + 1,
-                            config.fallback_config.max_retries,
-                            AgentErrorKind::ToolExecutionFailed, // Use a retriable error kind
-                            config.fallback_config.retry_delay_ms,
+                            RetryMessageParams {
+                                display_name: config.display_name,
+                                model_suffix: &model_suffix,
+                                retry: retry + 1,
+                                max_retries: config.fallback_config.max_retries,
+                                error_kind: AgentErrorKind::ToolExecutionFailed,
+                                retry_delay_ms: config.fallback_config.retry_delay_ms,
+                            },
                             runtime.logger,
+                            &config.retry_timer,
                         );
                         continue;
                     }
@@ -340,13 +358,16 @@ pub fn try_agent_with_retries(
         // Otherwise, continue retrying the same model/agent
         if retry + 1 < config.fallback_config.max_retries {
             log_retry_message(
-                config.display_name,
-                &model_suffix,
-                retry + 1,
-                config.fallback_config.max_retries,
-                error_kind,
-                config.fallback_config.retry_delay_ms,
+                RetryMessageParams {
+                    display_name: config.display_name,
+                    model_suffix: &model_suffix,
+                    retry: retry + 1,
+                    max_retries: config.fallback_config.max_retries,
+                    error_kind,
+                    retry_delay_ms: config.fallback_config.retry_delay_ms,
+                },
                 runtime.logger,
+                &config.retry_timer,
             );
         }
     }

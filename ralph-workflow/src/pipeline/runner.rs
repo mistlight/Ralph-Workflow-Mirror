@@ -2,6 +2,7 @@
 
 use crate::agents::{validate_model_flag, AgentConfig, AgentRegistry, AgentRole, JsonParserType};
 use crate::common::split_command;
+use std::sync::Arc;
 
 use super::fallback::try_agent_with_retries;
 use super::fallback::TryAgentResult;
@@ -109,11 +110,10 @@ fn build_command_for_model(ctx: &TryModelContext<'_>, runtime: &PipelineRuntime<
                 ctx.agent_config
                     .build_cmd_with_model(true, true, yolo, model_ref)
             }),
-            AgentRole::Commit => {
-                // Commit role doesn't have cmd override, use default
+            AgentRole::Commit => runtime.config.commit_cmd.clone().unwrap_or_else(|| {
                 ctx.agent_config
                     .build_cmd_with_model(true, true, yolo, model_ref)
-            }
+            }),
         }
     } else {
         ctx.agent_config
@@ -204,6 +204,7 @@ struct TryModelContext<'a> {
     logfile_prefix: &'a str,
     fallback_config: &'a crate::agents::fallback::FallbackConfig,
     output_validator: Option<crate::pipeline::fallback::OutputValidator>,
+    retry_timer: Arc<dyn crate::agents::RetryTimerProvider>,
 }
 
 /// Try a single model configuration for an agent.
@@ -261,6 +262,7 @@ fn try_single_model(
         cycle: ctx.cycle as usize,
         fallback_config: ctx.fallback_config,
         output_validator: ctx.output_validator,
+        retry_timer: Arc::clone(&ctx.retry_timer),
     };
     let result = try_agent_with_retries(&attempt_config, runtime)?;
 
@@ -286,6 +288,7 @@ struct TryAgentContext<'a> {
     cli_model_override: Option<&'a String>,
     cli_provider_override: Option<&'a String>,
     output_validator: Option<crate::pipeline::fallback::OutputValidator>,
+    retry_timer: Arc<dyn crate::agents::RetryTimerProvider>,
 }
 
 /// Try a single agent with all its model configurations.
@@ -339,6 +342,7 @@ fn try_single_agent(
             logfile_prefix: ctx.logfile_prefix,
             fallback_config,
             output_validator: ctx.output_validator,
+            retry_timer: Arc::clone(&ctx.retry_timer),
         };
         let result = try_single_model(&model_ctx, runtime)?;
 
@@ -436,7 +440,10 @@ fn run_with_fallback_internal(config: &mut FallbackConfig<'_, '_>) -> std::io::R
                 fallback_config.max_cycles,
                 backoff_ms
             ));
-            std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
+            config
+                .registry
+                .retry_timer()
+                .sleep(std::time::Duration::from_millis(backoff_ms));
         }
 
         for (agent_index, agent_name) in agents_to_try.iter().enumerate() {
@@ -451,6 +458,7 @@ fn run_with_fallback_internal(config: &mut FallbackConfig<'_, '_>) -> std::io::R
                 cli_model_override: cli_model_override.as_ref(),
                 cli_provider_override: cli_provider_override.as_ref(),
                 output_validator: config.output_validator,
+                retry_timer: config.registry.retry_timer(),
             };
             let result = try_single_agent(&ctx, config.runtime, config.registry, fallback_config)?;
 

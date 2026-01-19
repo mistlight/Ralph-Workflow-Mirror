@@ -22,9 +22,11 @@ use super::ccs::CcsAliasResolver;
 use super::config::{AgentConfig, AgentConfigError, AgentsConfigFile, DEFAULT_AGENTS_TOML};
 use super::fallback::{AgentRole, FallbackConfig};
 use super::parser::JsonParserType;
+use super::retry_timer::{production_timer, RetryTimerProvider};
 use crate::config::{CcsAliasConfig, CcsConfig};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 /// Agent registry with CCS alias support.
 ///
@@ -36,6 +38,8 @@ pub struct AgentRegistry {
     fallback: FallbackConfig,
     /// CCS alias resolver for `ccs/alias` syntax.
     ccs_resolver: CcsAliasResolver,
+    /// Retry timer provider for controlling sleep behavior in retry logic.
+    retry_timer: Arc<dyn RetryTimerProvider>,
 }
 
 impl AgentRegistry {
@@ -48,6 +52,7 @@ impl AgentRegistry {
             agents: HashMap::new(),
             fallback,
             ccs_resolver: CcsAliasResolver::empty(),
+            retry_timer: production_timer(),
         };
 
         for (name, agent_toml) in agents {
@@ -390,6 +395,19 @@ impl AgentRegistry {
     /// Get the fallback configuration.
     pub const fn fallback_config(&self) -> &FallbackConfig {
         &self.fallback
+    }
+
+    /// Get the retry timer provider.
+    pub fn retry_timer(&self) -> Arc<dyn RetryTimerProvider> {
+        Arc::clone(&self.retry_timer)
+    }
+
+    /// Set the retry timer provider (for testing purposes).
+    ///
+    /// This is used to inject a test timer that doesn't actually sleep,
+    /// enabling fast test execution without waiting for retry delays.
+    pub fn set_retry_timer(&mut self, timer: Arc<dyn RetryTimerProvider>) {
+        self.retry_timer = timer;
     }
 
     /// Get all fallback agents for a role that are registered in this registry.
