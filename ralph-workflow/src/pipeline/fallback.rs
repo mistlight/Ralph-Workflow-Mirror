@@ -57,7 +57,7 @@ pub struct AgentAttemptConfig<'a> {
     pub cycle: usize,
     /// Fallback configuration
     pub fallback_config: &'a crate::agents::fallback::FallbackConfig,
-    /// Optional callback to validate output after execution (`exit_code=0`)
+    /// Optional callback to validate output after execution
     pub output_validator: Option<OutputValidator>,
 }
 
@@ -194,7 +194,9 @@ fn log_retry_message(
     std::thread::sleep(std::time::Duration::from_millis(wait_ms));
 }
 
-/// Validate agent output after successful execution (`exit_code=0`).
+/// Validate agent output after execution.
+///
+/// Used after successful execution (`exit_code=0`) and for GLM agents with `exit_code=1`.
 ///
 /// Returns `Some(true)` if output is valid, `Some(false)` if missing/invalid (trigger fallback),
 /// or `None` if no validator is configured.
@@ -304,21 +306,17 @@ pub fn try_agent_with_retries(
             }
         } else if is_glm_agent && result.exit_code == 1 {
             // GLM quirk: exit code 1 may indicate success with valid output
-            // Check if output validator exists and validates successfully
-            match validate_agent_output(config, runtime) {
-                Some(true) => {
-                    // Valid output despite exit code 1 - treat as success
-                    runtime.logger.info(&format!(
-                        "GLM-like agent '{}' exited with code 1 but produced valid output - treating as success",
-                        config.display_name
-                    ));
-                    return Ok(TryAgentResult::Success);
-                }
-                Some(false) | None => {
-                    // No valid output - fall through to error handling below
-                    // No additional logging needed as error handling will log it
-                }
+            // If output validator confirms valid output, treat as success
+            // Otherwise (no validator or validation failed), fall through to error handling
+            if let Some(true) = validate_agent_output(config, runtime) {
+                // Valid output despite exit code 1 - treat as success
+                runtime.logger.info(&format!(
+                    "GLM-like agent '{}' exited with code 1 but produced valid output - treating as success",
+                    config.display_name
+                ));
+                return Ok(TryAgentResult::Success);
             }
+            // No validator configured or validation failed - fall through to error handling below
         }
 
         // Handle error classification, logging, and user guidance
