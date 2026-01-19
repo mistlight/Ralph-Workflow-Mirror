@@ -23,8 +23,10 @@ use crate::logger::{print_progress, Logger};
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
-use crate::pipeline::{run_with_fallback_and_validator, FallbackConfig, PipelineRuntime};
-use crate::prompts::{prompt_for_agent, Action, ContextLevel, PromptConfig, Role};
+use crate::pipeline::{run_with_fallback, PipelineRuntime};
+use crate::prompts::{
+    get_stored_or_generate_prompt, prompt_for_agent, Action, ContextLevel, PromptConfig, Role,
+};
 use crate::review_metrics::ReviewMetrics;
 use std::fs;
 use std::path::Path;
@@ -189,7 +191,9 @@ pub fn run_review_phase(
 
         // REVIEW PASS
         update_status("Reviewing code", ctx.config.isolation_mode)?;
-        let (review_label, review_prompt) = build_review_prompt(
+
+        // First, get the review label (for logging and error messages)
+        let (review_label, _) = build_review_prompt(
             ctx,
             reviewer_context,
             ctx.review_guidelines,
@@ -200,10 +204,33 @@ pub fn run_review_phase(
             },
         );
 
-        // Capture the review prompt for checkpoint/resume
+        // Use prompt replay if available, otherwise build new review prompt
+        let review_prompt_key = format!("review_{}", j);
+        let (review_prompt, was_replayed) =
+            get_stored_or_generate_prompt(&review_prompt_key, &ctx.prompt_history, || {
+                let (_, prompt) = build_review_prompt(
+                    ctx,
+                    reviewer_context,
+                    ctx.review_guidelines,
+                    if resuming_into_review {
+                        resume_context
+                    } else {
+                        None
+                    },
+                );
+                prompt
+            });
+
+        // Capture the review prompt for checkpoint/resume (only if newly generated)
         if !review_prompt.is_empty() {
-            let prompt_key = format!("review_{}", j);
-            ctx.capture_prompt(&prompt_key, &review_prompt);
+            if !was_replayed {
+                ctx.capture_prompt(&review_prompt_key, &review_prompt);
+            } else {
+                ctx.logger.info(&format!(
+                    "Using stored prompt from checkpoint for determinism: {}",
+                    review_prompt_key
+                ));
+            }
         }
 
         // Check if the review prompt is empty (e.g., due to diff retrieval failure)
@@ -914,7 +941,7 @@ fn run_fix_pass(
     let issues_content = fs::read_to_string(".agent/ISSUES.md").unwrap_or_default();
 
     let mut prompt_config = PromptConfig::new().with_prompt_plan_and_issues(
-        prompt_content,
+        prompt_content.clone(),
         plan_content,
         issues_content,
     );
@@ -924,17 +951,28 @@ fn run_fix_pass(
         prompt_config = prompt_config.with_resume_context(resume_ctx.clone());
     }
 
-    let fix_prompt = prompt_for_agent(
-        Role::Reviewer,
-        Action::Fix,
-        reviewer_context,
-        ctx.template_context,
-        prompt_config,
-    );
-
-    // Capture the fix prompt for checkpoint/resume
+    // Use prompt replay if available, otherwise generate new fix prompt
     let prompt_key = format!("fix_{}", j);
-    ctx.capture_prompt(&prompt_key, &fix_prompt);
+    let (fix_prompt, was_replayed) =
+        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+            prompt_for_agent(
+                Role::Reviewer,
+                Action::Fix,
+                reviewer_context,
+                ctx.template_context,
+                prompt_config.clone(),
+            )
+        });
+
+    // Capture the fix prompt for checkpoint/resume (only if newly generated)
+    if !was_replayed {
+        ctx.capture_prompt(&prompt_key, &fix_prompt);
+    } else {
+        ctx.logger.info(&format!(
+            "Using stored prompt from checkpoint for determinism: {}",
+            prompt_key
+        ));
+    }
 
     // Log the fix prompt details for debugging (when verbose)
     if ctx.config.verbosity.is_debug() {

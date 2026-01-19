@@ -296,6 +296,52 @@ pub fn prompt_for_agent(
     }
 }
 
+/// Get a stored prompt from history or generate a new one.
+///
+/// This function implements prompt replay for hardened resume functionality.
+/// When resuming from a checkpoint, it checks if a prompt was already used
+/// and returns the stored prompt for deterministic behavior. Otherwise, it
+/// generates a new prompt using the provided generator function.
+///
+/// # Arguments
+///
+/// * `prompt_key` - Unique key identifying this prompt (e.g., "development_1", "review_2")
+/// * `prompt_history` - The prompt history from the checkpoint (if available)
+/// * `generator` - Function to generate the prompt if not found in history
+///
+/// # Returns
+///
+/// A tuple of (prompt, was_replayed) where:
+/// - `prompt` is the prompt string (either replayed or newly generated)
+/// - `was_replayed` is true if the prompt came from history, false if newly generated
+///
+/// # Example
+///
+/// ```rust
+/// let (prompt, was_replayed) = get_stored_or_generate_prompt(
+///     "development_1",
+///     &ctx.prompt_history,
+///     || prompt_for_agent(role, action, context, template_context, config),
+/// );
+/// if was_replayed {
+///     logger.info("Using stored prompt from checkpoint for determinism");
+/// }
+/// ```
+pub fn get_stored_or_generate_prompt<F>(
+    prompt_key: &str,
+    prompt_history: &std::collections::HashMap<String, String>,
+    generator: F,
+) -> (String, bool)
+where
+    F: FnOnce() -> String,
+{
+    if let Some(stored_prompt) = prompt_history.get(prompt_key) {
+        (stored_prompt.clone(), true)
+    } else {
+        (generator(), false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -740,5 +786,43 @@ mod tests {
         assert!(result.contains("SESSION RESUME CONTEXT"));
         assert!(result.contains("FIX phase"));
         assert!(result.contains("Focus on addressing the issues"));
+    }
+
+    #[test]
+    fn test_get_stored_or_generate_prompt_replays_when_available() {
+        let mut history = std::collections::HashMap::new();
+        history.insert("test_key".to_string(), "stored prompt".to_string());
+
+        let (prompt, was_replayed) =
+            get_stored_or_generate_prompt("test_key", &history, || "generated prompt".to_string());
+
+        assert_eq!(prompt, "stored prompt");
+        assert!(was_replayed, "Should have replayed the stored prompt");
+    }
+
+    #[test]
+    fn test_get_stored_or_generate_prompt_generates_when_not_available() {
+        let history = std::collections::HashMap::new();
+
+        let (prompt, was_replayed) = get_stored_or_generate_prompt("missing_key", &history, || {
+            "generated prompt".to_string()
+        });
+
+        assert_eq!(prompt, "generated prompt");
+        assert!(!was_replayed, "Should have generated a new prompt");
+    }
+
+    #[test]
+    fn test_get_stored_or_generate_prompt_with_empty_history() {
+        let history = std::collections::HashMap::new();
+
+        let (prompt, was_replayed) =
+            get_stored_or_generate_prompt("any_key", &history, || "fresh prompt".to_string());
+
+        assert_eq!(prompt, "fresh prompt");
+        assert!(
+            !was_replayed,
+            "Should have generated a new prompt for empty history"
+        );
     }
 }

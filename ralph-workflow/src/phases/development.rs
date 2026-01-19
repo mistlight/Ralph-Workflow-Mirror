@@ -18,7 +18,9 @@ use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
-use crate::prompts::{prompt_for_agent, Action, ContextLevel, PromptConfig, Role};
+use crate::prompts::{
+    get_stored_or_generate_prompt, prompt_for_agent, Action, ContextLevel, PromptConfig, Role,
+};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -129,17 +131,28 @@ pub fn run_development_phase(
             }
         }
 
-        let prompt = prompt_for_agent(
-            Role::Developer,
-            Action::Iterate,
-            developer_context,
-            ctx.template_context,
-            prompt_config,
-        );
-
-        // Capture the prompt for checkpoint/resume
+        // Use prompt replay if available, otherwise generate new prompt
         let prompt_key = format!("development_{}", i);
-        ctx.capture_prompt(&prompt_key, &prompt);
+        let (prompt, was_replayed) =
+            get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                prompt_for_agent(
+                    Role::Developer,
+                    Action::Iterate,
+                    developer_context,
+                    ctx.template_context,
+                    prompt_config.clone(),
+                )
+            });
+
+        // Capture the prompt for checkpoint/resume (only if newly generated)
+        if !was_replayed {
+            ctx.capture_prompt(&prompt_key, &prompt);
+        } else {
+            ctx.logger.info(&format!(
+                "Using stored prompt from checkpoint for determinism: {}",
+                prompt_key
+            ));
+        }
 
         let dev_start_time = Instant::now();
 
@@ -272,19 +285,30 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
 
     // Note: We don't set is_resume for planning since planning runs on each iteration.
     // The resume context is set during the development execution step.
-    let plan_prompt = prompt_for_agent(
-        Role::Developer,
-        Action::Plan,
-        ContextLevel::Normal,
-        ctx.template_context,
-        prompt_md_content
-            .map(|content| PromptConfig::new().with_prompt_md(content))
-            .unwrap_or_default(),
-    );
-
-    // Capture the planning prompt for checkpoint/resume
     let prompt_key = format!("planning_{}", iteration);
-    ctx.capture_prompt(&prompt_key, &plan_prompt);
+    let (plan_prompt, was_replayed) =
+        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+            prompt_for_agent(
+                Role::Developer,
+                Action::Plan,
+                ContextLevel::Normal,
+                ctx.template_context,
+                prompt_md_content
+                    .as_ref()
+                    .map(|content| PromptConfig::new().with_prompt_md(content.clone()))
+                    .unwrap_or_default(),
+            )
+        });
+
+    // Capture the planning prompt for checkpoint/resume (only if newly generated)
+    if !was_replayed {
+        ctx.capture_prompt(&prompt_key, &plan_prompt);
+    } else {
+        ctx.logger.info(&format!(
+            "Using stored prompt from checkpoint for determinism: {}",
+            prompt_key
+        ));
+    }
 
     let log_dir = format!(".agent/logs/planning_{iteration}");
     let mut runtime = PipelineRuntime {

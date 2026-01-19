@@ -517,6 +517,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         &mut stats,
         review_guidelines.as_ref(),
         &run_context,
+        resume_checkpoint.as_ref(),
     );
     save_start_commit_or_warn(ctx);
 
@@ -668,7 +669,23 @@ fn create_phase_context_with_config<'ctx>(
     stats: &'ctx mut Stats,
     review_guidelines: Option<&'ctx crate::guidelines::ReviewGuidelines>,
     run_context: &'ctx crate::checkpoint::RunContext,
+    resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> PhaseContext<'ctx> {
+    // Restore execution history and prompt history from checkpoint if available
+    let (execution_history, prompt_history) = if let Some(checkpoint) = resume_checkpoint {
+        let exec_history = checkpoint
+            .execution_history
+            .clone()
+            .unwrap_or_else(crate::checkpoint::execution_history::ExecutionHistory::new);
+        let prompt_hist = checkpoint.prompt_history.clone().unwrap_or_default();
+        (exec_history, prompt_hist)
+    } else {
+        (
+            crate::checkpoint::execution_history::ExecutionHistory::new(),
+            std::collections::HashMap::new(),
+        )
+    };
+
     PhaseContext {
         config,
         registry: &ctx.registry,
@@ -681,8 +698,8 @@ fn create_phase_context_with_config<'ctx>(
         review_guidelines,
         template_context: &ctx.template_context,
         run_context: run_context.clone(),
-        execution_history: crate::checkpoint::execution_history::ExecutionHistory::new(),
-        prompt_history: std::collections::HashMap::new(),
+        execution_history,
+        prompt_history,
     }
 }
 
