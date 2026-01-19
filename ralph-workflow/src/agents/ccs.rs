@@ -1194,7 +1194,8 @@ mod tests {
 
         // Permission denied - caught by check_tool_failures first, should fallback
         // (ToolExecutionFailed also triggers fallback, just via a different code path)
-        let error = AgentErrorKind::classify_with_agent(1, "permission denied", Some("ccs/glm"), None);
+        let error =
+            AgentErrorKind::classify_with_agent(1, "permission denied", Some("ccs/glm"), None);
         assert_eq!(error, AgentErrorKind::ToolExecutionFailed);
 
         // CCS/GLM with failed message - known issue, should fallback
