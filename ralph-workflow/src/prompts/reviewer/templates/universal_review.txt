@@ -59,6 +59,9 @@ IMPLEMENTATION PLAN:
 
 {{EXPLORATION_REQUIRED}}
 
+DIFF CONTEXT:
+{{DIFF_CONTEXT}}
+
 Review for:
 - Bugs, errors, security issues
 - Missing tests

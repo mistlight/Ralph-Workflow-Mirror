@@ -73,6 +73,7 @@ pub fn prompt_detailed_review_without_guidelines_with_diff(
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),
+        ("DIFF_CONTEXT", String::new()),
         ("GUIDELINES", "".to_string()), // No guidelines for unguided review
         ("EXPLORATION_REQUIRED", String::new()),
         ("EXPLORATION_MODE", String::new()),

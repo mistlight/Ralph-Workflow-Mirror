@@ -65,6 +65,7 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff(
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),
+        ("DIFF_CONTEXT", String::new()),
         ("GUIDELINES", guidelines_section),
         ("EXPLORATION_REQUIRED", String::new()),
         ("EXPLORATION_MODE", String::new()),

@@ -62,6 +62,9 @@ IMPLEMENTATION PLAN:
 
 {{EXPLORATION_REQUIRED}}
 
+DIFF CONTEXT:
+{{DIFF_CONTEXT}}
+
 Language-Specific checks (Optional Reference - Do NOT explore beyond the diff and its direct dependencies):
 {{GUIDELINES}}
 
