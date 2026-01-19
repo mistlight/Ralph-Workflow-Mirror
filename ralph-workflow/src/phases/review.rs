@@ -22,7 +22,7 @@ use crate::logger::{print_progress, Logger};
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
-use crate::pipeline::{run_with_fallback, PipelineRuntime};
+use crate::pipeline::{run_with_fallback_and_validator, FallbackConfig, PipelineRuntime};
 use crate::prompts::{prompt_for_agent, Action, ContextLevel, PromptConfig, Role};
 use crate::review_metrics::ReviewMetrics;
 
@@ -468,9 +468,22 @@ fn run_review_pass(
                 colors: ctx.colors,
                 config: ctx.config,
             };
-            run_with_fallback(
-                AgentRole::Reviewer,
-                &format!(
+
+            // Output validator: checks if reviewer produced valid JSON output
+            // This is critical for GLM agents which may exit with code 1 even when successful
+            let validate_output: crate::pipeline::OutputValidator =
+                |log_dir_path: &Path, _logger: &crate::logger::Logger| -> std::io::Result<bool> {
+                    use crate::files::result_extraction::extract_last_result;
+                    match extract_last_result(log_dir_path) {
+                        Ok(Some(_)) => Ok(true), // Valid JSON output exists
+                        Ok(None) => Ok(false),   // No JSON output found
+                        Err(_) => Ok(true), // On error, assume success (let extraction handle validation)
+                    }
+                };
+
+            let mut fallback_config = FallbackConfig {
+                role: AgentRole::Reviewer,
+                base_label: &format!(
                     "{review_label} #{j}{}",
                     if retry_count > 0 {
                         format!(" (retry {retry_count})")
@@ -478,12 +491,14 @@ fn run_review_pass(
                         String::new()
                     }
                 ),
-                &current_prompt,
-                &log_dir,
-                &mut runtime,
-                ctx.registry,
-                ctx.reviewer_agent,
-            )
+                prompt: &current_prompt,
+                logfile_prefix: &log_dir,
+                runtime: &mut runtime,
+                registry: ctx.registry,
+                primary_agent: ctx.reviewer_agent,
+                output_validator: Some(validate_output),
+            };
+            run_with_fallback_and_validator(&mut fallback_config)
         };
         ctx.stats.reviewer_runs_completed += 1;
 
@@ -775,15 +790,31 @@ fn run_fix_pass(
             colors: ctx.colors,
             config: ctx.config,
         };
-        run_with_fallback(
-            AgentRole::Reviewer,
-            &format!("fix #{j}"),
-            &fix_prompt,
-            &format!(".agent/logs/reviewer_fix_{j}"),
-            &mut runtime,
-            ctx.registry,
-            ctx.reviewer_agent,
-        )
+
+        // Output validator: checks if fixer produced valid JSON output
+        // This is critical for GLM agents which may exit with code 1 even when successful
+        let validate_output: crate::pipeline::OutputValidator =
+            |log_dir_path: &Path, _logger: &crate::logger::Logger| -> std::io::Result<bool> {
+                use crate::files::result_extraction::extract_last_result;
+                match extract_last_result(log_dir_path) {
+                    Ok(Some(_)) => Ok(true), // Valid JSON output exists
+                    Ok(None) => Ok(false),   // No JSON output found
+                    Err(_) => Ok(true), // On error, assume success (let later validation handle it)
+                }
+            };
+
+        let log_dir = format!(".agent/logs/reviewer_fix_{j}");
+        let mut fallback_config = FallbackConfig {
+            role: AgentRole::Reviewer,
+            base_label: &format!("fix #{j}"),
+            prompt: &fix_prompt,
+            logfile_prefix: &log_dir,
+            runtime: &mut runtime,
+            registry: ctx.registry,
+            primary_agent: ctx.reviewer_agent,
+            output_validator: Some(validate_output),
+        };
+        run_with_fallback_and_validator(&mut fallback_config)
     };
     ctx.stats.reviewer_runs_completed += 1;
 
