@@ -3,13 +3,16 @@
 //! This module provides functions to clean and filter extracted LLM output,
 //! removing AI thought processes, formatted thinking patterns, and other artifacts.
 
+#[cfg(test)]
 use regex::Regex;
+#[cfg(test)]
 use std::sync::OnceLock;
 
 /// Strip thought pattern and look for commit message with blank line detection.
 ///
 /// Handles pattern stripping with blank line detection. Returns Some(result) if
 /// pattern was found and processed, None otherwise.
+#[cfg(test)]
 fn strip_thought_pattern_with_blank_line(content: &str, pattern: &str) -> Option<String> {
     let rest = content.strip_prefix(pattern)?;
 
@@ -55,6 +58,7 @@ fn strip_thought_pattern_with_blank_line(content: &str, pattern: &str) -> Option
 ///
 /// Handles numbered list patterns like "1. First change\n2. Second change\n\nfix: actual".
 /// Returns Some(result) if pattern was found and processed, None otherwise.
+#[cfg(test)]
 fn strip_numbered_analysis_patterns(content: &str) -> Option<String> {
     let result_lower = content.to_lowercase();
     let numbered_start_patterns = [
@@ -91,6 +95,7 @@ fn strip_numbered_analysis_patterns(content: &str) -> Option<String> {
 ///
 /// Handles markdown bold patterns like "1. **Test assertion style** (file.rs): Description".
 /// Returns Some(result) if pattern was found and processed, None otherwise.
+#[cfg(test)]
 fn strip_markdown_bold_analysis(content: &str) -> Option<String> {
     if starts_with_markdown_bold_analysis(content) {
         if let Some(commit_start) = find_conventional_commit_start(content) {
@@ -112,6 +117,7 @@ fn strip_markdown_bold_analysis(content: &str) -> Option<String> {
 ///
 /// Handles aggressive filtering with commit detection. Returns Some(result) if pattern
 /// was found and processed, None otherwise.
+#[cfg(test)]
 fn extract_commit_from_analysis(content: &str) -> Option<String> {
     if let Some(commit_start) = find_conventional_commit_start(content) {
         // Verify that the content before the commit looks like analysis
@@ -137,6 +143,7 @@ fn extract_commit_from_analysis(content: &str) -> Option<String> {
 ///
 /// Handles analysis text filtering with embedded type mentions like "**feat**".
 /// Returns Some(result) if content should be filtered, None otherwise.
+#[cfg(test)]
 fn filter_analysis_with_embedded_types(content: &str) -> Option<String> {
     if !looks_like_analysis_text(content) {
         return None;
@@ -190,6 +197,7 @@ fn filter_analysis_with_embedded_types(content: &str) -> Option<String> {
 /// - Analysis followed by single newline (aggressive filtering)
 /// - Numbered/bullet lists without proper separation
 /// - Multi-line analysis that ends with conventional commit format
+#[cfg(test)]
 pub fn remove_thought_process_patterns(content: &str) -> String {
     let mut result = content.to_string();
 
@@ -270,6 +278,7 @@ pub fn remove_thought_process_patterns(content: &str) -> String {
 /// - "1. **Category** (file.rs): Description"
 /// - "**Category**:"
 /// - Multiple numbered lines with **bold** headers
+#[cfg(test)]
 fn starts_with_markdown_bold_analysis(text: &str) -> bool {
     let trimmed = text.trim();
 
@@ -322,6 +331,7 @@ fn starts_with_markdown_bold_analysis(text: &str) -> bool {
 /// Returns true if the text starts with patterns like:
 /// - "feat:", "fix:", "chore:", "docs:", "test:", "refactor:", "perf:", "style:"
 /// - With optional scope in parentheses: "feat(parser):", "fix(api):"
+#[cfg(test)]
 fn looks_like_commit_message_start(text: &str) -> bool {
     let trimmed = text.trim();
     let conventional_types = [
@@ -347,6 +357,7 @@ fn looks_like_commit_message_start(text: &str) -> bool {
 /// Find the position of a conventional commit message in the text.
 ///
 /// Returns Some(position) if found, None otherwise.
+#[cfg(test)]
 pub fn find_conventional_commit_start(text: &str) -> Option<usize> {
     let conventional_types = [
         "feat", "fix", "chore", "docs", "test", "refactor", "perf", "style", "build", "ci",
@@ -383,6 +394,7 @@ pub fn find_conventional_commit_start(text: &str) -> Option<usize> {
 ///
 /// Returns true if the text contains patterns typical of AI analysis
 /// such as numbered lists, bullet points, or analysis phrases.
+#[cfg(test)]
 pub fn looks_like_analysis_text(text: &str) -> bool {
     let text_lower = text.to_lowercase();
 
@@ -455,6 +467,7 @@ pub fn looks_like_analysis_text(text: &str) -> bool {
 
 /// ANSI escape code regex - compiled once using `OnceLock` for efficiency.
 /// Matches patterns like \x1b[...m or \x1b[...K used for terminal formatting.
+#[cfg(test)]
 fn ansi_escape_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*[mK]").expect("ANSI regex should be valid"))
@@ -468,6 +481,7 @@ fn ansi_escape_regex() -> &'static Regex {
 ///
 /// The function removes lines that contain formatted thinking markers and any
 /// subsequent content until a blank line or conventional commit pattern is found.
+#[cfg(test)]
 fn remove_formatted_thinking_patterns(content: &str) -> String {
     let mut result = String::new();
     let mut skip_until_blank = false;
@@ -733,6 +747,7 @@ pub fn preprocess_raw_content(content: &str) -> String {
 /// - Common prefixes like "Commit message:", "Output:", etc.
 /// - Excessive whitespace
 /// - JSON escape sequences that weren't properly unescaped
+#[cfg(test)]
 pub fn clean_plain_text(content: &str) -> String {
     let mut result = content.to_string();
 

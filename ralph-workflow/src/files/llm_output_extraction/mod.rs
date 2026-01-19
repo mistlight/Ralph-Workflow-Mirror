@@ -20,29 +20,38 @@
 
 pub mod cleaning;
 mod commit;
+#[cfg(test)]
 mod parsers;
-mod types;
 pub mod xml_extraction;
 pub mod xsd_validation;
 
-// Re-export public types
-pub use types::{ExtractionOutput, OutputFormat};
+// Internal types module (only used for tests)
+#[cfg(test)]
+mod types;
 
 // Re-export public functions from cleaning module
 pub use cleaning::preprocess_raw_content;
 
+// Import clean_plain_text for tests
+#[cfg(test)]
+pub use cleaning::clean_plain_text;
+
 // Re-export public functions from commit module
 pub use commit::{
     detect_agent_errors_in_output, generate_fallback_commit_message,
-    try_extract_structured_commit_with_trace, try_extract_xml_commit_with_trace,
-    try_salvage_commit_message, validate_commit_message, validate_commit_message_with_report,
-    CommitExtractionResult,
+    try_extract_xml_commit_with_trace, validate_commit_message_with_report, CommitExtractionResult,
 };
+
+// Re-export validate_commit_message for tests
+#[cfg(test)]
+pub use commit::validate_commit_message;
 
 // XSD validation is now internal (pub(crate))
 
-use cleaning::clean_plain_text;
+#[cfg(test)]
 use parsers::{detect_output_format, extract_by_format};
+#[cfg(test)]
+use types::{ExtractionOutput, OutputFormat};
 
 /// Extract result content from LLM CLI output.
 ///
@@ -69,7 +78,8 @@ use parsers::{detect_output_format, extract_by_format};
 /// let result = extract_llm_output(output, Some(OutputFormat::Claude));
 /// assert_eq!(result.content, "feat: add feature");
 /// ```
-pub fn extract_llm_output(output: &str, format: Option<OutputFormat>) -> ExtractionOutput {
+#[cfg(test)]
+fn extract_llm_output(output: &str, format: Option<OutputFormat>) -> ExtractionOutput {
     let trimmed = output.trim();
     if trimmed.is_empty() {
         return ExtractionOutput::empty();

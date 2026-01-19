@@ -5,13 +5,9 @@
 //! git diff metadata.
 
 use regex::Regex;
-use serde::Deserialize;
 use std::sync::OnceLock;
 
-use super::cleaning::{
-    final_escape_sequence_cleanup, find_conventional_commit_start, looks_like_analysis_text,
-    unescape_json_strings, unescape_json_strings_aggressive,
-};
+use super::cleaning::{final_escape_sequence_cleanup, unescape_json_strings_aggressive};
 use super::xml_extraction::extract_xml_commit;
 use super::xsd_validation::validate_xml_against_xsd;
 use crate::agents::AgentErrorKind;
@@ -59,16 +55,11 @@ pub fn detect_agent_errors_in_output(content: &str) -> Option<AgentErrorKind> {
 
 /// Result of commit message extraction with detail about the extraction method.
 ///
-/// This enum allows callers to distinguish between different extraction outcomes
-/// and take appropriate action (e.g., re-prompt when receiving a Fallback result).
+/// This enum allows callers to distinguish between different extraction outcomes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommitExtractionResult {
-    /// Successfully extracted from structured agent output (JSON schema or pattern-based)
+    /// Successfully extracted from XML output
     Extracted(String),
-    /// Recovered via salvage mechanism (found conventional commit within mixed output)
-    Salvaged(String),
-    /// Using deterministic fallback generated from diff metadata
-    Fallback(String),
     /// Agent error detected in output (should trigger fallback)
     AgentError(AgentErrorKind),
 }
@@ -80,16 +71,14 @@ impl CommitExtractionResult {
     /// to the actual commit message.
     pub fn into_message(self) -> String {
         match self {
-            Self::Extracted(msg) | Self::Salvaged(msg) | Self::Fallback(msg) => {
-                render_final_commit_message(&msg)
-            }
+            Self::Extracted(msg) => render_final_commit_message(&msg),
             Self::AgentError(_) => String::new(), // Errors produce empty message
         }
     }
 
-    /// Check if this was a fallback result (should trigger re-prompt).
+    /// Check if this was a fallback result (always false for XML-only extraction).
     pub const fn is_fallback(&self) -> bool {
-        matches!(self, Self::Fallback(_))
+        false
     }
 
     /// Check if this was an agent error (should trigger fallback immediately).
@@ -99,9 +88,9 @@ impl CommitExtractionResult {
 
     /// Check if this result indicates a successful extraction.
     ///
-    /// A successful result is one that produced a commit message (not a fallback or error).
+    /// A successful result is one that produced a commit message (not an error).
     pub const fn is_success(&self) -> bool {
-        matches!(self, Self::Extracted(_) | Self::Salvaged(_))
+        matches!(self, Self::Extracted(_))
     }
 
     /// Get the error kind if this is an agent error.
@@ -111,13 +100,6 @@ impl CommitExtractionResult {
             _ => None,
         }
     }
-}
-
-/// Structured commit message schema for JSON parsing.
-#[derive(Debug, Deserialize)]
-struct StructuredCommitMessage {
-    subject: String,
-    body: Option<String>,
 }
 
 /// Try to extract commit message from XML format with detailed tracing.
@@ -231,144 +213,14 @@ pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, Stri
     )
 }
 
-/// Try to extract commit message from JSON format with detailed tracing.
-///
-/// Returns both the result and a detailed reason string explaining what was found/not found.
-pub fn try_extract_structured_commit_with_trace(content: &str) -> (Option<String>, String) {
-    let trimmed = content.trim();
-    let content_len = trimmed.len();
-
-    // Check for NDJSON stream
-    if looks_like_ndjson(trimmed) {
-        for line in trimmed.lines() {
-            let line = line.trim();
-            if !line.starts_with('{') {
-                continue;
-            }
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-                if json.get("type").and_then(|v| v.as_str()) == Some("result") {
-                    if let Some(result_str) = json.get("result").and_then(|v| v.as_str()) {
-                        if let Some(msg) = try_extract_from_text(result_str) {
-                            return (
-                                Some(msg.clone()),
-                                format!(
-                                    "Extracted from NDJSON result field, message: '{}'",
-                                    if msg.len() > 80 {
-                                        format!("{}...", &msg[..80].replace('\n', "\\n"))
-                                    } else {
-                                        msg.replace('\n', "\\n")
-                                    }
-                                ),
-                            );
-                        }
-                    }
-                }
-            }
-        }
-        return (
-            None,
-            format!("Content looks like NDJSON ({content_len} chars) but no valid commit found in result field"),
-        );
-    }
-
-    // Try extraction from text content
-    if let Some(msg) = try_extract_from_text(trimmed) {
-        return (
-            Some(msg.clone()),
-            format!(
-                "Extracted from JSON/text content, message: '{}'",
-                if msg.len() > 80 {
-                    format!("{}...", &msg[..80].replace('\n', "\\n"))
-                } else {
-                    msg.replace('\n', "\\n")
-                }
-            ),
-        );
-    }
-
-    // Provide detailed failure reason
-    let has_brace = trimmed.contains('{');
-    let has_subject_key = trimmed.contains("\"subject\"");
-
-    if has_brace && has_subject_key {
-        (
-            None,
-            format!(
-                "Content has JSON-like structure ({content_len} chars, has '{{': {has_brace}, has 'subject' key: {has_subject_key}) but parsing failed"
-            ),
-        )
-    } else if has_brace {
-        (
-            None,
-            format!("Content has '{{' but no 'subject' key found ({content_len} chars)"),
-        )
-    } else {
-        (
-            None,
-            format!("Content does not appear to be JSON ({content_len} chars, no '{{' found)"),
-        )
-    }
-}
-
-/// Try to extract a structured commit message from text content.
-///
-/// This handles:
-/// - Direct JSON parsing
-/// - JSON inside markdown code fences
-/// - JSON embedded within other text
-fn try_extract_from_text(content: &str) -> Option<String> {
-    let trimmed = content.trim();
-
-    // Try extracting from markdown code fence first
-    if let Some(json_content) = extract_json_from_code_fence(trimmed) {
-        if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(&json_content) {
-            return format_structured_commit(&msg);
-        }
-    }
-
-    // Try direct parse
-    if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(trimmed) {
-        return format_structured_commit(&msg);
-    }
-
-    // Try to find JSON object within content (in case of minor preamble)
-    if let Some(start) = trimmed.find('{') {
-        if let Some(end) = trimmed.rfind('}') {
-            if start < end {
-                let json_str = &trimmed[start..=end];
-                if let Ok(msg) = serde_json::from_str::<StructuredCommitMessage>(json_str) {
-                    return format_structured_commit(&msg);
-                }
-            }
-        }
-    }
-
-    None
-}
-
-/// Format a structured commit message into the final string format.
-fn format_structured_commit(msg: &StructuredCommitMessage) -> Option<String> {
-    let subject = msg.subject.trim();
-
-    // Unescape JSON escape sequences that may be in the string values
-    // When serde_json parses JSON like `{"subject": "feat: add", "body": "Line 1\\nLine 2"}`
-    // the body field contains the literal characters `\` and `n`, not a newline.
-    // We need to unescape these to get proper formatting.
-    let subject = unescape_json_strings(subject);
-
-    // Validate conventional commit format
-    if !is_conventional_commit_subject(&subject) {
-        return None;
-    }
-
-    // Format the commit message
-    match &msg.body {
-        Some(body) if !body.trim().is_empty() => {
-            let body = unescape_json_strings(body.trim());
-            Some(format!("{subject}\n\n{body}",))
-        }
-        _ => Some(subject),
-    }
+/// File count pattern regex - compiled once using `OnceLock` for efficiency.
+/// Matches patterns like "chore: N file(s) changed" for any number N.
+fn file_count_pattern_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^chore:\s*\d+\s+(?:file\(s\)|files?)\s+changed$")
+            .expect("file count regex should be valid")
+    })
 }
 
 /// Check if a string is a valid conventional commit subject line.
@@ -391,40 +243,6 @@ pub fn is_conventional_commit_subject(subject: &str) -> bool {
     let commit_type = &prefix[..type_end];
 
     valid_types.contains(&commit_type)
-}
-
-/// Extract JSON content from markdown code fences.
-///
-/// Handles both regular code fences and nested fences (e.g., within NDJSON streams).
-fn extract_json_from_code_fence(content: &str) -> Option<String> {
-    // Look for ```json code fence
-    let fence_start = content.find("```json")?;
-    let after_fence = &content[fence_start + 7..]; // Skip past ```json
-
-    // Find the end of the code fence
-    let fence_end = after_fence.find("\n```")?;
-    let json_content = after_fence[..fence_end].trim();
-
-    if json_content.is_empty() {
-        None
-    } else {
-        Some(json_content.to_string())
-    }
-}
-
-/// Check if content looks like NDJSON stream.
-fn looks_like_ndjson(content: &str) -> bool {
-    content.lines().count() > 1 && content.contains("{\"type\":")
-}
-
-/// File count pattern regex - compiled once using `OnceLock` for efficiency.
-/// Matches patterns like "chore: N file(s) changed" for any number N.
-fn file_count_pattern_regex() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"^chore:\s*\d+\s+(?:file\(s\)|files?)\s+changed$")
-            .expect("file count regex should be valid")
-    })
 }
 
 // =========================================================================
@@ -1075,93 +893,9 @@ pub fn render_final_commit_message(message: &str) -> String {
 // Commit Message Recovery Functions
 // =========================================================================
 
-/// Attempt to salvage a valid commit message from content that failed validation.
-///
-/// Uses aggressive pattern matching to find a conventional commit message
-/// embedded within mixed AI output (thinking + actual message).
-///
-/// This is used when `validate_commit_message()` fails, to try extracting a valid
-/// commit message from mixed output containing thinking patterns and actual content.
-///
-/// # Returns
-///
-/// `Some(message)` if a valid commit message was salvaged, `None` otherwise.
-pub fn try_salvage_commit_message(content: &str) -> Option<String> {
-    // Look for conventional commit pattern anywhere in the content
-    let commit_pos = find_conventional_commit_start(content)?;
-
-    // Extract from that position
-    let from_commit = &content[commit_pos..];
-
-    // Find where the commit message ends (next blank line or end of content)
-    // But include the body paragraph if it follows immediately
-    let lines: Vec<&str> = from_commit.lines().collect();
-
-    if lines.is_empty() {
-        return None;
-    }
-
-    // First line is the subject
-    let subject = lines[0].trim();
-    if subject.is_empty() {
-        return None;
-    }
-
-    // Collect body lines (everything after subject until double newline or analysis)
-    let mut body_lines: Vec<&str> = Vec::new();
-    let mut found_blank = false;
-
-    for line in lines.iter().skip(1) {
-        let trimmed: &str = line.trim();
-
-        if trimmed.is_empty() {
-            if found_blank {
-                // Double blank line - end of message
-                break;
-            }
-            found_blank = true;
-            body_lines.push("");
-            continue;
-        }
-
-        // Check if this line looks like analysis starting up again
-        if looks_like_analysis_text(trimmed)
-            || trimmed.starts_with("1. ")
-            || trimmed.starts_with("- ")
-            || trimmed.starts_with("* ")
-        {
-            break;
-        }
-
-        body_lines.push(trimmed);
-        found_blank = false;
-    }
-
-    // Build the salvaged message
-    let mut salvaged = subject.to_string();
-    if !body_lines.is_empty() {
-        // Remove trailing empty lines from body
-        while body_lines.last().is_some_and(|l| l.is_empty()) {
-            body_lines.pop();
-        }
-        if !body_lines.is_empty() {
-            salvaged.push('\n');
-            salvaged.push_str(&body_lines.join("\n"));
-        }
-    }
-
-    // Validate the salvaged message before returning
-    match validate_commit_message(&salvaged) {
-        Ok(()) => Some(salvaged),
-        Err(_) => None,
-    }
-}
-
 /// Generate a deterministic fallback commit message from diff metadata.
 ///
-/// This is the last resort when:
-/// 1. Agent output extraction failed
-/// 2. Salvage attempt failed
+/// This is the last resort when agent output extraction failed.
 ///
 /// # Arguments
 ///
@@ -1397,24 +1131,6 @@ mod tests {
     }
 
     #[test]
-    fn test_try_salvage_commit_message() {
-        let content = "Looking at this diff...\n\nfeat: add feature";
-        let salvaged = try_salvage_commit_message(content);
-        assert!(salvaged.is_some());
-        assert_eq!(salvaged.unwrap(), "feat: add feature");
-    }
-
-    #[test]
-    fn test_try_salvage_with_body() {
-        let content = "Analysis text\n\nfix(parser): resolve bug\n\nAdd proper error handling.";
-        let salvaged = try_salvage_commit_message(content);
-        assert!(salvaged.is_some());
-        let msg = salvaged.unwrap();
-        assert!(msg.starts_with("fix(parser):"));
-        assert!(msg.contains("Add proper error handling"));
-    }
-
-    #[test]
     fn test_generate_fallback_empty_diff() {
         let fallback = generate_fallback_commit_message("");
         assert_eq!(fallback, "chore: apply automated changes");
@@ -1449,17 +1165,20 @@ diff --git a/tests/c.rs b/tests/c.rs";
 
     #[test]
     fn test_regression_thinking_leakage_recovery() {
-        // The exact scenario from the bug report
+        // The exact scenario from the bug report - with XML-only extraction,
+        // we need to ensure the XML extractor can find the commit message
+        // even when thinking output precedes it
         let log_content = r"[Claude] Thinking: Looking at this diff, I need to analyze...
 
-feat(pipeline): add recovery mechanism
+<ralph-commit>
+<ralph-subject>feat(pipeline): add recovery mechanism</ralph-subject>
+<ralph-body>When commit validation fails, attempt to salvage valid message.</ralph-body>
+</ralph-commit>";
 
-When commit validation fails, attempt to salvage valid message.";
-
-        // Verify salvage recovers it
-        let salvaged = try_salvage_commit_message(log_content);
-        assert!(salvaged.is_some());
-        let msg = salvaged.unwrap();
+        // Verify XML extraction can recover it
+        let (result, _reason) = try_extract_xml_commit_with_trace(log_content);
+        assert!(result.is_some());
+        let msg = result.unwrap();
         assert!(validate_commit_message(&msg).is_ok());
         assert!(msg.starts_with("feat(pipeline):"));
     }
@@ -1897,67 +1616,6 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
     }
 
     // =========================================================================
-    // Tests for format_structured_commit with escaped sequences
-    // =========================================================================
-
-    #[test]
-    fn test_format_structured_commit_unescapes_body_newlines() {
-        // Test that format_structured_commit properly unescapes \n in body
-        let msg = StructuredCommitMessage {
-            subject: "feat: add feature".to_string(),
-            body: Some("Line 1\\nLine 2\\nLine 3".to_string()),
-        };
-        let result = format_structured_commit(&msg);
-        assert!(result.is_some());
-        let formatted = result.unwrap();
-        assert!(formatted.contains("Line 1\nLine 2\nLine 3"));
-        assert!(!formatted.contains("\\n"));
-    }
-
-    #[test]
-    fn test_format_structured_commit_unescapes_subject_newlines() {
-        // Test that format_structured_commit properly unescapes \n in subject
-        // Note: After unescaping, "feat: add\nfeature" contains an actual newline.
-        // The is_conventional_commit_subject check only validates the prefix (feat:),
-        // so this passes validation. The resulting commit message would have an embedded
-        // newline in the subject, which is unusual but technically passes the checks.
-        let msg = StructuredCommitMessage {
-            subject: "feat: add\\nfeature".to_string(),
-            body: None,
-        };
-        let result = format_structured_commit(&msg);
-        // The result is Some because "feat:" is a valid type prefix
-        assert!(result.is_some());
-        // The subject has been unescaped, so it contains an actual newline
-        assert!(result.unwrap().contains('\n'));
-    }
-
-    #[test]
-    fn test_format_structured_commit_with_empty_body() {
-        // Test that format_structured_commit works with empty body
-        let msg = StructuredCommitMessage {
-            subject: "fix: resolve bug".to_string(),
-            body: None,
-        };
-        let result = format_structured_commit(&msg);
-        assert_eq!(result, Some("fix: resolve bug".to_string()));
-    }
-
-    #[test]
-    fn test_format_structured_commit_with_body_containing_tabs() {
-        // Test that format_structured_commit properly unescapes \t in body
-        let msg = StructuredCommitMessage {
-            subject: "feat: add feature".to_string(),
-            body: Some("- item 1\\t- item 2".to_string()),
-        };
-        let result = format_structured_commit(&msg);
-        assert!(result.is_some());
-        let formatted = result.unwrap();
-        assert!(formatted.contains("- item 1\t- item 2"));
-        assert!(!formatted.contains("\\t"));
-    }
-
-    // =========================================================================
     // Tests for render_final_commit_message
     // =========================================================================
 
@@ -2030,121 +1688,6 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         let result = render_final_commit_message(input);
         // Whitespace cleanup removes blank lines and trims each line
         assert_eq!(result, "feat: add feature\nBody with spaces");
-    }
-
-    // =========================================================================
-    // Tests for try_extract_structured_commit
-    // =========================================================================
-
-    #[test]
-    fn test_try_extract_structured_commit_direct_json() {
-        // Test that direct JSON with subject and body is extracted correctly
-        let json = r#"{"subject":"fix(commit): try simpler prompts after agent errors","body":"When all agents fail for a prompt variant, keep iterating through progressively simpler prompt strategies instead of aborting the retry loop."}"#;
-        let result = try_extract_structured_commit_with_trace(json).0;
-        assert!(result.is_some(), "Should extract commit from direct JSON");
-        let msg = result.unwrap();
-        assert!(msg.starts_with("fix(commit):"), "Should start with type");
-        assert!(msg.contains("try simpler prompts after agent errors"));
-        assert!(msg.contains("When all agents fail"));
-    }
-
-    #[test]
-    fn test_try_extract_structured_commit_json_no_body() {
-        // Test JSON with subject only
-        let json = r#"{"subject":"feat: add new feature"}"#;
-        let result = try_extract_structured_commit_with_trace(json).0;
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), "feat: add new feature");
-    }
-
-    #[test]
-    fn test_try_extract_structured_commit_code_fence() {
-        // Test JSON inside markdown code fence
-        let content = r#"Here is the commit message:
-```json
-{"subject":"fix: resolve bug","body":"Details about the fix."}
-```
-"#;
-        let result = try_extract_structured_commit_with_trace(content).0;
-        assert!(result.is_some());
-        let msg = result.unwrap();
-        assert!(msg.starts_with("fix: resolve bug"));
-        assert!(msg.contains("Details about the fix"));
-    }
-
-    #[test]
-    fn test_try_extract_structured_commit_with_preamble() {
-        // Test JSON with some preamble text
-        let content = r#"Based on the diff, here is my commit:
-{"subject":"refactor: simplify logic","body":"Removed unnecessary complexity."}"#;
-        let result = try_extract_structured_commit_with_trace(content).0;
-        assert!(result.is_some());
-        let msg = result.unwrap();
-        assert!(msg.starts_with("refactor:"));
-    }
-
-    #[test]
-    fn test_try_extract_structured_commit_invalid_type() {
-        // Test JSON with invalid conventional commit type
-        let json = r#"{"subject":"invalid: not a real type","body":"Body"}"#;
-        let result = try_extract_structured_commit_with_trace(json).0;
-        assert!(result.is_none(), "Should reject invalid commit type");
-    }
-
-    #[test]
-    fn test_try_extract_structured_commit_from_ndjson() {
-        // Test extraction from NDJSON stream with result type
-        let ndjson = r#"{"type":"stream_event","data":"..."}
-{"type":"result","result":"{\"subject\":\"docs: update readme\",\"body\":\"Add usage examples.\"}"}
-"#;
-        let result = try_extract_structured_commit_with_trace(ndjson).0;
-        assert!(result.is_some(), "Should extract from NDJSON result field");
-        let msg = result.unwrap();
-        assert!(msg.starts_with("docs: update readme"));
-    }
-
-    #[test]
-    fn test_try_extract_structured_commit_from_ndjson_with_markdown_fence() {
-        // Test extraction from NDJSON stream where result contains markdown with JSON code fence
-        // This is the format used by PROMPT-LOG5.log (GLM-4.7 with markdown JSON)
-        let ndjson = r#"{"type":"stream_event","data":"..."}
-{"type":"result","result":"The changes look clean. Now I'll generate the commit message:\n\n```json\n{\n  \"subject\": \"refactor(review): pass diff directly to all review prompts\",\n  \"body\": \"Previously, review prompts would tell agents to run git commands to\\nfetch the diff. This change:\\n\\n1. Fetches the diff once at the start of build_review_prompt\\n2. Passes it directly to all review prompt functions\"\n}\n```"}
-"#;
-        let result = try_extract_structured_commit_with_trace(ndjson).0;
-        assert!(
-            result.is_some(),
-            "Should extract from NDJSON result field with markdown code fence"
-        );
-        let msg = result.unwrap();
-        assert!(msg.starts_with("refactor(review):"));
-        assert!(msg.contains("pass diff directly"));
-    }
-
-    // =========================================================================
-    // Tests for validate_commit_message - JSON artifact detection
-    // =========================================================================
-
-    #[test]
-    fn test_validate_commit_message_raw_json_structure() {
-        // Test that raw JSON commit structure is rejected
-        let raw_json = r#"{"subject":"fix: something","body":"Details"}"#;
-        let result = validate_commit_message(raw_json);
-        assert!(result.is_err(), "Raw JSON should be rejected");
-        assert!(
-            result.unwrap_err().contains("JSON"),
-            "Error should mention JSON"
-        );
-    }
-
-    #[test]
-    fn test_validate_commit_message_json_with_subject_key() {
-        // Regression test: {"subject":...} pattern should be detected as JSON artifact
-        let bad_msg = r#"{"subject":"feat: add feature","body":"Some body"}"#;
-        let result = validate_commit_message(bad_msg);
-        assert!(
-            result.is_err(),
-            "Commit message containing {{\"subject\":}} should be rejected"
-        );
     }
 
     // =========================================================================
