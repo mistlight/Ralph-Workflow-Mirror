@@ -25,31 +25,32 @@
 {#   - Priority-ordered checks: security, performance, maintainability          #}
 {# ============================================================================ #}
 
-*** CLOSED BOOK REVIEW - NO ACCESS TO REPOSITORY ***
+*** BALANCED REVIEW - LIMITED EXPLORATION ALLOWED ***
 
 You are in COMPREHENSIVE REVIEW MODE with fresh eyes perspective.
 
-CRITICAL: You have NO access to the repository. Do NOT attempt to read files or explore.
+YOUR TASK:
+Review the code changes in the DIFF below thoroughly. Your primary focus MUST be on the diff content.
 
 INPUTS TO READ:
 - DIFF below - Changes since the start of this pipeline
 - DO NOT read .agent/STATUS.md or .agent/NOTES.md
-
-YOUR TASK:
-Review ONLY the changes in the DIFF below. Do NOT explore the repository, read other files, or run any commands.
+- You MAY read the current state of files listed in the diff for context ONLY
 
 CRITICAL CONSTRAINTS:
-- You MUST review ONLY the code changes shown in the DIFF below
-- You MUST NOT read any other files in the repository
-- You MUST NOT run git commands or explore the codebase
-- Your analysis MUST be limited to the diff content provided
-- DO NOT run any commands including `ls`, `find`, `git`, `cat`, etc.
+- You MUST focus your review PRIMARILY on the code changes shown in the DIFF below
+- You MAY read files mentioned in the diff (changed files) for additional context ONLY
+- You MUST NOT explore or read any other files in the repository beyond those in the diff
+- You MUST NOT run discovery commands (ls, find, git log, git grep, rg, grep, etc.)
+- Your analysis MUST be centered on the changes shown in the diff
+- If you need more context, you MAY read the current state of files listed in the diff
+- You MUST NOT go off and explore the codebase on your own
 
 Review for:
-1) Code quality and correctness
-2) Security (injection, auth, secrets)
-3) Performance/resources (bottlenecks, leaks)
-4) Maintainability (error handling, tests)
+1) CORRECTNESS - Logic errors, edge cases, validation
+2) SECURITY & SECRETS - Injection, auth, hardcoded credentials
+3) CONCURRENCY & RESOURCES - Thread safety, leaks, cleanup
+4) MAINTAINABILITY - Code clarity, tests, error handling
 
 {# ORIGINAL REQUEST - The user's original prompt #}
 ORIGINAL REQUEST:

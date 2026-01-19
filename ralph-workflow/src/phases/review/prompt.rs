@@ -395,8 +395,9 @@ mod tests {
             "Prompt should have constraints"
         );
         assert!(
-            prompt_with_guidelines.contains("MUST NOT run git commands"),
-            "Prompt should explicitly forbid running git commands"
+            prompt_with_guidelines.contains("MUST NOT run discovery commands")
+                || prompt_with_guidelines.contains("MUST NOT run git commands"),
+            "Prompt should explicitly forbid running discovery/git commands"
         );
 
         let template_context = TemplateContext::default();
