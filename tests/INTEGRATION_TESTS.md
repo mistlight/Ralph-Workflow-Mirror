@@ -85,6 +85,183 @@ The fix is to refactor the production code, not to add more mocks.
 
 ---
 
+## Strict External Dependency Rules
+
+This section defines **non-negotiable rules** for handling external dependencies in tests.
+Violations of these rules are blocking issues that must be fixed before code can be merged.
+
+### Rule 1: All External Dependencies MUST Be Mocked
+
+Integration tests **MUST NOT** make real calls to any external system. This includes:
+
+| External Dependency | Requirement |
+|---------------------|-------------|
+| **AI/LLM APIs** | MUST be mocked. Never call OpenAI, Anthropic, or any AI service |
+| **File system** | MUST use `TempDir` for isolation. Never write to real paths |
+| **Network/HTTP** | MUST be mocked. No real HTTP calls to external services |
+| **Console/stdout** | MUST be captured via `TestPrinter` or similar. No direct `println!` |
+| **System clock** | MUST be injectable/mockable for time-dependent tests |
+| **Environment variables** | MUST be explicitly set in test, not inherited from system |
+| **Databases** | MUST use test instances or in-memory alternatives |
+| **External processes** | MUST be mocked or use controlled test fixtures |
+
+**Why this matters:**
+- Tests must be deterministic and reproducible
+- Tests must not incur costs (API calls cost money)
+- Tests must not depend on network availability
+- Tests must not pollute the developer's environment
+- Tests must run in CI without special credentials
+
+### Rule 2: No Test-Only Flags in Production Code
+
+**FORBIDDEN** patterns in production code:
+
+```rust
+// ❌ FORBIDDEN: Test-only conditional branches
+if cfg!(test) {
+    // test behavior
+} else {
+    // real behavior
+}
+
+// ❌ FORBIDDEN: Test mode flags
+fn process_data(data: &str, test_mode: bool) {
+    if test_mode {
+        // skip external calls
+    }
+}
+
+// ❌ FORBIDDEN: Environment-based test detection
+if std::env::var("RUNNING_TESTS").is_ok() {
+    return mock_response();
+}
+
+// ❌ FORBIDDEN: Feature flags solely for testing
+#[cfg(feature = "testing")]
+fn do_something() { /* test version */ }
+
+#[cfg(not(feature = "testing"))]
+fn do_something() { /* real version */ }
+```
+
+**Why this is forbidden:**
+- Production code paths must be testable as-is
+- Test-only branches add untested code paths to production
+- These patterns hide design problems (poor dependency injection)
+- They make it unclear what code actually runs in production
+
+### Rule 3: Use Dependency Injection for Testability
+
+If code needs external dependencies, **refactor to accept them as parameters**:
+
+```rust
+// ❌ BAD: Hardcoded dependency
+fn fetch_ai_response(prompt: &str) -> Result<String> {
+    let client = AnthropicClient::new();  // Hardcoded!
+    client.complete(prompt)
+}
+
+// ✅ GOOD: Dependency injection via trait
+trait AiClient {
+    fn complete(&self, prompt: &str) -> Result<String>;
+}
+
+fn fetch_ai_response(client: &dyn AiClient, prompt: &str) -> Result<String> {
+    client.complete(prompt)
+}
+
+// In tests: use MockAiClient
+// In production: use RealAnthropicClient
+```
+
+```rust
+// ❌ BAD: Direct filesystem access
+fn save_results(data: &str) -> Result<()> {
+    std::fs::write("/var/data/results.txt", data)  // Hardcoded path!
+}
+
+// ✅ GOOD: Path injection
+fn save_results(path: &Path, data: &str) -> Result<()> {
+    std::fs::write(path, data)
+}
+
+// In tests: use TempDir path
+// In production: use configured path
+```
+
+```rust
+// ❌ BAD: Direct println
+fn report_status(status: &str) {
+    println!("Status: {}", status);  // Untestable!
+}
+
+// ✅ GOOD: Writer injection
+fn report_status(writer: &mut dyn Write, status: &str) -> std::io::Result<()> {
+    writeln!(writer, "Status: {}", status)
+}
+
+// In tests: use Vec<u8> or TestPrinter
+// In production: use stdout()
+```
+
+### Rule 4: Allowed Testing Infrastructure
+
+The following patterns ARE allowed because they exist solely in test code:
+
+```rust
+// ✅ OK: Test-only helper structs (in test modules only)
+#[cfg(test)]
+mod tests {
+    struct MockClient { /* ... */ }
+}
+
+// ✅ OK: Test utilities exposed via feature flag (for integration test crate)
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    pub struct TestPrinter { /* ... */ }
+}
+
+// ✅ OK: Trait implementations only used in tests
+#[cfg(test)]
+impl AiClient for MockClient { /* ... */ }
+```
+
+The distinction is:
+- **Forbidden**: Test conditionals that change production code behavior
+- **Allowed**: Test infrastructure that only exists in test builds
+
+### Decision Tree: Making Code Testable
+
+```
+Need to test code that uses external dependency?
+    │
+    ├─► Is the dependency behind a trait/interface?
+    │       NO → Refactor to introduce trait/interface
+    │       YES ↓
+    │
+    ├─► Can the dependency be injected?
+    │       NO → Refactor to accept dependency as parameter
+    │       YES ↓
+    │
+    └─► Create mock implementation of trait for tests
+            │
+            ├─► Mock goes in test code only (not production)
+            └─► Real implementation used in production
+```
+
+### Enforcement
+
+These rules are enforced by:
+
+1. **Code review** - Reviewers must reject test-only flags in production code
+2. **CI checks** - Grep for forbidden patterns (`cfg!(test)`, `test_mode`, etc.)
+3. **Test isolation** - Tests that make real external calls will fail in CI
+
+**If you find existing code that violates these rules**, fix it as part of your change
+or file an issue to track the technical debt.
+
+---
+
 ## When to Update Integration Tests
 
 ### Valid Reasons to Update a Test
