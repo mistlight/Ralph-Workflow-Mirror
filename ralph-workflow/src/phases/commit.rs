@@ -11,20 +11,16 @@
 //! 4. Returns the generated message for use by the caller
 
 use super::commit_logging::{
-    AttemptOutcome, CommitAttemptLog, CommitLogSession, ExtractionAttempt, ValidationCheck,
+    AttemptOutcome, CommitAttemptLog, CommitLogSession, ExtractionAttempt,
 };
 use super::context::PhaseContext;
-use crate::agents::{AgentErrorKind, AgentRegistry, AgentRole};
+use crate::agents::{AgentRegistry, AgentRole};
 use crate::files::llm_output_extraction::{
-    detect_agent_errors_in_output, generate_fallback_commit_message, preprocess_raw_content,
-    try_extract_xml_commit_with_trace, validate_commit_message_with_report, CommitExtractionResult,
+    preprocess_raw_content, try_extract_xml_commit_with_trace, CommitExtractionResult,
 };
-
-#[cfg(test)]
-use crate::files::llm_output_extraction::validate_commit_message;
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
-use crate::pipeline::{run_with_fallback, PipelineRuntime};
+use crate::pipeline::PipelineRuntime;
 use crate::prompts::{
     prompt_generate_commit_message_with_diff_with_context, prompt_simplified_commit_with_context,
     prompt_xsd_retry_with_context,
@@ -152,8 +148,8 @@ impl CommitRetryStrategy {
     /// Get the maximum number of in-session retries for this strategy
     const fn max_session_retries(self) -> usize {
         match self {
-            Self::Normal => 5,     // Allow 5 retries with XSD validation feedback
-            Self::Simplified => 5, // Allow 5 retries for simplified prompt
+            Self::Normal => 10,     // Allow 10 retries with XSD validation feedback
+            Self::Simplified => 10, // Allow 10 retries for simplified prompt
         }
     }
 }
@@ -462,8 +458,12 @@ fn log_commit_attempt(
 
 /// Handle the extraction result from a commit attempt.
 ///
-/// Returns `Some(result)` if we should return early (success or hard error),
+/// Returns `Some(result)` if we should return early (success),
 /// or `None` if we should continue to the next strategy.
+///
+/// With XSD validation handling everything, we only check:
+/// - Success: Valid commit message extracted
+/// - Failure: No valid message (try next strategy)
 fn handle_commit_extraction_result(
     extraction_result: anyhow::Result<Option<CommitExtractionResult>>,
     strategy: CommitRetryStrategy,
@@ -476,59 +476,22 @@ fn handle_commit_extraction_result(
 
     match extraction_result {
         Ok(Some(extraction)) => {
-            let error_kind = extraction.error_kind();
-            if extraction.is_agent_error() {
-                let error_desc = error_kind.map_or("unknown", AgentErrorKind::description);
-
-                // Only abort for truly unrecoverable errors (DiskFull, Permanent)
-                // All other errors should try simpler prompts before giving up
-                if error_kind.is_some_and(AgentErrorKind::is_unrecoverable) {
-                    runtime.logger.error(&format!(
-                        "Unrecoverable agent error: {error_desc}. Cannot continue."
-                    ));
-                    attempt_log.set_outcome(AttemptOutcome::AgentError(format!(
-                        "Unrecoverable: {error_desc}"
-                    )));
-                    *last_extraction = Some(extraction);
-                    return Some(Err(anyhow::anyhow!(
-                        "Unrecoverable agent error: {error_desc}"
-                    )));
-                }
-
-                // For recoverable errors, try simpler prompts
-                runtime.logger.warn(&format!(
-                    "{error_desc} detected with {}. Trying smaller prompt variant.",
-                    strategy.description()
-                ));
-                attempt_log.set_outcome(AttemptOutcome::AgentError(format!(
-                    "Recoverable: {error_desc}"
-                )));
-                *last_extraction = Some(extraction);
-                None // Continue to next strategy
-            } else if extraction.is_fallback() {
-                runtime.logger.warn(&format!(
-                    "Extraction produced fallback message with {strategy}"
-                ));
-                attempt_log
-                    .set_outcome(AttemptOutcome::Fallback(extraction.clone().into_message()));
-                *last_extraction = Some(extraction);
-                None // Continue to next strategy
-            } else {
-                runtime.logger.info(&format!(
-                    "Successfully extracted commit message with {strategy}"
-                ));
-                let message = extraction.into_message();
-                attempt_log.set_outcome(AttemptOutcome::Success(message.clone()));
-                Some(Ok(CommitMessageResult {
-                    message,
-                    success: true,
-                    _log_path: log_file,
-                }))
-            }
+            // XSD validation already passed - we have a valid commit message
+            runtime.logger.info(&format!(
+                "Successfully extracted commit message with {strategy}"
+            ));
+            let message = extraction.clone().into_message();
+            attempt_log.set_outcome(AttemptOutcome::Success(message.clone()));
+            *last_extraction = Some(extraction);
+            Some(Ok(CommitMessageResult {
+                message,
+                success: true,
+                _log_path: log_file,
+            }))
         }
         Ok(None) => {
             runtime.logger.warn(&format!(
-                "No valid commit message extracted with {strategy}, will use fallback"
+                "No valid commit message extracted with {strategy}, will try next strategy"
             ));
             attempt_log.set_outcome(AttemptOutcome::ExtractionFailed(
                 "No valid commit message extracted".to_string(),
@@ -677,8 +640,8 @@ fn run_commit_attempt_with_agent(
 
         // Check if we got a valid commit message or need to retry for XSD errors
         match &extraction_result {
-            Ok(Some(extraction)) if extraction.is_success() => {
-                // Success - write log and return
+            Ok(Some(_)) => {
+                // XSD validation passed - we have a valid commit message
                 let result = handle_commit_extraction_result(
                     extraction_result,
                     strategy,
@@ -696,11 +659,8 @@ fn run_commit_attempt_with_agent(
 
                 return result;
             }
-            Ok(Some(_)) => {
-                // Not a success - continue to check for XSD errors
-            }
             _ => {
-                // Other failure - continue to check for XSD errors
+                // Extraction failed - continue to check for XSD errors for retry
             }
         };
 
@@ -773,172 +733,6 @@ fn run_commit_attempt_with_agent(
     None
 }
 
-/// Try progressive truncation recovery when `TokenExhausted` is detected.
-fn try_progressive_truncation_recovery(
-    diff: &str,
-    log_dir: &str,
-    log_file: &str,
-    runtime: &mut PipelineRuntime,
-    registry: &AgentRegistry,
-    commit_agent: &str,
-    template_context: &crate::prompts::TemplateContext,
-) -> anyhow::Result<CommitMessageResult> {
-    runtime
-        .logger
-        .warn("TokenExhausted detected: All agents failed due to token limits.");
-    runtime
-        .logger
-        .warn("Attempting progressive diff truncation...");
-
-    let truncation_stages = [
-        (50_000, "50KB"),
-        (25_000, "25KB"),
-        (10_000, "10KB"),
-        (1_000, "file-list-only"),
-    ];
-
-    for (size_kb, label) in truncation_stages {
-        runtime.logger.warn(&format!(
-            "Truncation retry: Trying {} limit ({})...",
-            label,
-            size_kb / 1024
-        ));
-
-        let truncated_diff = truncate_diff_if_large(diff, size_kb);
-        let prompt = prompt_simplified_commit_with_context(template_context, &truncated_diff);
-
-        runtime.logger.info(&format!(
-            "Truncated diff attempt ({}): prompt size {} KB",
-            label,
-            prompt.len() / 1024
-        ));
-
-        let exit_code = run_with_fallback(
-            AgentRole::Commit,
-            &format!("generate commit message (truncated {label})"),
-            &prompt,
-            log_dir,
-            runtime,
-            registry,
-            commit_agent,
-        )?;
-
-        if exit_code == 0 {
-            if let Ok(Some(extraction)) = extract_commit_message_from_logs(
-                log_dir,
-                &truncated_diff,
-                commit_agent,
-                runtime.logger,
-            ) {
-                if extraction.is_agent_error() {
-                    runtime.logger.warn(&format!(
-                        "{label} truncation still hit token limits, trying smaller size..."
-                    ));
-                    continue;
-                }
-
-                let message = extraction.into_message();
-                if !message.is_empty() {
-                    runtime.logger.info(&format!(
-                        "Successfully generated commit message with {label} truncation"
-                    ));
-                    return Ok(CommitMessageResult {
-                        message,
-                        success: true,
-                        _log_path: log_file.to_string(),
-                    });
-                }
-                break;
-            }
-        }
-    }
-
-    // All truncation stages failed - try emergency no-diff
-    try_emergency_no_diff_recovery(
-        diff,
-        log_dir,
-        log_file,
-        runtime,
-        registry,
-        commit_agent,
-        template_context,
-    )
-}
-
-/// Try further truncation recovery when already pre-truncated and still got `TokenExhausted`.
-fn try_further_truncation_recovery(
-    diff: &str,
-    log_dir: &str,
-    log_file: &str,
-    runtime: &mut PipelineRuntime,
-    registry: &AgentRegistry,
-    commit_agent: &str,
-    template_context: &crate::prompts::TemplateContext,
-) -> anyhow::Result<CommitMessageResult> {
-    runtime
-        .logger
-        .warn("Already pre-truncated but still hit token limits. Trying further truncation...");
-
-    let further_truncation_stages = [
-        (25_000, "25KB"),
-        (10_000, "10KB"),
-        (1_000, "file-list-only"),
-    ];
-
-    for (size_kb, label) in further_truncation_stages {
-        runtime.logger.warn(&format!(
-            "Further truncation: Trying {} limit ({})...",
-            label,
-            size_kb / 1024
-        ));
-
-        let truncated_diff = truncate_diff_if_large(diff, size_kb);
-        let prompt = prompt_simplified_commit_with_context(template_context, &truncated_diff);
-
-        let exit_code = run_with_fallback(
-            AgentRole::Commit,
-            &format!("generate commit message (further truncated {label})"),
-            &prompt,
-            log_dir,
-            runtime,
-            registry,
-            commit_agent,
-        )?;
-
-        if exit_code == 0 {
-            if let Ok(Some(extraction)) = extract_commit_message_from_logs(
-                log_dir,
-                &truncated_diff,
-                commit_agent,
-                runtime.logger,
-            ) {
-                if extraction.is_agent_error() {
-                    continue;
-                }
-                let message = extraction.into_message();
-                if !message.is_empty() {
-                    return Ok(CommitMessageResult {
-                        message,
-                        success: true,
-                        _log_path: log_file.to_string(),
-                    });
-                }
-                break;
-            }
-        }
-    }
-
-    runtime
-        .logger
-        .warn("All further truncation stages failed. Generating fallback from diff...");
-    let fallback = generate_fallback_commit_message(diff);
-    Ok(CommitMessageResult {
-        message: fallback,
-        success: true,
-        _log_path: log_file.to_string(),
-    })
-}
-
 /// Return the hardcoded fallback commit message as last resort.
 fn return_hardcoded_fallback(log_file: &str, runtime: &PipelineRuntime) -> CommitMessageResult {
     runtime.logger.warn("");
@@ -963,61 +757,6 @@ fn return_hardcoded_fallback(log_file: &str, runtime: &PipelineRuntime) -> Commi
         success: true,
         _log_path: log_file.to_string(),
     }
-}
-
-/// Try emergency no-diff recovery when truncation fails.
-fn try_emergency_no_diff_recovery(
-    diff: &str,
-    log_dir: &str,
-    log_file: &str,
-    runtime: &mut PipelineRuntime,
-    registry: &AgentRegistry,
-    commit_agent: &str,
-    template_context: &crate::prompts::TemplateContext,
-) -> anyhow::Result<CommitMessageResult> {
-    runtime
-        .logger
-        .warn("All truncation stages failed. Trying simplified prompt with diff...");
-    let working_diff = diff; // Use original diff for simplified prompt
-    let simplified_prompt = prompt_simplified_commit_with_context(template_context, working_diff);
-
-    let exit_code = run_with_fallback(
-        AgentRole::Commit,
-        "generate commit message (simplified)",
-        &simplified_prompt,
-        log_dir,
-        runtime,
-        registry,
-        commit_agent,
-    )?;
-
-    if exit_code == 0 {
-        if let Ok(Some(extraction)) =
-            extract_commit_message_from_logs(log_dir, working_diff, commit_agent, runtime.logger)
-        {
-            if !extraction.is_agent_error() {
-                let message = extraction.into_message();
-                if !message.is_empty() {
-                    return Ok(CommitMessageResult {
-                        message,
-                        success: true,
-                        _log_path: log_file.to_string(),
-                    });
-                }
-            }
-        }
-    }
-
-    // Emergency no-diff failed - generate fallback
-    runtime
-        .logger
-        .warn("Emergency no-diff failed. Generating fallback from diff metadata...");
-    let fallback = generate_fallback_commit_message(diff);
-    Ok(CommitMessageResult {
-        message: fallback,
-        success: true,
-        _log_path: log_file.to_string(),
-    })
 }
 
 /// Generate a commit message using the standard agent pipeline with fallback.
@@ -1107,17 +846,11 @@ pub fn generate_commit_message(
 
     // Handle fallback cases
     let fallback_ctx = CommitFallbackContext {
-        diff,
-        log_dir,
         log_file: &log_file,
-        commit_agent,
-        diff_was_pre_truncated,
-        template_context,
     };
     handle_commit_fallbacks(
         &fallback_ctx,
         runtime,
-        registry,
         &session,
         total_attempts,
         last_extraction.as_ref(),
@@ -1230,88 +963,38 @@ fn log_completion(
 
 /// Context for commit fallback handling.
 struct CommitFallbackContext<'a> {
-    diff: &'a str,
-    log_dir: &'a str,
     log_file: &'a str,
-    commit_agent: &'a str,
-    diff_was_pre_truncated: bool,
-    template_context: &'a crate::prompts::TemplateContext,
 }
 
 /// Handle fallback cases after all agents exhausted.
+///
+/// With XSD validation handling everything, the fallback logic is simple:
+/// - If we have a last extraction with a valid message, use it
+/// - Otherwise, use the hardcoded fallback
 fn handle_commit_fallbacks(
     ctx: &CommitFallbackContext<'_>,
     runtime: &mut PipelineRuntime,
-    registry: &AgentRegistry,
     session: &CommitLogSession,
     total_attempts: usize,
     last_extraction: Option<&CommitExtractionResult>,
 ) -> anyhow::Result<CommitMessageResult> {
-    // Use fallback from last extraction if available
+    // Use message from last extraction if available
+    // (XSD validation already passed if we have an extraction)
     if let Some(extraction) = last_extraction {
-        if extraction.is_agent_error() {
-            return Ok(handle_agent_error_fallback(
-                ctx.diff,
-                ctx.log_file,
-                runtime,
-                session,
-                total_attempts,
-                extraction,
-            ));
-        }
-        return Ok(handle_extraction_fallback(
-            ctx.log_file,
-            runtime,
-            session,
-            total_attempts,
-            extraction,
-        ));
-    }
-
-    // Token exhausted recovery
-    let is_token_exhausted = last_extraction
-        == Some(&CommitExtractionResult::AgentError(
-            AgentErrorKind::TokenExhausted,
-        ));
-
-    if is_token_exhausted && !ctx.diff_was_pre_truncated {
+        let message = extraction.clone().into_message();
         let _ = session.write_summary(
             total_attempts,
-            "TRUNCATION_RECOVERY: Attempting progressive truncation",
+            &format!("LAST_EXTRACTION: {}", preview_commit_message(&message)),
         );
         runtime.logger.info(&format!(
-            "Attempting truncation recovery. Logs: {}",
+            "Commit generation complete after {total_attempts} attempts. Logs: {}",
             session.run_dir().display()
         ));
-        return try_progressive_truncation_recovery(
-            ctx.diff,
-            ctx.log_dir,
-            ctx.log_file,
-            runtime,
-            registry,
-            ctx.commit_agent,
-            ctx.template_context,
-        );
-    }
-
-    if is_token_exhausted && ctx.diff_was_pre_truncated {
-        let _ = session.write_summary(
-            total_attempts,
-            "FURTHER_TRUNCATION: Already truncated, trying smaller",
-        );
-        runtime.logger.info(&format!(
-            "Attempting further truncation. Logs: {}",
-            session.run_dir().display()
-        ));
-        return try_further_truncation_recovery(
-            ctx.diff,
-            ctx.log_dir,
-            ctx.log_file,
-            runtime,
-            registry,
-            ctx.commit_agent,
-            ctx.template_context,
-        );
+        return Ok(CommitMessageResult {
+            message,
+            success: true,
+            _log_path: ctx.log_file.to_string(),
+        });
     }
 
     // Hardcoded fallback as last resort
@@ -1324,67 +1007,6 @@ fn handle_commit_fallbacks(
         session.run_dir().display()
     ));
     Ok(return_hardcoded_fallback(ctx.log_file, runtime))
-}
-
-/// Handle agent error fallback.
-fn handle_agent_error_fallback(
-    diff: &str,
-    log_file: &str,
-    runtime: &mut PipelineRuntime,
-    session: &CommitLogSession,
-    total_attempts: usize,
-    extraction: &CommitExtractionResult,
-) -> CommitMessageResult {
-    runtime.logger.warn(&format!(
-        "Agent error ({}) - generating fallback commit message from diff...",
-        extraction
-            .error_kind()
-            .map_or("unknown", AgentErrorKind::description)
-    ));
-    let fallback = generate_fallback_commit_message(diff);
-    let _ = session.write_summary(
-        total_attempts,
-        &format!(
-            "AGENT_ERROR_FALLBACK: {}",
-            preview_commit_message(&fallback)
-        ),
-    );
-    runtime.logger.info(&format!(
-        "Commit generation complete after {total_attempts} attempts. Logs: {}",
-        session.run_dir().display()
-    ));
-    CommitMessageResult {
-        message: fallback,
-        success: true,
-        _log_path: log_file.to_string(),
-    }
-}
-
-/// Handle extraction fallback (non-error).
-fn handle_extraction_fallback(
-    log_file: &str,
-    runtime: &mut PipelineRuntime,
-    session: &CommitLogSession,
-    total_attempts: usize,
-    extraction: &CommitExtractionResult,
-) -> CommitMessageResult {
-    runtime
-        .logger
-        .warn("Using fallback commit message from final attempt");
-    let message = extraction.clone().into_message();
-    let _ = session.write_summary(
-        total_attempts,
-        &format!("FALLBACK: {}", preview_commit_message(&message)),
-    );
-    runtime.logger.info(&format!(
-        "Commit generation complete after {total_attempts} attempts. Logs: {}",
-        session.run_dir().display()
-    ));
-    CommitMessageResult {
-        message,
-        success: true,
-        _log_path: log_file.to_string(),
-    }
 }
 
 /// Create a commit with an automatically generated message using the standard pipeline.
@@ -1465,143 +1087,6 @@ pub fn commit_with_generated_message(
     }
 }
 
-/// Extract a commit message from the agent log files.
-///
-/// This function reads the most recent agent log file and extracts
-/// the commit message using the standard LLM output extraction logic.
-///
-/// # Arguments
-///
-/// * `log_dir` - Directory containing the agent log files
-/// * `diff` - The original diff (for context/error messages)
-/// * `agent_cmd` - The agent command (for format hint detection)
-/// * `logger` - Logger for diagnostic output
-///
-/// # Returns
-///
-/// * `Ok(CommitExtractionResult)` - A result indicating how the message was obtained:
-///   - `Extracted` - Successfully extracted from structured output
-///   - `Salvaged` - Recovered from mixed output via salvage mechanism
-///   - `Fallback` - Using deterministic fallback (caller should consider re-prompt)
-/// * `Err(e)` - An error occurred during extraction (e.g., file I/O error)
-fn extract_commit_message_from_logs(
-    log_dir: &str,
-    _diff: &str,
-    _agent_cmd: &str,
-    logger: &Logger,
-) -> anyhow::Result<Option<CommitExtractionResult>> {
-    // Find the most recent log file
-    let log_path = find_most_recent_log(log_dir)?;
-
-    let Some(log_file) = log_path else {
-        logger.warn("No log files found in commit generation directory");
-        return Ok(None);
-    };
-
-    logger.info(&format!(
-        "Reading commit message from log: {}",
-        log_file.display()
-    ));
-
-    // Read the log file
-    let mut content = String::new();
-    let mut file = File::open(&log_file)?;
-    file.read_to_string(&mut content)?;
-
-    if content.trim().is_empty() {
-        logger.warn("Log file is empty");
-        return Ok(None);
-    }
-
-    // PRE-PROCESS: Apply aggressive escape sequence unescaping BEFORE any other processing
-    content = preprocess_raw_content(&content);
-
-    // FIRST: Detect agent errors in the output stream BEFORE attempting extraction
-    if let Some(error_kind) = detect_agent_errors_in_output(&content) {
-        logger.warn(&format!(
-            "Detected agent error in output: {}. This should trigger fallback.",
-            error_kind.description()
-        ));
-        return Ok(Some(CommitExtractionResult::AgentError(error_kind)));
-    }
-
-    // XML-only extraction with XSD validation
-    // The XML extraction includes flexible parsing with 4 strategies and XSD validation
-    let (xml_result, xml_detail) = try_extract_xml_commit_with_trace(&content);
-    logger.info(&format!("XML extraction: {xml_detail}"));
-
-    if let Some(message) = xml_result {
-        logger.info("Successfully extracted commit message from XML format");
-
-        // Validate the extracted message
-        let report = validate_commit_message_with_report(&message);
-        if report.all_passed() {
-            return Ok(Some(CommitExtractionResult::Extracted(message)));
-        }
-
-        // XSD validation already happened inside try_extract_xml_commit_with_trace
-        // If we reach here with a message, it means XSD passed but commit validation failed
-        logger.warn(&format!(
-            "XML extraction succeeded but validation failed: {}",
-            report
-                .format_failures()
-                .as_deref()
-                .unwrap_or("unknown error")
-        ));
-    }
-
-    logger.info("XML extraction failed - returning None to trigger fallback");
-
-    // Return None to trigger next strategy/agent fallback
-    Ok(None)
-}
-
-/// Validate and record extraction result.
-///
-/// Returns `Some(CommitExtractionResult::Extracted)` if valid, `None` if validation failed.
-fn validate_and_record_extraction(
-    message: &str,
-    method: &'static str,
-    detail: String,
-    logger: &Logger,
-    attempt_log: &mut CommitAttemptLog,
-) -> Option<CommitExtractionResult> {
-    let report = validate_commit_message_with_report(message);
-
-    // Record validation checks
-    let validation_checks: Vec<ValidationCheck> = report
-        .checks
-        .iter()
-        .map(|c| {
-            if c.passed {
-                ValidationCheck::pass(c.name)
-            } else {
-                ValidationCheck::fail(c.name, c.error.clone().unwrap_or_default())
-            }
-        })
-        .collect();
-    attempt_log.set_validation_checks(validation_checks);
-
-    if report.all_passed() {
-        attempt_log.add_extraction_attempt(ExtractionAttempt::success(method, detail));
-        Some(CommitExtractionResult::Extracted(message.to_string()))
-    } else {
-        let failure_detail = format!(
-            "Extracted but validation failed: {}",
-            report.format_failures().unwrap_or_default()
-        );
-        attempt_log.add_extraction_attempt(ExtractionAttempt::failure(method, failure_detail));
-        logger.warn(&format!(
-            "{method} extraction succeeded but validation failed: {}",
-            report
-                .format_failures()
-                .as_deref()
-                .unwrap_or("unknown error")
-        ));
-        None
-    }
-}
-
 /// Import types needed for parsing trace helpers.
 use crate::phases::commit_logging::{ParsingTraceLog, ParsingTraceStep};
 
@@ -1617,7 +1102,7 @@ fn write_parsing_trace_with_logging(
 }
 
 /// Try XML extraction and record in parsing trace.
-/// Returns `Some(result)` if extraction succeeded, `None` otherwise.
+/// Returns `Some(result)` if extraction succeeded (XSD validation passed), `None` otherwise.
 fn try_xml_extraction_traced(
     content: &str,
     step_number: &mut usize,
@@ -1639,28 +1124,26 @@ fn try_xml_extraction_traced(
     *step_number += 1;
 
     if let Some(message) = xml_result {
-        if let Some(result) =
-            validate_and_record_extraction(&message, "XML", xml_detail, logger, attempt_log)
-        {
-            parsing_trace.set_final_message(&message);
-            write_parsing_trace_with_logging(parsing_trace, log_dir, logger);
-            return Some(result);
-        }
-    } else {
-        attempt_log.add_extraction_attempt(ExtractionAttempt::failure("XML", xml_detail));
+        // XSD validation already passed inside try_extract_xml_commit_with_trace
+        attempt_log.add_extraction_attempt(ExtractionAttempt::success("XML", xml_detail));
+        parsing_trace.set_final_message(&message);
+        write_parsing_trace_with_logging(parsing_trace, log_dir, logger);
+        return Some(CommitExtractionResult::new(message));
     }
+
+    // XML extraction or XSD validation failed
+    attempt_log.add_extraction_attempt(ExtractionAttempt::failure("XML", xml_detail));
     logger.info("  ✗ XML extraction failed");
     None
 }
 
 /// Extract a commit message from agent logs with full tracing for diagnostics.
 ///
-/// Similar to `extract_commit_message_from_logs` but records all extraction
-/// attempts in the provided `CommitAttemptLog` for debugging.
+/// Records all extraction attempts in the provided `CommitAttemptLog` for debugging.
 ///
 /// This function also creates and writes a `ParsingTraceLog` that captures
 /// detailed information about each extraction step, including the exact
-/// content being processed and validation results.
+/// content being processed and XSD validation results.
 fn extract_commit_message_from_logs_with_trace(
     log_dir: &str,
     _diff: &str,
@@ -1682,30 +1165,6 @@ fn extract_commit_message_from_logs_with_trace(
 
     // Set raw output in parsing trace
     parsing_trace.set_raw_output(&content);
-
-    // Detect agent errors in the output stream
-    if let Some(error_kind) = detect_agent_errors_in_output(&content) {
-        logger.warn(&format!(
-            "Detected agent error in output: {}. This should trigger fallback.",
-            error_kind.description()
-        ));
-        attempt_log.add_extraction_attempt(ExtractionAttempt::failure(
-            "ErrorDetection",
-            format!("Agent error detected: {}", error_kind.description()),
-        ));
-
-        // Add to parsing trace
-        parsing_trace.add_step(
-            ParsingTraceStep::new(1, "Agent Error Detection")
-                .with_input(&content[..content.len().min(1000)])
-                .with_success(false)
-                .with_details(&format!("Agent error: {}", error_kind.description())),
-        );
-        parsing_trace.set_final_message("[AGENT ERROR]");
-        write_parsing_trace_with_logging(&parsing_trace, log_dir, logger);
-
-        return Ok(Some(CommitExtractionResult::AgentError(error_kind)));
-    }
 
     let mut step_number = 1;
 
@@ -1971,9 +1430,12 @@ mod tests {
 
     #[test]
     fn test_hardcoded_fallback_commit() {
-        // The hardcoded fallback should always be valid
-        let result = validate_commit_message(HARDCODED_FALLBACK_COMMIT);
-        assert!(result.is_ok(), "Hardcoded fallback must pass validation");
+        // The hardcoded fallback should always be a valid conventional commit
+        use crate::files::llm_output_extraction::is_conventional_commit_subject;
+        assert!(
+            is_conventional_commit_subject(HARDCODED_FALLBACK_COMMIT),
+            "Hardcoded fallback must be a valid conventional commit"
+        );
         assert!(!HARDCODED_FALLBACK_COMMIT.is_empty());
         assert!(HARDCODED_FALLBACK_COMMIT.len() >= 5);
     }

@@ -361,6 +361,7 @@ pub struct ValidationCheck {
 
 impl ValidationCheck {
     /// Create a passing validation check.
+    #[cfg(test)]
     pub const fn pass(name: &'static str) -> Self {
         Self {
             name,
@@ -370,6 +371,7 @@ impl ValidationCheck {
     }
 
     /// Create a failing validation check.
+    #[cfg(test)]
     pub const fn fail(name: &'static str, error: String) -> Self {
         Self {
             name,
@@ -384,10 +386,6 @@ impl ValidationCheck {
 pub enum AttemptOutcome {
     /// Successfully extracted a valid commit message
     Success(String),
-    /// Extraction produced a fallback message (may trigger re-prompt)
-    Fallback(String),
-    /// Agent error detected (should trigger fallback)
-    AgentError(String),
     /// XSD validation failed with specific error message
     XsdValidationFailed(String),
     /// Extraction failed entirely
@@ -398,8 +396,6 @@ impl std::fmt::Display for AttemptOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Success(msg) => write!(f, "SUCCESS: {}", preview_message(msg)),
-            Self::Fallback(msg) => write!(f, "FALLBACK: {}", preview_message(msg)),
-            Self::AgentError(err) => write!(f, "AGENT_ERROR: {err}"),
             Self::XsdValidationFailed(err) => write!(f, "XSD_VALIDATION_FAILED: {err}"),
             Self::ExtractionFailed(err) => write!(f, "EXTRACTION_FAILED: {err}"),
         }
@@ -498,6 +494,7 @@ impl CommitAttemptLog {
     }
 
     /// Record validation check results.
+    #[cfg(test)]
     pub fn set_validation_checks(&mut self, checks: Vec<ValidationCheck>) {
         self.validation_checks = checks;
     }
@@ -860,8 +857,8 @@ mod tests {
         let success = AttemptOutcome::Success("feat: add feature".to_string());
         assert!(format!("{success}").contains("SUCCESS"));
 
-        let error = AttemptOutcome::AgentError("token limit exceeded".to_string());
-        assert!(format!("{error}").contains("AGENT_ERROR"));
+        let error = AttemptOutcome::ExtractionFailed("extraction failed".to_string());
+        assert!(format!("{error}").contains("EXTRACTION_FAILED"));
     }
 
     #[test]
