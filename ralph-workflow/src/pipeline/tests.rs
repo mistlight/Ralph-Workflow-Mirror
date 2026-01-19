@@ -518,6 +518,8 @@ exit 1
         logger: &logger,
         colors: &colors,
         config: &config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
     };
 
     // Run with output validator

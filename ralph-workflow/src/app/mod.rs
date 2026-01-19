@@ -477,7 +477,6 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
         run_initial_rebase(
-            &ctx.args,
             &ctx.config,
             &ctx.template_context,
             &ctx.logger,
@@ -496,7 +495,6 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     // Run post-review rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
         run_post_review_rebase(
-            &ctx.args,
             &ctx.config,
             &ctx.template_context,
             &ctx.logger,
@@ -984,18 +982,17 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 /// # Rebase Control
 ///
 /// Rebase is only performed when both conditions are met:
-/// - `auto_rebase` config is enabled (default: true)
-/// - `--skip-rebase` CLI flag is not set
+/// - `--with-rebase` CLI flag is set (caller already checked this)
+/// - `auto_rebase` config is enabled (checked here)
 fn run_initial_rebase(
-    args: &Args,
     config: &crate::config::Config,
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
-    // Check if rebase is disabled via config or CLI flag
-    if !config.features.auto_rebase || args.rebase_flags.skip_rebase {
-        logger.info("Rebase disabled via config or --skip-rebase flag");
+    // Check if rebase is enabled via config
+    if !config.features.auto_rebase {
+        logger.info("Rebase disabled via config (auto_rebase=false)");
         return Ok(());
     }
 
@@ -1078,18 +1075,17 @@ fn run_initial_rebase(
 /// # Rebase Control
 ///
 /// Rebase is only performed when both conditions are met:
-/// - `auto_rebase` config is enabled (default: true)
-/// - `--skip-rebase` CLI flag is not set
+/// - `--with-rebase` CLI flag is set (caller already checked this)
+/// - `auto_rebase` config is enabled (checked here)
 fn run_post_review_rebase(
-    args: &Args,
     config: &crate::config::Config,
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
-    // Check if rebase is disabled via config or CLI flag
-    if !config.features.auto_rebase || args.rebase_flags.skip_rebase {
-        logger.info("Rebase disabled via config or --skip-rebase flag");
+    // Check if rebase is enabled via config
+    if !config.features.auto_rebase {
+        logger.info("Rebase disabled via config (auto_rebase=false)");
         return Ok(());
     }
 
