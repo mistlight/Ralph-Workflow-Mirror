@@ -9,6 +9,16 @@
 //! require the commit agent to run and cannot be properly tested without the
 //! AgentExecutor trait infrastructure. These tests focus on the observable
 //! behavior of commit creation.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (commit creation, commit messages)
+//! - Uses `TempDir` for filesystem isolation
+//! - Tests are deterministic and black-box (test commit as a user would experience it)
 
 use predicates::prelude::*;
 use tempfile::TempDir;

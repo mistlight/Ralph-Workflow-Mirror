@@ -59,6 +59,26 @@ cargo build --release
 - Add property-based tests when invariants matter
 - Integration tests live in the `tests/` directory
 
+#### Integration Tests
+
+**CRITICAL:** All integration tests MUST follow the integration test style guide.
+
+- **Read first:** Before modifying, adding, or debugging integration tests, read **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**
+- **This is mandatory:** The guide defines non-negotiable rules for behavior-based testing, mocking strategy, and when to update tests
+- **Key principles:**
+  - Test **observable behavior**, not implementation details
+  - Mock only at **architectural boundaries** (filesystem, network, external APIs)
+  - NEVER use `cfg!(test)` branches or test-only flags in production code
+  - When a test fails, fix the implementation unless the expected behavior changed intentionally
+
+The integration test guide is also referenced from:
+- CLAUDE.md - AI agent instructions
+- AGENTS.md - Agent-specific guidelines
+- tests/integration_tests/main.rs - Main test entry point
+- tests/integration_tests/common/mod.rs - Common test utilities
+
+For help getting started with integration tests, see the template at `tests/integration_tests/_TEMPLATE.rs`.
+
 ## Pull Request Process
 
 ### Before Submitting
