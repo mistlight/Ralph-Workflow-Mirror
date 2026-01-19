@@ -144,7 +144,6 @@ impl RebaseCheckpoint {
     }
 
     /// Check if all conflicts are resolved.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn all_conflicts_resolved(&self) -> bool {
         self.conflicted_files
             .iter()
@@ -152,7 +151,6 @@ impl RebaseCheckpoint {
     }
 
     /// Get the number of unresolved conflicts.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn unresolved_conflict_count(&self) -> usize {
         self.conflicted_files
             .iter()

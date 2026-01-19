@@ -629,6 +629,138 @@ fn extract_conflict_files(output: &str) -> Vec<String> {
     files
 }
 
+/// Type of concurrent Git operation detected.
+///
+/// Represents the various Git operations that may be in progress
+/// and would block a rebase from starting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConcurrentOperation {
+    /// A rebase is already in progress.
+    Rebase,
+    /// A merge is in progress.
+    Merge,
+    /// A cherry-pick is in progress.
+    CherryPick,
+    /// A revert is in progress.
+    Revert,
+    /// A bisect is in progress.
+    Bisect,
+    /// Another Git process is holding locks.
+    OtherGitProcess,
+    /// Unknown concurrent operation.
+    Unknown(String),
+}
+
+impl ConcurrentOperation {
+    /// Returns a human-readable description of the operation.
+    pub fn description(&self) -> String {
+        match self {
+            ConcurrentOperation::Rebase => "rebase".to_string(),
+            ConcurrentOperation::Merge => "merge".to_string(),
+            ConcurrentOperation::CherryPick => "cherry-pick".to_string(),
+            ConcurrentOperation::Revert => "revert".to_string(),
+            ConcurrentOperation::Bisect => "bisect".to_string(),
+            ConcurrentOperation::OtherGitProcess => "another Git process".to_string(),
+            ConcurrentOperation::Unknown(s) => format!("unknown operation: {s}"),
+        }
+    }
+}
+
+/// Detect concurrent Git operations that would block a rebase.
+///
+/// This function performs a comprehensive check for any in-progress Git
+/// operations that would prevent a rebase from starting. It checks for:
+/// - Rebase in progress (`.git/rebase-apply` or `.git/rebase-merge`)
+/// - Merge in progress (`.git/MERGE_HEAD`)
+/// - Cherry-pick in progress (`.git/CHERRY_PICK_HEAD`)
+/// - Revert in progress (`.git/REVERT_HEAD`)
+/// - Bisect in progress (`.git/BISECT_*`)
+/// - Lock files held by other processes
+///
+/// # Returns
+///
+/// Returns `Ok(None)` if no concurrent operations are detected,
+/// or `Ok(Some(operation))` with the type of operation detected.
+/// Returns an error if unable to check the repository state.
+///
+/// # Example
+///
+/// ```no_run
+/// use ralph_workflow::git_helpers::rebase::detect_concurrent_git_operations;
+///
+/// match detect_concurrent_git_operations() {
+///     Ok(None) => println!("No concurrent operations detected"),
+///     Ok(Some(op)) => println!("Concurrent operation detected: {}", op.description()),
+///     Err(e) => eprintln!("Error checking: {e}"),
+/// }
+/// ```
+pub fn detect_concurrent_git_operations() -> io::Result<Option<ConcurrentOperation>> {
+    use std::fs;
+
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    let git_dir = repo.path();
+
+    // Check for rebase in progress (multiple possible state directories)
+    let rebase_merge = git_dir.join("rebase-merge");
+    let rebase_apply = git_dir.join("rebase-apply");
+    if rebase_merge.exists() || rebase_apply.exists() {
+        return Ok(Some(ConcurrentOperation::Rebase));
+    }
+
+    // Check for merge in progress
+    let merge_head = git_dir.join("MERGE_HEAD");
+    if merge_head.exists() {
+        return Ok(Some(ConcurrentOperation::Merge));
+    }
+
+    // Check for cherry-pick in progress
+    let cherry_pick_head = git_dir.join("CHERRY_PICK_HEAD");
+    if cherry_pick_head.exists() {
+        return Ok(Some(ConcurrentOperation::CherryPick));
+    }
+
+    // Check for revert in progress
+    let revert_head = git_dir.join("REVERT_HEAD");
+    if revert_head.exists() {
+        return Ok(Some(ConcurrentOperation::Revert));
+    }
+
+    // Check for bisect in progress (multiple possible state files)
+    let bisect_log = git_dir.join("BISECT_LOG");
+    let bisect_start = git_dir.join("BISECT_START");
+    let bisect_names = git_dir.join("BISECT_NAMES");
+    if bisect_log.exists() || bisect_start.exists() || bisect_names.exists() {
+        return Ok(Some(ConcurrentOperation::Bisect));
+    }
+
+    // Check for lock files that might indicate concurrent operations
+    let index_lock = git_dir.join("index.lock");
+    let packed_refs_lock = git_dir.join("packed-refs.lock");
+    let head_lock = git_dir.join("HEAD.lock");
+    if index_lock.exists() || packed_refs_lock.exists() || head_lock.exists() {
+        // Lock files might be stale, so we'll report as "other Git process"
+        // The caller can decide whether to wait or clean up
+        return Ok(Some(ConcurrentOperation::OtherGitProcess));
+    }
+
+    // Check for any other state files we might have missed
+    if let Ok(entries) = fs::read_dir(git_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            // Look for other state patterns
+            if name_str.contains("REBASE")
+                || name_str.contains("MERGE")
+                || name_str.contains("CHERRY")
+            {
+                return Ok(Some(ConcurrentOperation::Unknown(name_str.to_string())));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 /// Check if a rebase is currently in progress using Git CLI.
 ///
 /// This is a fallback function that uses Git CLI to detect rebase state
@@ -655,64 +787,227 @@ pub fn rebase_in_progress_cli() -> io::Result<bool> {
     }
 }
 
+/// Result of cleaning up stale rebase state.
+///
+/// Provides information about what was cleaned up during the operation.
+#[derive(Debug, Clone, Default)]
+pub struct CleanupResult {
+    /// List of state files that were cleaned up
+    pub cleaned_paths: Vec<String>,
+    /// Whether any lock files were removed
+    pub locks_removed: bool,
+}
+
+impl CleanupResult {
+    /// Returns true if any cleanup was performed.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn has_cleanup(&self) -> bool {
+        !self.cleaned_paths.is_empty() || self.locks_removed
+    }
+
+    /// Returns the number of items cleaned up.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn count(&self) -> usize {
+        self.cleaned_paths.len() + if self.locks_removed { 1 } else { 0 }
+    }
+}
+
 /// Clean up stale rebase state files.
 ///
 /// This function attempts to clean up stale rebase state that may be
-/// left over from interrupted operations. It's used as a recovery
-/// mechanism for concurrent operation detection.
+/// left over from interrupted operations. It validates state before
+/// removal and reports what was cleaned up.
+///
+/// This is a recovery mechanism for concurrent operation detection and
+/// for cleaning up after interrupted rebase operations.
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` if cleanup succeeded or no cleanup was needed,
-/// or an error if cleanup failed.
-#[cfg(any(test, feature = "test-utils"))]
-pub fn cleanup_stale_rebase_state() -> io::Result<()> {
+/// Returns `Ok(CleanupResult)` with details of what was cleaned up,
+/// or an error if cleanup failed catastrophically.
+pub fn cleanup_stale_rebase_state() -> io::Result<CleanupResult> {
     use std::fs;
 
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
     let git_dir = repo.path();
 
+    let mut result = CleanupResult::default();
+
     // List of possible stale rebase state files/directories
     let stale_paths = [
-        "rebase-apply",
-        "rebase-merge",
-        "MERGE_HEAD",
-        "MERGE_MSG",
-        "CHERRY_PICK_HEAD",
-        "REVERT_HEAD",
-        "COMMIT_EDITMSG",
+        ("rebase-apply", "rebase-apply directory"),
+        ("rebase-merge", "rebase-merge directory"),
+        ("MERGE_HEAD", "merge state"),
+        ("MERGE_MSG", "merge message"),
+        ("CHERRY_PICK_HEAD", "cherry-pick state"),
+        ("REVERT_HEAD", "revert state"),
+        ("COMMIT_EDITMSG", "commit message"),
     ];
 
-    let mut cleaned = false;
-
-    for path in &stale_paths {
-        let full_path = git_dir.join(path);
+    for (path_name, description) in &stale_paths {
+        let full_path = git_dir.join(path_name);
         if full_path.exists() {
-            // Try to remove the stale state
-            if full_path.is_dir() {
-                if fs::remove_dir_all(&full_path).is_ok() {
-                    cleaned = true;
+            // Try to validate the state before removing
+            let is_valid = validate_state_file(&full_path);
+            if !is_valid.unwrap_or(true) {
+                // State is invalid or corrupted, safe to remove
+                let removed = if full_path.is_dir() {
+                    fs::remove_dir_all(&full_path)
+                        .map(|_| true)
+                        .unwrap_or(false)
+                } else {
+                    fs::remove_file(&full_path).map(|_| true).unwrap_or(false)
+                };
+
+                if removed {
+                    result
+                        .cleaned_paths
+                        .push(format!("{path_name} ({description})"));
                 }
-            } else if fs::remove_file(&full_path).is_ok() {
-                cleaned = true;
             }
         }
     }
 
-    // Also clean up index.lock if it exists and is stale
-    let index_lock = git_dir.join("index.lock");
-    if index_lock.exists() {
-        // Try to remove stale lock
-        let _ = fs::remove_file(&index_lock);
-        cleaned = true;
+    // Clean up lock files if they exist
+    let lock_files = ["index.lock", "packed-refs.lock", "HEAD.lock"];
+    for lock_file in &lock_files {
+        let lock_path = git_dir.join(lock_file);
+        if lock_path.exists() {
+            // Lock files are generally safe to remove if stale
+            if fs::remove_file(&lock_path).is_ok() {
+                result.locks_removed = true;
+                result
+                    .cleaned_paths
+                    .push(format!("{lock_file} (lock file)"));
+            }
+        }
     }
 
-    if cleaned {
-        // Log the cleanup
-        eprintln!("Cleaned up stale rebase state files");
+    Ok(result)
+}
+
+// Validate a Git state file for corruption.
+///
+/// Checks if a state file is valid before attempting to remove it.
+/// This prevents accidental removal of valid in-progress operations.
+///
+/// # Arguments
+///
+/// * `path` - Path to the state file to validate
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if the state appears valid, `Ok(false)` if invalid,
+/// or an error if validation failed.
+fn validate_state_file(path: &Path) -> io::Result<bool> {
+    use std::fs;
+
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    // For directories, check if they contain required files
+    if path.is_dir() {
+        // A valid rebase directory should have at least some files
+        let entries = fs::read_dir(path)?;
+        let has_content = entries.count() > 0;
+        return Ok(has_content);
+    }
+
+    // For files, check if they're readable and non-empty
+    if path.is_file() {
+        let metadata = fs::metadata(path)?;
+        if metadata.len() == 0 {
+            // Empty state file is invalid
+            return Ok(false);
+        }
+        // Try to read a small amount to verify file integrity
+        let _ = fs::read(path)?;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+/// Validate the overall Git repository state for corruption.
+///
+/// Performs comprehensive checks on the repository to detect
+/// corrupted state files, missing objects, or other integrity issues.
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the repository state appears valid,
+/// or an error describing the validation failure.
+pub fn validate_git_state() -> io::Result<()> {
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+
+    // Check if the repository head is valid
+    let _ = repo.head().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Repository HEAD is invalid: {e}"),
+        )
+    })?;
+
+    // Try to access the index to verify it's not corrupted
+    let _ = repo.index().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Repository index is corrupted: {e}"),
+        )
+    })?;
+
+    // Check for object database integrity by trying to access HEAD
+    if let Ok(head) = repo.head() {
+        if let Ok(commit) = head.peel_to_commit() {
+            // Verify the commit tree is accessible
+            let _ = commit.tree().map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Object database corruption: {e}"),
+                )
+            })?;
+        }
     }
 
     Ok(())
+}
+
+/// Restore repository state from reflog.
+///
+/// This is a fallback recovery mechanism that attempts to restore
+/// the repository to a previous state using the reflog.
+///
+/// # Arguments
+///
+/// * `ref_name` - The reference to restore (e.g., "HEAD", "refs/heads/main")
+/// * `steps_back` - Number of steps back in the reflog to go
+///
+/// # Returns
+///
+/// Returns `Ok(())` if restore succeeded, or an error if it failed.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn restore_from_reflog(ref_name: &str, steps_back: usize) -> io::Result<()> {
+    use std::process::Command;
+
+    // Use Git CLI to reset to the reflog entry
+    let refspec = format!("{ref_name}@{{{steps_back}}}");
+    let output = Command::new("git")
+        .args(["reset", "--hard", &refspec])
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => Ok(()),
+        Ok(result) => {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            Err(io::Error::other(format!(
+                "Failed to restore from reflog: {stderr}",
+            )))
+        }
+        Err(e) => Err(io::Error::other(format!(
+            "Failed to execute git reset: {e}"
+        ))),
+    }
 }
 
 /// Detect dirty working tree using Git CLI.

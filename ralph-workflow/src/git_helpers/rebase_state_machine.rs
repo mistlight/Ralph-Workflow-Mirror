@@ -6,13 +6,9 @@
 
 #![deny(unsafe_code)]
 
-use std::io;
-
-#[cfg(any(test, feature = "test-utils"))]
 use std::fs;
-#[cfg(any(test, feature = "test-utils"))]
+use std::io;
 use std::io::Write;
-#[cfg(any(test, feature = "test-utils"))]
 use std::path::Path;
 
 use super::rebase_checkpoint::{
@@ -24,18 +20,15 @@ use super::rebase_checkpoint::{
 const DEFAULT_MAX_RECOVERY_ATTEMPTS: u32 = 3;
 
 /// Rebase lock file name.
-#[cfg(any(test, feature = "test-utils"))]
 const REBASE_LOCK_FILE: &str = "rebase.lock";
 
 /// Default lock timeout in seconds (30 minutes).
-#[cfg(any(test, feature = "test-utils"))]
 const DEFAULT_LOCK_TIMEOUT_SECONDS: u64 = 1800;
 
 /// Get the rebase lock file path.
 ///
 /// The lock is stored in `.agent/rebase.lock`
 /// relative to the current working directory.
-#[cfg(any(test, feature = "test-utils"))]
 fn rebase_lock_path() -> String {
     format!(".agent/{REBASE_LOCK_FILE}")
 }
@@ -162,13 +155,11 @@ impl RebaseStateMachine {
     /// Check if all conflicts have been resolved.
     ///
     /// Returns `true` if all conflicted files have been marked as resolved.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn all_conflicts_resolved(&self) -> bool {
         self.checkpoint.all_conflicts_resolved()
     }
 
     /// Get the current checkpoint.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn checkpoint(&self) -> &RebaseCheckpoint {
         &self.checkpoint
     }
@@ -184,7 +175,6 @@ impl RebaseStateMachine {
     }
 
     /// Get the number of unresolved conflicts.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn unresolved_conflict_count(&self) -> usize {
         self.checkpoint.unresolved_conflict_count()
     }
@@ -195,6 +185,10 @@ impl RebaseStateMachine {
     }
 
     /// Force abort and save the aborted state.
+    ///
+    /// This method consumes the state machine and saves the aborted state.
+    /// It's primarily used in tests or for explicit abort scenarios where
+    /// you own the state machine.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn abort(mut self) -> io::Result<()> {
         self.checkpoint = self
@@ -222,13 +216,11 @@ pub enum RecoveryAction {
 /// RAII-style guard for rebase lock.
 ///
 /// Automatically releases the lock when dropped.
-#[cfg(any(test, feature = "test-utils"))]
 pub struct RebaseLock {
     /// Whether we own the lock
     owns_lock: bool,
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl Drop for RebaseLock {
     fn drop(&mut self) {
         if self.owns_lock {
@@ -237,7 +229,6 @@ impl Drop for RebaseLock {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl RebaseLock {
     /// Create a new lock guard that owns the lock.
     pub fn new() -> io::Result<Self> {
@@ -249,6 +240,7 @@ impl RebaseLock {
     ///
     /// This is useful when transferring ownership.
     #[must_use]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn leak(mut self) -> bool {
         let owned = self.owns_lock;
         self.owns_lock = false;
@@ -266,7 +258,6 @@ impl RebaseLock {
 /// Returns an error if:
 /// - The lock file exists and is not stale
 /// - The lock file cannot be created
-#[cfg(any(test, feature = "test-utils"))]
 pub fn acquire_rebase_lock() -> io::Result<()> {
     let lock_path = rebase_lock_path();
     let path = Path::new(&lock_path);
@@ -308,7 +299,6 @@ pub fn acquire_rebase_lock() -> io::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the lock file exists but cannot be removed.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn release_rebase_lock() -> io::Result<()> {
     let lock_path = rebase_lock_path();
     let path = Path::new(&lock_path);
@@ -327,7 +317,6 @@ pub fn release_rebase_lock() -> io::Result<()> {
 /// # Returns
 ///
 /// Returns `true` if the lock is stale, `false` otherwise.
-#[cfg(any(test, feature = "test-utils"))]
 fn is_lock_stale() -> io::Result<bool> {
     let lock_path = rebase_lock_path();
     let path = Path::new(&lock_path);

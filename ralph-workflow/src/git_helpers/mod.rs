@@ -36,14 +36,22 @@ pub mod test_trait;
 pub use branch::{get_default_branch, is_main_or_master_branch};
 pub use hooks::uninstall_hooks;
 pub use rebase::{
-    abort_rebase, continue_rebase, get_conflict_markers_for_file, get_conflicted_files,
-    rebase_onto, RebaseErrorKind, RebaseResult,
+    abort_rebase, cleanup_stale_rebase_state, continue_rebase, detect_concurrent_git_operations,
+    get_conflict_markers_for_file, get_conflicted_files, rebase_onto, validate_git_state,
+    RebaseErrorKind, RebaseResult,
 };
 
+// Types that are part of the public API but not used in binary
 #[cfg(any(test, feature = "test-utils"))]
-pub use rebase::{cleanup_stale_rebase_state, is_dirty_tree_cli, rebase_in_progress_cli};
+pub use rebase::{CleanupResult, ConcurrentOperation};
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase::restore_from_reflog;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase::{is_dirty_tree_cli, rebase_in_progress_cli};
 pub use rebase_checkpoint::RebasePhase;
-pub use rebase_state_machine::RebaseStateMachine;
+pub use rebase_state_machine::{RebaseLock, RebaseStateMachine};
 pub use repo::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
     validate_and_truncate_diff, CommitResultFallback,

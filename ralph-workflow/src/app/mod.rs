@@ -1528,7 +1528,7 @@ fn run_rebase_with_state_machine(
     config: &crate::config::Config,
     template_context: &TemplateContext,
 ) -> anyhow::Result<RebaseResult> {
-    use crate::git_helpers::RebasePhase;
+    use crate::git_helpers::{detect_concurrent_git_operations, RebaseLock, RebasePhase};
 
     let upstream_branch = state_machine.upstream_branch().to_string();
     logger.info(&format!(
@@ -1540,6 +1540,37 @@ fn run_rebase_with_state_machine(
 
     // Transition to pre-rebase check
     state_machine.transition_to(RebasePhase::PreRebaseCheck)?;
+
+    // Log current checkpoint state for debugging
+    let checkpoint = state_machine.checkpoint();
+    logger.info(&format!(
+        "Rebase checkpoint: upstream={}, phase={:?}, error_count={}",
+        checkpoint.upstream_branch, checkpoint.phase, checkpoint.error_count
+    ));
+
+    // Acquire rebase lock to prevent concurrent rebases
+    let _lock =
+        RebaseLock::new().map_err(|e| anyhow::anyhow!("Failed to acquire rebase lock: {e}"))?;
+
+    // Validate Git repository state before starting rebase
+    if let Err(e) = crate::git_helpers::validate_git_state() {
+        logger.warn(&format!("Git state validation failed: {e}"));
+        // Try to clean up any stale state that might be causing issues
+        let _ = crate::git_helpers::cleanup_stale_rebase_state();
+    }
+
+    // Check for concurrent Git operations that would block rebase
+    if let Ok(Some(operation)) = detect_concurrent_git_operations() {
+        let operation_desc = operation.description();
+        logger.warn(&format!(
+            "Cannot start rebase: {operation_desc} already in progress"
+        ));
+        return Ok(RebaseResult::Failed(
+            crate::git_helpers::RebaseErrorKind::ConcurrentOperation {
+                operation: operation_desc,
+            },
+        ));
+    }
 
     // Perform the rebase operation
     state_machine.transition_to(RebasePhase::RebaseInProgress)?;
@@ -1562,7 +1593,7 @@ fn run_rebase_with_state_machine(
 
             logger.warn(&format!(
                 "Rebase resulted in {} conflict(s), attempting AI resolution",
-                files.len()
+                state_machine.unresolved_conflict_count()
             ));
 
             // Attempt to resolve conflicts with AI
@@ -1575,29 +1606,47 @@ fn run_rebase_with_state_machine(
             )?;
 
             if resolution_result {
-                // Conflicts resolved, continue the rebase
-                state_machine.transition_to(RebasePhase::CompletingRebase)?;
-                logger.info("Continuing rebase after conflict resolution");
-                match continue_rebase() {
-                    Ok(()) => {
-                        state_machine.transition_to(RebasePhase::RebaseComplete)?;
-                        Ok(RebaseResult::Success)
+                // Verify all conflicts are resolved
+                if state_machine.all_conflicts_resolved() {
+                    // Conflicts resolved, continue the rebase
+                    state_machine.transition_to(RebasePhase::CompletingRebase)?;
+                    logger.info("Continuing rebase after conflict resolution");
+                    match continue_rebase() {
+                        Ok(()) => {
+                            state_machine.transition_to(RebasePhase::RebaseComplete)?;
+                            Ok(RebaseResult::Success)
+                        }
+                        Err(e) => {
+                            state_machine.record_error(format!("Failed to continue rebase: {e}"));
+                            logger.warn(&format!("Failed to continue rebase: {e}"));
+                            let _ = state_machine.transition_to(RebasePhase::RebaseAborted);
+                            let _ = abort_rebase();
+                            Ok(RebaseResult::Failed(
+                                crate::git_helpers::RebaseErrorKind::ReferenceUpdateFailed {
+                                    reason: format!("Failed to continue: {e}"),
+                                },
+                            ))
+                        }
                     }
-                    Err(e) => {
-                        state_machine.record_error(format!("Failed to continue rebase: {e}"));
-                        logger.warn(&format!("Failed to continue rebase: {e}"));
-                        let _ = abort_rebase();
-                        Ok(RebaseResult::Failed(
-                            crate::git_helpers::RebaseErrorKind::ReferenceUpdateFailed {
-                                reason: format!("Failed to continue: {e}"),
-                            },
-                        ))
-                    }
+                } else {
+                    // Not all conflicts were resolved
+                    let remaining = state_machine.unresolved_conflict_count();
+                    state_machine
+                        .record_error(format!("AI resolution left {remaining} conflict(s)"));
+                    logger.warn(&format!(
+                        "AI resolution left {remaining} conflict(s) unresolved"
+                    ));
+                    let _ = state_machine.transition_to(RebasePhase::RebaseAborted);
+                    let _ = abort_rebase();
+                    Ok(RebaseResult::Failed(
+                        crate::git_helpers::RebaseErrorKind::ContentConflict { files },
+                    ))
                 }
             } else {
                 // AI resolution failed
                 state_machine.record_error("AI conflict resolution failed".to_string());
                 logger.warn("AI conflict resolution failed, aborting rebase");
+                let _ = state_machine.transition_to(RebasePhase::RebaseAborted);
                 let _ = abort_rebase();
                 Ok(RebaseResult::Failed(
                     crate::git_helpers::RebaseErrorKind::ContentConflict { files },
@@ -1606,7 +1655,7 @@ fn run_rebase_with_state_machine(
         }
         Ok(RebaseResult::Failed(err)) => {
             state_machine.record_error(err.description());
-            state_machine.transition_to(RebasePhase::RebaseAborted)?;
+            let _ = state_machine.transition_to(RebasePhase::RebaseAborted);
             Ok(RebaseResult::Failed(err))
         }
         Err(e) => {
