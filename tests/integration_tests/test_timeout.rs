@@ -4,6 +4,16 @@
 //! for integration tests. Tests that take longer than the specified
 //! timeout will be terminated and fail with a clear error message.
 //!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** This module is part of the integration test framework and
+//! MUST follow the integration test style guide defined in
+//! **[../INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (test completion within timeout)
+//! - Provides utility for test isolation and determinism
+//!
 //! # MANDATORY Usage
 //!
 //! **ALL integration tests MUST use either `with_default_timeout()` or `with_timeout()`

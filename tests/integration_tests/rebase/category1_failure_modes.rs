@@ -7,6 +7,16 @@
 //! - Repository integrity or storage failures
 //! - Environment or configuration failures
 //! - Hook-triggered abortions (pre-start)
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (rebase failure detection, error types)
+//! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
+//! - Tests are deterministic and isolated
 
 use std::fs;
 use tempfile::TempDir;

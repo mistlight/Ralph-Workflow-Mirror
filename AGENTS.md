@@ -16,12 +16,35 @@ If any instruction below conflicts with another file (e.g., `CONTRIBUTING.md`), 
 
 For design principles, testing philosophy, and dead code policy, see **[CODE_STYLE.md](CODE_STYLE.md)**.
 
-For integration test guidance (behavior-based testing, mocking strategy, when to update tests), see **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**.
-This **MUST** be followed when dealing with integration tests
-
 Do not assume anything about external dependency, if you need to interact with an external API, you must use context7, if that fails, research the official documentation by going to the website through playwright.
 
 Do not create ANY files in the root directory or documentation directory unless prompt is about documentation creation. You have to update outdated documentation though.
+
+---
+
+## Integration Tests
+
+**CRITICAL FOR AI AGENTS:** When working with integration tests, you **MUST** follow the integration test style guide.
+
+- **Read first:** Before modifying, adding, or debugging integration tests, read **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**
+- **This is mandatory:** The guide defines non-negotiable rules for behavior-based testing, mocking strategy, and when to update tests
+- **Key principles:**
+  - Test **observable behavior**, not implementation details
+  - Mock only at **architectural boundaries** (filesystem, network, external APIs)
+  - NEVER use `cfg!(test)` branches or test-only flags in production code
+  - When a test fails, fix the implementation unless the expected behavior changed intentionally
+
+**Common agent mistakes to avoid:**
+- ❌ Mocking internal functions or helpers - Only mock external dependencies
+- ❌ Testing private implementation details - Test through public APIs
+- ❌ Adding `#[cfg(test)]` branches in production code - Refactor for dependency injection instead
+- ❌ Updating tests because implementation changed - Only update if expected behavior changed
+- ❌ Making real API calls to external services - Always mock external dependencies
+
+**Required patterns:**
+- Parser tests → Use `TestPrinter` from `ralph_workflow::json_parser::printer`
+- File operations → Use `tempfile::TempDir` for isolation
+- CLI tests → Use `assert_cmd::Command` for black-box testing
 
 ---
 

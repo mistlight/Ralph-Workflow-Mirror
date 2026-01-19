@@ -3,6 +3,16 @@
 //! These tests verify that test traits like MockGit, MockAgentExecutor, and MockFileOps
 //! are properly exported from the ralph-workflow crate and can be used
 //! in integration tests.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (trait exports and basic functionality)
+//! - Uses mock traits at architectural boundaries (git, filesystem, agent execution)
+//! - Tests are deterministic and isolated
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::files::{FileOperation, FileOps, MockFileOps};

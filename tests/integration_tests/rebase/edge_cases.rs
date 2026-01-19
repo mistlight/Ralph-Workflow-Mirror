@@ -5,6 +5,16 @@
 //! - Already on main/master branch
 //! - Already up-to-date
 //! - Empty repository (unborn HEAD)
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (rebase skip behavior)
+//! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
+//! - Tests are deterministic and isolated
 
 use std::fs;
 use tempfile::TempDir;

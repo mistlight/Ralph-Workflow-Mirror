@@ -6,6 +6,17 @@
 //! This ensures tests complete within 10 seconds and don't hang due to external I/O.
 //!
 //! See `test_timeout.rs` for details on the timeout enforcement mechanism.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (exit codes, stdout/stderr, file changes)
+//! - Uses `assert_cmd::Command` for black-box CLI testing
+//! - Uses `TempDir` for filesystem isolation
+//! - Tests are deterministic and black-box (test CLI as a user would invoke it)
 
 use crate::common::ralph_cmd;
 use crate::test_timeout::with_default_timeout;

@@ -9,6 +9,16 @@
 //! - Baseline management tests (baseline.rs)
 //! - PLAN workflow tests (plan.rs)
 //! - Review workflow tests (review.rs)
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
+//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (file changes, CLI output, git state)
+//! - Uses `TempDir` for filesystem isolation
+//! - Tests are deterministic and black-box (test the workflow as a user would run it)
 
 pub mod backup;
 pub mod baseline;
