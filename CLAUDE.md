@@ -26,7 +26,12 @@ Follow these instructions exactly. If unsure, choose the safest and simplest opt
 If any instruction here conflicts with another project file (e.g. `CONTRIBUTING.md`),
 follow the **stricter** rule.
 
+For integration test guidance (behavior-based testing, mocking strategy, when to update tests), see **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**.
+This **MUST** be followed when dealing with integration tests
+
 For design principles, testing philosophy, and dead code policy, see **[CODE_STYLE.md](CODE_STYLE.md)**.
+
+Do not assume anything about external dependency, if you need to interact with an external API, you must use context7, if that fails, research the official documentation by going to the website through playwright.
 
 ---
 

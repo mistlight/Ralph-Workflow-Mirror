@@ -305,6 +305,11 @@ pub struct StreamingSession {
     /// Provides O(n+m) guaranteed complexity for detecting snapshot-as-delta violations.
     /// Cleared on message boundaries to prevent false positives.
     deduplicator: DeltaDeduplicator,
+    /// Track message IDs that have been fully rendered from an assistant event BEFORE streaming.
+    /// When an assistant event arrives before streaming deltas, we render it and record
+    /// the message_id. ALL subsequent streaming deltas for that message_id should be
+    /// suppressed to prevent duplication.
+    pre_rendered_message_ids: HashSet<String>,
 }
 
 impl StreamingSession {
@@ -472,6 +477,35 @@ impl StreamingSession {
     pub fn mark_message_displayed(&mut self, message_id: &str) {
         self.displayed_final_messages.insert(message_id.to_string());
         self.last_finalized_message_id = Some(message_id.to_string());
+    }
+
+    /// Mark that an assistant event has pre-rendered content BEFORE streaming started.
+    ///
+    /// This is used to handle the case where an assistant event arrives with full content
+    /// BEFORE any streaming deltas. When this happens, we render the assistant event content
+    /// and mark the message_id as pre-rendered. ALL subsequent streaming deltas for the
+    /// same message_id should be suppressed to prevent duplication.
+    ///
+    /// # Arguments
+    /// * `message_id` - The message ID that was pre-rendered
+    pub fn mark_message_pre_rendered(&mut self, message_id: &str) {
+        self.pre_rendered_message_ids.insert(message_id.to_string());
+    }
+
+    /// Check if a message was pre-rendered from an assistant event.
+    ///
+    /// This checks if the given message_id was previously rendered from an assistant
+    /// event (before streaming started). If so, ALL subsequent streaming deltas for
+    /// this message should be suppressed.
+    ///
+    /// # Arguments
+    /// * `message_id` - The message ID to check
+    ///
+    /// # Returns
+    /// * `true` - This message was pre-rendered, suppress all streaming output
+    /// * `false` - This message was not pre-rendered, allow streaming output
+    pub fn is_message_pre_rendered(&self, message_id: &str) -> bool {
+        self.pre_rendered_message_ids.contains(message_id)
     }
 
     /// Mark the start of a content block.
