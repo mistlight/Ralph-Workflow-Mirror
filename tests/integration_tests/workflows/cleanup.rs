@@ -414,24 +414,6 @@ fn ralph_resume_continues_from_checkpoint_phase() {
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
 
-        let dev_script_path = dir.path().join("dev_script.sh");
-        fs::write(
-            &dev_script_path,
-            r#"#!/bin/sh
-mkdir -p .agent
-case "$1" in
-  *"PLANNING MODE"*)
-    echo "Plan" > .agent/PLAN.md
-    ;;
-  *)
-    echo "ran" > ran.txt
-    ;;
-esac
-exit 0
-"#,
-        )
-        .unwrap();
-
         // First run: With auto-commit behavior, the pipeline will succeed.
         // But we can create a failure by making the PLAN.md empty/invalid
         // which causes a planning failure.
@@ -477,40 +459,6 @@ fn ralph_developer_iteration_creates_changes_for_commit() {
         // Track how many times the script has been called
         let counter_path = dir.path().join(".agent/dev_counter");
 
-        let script_path = dir.path().join("dev_script.sh");
-        fs::write(
-            &script_path,
-            format!(
-                r#"#!/bin/sh
-mkdir -p .agent
-
-# Increment counter
-if [ -f "{counter}" ]; then
-    count=$(cat "{counter}")
-    count=$((count + 1))
-else
-    count=1
-fi
-echo $count > "{counter}"
-
-# Create PLAN.md if it doesn't exist (planning phase)
-if [ ! -f .agent/PLAN.md ]; then
-    echo "Plan for iteration $count" > .agent/PLAN.md
-fi
-
-# Create a meaningful change file ONLY on even-numbered calls (execution phase, not planning)
-# This ensures we get changes after each iteration's execution phase
-if [ $((count % 2)) -eq 0 ]; then
-    echo "change from iteration $((count / 2))" >> changes.txt
-fi
-
-exit 0
-"#,
-                counter = counter_path.display()
-            ),
-        )
-        .unwrap();
-
         let mut cmd = ralph_cmd();
         base_env(&mut cmd)
             .current_dir(dir.path())
@@ -518,7 +466,10 @@ exit 0
             .env("RALPH_REVIEWER_REVIEWS", "0")
             .env(
                 "RALPH_DEVELOPER_CMD",
-                format!("sh {}", script_path.display()),
+                format!(
+                    "sh -c 'mkdir -p .agent && if [ -f {counter} ]; then count=$(cat {counter}); count=$((count + 1)); else count=1; fi; echo $count > {counter} && if [ ! -f .agent/PLAN.md ]; then echo \"Plan for iteration $count\" > .agent/PLAN.md; fi && if [ $((count % 2)) -eq 0 ]; then echo \"change from iteration $((count / 2))\" >> changes.txt; fi'",
+                    counter = counter_path.display()
+                ),
             )
             .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 

@@ -169,31 +169,9 @@ fn ralph_quick_mode_sets_minimal_iterations() {
     let dir = TempDir::new().unwrap();
     let _ = init_git_repo(&dir);
 
-    // Create a script that tracks how many times planning is called
+    // Use inline shell command that tracks planning calls without a script file
+    // This tests the observable behavior: quick mode = 1 iteration
     let counter_path = dir.path().join(".agent/plan_counter");
-    let script_path = dir.path().join("dev_script.sh");
-    fs::write(
-        &script_path,
-        format!(
-            r#"#!/bin/sh
-mkdir -p .agent
-# Only count planning phase calls (when PLAN.md doesn't exist)
-if [ ! -f .agent/PLAN.md ]; then
-    if [ -f "{counter}" ]; then
-        count=$(cat "{counter}")
-        count=$((count + 1))
-    else
-        count=1
-    fi
-    echo $count > "{counter}"
-    echo "Plan for iteration" > .agent/PLAN.md
-fi
-exit 0
-"#,
-            counter = counter_path.display()
-        ),
-    )
-    .unwrap();
 
     let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
@@ -201,7 +179,10 @@ exit 0
         .env("RALPH_INTERACTIVE", "0")
         .env(
             "RALPH_DEVELOPER_CMD",
-            format!("sh {}", script_path.display()),
+            format!(
+                "sh -c 'mkdir -p .agent && if [ ! -f .agent/PLAN.md ]; then if [ -f {counter} ]; then count=$(cat {counter}); count=$((count + 1)); else count=1; fi; echo $count > {counter} && echo \"Plan for iteration\" > .agent/PLAN.md; fi'",
+                counter = counter_path.display()
+            )
         )
         .env(
             "RALPH_REVIEWER_CMD",
@@ -233,28 +214,6 @@ fn ralph_quick_mode_short_flag_works() {
     let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/plan_counter");
-    let script_path = dir.path().join("dev_script.sh");
-    fs::write(
-        &script_path,
-        format!(
-            r#"#!/bin/sh
-mkdir -p .agent
-if [ ! -f .agent/PLAN.md ]; then
-    if [ -f "{counter}" ]; then
-        count=$(cat "{counter}")
-        count=$((count + 1))
-    else
-        count=1
-    fi
-    echo $count > "{counter}"
-    echo "Plan" > .agent/PLAN.md
-fi
-exit 0
-"#,
-            counter = counter_path.display()
-        ),
-    )
-    .unwrap();
 
     let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
@@ -262,7 +221,10 @@ exit 0
         .env("RALPH_INTERACTIVE", "0")
         .env(
             "RALPH_DEVELOPER_CMD",
-            format!("sh {}", script_path.display()),
+            format!(
+                "sh -c 'mkdir -p .agent && if [ ! -f .agent/PLAN.md ]; then if [ -f {counter} ]; then count=$(cat {counter}); count=$((count + 1)); else count=1; fi; echo $count > {counter} && echo \"Plan\" > .agent/PLAN.md; fi'",
+                counter = counter_path.display()
+            )
         )
         .env(
             "RALPH_REVIEWER_CMD",
@@ -293,28 +255,6 @@ fn ralph_quick_mode_explicit_iters_override() {
     let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/plan_counter");
-    let script_path = dir.path().join("dev_script.sh");
-    fs::write(
-        &script_path,
-        format!(
-            r#"#!/bin/sh
-mkdir -p .agent
-if [ ! -f .agent/PLAN.md ]; then
-    if [ -f "{counter}" ]; then
-        count=$(cat "{counter}")
-        count=$((count + 1))
-    else
-        count=1
-    fi
-    echo $count > "{counter}"
-    echo "Plan" > .agent/PLAN.md
-fi
-exit 0
-"#,
-            counter = counter_path.display()
-        ),
-    )
-    .unwrap();
 
     let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
@@ -324,7 +264,10 @@ exit 0
         .env("RALPH_INTERACTIVE", "0")
         .env(
             "RALPH_DEVELOPER_CMD",
-            format!("sh {}", script_path.display()),
+            format!(
+                "sh -c 'mkdir -p .agent && if [ ! -f .agent/PLAN.md ]; then if [ -f {counter} ]; then count=$(cat {counter}); count=$((count + 1)); else count=1; fi; echo $count > {counter} && echo \"Plan\" > .agent/PLAN.md; fi'",
+                counter = counter_path.display()
+            )
         )
         .env(
             "RALPH_REVIEWER_CMD",
@@ -355,28 +298,6 @@ fn ralph_rapid_mode_sets_two_iterations() {
     let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/plan_counter");
-    let script_path = dir.path().join("dev_script.sh");
-    fs::write(
-        &script_path,
-        format!(
-            r#"#!/bin/sh
-mkdir -p .agent
-if [ ! -f .agent/PLAN.md ]; then
-    if [ -f "{counter}" ]; then
-        count=$(cat "{counter}")
-        count=$((count + 1))
-    else
-        count=1
-    fi
-    echo $count > "{counter}"
-    echo "Plan for iteration" > .agent/PLAN.md
-fi
-exit 0
-"#,
-            counter = counter_path.display()
-        ),
-    )
-    .unwrap();
 
     let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
@@ -384,7 +305,10 @@ exit 0
         .env("RALPH_INTERACTIVE", "0")
         .env(
             "RALPH_DEVELOPER_CMD",
-            format!("sh {}", script_path.display()),
+            format!(
+                "sh -c 'mkdir -p .agent && if [ ! -f .agent/PLAN.md ]; then if [ -f {counter} ]; then count=$(cat {counter}); count=$((count + 1)); else count=1; fi; echo $count > {counter} && echo \"Plan for iteration\" > .agent/PLAN.md; fi'",
+                counter = counter_path.display()
+            )
         )
         .env(
             "RALPH_REVIEWER_CMD",
@@ -416,28 +340,6 @@ fn ralph_rapid_mode_short_flag_works() {
     let _ = init_git_repo(&dir);
 
     let counter_path = dir.path().join(".agent/plan_counter");
-    let script_path = dir.path().join("dev_script.sh");
-    fs::write(
-        &script_path,
-        format!(
-            r#"#!/bin/sh
-mkdir -p .agent
-if [ ! -f .agent/PLAN.md ]; then
-    if [ -f "{counter}" ]; then
-        count=$(cat "{counter}")
-        count=$((count + 1))
-    else
-        count=1
-    fi
-    echo $count > "{counter}"
-    echo "Plan" > .agent/PLAN.md
-fi
-exit 0
-"#,
-            counter = counter_path.display()
-        ),
-    )
-    .unwrap();
 
     let mut cmd = ralph_cmd();
     cmd.current_dir(dir.path())
@@ -445,7 +347,10 @@ exit 0
         .env("RALPH_INTERACTIVE", "0")
         .env(
             "RALPH_DEVELOPER_CMD",
-            format!("sh {}", script_path.display()),
+            format!(
+                "sh -c 'mkdir -p .agent && if [ ! -f .agent/PLAN.md ]; then if [ -f {counter} ]; then count=$(cat {counter}); count=$((count + 1)); else count=1; fi; echo $count > {counter} && echo \"Plan\" > .agent/PLAN.md; fi'",
+                counter = counter_path.display()
+            )
         )
         .env(
             "RALPH_REVIEWER_CMD",

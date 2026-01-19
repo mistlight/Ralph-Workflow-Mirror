@@ -129,10 +129,7 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
             .stdout(predicate::str::contains("Pipeline Complete"));
 
         // Verify backup was created and content matches
-        assert!(
-            backup_path.exists(),
-            "Backup should be created after run"
-        );
+        assert!(backup_path.exists(), "Backup should be created after run");
 
         let backup_content = fs::read_to_string(&backup_path).unwrap();
         assert_eq!(backup_content, original_content);
