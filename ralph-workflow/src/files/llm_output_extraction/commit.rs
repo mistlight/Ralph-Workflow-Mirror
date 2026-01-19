@@ -144,27 +144,32 @@ impl CommitExtractionResult {
 /// - First element: `Some(message)` if valid XML with a valid conventional commit subject was found, `None` otherwise
 /// - Second element: Detailed reason string explaining what was found/not found (for debugging)
 pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, String) {
-    let content_len = content.len();
-    let content_preview = if content_len > 50 {
-        format!("{}...", &content[..50].replace('\n', "\\n"))
-    } else {
-        content.replace('\n', "\\n")
-    };
-
-    // Use the flexible XML extraction that handles various AI embedding patterns
-    let xml_block = match extract_xml_commit(content) {
-        Some(xml) => xml,
+    // Try flexible XML extraction that handles various AI embedding patterns.
+    // If extraction fails, use the raw content directly - XSD validation will
+    // provide a clear error message explaining what's wrong (e.g., missing
+    // <ralph-commit> root element) that can be sent back to the AI for retry.
+    let (xml_block, extraction_pattern) = match extract_xml_commit(content) {
+        Some(xml) => {
+            // Detect which extraction pattern was used for logging
+            let pattern = if content.trim().starts_with("<ralph-commit>") {
+                "direct XML"
+            } else if content.contains("```xml") || content.contains("```\n<ralph-commit>") {
+                "markdown code fence"
+            } else if content.contains("{\"result\":") || content.contains("\"result\":") {
+                "JSON string"
+            } else {
+                "embedded search"
+            };
+            (xml, pattern)
+        }
         None => {
-            return (
-                None,
-                format!(
-                    "No <ralph-commit> tag found in any extraction pattern (content length: {content_len}, starts with: '{content_preview}')"
-                ),
-            );
+            // No XML tags found - use raw content and let XSD validation
+            // produce an informative error for the AI to retry
+            (content.to_string(), "raw content (no XML tags found)")
         }
     };
 
-    // Run XSD validation on the extracted XML block
+    // Run XSD validation - this will catch both malformed XML and missing elements
     let xsd_result = validate_xml_against_xsd(&xml_block);
 
     let message = match xsd_result {
@@ -178,7 +183,7 @@ pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, Stri
             }
         }
         Err(e) => {
-            // XSD validation failed - return error with details
+            // XSD validation failed - return error with details for AI retry
             let error_msg = e.format_for_ai_retry();
             return (None, format!("XSD validation failed: {}", error_msg));
         }
@@ -186,17 +191,6 @@ pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, Stri
 
     // Determine body presence for logging
     let has_body = message.lines().count() > 1;
-
-    // Detect which extraction pattern was used for better logging
-    let extraction_pattern = if content.trim().starts_with("<ralph-commit>") {
-        "direct XML"
-    } else if content.contains("```xml") || content.contains("```\n<ralph-commit>") {
-        "markdown code fence"
-    } else if content.contains("{\"result\":") || content.contains("\"result\":") {
-        "JSON string"
-    } else {
-        "embedded search"
-    };
 
     (
         Some(message.clone()),

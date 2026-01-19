@@ -24,6 +24,7 @@
 {#   - Still requires the same XML format for consistency                      #}
 {#   - Focuses on the essential requirements                                   #}
 {# ============================================================================ #}
+{{> shared/_safety_no_execute}}
 
 Generate a commit message for the following diff.
 
