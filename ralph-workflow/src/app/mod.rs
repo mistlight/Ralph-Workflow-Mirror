@@ -575,7 +575,9 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
                 &run_context,
             );
 
-        let builder = builder.with_execution_history(phase_ctx.execution_history.clone());
+        let builder = builder
+            .with_execution_history(phase_ctx.execution_history.clone())
+            .with_prompt_history(phase_ctx.clone_prompt_history());
 
         if let Some(checkpoint) = builder.build() {
             let _ = save_checkpoint(&checkpoint);
@@ -938,7 +940,9 @@ fn run_final_validation(
                 &ctx.run_context,
             );
 
-        let builder = builder.with_execution_history(ctx.execution_history.clone());
+        let builder = builder
+            .with_execution_history(ctx.execution_history.clone())
+            .with_prompt_history(ctx.prompt_history.clone());
 
         if let Some(checkpoint) = builder.build() {
             let _ = save_checkpoint(&checkpoint);
