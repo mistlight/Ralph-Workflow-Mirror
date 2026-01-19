@@ -128,6 +128,15 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             },
         );
 
+        m.insert(
+            "commit_simplified",
+            EmbeddedTemplate {
+                name: "commit_simplified",
+                content: include_str!("templates/commit_simplified.txt"),
+                description: "Simplified commit prompt with direct instructions",
+            },
+        );
+
         // TODO: Add commit_validation_retry template when implementing retry logic
 
         // ============================================================================

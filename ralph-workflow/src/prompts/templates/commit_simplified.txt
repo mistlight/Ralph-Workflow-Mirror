@@ -1,0 +1,74 @@
+{# ============================================================================ #}
+{# Template: commit_simplified.txt                                             #}
+{# Version: 1.0                                                                #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Simplified commit prompt with direct instructions.                        #}
+{#   Second-stage prompt when the normal XML prompt fails.                     #}
+{#                                                                             #}
+{# WHEN USED:                                                                  #}
+{#   After the normal XML prompt has failed with all agents.                   #}
+{#                                                                             #}
+{# TRIGGER:                                                                    #}
+{#   All agents failed to produce valid XML with the normal prompt.            #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   DIFF - Git diff to analyze (required)                                     #}
+{#                                                                             #}
+{# OUTPUT:                                                                     #}
+{#   <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit> #}
+{#                                                                             #}
+{# NOTES:                                                                      #}
+{#   - More direct and concise than the normal prompt                          #}
+{#   - Still requires the same XML format for consistency                      #}
+{#   - Focuses on the essential requirements                                   #}
+{# ============================================================================ #}
+
+Generate a commit message for the following diff.
+
+## Instructions
+
+1. Analyze the diff below
+2. Write a clear, specific commit message following conventional commit format
+3. Output ONLY the XML format shown below - no explanation, no preamble
+
+## Commit Format
+
+Type: One of feat, fix, docs, style, refactor, perf, test, build, ci, chore
+Subject: Imperative mood, lowercase, no period, max 50 chars
+Body: Optional - only if needed for context
+
+## Required Output Format
+
+<ralph-commit>
+<ralph-subject>type(scope): description</ralph-subject>
+<ralph-body>Optional body text here.</ralph-body>
+</ralph-commit>
+
+IMPORTANT:
+- Start immediately with `<ralph-commit>`
+- No text before or after the XML
+- Subject is REQUIRED
+- Body is OPTIONAL - omit entirely if not needed
+
+## Valid Types
+
+- **feat**: New feature
+- **fix**: Bug fix
+- **docs**: Documentation only
+- **style**: Code style (no logic change)
+- **refactor**: Restructuring (no behavior change)
+- **perf**: Performance improvement
+- **test**: Adding/updating tests
+- **build**: Build system/dependencies
+- **ci**: CI/CD configuration
+- **chore**: Other changes
+
+## Diff
+
+{{DIFF}}
+
+## Output ONLY the XML:
+
+(Start with <ralph-commit> and end with </ralph-commit>)

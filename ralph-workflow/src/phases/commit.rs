@@ -25,7 +25,7 @@ use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
-    prompt_emergency_commit_with_context, prompt_generate_commit_message_with_diff_with_context,
+    prompt_generate_commit_message_with_diff_with_context, prompt_simplified_commit_with_context,
     prompt_xsd_retry_with_context,
 };
 use std::fmt;
@@ -106,57 +106,54 @@ fn max_prompt_size_for_agent(commit_agent: &str) -> usize {
 /// degradation from detailed prompts to minimal ones before falling back
 /// to the next agent in the chain.
 ///
-/// With XSD validation, we now have fewer strategies but each strategy
-/// supports up to 5 in-session retries with validation feedback.
+/// With XSD validation, we now have two strategies. Each strategy supports
+/// up to 5 in-session retries with validation feedback.
+///
+/// The XSD retry mechanism is used internally for in-session retries when
+/// validation fails, not as a separate stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommitRetryStrategy {
     /// First attempt with normal XML prompt
-    Initial,
-    /// XSD validation retry with error feedback
-    XsdRetry,
-    /// Emergency prompt - maximum strictness
-    Emergency,
+    Normal,
+    /// Simplified XML prompt - more direct instructions
+    Simplified,
 }
 
 impl CommitRetryStrategy {
     /// Get the description of this retry stage for logging
     const fn description(self) -> &'static str {
         match self {
-            Self::Initial => "initial XML prompt",
-            Self::XsdRetry => "XSD validation retry",
-            Self::Emergency => "emergency prompt",
+            Self::Normal => "normal XML prompt",
+            Self::Simplified => "simplified XML prompt",
         }
     }
 
     /// Get the next retry strategy, or None if this is the last stage
     const fn next(self) -> Option<Self> {
         match self {
-            Self::Initial => Some(Self::XsdRetry),
-            Self::XsdRetry => Some(Self::Emergency),
-            Self::Emergency => None,
+            Self::Normal => Some(Self::Simplified),
+            Self::Simplified => None,
         }
     }
 
     /// Get the 1-based stage number for this strategy
     const fn stage_number(self) -> usize {
         match self {
-            Self::Initial => 1,
-            Self::XsdRetry => 2,
-            Self::Emergency => 3,
+            Self::Normal => 1,
+            Self::Simplified => 2,
         }
     }
 
     /// Get the total number of retry stages
     const fn total_stages() -> usize {
-        3 // Initial + XsdRetry + Emergency
+        2 // Normal + Simplified
     }
 
     /// Get the maximum number of in-session retries for this strategy
     const fn max_session_retries(self) -> usize {
         match self {
-            Self::Initial => 5,   // Allow 5 retries with XSD validation feedback
-            Self::XsdRetry => 5,  // Allow 5 retries with clearer error messages
-            Self::Emergency => 3, // Allow 3 retries for emergency (was 1, increased to account for no separate no-diff strategy)
+            Self::Normal => 5,     // Allow 5 retries with XSD validation feedback
+            Self::Simplified => 5, // Allow 5 retries for simplified prompt
         }
     }
 }
@@ -404,6 +401,7 @@ fn check_and_pre_truncate_diff(
 /// Generate the appropriate prompt for the current retry strategy.
 ///
 /// For XSD retry, the xsd_error parameter is used to provide feedback to the agent.
+/// Note: XSD retry is handled internally within the session, not as a separate stage.
 fn generate_prompt_for_strategy(
     strategy: CommitRetryStrategy,
     working_diff: &str,
@@ -411,15 +409,26 @@ fn generate_prompt_for_strategy(
     xsd_error: Option<&str>,
 ) -> String {
     match strategy {
-        CommitRetryStrategy::Initial => {
-            prompt_generate_commit_message_with_diff_with_context(template_context, working_diff)
+        CommitRetryStrategy::Normal => {
+            if let Some(error_msg) = xsd_error {
+                // In-session XSD retry with error feedback
+                prompt_xsd_retry_with_context(template_context, working_diff, error_msg)
+            } else {
+                // First attempt with normal XML prompt
+                prompt_generate_commit_message_with_diff_with_context(
+                    template_context,
+                    working_diff,
+                )
+            }
         }
-        CommitRetryStrategy::XsdRetry => {
-            let error_msg = xsd_error.unwrap_or("Unknown XSD validation error");
-            prompt_xsd_retry_with_context(template_context, working_diff, error_msg)
-        }
-        CommitRetryStrategy::Emergency => {
-            prompt_emergency_commit_with_context(template_context, working_diff)
+        CommitRetryStrategy::Simplified => {
+            if let Some(error_msg) = xsd_error {
+                // In-session XSD retry with error feedback
+                prompt_xsd_retry_with_context(template_context, working_diff, error_msg)
+            } else {
+                // Simplified XML prompt
+                prompt_simplified_commit_with_context(template_context, working_diff)
+            }
         }
     }
 }
@@ -431,7 +440,7 @@ fn log_commit_attempt(
     commit_agent: &str,
     runtime: &PipelineRuntime,
 ) {
-    if strategy == CommitRetryStrategy::Initial {
+    if strategy == CommitRetryStrategy::Normal {
         runtime.logger.info(&format!(
             "Attempt 1/{}: Using {} (prompt size: {} KB, agent: {})",
             CommitRetryStrategy::total_stages(),
@@ -796,7 +805,7 @@ fn try_progressive_truncation_recovery(
         ));
 
         let truncated_diff = truncate_diff_if_large(diff, size_kb);
-        let prompt = prompt_emergency_commit_with_context(template_context, &truncated_diff);
+        let prompt = prompt_simplified_commit_with_context(template_context, &truncated_diff);
 
         runtime.logger.info(&format!(
             "Truncated diff attempt ({}): prompt size {} KB",
@@ -884,7 +893,7 @@ fn try_further_truncation_recovery(
         ));
 
         let truncated_diff = truncate_diff_if_large(diff, size_kb);
-        let prompt = prompt_emergency_commit_with_context(template_context, &truncated_diff);
+        let prompt = prompt_simplified_commit_with_context(template_context, &truncated_diff);
 
         let exit_code = run_with_fallback(
             AgentRole::Commit,
@@ -968,14 +977,14 @@ fn try_emergency_no_diff_recovery(
 ) -> anyhow::Result<CommitMessageResult> {
     runtime
         .logger
-        .warn("All truncation stages failed. Trying emergency prompt with diff...");
-    let working_diff = diff; // Use original diff for emergency prompt
-    let emergency_prompt = prompt_emergency_commit_with_context(template_context, working_diff);
+        .warn("All truncation stages failed. Trying simplified prompt with diff...");
+    let working_diff = diff; // Use original diff for simplified prompt
+    let simplified_prompt = prompt_simplified_commit_with_context(template_context, working_diff);
 
     let exit_code = run_with_fallback(
         AgentRole::Commit,
-        "generate commit message (emergency)",
-        &emergency_prompt,
+        "generate commit message (simplified)",
+        &simplified_prompt,
         log_dir,
         runtime,
         registry,
@@ -1154,7 +1163,7 @@ fn try_agents_with_strategies(
     session: &mut CommitLogSession,
     total_attempts: &mut usize,
 ) -> Option<anyhow::Result<CommitMessageResult>> {
-    let mut strategy = CommitRetryStrategy::Initial;
+    let mut strategy = CommitRetryStrategy::Normal;
     loop {
         runtime.logger.info(&format!(
             "Trying strategy {}/{}: {}",

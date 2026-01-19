@@ -281,26 +281,28 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
     })
 }
 
-/// Generate emergency commit prompt with maximum constraints using template registry.
+/// Generate simplified commit prompt using template registry.
 ///
 /// This version uses the template registry which supports user template overrides.
+/// It provides a more direct and concise version of the commit prompt.
 ///
 /// # Arguments
 ///
 /// * `context` - Template context containing the template registry
 /// * `diff` - The git diff to generate a commit message for
-pub fn prompt_emergency_commit_with_context(context: &TemplateContext, diff: &str) -> String {
+pub fn prompt_simplified_commit_with_context(context: &TemplateContext, diff: &str) -> String {
     let template_content = context
         .registry()
-        .get_template("commit_emergency")
-        .unwrap_or_else(|_| include_str!("templates/commit_emergency.txt").to_string());
+        .get_template("commit_simplified")
+        .unwrap_or_else(|_| include_str!("templates/commit_simplified.txt").to_string());
     let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
-            // Fallback to minimal prompt with diff if template rendering fails
+            // Fallback to simple prompt with diff if template rendering fails
             format!(
-                "<ralph-commit>\n<ralph-subject>fix: </ralph-subject>\n</ralph-commit>\n\n{}\n",
+                "Generate a commit message for this diff:\n\n{}\n\n\
+                 Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>",
                 diff.trim()
             )
         })
