@@ -9,7 +9,9 @@ use std::fs;
 
 use crate::agents::is_glm_like_agent;
 use crate::config::ReviewDepth;
-use crate::git_helpers::get_git_diff_from_review_baseline;
+use crate::git_helpers::{
+    get_git_diff_from_review_baseline, DiffReviewContent, DiffTruncationLevel,
+};
 use crate::guidelines::ReviewGuidelines;
 use crate::prompts::{
     prompt_comprehensive_review_with_diff_with_context,
@@ -107,7 +109,7 @@ pub fn build_review_prompt(
 fn build_universal_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
-    diff_result: Result<Option<String>, ()>,
+    diff_result: Result<Option<DiffReviewContent>, ()>,
 ) -> (String, String) {
     let reason = if ctx.config.features.force_universal_prompt {
         "forced via config/env"
@@ -120,11 +122,11 @@ fn build_universal_prompt(
     ));
     let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
-        Ok(Some(diff)) => {
+        Ok(Some(diff_content)) => {
             let prompt = prompt_universal_review_with_diff_with_context(
                 ctx.template_context,
                 reviewer_context,
-                &diff,
+                &diff_content,
                 &prompt_content,
                 &plan_content,
             );
@@ -141,7 +143,7 @@ fn build_security_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
     guidelines: Option<&ReviewGuidelines>,
-    diff_result: Result<Option<String>, ()>,
+    diff_result: Result<Option<DiffReviewContent>, ()>,
 ) -> (String, String) {
     ctx.logger.info(if guidelines.is_some() {
         "Using security-focused review with language-specific checks"
@@ -150,7 +152,7 @@ fn build_security_prompt(
     });
     let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
-        Ok(Some(diff)) => {
+        Ok(Some(diff_content)) => {
             let guidelines_ref = guidelines.unwrap_or_else(|| {
                 static DEFAULT_GUIDELINES: std::sync::OnceLock<ReviewGuidelines> =
                     std::sync::OnceLock::new();
@@ -160,7 +162,7 @@ fn build_security_prompt(
                 ctx.template_context,
                 reviewer_context,
                 guidelines_ref,
-                &diff,
+                &diff_content,
                 &prompt_content,
                 &plan_content,
             );
@@ -176,17 +178,17 @@ fn build_security_prompt(
 fn build_incremental_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
-    diff_result: Result<Option<String>, ()>,
+    diff_result: Result<Option<DiffReviewContent>, ()>,
 ) -> (String, String) {
     let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
-        Ok(Some(diff)) => {
+        Ok(Some(diff_content)) => {
             ctx.logger
                 .info("Using incremental review (changed files only)");
             let prompt = prompt_incremental_review_with_diff_with_context(
                 ctx.template_context,
                 reviewer_context,
-                &diff,
+                &diff_content,
                 &prompt_content,
                 &plan_content,
             );
@@ -203,7 +205,7 @@ fn build_comprehensive_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
     guidelines: Option<&ReviewGuidelines>,
-    diff_result: Result<Option<String>, ()>,
+    diff_result: Result<Option<DiffReviewContent>, ()>,
 ) -> (String, String) {
     ctx.logger.info(if guidelines.is_some() {
         "Using comprehensive review with language-specific checks"
@@ -212,7 +214,7 @@ fn build_comprehensive_prompt(
     });
     let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
-        Ok(Some(diff)) => {
+        Ok(Some(diff_content)) => {
             let guidelines_ref = guidelines.unwrap_or_else(|| {
                 static DEFAULT_GUIDELINES: std::sync::OnceLock<ReviewGuidelines> =
                     std::sync::OnceLock::new();
@@ -222,7 +224,7 @@ fn build_comprehensive_prompt(
                 ctx.template_context,
                 reviewer_context,
                 guidelines_ref,
-                &diff,
+                &diff_content,
                 &prompt_content,
                 &plan_content,
             );
@@ -242,11 +244,11 @@ fn build_standard_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
     guidelines: Option<&ReviewGuidelines>,
-    diff_result: Result<Option<String>, ()>,
+    diff_result: Result<Option<DiffReviewContent>, ()>,
 ) -> (String, String) {
     let (prompt_content, plan_content) = read_prompt_and_plan();
     match diff_result {
-        Ok(Some(diff)) => {
+        Ok(Some(diff_content)) => {
             ctx.logger.info(if guidelines.is_some() {
                 "Using standard review with language-specific checks"
             } else {
@@ -257,7 +259,7 @@ fn build_standard_prompt(
                     let prompt = prompt_detailed_review_without_guidelines_with_diff_with_context(
                         ctx.template_context,
                         reviewer_context,
-                        &diff,
+                        &diff_content,
                         &prompt_content,
                         &plan_content,
                     );
@@ -269,7 +271,7 @@ fn build_standard_prompt(
                         ctx.template_context,
                         reviewer_context,
                         g,
-                        &diff,
+                        &diff_content,
                         &prompt_content,
                         &plan_content,
                     );
@@ -317,38 +319,75 @@ fn log_prompt_debug_info(ctx: &PhaseContext<'_>, prompt: &str, prompt_type: &str
     }
 }
 
-/// Fetch and validate the git diff from the review baseline.
+/// Fetch and validate the git diff from the review baseline with progressive truncation.
 ///
 /// Returns:
-/// - `Ok(Some(diff))` - Successfully retrieved and validated diff
+/// - `Ok(Some(content))` - Successfully retrieved diff (possibly truncated)
 /// - `Ok(None)` - No diff found (no changes since baseline)
 /// - `Err(..)` - Failed to retrieve diff (git error)
-fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<String>, ()> {
+fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<DiffReviewContent>, ()> {
     match get_git_diff_from_review_baseline() {
         Ok(d) if !d.trim().is_empty() => {
             let original_size = d.len();
-            let (truncated_diff, was_truncated) = crate::git_helpers::validate_and_truncate_diff(d);
-            if was_truncated {
-                ctx.logger.warn(&format!(
-                    "Review diff truncated from {} to {} bytes for LLM processing",
-                    original_size,
-                    truncated_diff.len()
-                ));
-            }
-            if ctx.config.verbosity.is_debug() {
-                ctx.logger.info(&format!(
-                    "Diff size for review: {} bytes",
-                    truncated_diff.len()
-                ));
-                // Log a preview of the diff content for verification
-                if truncated_diff.len() > 500 {
+
+            // Use progressive truncation with sensible defaults
+            const MAX_FULL_DIFF_SIZE: usize = 100 * 1024; // 100KB
+            const MAX_ABBREVIATED_SIZE: usize = 50 * 1024; // 50KB
+            const MAX_FILE_LIST_SIZE: usize = 10 * 1024; // 10KB
+
+            let content = crate::git_helpers::truncate_diff_for_review(
+                d,
+                MAX_FULL_DIFF_SIZE,
+                MAX_ABBREVIATED_SIZE,
+                MAX_FILE_LIST_SIZE,
+            );
+
+            match content.truncation_level {
+                DiffTruncationLevel::Full => {
+                    if ctx.config.verbosity.is_debug() {
+                        ctx.logger.info(&format!(
+                            "Diff size for review: {} bytes (no truncation)",
+                            content.content.len()
+                        ));
+                    }
+                }
+                DiffTruncationLevel::Abbreviated => {
+                    ctx.logger.warn(&format!(
+                        "Review diff abbreviated: {}/{} files shown ({:.1}% of original)",
+                        content.shown_file_count.unwrap_or(0),
+                        content.total_file_count,
+                        (content.content.len() as f64 / original_size as f64) * 100.0
+                    ));
                     ctx.logger
-                        .info(&format!("Diff preview:\n{}...", &truncated_diff[..500]));
-                } else {
-                    ctx.logger.info(&format!("Diff preview:\n{truncated_diff}"));
+                        .info("Reviewer agent must explore full diff independently");
+                }
+                DiffTruncationLevel::FileList => {
+                    ctx.logger.warn(&format!(
+                        "Review diff truncated to file list: {} files (reviewer must explore each)",
+                        content.total_file_count
+                    ));
+                }
+                DiffTruncationLevel::FileListAbbreviated => {
+                    ctx.logger.warn(&format!(
+                        "Review diff truncated: {}/{} files shown (reviewer must discover all files)",
+                        content.shown_file_count.unwrap_or(0),
+                        content.total_file_count
+                    ));
                 }
             }
-            Ok(Some(truncated_diff))
+
+            if ctx.config.verbosity.is_debug() {
+                // Log a preview of the diff content for verification
+                if content.content.len() > 500 {
+                    ctx.logger
+                        .info(&format!("Diff preview:\n{}...", &content.content[..500]));
+                } else {
+                    ctx.logger
+                        .info(&format!("Diff preview:\n{}", content.content));
+                }
+            }
+
+            Ok(Some(content))
         }
         Ok(_) => {
             ctx.logger
@@ -376,6 +415,12 @@ mod tests {
     #[test]
     fn test_all_prompts_include_diff_content() {
         let sample_diff = "+ new line\n- old line";
+        let diff_content = DiffReviewContent {
+            content: sample_diff.to_string(),
+            truncation_level: DiffTruncationLevel::Full,
+            total_file_count: 1,
+            shown_file_count: None,
+        };
 
         // Test guided prompts (with guidelines)
         let guidelines = ReviewGuidelines::default();
@@ -405,7 +450,7 @@ mod tests {
             &template_context,
             ContextLevel::Normal,
             &guidelines,
-            sample_diff,
+            &diff_content,
             "",
             "",
         );
@@ -418,7 +463,7 @@ mod tests {
             &template_context,
             ContextLevel::Minimal,
             &guidelines,
-            sample_diff,
+            &diff_content,
             "",
             "",
         );
@@ -431,7 +476,7 @@ mod tests {
         let detailed_prompt = prompt_detailed_review_without_guidelines_with_diff_with_context(
             &template_context,
             ContextLevel::Normal,
-            sample_diff,
+            &diff_content,
             "",
             "",
         );
@@ -443,7 +488,7 @@ mod tests {
         let incremental_prompt = prompt_incremental_review_with_diff_with_context(
             &template_context,
             ContextLevel::Minimal,
-            sample_diff,
+            &diff_content,
             "",
             "",
         );
@@ -455,7 +500,7 @@ mod tests {
         let universal_prompt = prompt_universal_review_with_diff_with_context(
             &template_context,
             ContextLevel::Normal,
-            sample_diff,
+            &diff_content,
             "",
             "",
         );
@@ -470,13 +515,19 @@ mod tests {
     fn test_prompts_constrain_agent_from_exploring() {
         let sample_diff = "+ new line";
         let template_context = TemplateContext::default();
+        let diff_content = DiffReviewContent {
+            content: sample_diff.to_string(),
+            truncation_level: DiffTruncationLevel::Full,
+            total_file_count: 1,
+            shown_file_count: None,
+        };
 
         let prompts_to_check = vec![
             prompt_reviewer_review_with_guidelines_and_diff_with_context(
                 &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
@@ -484,7 +535,7 @@ mod tests {
                 &template_context,
                 ContextLevel::Normal,
                 &ReviewGuidelines::default(),
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
@@ -492,28 +543,28 @@ mod tests {
                 &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
             prompt_detailed_review_without_guidelines_with_diff_with_context(
                 &template_context,
                 ContextLevel::Normal,
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
             prompt_incremental_review_with_diff_with_context(
                 &template_context,
                 ContextLevel::Minimal,
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
             prompt_universal_review_with_diff_with_context(
                 &template_context,
                 ContextLevel::Normal,
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
@@ -544,11 +595,17 @@ mod tests {
     fn test_prompts_forbid_specific_commands() {
         let sample_diff = "+ new line";
         let template_context = TemplateContext::default();
+        let diff_content = DiffReviewContent {
+            content: sample_diff.to_string(),
+            truncation_level: DiffTruncationLevel::Full,
+            total_file_count: 1,
+            shown_file_count: None,
+        };
 
         let universal_prompt = prompt_universal_review_with_diff_with_context(
             &template_context,
             ContextLevel::Minimal,
-            sample_diff,
+            &diff_content,
             "",
             "",
         );
@@ -591,13 +648,19 @@ mod tests {
     fn test_prompts_contain_closed_book_constraint() {
         let sample_diff = "+ new line";
         let template_context = TemplateContext::default();
+        let diff_content = DiffReviewContent {
+            content: sample_diff.to_string(),
+            truncation_level: DiffTruncationLevel::Full,
+            total_file_count: 1,
+            shown_file_count: None,
+        };
 
         let prompts_to_check = vec![
             prompt_reviewer_review_with_guidelines_and_diff_with_context(
                 &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
@@ -605,7 +668,7 @@ mod tests {
                 &template_context,
                 ContextLevel::Normal,
                 &ReviewGuidelines::default(),
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
@@ -613,28 +676,28 @@ mod tests {
                 &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
             prompt_detailed_review_without_guidelines_with_diff_with_context(
                 &template_context,
                 ContextLevel::Normal,
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
             prompt_incremental_review_with_diff_with_context(
                 &template_context,
                 ContextLevel::Minimal,
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
             prompt_universal_review_with_diff_with_context(
                 &template_context,
                 ContextLevel::Normal,
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
@@ -661,13 +724,19 @@ mod tests {
     fn test_actual_diff_content_is_substituted_not_placeholder() {
         let sample_diff = "+ new line\n- old line";
         let template_context = TemplateContext::default();
+        let diff_content = DiffReviewContent {
+            content: sample_diff.to_string(),
+            truncation_level: DiffTruncationLevel::Full,
+            total_file_count: 1,
+            shown_file_count: None,
+        };
 
         let prompts_to_check = vec![
             prompt_reviewer_review_with_guidelines_and_diff_with_context(
                 &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
@@ -675,7 +744,7 @@ mod tests {
                 &template_context,
                 ContextLevel::Normal,
                 &ReviewGuidelines::default(),
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
@@ -683,28 +752,28 @@ mod tests {
                 &template_context,
                 ContextLevel::Minimal,
                 &ReviewGuidelines::default(),
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
             prompt_detailed_review_without_guidelines_with_diff_with_context(
                 &template_context,
                 ContextLevel::Normal,
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
             prompt_incremental_review_with_diff_with_context(
                 &template_context,
                 ContextLevel::Minimal,
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),
             prompt_universal_review_with_diff_with_context(
                 &template_context,
                 ContextLevel::Normal,
-                sample_diff,
+                &diff_content,
                 "",
                 "",
             ),

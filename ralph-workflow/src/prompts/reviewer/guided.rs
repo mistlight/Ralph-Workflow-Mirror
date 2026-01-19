@@ -13,6 +13,7 @@
 
 use super::super::types::ContextLevel;
 use super::super::Template;
+use crate::git_helpers::{DiffReviewContent, DiffTruncationLevel};
 use crate::guidelines::ReviewGuidelines;
 use crate::prompts::template_context::TemplateContext;
 use std::collections::HashMap;
@@ -65,6 +66,8 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff(
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff.to_string()),
         ("GUIDELINES", guidelines_section),
+        ("EXPLORATION_REQUIRED", String::new()),
+        ("EXPLORATION_MODE", String::new()),
     ]);
 
     load_template_str(template_content, &variables)
@@ -80,14 +83,14 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff(
 /// * `template_context` - Template context containing the template registry
 /// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `guidelines` - The language-specific review guidelines
-/// * `diff` - The git diff to review (changes since pipeline start)
+/// * `diff_content` - The diff content with truncation metadata
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_reviewer_review_with_guidelines_and_diff_with_context(
     template_context: &TemplateContext,
     _context: ContextLevel,
     guidelines: &ReviewGuidelines,
-    diff: &str,
+    diff_content: &DiffReviewContent,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
@@ -101,11 +104,23 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff_with_context(
         .get_template(template_name)
         .unwrap_or_else(|_| include_str!("templates/standard_review.txt").to_string());
 
+    // Build exploration instruction text
+    let exploration_instruction = build_exploration_instruction(diff_content);
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
-        ("DIFF", diff.to_string()),
+        ("DIFF", diff_content.content.clone()),
         ("GUIDELINES", guidelines_section),
+        ("EXPLORATION_REQUIRED", exploration_instruction),
+        (
+            "EXPLORATION_MODE",
+            if diff_content.truncation_level != DiffTruncationLevel::Full {
+                "true".to_string()
+            } else {
+                String::new()
+            },
+        ),
     ]);
 
     load_template_str(&tmpl_content, &variables)
@@ -121,14 +136,14 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff_with_context(
 /// * `template_context` - Template context containing the template registry
 /// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `guidelines` - The language-specific review guidelines
-/// * `diff` - The git diff to review (changes since pipeline start)
+/// * `diff_content` - The diff content with truncation metadata
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_comprehensive_review_with_diff_with_context(
     template_context: &TemplateContext,
     _context: ContextLevel,
     guidelines: &ReviewGuidelines,
-    diff: &str,
+    diff_content: &DiffReviewContent,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
@@ -141,11 +156,23 @@ pub fn prompt_comprehensive_review_with_diff_with_context(
         .get_template(template_name)
         .unwrap_or_else(|_| include_str!("templates/comprehensive_review.txt").to_string());
 
+    // Build exploration instruction text
+    let exploration_instruction = build_exploration_instruction(diff_content);
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
-        ("DIFF", diff.to_string()),
+        ("DIFF", diff_content.content.clone()),
         ("GUIDELINES", priority_section),
+        ("EXPLORATION_REQUIRED", exploration_instruction),
+        (
+            "EXPLORATION_MODE",
+            if diff_content.truncation_level != DiffTruncationLevel::Full {
+                "true".to_string()
+            } else {
+                String::new()
+            },
+        ),
     ]);
 
     load_template_str(&tmpl_content, &variables)
@@ -161,14 +188,14 @@ pub fn prompt_comprehensive_review_with_diff_with_context(
 /// * `template_context` - Template context containing the template registry
 /// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
 /// * `guidelines` - The language-specific review guidelines
-/// * `diff` - The git diff to review (changes since pipeline start)
+/// * `diff_content` - The diff content with truncation metadata
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
 pub fn prompt_security_focused_review_with_diff_with_context(
     template_context: &TemplateContext,
     _context: ContextLevel,
     guidelines: &ReviewGuidelines,
-    diff: &str,
+    diff_content: &DiffReviewContent,
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
@@ -181,12 +208,45 @@ pub fn prompt_security_focused_review_with_diff_with_context(
         .get_template(template_name)
         .unwrap_or_else(|_| include_str!("templates/security_review.txt").to_string());
 
+    // Build exploration instruction text
+    let exploration_instruction = build_exploration_instruction(diff_content);
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
-        ("DIFF", diff.to_string()),
+        ("DIFF", diff_content.content.clone()),
         ("GUIDELINES", security_section),
+        ("EXPLORATION_REQUIRED", exploration_instruction),
+        (
+            "EXPLORATION_MODE",
+            if diff_content.truncation_level != DiffTruncationLevel::Full {
+                "true".to_string()
+            } else {
+                String::new()
+            },
+        ),
     ]);
 
     load_template_str(&tmpl_content, &variables)
+}
+
+/// Build exploration instruction text based on truncation level.
+pub fn build_exploration_instruction(diff_content: &DiffReviewContent) -> String {
+    match diff_content.truncation_level {
+        DiffTruncationLevel::Full => String::new(),
+        DiffTruncationLevel::Abbreviated => format!(
+            "[DIFF ABBREVIATED: {}/{} files shown. You MUST explore the full diff using 'git diff HEAD' to review properly.]",
+            diff_content.shown_file_count.unwrap_or(0),
+            diff_content.total_file_count
+        ),
+        DiffTruncationLevel::FileList => format!(
+            "[FILE LIST ONLY: {} files changed. You MUST explore each file's diff using 'git diff HEAD -- <file>' to review properly.]",
+            diff_content.total_file_count
+        ),
+        DiffTruncationLevel::FileListAbbreviated => format!(
+            "[FILE LIST ABBREVIATED: {}/{} files shown. You MUST run 'git status' to find all files and explore their diffs.]",
+            diff_content.shown_file_count.unwrap_or(0),
+            diff_content.total_file_count
+        ),
+    }
 }

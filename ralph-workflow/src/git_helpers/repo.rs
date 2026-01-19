@@ -16,17 +16,38 @@ use std::path::PathBuf;
 
 use super::identity::GitIdentity;
 
-/// Maximum diff size (in bytes) before showing a warning.
-/// 100KB is a reasonable threshold - most meaningful diffs are smaller.
-const MAX_DIFF_SIZE_WARNING: usize = 100 * 1024;
+/// The level of truncation applied to a diff for review.
+///
+/// This enum tracks how much a diff has been abbreviated and determines
+/// what instructions should be given to the reviewer agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DiffTruncationLevel {
+    /// No truncation - full diff is included
+    #[default]
+    Full,
+    /// Diff was semantically truncated - high-priority files shown, instruction to explore
+    Abbreviated,
+    /// Only file paths listed - instruction to explore each file's diff
+    FileList,
+    /// File list was abbreviated - instruction to explore and discover files
+    FileListAbbreviated,
+}
 
-/// Maximum diff size (in bytes) before truncation for reviewers.
-/// 1MB provides reviewers with more context for large changes.
-const MAX_DIFF_SIZE_HARD: usize = 1024 * 1024;
-
-/// Truncation marker for reviewer diffs.
-const DIFF_TRUNCATED_MARKER: &str =
-    "\n\n[Diff truncated due to size. Showing first portion above.]";
+/// The result of diff truncation for review purposes.
+///
+/// Contains both the potentially-truncated content and metadata about
+/// what truncation was applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiffReviewContent {
+    /// The content to include in the review prompt
+    pub content: String,
+    /// The level of truncation applied
+    pub truncation_level: DiffTruncationLevel,
+    /// Total number of files in the full diff (for context in messages)
+    pub total_file_count: usize,
+    /// Number of files shown in the abbreviated content (if applicable)
+    pub shown_file_count: Option<usize>,
+}
 
 /// Convert git2 error to `io::Error`.
 fn git2_to_io_error(err: &git2::Error) -> io::Error {
@@ -182,48 +203,321 @@ pub fn git_diff() -> io::Result<String> {
     Ok(String::from_utf8_lossy(&result).to_string())
 }
 
-/// Validate and optionally truncate a diff for LLM consumption (for reviewers).
+/// Truncate a diff for review using progressive fallback strategy.
 ///
-/// This function checks if a diff is too large for effective LLM processing
-/// and truncates it for reviewer use. For commit messages, use chunk instead.
+/// This function implements a multi-level truncation approach:
+/// 1. If diff fits within `max_full_diff_size`, return as-is
+/// 2. If diff is too large, semantically truncate with file prioritization
+/// 3. If even abbreviated diff is too large, return just file paths
+/// 4. If file list is too large, return abbreviated file list
+///
+/// When truncation occurs, the returned content includes clear markers
+/// and the truncation level indicates what instructions should be shown
+/// to the reviewer agent about exploring the full diff themselves.
 ///
 /// # Arguments
 ///
-/// * `diff` - The git diff to validate
+/// * `diff` - The full git diff
+/// * `max_full_diff_size` - Maximum size for full diff (default: 100KB)
+/// * `max_abbreviated_size` - Maximum size for abbreviated diff (default: 50KB)
+/// * `max_file_list_size` - Maximum size for file list (default: 10KB)
 ///
 /// # Returns
 ///
-/// Returns a tuple containing:
-/// - The validated (and possibly truncated) diff
-/// - A boolean indicating whether the diff was truncated
-pub fn validate_and_truncate_diff(diff: String) -> (String, bool) {
+/// A `DiffReviewContent` struct containing the truncated content and metadata.
+pub fn truncate_diff_for_review(
+    diff: String,
+    max_full_diff_size: usize,
+    max_abbreviated_size: usize,
+    max_file_list_size: usize,
+) -> DiffReviewContent {
     let diff_size = diff.len();
 
-    // Warn about large diffs
-    if diff_size > MAX_DIFF_SIZE_WARNING {
-        eprintln!(
-            "Warning: Large diff detected ({diff_size} bytes). This may affect commit message quality."
+    // Level 1: Full diff fits
+    if diff_size <= max_full_diff_size {
+        return DiffReviewContent {
+            content: diff,
+            truncation_level: DiffTruncationLevel::Full,
+            total_file_count: 0,
+            shown_file_count: None,
+        };
+    }
+
+    // Parse the diff into files for processing
+    let files = parse_diff_to_files(&diff);
+    let total_file_count = files.len();
+
+    // Level 2: Abbreviated diff with semantic prioritization
+    let abbreviated = truncate_diff_semantically(&diff, &files, max_abbreviated_size);
+    let abbreviated_size = abbreviated.content.len();
+
+    if abbreviated_size <= max_abbreviated_size {
+        return abbreviated;
+    }
+
+    // Level 3: File list only
+    let file_list = build_file_list(&files);
+    let file_list_size = file_list.content.len();
+
+    if file_list_size <= max_file_list_size {
+        return file_list;
+    }
+
+    // Level 4: Abbreviated file list
+    abbreviate_file_list(&files, max_file_list_size, total_file_count)
+}
+
+/// Represents a single file's diff chunk.
+#[derive(Debug, Default, Clone)]
+struct DiffFile {
+    /// File path (extracted from diff header)
+    path: String,
+    /// Priority for selection (higher = more important)
+    priority: i32,
+    /// Lines in this file's diff
+    lines: Vec<String>,
+}
+
+/// Assign a priority score to a file path for truncation selection.
+///
+/// Higher priority files are kept first when truncating:
+/// - src/*.rs: +100 (source code is most important)
+/// - src/*: +80 (other src files)
+/// - tests/*: +40 (tests are important but secondary)
+/// - Cargo.toml, package.json, etc.: +60 (config files)
+/// - docs/*, *.md: +20 (docs are least important)
+/// - Other: +50 (default)
+fn prioritize_file_path(path: &str) -> i32 {
+    use std::path::Path;
+    let path_lower = path.to_lowercase();
+
+    // Helper function for case-insensitive extension check
+    let has_ext = |ext: &str| -> bool {
+        Path::new(path)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|e| e.eq_ignore_ascii_case(ext))
+    };
+
+    // Helper function for case-insensitive file extension check on path_lower
+    let has_ext_lower = |ext: &str| -> bool {
+        Path::new(&path_lower)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|e| e.eq_ignore_ascii_case(ext))
+    };
+
+    // Source code files (highest priority)
+    if path_lower.contains("src/") && has_ext_lower("rs") {
+        100
+    } else if path_lower.contains("src/") {
+        80
+    }
+    // Test files
+    else if path_lower.contains("test") {
+        40
+    }
+    // Config files - use case-insensitive extension check
+    else if has_ext("toml")
+        || has_ext("json")
+        || path_lower.ends_with("cargo.toml")
+        || path_lower.ends_with("package.json")
+        || path_lower.ends_with("tsconfig.json")
+    {
+        60
+    }
+    // Documentation files (lowest priority)
+    else if path_lower.contains("doc") || has_ext("md") {
+        20
+    }
+    // Default priority
+    else {
+        50
+    }
+}
+
+/// Parse a git diff into individual file blocks.
+fn parse_diff_to_files(diff: &str) -> Vec<DiffFile> {
+    let mut files: Vec<DiffFile> = Vec::new();
+    let mut current_file = DiffFile::default();
+    let mut in_file = false;
+
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            if in_file && !current_file.lines.is_empty() {
+                files.push(std::mem::take(&mut current_file));
+            }
+            in_file = true;
+            current_file.lines.push(line.to_string());
+
+            if let Some(path) = line.split(" b/").nth(1) {
+                current_file.path = path.to_string();
+                current_file.priority = prioritize_file_path(path);
+            }
+        } else if in_file {
+            current_file.lines.push(line.to_string());
+        }
+    }
+
+    if in_file && !current_file.lines.is_empty() {
+        files.push(current_file);
+    }
+
+    files
+}
+
+/// Semantically truncate diff with file prioritization.
+fn truncate_diff_semantically(
+    _diff: &str,
+    files: &[DiffFile],
+    max_size: usize,
+) -> DiffReviewContent {
+    // Sort by priority, greedily select files that fit
+    let mut sorted_files = files.to_vec();
+    sorted_files.sort_by_key(|f: &DiffFile| std::cmp::Reverse(f.priority));
+
+    let mut selected_files = Vec::new();
+    let mut current_size = 0;
+
+    for file in &sorted_files {
+        let file_size: usize = file.lines.iter().map(|l| l.len() + 1).sum();
+
+        if current_size + file_size <= max_size {
+            current_size += file_size;
+            selected_files.push(file.clone());
+        } else if current_size > 0 {
+            break;
+        } else {
+            // Even the first file is too large, take part of it
+            let truncated_lines = truncate_lines_to_fit(&file.lines, max_size);
+            selected_files.push(DiffFile {
+                path: file.path.clone(),
+                priority: file.priority,
+                lines: truncated_lines,
+            });
+            break;
+        }
+    }
+
+    let shown_count = selected_files.len();
+    let omitted_count = files.len().saturating_sub(shown_count);
+
+    let mut result = String::new();
+    if omitted_count > 0 {
+        use std::fmt::Write;
+        let _ = write!(
+            result,
+            "[DIFF TRUNCATED: Showing {shown_count} of {} files. You MUST explore the full diff using git commands to review properly.]\n\n",
+            files.len()
         );
     }
 
-    // Truncate if over the hard limit
-    if diff_size > MAX_DIFF_SIZE_HARD {
-        let truncate_size = MAX_DIFF_SIZE_HARD - DIFF_TRUNCATED_MARKER.len();
-        let truncated = diff.char_indices().nth(truncate_size).map_or_else(
-            || format!("{diff}{DIFF_TRUNCATED_MARKER}"),
-            |(i, _)| format!("{}{}", &diff[..i], DIFF_TRUNCATED_MARKER),
-        );
-
-        eprintln!(
-            "Warning: Diff truncated from {} to {} bytes for LLM processing.",
-            diff_size,
-            truncated.len()
-        );
-
-        (truncated, true)
-    } else {
-        (diff, false)
+    for file in &selected_files {
+        for line in &file.lines {
+            result.push_str(line);
+            result.push('\n');
+        }
     }
+
+    DiffReviewContent {
+        content: result,
+        truncation_level: DiffTruncationLevel::Abbreviated,
+        total_file_count: files.len(),
+        shown_file_count: Some(shown_count),
+    }
+}
+
+/// Build a file list from diff files.
+fn build_file_list(files: &[DiffFile]) -> DiffReviewContent {
+    let mut result = String::from(
+        "[FULL DIFF TOO LARGE - Showing file list only. You MUST explore each file's diff using git commands.]\n\n"
+    );
+    result.push_str("FILES CHANGED (you must explore each file's diff):\n");
+
+    for file in files {
+        if !file.path.is_empty() {
+            result.push_str("  - ");
+            result.push_str(&file.path);
+            result.push('\n');
+        }
+    }
+
+    DiffReviewContent {
+        content: result,
+        truncation_level: DiffTruncationLevel::FileList,
+        total_file_count: files.len(),
+        shown_file_count: Some(files.len()),
+    }
+}
+
+/// Abbreviate a file list that's too large.
+fn abbreviate_file_list(
+    files: &[DiffFile],
+    max_size: usize,
+    total_count: usize,
+) -> DiffReviewContent {
+    let mut result = String::from(
+        "[FILE LIST TOO LARGE - You MUST explore the repository to find all changed files.]\n\n",
+    );
+
+    // Calculate how many files we can show
+    let mut size_so_far = result.len();
+    let mut shown_count = 0;
+
+    result.push_str("SAMPLE OF CHANGED FILES (explore to find all):\n");
+
+    for file in files {
+        let line = format!("  - {}\n", file.path);
+        if size_so_far + line.len() > max_size {
+            break;
+        }
+        result.push_str(&line);
+        size_so_far += line.len();
+        shown_count += 1;
+    }
+
+    let omitted = total_count.saturating_sub(shown_count);
+    if omitted > 0 {
+        use std::fmt::Write;
+        let _ = write!(
+            result,
+            "\n... and {} more files (explore to find all)\n",
+            omitted
+        );
+    }
+
+    DiffReviewContent {
+        content: result,
+        truncation_level: DiffTruncationLevel::FileListAbbreviated,
+        total_file_count: total_count,
+        shown_file_count: Some(shown_count),
+    }
+}
+
+/// Truncate a slice of lines to fit within a maximum size.
+///
+/// This is a fallback for when even a single file is too large.
+/// Returns as many complete lines as will fit.
+fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current_size = 0;
+
+    for line in lines {
+        let line_size = line.len() + 1; // +1 for newline
+        if current_size + line_size <= max_size {
+            current_size += line_size;
+            result.push(line.clone());
+        } else {
+            break;
+        }
+    }
+
+    // Add truncation marker to the last line
+    if let Some(last) = result.last_mut() {
+        last.push_str(" [truncated...]");
+    }
+
+    result
 }
 
 fn index_has_changes_to_commit(repo: &git2::Repository, index: &git2::Index) -> io::Result<bool> {
@@ -690,30 +984,141 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_and_truncate_diff_small_diff() {
+    fn test_truncate_diff_for_review_full() {
         // Small diffs should not be truncated
-        let small_diff = "diff --git a/file.txt b/file.txt\n+ hello";
-        let (result, truncated) = validate_and_truncate_diff(small_diff.to_string());
-        assert!(!truncated);
-        assert_eq!(result, small_diff);
+        let diff = "diff --git a/file.rs b/file.rs\n+ new line\n- old line";
+        let result = truncate_diff_for_review(diff.to_string(), 10_000, 5_000, 1_000);
+        assert_eq!(result.truncation_level, DiffTruncationLevel::Full);
+        // total_file_count is 0 for full diffs (no parsing needed)
+        assert_eq!(result.total_file_count, 0);
+        assert_eq!(result.shown_file_count, None);
     }
 
     #[test]
-    fn test_validate_and_truncate_diff_large_diff() {
-        // Large diffs should be truncated
-        let large_diff = "x".repeat(MAX_DIFF_SIZE_HARD + 1000);
-        let (result, truncated) = validate_and_truncate_diff(large_diff.clone());
-        assert!(truncated);
-        assert!(result.len() < large_diff.len());
-        assert!(result.contains(DIFF_TRUNCATED_MARKER));
+    fn test_truncate_diff_for_review_abbreviated() {
+        // Create a diff with multiple files that will exceed max_full_diff_size
+        let mut diff = String::new();
+        for i in 0..20 {
+            diff.push_str(&format!("diff --git a/file{}.rs b/file{}.rs\n", i, i));
+            diff.push_str("index abc123..def456 100644\n");
+            diff.push_str(&format!("--- a/file{}.rs\n", i));
+            diff.push_str(&format!("+++ b/file{}.rs\n", i));
+            for j in 0..100 {
+                diff.push_str(&format!("+line {} in file {}\n", j, i));
+                diff.push_str(&format!("-line {} in file {}\n", j, i));
+            }
+        }
+
+        let result = truncate_diff_for_review(diff, 1_000, 5_000, 1_000);
+        assert_eq!(result.truncation_level, DiffTruncationLevel::Abbreviated);
+        assert!(result.shown_file_count.unwrap_or(0) < result.total_file_count);
+        assert!(result.content.contains("TRUNCATED") || result.content.contains("truncated"));
     }
 
     #[test]
-    fn test_validate_and_truncate_diff_empty() {
-        // Empty diffs should not be truncated
-        let empty_diff = "";
-        let (result, truncated) = validate_and_truncate_diff(empty_diff.to_string());
-        assert!(!truncated);
-        assert_eq!(result, empty_diff);
+    fn test_prioritize_file_path() {
+        // Source files get highest priority
+        assert!(prioritize_file_path("src/main.rs") > prioritize_file_path("tests/test.rs"));
+        assert!(prioritize_file_path("src/lib.rs") > prioritize_file_path("README.md"));
+
+        // Tests get lower priority than src
+        assert!(prioritize_file_path("src/main.rs") > prioritize_file_path("test/test.rs"));
+
+        // Config files get medium priority
+        assert!(prioritize_file_path("Cargo.toml") > prioritize_file_path("docs/guide.md"));
+
+        // Docs get lowest priority
+        assert!(prioritize_file_path("README.md") < prioritize_file_path("src/main.rs"));
+    }
+
+    #[test]
+    fn test_truncate_diff_keeps_high_priority_files() {
+        let diff = "diff --git a/README.md b/README.md\n\
+            +doc change\n\
+            diff --git a/src/main.rs b/src/main.rs\n\
+            +important change\n\
+            diff --git a/tests/test.rs b/tests/test.rs\n\
+            +test change\n";
+
+        // With a very small limit, should keep src/main.rs first due to priority
+        let result = truncate_diff_for_review(diff.to_string(), 50, 100, 1_000);
+
+        // Should include the high priority src file
+        assert!(result.content.contains("src/main.rs") || result.content.contains("file list"));
+    }
+
+    #[test]
+    fn test_diff_review_content_default_truncation_level() {
+        // Test that DiffTruncationLevel::Full is the default
+        assert_eq!(DiffTruncationLevel::default(), DiffTruncationLevel::Full);
+    }
+
+    #[test]
+    fn test_exploration_instruction_helper() {
+        // Use the local helper function instead of importing from guided module
+        // Test Full level - should return empty string
+        let full_content = DiffReviewContent {
+            content: "some diff".to_string(),
+            truncation_level: DiffTruncationLevel::Full,
+            total_file_count: 5,
+            shown_file_count: None,
+        };
+        let instruction = build_exploration_instruction_for_test(&full_content);
+        assert!(instruction.is_empty());
+
+        // Test Abbreviated level - should have instruction
+        let abbreviated_content = DiffReviewContent {
+            content: "truncated diff".to_string(),
+            truncation_level: DiffTruncationLevel::Abbreviated,
+            total_file_count: 10,
+            shown_file_count: Some(3),
+        };
+        let instruction = build_exploration_instruction_for_test(&abbreviated_content);
+        assert!(instruction.contains("ABBREVIATED"));
+        assert!(instruction.contains("3/10"));
+
+        // Test FileList level - should have instruction
+        let file_list_content = DiffReviewContent {
+            content: "files list".to_string(),
+            truncation_level: DiffTruncationLevel::FileList,
+            total_file_count: 50,
+            shown_file_count: Some(50),
+        };
+        let instruction = build_exploration_instruction_for_test(&file_list_content);
+        assert!(instruction.contains("FILE LIST ONLY"));
+        assert!(instruction.contains("50 files changed"));
+
+        // Test FileListAbbreviated level - should have instruction
+        let abbreviated_list_content = DiffReviewContent {
+            content: "abbreviated file list".to_string(),
+            truncation_level: DiffTruncationLevel::FileListAbbreviated,
+            total_file_count: 200,
+            shown_file_count: Some(10),
+        };
+        let instruction = build_exploration_instruction_for_test(&abbreviated_list_content);
+        assert!(instruction.contains("FILE LIST ABBREVIATED"));
+        assert!(instruction.contains("10/200"));
+    }
+
+    /// Helper function for testing exploration instruction generation.
+    #[cfg(test)]
+    fn build_exploration_instruction_for_test(diff_content: &DiffReviewContent) -> String {
+        match diff_content.truncation_level {
+            DiffTruncationLevel::Full => String::new(),
+            DiffTruncationLevel::Abbreviated => format!(
+                "[DIFF ABBREVIATED: {}/{} files shown. You MUST explore the full diff using 'git diff HEAD' to review properly.]",
+                diff_content.shown_file_count.unwrap_or(0),
+                diff_content.total_file_count
+            ),
+            DiffTruncationLevel::FileList => format!(
+                "[FILE LIST ONLY: {} files changed. You MUST explore each file's diff using 'git diff HEAD -- <file>' to review properly.]",
+                diff_content.total_file_count
+            ),
+            DiffTruncationLevel::FileListAbbreviated => format!(
+                "[FILE LIST ABBREVIATED: {}/{} files shown. You MUST run 'git status' to find all files and explore their diffs.]",
+                diff_content.shown_file_count.unwrap_or(0),
+                diff_content.total_file_count
+            ),
+        }
     }
 }

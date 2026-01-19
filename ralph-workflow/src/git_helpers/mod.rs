@@ -39,7 +39,7 @@ pub use rebase::{
 };
 pub use repo::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
-    validate_and_truncate_diff, CommitResultFallback,
+    truncate_diff_for_review, CommitResultFallback, DiffReviewContent, DiffTruncationLevel,
 };
 pub use review_baseline::{
     get_baseline_summary, get_git_diff_from_review_baseline, get_review_baseline_info,
