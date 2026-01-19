@@ -29,15 +29,10 @@ templates/
 │   ├── _context_section.txt            # PROMPT and PLAN context
 │   ├── _diff_section.txt               # DIFF display format
 │   └── _output_checklist.txt           # Prioritized checklist format
-├── commit_message_xml.txt              # Main commit message generation
-├── commit_strict_json.txt              # Strict retry v1
-├── commit_strict_json_v2.txt           # Strict retry v2 with examples
-├── commit_ultra_minimal.txt            # Minimal prompt v1
-├── commit_ultra_minimal_v2.txt         # Minimal prompt v2
-├── commit_file_list_only.txt           # File paths only
-├── commit_file_list_summary.txt        # File summary only
-├── commit_emergency.txt                # Emergency fallback with diff
-├── commit_emergency_no_diff.txt        # Absolute last resort
+├── commit_message_xml.txt              # Normal strategy (XML format)
+├── commit_simplified.txt               # Simplified strategy (direct instructions)
+├── commit_xsd_retry.txt                # XSD validation retry (in-session)
+├── commit_message_fallback.txt         # Fallback when template rendering fails
 ├── developer_iteration.txt             # Implementation mode prompt
 ├── planning.txt                        # Planning phase prompt
 ├── fix_mode.txt                        # Fix mode prompt
@@ -156,12 +151,41 @@ All commit templates are used during the commit message generation phase, with d
 |----------|-------------|
 | `FILE_SUMMARY` | Summary statistics of changed files |
 
-#### `commit_emergency.txt`, `commit_emergency_no_diff.txt`
-**When used**: Final fallback attempts before giving up
+#### `commit_message_xml.txt` (Normal Strategy)
+**When used**: First attempt at commit generation
 
 | Variable | Description |
 |----------|-------------|
-| `DIFF` | Git diff (emergency_no_diff variant doesn't use this) |
+| `DIFF` | Git diff to analyze |
+| `FILES_CHANGED` | List of changed files |
+| `BRANCH_NAME` | Current branch name (optional) |
+
+#### `commit_simplified.txt` (Simplified Strategy)
+**When used**: Second attempt with more direct instructions
+
+| Variable | Description |
+|----------|-------------|
+| `DIFF` | Git diff to analyze |
+| `FILES_CHANGED` | List of changed files |
+| `BRANCH_NAME` | Current branch name (optional) |
+
+#### `commit_xsd_retry.txt` (XSD Validation Retry)
+**When used**: In-session retry when XSD validation fails
+
+| Variable | Description |
+|----------|-------------|
+| `DIFF` | Git diff to analyze |
+| `FILES_CHANGED` | List of changed files |
+| `BRANCH_NAME` | Current branch name (optional) |
+| `XSD_ERROR` | XSD validation error message |
+
+#### `commit_message_fallback.txt`
+**When used**: Fallback when template rendering fails
+
+| Variable | Description |
+|----------|-------------|
+| `DIFF` | Git diff to analyze |
+| `FILES_CHANGED` | List of changed files |
 
 ### Fix Template
 

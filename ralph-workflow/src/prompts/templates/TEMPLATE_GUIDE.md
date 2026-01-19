@@ -128,11 +128,10 @@ Partials in the `shared/` directory (prefixed with `_`) are reusable components:
 
 | Template | When Used | Variables |
 |----------|-----------|-----------|
-| `commit_message_xml.txt` | Standard commit generation | `DIFF`, `FILES_CHANGED`, `BRANCH_NAME` |
-| `commit_strict_json_v2.txt` | JSON format commit | `DIFF`, `FILES_CHANGED` |
-| `commit_ultra_minimal_v2.txt` | Minimal context commit | `DIFF` |
-| `commit_emergency.txt` | Emergency mode (no diff) | `FILES_CHANGED`, `BRANCH_NAME` |
-| `commit_file_list_only.txt` | File list only (no diff content) | `FILE_LIST` |
+| `commit_message_xml.txt` | Normal strategy (standard commit generation) | `DIFF`, `FILES_CHANGED`, `BRANCH_NAME` |
+| `commit_simplified.txt` | Simplified strategy (direct instructions) | `DIFF`, `FILES_CHANGED`, `BRANCH_NAME` |
+| `commit_xsd_retry.txt` | XSD validation retry (in-session) | `DIFF`, `FILES_CHANGED`, `BRANCH_NAME`, `XSD_ERROR` |
+| `commit_message_fallback.txt` | Fallback when template rendering fails | `DIFF`, `FILES_CHANGED` |
 
 **Trigger**: Used when `ralph commit` is run.
 
