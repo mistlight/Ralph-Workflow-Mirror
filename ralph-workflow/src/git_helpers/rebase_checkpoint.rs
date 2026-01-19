@@ -52,6 +52,33 @@ pub enum RebasePhase {
     RebaseAborted,
 }
 
+impl RebasePhase {
+    /// Get the maximum number of recovery attempts allowed for this phase.
+    ///
+    /// Different phases have different recovery limits:
+    /// - ConflictResolutionInProgress: Higher limit (5) - conflicts may need multiple AI attempts
+    /// - ConflictDetected: Medium limit (3) - waiting for AI to process
+    /// - RebaseInProgress: Lower limit (2) - transient Git issues
+    /// - CompletingRebase: Lower limit (2) - final stages should be quick
+    /// - PreRebaseCheck: Low limit (1) - validation should pass immediately
+    /// - Other phases: Default limit (3)
+    ///
+    /// # Returns
+    ///
+    /// The maximum number of recovery attempts for this phase.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn max_recovery_attempts(&self) -> u32 {
+        match self {
+            RebasePhase::ConflictResolutionInProgress => 5,
+            RebasePhase::ConflictDetected => 3,
+            RebasePhase::RebaseInProgress => 2,
+            RebasePhase::CompletingRebase => 2,
+            RebasePhase::PreRebaseCheck => 1,
+            _ => 3,
+        }
+    }
+}
+
 /// Checkpoint data for rebase operations.
 ///
 /// This structure contains all the information needed to resume
@@ -72,6 +99,9 @@ pub struct RebaseCheckpoint {
     pub last_error: Option<String>,
     /// Timestamp of checkpoint.
     pub timestamp: String,
+    /// Number of errors encountered in the current phase.
+    #[serde(default)]
+    pub phase_error_count: u32,
 }
 
 impl Default for RebaseCheckpoint {
@@ -84,6 +114,7 @@ impl Default for RebaseCheckpoint {
             error_count: 0,
             last_error: None,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            phase_error_count: 0,
         }
     }
 }
@@ -99,11 +130,18 @@ impl RebaseCheckpoint {
             error_count: 0,
             last_error: None,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            phase_error_count: 0,
         }
     }
 
     /// Set the phase of the rebase.
+    ///
+    /// Resets the phase error count when transitioning to a new phase.
     pub fn with_phase(mut self, phase: RebasePhase) -> Self {
+        // Reset phase error count when transitioning to a new phase
+        if self.phase != phase {
+            self.phase_error_count = 0;
+        }
         self.phase = phase;
         self.timestamp = chrono::Utc::now().to_rfc3339();
         self
@@ -126,8 +164,11 @@ impl RebaseCheckpoint {
     }
 
     /// Add an error.
+    ///
+    /// Increments both the global error count and the phase-specific error count.
     pub fn with_error(mut self, error: String) -> Self {
         self.error_count += 1;
+        self.phase_error_count += 1;
         self.last_error = Some(error);
         self.timestamp = chrono::Utc::now().to_rfc3339();
         self

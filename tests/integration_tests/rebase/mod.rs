@@ -8,5 +8,6 @@ pub mod category1_failure_modes;
 pub mod category2_failure_modes;
 pub mod category3_failure_modes;
 pub mod category4_recovery_tests;
+pub mod category5_unknown_failures;
 pub mod edge_cases;
 pub mod state_machine;

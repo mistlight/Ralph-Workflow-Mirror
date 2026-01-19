@@ -47,7 +47,7 @@ pub use rebase::{CleanupResult, ConcurrentOperation};
 
 #[cfg(any(test, feature = "test-utils"))]
 pub use rebase::{
-    is_dirty_tree_cli, rebase_in_progress_cli, restore_from_reflog,
+    attempt_automatic_recovery, is_dirty_tree_cli, rebase_in_progress_cli, restore_from_reflog,
     validate_post_rebase_with_checks, verify_rebase_completed, PostRebaseValidationResult,
 };
 

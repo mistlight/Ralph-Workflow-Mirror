@@ -929,6 +929,108 @@ fn validate_state_file(path: &Path) -> io::Result<bool> {
     Ok(false)
 }
 
+/// Attempt automatic recovery from a rebase failure.
+///
+/// This function implements an escalation strategy for recovering from
+/// rebase failures, trying multiple approaches before giving up:
+///
+/// **Level 1 - Clean state retry**: Reset to clean state and retry
+/// **Level 2 - Lock file removal**: Remove stale lock files
+/// **Level 3 - Abort and restart**: Abort current rebase and restart from checkpoint
+///
+/// # Arguments
+///
+/// * `error_kind` - The error that occurred
+/// * `phase` - The current rebase phase
+/// * `phase_error_count` - Number of errors in the current phase
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if automatic recovery succeeded and operation can continue,
+/// `Ok(false)` if recovery was attempted but operation should still abort,
+/// or an error if recovery itself failed.
+///
+/// # Example
+///
+/// ```no_run
+/// use ralph_workflow::git_helpers::rebase::{attempt_automatic_recovery, RebaseErrorKind};
+/// use ralph_workflow::git_helpers::rebase_checkpoint::RebasePhase;
+///
+/// match attempt_automatic_recovery(&RebaseErrorKind::Unknown { details: "test".to_string() }, &RebasePhase::ConflictDetected, 2) {
+///     Ok(true) => println!("Recovery succeeded, can continue"),
+///     Ok(false) => println!("Recovery attempted, should abort"),
+///     Err(e) => println!("Recovery failed: {e}"),
+/// }
+/// ```
+#[cfg(any(test, feature = "test-utils"))]
+pub fn attempt_automatic_recovery(
+    error_kind: &RebaseErrorKind,
+    phase: &crate::git_helpers::rebase_checkpoint::RebasePhase,
+    phase_error_count: u32,
+) -> io::Result<bool> {
+    use std::process::Command;
+
+    // Don't attempt recovery for fatal errors
+    match error_kind {
+        RebaseErrorKind::InvalidRevision { .. }
+        | RebaseErrorKind::DirtyWorkingTree
+        | RebaseErrorKind::RepositoryCorrupt { .. }
+        | RebaseErrorKind::EnvironmentFailure { .. }
+        | RebaseErrorKind::HookRejection { .. }
+        | RebaseErrorKind::InteractiveStop { .. }
+        | RebaseErrorKind::Unknown { .. } => {
+            return Ok(false);
+        }
+        _ => {}
+    }
+
+    let max_attempts = phase.max_recovery_attempts();
+    if phase_error_count >= max_attempts {
+        return Ok(false);
+    }
+
+    // Level 1: Try cleaning stale state
+    if cleanup_stale_rebase_state().is_ok() {
+        // If we cleaned something, try to validate the repo is in a good state
+        if validate_git_state().is_ok() {
+            return Ok(true);
+        }
+    }
+
+    // Level 2: Try removing lock files
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    let git_dir = repo.path();
+    let lock_files = ["index.lock", "packed-refs.lock", "HEAD.lock"];
+    let mut removed_any = false;
+
+    for lock_file in &lock_files {
+        let lock_path = git_dir.join(lock_file);
+        if lock_path.exists() && std::fs::remove_file(&lock_path).is_ok() {
+            removed_any = true;
+        }
+    }
+
+    if removed_any && validate_git_state().is_ok() {
+        return Ok(true);
+    }
+
+    // Level 3: For concurrent operations, try to abort the in-progress operation
+    if let RebaseErrorKind::ConcurrentOperation { .. } = error_kind {
+        // Try git rebase --abort
+        let abort_result = Command::new("git").args(["rebase", "--abort"]).output();
+
+        if abort_result.is_ok() {
+            // Check if state is now clean
+            if validate_git_state().is_ok() {
+                return Ok(true);
+            }
+        }
+    }
+
+    // Recovery attempts exhausted or failed
+    Ok(false)
+}
+
 /// Validate the overall Git repository state for corruption.
 ///
 /// Performs comprehensive checks on the repository to detect

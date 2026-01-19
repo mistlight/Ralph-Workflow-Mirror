@@ -212,18 +212,22 @@ impl RebaseStateMachine {
 
     /// Check if recovery is possible.
     ///
-    /// Returns `true` if the error count is below the maximum recovery attempts.
+    /// Returns `true` if the phase-specific error count is below the maximum
+    /// recovery attempts for the current phase.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn can_recover(&self) -> bool {
-        self.checkpoint.error_count < self.max_recovery_attempts
+        let max_for_phase = self.checkpoint.phase.max_recovery_attempts();
+        self.checkpoint.phase_error_count < max_for_phase
     }
 
     /// Check if the rebase should be aborted.
     ///
-    /// Returns `true` if the error count has exceeded the maximum recovery attempts.
+    /// Returns `true` if the phase-specific error count has exceeded the maximum
+    /// recovery attempts for the current phase.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn should_abort(&self) -> bool {
-        self.checkpoint.error_count >= self.max_recovery_attempts
+        let max_for_phase = self.checkpoint.phase.max_recovery_attempts();
+        self.checkpoint.phase_error_count >= max_for_phase
     }
 
     /// Check if all conflicts have been resolved.
