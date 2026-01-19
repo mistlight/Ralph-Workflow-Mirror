@@ -85,6 +85,9 @@ fn test_ralph_init_with_template_exits_cleanly() {
     // Initialize git repo
     let _ = init_git_repo(&dir);
 
+    // Remove the PROMPT.md that init_git_repo creates, so we can test --init creating it
+    fs::remove_file(dir_path.join("PROMPT.md")).unwrap();
+
     // Set up config dir with existing config
     let config_home = dir_path.join(".config");
     fs::create_dir_all(&config_home).unwrap();
