@@ -29,6 +29,8 @@ pub struct ResumeContext {
     pub rebase_state: RebaseState,
     /// Run ID for tracing
     pub run_id: String,
+    /// Captured prompts from the original run for deterministic replay
+    pub prompt_history: Option<std::collections::HashMap<String, String>>,
 }
 
 impl ResumeContext {
@@ -78,6 +80,7 @@ impl PipelineCheckpoint {
             resume_count: self.resume_count,
             rebase_state: self.rebase_state.clone(),
             run_id: self.run_id.clone(),
+            prompt_history: self.prompt_history.clone(),
         }
     }
 }
@@ -391,6 +394,7 @@ mod tests {
         assert_eq!(resume_ctx.total_reviewer_passes, 3);
         assert_eq!(resume_ctx.resume_count, 0);
         assert_eq!(resume_ctx.run_id, checkpoint.run_id);
+        assert!(resume_ctx.prompt_history.is_none());
     }
 
     #[test]
@@ -404,6 +408,7 @@ mod tests {
             resume_count: 0,
             rebase_state: RebaseState::default(),
             run_id: "test".to_string(),
+            prompt_history: None,
         };
 
         assert_eq!(ctx.phase_name(), "Development iteration 3/5");
@@ -420,6 +425,7 @@ mod tests {
             resume_count: 0,
             rebase_state: RebaseState::default(),
             run_id: "test".to_string(),
+            prompt_history: None,
         };
 
         assert_eq!(ctx.phase_name(), "Review (pass 2/3)");
@@ -436,6 +442,7 @@ mod tests {
             resume_count: 1,
             rebase_state: RebaseState::default(),
             run_id: "test".to_string(),
+            prompt_history: None,
         };
 
         assert_eq!(ctx.phase_name(), "Verification review 3/3");
@@ -452,6 +459,7 @@ mod tests {
             resume_count: 0,
             rebase_state: RebaseState::default(),
             run_id: "test".to_string(),
+            prompt_history: None,
         };
 
         assert_eq!(ctx.phase_name(), "Fix");

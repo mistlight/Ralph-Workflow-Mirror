@@ -4,11 +4,12 @@
 //! including validation and state restoration.
 
 use crate::agents::AgentRegistry;
-use crate::checkpoint::file_state::FileSystemState;
+use crate::checkpoint::file_state::{FileSystemState, ValidationError};
 use crate::checkpoint::{load_checkpoint, validate_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::config::Config;
 use crate::git_helpers::rebase_in_progress;
 use crate::logger::Logger;
+use std::fs;
 
 /// Result of handling resume, containing the checkpoint.
 pub struct ResumeResult {
@@ -168,12 +169,111 @@ fn validate_file_system_state(
             ValidationOutcome::Passed
         }
         crate::checkpoint::recovery::RecoveryStrategy::Auto => {
-            // Auto recovery - for now, we just warn but continue
-            // In the future, this could attempt automatic fixes
-            logger.warn("Automatic recovery not fully implemented for file system changes.");
-            logger.warn("Proceeding with resume despite file changes (strategy: auto).");
-            logger.info("Note: Pipeline behavior may be unpredictable.");
-            ValidationOutcome::Passed
+            // Attempt automatic recovery for recoverable errors
+            let (_recovered, remaining) = attempt_auto_recovery(file_system_state, &errors, logger);
+
+            if remaining.is_empty() {
+                logger.success("Automatic recovery completed successfully.");
+                ValidationOutcome::Passed
+            } else {
+                logger.warn("Some issues could not be automatically recovered:");
+                for error in &remaining {
+                    logger.warn(&format!("  - {}", error));
+                }
+                logger.warn("Proceeding with resume despite unrecovered issues (strategy: auto).");
+                logger.info("Note: Pipeline behavior may be unpredictable.");
+                ValidationOutcome::Passed
+            }
+        }
+    }
+}
+
+/// Attempt automatic recovery from file system state changes.
+///
+/// This function attempts to automatically fix recoverable issues:
+/// - Restores small files from content stored in snapshot
+/// - Warns about unrecoverable issues (large files, git changes)
+///
+/// # Arguments
+///
+/// * `file_system_state` - The file system state from checkpoint
+/// * `errors` - Validation errors that were detected
+/// * `logger` - Logger for output
+///
+/// # Returns
+///
+/// A tuple of (number of issues recovered, remaining errors)
+fn attempt_auto_recovery(
+    file_system_state: &FileSystemState,
+    errors: &[ValidationError],
+    logger: &Logger,
+) -> (usize, Vec<ValidationError>) {
+    let mut recovered = 0;
+    let mut remaining = Vec::new();
+
+    for error in errors {
+        match attempt_recovery_for_error(file_system_state, error, logger) {
+            Ok(()) => {
+                recovered += 1;
+                logger.success(&format!("Recovered: {}", error));
+            }
+            Err(e) => {
+                remaining.push(error.clone());
+                logger.warn(&format!("Could not recover: {} - {}", error, e));
+            }
+        }
+    }
+
+    (recovered, remaining)
+}
+
+/// Attempt to recover from a single validation error.
+///
+/// # Returns
+///
+/// `Ok(())` if recovery succeeded, `Err(reason)` if it failed.
+fn attempt_recovery_for_error(
+    file_system_state: &FileSystemState,
+    error: &ValidationError,
+    logger: &Logger,
+) -> Result<(), String> {
+    match error {
+        ValidationError::FileContentChanged { path } => {
+            // Try to restore from snapshot if content is available
+            if let Some(snapshot) = file_system_state.files.get(path) {
+                if let Some(content) = &snapshot.content {
+                    fs::write(path, content).map_err(|e| format!("Failed to write file: {}", e))?;
+                    logger.info(&format!("Restored {} from checkpoint content.", path));
+                    return Ok(());
+                }
+            }
+            Err("No content available in snapshot".to_string())
+        }
+        ValidationError::GitHeadChanged { .. } => {
+            // Git state changes are not automatically recoverable
+            // They require user intervention to reset or accept the new state
+            Err("Git HEAD changes require manual intervention".to_string())
+        }
+        ValidationError::GitStateInvalid { .. } => {
+            Err("Git state validation requires manual intervention".to_string())
+        }
+        ValidationError::FileMissing { path } => {
+            // Can't recover a missing file unless we have content
+            if let Some(snapshot) = file_system_state.files.get(path) {
+                if let Some(content) = &snapshot.content {
+                    fs::write(path, content).map_err(|e| format!("Failed to write file: {}", e))?;
+                    logger.info(&format!("Restored missing {} from checkpoint.", path));
+                    return Ok(());
+                }
+            }
+            Err(format!("Cannot recover missing file {}", path))
+        }
+        ValidationError::FileUnexpectedlyExists { path } => {
+            // Unexpected files should be removed by user
+            Err(format!(
+                "File {} should not exist - requires manual removal",
+                path
+            ))
         }
     }
 }

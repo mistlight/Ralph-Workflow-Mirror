@@ -641,6 +641,7 @@ mod tests {
             resume_count: 1,
             rebase_state: RebaseState::NotStarted,
             run_id: "test-run-id".to_string(),
+            prompt_history: None,
         };
 
         let result = prompt_for_agent(
@@ -678,6 +679,7 @@ mod tests {
             resume_count: 2,
             rebase_state: RebaseState::NotStarted,
             run_id: "test-run-id".to_string(),
+            prompt_history: None,
         };
 
         let result = prompt_for_agent(
@@ -717,6 +719,7 @@ mod tests {
             resume_count: 0,
             rebase_state: RebaseState::NotStarted,
             run_id: "test-run-id".to_string(),
+            prompt_history: None,
         };
 
         let result = prompt_for_agent(
