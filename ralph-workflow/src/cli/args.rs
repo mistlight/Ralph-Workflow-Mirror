@@ -342,7 +342,6 @@ pub struct CommitPlumbingFlags {
 /// Commit display plumbing flags.
 ///
 /// This groups flags for displaying commit-related information.
-/// Note: The handler for `show_baseline` is in `cli/handlers/baseline.rs`.
 #[derive(Parser, Debug, Default)]
 pub struct CommitDisplayFlags {
     /// Show the generated commit message and exit
