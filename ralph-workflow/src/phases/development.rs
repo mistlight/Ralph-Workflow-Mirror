@@ -142,9 +142,20 @@ pub fn run_development_phase(
 
         let snap = git_snapshot()?;
         if snap == prev_snap {
-            ctx.logger.warn("No git-status change detected");
+            if snap.is_empty() {
+                ctx.logger
+                    .warn("No git-status change detected (repository is clean)");
+            } else {
+                ctx.logger.warn(&format!(
+                    "No git-status change detected (existing changes: {})",
+                    snap.lines().count()
+                ));
+            }
         } else {
-            ctx.logger.success("Repository modified");
+            ctx.logger.success(&format!(
+                "Repository modified ({} file(s) changed)",
+                snap.lines().count()
+            ));
             ctx.stats.changes_detected += 1;
             handle_commit_after_development(ctx)?;
         }
