@@ -4,6 +4,7 @@
 //! events to log files, even in edge cases like missing turn.completed events
 //! or last lines without trailing newlines.
 
+use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;
 use ralph_workflow::files::result_extraction::extract_last_result;
 use ralph_workflow::json_parser::codex::CodexParser;
@@ -18,32 +19,34 @@ use tempfile::TempDir;
 /// result event is written to the log file and can be extracted.
 #[test]
 fn test_codex_parser_normal_flow_with_turn_completed() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("codex_test.log");
+    with_default_timeout(|| {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("codex_test.log");
 
-    // Create a CodexParser with log file
-    let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
-    let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
-        .with_log_file_for_test(log_path.to_str().unwrap());
+        // Create a CodexParser with log file
+        let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
+        let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+            .with_log_file_for_test(log_path.to_str().unwrap());
 
-    // Simulate a normal flow: thread started → turn started → item started → turn completed
-    let input = r#"{"type":"thread.started","thread_id":"thread-123"}
+        // Simulate a normal flow: thread started → turn started → item started → turn completed
+        let input = r#"{"type":"thread.started","thread_id":"thread-123"}
 {"type":"turn.started"}
 {"type":"item.started","item":{"type":"agent_message","text":"Hello World"}}
 {"type":"item.completed","item":{"type":"agent_message"}}
 {"type":"turn.completed","usage":{"prompt_tokens":10,"completion_tokens":20}}"#;
 
-    let reader = BufReader::new(input.as_bytes());
-    parser.parse_stream_for_test(reader).unwrap();
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader).unwrap();
 
-    // Verify the synthetic result event was written and can be extracted
-    let result = extract_last_result(&log_path).unwrap();
-    assert!(
-        result.is_some(),
-        "Expected to find result event in normal flow"
-    );
-    let result_content = result.unwrap();
-    assert!(result_content.contains("Hello World"));
+        // Verify the synthetic result event was written and can be extracted
+        let result = extract_last_result(&log_path).unwrap();
+        assert!(
+            result.is_some(),
+            "Expected to find result event in normal flow"
+        );
+        let result_content = result.unwrap();
+        assert!(result_content.contains("Hello World"));
+    });
 }
 
 /// Test fallback flow without turn.completed event.
@@ -53,30 +56,32 @@ fn test_codex_parser_normal_flow_with_turn_completed() {
 /// event with any accumulated content.
 #[test]
 fn test_codex_parser_fallback_without_turn_completed() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("codex_fallback.log");
+    with_default_timeout(|| {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("codex_fallback.log");
 
-    let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
-    let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
-        .with_log_file_for_test(log_path.to_str().unwrap());
+        let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
+        let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+            .with_log_file_for_test(log_path.to_str().unwrap());
 
-    // Simulate stream ending without turn.completed
-    let input = r#"{"type":"thread.started","thread_id":"thread-456"}
+        // Simulate stream ending without turn.completed
+        let input = r#"{"type":"thread.started","thread_id":"thread-456"}
 {"type":"turn.started"}
 {"type":"item.started","item":{"type":"agent_message","text":"Fallback content"}}
 {"type":"item.completed","item":{"type":"agent_message"}}"#;
 
-    let reader = BufReader::new(input.as_bytes());
-    parser.parse_stream_for_test(reader).unwrap();
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader).unwrap();
 
-    // Verify the fallback synthetic result event was written
-    let result = extract_last_result(&log_path).unwrap();
-    assert!(
-        result.is_some(),
-        "Expected to find result event in fallback flow (no turn.completed)"
-    );
-    let result_content = result.unwrap();
-    assert!(result_content.contains("Fallback content"));
+        // Verify the fallback synthetic result event was written
+        let result = extract_last_result(&log_path).unwrap();
+        assert!(
+            result.is_some(),
+            "Expected to find result event in fallback flow (no turn.completed)"
+        );
+        let result_content = result.unwrap();
+        assert!(result_content.contains("Fallback content"));
+    });
 }
 
 /// Test last line without trailing newline.
@@ -85,27 +90,29 @@ fn test_codex_parser_fallback_without_turn_completed() {
 /// file doesn't have a trailing newline.
 #[test]
 fn test_codex_parser_last_line_without_trailing_newline() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("codex_no_newline.log");
+    with_default_timeout(|| {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("codex_no_newline.log");
 
-    let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
-    let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
-        .with_log_file_for_test(log_path.to_str().unwrap());
+        let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
+        let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+            .with_log_file_for_test(log_path.to_str().unwrap());
 
-    // Normal flow - the parser should handle trailing newlines correctly
-    let input = r#"{"type":"thread.started","thread_id":"thread-789"}
+        // Normal flow - the parser should handle trailing newlines correctly
+        let input = r#"{"type":"thread.started","thread_id":"thread-789"}
 {"type":"turn.started"}
 {"type":"item.started","item":{"type":"agent_message","text":"No newline test"}}
 {"type":"item.completed","item":{"type":"agent_message"}}
 {"type":"turn.completed","usage":{"prompt_tokens":5,"completion_tokens":10}}"#;
 
-    let reader = BufReader::new(input.as_bytes());
-    parser.parse_stream_for_test(reader).unwrap();
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader).unwrap();
 
-    // Verify extraction works regardless of trailing newline
-    let result = extract_last_result(&log_path).unwrap();
-    assert!(result.is_some(), "Expected to find result event");
-    assert!(result.unwrap().contains("No newline test"));
+        // Verify extraction works regardless of trailing newline
+        let result = extract_last_result(&log_path).unwrap();
+        assert!(result.is_some(), "Expected to find result event");
+        assert!(result.unwrap().contains("No newline test"));
+    });
 }
 
 /// Test multiple turns with result events.
@@ -113,15 +120,16 @@ fn test_codex_parser_last_line_without_trailing_newline() {
 /// Verifies that each completed turn gets its own result event written.
 #[test]
 fn test_codex_parser_multiple_turns() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("codex_multi_turn.log");
+    with_default_timeout(|| {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("codex_multi_turn.log");
 
-    let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
-    let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
-        .with_log_file_for_test(log_path.to_str().unwrap());
+        let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
+        let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+            .with_log_file_for_test(log_path.to_str().unwrap());
 
-    // Simulate multiple turns
-    let input = r#"{"type":"thread.started","thread_id":"thread-multi"}
+        // Simulate multiple turns
+        let input = r#"{"type":"thread.started","thread_id":"thread-multi"}
 {"type":"turn.started"}
 {"type":"item.started","item":{"type":"agent_message","text":"First turn"}}
 {"type":"item.completed","item":{"type":"agent_message"}}
@@ -131,21 +139,22 @@ fn test_codex_parser_multiple_turns() {
 {"type":"item.completed","item":{"type":"agent_message"}}
 {"type":"turn.completed","usage":{"prompt_tokens":15,"completion_tokens":25}}"#;
 
-    let reader = BufReader::new(input.as_bytes());
-    parser.parse_stream_for_test(reader).unwrap();
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader).unwrap();
 
-    // Verify at least one result event was written (extraction picks the best one)
-    let result = extract_last_result(&log_path).unwrap();
-    assert!(
-        result.is_some(),
-        "Expected to find at least one result event"
-    );
-    // The result should contain content from one of the turns
-    let result_content = result.unwrap();
-    assert!(
-        result_content.contains("First turn") || result_content.contains("Second turn"),
-        "Result should contain content from one of the turns"
-    );
+        // Verify at least one result event was written (extraction picks the best one)
+        let result = extract_last_result(&log_path).unwrap();
+        assert!(
+            result.is_some(),
+            "Expected to find at least one result event"
+        );
+        // The result should contain content from one of the turns
+        let result_content = result.unwrap();
+        assert!(
+            result_content.contains("First turn") || result_content.contains("Second turn"),
+            "Result should contain content from one of the turns"
+        );
+    });
 }
 
 /// Test the exact user-reported bug scenario.
@@ -156,35 +165,37 @@ fn test_codex_parser_multiple_turns() {
 /// correctly even when the agent output ends abruptly.
 #[test]
 fn test_user_reported_bug_scenario() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("user_bug_scenario.log");
+    with_default_timeout(|| {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("user_bug_scenario.log");
 
-    let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
-    let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
-        .with_log_file_for_test(log_path.to_str().unwrap());
+        let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
+        let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+            .with_log_file_for_test(log_path.to_str().unwrap());
 
-    // Simulate the exact scenario from the user's report:
-    // Agent output that should produce a result event but might not have turn.completed
-    let input = r#"{"type":"thread.started","thread_id":"thread-user"}
+        // Simulate the exact scenario from the user's report:
+        // Agent output that should produce a result event but might not have turn.completed
+        let input = r#"{"type":"thread.started","thread_id":"thread-user"}
 {"type":"turn.started"}
 {"type":"item.started","item":{"type":"agent_message","text":"I'll craft a prioritized checklist with about ten items across four levels. I'll highlight critical issues like compile errors in args.rs, app/mod.rs, and other files."}}
 {"type":"item.completed","item":{"type":"agent_message"}}"#;
 
-    let reader = BufReader::new(input.as_bytes());
-    parser.parse_stream_for_test(reader).unwrap();
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader).unwrap();
 
-    // Verify the result event IS found (this would have failed in the original bug)
-    let result = extract_last_result(&log_path).unwrap();
+        // Verify the result event IS found (this would have failed in the original bug)
+        let result = extract_last_result(&log_path).unwrap();
 
-    assert!(
+        assert!(
         result.is_some(),
         "Expected to find result event but got None. This indicates the last-line extraction bug."
     );
 
-    let result_content = result.unwrap();
-    assert!(result_content.contains("prioritized checklist"));
-    assert!(result_content.contains("compile errors"));
-    assert!(result_content.contains("args.rs"));
+        let result_content = result.unwrap();
+        assert!(result_content.contains("prioritized checklist"));
+        assert!(result_content.contains("compile errors"));
+        assert!(result_content.contains("args.rs"));
+    });
 }
 
 /// Test that empty accumulated content doesn't cause issues.
@@ -193,25 +204,27 @@ fn test_user_reported_bug_scenario() {
 /// the parser handles it gracefully.
 #[test]
 fn test_codex_parser_empty_accumulated_content() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("codex_empty.log");
+    with_default_timeout(|| {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("codex_empty.log");
 
-    let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
-    let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
-        .with_log_file_for_test(log_path.to_str().unwrap());
+        let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
+        let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+            .with_log_file_for_test(log_path.to_str().unwrap());
 
-    // Turn started but no item content
-    let input = r#"{"type":"thread.started","thread_id":"thread-empty"}
+        // Turn started but no item content
+        let input = r#"{"type":"thread.started","thread_id":"thread-empty"}
 {"type":"turn.started"}
 {"type":"turn.completed","usage":{"prompt_tokens":0,"completion_tokens":0}}"#;
 
-    let reader = BufReader::new(input.as_bytes());
-    parser.parse_stream_for_test(reader).unwrap();
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader).unwrap();
 
-    // With empty accumulated content, we might not get a result event
-    // or we might get one with empty result - both are acceptable
-    let _result = extract_last_result(&log_path).unwrap();
-    // The test passes as long as we don't crash
+        // With empty accumulated content, we might not get a result event
+        // or we might get one with empty result - both are acceptable
+        let _result = extract_last_result(&log_path).unwrap();
+        // The test passes as long as we don't crash
+    });
 }
 
 /// Test that log file is created and properly flushed.
@@ -220,34 +233,36 @@ fn test_codex_parser_empty_accumulated_content() {
 /// the expected content.
 #[test]
 fn test_codex_parser_log_file_flushed() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("codex_flushed.log");
+    with_default_timeout(|| {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("codex_flushed.log");
 
-    let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
-    let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
-        .with_log_file_for_test(log_path.to_str().unwrap());
+        let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
+        let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+            .with_log_file_for_test(log_path.to_str().unwrap());
 
-    let input = r#"{"type":"thread.started","thread_id":"thread-flush"}
+        let input = r#"{"type":"thread.started","thread_id":"thread-flush"}
 {"type":"turn.started"}
 {"type":"item.started","item":{"type":"agent_message","text":"Flush test"}}
 {"type":"item.completed","item":{"type":"agent_message"}}
 {"type":"turn.completed","usage":{"prompt_tokens":8,"completion_tokens":12}}"#;
 
-    let reader = BufReader::new(input.as_bytes());
-    parser.parse_stream_for_test(reader).unwrap();
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader).unwrap();
 
-    // Verify the log file exists and is readable
-    assert!(log_path.exists(), "Log file should exist after parsing");
+        // Verify the log file exists and is readable
+        assert!(log_path.exists(), "Log file should exist after parsing");
 
-    let log_content = std::fs::read_to_string(&log_path).unwrap();
-    assert!(
-        log_content.contains(r#"{"type":"thread.started""#),
-        "Log should contain thread.started event"
-    );
-    assert!(
-        log_content.contains(r#"{"type":"result""#),
-        "Log should contain synthetic result event"
-    );
+        let log_content = std::fs::read_to_string(&log_path).unwrap();
+        assert!(
+            log_content.contains(r#"{"type":"thread.started""#),
+            "Log should contain thread.started event"
+        );
+        assert!(
+            log_content.contains(r#"{"type":"result""#),
+            "Log should contain synthetic result event"
+        );
+    });
 }
 
 /// Test persistence with sync_all.
@@ -256,28 +271,30 @@ fn test_codex_parser_log_file_flushed() {
 /// and can be read immediately after parsing completes.
 #[test]
 fn test_codex_parser_persistence_with_sync_all() {
-    let temp_dir = TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("codex_persistence.log");
+    with_default_timeout(|| {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("codex_persistence.log");
 
-    let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
-    let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
-        .with_log_file_for_test(log_path.to_str().unwrap());
+        let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
+        let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
+            .with_log_file_for_test(log_path.to_str().unwrap());
 
-    let input = r#"{"type":"thread.started","thread_id":"thread-sync"}
+        let input = r#"{"type":"thread.started","thread_id":"thread-sync"}
 {"type":"turn.started"}
 {"type":"item.started","item":{"type":"agent_message","text":"Persistence test"}}
 {"type":"item.completed","item":{"type":"agent_message"}}
 {"type":"turn.completed","usage":{"prompt_tokens":10,"completion_tokens":15}}"#;
 
-    let reader = BufReader::new(input.as_bytes());
-    parser.parse_stream_for_test(reader).unwrap();
+        let reader = BufReader::new(input.as_bytes());
+        parser.parse_stream_for_test(reader).unwrap();
 
-    // Immediately after parsing, the result should be extractable
-    // (this verifies that sync_all was called)
-    let result = extract_last_result(&log_path).unwrap();
-    assert!(
-        result.is_some(),
-        "Result should be extractable immediately after parsing (sync_all worked)"
-    );
-    assert!(result.unwrap().contains("Persistence test"));
+        // Immediately after parsing, the result should be extractable
+        // (this verifies that sync_all was called)
+        let result = extract_last_result(&log_path).unwrap();
+        assert!(
+            result.is_some(),
+            "Result should be extractable immediately after parsing (sync_all worked)"
+        );
+        assert!(result.unwrap().contains("Persistence test"));
+    });
 }

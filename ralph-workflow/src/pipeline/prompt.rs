@@ -12,6 +12,9 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdout, Command, Stdio};
 
+#[cfg(any(test, feature = "test-utils"))]
+use std::sync::Arc;
+
 /// A line-oriented reader that processes data as it arrives.
 ///
 /// Unlike `BufReader::lines()`, this reader yields lines immediately
@@ -543,8 +546,8 @@ pub fn run_with_prompt(
     // Use agent executor if provided (for testing)
     #[cfg(any(test, feature = "test-utils"))]
     {
-        if let Some(executor) = runtime.agent_executor.as_ref() {
-            return run_with_agent_executor(cmd, runtime, executor);
+        if let Some(executor) = runtime.agent_executor.clone() {
+            return run_with_agent_executor(cmd, runtime, &executor);
         }
     }
 
