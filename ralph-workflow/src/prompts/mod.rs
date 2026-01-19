@@ -27,6 +27,9 @@ pub mod template_registry;
 mod template_validator;
 mod types;
 
+// Re-export ResumeContext for use in prompts
+pub use crate::checkpoint::restore::ResumeContext;
+
 // Re-export all public items for backward compatibility
 pub use commit::{
     prompt_fix_with_context, prompt_generate_commit_message_with_diff_with_context,
@@ -76,6 +79,8 @@ pub struct PromptConfig {
     pub prompt_plan_and_issues: Option<(String, String, String)>,
     /// Whether this is a resumed session (from a checkpoint).
     pub is_resume: bool,
+    /// Rich resume context if available.
+    pub resume_context: Option<ResumeContext>,
 }
 
 impl PromptConfig {
@@ -89,6 +94,7 @@ impl PromptConfig {
             prompt_and_plan: None,
             prompt_plan_and_issues: None,
             is_resume: false,
+            resume_context: None,
         }
     }
 
@@ -127,10 +133,96 @@ impl PromptConfig {
 
     /// Set whether this is a resumed session.
     #[must_use = "returns the updated configuration for chaining"]
+    #[allow(dead_code)]
     pub const fn with_resume(mut self, is_resume: bool) -> Self {
         self.is_resume = is_resume;
         self
     }
+
+    /// Set rich resume context for resumed sessions.
+    #[must_use = "returns the updated configuration for chaining"]
+    pub fn with_resume_context(mut self, context: ResumeContext) -> Self {
+        self.resume_context = Some(context);
+        self.is_resume = true;
+        self
+    }
+}
+
+/// Generate a rich resume note from resume context.
+///
+/// Creates a detailed, context-aware note that helps agents understand
+/// where they are in the pipeline when resuming from a checkpoint.
+fn generate_resume_note(context: &ResumeContext) -> String {
+    let mut note = String::from("SESSION RESUME CONTEXT\n");
+    note.push_str("====================\n\n");
+
+    // Add phase information with specific context based on phase type
+    match context.phase {
+        crate::checkpoint::state::PipelinePhase::Development => {
+            note.push_str(&format!(
+                "Resuming DEVELOPMENT phase (iteration {} of {})\n",
+                context.iteration + 1,
+                context.total_iterations
+            ));
+        }
+        crate::checkpoint::state::PipelinePhase::Review => {
+            note.push_str(&format!(
+                "Resuming REVIEW phase (pass {} of {})\n",
+                context.reviewer_pass + 1,
+                context.total_reviewer_passes
+            ));
+        }
+        crate::checkpoint::state::PipelinePhase::ReviewAgain => {
+            note.push_str(&format!(
+                "Resuming VERIFICATION REVIEW phase (pass {} of {})\n",
+                context.reviewer_pass + 1,
+                context.total_reviewer_passes
+            ));
+        }
+        crate::checkpoint::state::PipelinePhase::Fix => {
+            note.push_str("Resuming FIX phase\n");
+        }
+        _ => {
+            note.push_str(&format!("Resuming from phase: {}\n", context.phase_name()));
+        }
+    }
+
+    // Add resume count if this has been resumed before
+    if context.resume_count > 0 {
+        note.push_str(&format!(
+            "This session has been resumed {} time(s)\n",
+            context.resume_count
+        ));
+    }
+
+    // Add rebase state if applicable
+    if !matches!(
+        context.rebase_state,
+        crate::checkpoint::state::RebaseState::NotStarted
+    ) {
+        note.push_str(&format!("Rebase state: {:?}\n", context.rebase_state));
+    }
+
+    note.push_str("\nPrevious progress is preserved in git history.\n");
+    note.push_str("Check 'git log' for details about what was done before.\n");
+
+    // Add helpful guidance about what the agent should focus on
+    match context.phase {
+        crate::checkpoint::state::PipelinePhase::Development => {
+            note.push_str("Continue working on the implementation tasks from your plan.\n");
+        }
+        crate::checkpoint::state::PipelinePhase::Review
+        | crate::checkpoint::state::PipelinePhase::ReviewAgain => {
+            note.push_str("Review the code changes and provide feedback.\n");
+        }
+        crate::checkpoint::state::PipelinePhase::Fix => {
+            note.push_str("Focus on addressing the issues identified in the review.\n");
+        }
+        _ => {}
+    }
+
+    note.push('\n');
+    note
 }
 
 /// Generate a prompt for any agent type.
@@ -157,10 +249,13 @@ pub fn prompt_for_agent(
     template_context: &TemplateContext,
     config: PromptConfig,
 ) -> String {
-    let resume_note = if config.is_resume {
-        "\nNOTE: This session is resuming from a previous run. Previous progress is preserved in git history. You can check 'git log' for context about what was done before.\n\n"
+    let resume_note = if let Some(resume_ctx) = &config.resume_context {
+        generate_resume_note(resume_ctx)
+    } else if config.is_resume {
+        // Fallback for backward compatibility when no rich context is available
+        "\nNOTE: This session is resuming from a previous run. Previous progress is preserved in git history. You can check 'git log' for context about what was done before.\n\n".to_string()
     } else {
-        ""
+        String::new()
     };
 
     let base_prompt = match (role, action) {
@@ -528,5 +623,119 @@ mod tests {
         // Should include resume note
         assert!(result.contains("resuming from a previous run"));
         assert!(result.contains("git log"));
+    }
+
+    #[test]
+    fn test_prompt_with_rich_resume_context_development() {
+        use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase, RebaseState};
+
+        let template_context = TemplateContext::default();
+
+        // Create a resume context for development phase
+        let resume_context = ResumeContext {
+            phase: PipelinePhase::Development,
+            iteration: 2,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 3,
+            resume_count: 1,
+            rebase_state: RebaseState::NotStarted,
+            run_id: "test-run-id".to_string(),
+        };
+
+        let result = prompt_for_agent(
+            Role::Developer,
+            Action::Iterate,
+            ContextLevel::Normal,
+            &template_context,
+            PromptConfig::new()
+                .with_resume_context(resume_context)
+                .with_iterations(3, 5)
+                .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
+        );
+
+        // Should include rich resume context
+        assert!(result.contains("SESSION RESUME CONTEXT"));
+        assert!(result.contains("DEVELOPMENT phase"));
+        assert!(result.contains("iteration 3 of 5"));
+        assert!(result.contains("has been resumed 1 time"));
+        assert!(result.contains("Continue working on the implementation"));
+    }
+
+    #[test]
+    fn test_prompt_with_rich_resume_context_review() {
+        use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase, RebaseState};
+
+        let template_context = TemplateContext::default();
+
+        // Create a resume context for review phase
+        let resume_context = ResumeContext {
+            phase: PipelinePhase::Review,
+            iteration: 5,
+            total_iterations: 5,
+            reviewer_pass: 1,
+            total_reviewer_passes: 3,
+            resume_count: 2,
+            rebase_state: RebaseState::NotStarted,
+            run_id: "test-run-id".to_string(),
+        };
+
+        let result = prompt_for_agent(
+            Role::Reviewer,
+            Action::Fix,
+            ContextLevel::Normal,
+            &template_context,
+            PromptConfig::new()
+                .with_resume_context(resume_context)
+                .with_prompt_plan_and_issues(
+                    "test prompt".to_string(),
+                    "test plan".to_string(),
+                    "test issues".to_string(),
+                ),
+        );
+
+        // Should include rich resume context for review
+        assert!(result.contains("SESSION RESUME CONTEXT"));
+        assert!(result.contains("REVIEW phase"));
+        assert!(result.contains("pass 2 of 3"));
+        assert!(result.contains("has been resumed 2 time"));
+    }
+
+    #[test]
+    fn test_prompt_with_rich_resume_context_fix() {
+        use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase, RebaseState};
+
+        let template_context = TemplateContext::default();
+
+        // Create a resume context for fix phase
+        let resume_context = ResumeContext {
+            phase: PipelinePhase::Fix,
+            iteration: 5,
+            total_iterations: 5,
+            reviewer_pass: 1,
+            total_reviewer_passes: 3,
+            resume_count: 0,
+            rebase_state: RebaseState::NotStarted,
+            run_id: "test-run-id".to_string(),
+        };
+
+        let result = prompt_for_agent(
+            Role::Reviewer,
+            Action::Fix,
+            ContextLevel::Normal,
+            &template_context,
+            PromptConfig::new()
+                .with_resume_context(resume_context)
+                .with_prompt_plan_and_issues(
+                    "test prompt".to_string(),
+                    "test plan".to_string(),
+                    "test issues".to_string(),
+                ),
+        );
+
+        // Should include rich resume context for fix
+        assert!(result.contains("SESSION RESUME CONTEXT"));
+        assert!(result.contains("FIX phase"));
+        assert!(result.contains("Focus on addressing the issues"));
     }
 }

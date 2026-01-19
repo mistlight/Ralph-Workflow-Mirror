@@ -8,6 +8,7 @@
 //! 4. Optionally runs fast checks
 
 use crate::agents::AgentRole;
+use crate::checkpoint::restore::ResumeContext;
 use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase};
 use crate::files::{delete_plan_file, update_status};
 use crate::files::{extract_plan, extract_plan_from_logs_text};
@@ -41,7 +42,7 @@ pub struct DevelopmentResult {
 ///
 /// * `ctx` - The phase context containing shared state
 /// * `start_iter` - The iteration to start from (for resume support)
-/// * `resuming_from_development` - Whether we're resuming into the development step
+/// * `resume_context` - Optional resume context for resumed sessions
 ///
 /// # Returns
 ///
@@ -49,7 +50,7 @@ pub struct DevelopmentResult {
 pub fn run_development_phase(
     ctx: &mut PhaseContext<'_>,
     start_iter: u32,
-    resuming_from_development: bool,
+    resume_context: Option<&ResumeContext>,
 ) -> anyhow::Result<DevelopmentResult> {
     let mut had_errors = false;
     let mut prev_snap = git_snapshot()?;
@@ -62,7 +63,7 @@ pub fn run_development_phase(
         ));
         print_progress(i, ctx.config.developer_iters, "Overall");
 
-        let resuming_into_development = resuming_from_development && i == start_iter;
+        let resuming_into_development = resume_context.is_some() && i == start_iter;
 
         // Step 1: Create PLAN from PROMPT (skip if resuming into development)
         if resuming_into_development {
@@ -115,9 +116,11 @@ pub fn run_development_phase(
             .with_iterations(i, ctx.config.developer_iters)
             .with_prompt_and_plan(prompt_md, plan_md);
 
-        // Set resume flag if this is the first iteration of a resumed session
+        // Set resume context if this is the first iteration of a resumed session
         if resuming_into_development {
-            prompt_config = prompt_config.with_resume(true);
+            if let Some(resume_ctx) = resume_context {
+                prompt_config = prompt_config.with_resume_context(resume_ctx.clone());
+            }
         }
 
         let prompt = prompt_for_agent(

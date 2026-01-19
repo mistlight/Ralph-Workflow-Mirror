@@ -8,6 +8,7 @@
 use std::fs;
 
 use crate::agents::is_glm_like_agent;
+use crate::checkpoint::restore::ResumeContext;
 use crate::config::ReviewDepth;
 use crate::git_helpers::get_git_diff_from_review_baseline;
 use crate::guidelines::ReviewGuidelines;
@@ -76,7 +77,7 @@ pub fn build_review_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
     guidelines: Option<&ReviewGuidelines>,
-    is_resume: bool,
+    resume_context: Option<&ResumeContext>,
 ) -> (String, String) {
     let diff_result = get_and_validate_diff(ctx);
 
@@ -106,14 +107,55 @@ pub fn build_review_prompt(
     };
 
     // Prepend resume note if this is a resumed session
-    let prompt = if is_resume {
-        let resume_note = "\nNOTE: This session is resuming from a previous run. Previous progress is preserved in git history. You can check 'git log' for context about what was done before.\n\n";
+    let prompt = if let Some(resume_ctx) = resume_context {
+        let resume_note = generate_resume_note_from_context(resume_ctx);
         format!("{}{}", resume_note, prompt)
     } else {
         prompt
     };
 
     (label, prompt)
+}
+
+/// Generate a resume note from ResumeContext for review prompts.
+fn generate_resume_note_from_context(context: &ResumeContext) -> String {
+    let mut note = String::from("SESSION RESUME CONTEXT\n");
+    note.push_str("====================\n\n");
+
+    match context.phase {
+        crate::checkpoint::state::PipelinePhase::Review => {
+            note.push_str(&format!(
+                "Resuming REVIEW phase (pass {} of {})\n",
+                context.reviewer_pass + 1,
+                context.total_reviewer_passes
+            ));
+        }
+        crate::checkpoint::state::PipelinePhase::ReviewAgain => {
+            note.push_str(&format!(
+                "Resuming VERIFICATION REVIEW phase (pass {} of {})\n",
+                context.reviewer_pass + 1,
+                context.total_reviewer_passes
+            ));
+        }
+        crate::checkpoint::state::PipelinePhase::Fix => {
+            note.push_str("Resuming FIX phase\n");
+        }
+        _ => {
+            note.push_str(&format!("Resuming from phase: {}\n", context.phase_name()));
+        }
+    }
+
+    if context.resume_count > 0 {
+        note.push_str(&format!(
+            "This session has been resumed {} time(s)\n",
+            context.resume_count
+        ));
+    }
+
+    note.push_str("\nPrevious progress is preserved in git history.\n");
+    note.push_str("Check 'git log' for details about what was done before.\n\n");
+
+    note
 }
 
 /// Build the universal/simplified review prompt.

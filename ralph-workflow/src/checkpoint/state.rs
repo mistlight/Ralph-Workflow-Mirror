@@ -192,7 +192,7 @@ pub struct CheckpointParams<'a> {
 ///
 /// Tracks the state of rebase operations to enable
 /// proper recovery from interruptions during rebase.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RebaseState {
     /// Rebase not started yet
     #[default]

@@ -787,9 +787,12 @@ fn run_development(
         None => 1,
     };
 
-    let resuming_from_development = resume_checkpoint
-        .is_some_and(|c| args.recovery.resume && c.phase == PipelinePhase::Development);
-    let development_result = run_development_phase(ctx, start_iter, resuming_from_development)?;
+    let resume_context = if args.recovery.resume {
+        resume_checkpoint.map(|c| c.resume_context())
+    } else {
+        None
+    };
+    let development_result = run_development_phase(ctx, start_iter, resume_context.as_ref())?;
 
     if development_result.had_errors {
         ctx.logger
@@ -826,15 +829,20 @@ fn run_review_and_fix(
             None => 1,
         };
 
-        let resuming_from_review = resume_checkpoint.is_some_and(|c| {
-            args.recovery.resume
-                && matches!(
-                    c.phase,
-                    PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain
-                )
-        });
+        let resume_context = if args.recovery.resume {
+            resume_checkpoint
+                .filter(|c| {
+                    matches!(
+                        c.phase,
+                        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain
+                    )
+                })
+                .map(|c| c.resume_context())
+        } else {
+            None
+        };
 
-        let review_result = run_review_phase(ctx, start_pass, resuming_from_review)?;
+        let review_result = run_review_phase(ctx, start_pass, resume_context.as_ref())?;
         if review_result.completed_early {
             ctx.logger
                 .success("Review phase completed early (no issues found)");

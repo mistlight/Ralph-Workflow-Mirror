@@ -12,6 +12,7 @@
 //! - [`validation`] - Pre-flight and post-flight validation checks
 
 use crate::agents::AgentRole;
+use crate::checkpoint::restore::ResumeContext;
 use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase};
 use crate::files::extract_issues;
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
@@ -57,7 +58,7 @@ pub struct ReviewResult {
 ///
 /// * `ctx` - The phase context containing shared state
 /// * `start_pass` - The review pass to start from (for resume support)
-/// * `resuming_from_review` - Whether we're resuming into the review step
+/// * `resume_context` - Optional resume context for resumed sessions
 ///
 /// # Returns
 ///
@@ -65,7 +66,7 @@ pub struct ReviewResult {
 pub fn run_review_phase(
     ctx: &mut PhaseContext<'_>,
     start_pass: u32,
-    resuming_from_review: bool,
+    resume_context: Option<&ResumeContext>,
 ) -> anyhow::Result<ReviewResult> {
     let reviewer_context = ContextLevel::from(ctx.config.reviewer_context);
 
@@ -98,7 +99,7 @@ pub fn run_review_phase(
 
     // Review-Fix iterations
     for j in start_pass..=ctx.config.reviewer_reviews {
-        let resuming_into_review = resuming_from_review && j == start_pass;
+        let resuming_into_review = resume_context.is_some() && j == start_pass;
         // Save checkpoint at start of each iteration
         if ctx.config.features.checkpoint_enabled {
             if let Some(checkpoint) = CheckpointBuilder::new()
@@ -186,7 +187,11 @@ pub fn run_review_phase(
             ctx,
             reviewer_context,
             ctx.review_guidelines,
-            resuming_into_review,
+            if resuming_into_review {
+                resume_context
+            } else {
+                None
+            },
         );
 
         // Check if the review prompt is empty (e.g., due to diff retrieval failure)
@@ -224,7 +229,16 @@ pub fn run_review_phase(
         }
 
         // Run fix pass
-        run_fix_pass(ctx, j, reviewer_context, resuming_into_review)?;
+        run_fix_pass(
+            ctx,
+            j,
+            reviewer_context,
+            if resuming_into_review {
+                resume_context
+            } else {
+                None
+            },
+        )?;
 
         // UPDATE REVIEW BASELINE: Move baseline forward after fixes
         // This ensures the next review cycle sees only new changes
@@ -773,7 +787,7 @@ fn run_fix_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
     reviewer_context: ContextLevel,
-    resuming_into_review: bool,
+    resume_context: Option<&ResumeContext>,
 ) -> anyhow::Result<()> {
     update_status("Applying fixes", ctx.config.isolation_mode)?;
 
@@ -788,9 +802,9 @@ fn run_fix_pass(
         issues_content,
     );
 
-    // Set resume flag if this is the first pass of a resumed session
-    if resuming_into_review {
-        prompt_config = prompt_config.with_resume(true);
+    // Set resume context if this is the first pass of a resumed session
+    if let Some(resume_ctx) = resume_context {
+        prompt_config = prompt_config.with_resume_context(resume_ctx.clone());
     }
 
     let fix_prompt = prompt_for_agent(

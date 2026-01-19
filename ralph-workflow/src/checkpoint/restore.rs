@@ -3,8 +3,84 @@
 //! This module provides functionality to restore pipeline state from a checkpoint,
 //! including CLI arguments and configuration overrides.
 
-use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase};
+use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase, RebaseState};
 use crate::config::Config;
+
+/// Rich context about a resumed session for use in agent prompts.
+///
+/// This struct contains information that helps AI agents understand where
+/// they are in the pipeline when resuming from a checkpoint, enabling them
+/// to provide more contextual and appropriate responses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResumeContext {
+    /// The phase being resumed from
+    pub phase: PipelinePhase,
+    /// Current iteration number (for development)
+    pub iteration: u32,
+    /// Total iterations
+    pub total_iterations: u32,
+    /// Current reviewer pass
+    pub reviewer_pass: u32,
+    /// Total reviewer passes
+    pub total_reviewer_passes: u32,
+    /// Number of times this session has been resumed
+    pub resume_count: u32,
+    /// Rebase state if applicable
+    pub rebase_state: RebaseState,
+    /// Run ID for tracing
+    pub run_id: String,
+}
+
+impl ResumeContext {
+    /// Display name for the current phase.
+    pub fn phase_name(&self) -> String {
+        match self.phase {
+            PipelinePhase::Planning => "Planning".to_string(),
+            PipelinePhase::Development => format!(
+                "Development iteration {}/{}",
+                self.iteration + 1,
+                self.total_iterations
+            ),
+            PipelinePhase::Review => format!(
+                "Review (pass {}/{})",
+                self.reviewer_pass + 1,
+                self.total_reviewer_passes
+            ),
+            PipelinePhase::Fix => "Fix".to_string(),
+            PipelinePhase::ReviewAgain => format!(
+                "Verification review {}/{}",
+                self.reviewer_pass + 1,
+                self.total_reviewer_passes
+            ),
+            PipelinePhase::CommitMessage => "Commit Message Generation".to_string(),
+            PipelinePhase::FinalValidation => "Final Validation".to_string(),
+            PipelinePhase::Complete => "Complete".to_string(),
+            PipelinePhase::PreRebase => "Pre-Rebase".to_string(),
+            PipelinePhase::PreRebaseConflict => "Pre-Rebase Conflict".to_string(),
+            PipelinePhase::PostRebase => "Post-Rebase".to_string(),
+            PipelinePhase::PostRebaseConflict => "Post-Rebase Conflict".to_string(),
+        }
+    }
+}
+
+impl PipelineCheckpoint {
+    /// Extract rich resume context from this checkpoint.
+    ///
+    /// This method creates a `ResumeContext` containing all the information
+    /// needed to generate informative prompts for agents when resuming.
+    pub fn resume_context(&self) -> ResumeContext {
+        ResumeContext {
+            phase: self.phase,
+            iteration: self.iteration,
+            total_iterations: self.total_iterations,
+            reviewer_pass: self.reviewer_pass,
+            total_reviewer_passes: self.total_reviewer_passes,
+            resume_count: self.resume_count,
+            rebase_state: self.rebase_state.clone(),
+            run_id: self.run_id.clone(),
+        }
+    }
+}
 
 /// Apply checkpoint CLI args to a config.
 ///
@@ -301,5 +377,83 @@ mod tests {
             PipelinePhase::FinalValidation,
             &checkpoint
         ));
+    }
+
+    #[test]
+    fn test_resume_context_from_checkpoint() {
+        let checkpoint = make_test_checkpoint(PipelinePhase::Development, 3, 1);
+        let resume_ctx = checkpoint.resume_context();
+
+        assert_eq!(resume_ctx.phase, PipelinePhase::Development);
+        assert_eq!(resume_ctx.iteration, 3);
+        assert_eq!(resume_ctx.total_iterations, 5);
+        assert_eq!(resume_ctx.reviewer_pass, 1);
+        assert_eq!(resume_ctx.total_reviewer_passes, 3);
+        assert_eq!(resume_ctx.resume_count, 0);
+        assert_eq!(resume_ctx.run_id, checkpoint.run_id);
+    }
+
+    #[test]
+    fn test_resume_context_phase_name_development() {
+        let ctx = ResumeContext {
+            phase: PipelinePhase::Development,
+            iteration: 2,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 3,
+            resume_count: 0,
+            rebase_state: RebaseState::default(),
+            run_id: "test".to_string(),
+        };
+
+        assert_eq!(ctx.phase_name(), "Development iteration 3/5");
+    }
+
+    #[test]
+    fn test_resume_context_phase_name_review() {
+        let ctx = ResumeContext {
+            phase: PipelinePhase::Review,
+            iteration: 5,
+            total_iterations: 5,
+            reviewer_pass: 1,
+            total_reviewer_passes: 3,
+            resume_count: 0,
+            rebase_state: RebaseState::default(),
+            run_id: "test".to_string(),
+        };
+
+        assert_eq!(ctx.phase_name(), "Review (pass 2/3)");
+    }
+
+    #[test]
+    fn test_resume_context_phase_name_review_again() {
+        let ctx = ResumeContext {
+            phase: PipelinePhase::ReviewAgain,
+            iteration: 5,
+            total_iterations: 5,
+            reviewer_pass: 2,
+            total_reviewer_passes: 3,
+            resume_count: 1,
+            rebase_state: RebaseState::default(),
+            run_id: "test".to_string(),
+        };
+
+        assert_eq!(ctx.phase_name(), "Verification review 3/3");
+    }
+
+    #[test]
+    fn test_resume_context_phase_name_fix() {
+        let ctx = ResumeContext {
+            phase: PipelinePhase::Fix,
+            iteration: 5,
+            total_iterations: 5,
+            reviewer_pass: 1,
+            total_reviewer_passes: 3,
+            resume_count: 0,
+            rebase_state: RebaseState::default(),
+            run_id: "test".to_string(),
+        };
+
+        assert_eq!(ctx.phase_name(), "Fix");
     }
 }
