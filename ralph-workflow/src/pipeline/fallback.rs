@@ -302,6 +302,23 @@ pub fn try_agent_with_retries(
                 }
                 Some(true) | None => return Ok(TryAgentResult::Success),
             }
+        } else if is_glm_agent && result.exit_code == 1 {
+            // GLM quirk: exit code 1 may indicate success with valid output
+            // Check if output validator exists and validates successfully
+            match validate_agent_output(config, runtime) {
+                Some(true) => {
+                    // Valid output despite exit code 1 - treat as success
+                    runtime.logger.info(&format!(
+                        "GLM-like agent '{}' exited with code 1 but produced valid output - treating as success",
+                        config.display_name
+                    ));
+                    return Ok(TryAgentResult::Success);
+                }
+                Some(false) | None => {
+                    // No valid output - fall through to error handling below
+                    // No additional logging needed as error handling will log it
+                }
+            }
         }
 
         // Handle error classification, logging, and user guidance

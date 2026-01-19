@@ -404,3 +404,143 @@ exit 0
         "GLM agent with exit code 1 should not be retried (classified as AgentSpecificQuirk)"
     );
 }
+
+#[test]
+fn test_glm_exit_code_1_with_valid_output_treated_as_success() {
+    // Test that GLM agent with exit code 1 BUT valid output is treated as success
+    // This is the bug fix: GLM may exit with code 1 even when it successfully completes work
+    let dir = tempfile::tempdir().unwrap();
+    let glm_count = dir.path().join("glm_count.txt");
+    let log_dir = dir.path().join("logs");
+
+    // Create a mock GLM script that exits with code 1 but produces valid JSON output
+    let glm_script = dir.path().join("glm_success_with_exit_1.sh");
+    std::fs::write(
+        &glm_script,
+        format!(
+            r#"#!/bin/sh
+echo x >> "{}"
+# Simulate GLM producing valid output but exiting with code 1
+mkdir -p "{}"
+echo '{{"type":"result","result":"- [ ] Test review item"}}' > "{}/reviewer.log"
+exit 1
+"#,
+            glm_count.display(),
+            log_dir.display(),
+            log_dir.display()
+        ),
+    )
+    .unwrap();
+
+    // Create a fallback script (should NOT be called)
+    let fallback_script = dir.path().join("fallback.sh");
+    std::fs::write(
+        &fallback_script,
+        r"#!/bin/sh
+# This should never be called
+exit 1
+",
+    )
+    .unwrap();
+
+    // Set up registry with GLM agent and fallback
+    let defaults = crate::config::CcsConfig {
+        output_flag: String::new(),
+        yolo_flag: String::new(),
+        verbose_flag: String::new(),
+        print_flag: "-p".to_string(),
+        streaming_flag: "--include-partial-messages".to_string(),
+        json_parser: "claude".to_string(),
+        can_commit: true,
+    };
+
+    let mut aliases = std::collections::HashMap::new();
+    aliases.insert(
+        "glm".to_string(),
+        crate::config::CcsAliasConfig {
+            cmd: format!("sh {}", glm_script.display()),
+            ..Default::default()
+        },
+    );
+    aliases.insert(
+        "fallback".to_string(),
+        crate::config::CcsAliasConfig {
+            cmd: format!("sh {}", fallback_script.display()),
+            ..Default::default()
+        },
+    );
+
+    let mut registry = AgentRegistry::new().unwrap();
+    registry.set_ccs_aliases(&aliases, defaults);
+
+    // Configure fallback chain
+    let toml_str = r#"
+        [agent_chain]
+        reviewer = ["ccs/glm", "ccs/fallback"]
+        max_retries = 3
+        max_cycles = 1
+    "#;
+    let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+    registry.apply_unified_config(&unified);
+
+    // Create output validator that checks for valid JSON output
+    let validate_output: crate::pipeline::fallback::OutputValidator =
+        |log_dir_path: &path::Path, _logger: &crate::logger::Logger| -> std::io::Result<bool> {
+            let log_file = log_dir_path.join("reviewer.log");
+            if log_file.exists() {
+                let content = std::fs::read_to_string(&log_file)?;
+                Ok(content.contains(r#"{"type":"result""#))
+            } else {
+                Ok(false)
+            }
+        };
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config {
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
+        verbosity: Verbosity::Quiet,
+        prompt_path: dir.path().join("prompt.txt"),
+        ..Config::default()
+    };
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+    };
+
+    // Run with output validator
+    let mut fallback_config = crate::pipeline::runner::FallbackConfig {
+        role: crate::agents::AgentRole::Reviewer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: &log_dir.display().to_string(),
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/glm",
+        output_validator: Some(validate_output),
+    };
+
+    let exit =
+        crate::pipeline::runner::run_with_fallback_and_validator(&mut fallback_config).unwrap();
+
+    // GLM with exit code 1 but valid output should be treated as success
+    assert_eq!(
+        exit, 0,
+        "GLM with valid output should succeed despite exit code 1"
+    );
+
+    // GLM should only be called once
+    let glm_calls = std::fs::read_to_string(&glm_count).unwrap().lines().count();
+    assert_eq!(
+        glm_calls, 1,
+        "GLM agent should be called once and succeed (valid output despite exit code 1)"
+    );
+}
