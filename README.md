@@ -57,13 +57,17 @@ Coding knowledge will help a lot but is not strictly required in my opinion. You
 
 If you thoroughly review the code that it outputs, it depends on your risk tolerance. Any code change is risky, whether human- or AI-generated.
 
+**Should I use Claude Opus or Claude Sonnet***
+
+Unless you really want to burn $2000 out of nowhere and have unlimited AI budget I **strongly don't recommend this**, I suggest saving your Claude tokens for active AI interactions than Ralph Workflow. My recommended models are generally GLM and Codex. You probably can make it work with the 20x Claude Max subscription but even then I would use it like once or twice per week since ralph really goes through your AI token budget really fast.
+
 **What is the recommended workflow with this?**
 
 I recommend using Ralph Workflow on different Git worktrees so you can work on multiple features at the same time. Due to its unattended nature, Ralph Workflow will naturally take longer than if you interact with an AI agent directly when you work on features. While you can run Ralph Workflow on the main branch, it reduces your ability to work on multiple features at the same time by the nature of the Ralph process taking a long time.
 
 ## About Me
 
-I'm Mistlight. While Ralph did generate a lot of code for this repo, this README.md is written by me, hence you can tell why it's very awkwardly worded.
+I'm Mistlight. While Ralph did generate a lot of code for this repo, this README.md is written by me personally.
 
 ## LICENSE
 
