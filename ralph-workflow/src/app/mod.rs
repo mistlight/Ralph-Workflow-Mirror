@@ -1317,12 +1317,14 @@ fn build_enhanced_resolution_prompt(
         ))
     } else {
         // Fall back to standard prompt
-        Ok(crate::prompts::build_conflict_resolution_prompt_with_context(
-            template_context,
-            conflicts,
-            prompt_md_content.as_deref(),
-            plan_content.as_deref(),
-        ))
+        Ok(
+            crate::prompts::build_conflict_resolution_prompt_with_context(
+                template_context,
+                conflicts,
+                prompt_md_content.as_deref(),
+                plan_content.as_deref(),
+            ),
+        )
     }
 }
 
@@ -1742,7 +1744,9 @@ fn try_resolve_conflicts_with_state_machine(
             Some(info)
         }
         Err(e) => {
-            logger.warn(&format!("Failed to collect branch info: {e}, continuing without it"));
+            logger.warn(&format!(
+                "Failed to collect branch info: {e}, continuing without it"
+            ));
             None
         }
     };
@@ -1771,7 +1775,11 @@ fn try_resolve_conflicts_with_state_machine(
                  1. ALL conflict markers (<<<<<<<, =======, >>>>>>>) are removed\n\
                  2. The code is syntactically valid\n\
                  3. You preserve the intent of BOTH sides where possible\n\n{}",
-                build_enhanced_resolution_prompt(&conflicts, branch_info.as_ref(), template_context)?,
+                build_enhanced_resolution_prompt(
+                    &conflicts,
+                    branch_info.as_ref(),
+                    template_context
+                )?,
                 if iteration == max_iterations {
                     "This is your final attempt. If conflicts remain, manual intervention will be required."
                 } else {

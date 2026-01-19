@@ -1297,7 +1297,6 @@ mod tests {
 
     #[test]
     fn test_rebase_onto_returns_result() {
-        use std::path::Path;
         use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
         // Test that rebase_onto returns a Result

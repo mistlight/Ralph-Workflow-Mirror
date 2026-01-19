@@ -183,6 +183,9 @@ pub fn save_rebase_checkpoint(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
     // Ensure the .agent directory exists before attempting to write
     fs::create_dir_all(AGENT_DIR)?;
 
+    // Check if a checkpoint already exists (we'll need this info after saving)
+    let checkpoint_existed = Path::new(&rebase_checkpoint_path()).exists();
+
     // Create backup before overwriting existing checkpoint
     let _ = backup_checkpoint();
 
@@ -201,6 +204,12 @@ pub fn save_rebase_checkpoint(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
     if rename_result.is_err() {
         let _ = fs::remove_file(&temp_path);
         return rename_result;
+    }
+
+    // If this was the first save (no existing checkpoint before),
+    // create a backup now so we always have a backup for recovery
+    if !checkpoint_existed {
+        let _ = backup_checkpoint();
     }
 
     Ok(())
@@ -340,11 +349,11 @@ fn backup_checkpoint() -> io::Result<()> {
 
     // Remove existing backup if it exists
     if backup.exists() {
-        fs::remove_file(&backup)?;
+        fs::remove_file(backup)?;
     }
 
     // Copy checkpoint to backup
-    fs::copy(&checkpoint, &backup)?;
+    fs::copy(checkpoint, backup)?;
     Ok(())
 }
 
@@ -361,7 +370,7 @@ fn restore_from_backup() -> io::Result<Option<RebaseCheckpoint>> {
         return Ok(None);
     }
 
-    let content = fs::read_to_string(&backup)?;
+    let content = fs::read_to_string(backup)?;
     let checkpoint: RebaseCheckpoint = serde_json::from_str(&content).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -374,7 +383,7 @@ fn restore_from_backup() -> io::Result<Option<RebaseCheckpoint>> {
 
     // If valid, copy backup back to main checkpoint
     let checkpoint_path = rebase_checkpoint_path();
-    fs::copy(&backup, &checkpoint_path)?;
+    fs::copy(backup, checkpoint_path)?;
 
     Ok(Some(checkpoint))
 }

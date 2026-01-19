@@ -390,15 +390,9 @@ pub fn collect_branch_info(upstream_branch: &str) -> std::io::Result<BranchInfo>
             &format!("HEAD...{upstream_branch}"),
         ])
         .output()
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("git rev-list failed: {e}"),
-            )
-        })?;
+        .map_err(|e| std::io::Error::other(format!("git rev-list failed: {e}")))?;
 
     let diverging_count = String::from_utf8_lossy(&diverging.stdout)
-        .trim()
         .split_whitespace()
         .map(|s| s.parse::<usize>().unwrap_or(0))
         .sum::<usize>();
@@ -661,7 +655,7 @@ mod tests {
 
     #[test]
     fn test_branch_info_struct_exists() {
-        let info = ralph_workflow::prompts::rebase::BranchInfo {
+        let info = BranchInfo {
             current_branch: "feature".to_string(),
             upstream_branch: "main".to_string(),
             current_commits: vec!["abc123 feat: add thing".to_string()],
@@ -674,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_format_branch_info_section() {
-        let info = ralph_workflow::prompts::rebase::BranchInfo {
+        let info = BranchInfo {
             current_branch: "feature".to_string(),
             upstream_branch: "main".to_string(),
             current_commits: vec!["abc123 feat: add thing".to_string()],
@@ -682,7 +676,7 @@ mod tests {
             diverging_count: 5,
         };
 
-        let section = ralph_workflow::prompts::rebase::format_branch_info_section(&info);
+        let section = format_branch_info_section(&info);
 
         assert!(section.contains("Branch Information"));
         assert!(section.contains("feature"));
@@ -704,7 +698,7 @@ mod tests {
             },
         );
 
-        let branch_info = ralph_workflow::prompts::rebase::BranchInfo {
+        let branch_info = BranchInfo {
             current_branch: "feature".to_string(),
             upstream_branch: "main".to_string(),
             current_commits: vec!["abc123 my change".to_string()],
@@ -712,7 +706,7 @@ mod tests {
             diverging_count: 3,
         };
 
-        let prompt = ralph_workflow::prompts::rebase::build_enhanced_conflict_resolution_prompt(
+        let prompt = build_enhanced_conflict_resolution_prompt(
             &context,
             &conflicts,
             Some(&branch_info),

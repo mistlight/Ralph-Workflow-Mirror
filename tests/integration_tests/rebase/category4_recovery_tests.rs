@@ -15,7 +15,7 @@ use ralph_workflow::git_helpers::rebase_checkpoint::{
     load_rebase_checkpoint, rebase_checkpoint_exists, save_rebase_checkpoint, RebaseCheckpoint,
     RebasePhase,
 };
-use ralph_workflow::git_helpers::{is_dirty_tree_cli, rebase_onto, RebaseResult};
+use ralph_workflow::git_helpers::rebase_onto;
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
     let repo = init_git_repo(dir);
@@ -84,7 +84,7 @@ fn rebase_inconsistent_state_has_correct_category() {
 
 #[test]
 fn rebase_checkpoint_survives_process_termination() {
-    with_temp_cwd(|dir| {
+    with_temp_cwd(|_dir| {
         // Create a checkpoint
         let checkpoint = RebaseCheckpoint::new("main".to_string())
             .with_phase(RebasePhase::ConflictDetected)

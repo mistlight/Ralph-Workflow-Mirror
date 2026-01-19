@@ -6,9 +6,13 @@
 
 #![deny(unsafe_code)]
 
-use std::fs;
 use std::io;
+
+#[cfg(any(test, feature = "test-utils"))]
+use std::fs;
+#[cfg(any(test, feature = "test-utils"))]
 use std::io::Write;
+#[cfg(any(test, feature = "test-utils"))]
 use std::path::Path;
 
 use super::rebase_checkpoint::{
@@ -20,15 +24,18 @@ use super::rebase_checkpoint::{
 const DEFAULT_MAX_RECOVERY_ATTEMPTS: u32 = 3;
 
 /// Rebase lock file name.
+#[cfg(any(test, feature = "test-utils"))]
 const REBASE_LOCK_FILE: &str = "rebase.lock";
 
 /// Default lock timeout in seconds (30 minutes).
+#[cfg(any(test, feature = "test-utils"))]
 const DEFAULT_LOCK_TIMEOUT_SECONDS: u64 = 1800;
 
 /// Get the rebase lock file path.
 ///
 /// The lock is stored in `.agent/rebase.lock`
 /// relative to the current working directory.
+#[cfg(any(test, feature = "test-utils"))]
 fn rebase_lock_path() -> String {
     format!(".agent/{REBASE_LOCK_FILE}")
 }
@@ -233,7 +240,7 @@ impl Drop for RebaseLock {
 #[cfg(any(test, feature = "test-utils"))]
 impl RebaseLock {
     /// Create a new lock guard that owns the lock.
-    fn new() -> io::Result<Self> {
+    pub fn new() -> io::Result<Self> {
         acquire_rebase_lock()?;
         Ok(Self { owns_lock: true })
     }
@@ -279,7 +286,7 @@ pub fn acquire_rebase_lock() -> io::Result<()> {
             ));
         }
         // Lock is stale, remove it
-        fs::remove_file(&path)?;
+        fs::remove_file(path)?;
     }
 
     // Create lock file with PID and timestamp
@@ -287,7 +294,7 @@ pub fn acquire_rebase_lock() -> io::Result<()> {
     let timestamp = chrono::Utc::now().to_rfc3339();
     let lock_content = format!("pid={pid}\ntimestamp={timestamp}\n");
 
-    let mut file = fs::File::create(&path)?;
+    let mut file = fs::File::create(path)?;
     file.write_all(lock_content.as_bytes())?;
     file.sync_all()?;
 
@@ -307,7 +314,7 @@ pub fn release_rebase_lock() -> io::Result<()> {
     let path = Path::new(&lock_path);
 
     if path.exists() {
-        fs::remove_file(&path)?;
+        fs::remove_file(path)?;
     }
 
     Ok(())
@@ -330,7 +337,7 @@ fn is_lock_stale() -> io::Result<bool> {
     }
 
     // Read lock file to get timestamp
-    let content = fs::read_to_string(&path)?;
+    let content = fs::read_to_string(path)?;
 
     // Parse timestamp from lock file
     let timestamp_line = content

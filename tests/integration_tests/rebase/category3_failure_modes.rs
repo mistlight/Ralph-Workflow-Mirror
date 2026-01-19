@@ -4,7 +4,6 @@
 //! - Push or remote integration failures
 //! - Post-rebase validation failures (tests failing, build failures, lint violations)
 
-use std::fs;
 use tempfile::TempDir;
 use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
