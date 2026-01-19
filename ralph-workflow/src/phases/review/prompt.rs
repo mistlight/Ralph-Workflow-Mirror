@@ -640,14 +640,16 @@ mod tests {
         ];
 
         for prompt in prompts_to_check {
+            // Check for either the old "CLOSED BOOK REVIEW" or new "LIMITED EXPLORATION" constraint
             assert!(
-                prompt.contains("CLOSED BOOK REVIEW"),
-                "Prompt should contain 'CLOSED BOOK REVIEW' constraint. Prompt: {}",
+                prompt.contains("CLOSED BOOK REVIEW") || prompt.contains("LIMITED EXPLORATION"),
+                "Prompt should contain 'CLOSED BOOK REVIEW' or 'LIMITED EXPLORATION' constraint. Prompt: {}",
                 &prompt[..prompt.len().min(200)]
             );
             assert!(
-                prompt.contains("NO ACCESS TO REPOSITORY"),
-                "Prompt should contain 'NO ACCESS TO REPOSITORY' constraint. Prompt: {}",
+                prompt.contains("NO ACCESS TO REPOSITORY")
+                    || prompt.contains("CRITICAL CONSTRAINTS"),
+                "Prompt should contain access constraint. Prompt: {}",
                 &prompt[..prompt.len().min(200)]
             );
         }

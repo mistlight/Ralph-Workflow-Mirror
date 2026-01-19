@@ -118,7 +118,12 @@ pub fn run_review_phase(
         // Display baseline information
         match get_baseline_summary() {
             Ok(summary) => {
-                ctx.logger.info(&summary.format_compact());
+                if ctx.config.verbosity.is_debug() {
+                    // Show detailed baseline information in verbose mode
+                    ctx.logger.info(&summary.format_detailed());
+                } else {
+                    ctx.logger.info(&summary.format_compact());
+                }
                 if summary.is_stale {
                     ctx.logger.warn(&format!(
                         "Baseline is stale ({} commits behind). Consider updating the baseline to focus the review on recent changes.",

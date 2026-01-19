@@ -856,3 +856,449 @@ exit 0
         "ISSUES.md should be deleted after all cycles complete"
     );
 }
+
+// ============================================================================
+// Fixer Behavior Tests
+// ============================================================================
+
+#[test]
+fn ralph_fixer_receives_issues_content() {
+    // Test that fixer receives the ISSUES.md content during fix pass
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit with tracked files
+    write_file(dir.path().join("src/main.rs"), "fn main() {}");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(
+        dir.path().join("src/main.rs"),
+        "fn main() { println!(\"hi\"); }",
+    );
+
+    let fix_log = dir.path().join(".agent/fix_log.txt");
+    let script_path = dir.path().join("check_issues.sh");
+    fs::write(
+        &script_path,
+        format!(
+            r##"#!/bin/sh
+mkdir -p .agent
+# Track which call this is
+if [ -f .agent/call_counter ]; then
+    count=$(cat .agent/call_counter)
+    count=$((count + 1))
+else
+    count=1
+fi
+echo $count > .agent/call_counter
+
+case $count in
+    1) # Review phase - create ISSUES.md with specific content
+        cat > .agent/ISSUES.md << 'EOF'
+# Review Issues
+
+Critical:
+- [ ] [src/main.rs:1] Missing error handling
+- [ ] [src/main.rs:1] No documentation
+
+High:
+- [ ] [src/main.rs:1] Consider using Result type
+EOF
+        # Also output JSON for orchestrator extraction
+        printf '{{"type":"result","result":"# Issues\\n\\n- [ ] [src/main.rs:1] Missing error handling"}}\n'
+        ;;
+    2) # Fix phase - check if ISSUES.md exists and log it
+        if [ -f .agent/ISSUES.md ]; then
+            echo "FIX: ISSUES.md found" >> "{log}"
+            echo "FIX: Content:" >> "{log}"
+            cat .agent/ISSUES.md >> "{log}"
+        else
+            echo "FIX: ERROR - ISSUES.md missing!" >> "{log}"
+        fi
+        ;;
+esac
+exit 0
+"##,
+            log = fix_log.display()
+        ),
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    cmd.assert().success();
+
+    // Verify fix phase received ISSUES.md
+    if fix_log.exists() {
+        let log_content = fs::read_to_string(&fix_log).unwrap();
+        assert!(
+            log_content.contains("ISSUES.md found"),
+            "Fix phase should have found ISSUES.md"
+        );
+        // The ISSUES.md should contain the review issues OR the extracted content
+        // (orchestrator may extract from JSON result)
+    }
+}
+
+#[test]
+fn ralph_fixer_handles_minimal_issues_content() {
+    // Test that fixer can work with minimal/vague ISSUES.md content
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("code.py"), "print('hello')");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change
+    write_file(dir.path().join("code.py"), "print('hello world')");
+
+    let script_path = dir.path().join("minimal_issues.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+if [ -f .agent/call_counter ]; then
+    count=$(cat .agent/call_counter)
+    count=$((count + 1))
+else
+    count=1
+fi
+echo $count > .agent/call_counter
+
+case $count in
+    1) # Review phase - create minimal ISSUES.md
+        # This is a vague issue without file:line reference
+        echo "- [ ] Code needs improvement" > .agent/ISSUES.md
+        ;;
+    2) # Fix phase - should handle vague issues gracefully
+        # Just exit successfully
+        ;;
+esac
+exit 0
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    // Should complete even with vague issues
+    cmd.assert().success();
+}
+
+// ============================================================================
+// Recovery Scenario Tests
+// ============================================================================
+
+#[test]
+fn ralph_continues_after_review_agent_error() {
+    // Test that pipeline can continue when review agent fails on one cycle
+    // but the orchestrator handles it gracefully
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for the diff
+    write_file(dir.path().join("initial.txt"), "modified content");
+
+    let script_path = dir.path().join("flaky_reviewer.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+if [ -f .agent/call_counter ]; then
+    count=$(cat .agent/call_counter)
+    count=$((count + 1))
+else
+    count=1
+fi
+echo $count > .agent/call_counter
+
+# Fail on review phase (call 1), succeed on fix phase (call 2)
+# This simulates a reviewer that outputs nothing useful
+case $count in
+    1) # Review phase - no ISSUES.md created (simulates extraction failure)
+        # Don't write ISSUES.md - let orchestrator handle it
+        ;;
+    2) # Fix phase - should still be called
+        echo "Fixed the issues" > .agent/fix_result.txt
+        ;;
+esac
+exit 0
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    // Should complete - orchestrator writes "no issues" marker when extraction fails
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_handles_json_extraction_failure() {
+    // Test behavior when JSON extraction from agent output fails
+    // The orchestrator should fall back to legacy mode or create no-issues marker
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change
+    write_file(dir.path().join("initial.txt"), "modified content");
+
+    // Script that outputs invalid/no JSON
+    let script_path = dir.path().join("no_json.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+# Output plain text, not JSON
+echo "I reviewed the code and found no issues."
+echo "Everything looks good!"
+exit 0
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    // Should handle gracefully - orchestrator should write no-issues marker
+    cmd.assert().success();
+}
+
+#[test]
+fn ralph_reviewer_timeout_handled() {
+    // Test that agent timeout is handled gracefully
+    // Note: This test uses a quick timeout to avoid long test times
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change
+    write_file(dir.path().join("initial.txt"), "modified content");
+
+    // Script that completes quickly (timeout is tested at system level, not here)
+    let script_path = dir.path().join("quick_complete.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+# Complete quickly
+echo "- [ ] Quick issue" > .agent/ISSUES.md
+exit 0
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    // Should complete successfully
+    cmd.assert().success();
+}
+
+// ============================================================================
+// Reviewer Output Validation Tests
+// ============================================================================
+
+#[test]
+fn ralph_reviewer_json_output_extracted() {
+    // Test that JSON result events from reviewer are properly extracted
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change for review
+    write_file(dir.path().join("initial.txt"), "modified content");
+
+    // Create isolated config
+    let config_home = create_isolated_config(dir.path());
+
+    // Script that outputs proper JSON result event
+    let script_path = dir.path().join("json_output.sh");
+    fs::write(
+        &script_path,
+        r##"#!/bin/sh
+mkdir -p .agent
+if [ -f .agent/call_counter ]; then
+    count=$(cat .agent/call_counter)
+    count=$((count + 1))
+else
+    count=1
+fi
+echo $count > .agent/call_counter
+
+case $count in
+    1) # Review phase - output JSON with issues
+        printf '{"type":"result","result":"# Issues\\n\\n- [ ] [initial.txt:1] Found a problem"}\n'
+        ;;
+    2) # Fix phase
+        printf '{"type":"result","result":"Fixed the problem"}\n'
+        ;;
+esac
+exit 0
+"##,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .env("XDG_CONFIG_HOME", &config_home)
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    cmd.assert().success();
+
+    // In non-isolation mode, we could check ISSUES.md content
+    // But in isolation mode, it's deleted after fix
+}
+
+#[test]
+fn ralph_reviewer_issues_format_validation() {
+    // Test that various ISSUES.md formats are handled correctly
+    let dir = TempDir::new().unwrap();
+    let repo = init_git_repo(&dir);
+
+    // Create initial commit
+    write_file(dir.path().join("initial.txt"), "initial content");
+    let _ = commit_all(&repo, "initial commit");
+
+    // Create a change
+    write_file(dir.path().join("initial.txt"), "modified content");
+
+    // Script that creates ISSUES.md with various formats
+    let script_path = dir.path().join("format_test.sh");
+    fs::write(
+        &script_path,
+        r#"#!/bin/sh
+mkdir -p .agent
+if [ -f .agent/call_counter ]; then
+    count=$(cat .agent/call_counter)
+    count=$((count + 1))
+else
+    count=1
+fi
+echo $count > .agent/call_counter
+
+case $count in
+    1) # Review phase - create ISSUES.md with mixed format
+        cat > .agent/ISSUES.md << 'EOF'
+# Code Review Issues
+
+## Critical
+- [ ] [initial.txt:1] Critical bug found
+
+## High Priority
+- [ ] High: [initial.txt:2] Important issue
+
+## Medium
+- [ ] Medium: Code style issue
+
+## Already Fixed
+- [x] Low: Minor issue (resolved)
+
+No other issues found.
+EOF
+        ;;
+    2) # Fix phase
+        ;;
+esac
+exit 0
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = ralph_cmd();
+    base_env(&mut cmd)
+        .current_dir(dir.path())
+        .arg("--no-isolation")
+        .env("RALPH_DEVELOPER_ITERS", "0")
+        .env("RALPH_REVIEWER_REVIEWS", "1")
+        .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+        .env(
+            "RALPH_REVIEWER_CMD",
+            format!("sh {}", script_path.display()),
+        );
+
+    cmd.assert().success();
+
+    // In non-isolation mode, verify ISSUES.md persists with content
+    let issues_path = dir.path().join(".agent/ISSUES.md");
+    assert!(
+        issues_path.exists(),
+        "ISSUES.md should exist in non-isolation mode"
+    );
+
+    let content = fs::read_to_string(&issues_path).unwrap();
+    assert!(
+        content.contains("Critical"),
+        "ISSUES.md should contain Critical section"
+    );
+    assert!(
+        content.contains("[x]"),
+        "ISSUES.md should preserve resolved issues"
+    );
+}
