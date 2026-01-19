@@ -14,7 +14,6 @@ use super::rebase_checkpoint::{
 };
 
 /// Default maximum number of recovery attempts.
-#[cfg(any(test, feature = "test-utils"))]
 const DEFAULT_MAX_RECOVERY_ATTEMPTS: u32 = 3;
 
 /// State machine for fault-tolerant rebase operations.
@@ -27,8 +26,7 @@ const DEFAULT_MAX_RECOVERY_ATTEMPTS: u32 = 3;
 pub struct RebaseStateMachine {
     /// Current checkpoint state
     checkpoint: RebaseCheckpoint,
-    /// Maximum number of recovery attempts (only used in tests)
-    #[cfg(any(test, feature = "test-utils"))]
+    /// Maximum number of recovery attempts
     max_recovery_attempts: u32,
 }
 
@@ -41,7 +39,6 @@ impl RebaseStateMachine {
     pub fn new(upstream_branch: String) -> Self {
         Self {
             checkpoint: RebaseCheckpoint::new(upstream_branch),
-            #[cfg(any(test, feature = "test-utils"))]
             max_recovery_attempts: DEFAULT_MAX_RECOVERY_ATTEMPTS,
         }
     }
@@ -68,7 +65,6 @@ impl RebaseStateMachine {
             })?;
             Ok(Self {
                 checkpoint,
-                #[cfg(any(test, feature = "test-utils"))]
                 max_recovery_attempts: DEFAULT_MAX_RECOVERY_ATTEMPTS,
             })
         } else {
@@ -77,7 +73,6 @@ impl RebaseStateMachine {
     }
 
     /// Set the maximum number of recovery attempts.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn with_max_recovery_attempts(mut self, max: u32) -> Self {
         self.max_recovery_attempts = max;
         self

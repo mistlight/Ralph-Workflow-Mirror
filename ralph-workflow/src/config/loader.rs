@@ -114,6 +114,8 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         features: FeatureFlags {
             checkpoint_enabled: general.workflow.checkpoint_enabled,
             force_universal_prompt: general.execution.force_universal_prompt,
+            auto_rebase: general.workflow.auto_rebase,
+            max_recovery_attempts: general.workflow.max_recovery_attempts,
         },
         developer_iters: general.developer_iters,
         reviewer_reviews: general.reviewer_reviews,
@@ -160,6 +162,8 @@ fn default_config() -> Config {
         features: FeatureFlags {
             checkpoint_enabled: true,
             force_universal_prompt: false,
+            auto_rebase: true,
+            max_recovery_attempts: 3,
         },
         developer_iters: 5,
         reviewer_reviews: 2,

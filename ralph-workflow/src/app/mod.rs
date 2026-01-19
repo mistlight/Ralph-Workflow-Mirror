@@ -980,13 +980,25 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 ///
 /// Uses a state machine for fault tolerance and automatic recovery from
 /// interruptions or failures.
+///
+/// # Rebase Control
+///
+/// Rebase is only performed when both conditions are met:
+/// - `auto_rebase` config is enabled (default: true)
+/// - `--skip-rebase` CLI flag is not set
 fn run_initial_rebase(
-    _args: &Args,
+    args: &Args,
     config: &crate::config::Config,
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
+    // Check if rebase is disabled via config or CLI flag
+    if !config.features.auto_rebase || args.rebase_flags.skip_rebase {
+        logger.info("Rebase disabled via config or --skip-rebase flag");
+        return Ok(());
+    }
+
     logger.header("Pre-development rebase", Colors::cyan);
 
     // Get the default branch for rebasing
@@ -995,7 +1007,15 @@ fn run_initial_rebase(
     // Try to load an existing state machine or create a new one
     let mut state_machine: RebaseStateMachine =
         match RebaseStateMachine::load_or_create(default_branch.clone()) {
-            Ok(machine) => machine,
+            Ok(mut machine) => {
+                // Set max recovery attempts from config when creating a new machine
+                // (loaded machines already have their checkpoint state)
+                if machine.phase() == &crate::git_helpers::RebasePhase::NotStarted {
+                    machine =
+                        machine.with_max_recovery_attempts(config.features.max_recovery_attempts);
+                }
+                machine
+            }
             Err(e) => {
                 logger.warn(&format!("Failed to load rebase state machine: {e}"));
                 // Fall back to basic rebase without state machine
@@ -1054,13 +1074,25 @@ fn run_initial_rebase(
 ///
 /// Uses a state machine for fault tolerance and automatic recovery from
 /// interruptions or failures.
+///
+/// # Rebase Control
+///
+/// Rebase is only performed when both conditions are met:
+/// - `auto_rebase` config is enabled (default: true)
+/// - `--skip-rebase` CLI flag is not set
 fn run_post_review_rebase(
-    _args: &Args,
+    args: &Args,
     config: &crate::config::Config,
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
 ) -> anyhow::Result<()> {
+    // Check if rebase is disabled via config or CLI flag
+    if !config.features.auto_rebase || args.rebase_flags.skip_rebase {
+        logger.info("Rebase disabled via config or --skip-rebase flag");
+        return Ok(());
+    }
+
     logger.header("Post-review rebase", Colors::cyan);
 
     // Get the default branch for rebasing
@@ -1069,7 +1101,15 @@ fn run_post_review_rebase(
     // Try to load an existing state machine or create a new one
     let mut state_machine: RebaseStateMachine =
         match RebaseStateMachine::load_or_create(default_branch.clone()) {
-            Ok(machine) => machine,
+            Ok(mut machine) => {
+                // Set max recovery attempts from config when creating a new machine
+                // (loaded machines already have their checkpoint state)
+                if machine.phase() == &crate::git_helpers::RebasePhase::NotStarted {
+                    machine =
+                        machine.with_max_recovery_attempts(config.features.max_recovery_attempts);
+                }
+                machine
+            }
             Err(e) => {
                 logger.warn(&format!("Failed to load rebase state machine: {e}"));
                 // Fall back to basic rebase without state machine

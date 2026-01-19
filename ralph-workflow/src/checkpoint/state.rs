@@ -31,6 +31,8 @@ fn checkpoint_path() -> String {
 /// Checkpoints are saved at phase boundaries to enable resume functionality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PipelinePhase {
+    /// Rebase phase (synchronizing with upstream branch)
+    Rebase,
     /// Planning phase (creating PLAN.md)
     Planning,
     /// Development/implementation phase
@@ -52,6 +54,7 @@ pub enum PipelinePhase {
 impl std::fmt::Display for PipelinePhase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Rebase => write!(f, "Rebase"),
             Self::Planning => write!(f, "Planning"),
             Self::Development => write!(f, "Development"),
             Self::Review => write!(f, "Review"),
@@ -128,6 +131,7 @@ impl PipelineCheckpoint {
     /// suitable for display to the user when resuming.
     pub fn description(&self) -> String {
         match self.phase {
+            PipelinePhase::Rebase => "Rebase in progress".to_string(),
             PipelinePhase::Planning => {
                 format!(
                     "Planning phase, iteration {}/{}",
@@ -267,6 +271,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_phase_display() {
+        assert_eq!(format!("{}", PipelinePhase::Rebase), "Rebase");
         assert_eq!(format!("{}", PipelinePhase::Planning), "Planning");
         assert_eq!(format!("{}", PipelinePhase::Development), "Development");
         assert_eq!(format!("{}", PipelinePhase::Review), "Review");
