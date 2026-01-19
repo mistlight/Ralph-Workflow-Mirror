@@ -1893,21 +1893,19 @@ fn try_resolve_conflicts_with_state_machine(
             Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
                 // Agent provided JSON output - attempt to parse and write files
                 // JSON is optional for verification - LibGit2 state is authoritative
-                let resolved_files = match parse_and_validate_resolved_files(
-                    &resolved_content,
-                    logger,
-                ) {
-                    Ok(files) => {
-                        // Write files if JSON was successfully parsed
-                        write_resolved_files(&files, logger)?;
-                        Some(files)
-                    }
-                    Err(_) => {
-                        // JSON parsing failed - this is expected and normal
-                        // We verify conflicts via LibGit2 state, not JSON parsing
-                        None
-                    }
-                };
+                let resolved_files =
+                    match parse_and_validate_resolved_files(&resolved_content, logger) {
+                        Ok(files) => {
+                            // Write files if JSON was successfully parsed
+                            write_resolved_files(&files, logger)?;
+                            Some(files)
+                        }
+                        Err(_) => {
+                            // JSON parsing failed - this is expected and normal
+                            // We verify conflicts via LibGit2 state, not JSON parsing
+                            None
+                        }
+                    };
 
                 // Clear previous failures before new validation
                 previous_validation_failures.clear();
