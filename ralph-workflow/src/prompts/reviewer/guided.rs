@@ -107,10 +107,14 @@ pub fn prompt_reviewer_review_with_guidelines_and_diff_with_context(
     // Build exploration instruction text
     let exploration_instruction = build_exploration_instruction(diff_content);
 
+    // Build diff context header
+    let diff_context = diff_content.format_context_header();
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff_content.content.clone()),
+        ("DIFF_CONTEXT", diff_context),
         ("GUIDELINES", guidelines_section),
         ("EXPLORATION_REQUIRED", exploration_instruction),
         (
@@ -159,10 +163,14 @@ pub fn prompt_comprehensive_review_with_diff_with_context(
     // Build exploration instruction text
     let exploration_instruction = build_exploration_instruction(diff_content);
 
+    // Build diff context header
+    let diff_context = diff_content.format_context_header();
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff_content.content.clone()),
+        ("DIFF_CONTEXT", diff_context),
         ("GUIDELINES", priority_section),
         ("EXPLORATION_REQUIRED", exploration_instruction),
         (
@@ -211,10 +219,14 @@ pub fn prompt_security_focused_review_with_diff_with_context(
     // Build exploration instruction text
     let exploration_instruction = build_exploration_instruction(diff_content);
 
+    // Build diff context header
+    let diff_context = diff_content.format_context_header();
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff_content.content.clone()),
+        ("DIFF_CONTEXT", diff_context),
         ("GUIDELINES", security_section),
         ("EXPLORATION_REQUIRED", exploration_instruction),
         (

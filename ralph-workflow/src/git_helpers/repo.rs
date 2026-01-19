@@ -36,7 +36,7 @@ pub enum DiffTruncationLevel {
 /// The result of diff truncation for review purposes.
 ///
 /// Contains both the potentially-truncated content and metadata about
-/// what truncation was applied.
+/// what truncation was applied, along with version context information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffReviewContent {
     /// The content to include in the review prompt
@@ -47,6 +47,74 @@ pub struct DiffReviewContent {
     pub total_file_count: usize,
     /// Number of files shown in the abbreviated content (if applicable)
     pub shown_file_count: Option<usize>,
+    /// The OID (commit SHA) that this diff is compared against (baseline)
+    pub baseline_oid: Option<String>,
+    /// Short form (first 8 chars) of the baseline OID for display
+    pub baseline_short: Option<String>,
+    /// Description of what the baseline represents (e.g., "review_baseline", "start_commit")
+    pub baseline_description: String,
+}
+
+impl DiffReviewContent {
+    /// Generate a human-readable header describing the diff's version context.
+    ///
+    /// This header is meant to be included at the beginning of the diff content
+    /// to provide clarity about what state of the code the diff represents.
+    ///
+    /// # Returns
+    ///
+    /// A formatted string like:
+    /// ```text
+    /// Diff Context: Compared against review_baseline abc12345
+    /// Current state: Working directory (includes unstaged changes)
+    /// ```
+    ///
+    /// If no baseline information is available, returns a generic message.
+    pub fn format_context_header(&self) -> String {
+        let mut lines = Vec::new();
+
+        if let Some(short) = &self.baseline_short {
+            lines.push(format!(
+                "Diff Context: Compared against {} {}",
+                self.baseline_description, short
+            ));
+        } else {
+            lines.push("Diff Context: Version information not available".to_string());
+        }
+
+        // Add information about truncation if applicable
+        match self.truncation_level {
+            DiffTruncationLevel::Full => {
+                // No truncation - full diff
+            }
+            DiffTruncationLevel::Abbreviated => {
+                lines.push(format!(
+                    "Note: Diff abbreviated - {}/{} files shown",
+                    self.shown_file_count.unwrap_or(0),
+                    self.total_file_count
+                ));
+            }
+            DiffTruncationLevel::FileList => {
+                lines.push(format!(
+                    "Note: Only file list shown - {} files changed",
+                    self.total_file_count
+                ));
+            }
+            DiffTruncationLevel::FileListAbbreviated => {
+                lines.push(format!(
+                    "Note: File list abbreviated - {}/{} files shown",
+                    self.shown_file_count.unwrap_or(0),
+                    self.total_file_count
+                ));
+            }
+        }
+
+        if lines.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", lines.join("\n"))
+        }
+    }
 }
 
 /// Convert git2 error to `io::Error`.
@@ -255,6 +323,9 @@ pub fn truncate_diff_for_review(
             truncation_level: DiffTruncationLevel::Full,
             total_file_count,
             shown_file_count: None,
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
     }
 
@@ -435,6 +506,9 @@ fn truncate_diff_semantically(
         truncation_level: DiffTruncationLevel::Abbreviated,
         total_file_count: files.len(),
         shown_file_count: Some(shown_count),
+        baseline_oid: None,
+        baseline_short: None,
+        baseline_description: String::new(),
     }
 }
 
@@ -458,6 +532,9 @@ fn build_file_list(files: &[DiffFile]) -> DiffReviewContent {
         truncation_level: DiffTruncationLevel::FileList,
         total_file_count: files.len(),
         shown_file_count: Some(files.len()),
+        baseline_oid: None,
+        baseline_short: None,
+        baseline_description: String::new(),
     }
 }
 
@@ -502,6 +579,9 @@ fn abbreviate_file_list(
         truncation_level: DiffTruncationLevel::FileListAbbreviated,
         total_file_count: total_count,
         shown_file_count: Some(shown_count),
+        baseline_oid: None,
+        baseline_short: None,
+        baseline_description: String::new(),
     }
 }
 
@@ -1073,6 +1153,9 @@ mod tests {
             truncation_level: DiffTruncationLevel::Full,
             total_file_count: 5,
             shown_file_count: None,
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
         let instruction = build_exploration_instruction_for_test(&full_content);
         assert!(instruction.is_empty());
@@ -1083,6 +1166,9 @@ mod tests {
             truncation_level: DiffTruncationLevel::Abbreviated,
             total_file_count: 10,
             shown_file_count: Some(3),
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
         let instruction = build_exploration_instruction_for_test(&abbreviated_content);
         assert!(instruction.contains("ABBREVIATED"));
@@ -1094,6 +1180,9 @@ mod tests {
             truncation_level: DiffTruncationLevel::FileList,
             total_file_count: 50,
             shown_file_count: Some(50),
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
         let instruction = build_exploration_instruction_for_test(&file_list_content);
         assert!(instruction.contains("FILE LIST ONLY"));
@@ -1105,6 +1194,9 @@ mod tests {
             truncation_level: DiffTruncationLevel::FileListAbbreviated,
             total_file_count: 200,
             shown_file_count: Some(10),
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
         let instruction = build_exploration_instruction_for_test(&abbreviated_list_content);
         assert!(instruction.contains("FILE LIST ABBREVIATED"));

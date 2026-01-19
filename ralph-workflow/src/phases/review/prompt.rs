@@ -10,7 +10,8 @@ use std::fs;
 use crate::agents::is_glm_like_agent;
 use crate::config::ReviewDepth;
 use crate::git_helpers::{
-    get_git_diff_from_review_baseline, DiffReviewContent, DiffTruncationLevel,
+    get_git_diff_from_review_baseline, get_review_baseline_info, get_start_commit_summary,
+    DiffReviewContent, DiffTruncationLevel,
 };
 use crate::guidelines::ReviewGuidelines;
 use crate::prompts::{
@@ -335,12 +336,30 @@ fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<DiffReviewCont
             const MAX_ABBREVIATED_SIZE: usize = 50 * 1024; // 50KB
             const MAX_FILE_LIST_SIZE: usize = 10 * 1024; // 10KB
 
-            let content = crate::git_helpers::truncate_diff_for_review(
+            let mut content = crate::git_helpers::truncate_diff_for_review(
                 d,
                 MAX_FULL_DIFF_SIZE,
                 MAX_ABBREVIATED_SIZE,
                 MAX_FILE_LIST_SIZE,
             );
+
+            // Add version context to the diff content
+            if let Ok((baseline_oid, _, _)) = get_review_baseline_info() {
+                if let Some(oid) = baseline_oid {
+                    content.baseline_oid = Some(oid.clone());
+                    content.baseline_short = Some(short_oid(&oid));
+                    content.baseline_description = "review_baseline".to_string();
+                } else {
+                    // No review baseline set, fall back to start commit
+                    if let Ok(summary) = get_start_commit_summary() {
+                        if let Some(oid) = summary.start_oid {
+                            content.baseline_oid = Some(oid.clone());
+                            content.baseline_short = Some(short_oid(&oid));
+                            content.baseline_description = "start_commit".to_string();
+                        }
+                    }
+                }
+            }
 
             match content.truncation_level {
                 DiffTruncationLevel::Full => {
@@ -406,6 +425,11 @@ fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<DiffReviewCont
     }
 }
 
+/// Convert a full OID to a short form (first 8 characters).
+fn short_oid(oid: &str) -> String {
+    oid.chars().take(8).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,6 +444,9 @@ mod tests {
             truncation_level: DiffTruncationLevel::Full,
             total_file_count: 1,
             shown_file_count: None,
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
 
         // Test guided prompts (with guidelines)
@@ -520,6 +547,9 @@ mod tests {
             truncation_level: DiffTruncationLevel::Full,
             total_file_count: 1,
             shown_file_count: None,
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
 
         let prompts_to_check = vec![
@@ -600,6 +630,9 @@ mod tests {
             truncation_level: DiffTruncationLevel::Full,
             total_file_count: 1,
             shown_file_count: None,
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
 
         let universal_prompt = prompt_universal_review_with_diff_with_context(
@@ -653,6 +686,9 @@ mod tests {
             truncation_level: DiffTruncationLevel::Full,
             total_file_count: 1,
             shown_file_count: None,
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
 
         let prompts_to_check = vec![
@@ -729,6 +765,9 @@ mod tests {
             truncation_level: DiffTruncationLevel::Full,
             total_file_count: 1,
             shown_file_count: None,
+            baseline_oid: None,
+            baseline_short: None,
+            baseline_description: String::new(),
         };
 
         let prompts_to_check = vec![

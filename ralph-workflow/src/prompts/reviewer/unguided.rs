@@ -111,10 +111,14 @@ pub fn prompt_detailed_review_without_guidelines_with_diff_with_context(
     // Build exploration instruction text
     let exploration_instruction = build_exploration_instruction(diff_content);
 
+    // Build diff context header
+    let diff_context = diff_content.format_context_header();
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff_content.content.clone()),
+        ("DIFF_CONTEXT", diff_context),
         ("GUIDELINES", "".to_string()), // No guidelines for unguided review
         ("EXPLORATION_REQUIRED", exploration_instruction),
         (
@@ -160,10 +164,14 @@ pub fn prompt_incremental_review_with_diff_with_context(
     // Build exploration instruction text
     let exploration_instruction = build_exploration_instruction(diff_content);
 
+    // Build diff context header
+    let diff_context = diff_content.format_context_header();
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff_content.content.clone()),
+        ("DIFF_CONTEXT", diff_context),
         ("GUIDELINES", "".to_string()), // No guidelines for incremental review
         ("EXPLORATION_REQUIRED", exploration_instruction),
         (
@@ -208,10 +216,14 @@ pub fn prompt_universal_review_with_diff_with_context(
     // Build exploration instruction text
     let exploration_instruction = build_exploration_instruction(diff_content);
 
+    // Build diff context header
+    let diff_context = diff_content.format_context_header();
+
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("DIFF", diff_content.content.clone()),
+        ("DIFF_CONTEXT", diff_context),
         ("EXPLORATION_REQUIRED", exploration_instruction),
         (
             "EXPLORATION_MODE",
