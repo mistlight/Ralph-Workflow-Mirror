@@ -5,16 +5,243 @@
 
 use crate::agents::AgentRegistry;
 use crate::checkpoint::file_state::{FileSystemState, ValidationError};
-use crate::checkpoint::{load_checkpoint, validate_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::checkpoint::{
+    checkpoint_exists, load_checkpoint, validate_checkpoint, PipelineCheckpoint, PipelinePhase,
+};
 use crate::config::Config;
 use crate::git_helpers::rebase_in_progress;
 use crate::logger::Logger;
 use std::fs;
+use std::io::{self, IsTerminal};
 
 /// Result of handling resume, containing the checkpoint.
 pub struct ResumeResult {
     /// The loaded checkpoint.
     pub checkpoint: PipelineCheckpoint,
+}
+
+/// Offer interactive resume prompt when checkpoint exists without --resume flag.
+///
+/// This function checks if a checkpoint exists when the user did NOT specify
+/// the --resume flag, and if so, offers to resume via an interactive prompt.
+/// This provides a better user experience by detecting incomplete runs and
+/// offering to continue them.
+///
+/// # Arguments
+///
+/// * `args` - CLI arguments (to check if --resume was already specified)
+/// * `config` - Current configuration (for validation comparison)
+/// * `registry` - Agent registry (for agent validation)
+/// * `logger` - Logger for output
+/// * `developer_agent` - Current developer agent name
+/// * `reviewer_agent` - Current reviewer agent name
+///
+/// # Returns
+///
+/// `Some(ResumeResult)` if user chose to resume from a valid checkpoint,
+/// `None` if no checkpoint exists, not in a TTY, user declined, or validation failed.
+pub fn offer_resume_if_checkpoint_exists(
+    args: &crate::cli::Args,
+    config: &Config,
+    registry: &AgentRegistry,
+    logger: &Logger,
+    developer_agent: &str,
+    reviewer_agent: &str,
+) -> Option<ResumeResult> {
+    // Skip if --resume flag was already specified (handled by handle_resume_with_validation)
+    if args.recovery.resume {
+        return None;
+    }
+
+    // Skip if not in a TTY (can't prompt user)
+    if !can_prompt_user() {
+        return None;
+    }
+
+    // Check if checkpoint exists
+    if !checkpoint_exists() {
+        return None;
+    }
+
+    // Load checkpoint to display summary
+    let checkpoint = match load_checkpoint() {
+        Ok(Some(cp)) => cp,
+        Ok(None) => return None,
+        Err(e) => {
+            logger.warn(&format!("Checkpoint exists but failed to load: {e}"));
+            return None;
+        }
+    };
+
+    // Display user-friendly checkpoint summary with time elapsed
+    logger.header("FOUND PREVIOUS RUN", crate::logger::Colors::cyan);
+    display_user_friendly_checkpoint_summary(&checkpoint, logger);
+
+    // Prompt user to resume
+    if !prompt_user_to_resume(logger) {
+        // User declined - delete checkpoint and start fresh
+        logger.info("Deleting checkpoint and starting fresh...");
+        let _ = crate::checkpoint::clear_checkpoint();
+        return None;
+    }
+
+    // User chose to resume - validate and proceed
+    logger.header("RESUME: Loading Checkpoint", crate::logger::Colors::yellow);
+
+    let validation = validate_checkpoint(&checkpoint, config, registry);
+
+    for warning in &validation.warnings {
+        logger.warn(warning);
+    }
+    for error in &validation.errors {
+        logger.error(error);
+    }
+
+    if !validation.is_valid {
+        logger.error("Checkpoint validation failed. Cannot resume.");
+        logger.info("Delete .agent/checkpoint.json and start fresh, or fix the issues above.");
+        return None;
+    }
+
+    if checkpoint.developer_agent != developer_agent {
+        logger.warn(&format!(
+            "Developer agent changed: {} -> {}",
+            checkpoint.developer_agent, developer_agent
+        ));
+    }
+    if checkpoint.reviewer_agent != reviewer_agent {
+        logger.warn(&format!(
+            "Reviewer agent changed: {} -> {}",
+            checkpoint.reviewer_agent, reviewer_agent
+        ));
+    }
+
+    check_rebase_state_on_resume(&checkpoint, logger);
+
+    let validation_outcome = if let Some(ref file_system_state) = checkpoint.file_system_state {
+        validate_file_system_state(
+            file_system_state,
+            logger,
+            args.recovery.recovery_strategy.into(),
+        )
+    } else {
+        ValidationOutcome::Passed
+    };
+
+    if matches!(validation_outcome, ValidationOutcome::Failed(_)) {
+        return None;
+    }
+
+    Some(ResumeResult { checkpoint })
+}
+
+/// Check if we can prompt the user (stdin/stdout is a TTY).
+fn can_prompt_user() -> bool {
+    io::stdin().is_terminal() && (io::stdout().is_terminal() || io::stderr().is_terminal())
+}
+
+/// Display a user-friendly checkpoint summary with time elapsed.
+fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
+    use chrono::{DateTime, Local, NaiveDateTime};
+
+    logger.info(&format!(
+        "You were in the middle of: {}",
+        checkpoint.description()
+    ));
+
+    // Calculate and display time elapsed
+    // Parse the timestamp string which is in "YYYY-MM-DD HH:MM:SS" format
+    let checkpoint_time = match NaiveDateTime::parse_from_str(&checkpoint.timestamp, "%Y-%m-%d %H:%M:%S") {
+        Ok(dt) => DateTime::<Local>::from_naive_utc_and_offset(dt, Local::now().offset().to_owned()),
+        Err(_) => {
+            // If parsing fails, just show the timestamp string
+            logger.info(&format!("Session was interrupted at: {}", checkpoint.timestamp));
+            return;
+        }
+    };
+    let now = Local::now();
+    let duration = now.signed_duration_since(checkpoint_time);
+
+    let time_str = if duration.num_days() > 0 {
+        format!("{} day(s) ago", duration.num_days())
+    } else if duration.num_hours() > 0 {
+        format!("{} hour(s) ago", duration.num_hours())
+    } else if duration.num_minutes() > 0 {
+        format!("{} minute(s) ago", duration.num_minutes())
+    } else {
+        "just now".to_string()
+    };
+
+    logger.info(&format!("Session was interrupted: {}", time_str));
+
+    // Show progress
+    if checkpoint.total_iterations > 0 {
+        logger.info(&format!(
+            "Progress: {} of {} development iteration(s) completed",
+            checkpoint.actual_developer_runs, checkpoint.total_iterations
+        ));
+    }
+    if checkpoint.total_reviewer_passes > 0 {
+        logger.info(&format!(
+            "Progress: {} of {} review pass(es) completed",
+            checkpoint.actual_reviewer_runs, checkpoint.total_reviewer_passes
+        ));
+    }
+
+    // Show resume count if this is a resumed session
+    if checkpoint.resume_count > 0 {
+        logger.info(&format!(
+            "This session has been resumed {} time(s) before",
+            checkpoint.resume_count
+        ));
+    }
+
+    // Show original configuration
+    let cli = &checkpoint.cli_args;
+    if cli.developer_iters > 0 || cli.reviewer_reviews > 0 {
+        logger.info(&format!(
+            "Original configuration: -D {} -R {}",
+            cli.developer_iters, cli.reviewer_reviews
+        ));
+    }
+
+    logger.info(&format!("Developer agent: {}", checkpoint.developer_agent));
+    logger.info(&format!("Reviewer agent: {}", checkpoint.reviewer_agent));
+}
+
+/// Prompt user to decide whether to resume or start fresh.
+///
+/// Returns `true` if user wants to resume, `false` if they want to start fresh.
+fn prompt_user_to_resume(logger: &Logger) -> bool {
+    use std::io::Write;
+
+    println!();
+    logger.info("Would you like to resume from where you left off?");
+
+    let prompt = "Resume? [y/N] ";
+    let colors = crate::logger::Colors::new();
+
+    let mut input = String::new();
+    // Print prompt directly to stdout for better UX
+    print!("{}", colors.yellow());
+    let _ = io::stdout().write_all(prompt.as_bytes());
+    let _ = io::stdout().flush();
+    print!("{}", colors.reset());
+
+    match io::stdin().read_line(&mut input) {
+        Ok(0) => {
+            // EOF
+            println!();
+            false
+        }
+        Ok(_) => {
+            let response = input.trim().to_lowercase();
+            println!();
+
+            matches!(response.as_str(), "y" | "yes" | "Y" | "YES")
+        }
+        Err(_) => false,
+    }
 }
 
 /// Result of file system validation.

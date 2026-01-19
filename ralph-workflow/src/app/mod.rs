@@ -63,7 +63,7 @@ use config_init::initialize_config;
 use context::PipelineContext;
 use detection::detect_project_stack;
 use plumbing::{handle_apply_commit, handle_generate_commit_msg, handle_show_commit_msg};
-use resume::handle_resume_with_validation;
+use resume::{handle_resume_with_validation, offer_resume_if_checkpoint_exists};
 use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
@@ -444,15 +444,29 @@ fn setup_git_and_prompt_file(
 
 /// Runs the full development/review/commit pipeline.
 fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
-    // Handle --resume with validation
-    let resume_result = handle_resume_with_validation(
+    // First, offer interactive resume if checkpoint exists without --resume flag
+    let resume_result = offer_resume_if_checkpoint_exists(
         &ctx.args,
         &ctx.config,
         &ctx.registry,
         &ctx.logger,
-        &ctx.developer_display,
-        &ctx.reviewer_display,
+        &ctx.developer_agent,
+        &ctx.reviewer_agent,
     );
+
+    // If interactive resume didn't happen, check for --resume flag
+    let resume_result = match resume_result {
+        Some(result) => Some(result),
+        None => handle_resume_with_validation(
+            &ctx.args,
+            &ctx.config,
+            &ctx.registry,
+            &ctx.logger,
+            &ctx.developer_display,
+            &ctx.reviewer_display,
+        ),
+    };
+
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
 
     // Create run context - either new or from checkpoint
