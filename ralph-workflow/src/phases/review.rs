@@ -23,7 +23,7 @@ use crate::logger::{print_progress, Logger};
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
-use crate::pipeline::{run_with_fallback, PipelineRuntime};
+use crate::pipeline::{run_with_fallback_and_validator, FallbackConfig, PipelineRuntime};
 use crate::prompts::{
     get_stored_or_generate_prompt, prompt_for_agent, Action, ContextLevel, PromptConfig, Role,
 };

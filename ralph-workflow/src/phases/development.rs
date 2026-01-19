@@ -162,6 +162,8 @@ pub fn run_development_phase(
                 logger: ctx.logger,
                 colors: ctx.colors,
                 config: ctx.config,
+                #[cfg(any(test, feature = "test-utils"))]
+                agent_executor: None,
             };
             run_with_fallback(
                 AgentRole::Developer,
