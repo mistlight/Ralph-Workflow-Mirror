@@ -388,6 +388,8 @@ pub enum AttemptOutcome {
     Fallback(String),
     /// Agent error detected (should trigger fallback)
     AgentError(String),
+    /// XSD validation failed with specific error message
+    XsdValidationFailed(String),
     /// Extraction failed entirely
     ExtractionFailed(String),
 }
@@ -398,6 +400,7 @@ impl std::fmt::Display for AttemptOutcome {
             Self::Success(msg) => write!(f, "SUCCESS: {}", preview_message(msg)),
             Self::Fallback(msg) => write!(f, "FALLBACK: {}", preview_message(msg)),
             Self::AgentError(err) => write!(f, "AGENT_ERROR: {err}"),
+            Self::XsdValidationFailed(err) => write!(f, "XSD_VALIDATION_FAILED: {err}"),
             Self::ExtractionFailed(err) => write!(f, "EXTRACTION_FAILED: {err}"),
         }
     }

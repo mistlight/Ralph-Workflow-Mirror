@@ -38,6 +38,8 @@ pub use commit::{
     CommitExtractionResult,
 };
 
+// XSD validation is now internal (pub(crate))
+
 use cleaning::clean_plain_text;
 use parsers::{detect_output_format, extract_by_format};
 

@@ -96,6 +96,13 @@ impl CommitExtractionResult {
         matches!(self, Self::AgentError(_))
     }
 
+    /// Check if this result indicates a successful extraction.
+    ///
+    /// A successful result is one that produced a commit message (not a fallback or error).
+    pub const fn is_success(&self) -> bool {
+        matches!(self, Self::Extracted(_) | Self::Salvaged(_))
+    }
+
     /// Get the error kind if this is an agent error.
     pub const fn error_kind(&self) -> Option<AgentErrorKind> {
         match self {
@@ -127,6 +134,17 @@ struct StructuredCommitMessage {
 /// <ralph-subject>type(scope): description</ralph-subject>
 /// <ralph-body>Optional body text here.
 /// Can span multiple lines.</ralph-body>
+/// </ralph-commit>
+/// ```
+///
+/// Or with detailed body elements:
+///
+/// ```xml
+/// <ralph-commit>
+/// <ralph-subject>type(scope): description</ralph-subject>
+/// <ralph-body-summary>Brief summary</ralph-body-summary>
+/// <ralph-body-details>Detailed bullet points</ralph-body-details>
+/// <ralph-body-footer>BREAKING CHANGE or Fixes #123</ralph-body-footer>
 /// </ralph-commit>
 /// ```
 ///
@@ -173,66 +191,36 @@ pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, Stri
         );
     }
 
-    // Extract content between the tags
-    let commit_block = &content[commit_start + "<ralph-commit>".len()..commit_end];
-
-    // Extract subject (required)
-    let Some(subject) = extract_xml_tag_content(commit_block, "ralph-subject") else {
-        return (
-            None,
-            format!(
-                "Found <ralph-commit> at {commit_start}, but <ralph-subject> tag not found within commit block"
-            ),
-        );
-    };
-
-    let subject = subject.trim();
-    if subject.is_empty() {
-        return (
-            None,
-            format!("Found <ralph-subject> but it is empty (at pos {commit_start})"),
-        );
-    }
-
-    // Validate conventional commit format
-    if !is_conventional_commit_subject(subject) {
-        return (
-            None,
-            format!(
-                "Found subject '{}' but it doesn't match conventional commit format (type: ...)",
-                if subject.len() > 50 {
-                    format!("{}...", &subject[..50])
-                } else {
-                    subject.to_string()
-                }
-            ),
-        );
-    }
-
-    // Extract body (optional)
-    let body = extract_xml_tag_content(commit_block, "ralph-body");
-
-    // Format the commit message
-    let has_body = body.as_ref().is_some_and(|b| !b.trim().is_empty());
-    let message = match &body {
-        Some(body_content) if !body_content.trim().is_empty() => {
-            format!("{}\n\n{}", subject, body_content.trim())
-        }
-        _ => subject.to_string(),
-    };
-
-    // Additionally run XSD validation for enhanced error reporting (non-blocking)
-    let xml_block = &content[commit_start..=commit_end];
+    // Run XSD validation on the XML block
+    // commit_end is the position where </ralph-commit> starts, so we need to include the full tag
+    let xml_end = commit_end + "</ralph-commit>".len();
+    let xml_block = &content[commit_start..xml_end];
     let xsd_result = validate_xml_against_xsd(xml_block);
-    let xsd_note = match &xsd_result {
-        Ok(_) => "XSD validation passed".to_string(),
-        Err(e) => format!("XSD validation note: {}", e.format_for_ai_retry()),
+
+    let message = match xsd_result {
+        Ok(elements) => {
+            // Format the commit message using parsed elements
+            let body = elements.format_body();
+            if body.is_empty() {
+                elements.subject.clone()
+            } else {
+                format!("{}\n\n{}", elements.subject, body)
+            }
+        }
+        Err(e) => {
+            // XSD validation failed - return error with details
+            let error_msg = e.format_for_ai_retry();
+            return (None, format!("XSD validation failed: {}", error_msg));
+        }
     };
+
+    // Determine body presence for logging
+    let has_body = message.lines().count() > 1;
 
     (
         Some(message.clone()),
         format!(
-            "Found <ralph-commit> at pos {commit_start}, <ralph-subject> extracted, body={}, message: '{}'. {xsd_note}",
+            "Found <ralph-commit> at pos {commit_start}, XSD validation passed, body={}, message: '{}'",
             if has_body { "present" } else { "absent" },
             if message.len() > 80 {
                 format!("{}...", &message[..80].replace('\n', "\\n"))
@@ -319,37 +307,6 @@ pub fn try_extract_structured_commit_with_trace(content: &str) -> (Option<String
             None,
             format!("Content does not appear to be JSON ({content_len} chars, no '{{' found)"),
         )
-    }
-}
-
-/// Extract content between XML-style tags.
-///
-/// # Arguments
-///
-/// * `content` - The content to search
-/// * `tag_name` - The tag name (without angle brackets)
-///
-/// # Returns
-///
-/// * `Some(content)` if the tag was found with content
-/// * `None` if the tag was not found or was empty
-fn extract_xml_tag_content(content: &str, tag_name: &str) -> Option<String> {
-    let open_tag = format!("<{tag_name}>");
-    let close_tag = format!("</{tag_name}>");
-
-    let start = content.find(&open_tag)?;
-    let end = content.find(&close_tag)?;
-
-    if start >= end {
-        return None;
-    }
-
-    let inner = &content[start + open_tag.len()..end];
-
-    if inner.is_empty() {
-        None
-    } else {
-        Some(inner.to_string())
     }
 }
 
@@ -2200,8 +2157,12 @@ diff --git a/src/phases/commit.rs b/src/phases/commit.rs
         let content = r"<ralph-commit>
 <ralph-subject>feat: add new feature</ralph-subject>
 </ralph-commit>";
-        let result = try_extract_xml_commit_with_trace(content).0;
-        assert!(result.is_some(), "Should extract from basic XML");
+        let (result, reason) = try_extract_xml_commit_with_trace(content);
+        assert!(
+            result.is_some(),
+            "Should extract from basic XML. Reason: {}",
+            reason
+        );
         assert_eq!(result.unwrap(), "feat: add new feature");
     }
 

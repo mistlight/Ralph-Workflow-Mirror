@@ -103,6 +103,9 @@ pub(crate) fn validate_xml_against_xsd(
     // Parse required and optional elements
     let mut subject = None;
     let mut body = None;
+    let mut body_summary = None;
+    let mut body_details = None;
+    let mut body_footer = None;
 
     // Parse elements in order
     let mut remaining = commit_content.trim();
@@ -126,6 +129,16 @@ pub(crate) fn validate_xml_against_xsd(
         }
 
         if let Some(tag_content) = extract_tag_content(remaining, "ralph-body") {
+            // Check if detailed elements already exist
+            if body_summary.is_some() || body_details.is_some() || body_footer.is_some() {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::UnexpectedElement,
+                    element_path: "ralph-body".to_string(),
+                    expected: "use either <ralph-body> OR detailed tags, not both".to_string(),
+                    found: "mixed simple and detailed body elements".to_string(),
+                    suggestion: "Use either <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format, not both".to_string(),
+                });
+            }
             if body.is_some() {
                 return Err(XsdValidationError {
                     error_type: XsdErrorType::UnexpectedElement,
@@ -137,6 +150,81 @@ pub(crate) fn validate_xml_against_xsd(
             }
             body = Some(tag_content);
             remaining = advance_past_tag(remaining, "ralph-body");
+            continue;
+        }
+
+        if let Some(tag_content) = extract_tag_content(remaining, "ralph-body-summary") {
+            // Check if simple body already exists
+            if body.is_some() {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::UnexpectedElement,
+                    element_path: "ralph-body-summary".to_string(),
+                    expected: "use either <ralph-body> OR detailed tags, not both".to_string(),
+                    found: "mixed simple and detailed body elements".to_string(),
+                    suggestion: "Use either <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format, not both".to_string(),
+                });
+            }
+            if body_summary.is_some() {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::UnexpectedElement,
+                    element_path: "ralph-body-summary".to_string(),
+                    expected: "only one <ralph-body-summary> element".to_string(),
+                    found: "duplicate <ralph-body-summary> element".to_string(),
+                    suggestion: "Include only one <ralph-body-summary> element".to_string(),
+                });
+            }
+            body_summary = Some(tag_content);
+            remaining = advance_past_tag(remaining, "ralph-body-summary");
+            continue;
+        }
+
+        if let Some(tag_content) = extract_tag_content(remaining, "ralph-body-details") {
+            // Check if simple body already exists
+            if body.is_some() {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::UnexpectedElement,
+                    element_path: "ralph-body-details".to_string(),
+                    expected: "use either <ralph-body> OR detailed tags, not both".to_string(),
+                    found: "mixed simple and detailed body elements".to_string(),
+                    suggestion: "Use either <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format, not both".to_string(),
+                });
+            }
+            if body_details.is_some() {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::UnexpectedElement,
+                    element_path: "ralph-body-details".to_string(),
+                    expected: "only one <ralph-body-details> element".to_string(),
+                    found: "duplicate <ralph-body-details> element".to_string(),
+                    suggestion: "Include only one <ralph-body-details> element".to_string(),
+                });
+            }
+            body_details = Some(tag_content);
+            remaining = advance_past_tag(remaining, "ralph-body-details");
+            continue;
+        }
+
+        if let Some(tag_content) = extract_tag_content(remaining, "ralph-body-footer") {
+            // Check if simple body already exists
+            if body.is_some() {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::UnexpectedElement,
+                    element_path: "ralph-body-footer".to_string(),
+                    expected: "use either <ralph-body> OR detailed tags, not both".to_string(),
+                    found: "mixed simple and detailed body elements".to_string(),
+                    suggestion: "Use either <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format, not both".to_string(),
+                });
+            }
+            if body_footer.is_some() {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::UnexpectedElement,
+                    element_path: "ralph-body-footer".to_string(),
+                    expected: "only one <ralph-body-footer> element".to_string(),
+                    found: "duplicate <ralph-body-footer> element".to_string(),
+                    suggestion: "Include only one <ralph-body-footer> element".to_string(),
+                });
+            }
+            body_footer = Some(tag_content);
+            remaining = advance_past_tag(remaining, "ralph-body-footer");
             continue;
         }
 
@@ -209,6 +297,15 @@ pub(crate) fn validate_xml_against_xsd(
     Ok(CommitMessageElements {
         subject: subject.to_string(),
         body: body.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+        body_summary: body_summary
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        body_details: body_details
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        body_footer: body_footer
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
     })
 }
 
@@ -261,8 +358,48 @@ pub(crate) struct CommitMessageElements {
     /// The commit subject line (required)
     /// Format: type(scope): description
     pub subject: String,
-    /// Optional simple body content
+    /// Optional simple body content (mutually exclusive with detailed elements)
     pub body: Option<String>,
+    /// Optional body summary (for detailed format)
+    pub body_summary: Option<String>,
+    /// Optional body details (for detailed format)
+    pub body_details: Option<String>,
+    /// Optional body footer (for detailed format)
+    pub body_footer: Option<String>,
+}
+
+impl CommitMessageElements {
+    /// Format all body elements into a single body string.
+    ///
+    /// Combines the simple body or detailed elements into a formatted
+    /// commit message body string suitable for git commit.
+    pub(crate) fn format_body(&self) -> String {
+        // If simple body exists, use it directly
+        if let Some(ref body) = self.body {
+            return body.clone();
+        }
+
+        // Otherwise, combine detailed elements
+        let mut parts = Vec::new();
+
+        if let Some(ref summary) = self.body_summary {
+            parts.push(summary.trim());
+        }
+
+        if let Some(ref details) = self.body_details {
+            parts.push(details.trim());
+        }
+
+        if let Some(ref footer) = self.body_footer {
+            parts.push(footer.trim());
+        }
+
+        if parts.is_empty() {
+            String::new()
+        } else {
+            parts.join("\n\n")
+        }
+    }
 }
 
 /// Detailed XSD validation error for reporting to AI agent.
@@ -271,9 +408,9 @@ pub(crate) struct CommitMessageElements {
 /// during validation, making it suitable for generating retry prompts that
 /// guide the AI agent toward producing valid output.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct XsdValidationError {
+pub struct XsdValidationError {
     /// The type of validation error that occurred
-    pub error_type: XsdErrorType,
+    pub(crate) error_type: XsdErrorType,
     /// The path to the element that failed validation
     pub element_path: String,
     /// What was expected at this location

@@ -99,71 +99,11 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         m.insert(
-            "commit_strict_json",
-            EmbeddedTemplate {
-                name: "commit_strict_json",
-                content: include_str!("templates/commit_strict_json.txt"),
-                description: "Strict JSON commit message format (retry attempt 1)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "commit_strict_json_v2",
-            EmbeddedTemplate {
-                name: "commit_strict_json_v2",
-                content: include_str!("templates/commit_strict_json_v2.txt"),
-                description: "Strict JSON commit message format with examples (retry attempt 2)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "commit_ultra_minimal",
-            EmbeddedTemplate {
-                name: "commit_ultra_minimal",
-                content: include_str!("templates/commit_ultra_minimal.txt"),
-                description: "Ultra-minimal commit message prompt (retry attempt 3)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "commit_ultra_minimal_v2",
-            EmbeddedTemplate {
-                name: "commit_ultra_minimal_v2",
-                content: include_str!("templates/commit_ultra_minimal_v2.txt"),
-                description: "Ultra-minimal commit message prompt v2 (retry attempt 4)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "commit_file_list_only",
-            EmbeddedTemplate {
-                name: "commit_file_list_only",
-                content: include_str!("templates/commit_file_list_only.txt"),
-                description: "Commit message from file list only (fallback 1)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "commit_file_list_summary",
-            EmbeddedTemplate {
-                name: "commit_file_list_summary",
-                content: include_str!("templates/commit_file_list_summary.txt"),
-                description: "Commit message from file summary (fallback 2)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
             "commit_emergency",
             EmbeddedTemplate {
                 name: "commit_emergency",
                 content: include_str!("templates/commit_emergency.txt"),
-                description: "Emergency commit message with diff (fallback 3)",
+                description: "Emergency commit message with diff (fallback)",
                 deprecated: false,
             },
         );
@@ -184,6 +124,16 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "commit_message_fallback",
                 content: include_str!("templates/commit_message_fallback.txt"),
                 description: "Fallback commit message template",
+                deprecated: false,
+            },
+        );
+
+        m.insert(
+            "commit_xsd_retry",
+            EmbeddedTemplate {
+                name: "commit_xsd_retry",
+                content: include_str!("templates/commit_xsd_retry.txt"),
+                description: "XSD validation retry prompt for commit messages",
                 deprecated: false,
             },
         );

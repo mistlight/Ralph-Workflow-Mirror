@@ -30,10 +30,8 @@ mod types;
 // Re-export all public items for backward compatibility
 pub use commit::{
     prompt_emergency_commit_with_context, prompt_emergency_no_diff_commit_with_context,
-    prompt_file_list_only_commit_with_context, prompt_file_list_summary_only_commit_with_context,
     prompt_fix_with_context, prompt_generate_commit_message_with_diff_with_context,
-    prompt_strict_json_commit_v2_with_context, prompt_strict_json_commit_with_context,
-    prompt_ultra_minimal_commit_v2_with_context, prompt_ultra_minimal_commit_with_context,
+    prompt_xsd_retry_with_context,
 };
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
 pub use rebase::{

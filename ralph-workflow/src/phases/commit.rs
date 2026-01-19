@@ -26,10 +26,7 @@ use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
     prompt_emergency_commit_with_context, prompt_emergency_no_diff_commit_with_context,
-    prompt_file_list_only_commit_with_context, prompt_file_list_summary_only_commit_with_context,
-    prompt_generate_commit_message_with_diff_with_context,
-    prompt_strict_json_commit_v2_with_context, prompt_strict_json_commit_with_context,
-    prompt_ultra_minimal_commit_v2_with_context, prompt_ultra_minimal_commit_with_context,
+    prompt_generate_commit_message_with_diff_with_context, prompt_xsd_retry_with_context,
 };
 use std::fmt;
 use std::fs::{self, File};
@@ -108,22 +105,15 @@ fn max_prompt_size_for_agent(commit_agent: &str) -> usize {
 /// Tracks which stage of re-prompting we're in, allowing for progressive
 /// degradation from detailed prompts to minimal ones before falling back
 /// to the next agent in the chain.
+///
+/// With XSD validation, we now have fewer strategies but each strategy
+/// supports up to 5 in-session retries with validation feedback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommitRetryStrategy {
-    /// First attempt with normal prompt
+    /// First attempt with normal XML prompt
     Initial,
-    /// Re-prompt with strict JSON requirement
-    StrictJson,
-    /// Even stricter prompt with negative examples
-    StrictJsonV2,
-    /// Ultra-minimal prompt, no context
-    UltraMinimal,
-    /// Ultra-minimal V2 - even shorter
-    UltraMinimalV2,
-    /// File list only - no diff content
-    FileListOnly,
-    /// File list summary only - just file counts and categories
-    FileListSummaryOnly,
+    /// XSD validation retry with error feedback
+    XsdRetry,
     /// Emergency prompt - maximum strictness
     Emergency,
     /// Emergency no-diff - absolute last resort
@@ -134,13 +124,8 @@ impl CommitRetryStrategy {
     /// Get the description of this retry stage for logging
     const fn description(self) -> &'static str {
         match self {
-            Self::Initial => "initial prompt",
-            Self::StrictJson => "strict JSON prompt",
-            Self::StrictJsonV2 => "strict JSON V2 prompt",
-            Self::UltraMinimal => "ultra-minimal prompt",
-            Self::UltraMinimalV2 => "ultra-minimal V2 prompt",
-            Self::FileListOnly => "file list only prompt",
-            Self::FileListSummaryOnly => "file list summary only prompt",
+            Self::Initial => "initial XML prompt",
+            Self::XsdRetry => "XSD validation retry",
             Self::Emergency => "emergency prompt",
             Self::EmergencyNoDiff => "emergency no-diff prompt",
         }
@@ -149,13 +134,8 @@ impl CommitRetryStrategy {
     /// Get the next retry strategy, or None if this is the last stage
     const fn next(self) -> Option<Self> {
         match self {
-            Self::Initial => Some(Self::StrictJson),
-            Self::StrictJson => Some(Self::StrictJsonV2),
-            Self::StrictJsonV2 => Some(Self::UltraMinimal),
-            Self::UltraMinimal => Some(Self::UltraMinimalV2),
-            Self::UltraMinimalV2 => Some(Self::FileListOnly),
-            Self::FileListOnly => Some(Self::FileListSummaryOnly),
-            Self::FileListSummaryOnly => Some(Self::Emergency),
+            Self::Initial => Some(Self::XsdRetry),
+            Self::XsdRetry => Some(Self::Emergency),
             Self::Emergency => Some(Self::EmergencyNoDiff),
             Self::EmergencyNoDiff => None,
         }
@@ -165,20 +145,25 @@ impl CommitRetryStrategy {
     const fn stage_number(self) -> usize {
         match self {
             Self::Initial => 1,
-            Self::StrictJson => 2,
-            Self::StrictJsonV2 => 3,
-            Self::UltraMinimal => 4,
-            Self::UltraMinimalV2 => 5,
-            Self::FileListOnly => 6,
-            Self::FileListSummaryOnly => 7,
-            Self::Emergency => 8,
-            Self::EmergencyNoDiff => 9,
+            Self::XsdRetry => 2,
+            Self::Emergency => 3,
+            Self::EmergencyNoDiff => 4,
         }
     }
 
     /// Get the total number of retry stages
     const fn total_stages() -> usize {
-        9 // Initial + 8 re-prompt variants
+        4 // Initial + XsdRetry + Emergency + EmergencyNoDiff
+    }
+
+    /// Get the maximum number of in-session retries for this strategy
+    const fn max_session_retries(self) -> usize {
+        match self {
+            Self::Initial => 5,         // Allow 5 retries with XSD validation feedback
+            Self::XsdRetry => 5,        // Allow 5 retries with clearer error messages
+            Self::Emergency => 1,       // Single attempt for emergency
+            Self::EmergencyNoDiff => 1, // Single attempt for no-diff
+        }
     }
 }
 
@@ -423,32 +408,21 @@ fn check_and_pre_truncate_diff(
 }
 
 /// Generate the appropriate prompt for the current retry strategy.
+///
+/// For XSD retry, the xsd_error parameter is used to provide feedback to the agent.
 fn generate_prompt_for_strategy(
     strategy: CommitRetryStrategy,
     working_diff: &str,
     template_context: &crate::prompts::TemplateContext,
+    xsd_error: Option<&str>,
 ) -> String {
     match strategy {
         CommitRetryStrategy::Initial => {
             prompt_generate_commit_message_with_diff_with_context(template_context, working_diff)
         }
-        CommitRetryStrategy::StrictJson => {
-            prompt_strict_json_commit_with_context(template_context, working_diff)
-        }
-        CommitRetryStrategy::StrictJsonV2 => {
-            prompt_strict_json_commit_v2_with_context(template_context, working_diff)
-        }
-        CommitRetryStrategy::UltraMinimal => {
-            prompt_ultra_minimal_commit_with_context(template_context, working_diff)
-        }
-        CommitRetryStrategy::UltraMinimalV2 => {
-            prompt_ultra_minimal_commit_v2_with_context(template_context, working_diff)
-        }
-        CommitRetryStrategy::FileListOnly => {
-            prompt_file_list_only_commit_with_context(template_context, working_diff)
-        }
-        CommitRetryStrategy::FileListSummaryOnly => {
-            prompt_file_list_summary_only_commit_with_context(template_context, working_diff)
+        CommitRetryStrategy::XsdRetry => {
+            let error_msg = xsd_error.unwrap_or("Unknown XSD validation error");
+            prompt_xsd_retry_with_context(template_context, working_diff, error_msg)
         }
         CommitRetryStrategy::Emergency => {
             prompt_emergency_commit_with_context(template_context, working_diff)
@@ -600,9 +574,9 @@ struct CommitAttemptContext<'a> {
 /// Run a single commit attempt with the given strategy and agent.
 ///
 /// This function runs a single agent (not using fallback) to allow for
-/// per-agent prompt variant cycling. Returns Some(result) if we should
-/// return early (success or hard error), or None if we should continue
-/// to the next strategy.
+/// per-agent prompt variant cycling with in-session XSD validation retry.
+/// Returns Some(result) if we should return early (success or hard error),
+/// or None if we should continue to the next strategy.
 fn run_commit_attempt_with_agent(
     strategy: CommitRetryStrategy,
     ctx: &CommitAttemptContext<'_>,
@@ -612,21 +586,12 @@ fn run_commit_attempt_with_agent(
     last_extraction: &mut Option<CommitExtractionResult>,
     session: &mut CommitLogSession,
 ) -> Option<anyhow::Result<CommitMessageResult>> {
-    let prompt = generate_prompt_for_strategy(strategy, ctx.working_diff, ctx.template_context);
-    let prompt_size_kb = prompt.len() / 1024;
-
-    // Create attempt log
-    let mut attempt_log = session.new_attempt(agent, strategy.description());
-    attempt_log.set_prompt_size(prompt.len());
-    attempt_log.set_diff_info(ctx.working_diff.len(), ctx.diff_was_truncated);
-
-    log_commit_attempt(strategy, prompt_size_kb, agent, runtime);
-
     // Get the agent config
     let Some(agent_config) = registry.resolve_config(agent) else {
         runtime
             .logger
             .warn(&format!("Agent '{agent}' not found in registry, skipping"));
+        let mut attempt_log = session.new_attempt(agent, strategy.description());
         attempt_log.set_outcome(AttemptOutcome::ExtractionFailed(format!(
             "Agent '{agent}' not found in registry"
         )));
@@ -638,61 +603,174 @@ fn run_commit_attempt_with_agent(
     let cmd_str = agent_config.build_cmd(true, true, false);
     let logfile = format!("{}/{}_latest.log", ctx.log_dir, agent.replace('/', "-"));
 
-    // Run the agent directly (without fallback)
-    let exit_code = match crate::pipeline::run_with_prompt(
-        &crate::pipeline::PromptCommand {
-            label: &format!("generate commit message ({})", strategy.description()),
-            display_name: agent,
-            cmd_str: &cmd_str,
-            prompt: &prompt,
-            logfile: &logfile,
-            parser_type: agent_config.json_parser,
-            env_vars: &agent_config.env_vars,
-        },
-        runtime,
-    ) {
-        Ok(result) => result.exit_code,
-        Err(e) => {
-            runtime.logger.error(&format!("Failed to run agent: {e}"));
-            attempt_log.set_outcome(AttemptOutcome::ExtractionFailed(format!(
-                "Agent execution failed: {e}"
-            )));
-            let _ = attempt_log.write_to_file(session.run_dir());
-            return None;
+    // In-session retry loop with XSD validation feedback
+    let max_retries = strategy.max_session_retries();
+    let mut xsd_error: Option<String> = None;
+
+    for retry_num in 0..max_retries {
+        // For initial attempt, xsd_error is None
+        // For retries, we use the XSD error to guide the agent
+        let prompt = generate_prompt_for_strategy(
+            strategy,
+            ctx.working_diff,
+            ctx.template_context,
+            xsd_error.as_deref(),
+        );
+        let prompt_size_kb = prompt.len() / 1024;
+
+        // Create attempt log
+        let mut attempt_log = session.new_attempt(agent, strategy.description());
+        attempt_log.set_prompt_size(prompt.len());
+        attempt_log.set_diff_info(ctx.working_diff.len(), ctx.diff_was_truncated);
+
+        // Log retry attempt if not first attempt
+        if retry_num > 0 {
+            runtime.logger.info(&format!(
+                "  In-session retry {}/{} for XSD validation",
+                retry_num,
+                max_retries - 1
+            ));
+            if let Some(ref error) = xsd_error {
+                runtime.logger.info(&format!("  XSD error: {}", error));
+            }
+        } else {
+            log_commit_attempt(strategy, prompt_size_kb, agent, runtime);
         }
-    };
 
-    if exit_code != 0 {
-        runtime
-            .logger
-            .warn("Commit agent failed, checking logs for partial output...");
+        // Run the agent directly (without fallback)
+        let exit_code = match crate::pipeline::run_with_prompt(
+            &crate::pipeline::PromptCommand {
+                label: &format!("generate commit message ({})", strategy.description()),
+                display_name: agent,
+                cmd_str: &cmd_str,
+                prompt: &prompt,
+                logfile: &logfile,
+                parser_type: agent_config.json_parser,
+                env_vars: &agent_config.env_vars,
+            },
+            runtime,
+        ) {
+            Ok(result) => result.exit_code,
+            Err(e) => {
+                runtime.logger.error(&format!("Failed to run agent: {e}"));
+                attempt_log.set_outcome(AttemptOutcome::ExtractionFailed(format!(
+                    "Agent execution failed: {e}"
+                )));
+                let _ = attempt_log.write_to_file(session.run_dir());
+                return None;
+            }
+        };
+
+        if exit_code != 0 {
+            runtime
+                .logger
+                .warn("Commit agent failed, checking logs for partial output...");
+        }
+
+        let extraction_result = extract_commit_message_from_logs_with_trace(
+            ctx.log_dir,
+            ctx.working_diff,
+            agent,
+            runtime.logger,
+            &mut attempt_log,
+        );
+
+        // Check if we got a valid commit message or need to retry for XSD errors
+        match &extraction_result {
+            Ok(Some(extraction)) if extraction.is_success() => {
+                // Success - write log and return
+                let result = handle_commit_extraction_result(
+                    extraction_result,
+                    strategy,
+                    ctx.log_dir,
+                    runtime,
+                    last_extraction,
+                    &mut attempt_log,
+                );
+
+                if let Err(e) = attempt_log.write_to_file(session.run_dir()) {
+                    runtime
+                        .logger
+                        .warn(&format!("Failed to write attempt log: {e}"));
+                }
+
+                return result;
+            }
+            Ok(Some(_)) => {
+                // Not a success - continue to check for XSD errors
+            }
+            _ => {
+                // Other failure - continue to check for XSD errors
+            }
+        };
+
+        // Check extraction attempts for XSD validation errors
+        let xsd_error_msg = attempt_log
+            .extraction_attempts
+            .iter()
+            .find(|attempt| attempt.detail.contains("XSD validation failed"))
+            .map(|attempt| attempt.detail.clone());
+
+        if let Some(ref error_msg) = xsd_error_msg {
+            runtime
+                .logger
+                .warn(&format!("  XSD validation failed: {}", error_msg));
+
+            if retry_num < max_retries - 1 {
+                // Extract just the error message (after "XSD validation failed: ")
+                let error = error_msg
+                    .strip_prefix("XSD validation failed: ")
+                    .unwrap_or(error_msg);
+
+                // Store error for next retry attempt
+                xsd_error = Some(error.to_string());
+
+                // Write attempt log but don't return yet
+                attempt_log.set_outcome(AttemptOutcome::XsdValidationFailed(error.to_string()));
+                let _ = attempt_log.write_to_file(session.run_dir());
+
+                // Continue to next retry iteration
+                continue;
+            } else {
+                // No more retries - fall through to handle as extraction failure
+                runtime
+                    .logger
+                    .warn("  No more in-session retries remaining");
+            }
+        }
+
+        // Handle extraction result (failure cases)
+        let result = handle_commit_extraction_result(
+            extraction_result,
+            strategy,
+            ctx.log_dir,
+            runtime,
+            last_extraction,
+            &mut attempt_log,
+        );
+
+        // Write the attempt log
+        if let Err(e) = attempt_log.write_to_file(session.run_dir()) {
+            runtime
+                .logger
+                .warn(&format!("Failed to write attempt log: {e}"));
+        }
+
+        // If we got a result (success or hard error), return it
+        if result.is_some() {
+            return result;
+        }
+
+        // Otherwise, if this was a retry and we exhausted retries, break out
+        if retry_num >= max_retries - 1 {
+            break;
+        }
+
+        // For non-XSD errors, we don't retry in-session - move to next strategy
+        break;
     }
 
-    let extraction_result = extract_commit_message_from_logs_with_trace(
-        ctx.log_dir,
-        ctx.working_diff,
-        agent,
-        runtime.logger,
-        &mut attempt_log,
-    );
-
-    let result = handle_commit_extraction_result(
-        extraction_result,
-        strategy,
-        ctx.log_dir,
-        runtime,
-        last_extraction,
-        &mut attempt_log,
-    );
-
-    // Write the attempt log
-    if let Err(e) = attempt_log.write_to_file(session.run_dir()) {
-        runtime
-            .logger
-            .warn(&format!("Failed to write attempt log: {e}"));
-    }
-
-    result
+    None
 }
 
 /// Try progressive truncation recovery when `TokenExhausted` is detected.

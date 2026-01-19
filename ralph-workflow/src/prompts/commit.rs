@@ -281,164 +281,6 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
     })
 }
 
-/// Generate strict XML-only prompt for commit message retry using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-///
-/// # Arguments
-///
-/// * `context` - Template context containing the template registry
-/// * `diff` - The git diff to generate a commit message for
-pub fn prompt_strict_json_commit_with_context(context: &TemplateContext, diff: &str) -> String {
-    let template_content = context
-        .registry()
-        .get_template("commit_strict_json")
-        .unwrap_or_else(|_| include_str!("templates/commit_strict_json.txt").to_string());
-    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
-    Template::new(&template_content)
-        .render(&variables)
-        .unwrap_or_else(|_e| {
-            // Fallback to minimal prompt with diff if template rendering fails
-            format!(
-                "Generate a conventional commit message. Output ONLY:\n\n\
-                 <ralph-commit>\n\
-                 <ralph-subject>type: description</ralph-subject>\n\
-                 </ralph-commit>\n\n\
-                 Diff:\n{}\n",
-                diff.trim()
-            )
-        })
-}
-
-/// Generate even stricter re-prompt with negative examples using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-///
-/// # Arguments
-///
-/// * `context` - Template context containing the template registry
-/// * `diff` - The git diff to generate a commit message for
-pub fn prompt_strict_json_commit_v2_with_context(context: &TemplateContext, diff: &str) -> String {
-    let template_content = context
-        .registry()
-        .get_template("commit_strict_json_v2")
-        .unwrap_or_else(|_| include_str!("templates/commit_strict_json_v2.txt").to_string());
-    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
-    Template::new(&template_content)
-        .render(&variables)
-        .unwrap_or_else(|_e| {
-            // Fallback to minimal prompt with diff if template rendering fails
-            format!(
-                "OUTPUT ONLY:\n\n<ralph-commit>\n<ralph-subject>type: description</ralph-subject>\n</ralph-commit>\n\nDiff:\n{}\n",
-                diff.trim()
-            )
-        })
-}
-
-/// Generate ultra-minimal commit prompt using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-///
-/// # Arguments
-///
-/// * `context` - Template context containing the template registry
-/// * `diff` - The git diff to generate a commit message for
-pub fn prompt_ultra_minimal_commit_with_context(context: &TemplateContext, diff: &str) -> String {
-    let template_content = context
-        .registry()
-        .get_template("commit_ultra_minimal")
-        .unwrap_or_else(|_| include_str!("templates/commit_ultra_minimal.txt").to_string());
-    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
-    Template::new(&template_content)
-        .render(&variables)
-        .unwrap_or_else(|_e| {
-            // Fallback to minimal prompt with diff if template rendering fails
-            format!(
-                "OUTPUT ONLY:\n<ralph-commit>\n<ralph-subject>fix: </ralph-subject>\n</ralph-commit>\n\n{}\n",
-                diff.trim()
-            )
-        })
-}
-
-/// Generate ultra-minimal V2 commit prompt using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-///
-/// # Arguments
-///
-/// * `context` - Template context containing the template registry
-/// * `diff` - The git diff to generate a commit message for
-pub fn prompt_ultra_minimal_commit_v2_with_context(
-    context: &TemplateContext,
-    diff: &str,
-) -> String {
-    let template_content = context
-        .registry()
-        .get_template("commit_ultra_minimal_v2")
-        .unwrap_or_else(|_| include_str!("templates/commit_ultra_minimal_v2.txt").to_string());
-    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
-    Template::new(&template_content)
-        .render(&variables)
-        .unwrap_or_else(|_e| {
-            // Fallback to minimal prompt with diff if template rendering fails
-            format!(
-                "OUTPUT:\n<ralph-subject>fix: </ralph-subject>\n\n{}\n",
-                diff.trim()
-            )
-        })
-}
-
-/// Generate file-list-only commit prompt using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-///
-/// # Arguments
-///
-/// * `context` - Template context containing the template registry
-/// * `diff` - The git diff to generate a commit message for
-pub fn prompt_file_list_only_commit_with_context(context: &TemplateContext, diff: &str) -> String {
-    let diff_content = diff.trim();
-
-    // Extract just the file paths from the diff
-    let files: Vec<&str> = diff_content
-        .lines()
-        .filter(|line| line.starts_with("diff --git a/"))
-        .collect();
-
-    let file_list = if files.is_empty() {
-        String::from("(no files detected)")
-    } else {
-        // Format file list concisely
-        let mut result = String::from("Files changed:\n");
-        for file in &files {
-            if let Some(path) = file.split(" b/").nth(1) {
-                result.push_str("- ");
-                result.push_str(path);
-                result.push('\n');
-            }
-        }
-        result
-    };
-
-    let template_content = context
-        .registry()
-        .get_template("commit_file_list_only")
-        .unwrap_or_else(|_| include_str!("templates/commit_file_list_only.txt").to_string());
-    let variables = HashMap::from([("FILE_LIST", file_list.clone())]);
-    Template::new(&template_content)
-        .render(&variables)
-        .unwrap_or_else(|_| {
-            // Fallback to minimal prompt with file list if template rendering fails
-            format!(
-                "Generate commit message. Output ONLY:\n\n\
-                 <ralph-commit>\n\
-                 <ralph-subject>type: description</ralph-subject>\n\
-                 </ralph-commit>\n\n\
-                 Files changed:\n{file_list}\n"
-            )
-        })
-}
-
 /// Generate emergency commit prompt with maximum constraints using template registry.
 ///
 /// This version uses the template registry which supports user template overrides.
@@ -464,91 +306,6 @@ pub fn prompt_emergency_commit_with_context(context: &TemplateContext, diff: &st
         })
 }
 
-/// Generate file-list-summary-only commit prompt using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-///
-/// # Arguments
-///
-/// * `context` - Template context containing the template registry
-/// * `diff` - The git diff to generate a commit message for
-pub fn prompt_file_list_summary_only_commit_with_context(
-    context: &TemplateContext,
-    diff: &str,
-) -> String {
-    use std::fmt::Write;
-
-    let diff_content = diff.trim();
-
-    // Extract file statistics from the diff
-    let files: Vec<&str> = diff_content
-        .lines()
-        .filter(|line| line.starts_with("diff --git a/"))
-        .collect();
-
-    // Categorize files
-    let mut src_files = 0;
-    let mut test_files = 0;
-    let mut doc_files = 0;
-    let mut config_files = 0;
-    let mut other_files = 0;
-
-    for file in &files {
-        let path_lower = file.to_lowercase();
-        if path_lower.contains("/src/") || path_lower.contains("src/") {
-            src_files += 1;
-        } else if path_lower.contains("/test/") || path_lower.contains("test_") {
-            test_files += 1;
-        } else if path_lower.contains(".md") || path_lower.contains("/doc") {
-            doc_files += 1;
-        } else if path_lower.contains("cargo.toml") || path_lower.contains("package.json") {
-            config_files += 1;
-        } else {
-            other_files += 1;
-        }
-    }
-
-    let total_files = files.len();
-
-    // Build the summary
-    let mut summary = String::from("Changed files summary:\n");
-    writeln!(summary, "Total files changed: {total_files}").unwrap();
-
-    if src_files > 0 {
-        writeln!(summary, "- Source files: {src_files}").unwrap();
-    }
-    if test_files > 0 {
-        writeln!(summary, "- Test files: {test_files}").unwrap();
-    }
-    if doc_files > 0 {
-        writeln!(summary, "- Documentation: {doc_files}").unwrap();
-    }
-    if config_files > 0 {
-        writeln!(summary, "- Configuration: {config_files}").unwrap();
-    }
-    if other_files > 0 {
-        writeln!(summary, "- Other files: {other_files}").unwrap();
-    }
-
-    let template_content = context
-        .registry()
-        .get_template("commit_file_list_summary")
-        .unwrap_or_else(|_| include_str!("templates/commit_file_list_summary.txt").to_string());
-    let variables = HashMap::from([("FILE_SUMMARY", summary.clone())]);
-    Template::new(&template_content)
-        .render(&variables)
-        .unwrap_or_else(|_| {
-            // Fallback to minimal prompt with summary if template rendering fails
-            format!(
-                "Generate commit message. Output ONLY:\n\n\
-                 <ralph-commit>\n\
-                 <ralph-subject>chore: changes</ralph-subject>\n\
-                 </ralph-commit>\n\n\
-                 {summary}\n"
-            )
-        })
-}
-
 /// Generate emergency no-diff commit prompt using template registry.
 ///
 /// This version uses the template registry which supports user template overrides.
@@ -569,6 +326,43 @@ pub fn prompt_emergency_no_diff_commit_with_context(
         .unwrap_or_else(|_| {
             // Fallback to hardcoded commit message if template rendering fails
             "<ralph-commit>\n<ralph-subject>chore: automated commit</ralph-subject>\n</ralph-commit>".to_string()
+        })
+}
+
+/// Generate XSD validation retry prompt with error feedback.
+///
+/// This prompt is used when an AI agent produces XML that fails XSD validation.
+/// It provides clear, actionable error feedback to help the agent fix the issue.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `diff` - The git diff to generate a commit message for
+/// * `xsd_error` - The XSD validation error message to include in the prompt
+pub fn prompt_xsd_retry_with_context(
+    context: &TemplateContext,
+    diff: &str,
+    xsd_error: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("commit_xsd_retry")
+        .unwrap_or_else(|_| include_str!("templates/commit_xsd_retry.txt").to_string());
+    let variables = std::collections::HashMap::from([
+        ("DIFF", diff.to_string()),
+        ("XSD_ERROR", xsd_error.to_string()),
+    ]);
+    Template::new(&template_content)
+        .render(&variables)
+        .unwrap_or_else(|_| {
+            // Fallback to simple retry prompt if template rendering fails
+            format!(
+                "Your previous commit message failed validation.\n\nError: {}\n\n\
+                 Please fix it and output a valid commit message in XML format:\n\
+                 <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>\n\n\
+                 Diff:\n{}",
+                xsd_error, diff
+            )
         })
 }
 

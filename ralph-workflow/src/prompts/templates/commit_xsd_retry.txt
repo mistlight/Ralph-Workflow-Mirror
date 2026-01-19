@@ -1,0 +1,75 @@
+{# ============================================================================ #}
+{# Template: commit_xsd_retry.txt                                              #}
+{# Version: 1.0                                                                #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Retry prompt for commit message generation when XSD validation fails.     #}
+{#   Provides clear error feedback to help the AI agent fix the issue.         #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   {{DIFF}} - The git diff to analyze (required)                             #}
+{#   {{XSD_ERROR}} - The XSD validation error message (required)                #}
+{#                                                                             #}
+{# USAGE:                                                                      #}
+{#   Used when in-session retry is needed after XSD validation failure.        #}
+{#   The agent is told exactly what went wrong and how to fix it.             #}
+{# ============================================================================ #}
+The commit message you provided failed XSD validation. Please fix it and try again.
+
+## XSD Validation Error
+
+{{XSD_ERROR}}
+
+## What This Means
+
+Your previous output does not conform to the required XML format for commit messages.
+The error above explains exactly what went wrong and how to fix it.
+
+## Required Format
+
+You MUST output your commit message using ONLY these XML tags:
+
+<ralph-commit>
+<ralph-subject>type(scope): description</ralph-subject>
+<ralph-body>Optional body text here.
+Can span multiple lines.</ralph-body>
+</ralph-commit>
+
+### Key Rules:
+
+1. **Start immediately with `<ralph-commit>`** - NO text before it
+2. **Use ONLY valid tags**: `<ralph-subject>`, `<ralph-body>`, `<ralph-body-summary>`, `<ralph-body-details>`, `<ralph-body-footer>`
+3. **Subject is required** and must follow conventional commit format (type: description or type(scope): description)
+4. **Body is optional** - omit it entirely if not needed
+5. **End with `</ralph-commit>`** - NO text after it
+
+## Valid Commit Types
+
+- **feat**: A new feature
+- **fix**: A bug fix
+- **docs**: Documentation changes
+- **style**: Code style changes (no logic change)
+- **refactor**: Code restructuring without changing behavior
+- **perf**: Performance improvement
+- **test**: Adding or updating tests
+- **build**: Build system or dependency changes
+- **ci**: CI/CD configuration changes
+- **chore**: Other changes
+
+## Your Task
+
+1. **Fix the specific error** mentioned in the XSD validation error above
+2. **Analyze the diff** below to generate a proper commit message
+3. **Output ONLY the XML** - no explanation, no preamble
+
+---
+
+DIFF:
+{{DIFF}}
+
+---
+
+## Output ONLY the corrected XML:
+
+(Start with <ralph-commit> and end with </ralph-commit>)
