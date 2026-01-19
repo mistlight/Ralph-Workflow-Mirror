@@ -30,10 +30,13 @@ Review the code changes in the DIFF below thoroughly. Your primary focus MUST be
 
 CRITICAL CONSTRAINTS:
 - You MUST read the files mentioned in the diff (changed files) for full context
-- You MAY use targeted search ONLY to find definitions/imports mentioned in the diff
-- Example: If diff references `use crate::foo::bar`, you MAY search for `foo` module definition
-- You MUST stop exploring once you find the relevant definition
-- You MUST NOT explore or read any other files beyond changed files and their direct dependencies
+- You MAY use targeted search ONLY to find definitions of types/traits/functions immediately imported in the diff
+- "Direct dependencies" means ONLY the immediate imports/uses visible in the diff (e.g., `use crate::foo::Bar`)
+- You MAY navigate to those specific imported items to understand their signatures
+- You MUST NOT follow transitive dependencies (imports of imports, indirect dependencies)
+- Example: If diff has `use crate::foo::Bar`, you MAY read `foo.rs` to find `Bar`, but you MUST NOT explore what `Bar` imports
+- You MUST stop exploring once you find the relevant immediate definition
+- You MUST NOT explore or read any other files beyond changed files and their immediate dependencies
 - You MUST NOT run discovery commands (ls, find, git log, git grep, rg, grep, etc.)
 - Your analysis MUST be centered on the changes shown in the diff
 

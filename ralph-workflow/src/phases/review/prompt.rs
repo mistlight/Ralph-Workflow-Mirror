@@ -324,9 +324,20 @@ fn log_prompt_debug_info(ctx: &PhaseContext<'_>, prompt: &str, prompt_type: &str
 /// - `Ok(None)` - No diff found (no changes since baseline)
 /// - `Err(..)` - Failed to retrieve diff (git error)
 fn get_and_validate_diff(ctx: &PhaseContext<'_>) -> Result<Option<String>, ()> {
+    use crate::git_helpers::MAX_DIFF_SIZE_WARNING;
+
     match get_git_diff_from_review_baseline() {
         Ok(d) if !d.trim().is_empty() => {
             let original_size = d.len();
+
+            // Warn about large diffs (above warning threshold)
+            if original_size > MAX_DIFF_SIZE_WARNING {
+                ctx.logger.warn(&format!(
+                    "Large diff detected ({} bytes). This may affect review quality.",
+                    original_size
+                ));
+            }
+
             let (truncated_diff, was_truncated) = crate::git_helpers::validate_and_truncate_diff(d);
             if was_truncated {
                 ctx.logger.warn(&format!(

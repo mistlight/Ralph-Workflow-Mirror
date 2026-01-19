@@ -17,12 +17,22 @@ use std::path::PathBuf;
 use super::identity::GitIdentity;
 
 /// Maximum diff size (in bytes) before showing a warning.
-/// 100KB is a reasonable threshold - most meaningful diffs are smaller.
-const MAX_DIFF_SIZE_WARNING: usize = 100 * 1024;
+///
+/// This threshold is based on practical observations:
+/// - Most meaningful code review diffs are under 100KB
+/// - Diffs above this size may indicate large refactors or generated code
+/// - LLM review quality degrades for very large diffs
+/// - 100KB provides sufficient context for most single-review cycles
+pub const MAX_DIFF_SIZE_WARNING: usize = 100 * 1024;
 
 /// Maximum diff size (in bytes) before truncation for reviewers.
-/// 1MB provides reviewers with more context for large changes.
-const MAX_DIFF_SIZE_HARD: usize = 1024 * 1024;
+///
+/// This hard limit prevents sending excessively large diffs to LLMs:
+/// - Most LLMs have context limits (e.g., 200K tokens for Claude 3)
+/// - 1MB of text represents roughly 250K tokens, leaving room for prompts
+/// - Truncation is preferable to rejection for very large changes
+/// - The truncation marker explicitly informs reviewers of incomplete context
+pub const MAX_DIFF_SIZE_HARD: usize = 1024 * 1024;
 
 /// Truncation marker for reviewer diffs.
 const DIFF_TRUNCATED_MARKER: &str =
@@ -187,6 +197,17 @@ pub fn git_diff() -> io::Result<String> {
 /// This function checks if a diff is too large for effective LLM processing
 /// and truncates it for reviewer use. For commit messages, use chunk instead.
 ///
+/// # Warning Behavior
+///
+/// This function does not print warnings directly. Callers should check the
+/// return value's boolean flag and log appropriate warnings if truncation occurred.
+///
+/// # Truncation Behavior
+///
+/// When a diff exceeds `MAX_DIFF_SIZE_HARD`, it is truncated and a warning marker
+/// is placed **before** the diff content (not after). This ensures the LLM reviewer
+/// is immediately aware that the context is incomplete before analyzing the diff.
+///
 /// # Arguments
 ///
 /// * `diff` - The git diff to validate
@@ -199,25 +220,17 @@ pub fn git_diff() -> io::Result<String> {
 pub fn validate_and_truncate_diff(diff: String) -> (String, bool) {
     let diff_size = diff.len();
 
-    // Warn about large diffs
-    if diff_size > MAX_DIFF_SIZE_WARNING {
-        eprintln!(
-            "Warning: Large diff detected ({diff_size} bytes). This may affect commit message quality."
-        );
-    }
-
     // Truncate if over the hard limit
     if diff_size > MAX_DIFF_SIZE_HARD {
         let truncate_size = MAX_DIFF_SIZE_HARD - DIFF_TRUNCATED_MARKER.len();
-        let truncated = diff.char_indices().nth(truncate_size).map_or_else(
-            || format!("{diff}{DIFF_TRUNCATED_MARKER}"),
-            |(i, _)| format!("{}{}", &diff[..i], DIFF_TRUNCATED_MARKER),
-        );
-
-        eprintln!(
-            "Warning: Diff truncated from {} to {} bytes for LLM processing.",
-            diff_size,
-            truncated.len()
+        // Use floor_char_boundary for O(1) performance instead of O(n) char_indices().nth()
+        let truncate_idx = diff.floor_char_boundary(truncate_size);
+        // Place truncation marker BEFORE the diff content so LLM knows immediately
+        // that the context is incomplete
+        let truncated = format!(
+            "{}\n\n{}",
+            DIFF_TRUNCATED_MARKER.trim_start(),
+            &diff[..truncate_idx]
         );
 
         (truncated, true)
@@ -705,7 +718,8 @@ mod tests {
         let (result, truncated) = validate_and_truncate_diff(large_diff.clone());
         assert!(truncated);
         assert!(result.len() < large_diff.len());
-        assert!(result.contains(DIFF_TRUNCATED_MARKER));
+        // Marker should be at the beginning
+        assert!(result.starts_with("[Diff truncated due to size"));
     }
 
     #[test]
