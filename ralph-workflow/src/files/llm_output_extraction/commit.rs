@@ -12,6 +12,7 @@ use super::cleaning::{
     final_escape_sequence_cleanup, find_conventional_commit_start, looks_like_analysis_text,
     unescape_json_strings, unescape_json_strings_aggressive,
 };
+use super::xsd_validation::validate_xml_against_xsd;
 use crate::agents::AgentErrorKind;
 
 /// Detect if agent output contains unrecoverable errors that should trigger fallback.
@@ -219,10 +220,19 @@ pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, Stri
         }
         _ => subject.to_string(),
     };
+
+    // Additionally run XSD validation for enhanced error reporting (non-blocking)
+    let xml_block = &content[commit_start..=commit_end];
+    let xsd_result = validate_xml_against_xsd(xml_block);
+    let xsd_note = match &xsd_result {
+        Ok(_) => "XSD validation passed".to_string(),
+        Err(e) => format!("XSD validation note: {}", e.format_for_ai_retry()),
+    };
+
     (
         Some(message.clone()),
         format!(
-            "Found <ralph-commit> at pos {commit_start}, <ralph-subject> extracted, body={}, message: '{}'",
+            "Found <ralph-commit> at pos {commit_start}, <ralph-subject> extracted, body={}, message: '{}'. {xsd_note}",
             if has_body { "present" } else { "absent" },
             if message.len() > 80 {
                 format!("{}...", &message[..80].replace('\n', "\\n"))
@@ -405,7 +415,7 @@ fn format_structured_commit(msg: &StructuredCommitMessage) -> Option<String> {
 }
 
 /// Check if a string is a valid conventional commit subject line.
-fn is_conventional_commit_subject(subject: &str) -> bool {
+pub fn is_conventional_commit_subject(subject: &str) -> bool {
     let valid_types = [
         "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore",
     ];
@@ -2528,5 +2538,21 @@ Line 3</ralph-body>
             result.is_ok(),
             "Should accept 'placeholder' at end with valid action"
         );
+    }
+
+    // Test that validates XSD functionality using the integrated validation
+    #[test]
+    fn test_xsd_validation_integrated_in_extraction() {
+        // The XSD validation is called within try_extract_xml_commit_with_trace
+        // This test ensures that path is exercised
+        let xml = r#"Some text before
+<ralph-commit>
+<ralph-subject>fix: resolve bug</ralph-subject>
+</ralph-commit>
+Some text after"#;
+        let (msg, trace) = try_extract_xml_commit_with_trace(xml);
+        assert!(msg.is_some(), "Should extract valid message");
+        // The trace should contain XSD validation result
+        assert!(trace.contains("XSD"), "Trace should mention XSD validation");
     }
 }

@@ -188,6 +188,8 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             },
         );
 
+        // TODO: Add commit_validation_retry template when implementing retry logic
+
         // ============================================================================
         // Developer Templates
         // ============================================================================
