@@ -2432,3 +2432,57 @@ fn test_consecutive_duplicate_allows_legitimate_repetition() {
         "Legitimate streaming content should not be affected by consecutive duplicate detection. Output: {output:?}"
     );
 }
+
+/// Test for suppressing duplicate error Result events after success Result event.
+///
+/// This test verifies the fix for the GLM/ccs-glm bug where the agent emits both:
+/// 1. A "success" Result event when completing its work
+/// 2. An "error_during_execution" Result event when exiting with code 1
+///
+/// The fix suppresses the spurious error event to avoid confusing duplicate output.
+#[cfg(test)]
+#[test]
+fn test_suppress_duplicate_error_result_after_success() {
+    use std::io::Cursor;
+
+    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+    let printer: SharedPrinter = test_printer.clone();
+
+    let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer);
+
+    // Simulate the GLM/ccs-glm scenario:
+    // 1. Success Result event (agent completed successfully)
+    // 2. error_during_execution Result event (GLM exited with code 1)
+    let input_lines = [
+        // Success result
+        r#"{"type":"result","subtype":"success","duration_ms":600000,"num_turns":22,"total_cost_usd":0.9883}"#.to_string(),
+        // Spurious error result (should be suppressed)
+        r#"{"type":"result","subtype":"error_during_execution","duration_ms":0,"error":null}"#.to_string(),
+    ];
+
+    let input = input_lines.join("\n");
+    let reader = Cursor::new(input);
+
+    parser.parse_stream(reader).unwrap();
+    let printer_ref = test_printer.borrow();
+    let output = printer_ref.get_output();
+
+    // Should contain "Completed" from the success event
+    assert!(
+        output.contains("Completed"),
+        "Should contain 'Completed' from success event. Output: {output:?}"
+    );
+
+    // Should NOT contain "error_during_execution" (it's suppressed)
+    assert!(
+        !output.contains("error_during_execution"),
+        "Should NOT contain 'error_during_execution' - it should be suppressed. Output: {output:?}"
+    );
+
+    // Should only have ONE result line, not two
+    let result_count = output.matches("[Claude]").count();
+    assert_eq!(
+        result_count, 1,
+        "Should have exactly 1 result line (success only), not 2. Found {result_count}. Output: {output:?}"
+    );
+}
