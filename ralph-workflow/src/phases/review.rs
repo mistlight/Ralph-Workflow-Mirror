@@ -57,6 +57,7 @@ pub struct ReviewResult {
 ///
 /// * `ctx` - The phase context containing shared state
 /// * `start_pass` - The review pass to start from (for resume support)
+/// * `resuming_from_review` - Whether we're resuming into the review step
 ///
 /// # Returns
 ///
@@ -64,6 +65,7 @@ pub struct ReviewResult {
 pub fn run_review_phase(
     ctx: &mut PhaseContext<'_>,
     start_pass: u32,
+    resuming_from_review: bool,
 ) -> anyhow::Result<ReviewResult> {
     let reviewer_context = ContextLevel::from(ctx.config.reviewer_context);
 
@@ -96,6 +98,7 @@ pub fn run_review_phase(
 
     // Review-Fix iterations
     for j in start_pass..=ctx.config.reviewer_reviews {
+        let resuming_into_review = resuming_from_review && j == start_pass;
         // Save checkpoint at start of each iteration
         if ctx.config.features.checkpoint_enabled {
             if let Some(checkpoint) = CheckpointBuilder::new()
@@ -213,7 +216,7 @@ pub fn run_review_phase(
         }
 
         // Run fix pass
-        run_fix_pass(ctx, j, reviewer_context)?;
+        run_fix_pass(ctx, j, reviewer_context, resuming_into_review)?;
 
         // UPDATE REVIEW BASELINE: Move baseline forward after fixes
         // This ensures the next review cycle sees only new changes
@@ -762,6 +765,7 @@ fn run_fix_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
     reviewer_context: ContextLevel,
+    resuming_into_review: bool,
 ) -> anyhow::Result<()> {
     update_status("Applying fixes", ctx.config.isolation_mode)?;
 
@@ -770,16 +774,23 @@ fn run_fix_pass(
     let plan_content = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
     let issues_content = fs::read_to_string(".agent/ISSUES.md").unwrap_or_default();
 
+    let mut prompt_config = PromptConfig::new().with_prompt_plan_and_issues(
+        prompt_content,
+        plan_content,
+        issues_content,
+    );
+
+    // Set resume flag if this is the first pass of a resumed session
+    if resuming_into_review {
+        prompt_config = prompt_config.with_resume(true);
+    }
+
     let fix_prompt = prompt_for_agent(
         Role::Reviewer,
         Action::Fix,
         reviewer_context,
         ctx.template_context,
-        PromptConfig::new().with_prompt_plan_and_issues(
-            prompt_content,
-            plan_content,
-            issues_content,
-        ),
+        prompt_config,
     );
 
     // Log the fix prompt details for debugging (when verbose)

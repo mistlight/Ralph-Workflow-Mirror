@@ -31,7 +31,9 @@ use crate::banner::print_welcome_banner;
 use crate::checkpoint::restore::{
     calculate_start_iteration, calculate_start_reviewer_pass, should_skip_phase,
 };
-use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase, RebaseState};
+use crate::checkpoint::{
+    save_checkpoint, CheckpointBuilder, PipelineCheckpoint, PipelinePhase, RebaseState,
+};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
     handle_list_available_agents, handle_list_providers, handle_show_baseline,
@@ -544,15 +546,24 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled {
-        let _ = save_checkpoint(&PipelineCheckpoint::new_minimal(
-            PipelinePhase::Complete,
-            config.developer_iters,
-            config.developer_iters,
-            config.reviewer_reviews,
-            config.reviewer_reviews,
-            &ctx.developer_agent,
-            &ctx.reviewer_agent,
-        ));
+        if let Some(checkpoint) = CheckpointBuilder::new()
+            .phase(
+                PipelinePhase::Complete,
+                config.developer_iters,
+                config.developer_iters,
+            )
+            .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
+            .capture_from_context(
+                &config,
+                &ctx.registry,
+                &ctx.developer_agent,
+                &ctx.reviewer_agent,
+                &ctx.logger,
+            )
+            .build()
+        {
+            let _ = save_checkpoint(&checkpoint);
+        }
     }
 
     // Commit phase
@@ -790,7 +801,7 @@ fn run_development(
 /// Runs the review and fix phase.
 fn run_review_and_fix(
     ctx: &mut PhaseContext,
-    _args: &Args,
+    args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
     ctx.logger
@@ -814,7 +825,15 @@ fn run_review_and_fix(
             None => 1,
         };
 
-        let review_result = run_review_phase(ctx, start_pass)?;
+        let resuming_from_review = resume_checkpoint.is_some_and(|c| {
+            args.recovery.resume
+                && matches!(
+                    c.phase,
+                    PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain
+                )
+        });
+
+        let review_result = run_review_phase(ctx, start_pass, resuming_from_review)?;
         if review_result.completed_early {
             ctx.logger
                 .success("Review phase completed early (no issues found)");
@@ -859,15 +878,24 @@ fn run_final_validation(
     }
 
     if ctx.config.features.checkpoint_enabled {
-        let _ = save_checkpoint(&PipelineCheckpoint::new_minimal(
-            PipelinePhase::FinalValidation,
-            ctx.config.developer_iters,
-            ctx.config.developer_iters,
-            ctx.config.reviewer_reviews,
-            ctx.config.reviewer_reviews,
-            ctx.developer_agent,
-            ctx.reviewer_agent,
-        ));
+        if let Some(checkpoint) = CheckpointBuilder::new()
+            .phase(
+                PipelinePhase::FinalValidation,
+                ctx.config.developer_iters,
+                ctx.config.developer_iters,
+            )
+            .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+            .capture_from_context(
+                ctx.config,
+                ctx.registry,
+                ctx.developer_agent,
+                ctx.reviewer_agent,
+                ctx.logger,
+            )
+            .build()
+        {
+            let _ = save_checkpoint(&checkpoint);
+        }
     }
 
     ctx.logger

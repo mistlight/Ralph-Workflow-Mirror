@@ -1001,6 +1001,7 @@ dependencies = [
  "predicates",
  "ralph-workflow",
  "serde_json",
+ "sha2",
  "tempfile",
  "test-helpers",
 ]

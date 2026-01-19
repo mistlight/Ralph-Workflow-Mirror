@@ -107,14 +107,21 @@ pub fn run_development_phase(
         let prompt_md = fs::read_to_string("PROMPT.md").unwrap_or_default();
         let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
 
+        let mut prompt_config = PromptConfig::new()
+            .with_iterations(i, ctx.config.developer_iters)
+            .with_prompt_and_plan(prompt_md, plan_md);
+
+        // Set resume flag if this is the first iteration of a resumed session
+        if resuming_into_development {
+            prompt_config = prompt_config.with_resume(true);
+        }
+
         let prompt = prompt_for_agent(
             Role::Developer,
             Action::Iterate,
             developer_context,
             ctx.template_context,
-            PromptConfig::new()
-                .with_iterations(i, ctx.config.developer_iters)
-                .with_prompt_and_plan(prompt_md, plan_md),
+            prompt_config,
         );
 
         let mut runtime = PipelineRuntime {
@@ -221,6 +228,8 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
     // which reduces the risk of accidental deletion.
     let prompt_md_content = std::fs::read_to_string("PROMPT.md").ok();
 
+    // Note: We don't set is_resume for planning since planning runs on each iteration.
+    // The resume context is set during the development execution step.
     let plan_prompt = prompt_for_agent(
         Role::Developer,
         Action::Plan,

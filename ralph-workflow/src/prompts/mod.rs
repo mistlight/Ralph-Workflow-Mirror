@@ -127,7 +127,6 @@ impl PromptConfig {
 
     /// Set whether this is a resumed session.
     #[must_use = "returns the updated configuration for chaining"]
-    #[cfg(test)]
     pub const fn with_resume(mut self, is_resume: bool) -> Self {
         self.is_resume = is_resume;
         self
