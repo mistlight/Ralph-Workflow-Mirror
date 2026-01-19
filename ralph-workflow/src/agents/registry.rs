@@ -406,6 +406,7 @@ impl AgentRegistry {
     ///
     /// This is used to inject a test timer that doesn't actually sleep,
     /// enabling fast test execution without waiting for retry delays.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn set_retry_timer(&mut self, timer: Arc<dyn RetryTimerProvider>) {
         self.retry_timer = timer;
     }

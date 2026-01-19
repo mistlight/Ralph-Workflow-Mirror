@@ -433,21 +433,6 @@ pub struct RebaseFlags {
     pub skip_rebase: bool,
 }
 
-/// Fast retry mode flags (for automation/CI scenarios).
-#[derive(Parser, Debug, Default)]
-pub struct FastRetryFlags {
-    /// Enable fast retry mode with immediate retries (no sleep delays).
-    ///
-    /// This is useful for automation/CI scenarios where you want rapid failure
-    /// detection without waiting for exponential backoff delays. All retry logic
-    /// still executes, just without the sleep delays.
-    #[arg(
-        long,
-        help = "Enable fast retry mode (no sleep delays between retries)"
-    )]
-    pub fast_retry: bool,
-}
-
 /// Ralph: PROMPT-driven agent orchestrator for git repos
 #[derive(Parser, Debug)]
 #[command(name = "ralph")]
@@ -526,10 +511,6 @@ pub struct Args {
     /// Rebase control flags
     #[command(flatten)]
     pub rebase_flags: RebaseFlags,
-
-    /// Fast retry mode flags (for automation/CI)
-    #[command(flatten)]
-    pub fast_retry_flags: FastRetryFlags,
 
     /// Commit message for the final commit
     #[arg(

@@ -79,7 +79,10 @@ pub use providers::{
     auth_failure_advice, strip_model_flag_prefix, validate_model_flag, OpenCodeProviderType,
 };
 pub use registry::AgentRegistry;
-pub use retry_timer::{RetryTimerProvider, TestRetryTimer};
+pub use retry_timer::RetryTimerProvider;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use retry_timer::TestRetryTimer;
 
 #[cfg(test)]
 mod tests {

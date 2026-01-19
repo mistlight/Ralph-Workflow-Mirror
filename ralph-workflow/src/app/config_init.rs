@@ -7,7 +7,6 @@
 //! - Loading agent registry data from unified config
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
-use crate::agents::{RetryTimerProvider, TestRetryTimer};
 use crate::cli::{
     apply_args_to_config, handle_extended_help, handle_generate_completion, handle_init_global,
     handle_init_legacy, handle_init_prompt, handle_list_work_guides, handle_smart_init, Args,
@@ -17,7 +16,6 @@ use crate::git_helpers::get_repo_root;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 /// Result of configuration initialization.
 pub struct ConfigInitResult {
@@ -145,9 +143,7 @@ pub fn initialize_config(
     }
 
     // Initialize agent registry with built-in defaults + unified config.
-    let fast_retry_enabled = args.fast_retry_flags.fast_retry;
-    let (registry, config_sources) =
-        load_agent_registry(unified.as_ref(), config_path.as_path(), fast_retry_enabled)?;
+    let (registry, config_sources) = load_agent_registry(unified.as_ref(), config_path.as_path())?;
 
     // Apply default agents from fallback chains
     apply_default_agents(&mut config, &registry);
@@ -163,19 +159,10 @@ pub fn initialize_config(
 fn load_agent_registry(
     unified: Option<&UnifiedConfig>,
     config_path: &std::path::Path,
-    fast_retry_enabled: bool,
 ) -> anyhow::Result<(AgentRegistry, Vec<ConfigSource>)> {
     let mut registry = AgentRegistry::new().map_err(|e| {
         anyhow::anyhow!("Failed to load built-in default agents config (examples/agents.toml): {e}")
     })?;
-
-    // Configure fast retry mode if enabled via CLI flag
-    // When enabled, use TestRetryTimer for immediate retries (no actual sleep)
-    // This is useful for automation/CI scenarios where you want rapid failure detection
-    if fast_retry_enabled {
-        let fast_timer: Arc<dyn RetryTimerProvider> = Arc::new(TestRetryTimer::new());
-        registry.set_retry_timer(fast_timer);
-    }
 
     let mut sources = Vec::new();
 

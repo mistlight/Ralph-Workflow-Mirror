@@ -38,6 +38,7 @@ pub fn production_timer() -> Arc<dyn RetryTimerProvider> {
 ///
 /// This is used in tests to avoid long delays while still exercising
 /// the retry logic. The sleep duration is tracked for assertions.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone)]
 pub struct TestRetryTimer {
     /// Optional tracking of sleep durations for test assertions.
@@ -45,12 +46,14 @@ pub struct TestRetryTimer {
     tracked: Option<Arc<std::sync::atomic::AtomicU64>>,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl Default for TestRetryTimer {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl TestRetryTimer {
     /// Create a new test retry timer without tracking.
     pub fn new() -> Self {
@@ -81,6 +84,7 @@ impl TestRetryTimer {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl RetryTimerProvider for TestRetryTimer {
     fn sleep(&self, duration: Duration) {
         if let Some(tracked) = &self.tracked {
