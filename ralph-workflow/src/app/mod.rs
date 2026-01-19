@@ -537,7 +537,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
-        run_initial_rebase(ctx, &run_context)?;
+        run_initial_rebase(ctx, &mut phase_ctx, &run_context)?;
     }
 
     // Run pipeline phases
@@ -550,7 +550,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Run post-review rebase (only if explicitly requested via --with-rebase)
     if ctx.args.rebase_flags.with_rebase {
-        run_post_review_rebase(ctx, &run_context)?;
+        run_post_review_rebase(ctx, &mut phase_ctx, &run_context)?;
     }
 
     update_status("In progress.", config.isolation_mode)?;
@@ -1096,6 +1096,7 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 /// the feature branch is up-to-date with the default branch.
 fn run_initial_rebase(
     ctx: &PipelineContext,
+    phase_ctx: &mut PhaseContext,
     run_context: &crate::checkpoint::RunContext,
 ) -> anyhow::Result<()> {
     ctx.logger.header("Pre-development rebase", Colors::cyan);
@@ -1103,7 +1104,7 @@ fn run_initial_rebase(
     // Save checkpoint at start of pre-rebase phase
     if ctx.config.features.checkpoint_enabled {
         let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
-        if let Some(mut checkpoint) = CheckpointBuilder::new()
+        let mut builder = CheckpointBuilder::new()
             .phase(PipelinePhase::PreRebase, 0, ctx.config.developer_iters)
             .reviewer_pass(0, ctx.config.reviewer_reviews)
             .capture_from_context(
@@ -1113,9 +1114,14 @@ fn run_initial_rebase(
                 &ctx.reviewer_agent,
                 &ctx.logger,
                 run_context,
-            )
-            .build()
-        {
+            );
+
+        // Include prompt history and execution history for hardened resume
+        builder = builder
+            .with_execution_history(phase_ctx.execution_history.clone())
+            .with_prompt_history(phase_ctx.clone_prompt_history());
+
+        if let Some(mut checkpoint) = builder.build() {
             checkpoint.rebase_state = RebaseState::PreRebaseInProgress {
                 upstream_branch: default_branch,
             };
@@ -1145,7 +1151,7 @@ fn run_initial_rebase(
 
             // Save checkpoint for conflict state
             if ctx.config.features.checkpoint_enabled {
-                if let Some(mut checkpoint) = CheckpointBuilder::new()
+                let mut builder = CheckpointBuilder::new()
                     .phase(
                         PipelinePhase::PreRebaseConflict,
                         0,
@@ -1159,9 +1165,14 @@ fn run_initial_rebase(
                         &ctx.reviewer_agent,
                         &ctx.logger,
                         run_context,
-                    )
-                    .build()
-                {
+                    );
+
+                // Include prompt history and execution history for hardened resume
+                builder = builder
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(mut checkpoint) = builder.build() {
                     checkpoint.rebase_state = RebaseState::HasConflicts {
                         files: conflicted_files.clone(),
                     };
@@ -1227,6 +1238,7 @@ fn run_initial_rebase(
 /// the feature branch is still up-to-date with the default branch.
 fn run_post_review_rebase(
     ctx: &PipelineContext,
+    phase_ctx: &mut PhaseContext,
     run_context: &crate::checkpoint::RunContext,
 ) -> anyhow::Result<()> {
     ctx.logger.header("Post-review rebase", Colors::cyan);
@@ -1234,7 +1246,7 @@ fn run_post_review_rebase(
     // Save checkpoint at start of post-rebase phase
     if ctx.config.features.checkpoint_enabled {
         let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
-        if let Some(mut checkpoint) = CheckpointBuilder::new()
+        let mut builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::PostRebase,
                 ctx.config.developer_iters,
@@ -1248,9 +1260,14 @@ fn run_post_review_rebase(
                 &ctx.reviewer_agent,
                 &ctx.logger,
                 run_context,
-            )
-            .build()
-        {
+            );
+
+        // Include prompt history and execution history for hardened resume
+        builder = builder
+            .with_execution_history(phase_ctx.execution_history.clone())
+            .with_prompt_history(phase_ctx.clone_prompt_history());
+
+        if let Some(mut checkpoint) = builder.build() {
             checkpoint.rebase_state = RebaseState::PostRebaseInProgress {
                 upstream_branch: default_branch,
             };
@@ -1280,7 +1297,7 @@ fn run_post_review_rebase(
 
             // Save checkpoint for conflict state
             if ctx.config.features.checkpoint_enabled {
-                if let Some(mut checkpoint) = CheckpointBuilder::new()
+                let mut builder = CheckpointBuilder::new()
                     .phase(
                         PipelinePhase::PostRebaseConflict,
                         ctx.config.developer_iters,
@@ -1294,9 +1311,14 @@ fn run_post_review_rebase(
                         &ctx.reviewer_agent,
                         &ctx.logger,
                         run_context,
-                    )
-                    .build()
-                {
+                    );
+
+                // Include prompt history and execution history for hardened resume
+                builder = builder
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(mut checkpoint) = builder.build() {
                     checkpoint.rebase_state = RebaseState::HasConflicts {
                         files: conflicted_files.clone(),
                     };
