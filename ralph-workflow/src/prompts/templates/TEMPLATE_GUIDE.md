@@ -131,9 +131,10 @@ Partials in the `shared/` directory (prefixed with `_`) are reusable components:
 | `commit_message_xml.txt` | Normal strategy (standard commit generation) | `DIFF`, `FILES_CHANGED`, `BRANCH_NAME` |
 | `commit_simplified.txt` | Simplified strategy (direct instructions) | `DIFF`, `FILES_CHANGED`, `BRANCH_NAME` |
 | `commit_xsd_retry.txt` | XSD validation retry (in-session) | `DIFF`, `FILES_CHANGED`, `BRANCH_NAME`, `XSD_ERROR` |
-| `commit_message_fallback.txt` | Fallback when template rendering fails | `DIFF`, `FILES_CHANGED` |
 
 **Trigger**: Used when `ralph commit` is run.
+
+**Retry Strategy**: The commit generation uses a two-strategy approach (Normal, Simplified) with in-session XSD validation retries. If XSD validation fails, the agent is prompted with the error details up to 5 times per strategy before moving to the next strategy.
 
 ### Developer Templates
 

@@ -16,11 +16,12 @@ use super::commit_logging::{
 use super::context::PhaseContext;
 use crate::agents::{AgentErrorKind, AgentRegistry, AgentRole};
 use crate::files::llm_output_extraction::{
-    detect_agent_errors_in_output, extract_llm_output, generate_fallback_commit_message,
-    preprocess_raw_content, try_extract_structured_commit_with_trace,
-    try_extract_xml_commit_with_trace, try_salvage_commit_message, validate_commit_message,
-    validate_commit_message_with_report, CommitExtractionResult, OutputFormat,
+    detect_agent_errors_in_output, generate_fallback_commit_message, preprocess_raw_content,
+    try_extract_xml_commit_with_trace, validate_commit_message_with_report, CommitExtractionResult,
 };
+
+#[cfg(test)]
+use crate::files::llm_output_extraction::validate_commit_message;
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
@@ -31,7 +32,6 @@ use crate::prompts::{
 use std::fmt;
 use std::fs::{self, File};
 use std::io::Read;
-use std::str::FromStr;
 
 /// Preview a commit message for display (first line, truncated if needed).
 fn preview_commit_message(msg: &str) -> String {
@@ -1486,8 +1486,8 @@ pub fn commit_with_generated_message(
 /// * `Err(e)` - An error occurred during extraction (e.g., file I/O error)
 fn extract_commit_message_from_logs(
     log_dir: &str,
-    diff: &str,
-    agent_cmd: &str,
+    _diff: &str,
+    _agent_cmd: &str,
     logger: &Logger,
 ) -> anyhow::Result<Option<CommitExtractionResult>> {
     // Find the most recent log file
@@ -1525,19 +1525,22 @@ fn extract_commit_message_from_logs(
         return Ok(Some(CommitExtractionResult::AgentError(error_kind)));
     }
 
-    // SECOND: Try XML extraction (new primary method) - with tracing
+    // XML-only extraction with XSD validation
+    // The XML extraction includes flexible parsing with 4 strategies and XSD validation
     let (xml_result, xml_detail) = try_extract_xml_commit_with_trace(&content);
     logger.info(&format!("XML extraction: {xml_detail}"));
 
     if let Some(message) = xml_result {
         logger.info("Successfully extracted commit message from XML format");
 
-        // Validate
+        // Validate the extracted message
         let report = validate_commit_message_with_report(&message);
         if report.all_passed() {
             return Ok(Some(CommitExtractionResult::Extracted(message)));
         }
-        // Fall through to try other methods if validation failed
+
+        // XSD validation already happened inside try_extract_xml_commit_with_trace
+        // If we reach here with a message, it means XSD passed but commit validation failed
         logger.warn(&format!(
             "XML extraction succeeded but validation failed: {}",
             report
@@ -1547,35 +1550,10 @@ fn extract_commit_message_from_logs(
         ));
     }
 
-    logger.info("XML extraction failed, trying JSON schema extraction...");
+    logger.info("XML extraction failed - returning None to trigger fallback");
 
-    // THIRD: Try structured JSON extraction - with tracing
-    let (json_result, json_detail) = try_extract_structured_commit_with_trace(&content);
-    logger.info(&format!("JSON extraction: {json_detail}"));
-
-    if let Some(message) = json_result {
-        logger.info("Successfully extracted commit message from JSON schema");
-
-        // Validate
-        let report = validate_commit_message_with_report(&message);
-        if report.all_passed() {
-            return Ok(Some(CommitExtractionResult::Extracted(message)));
-        }
-        logger.warn(&format!(
-            "JSON extraction succeeded but validation failed: {}",
-            report
-                .format_failures()
-                .as_deref()
-                .unwrap_or("unknown error")
-        ));
-    }
-
-    logger.info("JSON schema extraction failed, falling back to pattern-based extraction");
-
-    // Pattern-based extraction with recovery layers
-    Ok(try_pattern_extraction_with_recovery(
-        &content, diff, agent_cmd, logger,
-    ))
+    // Return None to trigger next strategy/agent fallback
+    Ok(None)
 }
 
 /// Validate and record extraction result.
@@ -1671,44 +1649,7 @@ fn try_xml_extraction_traced(
     } else {
         attempt_log.add_extraction_attempt(ExtractionAttempt::failure("XML", xml_detail));
     }
-    logger.info("  ✗ XML extraction failed, trying JSON schema extraction...");
-    None
-}
-
-/// Try JSON extraction and record in parsing trace.
-/// Returns `Some(result)` if extraction succeeded, `None` otherwise.
-fn try_json_extraction_traced(
-    content: &str,
-    step_number: &mut usize,
-    parsing_trace: &mut ParsingTraceLog,
-    logger: &Logger,
-    attempt_log: &mut CommitAttemptLog,
-    log_dir: &str,
-) -> Option<CommitExtractionResult> {
-    let (json_result, json_detail) = try_extract_structured_commit_with_trace(content);
-    logger.info(&format!("  ✓ JSON extraction: {json_detail}"));
-
-    parsing_trace.add_step(
-        ParsingTraceStep::new(*step_number, "JSON Schema Extraction")
-            .with_input(&content[..content.len().min(1000)])
-            .with_result(json_result.as_deref().unwrap_or("[No JSON found]"))
-            .with_success(json_result.is_some())
-            .with_details(&json_detail),
-    );
-    *step_number += 1;
-
-    if let Some(message) = json_result {
-        if let Some(result) =
-            validate_and_record_extraction(&message, "JSON", json_detail, logger, attempt_log)
-        {
-            parsing_trace.set_final_message(&message);
-            write_parsing_trace_with_logging(parsing_trace, log_dir, logger);
-            return Some(result);
-        }
-    } else {
-        attempt_log.add_extraction_attempt(ExtractionAttempt::failure("JSON", json_detail));
-    }
-    logger.info("  ✗ JSON schema extraction failed, falling back to pattern-based extraction");
+    logger.info("  ✗ XML extraction failed");
     None
 }
 
@@ -1722,8 +1663,8 @@ fn try_json_extraction_traced(
 /// content being processed and validation results.
 fn extract_commit_message_from_logs_with_trace(
     log_dir: &str,
-    diff: &str,
-    agent_cmd: &str,
+    _diff: &str,
+    _agent_cmd: &str,
     logger: &Logger,
     attempt_log: &mut CommitAttemptLog,
 ) -> anyhow::Result<Option<CommitExtractionResult>> {
@@ -1768,7 +1709,9 @@ fn extract_commit_message_from_logs_with_trace(
 
     let mut step_number = 1;
 
-    // Try XML extraction
+    // XML-only extraction with XSD validation
+    // The XML extraction includes flexible parsing with 4 strategies and XSD validation
+    // If XSD validation fails, the error is returned for in-session retry
     if let Some(result) = try_xml_extraction_traced(
         &content,
         &mut step_number,
@@ -1780,45 +1723,20 @@ fn extract_commit_message_from_logs_with_trace(
         return Ok(Some(result));
     }
 
-    // Try JSON extraction
-    if let Some(result) = try_json_extraction_traced(
-        &content,
-        &mut step_number,
-        &mut parsing_trace,
-        logger,
-        attempt_log,
-        log_dir,
-    ) {
-        return Ok(Some(result));
-    }
-
-    // Pattern-based extraction with recovery layers
-    let pattern_result =
-        try_pattern_extraction_with_recovery_traced(&content, diff, agent_cmd, logger, attempt_log);
-
-    // Add pattern extraction step to parsing trace
-    if let Some(ref result) = pattern_result {
-        if let CommitExtractionResult::Extracted(msg) = result {
-            parsing_trace.add_step(
-                ParsingTraceStep::new(step_number, "Pattern-based Extraction")
-                    .with_input(&content[..content.len().min(1000)])
-                    .with_result(msg)
-                    .with_success(true)
-                    .with_details("Successfully extracted via pattern matching"),
-            );
-            parsing_trace.set_final_message(msg);
-        }
-    } else {
-        parsing_trace.add_step(
-            ParsingTraceStep::new(step_number, "Pattern-based Extraction")
-                .with_input(&content[..content.len().min(1000)])
-                .with_success(false)
-                .with_details("Pattern extraction failed or validation failed"),
-        );
-    }
+    // XML extraction failed - add final failure step to parsing trace
+    parsing_trace.add_step(
+        ParsingTraceStep::new(step_number, "XML Extraction Failed")
+            .with_input(&content[..content.len().min(1000)])
+            .with_success(false)
+            .with_details("No valid XML found or XSD validation failed"),
+    );
 
     write_parsing_trace_with_logging(&parsing_trace, log_dir, logger);
-    Ok(pattern_result)
+
+    // Return None to trigger next strategy/agent fallback
+    // The in-session retry loop will have already attempted XSD validation retries
+    // if the error was an XSD validation failure (detected in attempt_log)
+    Ok(None)
 }
 
 /// Read and preprocess log content for extraction.
@@ -1858,190 +1776,6 @@ fn read_log_content_with_trace(
 
     // Apply preprocessing
     Ok(Some(preprocess_raw_content(&content)))
-}
-
-/// Try pattern-based extraction with tracing for attempt logging.
-fn try_pattern_extraction_with_recovery_traced(
-    content: &str,
-    diff: &str,
-    agent_cmd: &str,
-    logger: &Logger,
-    attempt_log: &mut CommitAttemptLog,
-) -> Option<CommitExtractionResult> {
-    let format_hint = detect_format_hint_from_agent(agent_cmd);
-    let extraction = extract_llm_output(content, format_hint);
-
-    // Log extraction metadata for debugging
-    logger.info(&format!(
-        "LLM output extraction: {:?} format, structured={}",
-        extraction.format, extraction.was_structured
-    ));
-
-    if let Some(warning) = &extraction.warning {
-        logger.warn(&format!("LLM output extraction warning: {warning}"));
-    }
-
-    let extracted = extraction.content;
-
-    // Validate the commit message
-    match validate_commit_message(&extracted) {
-        Ok(()) => {
-            logger.info("  ✓ Successfully extracted and validated commit message");
-            attempt_log.add_extraction_attempt(ExtractionAttempt::success(
-                "Pattern",
-                format!(
-                    "Format: {:?}, structured: {}",
-                    extraction.format, extraction.was_structured
-                ),
-            ));
-            Some(CommitExtractionResult::Extracted(extracted))
-        }
-        Err(e) => {
-            attempt_log.add_extraction_attempt(ExtractionAttempt::failure(
-                "Pattern",
-                format!("Validation failed: {e}"),
-            ));
-            try_recovery_layers_traced(content, diff, &e, logger, attempt_log)
-        }
-    }
-}
-
-/// Attempt recovery layers with tracing for attempt logging.
-fn try_recovery_layers_traced(
-    content: &str,
-    diff: &str,
-    error: &str,
-    logger: &Logger,
-    attempt_log: &mut CommitAttemptLog,
-) -> Option<CommitExtractionResult> {
-    logger.warn(&format!("Commit message validation failed: {error}"));
-
-    // Recovery Layer 1: Attempt to salvage valid commit message from raw content
-    logger.info("Attempting to salvage commit message from output...");
-    if let Some(salvaged) = try_salvage_commit_message(content) {
-        logger.info("  ✓ Successfully salvaged commit message");
-        attempt_log.add_extraction_attempt(ExtractionAttempt::success(
-            "Salvage",
-            "Salvaged valid commit from mixed output".to_string(),
-        ));
-        return Some(CommitExtractionResult::Salvaged(salvaged));
-    }
-    logger.warn("  ✗ Salvage attempt failed");
-    attempt_log.add_extraction_attempt(ExtractionAttempt::failure(
-        "Salvage",
-        "Could not salvage valid commit from content".to_string(),
-    ));
-
-    // Recovery Layer 2: Generate deterministic fallback from diff metadata
-    logger.info("Generating fallback commit message from diff...");
-    let fallback = generate_fallback_commit_message(diff);
-
-    // Defensive validation (should always pass, but be safe)
-    if validate_commit_message(&fallback).is_ok() {
-        logger.info(&format!(
-            "  ✓ Generated fallback: {}",
-            fallback.lines().next().unwrap_or(&fallback)
-        ));
-        attempt_log.add_extraction_attempt(ExtractionAttempt::success(
-            "Fallback",
-            format!("Generated from diff: {}", preview_commit_message(&fallback)),
-        ));
-        return Some(CommitExtractionResult::Fallback(fallback));
-    }
-
-    logger.error("Fallback commit message failed validation - this is a bug");
-    attempt_log.add_extraction_attempt(ExtractionAttempt::failure(
-        "Fallback",
-        "Generated fallback failed validation (bug!)".to_string(),
-    ));
-    None
-}
-
-/// Detect output format hint from agent command string.
-fn detect_format_hint_from_agent(agent_cmd: &str) -> Option<OutputFormat> {
-    agent_cmd
-        .split_whitespace()
-        .find_map(|tok| {
-            let tok = tok.to_lowercase();
-            if tok.contains("codex") {
-                Some("codex")
-            } else if tok.contains("claude") || tok.contains("ccs") || tok.contains("qwen") {
-                Some("claude")
-            } else if tok.contains("gemini") {
-                Some("gemini")
-            } else if tok.contains("opencode") {
-                Some("opencode")
-            } else {
-                None
-            }
-        })
-        .and_then(|s| OutputFormat::from_str(s).ok())
-}
-
-/// Try pattern-based extraction with recovery layers.
-fn try_pattern_extraction_with_recovery(
-    content: &str,
-    diff: &str,
-    agent_cmd: &str,
-    logger: &Logger,
-) -> Option<CommitExtractionResult> {
-    let format_hint = detect_format_hint_from_agent(agent_cmd);
-    let extraction = extract_llm_output(content, format_hint);
-
-    // Log extraction metadata for debugging
-    logger.info(&format!(
-        "LLM output extraction: {:?} format, structured={}",
-        extraction.format, extraction.was_structured
-    ));
-
-    if let Some(warning) = &extraction.warning {
-        logger.warn(&format!("LLM output extraction warning: {warning}"));
-    }
-
-    let extracted = extraction.content;
-
-    // Validate the commit message
-    match validate_commit_message(&extracted) {
-        Ok(()) => {
-            logger.info("Successfully extracted and validated commit message");
-            Some(CommitExtractionResult::Extracted(extracted))
-        }
-        Err(e) => try_recovery_layers(content, diff, &e, logger),
-    }
-}
-
-/// Attempt recovery layers when extraction fails validation.
-fn try_recovery_layers(
-    content: &str,
-    diff: &str,
-    error: &str,
-    logger: &Logger,
-) -> Option<CommitExtractionResult> {
-    logger.warn(&format!("Commit message validation failed: {error}"));
-
-    // Recovery Layer 1: Attempt to salvage valid commit message from raw content
-    logger.info("Attempting to salvage commit message from output...");
-    if let Some(salvaged) = try_salvage_commit_message(content) {
-        logger.info("Successfully salvaged commit message");
-        return Some(CommitExtractionResult::Salvaged(salvaged));
-    }
-    logger.warn("Salvage attempt failed");
-
-    // Recovery Layer 2: Generate deterministic fallback from diff metadata
-    logger.info("Generating fallback commit message from diff...");
-    let fallback = generate_fallback_commit_message(diff);
-
-    // Defensive validation (should always pass, but be safe)
-    if validate_commit_message(&fallback).is_ok() {
-        logger.info(&format!(
-            "Generated fallback: {}",
-            fallback.lines().next().unwrap_or(&fallback)
-        ));
-        return Some(CommitExtractionResult::Fallback(fallback));
-    }
-
-    logger.error("Fallback commit message failed validation - this is a bug");
-    None
 }
 
 /// Find the most recently modified log file in a directory or matching a prefix pattern.
