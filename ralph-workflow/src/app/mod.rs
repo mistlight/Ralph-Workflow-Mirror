@@ -28,6 +28,7 @@ use crate::agents::AgentRegistry;
 use crate::app::finalization::finalize_pipeline;
 use crate::app::resume::should_run_from;
 use crate::banner::print_welcome_banner;
+use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
 use crate::checkpoint::restore::{
     calculate_start_iteration, calculate_start_reviewer_pass, should_skip_phase,
 };
@@ -1025,8 +1026,8 @@ fn handle_rebase_only(
                 conflicted_files.len()
             ));
 
-            // Attempt to resolve conflicts with AI
-            match try_resolve_conflicts_with_fallback(
+            // For --rebase-only, we don't have a full PhaseContext, so we use a wrapper
+            match try_resolve_conflicts_without_phase_ctx(
                 &conflicted_files,
                 config,
                 template_context,
@@ -1114,6 +1115,18 @@ fn run_initial_rebase(
 ) -> anyhow::Result<()> {
     ctx.logger.header("Pre-development rebase", Colors::cyan);
 
+    // Record execution step: pre-rebase started
+    let step = ExecutionStep::new(
+        "PreRebase",
+        0,
+        "pre_rebase_start",
+        StepOutcome::Success {
+            output: None,
+            files_modified: vec![],
+        },
+    );
+    phase_ctx.execution_history.add_step(step);
+
     // Save checkpoint at start of pre-rebase phase
     if ctx.config.features.checkpoint_enabled {
         let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
@@ -1145,11 +1158,31 @@ fn run_initial_rebase(
     match run_rebase_to_default(&ctx.logger, ctx.colors) {
         Ok(RebaseResult::Success) => {
             ctx.logger.success("Rebase completed successfully");
+            // Record execution step: pre-rebase completed successfully
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_complete",
+                StepOutcome::Success {
+                    output: Some("Rebase completed successfully".to_string()),
+                    files_modified: vec![],
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(())
         }
         Ok(RebaseResult::NoOp { reason }) => {
-            ctx.logger
-                .info(&format!("No rebase needed: {reason}"));
+            ctx.logger.info(&format!("No rebase needed: {reason}"));
+            // Record execution step: pre-rebase skipped
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_skipped",
+                StepOutcome::Skipped {
+                    reason: reason.clone(),
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
@@ -1161,6 +1194,18 @@ fn run_initial_rebase(
                 let _ = abort_rebase();
                 return Ok(());
             }
+
+            // Record execution step: pre-rebase conflicts detected
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_conflict",
+                StepOutcome::Partial {
+                    completed: "Rebase started".to_string(),
+                    remaining: format!("{} conflicts detected", conflicted_files.len()),
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
 
             // Save checkpoint for conflict state
             if ctx.config.features.checkpoint_enabled {
@@ -1205,6 +1250,8 @@ fn run_initial_rebase(
                 &ctx.template_context,
                 &ctx.logger,
                 ctx.colors,
+                phase_ctx,
+                "PreRebase",
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
@@ -1214,11 +1261,33 @@ fn run_initial_rebase(
                         Ok(()) => {
                             ctx.logger
                                 .success("Rebase completed successfully after AI resolution");
+                            // Record execution step: conflicts resolved successfully
+                            let step = ExecutionStep::new(
+                                "PreRebase",
+                                0,
+                                "pre_rebase_resolution",
+                                StepOutcome::Success {
+                                    output: Some("Conflicts resolved by AI".to_string()),
+                                    files_modified: conflicted_files.clone(),
+                                },
+                            );
+                            phase_ctx.execution_history.add_step(step);
                             Ok(())
                         }
                         Err(e) => {
                             ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
                             let _ = abort_rebase();
+                            // Record execution step: resolution succeeded but continue failed
+                            let step = ExecutionStep::new(
+                                "PreRebase",
+                                0,
+                                "pre_rebase_resolution",
+                                StepOutcome::Partial {
+                                    completed: "Conflicts resolved by AI".to_string(),
+                                    remaining: format!("Failed to continue rebase: {e}"),
+                                },
+                            );
+                            phase_ctx.execution_history.add_step(step);
                             Ok(()) // Continue anyway - conflicts were resolved
                         }
                     }
@@ -1228,11 +1297,33 @@ fn run_initial_rebase(
                     ctx.logger
                         .warn("AI conflict resolution failed, aborting rebase");
                     let _ = abort_rebase();
+                    // Record execution step: resolution failed
+                    let step = ExecutionStep::new(
+                        "PreRebase",
+                        0,
+                        "pre_rebase_resolution",
+                        StepOutcome::Failure {
+                            error: "AI conflict resolution failed".to_string(),
+                            recoverable: true,
+                        },
+                    );
+                    phase_ctx.execution_history.add_step(step);
                     Ok(()) // Continue pipeline - don't block on rebase failure
                 }
                 Err(e) => {
                     ctx.logger.error(&format!("Conflict resolution error: {e}"));
                     let _ = abort_rebase();
+                    // Record execution step: resolution error
+                    let step = ExecutionStep::new(
+                        "PreRebase",
+                        0,
+                        "pre_rebase_resolution",
+                        StepOutcome::Failure {
+                            error: format!("Conflict resolution error: {e}"),
+                            recoverable: true,
+                        },
+                    );
+                    phase_ctx.execution_history.add_step(step);
                     Ok(()) // Continue pipeline
                 }
             }
@@ -1240,11 +1331,33 @@ fn run_initial_rebase(
         Ok(RebaseResult::Failed(err)) => {
             ctx.logger.error(&format!("Rebase failed: {err}"));
             let _ = abort_rebase();
+            // Record execution step: rebase failed
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_failed",
+                StepOutcome::Failure {
+                    error: format!("Rebase failed: {err}"),
+                    recoverable: true,
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(()) // Continue pipeline despite failure
         }
         Err(e) => {
             ctx.logger
                 .warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            // Record execution step: rebase error
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_error",
+                StepOutcome::Failure {
+                    error: format!("Rebase error: {e}"),
+                    recoverable: true,
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(())
         }
     }
@@ -1269,6 +1382,18 @@ fn run_post_review_rebase(
     run_context: &crate::checkpoint::RunContext,
 ) -> anyhow::Result<()> {
     ctx.logger.header("Post-review rebase", Colors::cyan);
+
+    // Record execution step: post-rebase started
+    let step = ExecutionStep::new(
+        "PostRebase",
+        ctx.config.developer_iters,
+        "post_rebase_start",
+        StepOutcome::Success {
+            output: None,
+            files_modified: vec![],
+        },
+    );
+    phase_ctx.execution_history.add_step(step);
 
     // Save checkpoint at start of post-rebase phase
     if ctx.config.features.checkpoint_enabled {
@@ -1305,11 +1430,31 @@ fn run_post_review_rebase(
     match run_rebase_to_default(&ctx.logger, ctx.colors) {
         Ok(RebaseResult::Success) => {
             ctx.logger.success("Rebase completed successfully");
+            // Record execution step: post-rebase completed successfully
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_complete",
+                StepOutcome::Success {
+                    output: Some("Rebase completed successfully".to_string()),
+                    files_modified: vec![],
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(())
         }
         Ok(RebaseResult::NoOp { reason }) => {
-            ctx.logger
-                .info(&format!("No rebase needed: {reason}"));
+            ctx.logger.info(&format!("No rebase needed: {reason}"));
+            // Record execution step: post-rebase skipped
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_skipped",
+                StepOutcome::Skipped {
+                    reason: reason.clone(),
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
@@ -1321,6 +1466,18 @@ fn run_post_review_rebase(
                 let _ = abort_rebase();
                 return Ok(());
             }
+
+            // Record execution step: post-rebase conflicts detected
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_conflict",
+                StepOutcome::Partial {
+                    completed: "Rebase started".to_string(),
+                    remaining: format!("{} conflicts detected", conflicted_files.len()),
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
 
             // Save checkpoint for conflict state
             if ctx.config.features.checkpoint_enabled {
@@ -1365,6 +1522,8 @@ fn run_post_review_rebase(
                 &ctx.template_context,
                 &ctx.logger,
                 ctx.colors,
+                phase_ctx,
+                "PostRebase",
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
@@ -1374,11 +1533,33 @@ fn run_post_review_rebase(
                         Ok(()) => {
                             ctx.logger
                                 .success("Rebase completed successfully after AI resolution");
+                            // Record execution step: conflicts resolved successfully
+                            let step = ExecutionStep::new(
+                                "PostRebase",
+                                ctx.config.developer_iters,
+                                "post_rebase_resolution",
+                                StepOutcome::Success {
+                                    output: Some("Conflicts resolved by AI".to_string()),
+                                    files_modified: conflicted_files.clone(),
+                                },
+                            );
+                            phase_ctx.execution_history.add_step(step);
                             Ok(())
                         }
                         Err(e) => {
                             ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
                             let _ = abort_rebase();
+                            // Record execution step: resolution succeeded but continue failed
+                            let step = ExecutionStep::new(
+                                "PostRebase",
+                                ctx.config.developer_iters,
+                                "post_rebase_resolution",
+                                StepOutcome::Partial {
+                                    completed: "Conflicts resolved by AI".to_string(),
+                                    remaining: format!("Failed to continue rebase: {e}"),
+                                },
+                            );
+                            phase_ctx.execution_history.add_step(step);
                             Ok(()) // Continue anyway - conflicts were resolved
                         }
                     }
@@ -1388,11 +1569,33 @@ fn run_post_review_rebase(
                     ctx.logger
                         .warn("AI conflict resolution failed, aborting rebase");
                     let _ = abort_rebase();
+                    // Record execution step: resolution failed
+                    let step = ExecutionStep::new(
+                        "PostRebase",
+                        ctx.config.developer_iters,
+                        "post_rebase_resolution",
+                        StepOutcome::Failure {
+                            error: "AI conflict resolution failed".to_string(),
+                            recoverable: true,
+                        },
+                    );
+                    phase_ctx.execution_history.add_step(step);
                     Ok(()) // Continue pipeline - don't block on rebase failure
                 }
                 Err(e) => {
                     ctx.logger.error(&format!("Conflict resolution error: {e}"));
                     let _ = abort_rebase();
+                    // Record execution step: resolution error
+                    let step = ExecutionStep::new(
+                        "PostRebase",
+                        ctx.config.developer_iters,
+                        "post_rebase_resolution",
+                        StepOutcome::Failure {
+                            error: format!("Conflict resolution error: {e}"),
+                            recoverable: true,
+                        },
+                    );
+                    phase_ctx.execution_history.add_step(step);
                     Ok(()) // Continue pipeline
                 }
             }
@@ -1400,11 +1603,33 @@ fn run_post_review_rebase(
         Ok(RebaseResult::Failed(err)) => {
             ctx.logger.error(&format!("Rebase failed: {err}"));
             let _ = abort_rebase();
+            // Record execution step: rebase failed
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_failed",
+                StepOutcome::Failure {
+                    error: format!("Rebase failed: {err}"),
+                    recoverable: true,
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(()) // Continue pipeline despite failure
         }
         Err(e) => {
             ctx.logger
                 .warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            // Record execution step: rebase error
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_error",
+                StepOutcome::Failure {
+                    error: format!("Rebase error: {e}"),
+                    recoverable: true,
+                },
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(())
         }
     }
@@ -1424,14 +1649,16 @@ enum ConflictResolutionResult {
 
 /// Attempt to resolve rebase conflicts with AI fallback.
 ///
-/// This is a helper function that creates a minimal `PhaseContext`
-/// for conflict resolution without requiring full pipeline state.
+/// This function accepts `PhaseContext` to capture prompts and track
+/// execution history for hardened resume functionality.
 fn try_resolve_conflicts_with_fallback(
     conflicted_files: &[String],
     config: &crate::config::Config,
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
+    phase_ctx: &mut PhaseContext<'_>,
+    phase: &str,
 ) -> anyhow::Result<bool> {
     if conflicted_files.is_empty() {
         return Ok(false);
@@ -1444,6 +1671,10 @@ fn try_resolve_conflicts_with_fallback(
 
     let conflicts = collect_conflict_info_or_error(conflicted_files, logger)?;
     let resolution_prompt = build_resolution_prompt(&conflicts, template_context);
+
+    // Capture the resolution prompt for deterministic resume
+    let prompt_key = format!("{}_conflict_resolution", phase.to_lowercase());
+    phase_ctx.capture_prompt(&prompt_key, &resolution_prompt);
 
     match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
         Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
@@ -1524,6 +1755,57 @@ fn try_resolve_conflicts_with_fallback(
     }
 }
 
+/// Wrapper for conflict resolution without PhaseContext.
+///
+/// This is used for --rebase-only mode where we don't have a full pipeline context.
+/// It creates a minimal PhaseContext for the conflict resolution call.
+fn try_resolve_conflicts_without_phase_ctx(
+    conflicted_files: &[String],
+    config: &crate::config::Config,
+    template_context: &TemplateContext,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<bool> {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::execution_history::ExecutionHistory;
+    use crate::checkpoint::RunContext;
+    use crate::pipeline::{Stats, Timer};
+
+    // Create minimal PhaseContext for conflict resolution
+    let registry = AgentRegistry::new()?;
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
+    let developer_agent = config.developer_agent.as_deref().unwrap_or("codex");
+
+    let mut phase_ctx = PhaseContext {
+        config,
+        registry: &registry,
+        logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent,
+        reviewer_agent,
+        review_guidelines: None,
+        template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+    };
+
+    try_resolve_conflicts_with_fallback(
+        conflicted_files,
+        config,
+        template_context,
+        logger,
+        colors,
+        &mut phase_ctx,
+        "RebaseOnly",
+    )
+}
+
 /// Collect conflict information from conflicted files.
 fn collect_conflict_info_or_error(
     conflicted_files: &[String],
@@ -1564,12 +1846,14 @@ fn build_enhanced_resolution_prompt(
     let plan_content = fs::read_to_string(".agent/PLAN.md").ok();
 
     // Use standard prompt
-    Ok(crate::prompts::build_conflict_resolution_prompt_with_context(
-        template_context,
-        conflicts,
-        prompt_md_content.as_deref(),
-        plan_content.as_deref(),
-    ))
+    Ok(
+        crate::prompts::build_conflict_resolution_prompt_with_context(
+            template_context,
+            conflicts,
+            prompt_md_content.as_deref(),
+            plan_content.as_deref(),
+        ),
+    )
 }
 
 /// Run AI agent to resolve conflicts with fallback mechanism.
@@ -1752,4 +2036,3 @@ fn write_resolved_files(
     logger.success(&format!("Successfully resolved {files_written} file(s)"));
     Ok(files_written)
 }
-

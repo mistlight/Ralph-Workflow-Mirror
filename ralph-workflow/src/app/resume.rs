@@ -180,6 +180,27 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
 
     logger.info(&format!("Session was interrupted: {}", time_str));
 
+    // Show rebase conflict information if applicable
+    if matches!(
+        checkpoint.rebase_state,
+        crate::checkpoint::RebaseState::HasConflicts { .. }
+    ) {
+        if let crate::checkpoint::RebaseState::HasConflicts { files } = &checkpoint.rebase_state {
+            logger.warn(&format!(
+                "Rebase conflicts detected in {} file(s)",
+                files.len()
+            ));
+            // Show up to 5 conflicted files
+            let display_files: Vec<_> = files.iter().take(5).cloned().collect();
+            for file in display_files {
+                logger.info(&format!("  - {}", file));
+            }
+            if files.len() > 5 {
+                logger.info(&format!("  ... and {} more", files.len() - 5));
+            }
+        }
+    }
+
     // Show progress
     if checkpoint.total_iterations > 0 {
         logger.info(&format!(

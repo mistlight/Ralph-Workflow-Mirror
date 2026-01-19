@@ -36,14 +36,16 @@ pub use commit::{
     prompt_simplified_commit_with_context, prompt_xsd_retry_with_context,
 };
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
-pub use rebase::{build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict};
+pub use rebase::{
+    build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict,
+};
 
 #[cfg(any(test, feature = "test-utils"))]
 pub use rebase::build_enhanced_conflict_resolution_prompt;
 
 // Types only used in tests
 #[cfg(any(test, feature = "test-utils"))]
-pub use rebase::{BranchInfo, collect_branch_info};
+pub use rebase::{collect_branch_info, BranchInfo};
 pub use reviewer::{
     prompt_comprehensive_review_with_diff_with_context,
     prompt_detailed_review_without_guidelines_with_diff_with_context,
