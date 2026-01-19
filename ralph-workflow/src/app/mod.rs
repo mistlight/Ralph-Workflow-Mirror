@@ -1198,11 +1198,24 @@ fn try_resolve_conflicts_with_fallback(
 
     match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
         Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
-            // Agent provided JSON output - parse and write files
-            let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
-            write_resolved_files(&resolved_files, logger)?;
+            // Agent provided JSON output - attempt to parse and write files
+            // JSON is optional for verification - LibGit2 state is authoritative
+            match parse_and_validate_resolved_files(&resolved_content, logger) {
+                Ok(resolved_files) => {
+                    write_resolved_files(&resolved_files, logger)?;
+                }
+                Err(json_err) => {
+                    // JSON parsing failed - this is NOT a verification failure
+                    // We verify conflicts via LibGit2 state, not JSON parsing
+                    logger.info(&format!(
+                        "JSON output unavailable ({}), verifying via LibGit2 state...",
+                        json_err
+                    ));
+                    // Continue to LibGit2 verification below
+                }
+            }
 
-            // Verify all conflicts are resolved
+            // Verify all conflicts are resolved via LibGit2 (authoritative source)
             let remaining_conflicts = get_conflicted_files()?;
             if remaining_conflicts.is_empty() {
                 Ok(true)
@@ -1572,6 +1585,17 @@ fn run_rebase_with_state_machine(
         ));
     }
 
+    // Perform pre-rebase validation
+    // This checks for Category 1 failure modes before attempting the rebase
+    if let Err(e) = crate::git_helpers::validate_rebase_preconditions() {
+        logger.warn(&format!("Pre-rebase validation failed: {e}"));
+        state_machine.record_error(format!("Pre-rebase validation failed: {e}"));
+        // Return NoOp as this is not a transient error
+        return Ok(RebaseResult::NoOp {
+            reason: format!("Pre-rebase validation failed: {e}"),
+        });
+    }
+
     // Perform the rebase operation
     state_machine.transition_to(RebasePhase::RebaseInProgress)?;
 
@@ -1880,19 +1904,37 @@ fn try_resolve_conflicts_with_state_machine(
         // Run AI conflict resolution
         match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
             Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
-                // Agent provided JSON output - parse and write files
-                let resolved_files = parse_and_validate_resolved_files(&resolved_content, logger)?;
-                write_resolved_files(&resolved_files, logger)?;
+                // Agent provided JSON output - attempt to parse and write files
+                // JSON is optional for verification - LibGit2 state is authoritative
+                let resolved_files =
+                    match parse_and_validate_resolved_files(&resolved_content, logger) {
+                        Ok(files) => {
+                            // Write files if JSON was successfully parsed
+                            write_resolved_files(&files, logger)?;
+                            Some(files)
+                        }
+                        Err(json_err) => {
+                            // JSON parsing failed - this is NOT a verification failure
+                            // We verify conflicts via LibGit2 state, not JSON parsing
+                            logger.info(&format!(
+                                "JSON output unavailable ({}), verifying via LibGit2 state...",
+                                json_err
+                            ));
+                            None
+                        }
+                    };
 
                 // Clear previous failures before new validation
                 previous_validation_failures.clear();
 
-                // Validate the resolution and collect any failures
+                // Validate the resolution using LibGit2 state (authoritative source)
                 match validate_conflict_resolution_detailed(logger, &conflicted_files) {
                     Ok(validation_result) if validation_result.is_valid() => {
                         // Mark files as resolved
-                        for path in resolved_files.keys() {
-                            state_machine.record_resolution(path.clone());
+                        if let Some(ref files) = resolved_files {
+                            for path in files.keys() {
+                                state_machine.record_resolution(path.clone());
+                            }
                         }
                         logger.success(&format!(
                             "All conflicts resolved successfully after {} cycle(s)",

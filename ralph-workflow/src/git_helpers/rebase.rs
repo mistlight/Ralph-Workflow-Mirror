@@ -1035,6 +1035,103 @@ pub fn is_dirty_tree_cli() -> io::Result<bool> {
     }
 }
 
+/// Validate preconditions before starting a rebase operation.
+///
+/// This function performs Category 1 (pre-start) validation checks to ensure
+/// the repository is in a valid state for rebasing. It checks for common
+/// issues that would cause a rebase to fail immediately.
+///
+/// # Returns
+///
+/// Returns `Ok(())` if all preconditions are met, or an error with a
+/// descriptive message if validation fails.
+///
+/// # Validation Checks
+///
+/// - Repository integrity (valid HEAD, index, object database)
+/// - No concurrent Git operations (merge, rebase, cherry-pick, etc.)
+/// - Git identity is configured (user.name and user.email)
+/// - Working tree is not dirty (no unstaged or staged changes)
+///
+/// # Example
+///
+/// ```no_run
+/// use ralph_workflow::git_helpers::rebase::validate_rebase_preconditions;
+///
+/// match validate_rebase_preconditions() {
+///     Ok(()) => println!("All preconditions met, safe to rebase"),
+///     Err(e) => eprintln!("Cannot rebase: {e}"),
+/// }
+/// ```
+pub fn validate_rebase_preconditions() -> io::Result<()> {
+    use std::process::Command;
+
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+
+    // 1. Check repository integrity
+    validate_git_state()?;
+
+    // 2. Check for concurrent Git operations
+    if let Some(concurrent_op) = detect_concurrent_git_operations()? {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Cannot start rebase: {} already in progress. \
+                 Please complete or abort the current operation first.",
+                concurrent_op.description()
+            ),
+        ));
+    }
+
+    // 3. Check Git identity configuration
+    let config = repo.config().map_err(|e| git2_to_io_error(&e))?;
+
+    let user_name = config.get_string("user.name");
+    let user_email = config.get_string("user.email");
+
+    if user_name.is_err() && user_email.is_err() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Git identity is not configured. Please set user.name and user.email:\n  \
+             git config --global user.name \"Your Name\"\n  \
+             git config --global user.email \"you@example.com\"",
+        ));
+    }
+
+    // 4. Check for dirty working tree using Git CLI
+    let status_output = Command::new("git").args(["status", "--porcelain"]).output();
+
+    match status_output {
+        Ok(result) => {
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            if !stdout.trim().is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Working tree is not clean. Please commit or stash changes before rebasing.",
+                ));
+            }
+        }
+        Err(_e) => {
+            // If git status fails, try with libgit2 as fallback
+            let statuses = repo.statuses(None).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Failed to check working tree status: {e}"),
+                )
+            })?;
+
+            if !statuses.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Working tree is not clean. Please commit or stash changes before rebasing.",
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Perform a rebase onto the specified upstream branch.
 ///
 /// This function rebases the current branch onto the specified upstream branch.
@@ -1130,13 +1227,16 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
         Ok(_) => {}
     }
 
-    // Check if we're on main/master
-    let branch_name = head.shorthand().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "Could not determine branch name from HEAD",
-        )
-    })?;
+    // Check if we're on main/master or in a detached HEAD state
+    let branch_name = match head.shorthand() {
+        Some(name) => name,
+        None => {
+            // Detached HEAD state - rebase is not applicable
+            return Ok(RebaseResult::NoOp {
+                reason: "HEAD is detached (not on any branch), rebase not applicable".to_string(),
+            });
+        }
+    };
 
     if branch_name == "main" || branch_name == "master" {
         return Ok(RebaseResult::NoOp {
@@ -1350,6 +1450,86 @@ pub fn get_conflict_markers_for_file(path: &Path) -> io::Result<String> {
     } else {
         Ok(conflict_sections.join("\n\n"))
     }
+}
+
+/// Verify that a rebase has completed successfully using LibGit2.
+///
+/// This function uses LibGit2 exclusively to verify that a rebase operation
+/// has completed successfully. It checks:
+/// - Repository state is clean (no rebase in progress)
+/// - HEAD is valid and not detached (unless expected)
+/// - Index has no conflicts
+/// - Current branch is descendant of upstream (rebase succeeded)
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if rebase is verified as complete, `Ok(false)` if
+/// rebase is still in progress (conflicts remain), or an error if the
+/// repository state is invalid.
+///
+/// # Note
+///
+/// This is the authoritative source for rebase completion verification.
+/// It does NOT depend on parsing agent output or any other external signals.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn verify_rebase_completed(upstream_branch: &str) -> io::Result<bool> {
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+
+    // 1. Check if a rebase is still in progress
+    let state = repo.state();
+    if state == git2::RepositoryState::Rebase
+        || state == git2::RepositoryState::RebaseMerge
+        || state == git2::RepositoryState::RebaseInteractive
+    {
+        // Rebase is still in progress
+        return Ok(false);
+    }
+
+    // 2. Check if there are any remaining conflicts in the index
+    let index = repo.index().map_err(|e| git2_to_io_error(&e))?;
+    if index.has_conflicts() {
+        // Conflicts remain in the index
+        return Ok(false);
+    }
+
+    // 3. Verify HEAD is valid
+    let head = repo.head().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Repository HEAD is invalid: {e}"),
+        )
+    })?;
+
+    // 4. Verify the current branch is a descendant of upstream
+    // This confirms the rebase actually succeeded
+    if let Ok(head_commit) = head.peel_to_commit() {
+        if let Ok(upstream_object) = repo.revparse_single(upstream_branch) {
+            if let Ok(upstream_commit) = upstream_object.peel_to_commit() {
+                // Check if HEAD is now a descendant of upstream
+                // This means the rebase moved our commits on top of upstream
+                match repo.graph_descendant_of(head_commit.id(), upstream_commit.id()) {
+                    Ok(is_descendant) => {
+                        if is_descendant {
+                            // HEAD is descendant of upstream - rebase successful
+                            return Ok(true);
+                        } else {
+                            // HEAD is not a descendant - rebase not complete or not applicable
+                            // (e.g., diverged branches, feature branch ahead of upstream)
+                            return Ok(false);
+                        }
+                    }
+                    Err(e) => {
+                        // Can't determine descendant relationship - fall back to conflict check
+                        let _ = e; // suppress unused warning
+                    }
+                }
+            }
+        }
+    }
+
+    // If we can't verify descendant relationship, check for conflicts
+    // as a fallback - if no conflicts and no rebase in progress, consider it complete
+    Ok(!index.has_conflicts())
 }
 
 /// Validate that the repository is in a good state after rebase.

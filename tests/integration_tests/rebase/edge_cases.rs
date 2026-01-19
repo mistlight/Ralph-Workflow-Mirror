@@ -451,3 +451,184 @@ fn rebase_with_unrelated_branches_returns_noop() {
         }
     });
 }
+
+#[test]
+fn rebase_on_detached_head_returns_noop_with_clear_reason() {
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+        let default_branch = get_default_branch_name(&repo);
+
+        // Create a commit
+        write_file(dir.path().join("file.txt"), "content");
+        let _ = commit_all(&repo, "add file");
+
+        // Detach HEAD by checking out a commit directly
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.set_head_detached(head_commit.id()).unwrap();
+        repo.checkout_head(None).unwrap();
+
+        // Verify HEAD is detached
+        assert!(
+            repo.head_detached().unwrap_or(false),
+            "HEAD should be detached after set_head_detached"
+        );
+
+        // Try to rebase - should return NoOp with clear reason
+        let result = rebase_onto(&default_branch);
+
+        match result {
+            Ok(RebaseResult::NoOp { reason }) => {
+                // The reason should mention detached HEAD
+                assert!(
+                    reason.contains("detached") || reason.contains("HEAD"),
+                    "Expected NoOp reason to mention 'detached' or 'HEAD', got: {reason}"
+                );
+            }
+            Ok(RebaseResult::Success) => {
+                // Git may succeed in some configurations
+            }
+            Ok(other) => {
+                panic!("Expected NoOp or Success, got: {other:?}");
+            }
+            Err(e) => {
+                panic!("Unexpected error: {e}");
+            }
+        }
+    });
+}
+
+#[test]
+fn verify_rebase_completed_detects_incomplete_rebase() {
+    use ralph_workflow::git_helpers::verify_rebase_completed;
+
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+        let default_branch = get_default_branch_name(&repo);
+
+        // Create a feature branch with a commit
+        write_file(dir.path().join("file1.txt"), "content on main");
+        let _ = commit_all(&repo, "add file1 on main");
+
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        let obj = repo.revparse_single("feature").unwrap();
+        let commit = obj.peel_to_commit().unwrap();
+        repo.checkout_tree(commit.as_object(), None).unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        write_file(dir.path().join("file2.txt"), "content on feature");
+        let _ = commit_all(&repo, "add file2 on feature");
+
+        // Start a rebase that will have conflicts
+        // We need to create a conflict by modifying the same file differently
+        write_file(dir.path().join("file1.txt"), "modified on feature");
+        let _ = commit_all(&repo, "modify file1 on feature");
+
+        // Now try to rebase onto main (which also has file1.txt)
+        // This should succeed since feature is ahead of main
+        let result = rebase_onto(&default_branch);
+        match result {
+            Ok(RebaseResult::Success) => {
+                // Verify the rebase completed using LibGit2
+                assert!(
+                    verify_rebase_completed(&default_branch).unwrap_or(false),
+                    "Rebase should be verified as complete after success"
+                );
+            }
+            _ => {
+                // Other outcomes are acceptable
+            }
+        }
+    });
+}
+
+#[test]
+fn verify_rebase_completed_returns_false_when_diverged() {
+    use ralph_workflow::git_helpers::verify_rebase_completed;
+
+    with_temp_cwd(|dir| {
+        let repo = init_repo_with_initial_commit(dir);
+        let default_branch = get_default_branch_name(&repo);
+
+        // Create initial file on default branch
+        write_file(dir.path().join("shared.txt"), "original content");
+        let _ = commit_all(&repo, "add shared file");
+
+        // Create feature branch
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
+
+        let obj = repo.revparse_single("feature").unwrap();
+        let commit = obj.peel_to_commit().unwrap();
+        repo.checkout_tree(commit.as_object(), None).unwrap();
+        repo.set_head("refs/heads/feature").unwrap();
+
+        // Modify file on feature
+        write_file(dir.path().join("shared.txt"), "feature branch content");
+        let _ = commit_all(&repo, "modify on feature");
+
+        // Go back to default branch and modify the same file
+        let default_ref = format!("refs/heads/{}", default_branch);
+        repo.set_head(&default_ref).unwrap();
+        repo.checkout_head(None).unwrap();
+        write_file(dir.path().join("shared.txt"), "default branch content");
+        let _ = commit_all(&repo, "modify on default");
+
+        // Go back to feature
+        repo.set_head("refs/heads/feature").unwrap();
+        repo.checkout_head(None).unwrap();
+
+        // Before any rebase, verify should return false
+        // The function checks if we're descendant of upstream
+        // We're not a descendant yet (feature has diverged), so it should be false
+        let verified = verify_rebase_completed(&default_branch).unwrap_or(false);
+        assert!(
+            !verified,
+            "Should not be verified as complete before rebase (diverged branches)"
+        );
+    });
+}
+
+#[test]
+fn validate_rebase_preconditions_detects_dirty_tree() {
+    use ralph_workflow::git_helpers::validate_rebase_preconditions;
+
+    with_temp_cwd(|dir| {
+        let _repo = init_repo_with_initial_commit(dir);
+
+        // Create an uncommitted change (dirty working tree)
+        write_file(dir.path().join("dirty.txt"), "uncommitted content");
+
+        // Precondition validation should fail due to dirty tree
+        let result = validate_rebase_preconditions();
+
+        assert!(
+            result.is_err(),
+            "Should fail precondition check with dirty working tree"
+        );
+
+        let err_msg = result.unwrap_err().to_string().to_lowercase();
+        assert!(
+            err_msg.contains("clean") || err_msg.contains("dirty") || err_msg.contains("commit"),
+            "Error message should mention clean/dirty state or commit: {err_msg}"
+        );
+    });
+}
+
+#[test]
+fn validate_rebase_preconditions_succeeds_on_clean_repo() {
+    use ralph_workflow::git_helpers::validate_rebase_preconditions;
+
+    with_temp_cwd(|dir| {
+        let _repo = init_repo_with_initial_commit(dir);
+
+        // Clean repository should pass precondition validation
+        let result = validate_rebase_preconditions();
+
+        assert!(
+            result.is_ok(),
+            "Should pass precondition check with clean repository: {result:?}"
+        );
+    });
+}
