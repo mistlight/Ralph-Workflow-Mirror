@@ -385,7 +385,7 @@ mod tests {
             "you can git",
             "should run git",
             "please run git",
-            "\ngit ",  // Command starting at line beginning after newline
+            "\ngit ", // Command starting at line beginning after newline
         ];
 
         // Context patterns that indicate the command is being FORBIDDEN, not instructed
