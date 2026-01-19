@@ -2342,9 +2342,9 @@ fn ralph_v3_file_system_state_detects_changes() {
     // Should succeed but log file system state validation error
     // Note: Current behavior is that validation errors don't stop the pipeline
     // They are logged but the pipeline continues without the checkpoint
-    cmd.assert()
-        .success()
-        .stderr(predicate::str::contains("File system state validation failed"));
+    cmd.assert().success().stderr(predicate::str::contains(
+        "File system state validation failed",
+    ));
 }
 
 #[test]
