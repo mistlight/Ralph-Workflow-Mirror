@@ -61,7 +61,7 @@ const MAX_SAFE_PROMPT_SIZE: usize = 200_000;
 /// - Deterministic fallback from diff failed
 ///
 /// This ensures the commit process NEVER fails completely.
-const HARDCODED_FALLBACK_COMMIT: &str = "chore: automated commit";
+pub(crate) const HARDCODED_FALLBACK_COMMIT: &str = "chore: automated commit";
 
 /// Get the maximum safe prompt size for a specific agent.
 ///
@@ -1050,6 +1050,8 @@ pub fn commit_with_generated_message(
         logger: ctx.logger,
         colors: ctx.colors,
         config: ctx.config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
     };
 
     // Generate commit message using the standard pipeline

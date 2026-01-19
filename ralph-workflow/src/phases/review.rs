@@ -467,6 +467,8 @@ fn run_review_pass(
                 logger: ctx.logger,
                 colors: ctx.colors,
                 config: ctx.config,
+                #[cfg(any(test, feature = "test-utils"))]
+                agent_executor: None,
             };
 
             // Output validator: checks if reviewer produced valid JSON output
@@ -789,6 +791,8 @@ fn run_fix_pass(
             logger: ctx.logger,
             colors: ctx.colors,
             config: ctx.config,
+            #[cfg(any(test, feature = "test-utils"))]
+            agent_executor: None,
         };
 
         // Output validator: checks if fixer produced valid JSON output

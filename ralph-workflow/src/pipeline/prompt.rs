@@ -12,6 +12,9 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdout, Command, Stdio};
 
+#[cfg(any(test, feature = "test-utils"))]
+use std::sync::Arc;
+
 /// A line-oriented reader that processes data as it arrives.
 ///
 /// Unlike `BufReader::lines()`, this reader yields lines immediately
@@ -174,6 +177,9 @@ pub struct PipelineRuntime<'a> {
     pub logger: &'a Logger,
     pub colors: &'a Colors,
     pub config: &'a Config,
+    /// Optional agent executor for mocking subprocess execution in tests.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub agent_executor: Option<Arc<dyn super::test_trait::AgentExecutor>>,
 }
 
 /// Command configuration for building an agent command.
@@ -321,6 +327,7 @@ fn spawn_agent_process(
     argv: &[String],
 ) -> io::Result<Result<Child, CommandResult>> {
     match command
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -536,6 +543,24 @@ pub fn run_with_prompt(
         *runtime.colors,
     )?;
 
+    // Use agent executor if provided (for testing)
+    #[cfg(any(test, feature = "test-utils"))]
+    {
+        if let Some(executor) = runtime.agent_executor.clone() {
+            return run_with_agent_executor(cmd, runtime, &executor);
+        }
+    }
+
+    run_with_subprocess(cmd, runtime, ANTHROPIC_ENV_VARS_TO_SANITIZE)
+}
+
+/// Run agent using the real subprocess execution.
+#[cfg(not(any(test, feature = "test-utils")))]
+fn run_with_subprocess(
+    cmd: &PromptCommand<'_>,
+    runtime: &mut PipelineRuntime<'_>,
+    anthropic_env_vars_to_sanitize: &[&str],
+) -> io::Result<CommandResult> {
     let (argv, command) = build_agent_command(
         &CommandConfig {
             cmd_str: cmd.cmd_str,
@@ -544,7 +569,7 @@ pub fn run_with_prompt(
             logfile: cmd.logfile,
             parser_type: cmd.parser_type,
         },
-        ANTHROPIC_ENV_VARS_TO_SANITIZE,
+        anthropic_env_vars_to_sanitize,
         runtime.logger,
         *runtime.colors,
     )?;
@@ -615,5 +640,146 @@ pub fn run_with_prompt(
     Ok(CommandResult {
         exit_code,
         stderr: stderr_output,
+    })
+}
+
+/// Run agent using the real subprocess execution.
+#[cfg(any(test, feature = "test-utils"))]
+fn run_with_subprocess(
+    cmd: &PromptCommand<'_>,
+    runtime: &mut PipelineRuntime<'_>,
+    anthropic_env_vars_to_sanitize: &[&str],
+) -> io::Result<CommandResult> {
+    let (argv, command) = build_agent_command(
+        &CommandConfig {
+            cmd_str: cmd.cmd_str,
+            prompt: cmd.prompt,
+            env_vars: cmd.env_vars,
+            logfile: cmd.logfile,
+            parser_type: cmd.parser_type,
+        },
+        anthropic_env_vars_to_sanitize,
+        runtime.logger,
+        *runtime.colors,
+    )?;
+
+    let mut child = match spawn_agent_process(command, &argv)? {
+        Ok(child) => child,
+        Err(result) => return Ok(result),
+    };
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
+
+    let stderr_join_handle = child.stderr.take().map(|stderr| {
+        std::thread::spawn(move || -> io::Result<String> {
+            const STDERR_MAX_BYTES: usize = 512 * 1024;
+
+            let mut reader = BufReader::new(stderr);
+            let mut buf = [0u8; 8192];
+            let mut collected = Vec::<u8>::new();
+            let mut truncated = false;
+
+            loop {
+                let n = reader.read(&mut buf)?;
+                if n == 0 {
+                    break;
+                }
+
+                let remaining = STDERR_MAX_BYTES.saturating_sub(collected.len());
+                if remaining == 0 {
+                    truncated = true;
+                    break;
+                }
+
+                let to_take = remaining.min(n);
+                collected.extend_from_slice(&buf[..to_take]);
+                if to_take < n {
+                    truncated = true;
+                    break;
+                }
+            }
+
+            let mut stderr_output = String::from_utf8_lossy(&collected).into_owned();
+            if truncated {
+                if !stderr_output.ends_with('\n') {
+                    stderr_output.push('\n');
+                }
+                stderr_output.push_str("<stderr truncated>");
+            }
+
+            Ok(stderr_output)
+        })
+    });
+
+    stream_agent_output(stdout, cmd, runtime)?;
+
+    let (exit_code, stderr_output) =
+        wait_for_completion_and_collect_stderr(child, stderr_join_handle, runtime)?;
+
+    if runtime.config.verbosity.is_verbose() {
+        runtime.logger.info(&format!(
+            "Phase elapsed: {}",
+            runtime.timer.phase_elapsed_formatted()
+        ));
+    }
+
+    Ok(CommandResult {
+        exit_code,
+        stderr: stderr_output,
+    })
+}
+
+/// Run agent using the mocked AgentExecutor (for testing).
+#[cfg(any(test, feature = "test-utils"))]
+fn run_with_agent_executor(
+    cmd: &PromptCommand<'_>,
+    runtime: &mut PipelineRuntime<'_>,
+    executor: &std::sync::Arc<dyn super::test_trait::AgentExecutor>,
+) -> io::Result<CommandResult> {
+    use super::test_trait::AgentCommandConfig;
+
+    let (argv, _command) = build_agent_command(
+        &CommandConfig {
+            cmd_str: cmd.cmd_str,
+            prompt: cmd.prompt,
+            env_vars: cmd.env_vars,
+            logfile: cmd.logfile,
+            parser_type: cmd.parser_type,
+        },
+        &[],
+        runtime.logger,
+        *runtime.colors,
+    )?;
+
+    let display_cmd = truncate_text(&format_argv_for_log(&argv), 160);
+    runtime.logger.info(&format!(
+        "Executing (mocked): {}{}{}",
+        runtime.colors.dim(),
+        display_cmd,
+        runtime.colors.reset()
+    ));
+
+    let result = executor.execute(&AgentCommandConfig {
+        cmd: cmd.cmd_str.to_string(),
+        prompt: cmd.prompt.to_string(),
+        env_vars: cmd.env_vars.clone(),
+        parser_type: cmd.parser_type,
+        logfile: cmd.logfile.to_string(),
+        display_name: cmd.display_name.to_string(),
+    })?;
+
+    if runtime.config.verbosity.is_verbose() {
+        runtime.logger.info(&format!(
+            "Phase elapsed: {}",
+            runtime.timer.phase_elapsed_formatted()
+        ));
+    }
+
+    Ok(CommandResult {
+        exit_code: result.exit_code,
+        stderr: result.stderr,
     })
 }

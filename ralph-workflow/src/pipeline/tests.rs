@@ -131,6 +131,8 @@ fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
         logger: &logger,
         colors: &colors,
         config: &config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
     };
 
     let exit = run_with_fallback(
@@ -377,6 +379,8 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
     };
 
     // Run the review with GLM agent

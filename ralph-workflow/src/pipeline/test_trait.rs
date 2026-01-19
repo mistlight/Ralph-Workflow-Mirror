@@ -8,7 +8,9 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fs;
 use std::io;
+use std::path::Path;
 
 use crate::agents::JsonParserType;
 
@@ -101,6 +103,91 @@ pub trait AgentExecutor {
     /// - Capturing stdout/stderr
     /// - Returning the exit code and output
     fn execute(&self, config: &AgentCommandConfig) -> io::Result<AgentCommandResult>;
+}
+
+/// File-based mock agent executor that creates files instead of running commands.
+///
+/// This executor simulates agent behavior by creating expected files and returning
+/// success. It is designed to replace shell command mocking in tests, avoiding
+/// the need to spawn subprocesses.
+///
+/// # File Creation Pattern
+///
+/// Instead of using `RALPH_DEVELOPER_CMD="sh -c 'echo plan > .agent/PLAN.md'"`,
+/// tests should pre-create the expected files and use this executor which simply
+/// returns success.
+///
+/// # Example
+///
+/// ```rust
+/// use ralph_workflow::pipeline::test_trait::{AgentExecutor, FileMockAgentExecutor};
+///
+/// // In test setup
+/// fs::write(".agent/PLAN.md", "plan content")?;
+///
+/// // Use the file mock executor
+/// let executor = FileMockAgentExecutor::new();
+/// let result = executor.execute(&config)?;
+/// assert_eq!(result.exit_code, 0);
+/// ```
+pub struct FileMockAgentExecutor {
+    /// Optional custom exit code to return (default: 0).
+    exit_code: RefCell<i32>,
+    /// Optional custom stderr to return.
+    stderr: RefCell<String>,
+}
+
+impl FileMockAgentExecutor {
+    /// Create a new file mock executor that returns success.
+    pub fn new() -> Self {
+        Self {
+            exit_code: RefCell::new(0),
+            stderr: RefCell::new(String::new()),
+        }
+    }
+
+    /// Create a new file mock executor that returns failure.
+    pub fn new_failure(exit_code: i32, stderr: impl Into<String>) -> Self {
+        Self {
+            exit_code: RefCell::new(exit_code),
+            stderr: RefCell::new(stderr.into()),
+        }
+    }
+
+    /// Set the exit code to return for subsequent executions.
+    pub fn with_exit_code(self, exit_code: i32) -> Self {
+        self.exit_code.replace(exit_code);
+        self
+    }
+
+    /// Set the stderr to return for subsequent executions.
+    pub fn with_stderr(self, stderr: impl Into<String>) -> Self {
+        self.stderr.replace(stderr.into());
+        self
+    }
+}
+
+impl Default for FileMockAgentExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AgentExecutor for FileMockAgentExecutor {
+    fn execute(&self, config: &AgentCommandConfig) -> io::Result<AgentCommandResult> {
+        // Ensure the log file directory exists
+        if let Some(parent) = Path::new(&config.logfile).parent() {
+            fs::create_dir_all(parent)?;
+        }
+        // Create an empty log file
+        fs::write(&config.logfile, "")?;
+
+        Ok(AgentCommandResult {
+            exit_code: *self.exit_code.borrow(),
+            stdout: String::new(),
+            stderr: self.stderr.borrow().clone(),
+        })
+    }
 }
 
 /// Clonable representation of an io::Result.

@@ -401,13 +401,16 @@ pub struct RecoveryFlags {
 /// Rebase control flags.
 #[derive(Parser, Debug, Default)]
 pub struct RebaseFlags {
-    /// Skip automatic rebase before/after pipeline
+    /// Enable automatic rebase before/after pipeline
+    ///
+    /// When enabled, ralph will automatically rebase to the main branch before
+    /// starting development and after the review phase. Default is disabled to
+    /// keep operations fast and avoid conflicts.
     #[arg(
         long,
-        help = "Skip automatic rebase to main branch before and after pipeline",
-        hide = true
+        help = "Enable automatic rebase to main branch before and after pipeline"
     )]
-    pub skip_rebase: bool,
+    pub with_rebase: bool,
 
     /// Only perform rebase and exit
     #[arg(
@@ -416,6 +419,18 @@ pub struct RebaseFlags {
         hide = true
     )]
     pub rebase_only: bool,
+
+    /// Skip automatic rebase before/after pipeline (deprecated: use default behavior or --with-rebase)
+    #[arg(
+        long,
+        help = "Skip automatic rebase to main branch before and after pipeline",
+        hide = true
+    )]
+    #[deprecated(
+        since = "0.4.2",
+        note = "Rebase is now disabled by default; use --with-rebase to enable"
+    )]
+    pub skip_rebase: bool,
 }
 
 /// Ralph: PROMPT-driven agent orchestrator for git repos

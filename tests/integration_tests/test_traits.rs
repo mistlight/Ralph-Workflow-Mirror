@@ -4,6 +4,7 @@
 //! are properly exported from the ralph-workflow crate and can be used
 //! in integration tests.
 
+use crate::test_timeout::with_default_timeout;
 use ralph_workflow::files::{FileOperation, FileOps, MockFileOps};
 use ralph_workflow::git_helpers::{CommitResult, GitOps, MockGit, OpsRebaseResult};
 use ralph_workflow::pipeline::test_trait::{AgentCommandResult, AgentExecutor, MockAgentExecutor};
@@ -12,155 +13,171 @@ use std::path::{Path, PathBuf};
 /// Test that MockGit can be created and used via GitOps trait.
 #[test]
 fn test_mock_git_creation() {
-    let mock = MockGit::new();
-    assert!(GitOps::require_repo(&mock).is_ok());
+    with_default_timeout(|| {
+        let mock = MockGit::new();
+        assert!(GitOps::require_repo(&mock).is_ok());
+    });
 }
 
 /// Test that MockGit builder pattern works.
 #[test]
 fn test_mock_git_builder() {
-    let mock = MockGit::new()
-        .with_repo_root(Ok(PathBuf::from("/test/repo")))
-        .with_diff(Ok("test diff".to_string()))
-        .with_snapshot(Ok("M file.txt".to_string()));
+    with_default_timeout(|| {
+        let mock = MockGit::new()
+            .with_repo_root(Ok(PathBuf::from("/test/repo")))
+            .with_diff(Ok("test diff".to_string()))
+            .with_snapshot(Ok("M file.txt".to_string()));
 
-    assert_eq!(
-        GitOps::repo_root(&mock).unwrap(),
-        PathBuf::from("/test/repo")
-    );
-    assert_eq!(GitOps::diff(&mock).unwrap(), "test diff");
-    assert_eq!(GitOps::snapshot(&mock).unwrap(), "M file.txt");
+        assert_eq!(
+            GitOps::repo_root(&mock).unwrap(),
+            PathBuf::from("/test/repo")
+        );
+        assert_eq!(GitOps::diff(&mock).unwrap(), "test diff");
+        assert_eq!(GitOps::snapshot(&mock).unwrap(), "M file.txt");
+    });
 }
 
 /// Test that MockGit implements GitOps trait.
 #[test]
 fn test_mock_git_implements_git_ops() {
-    let mock = MockGit::new()
-        .with_commit(Ok(CommitResult::Success("abc123".to_string())))
-        .with_rebase_onto(Ok(OpsRebaseResult::Success));
+    with_default_timeout(|| {
+        let mock = MockGit::new()
+            .with_commit(Ok(CommitResult::Success("abc123".to_string())))
+            .with_rebase_onto(Ok(OpsRebaseResult::Success));
 
-    // Test via GitOps trait
-    let commit_result = GitOps::commit(&mock, "test message", None, None).unwrap();
-    assert_eq!(commit_result, CommitResult::Success("abc123".to_string()));
+        // Test via GitOps trait
+        let commit_result = GitOps::commit(&mock, "test message", None, None).unwrap();
+        assert_eq!(commit_result, CommitResult::Success("abc123".to_string()));
 
-    let rebase_result = GitOps::rebase_onto(&mock, "main").unwrap();
-    assert_eq!(rebase_result, OpsRebaseResult::Success);
+        let rebase_result = GitOps::rebase_onto(&mock, "main").unwrap();
+        assert_eq!(rebase_result, OpsRebaseResult::Success);
+    });
 }
 
 /// Test that MockGit call capture works.
 #[test]
 fn test_mock_git_call_capture() {
-    let mock = MockGit::new();
+    with_default_timeout(|| {
+        let mock = MockGit::new();
 
-    let _ = GitOps::diff(&mock);
-    let _ = GitOps::diff(&mock);
-    let _ = GitOps::commit(&mock, "first", None, None);
-    let _ = GitOps::commit(&mock, "second", None, None);
+        let _ = GitOps::diff(&mock);
+        let _ = GitOps::diff(&mock);
+        let _ = GitOps::commit(&mock, "first", None, None);
+        let _ = GitOps::commit(&mock, "second", None, None);
 
-    assert_eq!(mock.diff_count(), 2);
-    assert_eq!(mock.commit_calls().len(), 2);
-    assert_eq!(mock.commit_calls()[0], "first");
-    assert_eq!(mock.commit_calls()[1], "second");
+        assert_eq!(mock.diff_count(), 2);
+        assert_eq!(mock.commit_calls().len(), 2);
+        assert_eq!(mock.commit_calls()[0], "first");
+        assert_eq!(mock.commit_calls()[1], "second");
+    });
 }
 
 /// Test that MockAgentExecutor can be created and used.
 #[test]
 fn test_mock_agent_executor_creation() {
-    let mock = MockAgentExecutor::new();
-    assert!(!mock.was_called());
+    with_default_timeout(|| {
+        let mock = MockAgentExecutor::new();
+        assert!(!mock.was_called());
+    });
 }
 
 /// Test that MockAgentExecutor builder pattern works.
 #[test]
 fn test_mock_agent_executor_builder() {
-    let mock = MockAgentExecutor::new()
-        .with_response(Ok(AgentCommandResult::success("output")))
-        .with_response(Ok(AgentCommandResult::failure(1, "error")));
+    with_default_timeout(|| {
+        let mock = MockAgentExecutor::new()
+            .with_response(Ok(AgentCommandResult::success("output")))
+            .with_response(Ok(AgentCommandResult::failure(1, "error")));
 
-    // Create a config for testing
-    use ralph_workflow::agents::JsonParserType;
-    use ralph_workflow::pipeline::test_trait::AgentCommandConfig;
-    use std::collections::HashMap;
+        // Create a config for testing
+        use ralph_workflow::agents::JsonParserType;
+        use ralph_workflow::pipeline::test_trait::AgentCommandConfig;
+        use std::collections::HashMap;
 
-    let config = AgentCommandConfig {
-        cmd: "test-cmd".to_string(),
-        prompt: "test prompt".to_string(),
-        env_vars: HashMap::new(),
-        parser_type: JsonParserType::Claude,
-        logfile: "/tmp/test.log".to_string(),
-        display_name: "test".to_string(),
-    };
+        let config = AgentCommandConfig {
+            cmd: "test-cmd".to_string(),
+            prompt: "test prompt".to_string(),
+            env_vars: HashMap::new(),
+            parser_type: JsonParserType::Claude,
+            logfile: "/tmp/test.log".to_string(),
+            display_name: "test".to_string(),
+        };
 
-    let r1 = mock.execute(&config).unwrap();
-    assert_eq!(r1.exit_code, 0);
-    assert_eq!(r1.stdout, "output");
+        let r1 = mock.execute(&config).unwrap();
+        assert_eq!(r1.exit_code, 0);
+        assert_eq!(r1.stdout, "output");
 
-    let r2 = mock.execute(&config).unwrap();
-    assert_eq!(r2.exit_code, 1);
-    assert_eq!(r2.stderr, "error");
+        let r2 = mock.execute(&config).unwrap();
+        assert_eq!(r2.exit_code, 1);
+        assert_eq!(r2.stderr, "error");
+    });
 }
 
 /// Test that MockAgentExecutor call capture works.
 #[test]
 fn test_mock_agent_executor_call_capture() {
-    let mock = MockAgentExecutor::new();
+    with_default_timeout(|| {
+        let mock = MockAgentExecutor::new();
 
-    use ralph_workflow::agents::JsonParserType;
-    use ralph_workflow::pipeline::test_trait::AgentCommandConfig;
-    use std::collections::HashMap;
+        use ralph_workflow::agents::JsonParserType;
+        use ralph_workflow::pipeline::test_trait::AgentCommandConfig;
+        use std::collections::HashMap;
 
-    let config1 = AgentCommandConfig {
-        cmd: "claude -p".to_string(),
-        prompt: "prompt1".to_string(),
-        env_vars: HashMap::new(),
-        parser_type: JsonParserType::Claude,
-        logfile: "/tmp/test.log".to_string(),
-        display_name: "test".to_string(),
-    };
+        let config1 = AgentCommandConfig {
+            cmd: "claude -p".to_string(),
+            prompt: "prompt1".to_string(),
+            env_vars: HashMap::new(),
+            parser_type: JsonParserType::Claude,
+            logfile: "/tmp/test.log".to_string(),
+            display_name: "test".to_string(),
+        };
 
-    let config2 = AgentCommandConfig {
-        cmd: "codex run".to_string(),
-        prompt: "prompt2".to_string(),
-        env_vars: HashMap::new(),
-        parser_type: JsonParserType::Codex,
-        logfile: "/tmp/test.log".to_string(),
-        display_name: "test".to_string(),
-    };
+        let config2 = AgentCommandConfig {
+            cmd: "codex run".to_string(),
+            prompt: "prompt2".to_string(),
+            env_vars: HashMap::new(),
+            parser_type: JsonParserType::Codex,
+            logfile: "/tmp/test.log".to_string(),
+            display_name: "test".to_string(),
+        };
 
-    let _ = mock.execute(&config1);
-    let _ = mock.execute(&config2);
+        let _ = mock.execute(&config1);
+        let _ = mock.execute(&config2);
 
-    assert_eq!(mock.call_count(), 2);
-    assert_eq!(mock.prompts(), vec!["prompt1", "prompt2"]);
-    assert_eq!(mock.commands(), vec!["claude -p", "codex run"]);
+        assert_eq!(mock.call_count(), 2);
+        assert_eq!(mock.prompts(), vec!["prompt1", "prompt2"]);
+        assert_eq!(mock.commands(), vec!["claude -p", "codex run"]);
 
-    // Test filtering
-    let claude_calls = mock.calls_matching("claude");
-    assert_eq!(claude_calls.len(), 1);
+        // Test filtering
+        let claude_calls = mock.calls_matching("claude");
+        assert_eq!(claude_calls.len(), 1);
+    });
 }
 
 /// Test that mock error variants work.
 #[test]
 fn test_mock_error_variants() {
-    let mock_git = MockGit::new_error();
-    assert!(GitOps::repo_root(&mock_git).is_err());
-    assert!(GitOps::diff(&mock_git).is_err());
+    with_default_timeout(|| {
+        let mock_git = MockGit::new_error();
+        assert!(GitOps::repo_root(&mock_git).is_err());
+        assert!(GitOps::diff(&mock_git).is_err());
 
-    let mock_executor = MockAgentExecutor::new_error();
-    use ralph_workflow::agents::JsonParserType;
-    use ralph_workflow::pipeline::test_trait::AgentCommandConfig;
-    use std::collections::HashMap;
+        let mock_executor = MockAgentExecutor::new_error();
+        use ralph_workflow::agents::JsonParserType;
+        use ralph_workflow::pipeline::test_trait::AgentCommandConfig;
+        use std::collections::HashMap;
 
-    let config = AgentCommandConfig {
-        cmd: "test".to_string(),
-        prompt: "test".to_string(),
-        env_vars: HashMap::new(),
-        parser_type: JsonParserType::Claude,
-        logfile: "/tmp/test.log".to_string(),
-        display_name: "test".to_string(),
-    };
+        let config = AgentCommandConfig {
+            cmd: "test".to_string(),
+            prompt: "test".to_string(),
+            env_vars: HashMap::new(),
+            parser_type: JsonParserType::Claude,
+            logfile: "/tmp/test.log".to_string(),
+            display_name: "test".to_string(),
+        };
 
-    assert!(mock_executor.execute(&config).is_err());
+        assert!(mock_executor.execute(&config).is_err());
+    });
 }
 
 // ============================================================================
@@ -170,158 +187,172 @@ fn test_mock_error_variants() {
 /// Test that MockFileOps can be created and used via FileOps trait.
 #[test]
 fn test_mock_file_ops_creation() {
-    let mock = MockFileOps::new();
-    assert!(!mock.exists(Path::new("nonexistent.txt")));
+    with_default_timeout(|| {
+        let mock = MockFileOps::new();
+        assert!(!mock.exists(Path::new("nonexistent.txt")));
+    });
 }
 
 /// Test that MockFileOps builder pattern works for virtual file system.
 #[test]
 fn test_mock_file_ops_builder() {
-    let mock = MockFileOps::new()
-        .with_file(".agent/PLAN.md", "# Plan\n\nStep 1: Do something")
-        .with_file("PROMPT.md", "# Feature Request\n\nAdd a button");
+    with_default_timeout(|| {
+        let mock = MockFileOps::new()
+            .with_file(".agent/PLAN.md", "# Plan\n\nStep 1: Do something")
+            .with_file("PROMPT.md", "# Feature Request\n\nAdd a button");
 
-    // Check file existence
-    assert!(mock.exists(Path::new(".agent/PLAN.md")));
-    assert!(mock.exists(Path::new("PROMPT.md")));
-    assert!(!mock.exists(Path::new(".agent/ISSUES.md")));
+        // Check file existence
+        assert!(mock.exists(Path::new(".agent/PLAN.md")));
+        assert!(mock.exists(Path::new("PROMPT.md")));
+        assert!(!mock.exists(Path::new(".agent/ISSUES.md")));
 
-    // Read file contents
-    let plan = mock.read_to_string(Path::new(".agent/PLAN.md")).unwrap();
-    assert!(plan.contains("# Plan"));
-    assert!(plan.contains("Step 1"));
+        // Read file contents
+        let plan = mock.read_to_string(Path::new(".agent/PLAN.md")).unwrap();
+        assert!(plan.contains("# Plan"));
+        assert!(plan.contains("Step 1"));
+    });
 }
 
 /// Test that MockFileOps captures write operations.
 #[test]
 fn test_mock_file_ops_captures_writes() {
-    let mock = MockFileOps::new();
+    with_default_timeout(|| {
+        let mock = MockFileOps::new();
 
-    // Write a commit message
-    mock.write_file(Path::new(".agent/commit-message.txt"), "feat: add button")
-        .unwrap();
+        // Write a commit message
+        mock.write_file(Path::new(".agent/commit-message.txt"), "feat: add button")
+            .unwrap();
 
-    // Write an issues file
-    mock.write_file(Path::new(".agent/ISSUES.md"), "- Issue 1\n- Issue 2")
-        .unwrap();
+        // Write an issues file
+        mock.write_file(Path::new(".agent/ISSUES.md"), "- Issue 1\n- Issue 2")
+            .unwrap();
 
-    // Verify writes were captured
-    assert!(mock.was_written(Path::new(".agent/commit-message.txt")));
-    assert!(mock.was_written(Path::new(".agent/ISSUES.md")));
-    assert!(!mock.was_written(Path::new(".agent/PLAN.md")));
+        // Verify writes were captured
+        assert!(mock.was_written(Path::new(".agent/commit-message.txt")));
+        assert!(mock.was_written(Path::new(".agent/ISSUES.md")));
+        assert!(!mock.was_written(Path::new(".agent/PLAN.md")));
 
-    // Verify written content
-    let commit_msg = mock
-        .get_written_content(Path::new(".agent/commit-message.txt"))
-        .unwrap();
-    assert_eq!(commit_msg, "feat: add button");
+        // Verify written content
+        let commit_msg = mock
+            .get_written_content(Path::new(".agent/commit-message.txt"))
+            .unwrap();
+        assert_eq!(commit_msg, "feat: add button");
+    });
 }
 
 /// Test that MockFileOps implements FileOps trait with full roundtrip.
 #[test]
 fn test_mock_file_ops_implements_file_ops_trait() {
-    let mock = MockFileOps::new();
+    with_default_timeout(|| {
+        let mock = MockFileOps::new();
 
-    // Write via FileOps trait
-    FileOps::write_file(&mock, Path::new("test.txt"), "content").unwrap();
+        // Write via FileOps trait
+        FileOps::write_file(&mock, Path::new("test.txt"), "content").unwrap();
 
-    // Read via FileOps trait
-    let content = FileOps::read_to_string(&mock, Path::new("test.txt")).unwrap();
-    assert_eq!(content, "content");
+        // Read via FileOps trait
+        let content = FileOps::read_to_string(&mock, Path::new("test.txt")).unwrap();
+        assert_eq!(content, "content");
 
-    // Check existence via FileOps trait
-    assert!(FileOps::exists(&mock, Path::new("test.txt")));
-    assert!(FileOps::is_file(&mock, Path::new("test.txt")));
+        // Check existence via FileOps trait
+        assert!(FileOps::exists(&mock, Path::new("test.txt")));
+        assert!(FileOps::is_file(&mock, Path::new("test.txt")));
 
-    // Remove via FileOps trait
-    FileOps::remove_file(&mock, Path::new("test.txt")).unwrap();
-    assert!(!FileOps::exists(&mock, Path::new("test.txt")));
+        // Remove via FileOps trait
+        FileOps::remove_file(&mock, Path::new("test.txt")).unwrap();
+        assert!(!FileOps::exists(&mock, Path::new("test.txt")));
+    });
 }
 
 /// Test that MockFileOps tracks all operations in order.
 #[test]
 fn test_mock_file_ops_operation_tracking() {
-    let mock = MockFileOps::new().with_file("existing.txt", "content");
+    with_default_timeout(|| {
+        let mock = MockFileOps::new().with_file("existing.txt", "content");
 
-    let _ = mock.read_to_string(Path::new("existing.txt"));
-    let _ = mock.exists(Path::new("other.txt"));
-    let _ = mock.write_file(Path::new("new.txt"), "new content");
+        let _ = mock.read_to_string(Path::new("existing.txt"));
+        let _ = mock.exists(Path::new("other.txt"));
+        let _ = mock.write_file(Path::new("new.txt"), "new content");
 
-    let ops = mock.operations();
-    assert_eq!(ops.len(), 3);
+        let ops = mock.operations();
+        assert_eq!(ops.len(), 3);
 
-    // Verify operation types
-    assert!(matches!(ops[0], FileOperation::Read(_)));
-    assert!(matches!(ops[1], FileOperation::Exists(_)));
-    assert!(matches!(ops[2], FileOperation::Write(_, _)));
+        // Verify operation types
+        assert!(matches!(ops[0], FileOperation::Read(_)));
+        assert!(matches!(ops[1], FileOperation::Exists(_)));
+        assert!(matches!(ops[2], FileOperation::Write(_, _)));
+    });
 }
 
 /// Test that MockFileOps error variants work.
 #[test]
 fn test_mock_file_ops_error_variants() {
-    // Test error mode
-    let mock_error = MockFileOps::new_error();
-    assert!(mock_error.read_to_string(Path::new("any.txt")).is_err());
-    assert!(mock_error.write_file(Path::new("any.txt"), "x").is_err());
+    with_default_timeout(|| {
+        // Test error mode
+        let mock_error = MockFileOps::new_error();
+        assert!(mock_error.read_to_string(Path::new("any.txt")).is_err());
+        assert!(mock_error.write_file(Path::new("any.txt"), "x").is_err());
 
-    // Test specific path errors
-    let mock_specific = MockFileOps::new()
-        .with_file("readable.txt", "content")
-        .with_read_error(
-            "readable.txt",
-            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no permission"),
-        );
+        // Test specific path errors
+        let mock_specific = MockFileOps::new()
+            .with_file("readable.txt", "content")
+            .with_read_error(
+                "readable.txt",
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no permission"),
+            );
 
-    assert!(mock_specific
-        .read_to_string(Path::new("readable.txt"))
-        .is_err());
+        assert!(mock_specific
+            .read_to_string(Path::new("readable.txt"))
+            .is_err());
+    });
 }
 
 /// Test that MockFileOps can simulate agent file operations.
 #[test]
 fn test_mock_file_ops_agent_workflow_scenario() {
-    // Simulate a workflow where:
-    // 1. Check if PLAN.md exists
-    // 2. Read PROMPT.md
-    // 3. Write PLAN.md
-    // 4. Write commit-message.txt
-    // 5. Delete PLAN.md after integration
+    with_default_timeout(|| {
+        // Simulate a workflow where:
+        // 1. Check if PLAN.md exists
+        // 2. Read PROMPT.md
+        // 3. Write PLAN.md
+        // 4. Write commit-message.txt
+        // 5. Delete PLAN.md after integration
 
-    let mock = MockFileOps::new().with_file("PROMPT.md", "# Feature: Add login button");
+        let mock = MockFileOps::new().with_file("PROMPT.md", "# Feature: Add login button");
 
-    // Phase 1: Planning
-    assert!(!mock.exists(Path::new(".agent/PLAN.md")));
-    let prompt = mock.read_to_string(Path::new("PROMPT.md")).unwrap();
-    assert!(prompt.contains("login button"));
+        // Phase 1: Planning
+        assert!(!mock.exists(Path::new(".agent/PLAN.md")));
+        let prompt = mock.read_to_string(Path::new("PROMPT.md")).unwrap();
+        assert!(prompt.contains("login button"));
 
-    // Phase 2: Agent produces a plan
-    mock.write_file(
-        Path::new(".agent/PLAN.md"),
-        "# Plan\n\n1. Create button component",
-    )
-    .unwrap();
-    assert!(mock.exists(Path::new(".agent/PLAN.md")));
-
-    // Phase 3: Commit generation
-    mock.write_file(
-        Path::new(".agent/commit-message.txt"),
-        "feat(ui): add login button",
-    )
-    .unwrap();
-
-    // Phase 4: Cleanup
-    mock.remove_file(Path::new(".agent/PLAN.md")).unwrap();
-    assert!(!mock.exists(Path::new(".agent/PLAN.md")));
-
-    // Verify the workflow operations
-    assert!(mock.was_read(Path::new("PROMPT.md")));
-    assert!(mock.was_written(Path::new(".agent/PLAN.md")));
-    assert!(mock.was_written(Path::new(".agent/commit-message.txt")));
-    assert!(mock.was_removed(Path::new(".agent/PLAN.md")));
-
-    // Verify final commit message is available
-    let commit_msg = mock
-        .get_written_content(Path::new(".agent/commit-message.txt"))
+        // Phase 2: Agent produces a plan
+        mock.write_file(
+            Path::new(".agent/PLAN.md"),
+            "# Plan\n\n1. Create button component",
+        )
         .unwrap();
-    assert!(commit_msg.contains("login button"));
+        assert!(mock.exists(Path::new(".agent/PLAN.md")));
+
+        // Phase 3: Commit generation
+        mock.write_file(
+            Path::new(".agent/commit-message.txt"),
+            "feat(ui): add login button",
+        )
+        .unwrap();
+
+        // Phase 4: Cleanup
+        mock.remove_file(Path::new(".agent/PLAN.md")).unwrap();
+        assert!(!mock.exists(Path::new(".agent/PLAN.md")));
+
+        // Verify the workflow operations
+        assert!(mock.was_read(Path::new("PROMPT.md")));
+        assert!(mock.was_written(Path::new(".agent/PLAN.md")));
+        assert!(mock.was_written(Path::new(".agent/commit-message.txt")));
+        assert!(mock.was_removed(Path::new(".agent/PLAN.md")));
+
+        // Verify final commit message is available
+        let commit_msg = mock
+            .get_written_content(Path::new(".agent/commit-message.txt"))
+            .unwrap();
+        assert!(commit_msg.contains("login button"));
+    });
 }

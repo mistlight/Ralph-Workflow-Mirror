@@ -112,23 +112,23 @@ pub fn run_development_phase(
                 .with_prompt_and_plan(prompt_md, plan_md),
         );
 
-        let exit_code = {
-            let mut runtime = PipelineRuntime {
-                timer: ctx.timer,
-                logger: ctx.logger,
-                colors: ctx.colors,
-                config: ctx.config,
-            };
-            run_with_fallback(
-                AgentRole::Developer,
-                &format!("run #{i}"),
-                &prompt,
-                &format!(".agent/logs/developer_{i}"),
-                &mut runtime,
-                ctx.registry,
-                ctx.developer_agent,
-            )?
+        let mut runtime = PipelineRuntime {
+            timer: ctx.timer,
+            logger: ctx.logger,
+            colors: ctx.colors,
+            config: ctx.config,
+            #[cfg(any(test, feature = "test-utils"))]
+            agent_executor: None,
         };
+        let exit_code = run_with_fallback(
+            AgentRole::Developer,
+            &format!("run #{i}"),
+            &prompt,
+            &format!(".agent/logs/developer_{i}"),
+            &mut runtime,
+            ctx.registry,
+            ctx.developer_agent,
+        )?;
 
         if exit_code != 0 {
             ctx.logger.error(&format!(
@@ -218,23 +218,23 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
     );
 
     let log_dir = format!(".agent/logs/planning_{iteration}");
-    let _exit_code = {
-        let mut runtime = PipelineRuntime {
-            timer: ctx.timer,
-            logger: ctx.logger,
-            colors: ctx.colors,
-            config: ctx.config,
-        };
-        run_with_fallback(
-            AgentRole::Developer,
-            &format!("planning #{iteration}"),
-            &plan_prompt,
-            &log_dir,
-            &mut runtime,
-            ctx.registry,
-            ctx.developer_agent,
-        )
-    }?;
+    let mut runtime = PipelineRuntime {
+        timer: ctx.timer,
+        logger: ctx.logger,
+        colors: ctx.colors,
+        config: ctx.config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
+    };
+    let _exit_code = run_with_fallback(
+        AgentRole::Developer,
+        &format!("planning #{iteration}"),
+        &plan_prompt,
+        &log_dir,
+        &mut runtime,
+        ctx.registry,
+        ctx.developer_agent,
+    )?;
 
     // ORCHESTRATOR-CONTROLLED FILE I/O:
     // Prefer extraction from JSON log (orchestrator write), but fall back to
@@ -399,7 +399,9 @@ fn handle_commit_after_development(ctx: &mut PhaseContext<'_>) -> anyhow::Result
         let git_name = ctx.config.git_user_name.as_deref();
         let git_email = ctx.config.git_user_email.as_deref();
 
-        match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
+        let result = commit_with_generated_message(&diff, &agent, git_name, git_email, ctx);
+
+        match result {
             CommitResultFallback::Success(oid) => {
                 ctx.logger
                     .success(&format!("Commit created successfully: {oid}"));

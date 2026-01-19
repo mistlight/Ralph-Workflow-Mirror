@@ -474,14 +474,16 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         create_phase_context(ctx, &mut timer, &mut stats, review_guidelines.as_ref());
     save_start_commit_or_warn(ctx);
 
-    // Run pre-development rebase
-    run_initial_rebase(
-        &ctx.args,
-        &ctx.config,
-        &ctx.template_context,
-        &ctx.logger,
-        ctx.colors,
-    )?;
+    // Run pre-development rebase (only if explicitly requested via --with-rebase)
+    if ctx.args.rebase_flags.with_rebase {
+        run_initial_rebase(
+            &ctx.args,
+            &ctx.config,
+            &ctx.template_context,
+            &ctx.logger,
+            ctx.colors,
+        )?;
+    }
 
     // Run pipeline phases
     run_development(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
@@ -491,14 +493,16 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     run_review_and_fix(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
     check_prompt_restoration(ctx, &mut prompt_monitor, "review");
 
-    // Run post-review rebase
-    run_post_review_rebase(
-        &ctx.args,
-        &ctx.config,
-        &ctx.template_context,
-        &ctx.logger,
-        ctx.colors,
-    )?;
+    // Run post-review rebase (only if explicitly requested via --with-rebase)
+    if ctx.args.rebase_flags.with_rebase {
+        run_post_review_rebase(
+            &ctx.args,
+            &ctx.config,
+            &ctx.template_context,
+            &ctx.logger,
+            ctx.colors,
+        )?;
+    }
 
     update_status("In progress.", ctx.config.isolation_mode)?;
 
@@ -1295,6 +1299,8 @@ fn run_ai_conflict_resolution(
         logger,
         colors: &colors,
         config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
     };
 
     // Output validator: checks if agent produced valid output OR resolved conflicts

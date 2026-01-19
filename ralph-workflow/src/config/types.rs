@@ -185,6 +185,8 @@ pub struct Config {
     pub(crate) developer_cmd: Option<String>,
     /// Reviewer command override
     pub(crate) reviewer_cmd: Option<String>,
+    /// Commit command override
+    pub(crate) commit_cmd: Option<String>,
     /// Developer model override (e.g., "-m opencode/glm-4.7-free")
     /// Passed to the agent's `model_flag` parameter
     pub(crate) developer_model: Option<String>,

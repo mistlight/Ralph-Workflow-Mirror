@@ -105,6 +105,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         reviewer_agent: None,  // Set from agent_chain or CLI
         developer_cmd: None,
         reviewer_cmd: None,
+        commit_cmd: None,
         developer_model: None,
         reviewer_model: None,
         developer_provider: None,
@@ -150,6 +151,7 @@ fn default_config() -> Config {
         reviewer_agent: None,
         developer_cmd: None,
         reviewer_cmd: None,
+        commit_cmd: None,
         developer_model: None,
         reviewer_model: None,
         developer_provider: None,
@@ -235,6 +237,7 @@ fn apply_command_env(config: &mut Config, warnings: &mut Vec<String>) {
     for (env_var, field) in [
         ("RALPH_DEVELOPER_CMD", &mut config.developer_cmd),
         ("RALPH_REVIEWER_CMD", &mut config.reviewer_cmd),
+        ("RALPH_COMMIT_CMD", &mut config.commit_cmd),
     ] {
         if let Ok(val) = env::var(env_var) {
             let trimmed = val.trim();
