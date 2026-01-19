@@ -436,13 +436,47 @@ impl XsdValidationError {
     }
 
     /// Format this error as a concise message for AI retry prompt.
+    ///
+    /// This provides an actionable, human-readable error message that guides
+    /// the AI agent toward producing valid XML output.
     pub fn format_for_ai_retry(&self) -> String {
-        format!(
-            "Validation failed for '{}': {}. {}",
-            self.element_path,
-            self.error_type.description(),
-            self.suggestion
-        )
+        match self.error_type {
+            XsdErrorType::MissingRequiredElement => {
+                format!(
+                    "MISSING REQUIRED ELEMENT: '{}' is required but was not found.\n\n\
+                     What was expected: {}\n\n\
+                     How to fix: {}",
+                    self.element_path, self.expected, self.suggestion
+                )
+            }
+            XsdErrorType::UnexpectedElement => {
+                format!(
+                    "UNEXPECTED ELEMENT: Found '{}' which is not allowed.\n\n\
+                     What was expected: {}\n\
+                     What was found: {}\n\n\
+                     How to fix: {}",
+                    self.element_path, self.expected, self.found, self.suggestion
+                )
+            }
+            XsdErrorType::InvalidContent => {
+                format!(
+                    "INVALID CONTENT: The content of '{}' does not meet requirements.\n\n\
+                     What was expected: {}\n\
+                     What was found: {}\n\n\
+                     How to fix: {}",
+                    self.element_path, self.expected, self.found, self.suggestion
+                )
+            }
+            XsdErrorType::MalformedXml => {
+                format!(
+                    "MALFORMED XML: The XML structure is invalid.\n\n\
+                     What was expected: {}\n\
+                     What was found: {}\n\n\
+                     How to fix: {}",
+                    self.expected, self.found, self.suggestion
+                )
+            }
+        }
     }
 }
 

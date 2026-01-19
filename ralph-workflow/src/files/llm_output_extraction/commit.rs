@@ -12,6 +12,7 @@ use super::cleaning::{
     final_escape_sequence_cleanup, find_conventional_commit_start, looks_like_analysis_text,
     unescape_json_strings, unescape_json_strings_aggressive,
 };
+use super::xml_extraction::extract_xml_commit;
 use super::xsd_validation::validate_xml_against_xsd;
 use crate::agents::AgentErrorKind;
 
@@ -121,8 +122,13 @@ struct StructuredCommitMessage {
 
 /// Try to extract commit message from XML format with detailed tracing.
 ///
-/// This function looks for the distinctive `<ralph-commit>` tags used by our
-/// XML-based commit prompt template. The XML format is preferred because:
+/// This function uses flexible XML extraction to handle various AI embedding patterns:
+/// - Direct XML tags at content start
+/// - XML in markdown code fences (```xml, ```)
+/// - XML in JSON strings (escaped)
+/// - XML embedded within analysis text
+///
+/// The XML format is preferred because:
 /// - No escape sequence issues (actual newlines work fine)
 /// - Distinctive tags unlikely to appear in LLM analysis text
 /// - Clear boundaries for parsing
@@ -163,39 +169,21 @@ pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, Stri
         content.replace('\n', "\\n")
     };
 
-    // Find the <ralph-commit> block
-    let Some(commit_start) = content.find("<ralph-commit>") else {
-        return (
-            None,
-            format!(
-                "No <ralph-commit> tag found (content length: {content_len}, starts with: '{content_preview}')"
-            ),
-        );
+    // Use the flexible XML extraction that handles various AI embedding patterns
+    let xml_block = match extract_xml_commit(content) {
+        Some(xml) => xml,
+        None => {
+            return (
+                None,
+                format!(
+                    "No <ralph-commit> tag found in any extraction pattern (content length: {content_len}, starts with: '{content_preview}')"
+                ),
+            );
+        }
     };
 
-    let Some(commit_end) = content.find("</ralph-commit>") else {
-        return (
-            None,
-            format!(
-                "Found <ralph-commit> at pos {commit_start}, but no closing </ralph-commit> tag"
-            ),
-        );
-    };
-
-    if commit_start >= commit_end {
-        return (
-            None,
-            format!(
-                "Malformed XML: </ralph-commit> at {commit_end} appears before <ralph-commit> at {commit_start}"
-            ),
-        );
-    }
-
-    // Run XSD validation on the XML block
-    // commit_end is the position where </ralph-commit> starts, so we need to include the full tag
-    let xml_end = commit_end + "</ralph-commit>".len();
-    let xml_block = &content[commit_start..xml_end];
-    let xsd_result = validate_xml_against_xsd(xml_block);
+    // Run XSD validation on the extracted XML block
+    let xsd_result = validate_xml_against_xsd(&xml_block);
 
     let message = match xsd_result {
         Ok(elements) => {
@@ -217,10 +205,22 @@ pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, Stri
     // Determine body presence for logging
     let has_body = message.lines().count() > 1;
 
+    // Detect which extraction pattern was used for better logging
+    let extraction_pattern = if content.trim().starts_with("<ralph-commit>") {
+        "direct XML"
+    } else if content.contains("```xml") || content.contains("```\n<ralph-commit>") {
+        "markdown code fence"
+    } else if content.contains("{\"result\":") || content.contains("\"result\":") {
+        "JSON string"
+    } else {
+        "embedded search"
+    };
+
     (
         Some(message.clone()),
         format!(
-            "Found <ralph-commit> at pos {commit_start}, XSD validation passed, body={}, message: '{}'",
+            "Found <ralph-commit> via {}, XSD validation passed, body={}, message: '{}'",
+            extraction_pattern,
             if has_body { "present" } else { "absent" },
             if message.len() > 80 {
                 format!("{}...", &message[..80].replace('\n', "\\n"))

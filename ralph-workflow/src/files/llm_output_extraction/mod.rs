@@ -22,6 +22,7 @@ pub mod cleaning;
 mod commit;
 mod parsers;
 mod types;
+pub mod xml_extraction;
 pub mod xsd_validation;
 
 // Re-export public types

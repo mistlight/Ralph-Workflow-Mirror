@@ -29,9 +29,8 @@ mod types;
 
 // Re-export all public items for backward compatibility
 pub use commit::{
-    prompt_emergency_commit_with_context, prompt_emergency_no_diff_commit_with_context,
-    prompt_fix_with_context, prompt_generate_commit_message_with_diff_with_context,
-    prompt_xsd_retry_with_context,
+    prompt_emergency_commit_with_context, prompt_fix_with_context,
+    prompt_generate_commit_message_with_diff_with_context, prompt_xsd_retry_with_context,
 };
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
 pub use rebase::{

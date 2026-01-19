@@ -109,16 +109,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         m.insert(
-            "commit_emergency_no_diff",
-            EmbeddedTemplate {
-                name: "commit_emergency_no_diff",
-                content: include_str!("templates/commit_emergency_no_diff.txt"),
-                description: "Emergency commit message without diff (last resort)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
             "commit_message_fallback",
             EmbeddedTemplate {
                 name: "commit_message_fallback",

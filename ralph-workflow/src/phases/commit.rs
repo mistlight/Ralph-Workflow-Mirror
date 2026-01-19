@@ -25,8 +25,8 @@ use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
 use crate::prompts::{
-    prompt_emergency_commit_with_context, prompt_emergency_no_diff_commit_with_context,
-    prompt_generate_commit_message_with_diff_with_context, prompt_xsd_retry_with_context,
+    prompt_emergency_commit_with_context, prompt_generate_commit_message_with_diff_with_context,
+    prompt_xsd_retry_with_context,
 };
 use std::fmt;
 use std::fs::{self, File};
@@ -116,8 +116,6 @@ enum CommitRetryStrategy {
     XsdRetry,
     /// Emergency prompt - maximum strictness
     Emergency,
-    /// Emergency no-diff - absolute last resort
-    EmergencyNoDiff,
 }
 
 impl CommitRetryStrategy {
@@ -127,7 +125,6 @@ impl CommitRetryStrategy {
             Self::Initial => "initial XML prompt",
             Self::XsdRetry => "XSD validation retry",
             Self::Emergency => "emergency prompt",
-            Self::EmergencyNoDiff => "emergency no-diff prompt",
         }
     }
 
@@ -136,8 +133,7 @@ impl CommitRetryStrategy {
         match self {
             Self::Initial => Some(Self::XsdRetry),
             Self::XsdRetry => Some(Self::Emergency),
-            Self::Emergency => Some(Self::EmergencyNoDiff),
-            Self::EmergencyNoDiff => None,
+            Self::Emergency => None,
         }
     }
 
@@ -147,22 +143,20 @@ impl CommitRetryStrategy {
             Self::Initial => 1,
             Self::XsdRetry => 2,
             Self::Emergency => 3,
-            Self::EmergencyNoDiff => 4,
         }
     }
 
     /// Get the total number of retry stages
     const fn total_stages() -> usize {
-        4 // Initial + XsdRetry + Emergency + EmergencyNoDiff
+        3 // Initial + XsdRetry + Emergency
     }
 
     /// Get the maximum number of in-session retries for this strategy
     const fn max_session_retries(self) -> usize {
         match self {
-            Self::Initial => 5,         // Allow 5 retries with XSD validation feedback
-            Self::XsdRetry => 5,        // Allow 5 retries with clearer error messages
-            Self::Emergency => 1,       // Single attempt for emergency
-            Self::EmergencyNoDiff => 1, // Single attempt for no-diff
+            Self::Initial => 5,   // Allow 5 retries with XSD validation feedback
+            Self::XsdRetry => 5,  // Allow 5 retries with clearer error messages
+            Self::Emergency => 3, // Allow 3 retries for emergency (was 1, increased to account for no separate no-diff strategy)
         }
     }
 }
@@ -426,9 +420,6 @@ fn generate_prompt_for_strategy(
         }
         CommitRetryStrategy::Emergency => {
             prompt_emergency_commit_with_context(template_context, working_diff)
-        }
-        CommitRetryStrategy::EmergencyNoDiff => {
-            prompt_emergency_no_diff_commit_with_context(template_context, working_diff)
         }
     }
 }
@@ -977,15 +968,14 @@ fn try_emergency_no_diff_recovery(
 ) -> anyhow::Result<CommitMessageResult> {
     runtime
         .logger
-        .warn("All truncation stages failed. Trying emergency no-diff prompt...");
-    let working_diff = diff; // Use original diff for no-diff prompt
-    let no_diff_prompt =
-        prompt_emergency_no_diff_commit_with_context(template_context, working_diff);
+        .warn("All truncation stages failed. Trying emergency prompt with diff...");
+    let working_diff = diff; // Use original diff for emergency prompt
+    let emergency_prompt = prompt_emergency_commit_with_context(template_context, working_diff);
 
     let exit_code = run_with_fallback(
         AgentRole::Commit,
-        "generate commit message (emergency no-diff)",
-        &no_diff_prompt,
+        "generate commit message (emergency)",
+        &emergency_prompt,
         log_dir,
         runtime,
         registry,

@@ -306,29 +306,6 @@ pub fn prompt_emergency_commit_with_context(context: &TemplateContext, diff: &st
         })
 }
 
-/// Generate emergency no-diff commit prompt using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-///
-/// # Arguments
-///
-/// * `context` - Template context containing the template registry
-pub fn prompt_emergency_no_diff_commit_with_context(
-    context: &TemplateContext,
-    _diff: &str,
-) -> String {
-    let template_content = context
-        .registry()
-        .get_template("commit_emergency_no_diff")
-        .unwrap_or_else(|_| include_str!("templates/commit_emergency_no_diff.txt").to_string());
-    Template::new(&template_content)
-        .render(&std::collections::HashMap::new())
-        .unwrap_or_else(|_| {
-            // Fallback to hardcoded commit message if template rendering fails
-            "<ralph-commit>\n<ralph-subject>chore: automated commit</ralph-subject>\n</ralph-commit>".to_string()
-        })
-}
-
 /// Generate XSD validation retry prompt with error feedback.
 ///
 /// This prompt is used when an AI agent produces XML that fails XSD validation.
