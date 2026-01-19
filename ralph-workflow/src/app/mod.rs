@@ -1288,18 +1288,42 @@ fn build_resolution_prompt(
     conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
     template_context: &TemplateContext,
 ) -> String {
-    use crate::prompts::build_conflict_resolution_prompt_with_context;
+    build_enhanced_resolution_prompt(conflicts, None, template_context)
+        .unwrap_or_else(|_| String::new())
+}
+
+/// Build the enhanced conflict resolution prompt with optional branch info.
+///
+/// This function uses the enhanced prompt builder when branch info is available,
+/// falling back to the standard prompt when it's not.
+fn build_enhanced_resolution_prompt(
+    conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
+    branch_info: Option<&crate::prompts::BranchInfo>,
+    template_context: &TemplateContext,
+) -> anyhow::Result<String> {
     use std::fs;
 
     let prompt_md_content = fs::read_to_string("PROMPT.md").ok();
     let plan_content = fs::read_to_string(".agent/PLAN.md").ok();
 
-    build_conflict_resolution_prompt_with_context(
-        template_context,
-        conflicts,
-        prompt_md_content.as_deref(),
-        plan_content.as_deref(),
-    )
+    // Use enhanced prompt with branch info if available
+    if let Some(info) = branch_info {
+        Ok(crate::prompts::build_enhanced_conflict_resolution_prompt(
+            template_context,
+            conflicts,
+            Some(info),
+            prompt_md_content.as_deref(),
+            plan_content.as_deref(),
+        ))
+    } else {
+        // Fall back to standard prompt
+        Ok(crate::prompts::build_conflict_resolution_prompt_with_context(
+            template_context,
+            conflicts,
+            prompt_md_content.as_deref(),
+            plan_content.as_deref(),
+        ))
+    }
 }
 
 /// Run AI agent to resolve conflicts with fallback mechanism.
@@ -1707,6 +1731,22 @@ fn try_resolve_conflicts_with_state_machine(
     // Transition to conflict resolution phase
     state_machine.transition_to(RebasePhase::ConflictResolutionInProgress)?;
 
+    // Collect branch info for enhanced conflict resolution context
+    let upstream_branch = state_machine.upstream_branch().to_string();
+    let branch_info = match crate::prompts::collect_branch_info(&upstream_branch) {
+        Ok(info) => {
+            logger.info(&format!(
+                "Branch context: {} diverging from {} by {} commit(s)",
+                info.current_branch, info.upstream_branch, info.diverging_count
+            ));
+            Some(info)
+        }
+        Err(e) => {
+            logger.warn(&format!("Failed to collect branch info: {e}, continuing without it"));
+            None
+        }
+    };
+
     // Maximum iterations for the review/fix cycle
     let max_iterations = 3;
 
@@ -1720,8 +1760,8 @@ fn try_resolve_conflicts_with_state_machine(
         // Collect conflict info and build prompt
         let conflicts = collect_conflict_info_or_error(&conflicted_files, logger)?;
         let resolution_prompt = if iteration == 1 {
-            // First attempt: use standard prompt
-            build_resolution_prompt(&conflicts, template_context)
+            // First attempt: use enhanced prompt with branch info
+            build_enhanced_resolution_prompt(&conflicts, branch_info.as_ref(), template_context)?
         } else {
             // Retry: add context about previous failures
             format!(
@@ -1731,7 +1771,7 @@ fn try_resolve_conflicts_with_state_machine(
                  1. ALL conflict markers (<<<<<<<, =======, >>>>>>>) are removed\n\
                  2. The code is syntactically valid\n\
                  3. You preserve the intent of BOTH sides where possible\n\n{}",
-                build_resolution_prompt(&conflicts, template_context),
+                build_enhanced_resolution_prompt(&conflicts, branch_info.as_ref(), template_context)?,
                 if iteration == max_iterations {
                     "This is your final attempt. If conflicts remain, manual intervention will be required."
                 } else {

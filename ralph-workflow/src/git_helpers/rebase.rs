@@ -315,11 +315,46 @@ pub fn classify_rebase_error(stderr: &str, stdout: &str) -> RebaseErrorKind {
         || combined.contains("ambiguous revision")
         || combined.contains("not found")
         || combined.contains("does not exist")
+        || combined.contains("bad revision")
+        || combined.contains("no such ref")
     {
         // Try to extract the revision name
         let revision = extract_revision(&combined);
         return RebaseErrorKind::InvalidRevision {
             revision: revision.unwrap_or_else(|| "unknown".to_string()),
+        };
+    }
+
+    // Shallow clone (missing history)
+    if combined.contains("shallow")
+        || combined.contains("depth")
+        || combined.contains("unreachable")
+        || combined.contains("needed single revision")
+        || combined.contains("does not have")
+    {
+        return RebaseErrorKind::RepositoryCorrupt {
+            details: format!(
+                "Shallow clone or missing history: {}",
+                extract_error_line(&combined)
+            ),
+        };
+    }
+
+    // Worktree conflict
+    if combined.contains("worktree")
+        || combined.contains("checked out")
+        || combined.contains("another branch")
+        || combined.contains("already checked out")
+    {
+        return RebaseErrorKind::ConcurrentOperation {
+            operation: "branch checked out in another worktree".to_string(),
+        };
+    }
+
+    // Submodule conflict
+    if combined.contains("submodule") || combined.contains(".gitmodules") {
+        return RebaseErrorKind::ContentConflict {
+            files: extract_conflict_files(&combined),
         };
     }
 

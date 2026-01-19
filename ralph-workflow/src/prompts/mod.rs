@@ -34,7 +34,8 @@ pub use commit::{
 };
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
 pub use rebase::{
-    build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict,
+    build_conflict_resolution_prompt_with_context, build_enhanced_conflict_resolution_prompt,
+    collect_branch_info, collect_conflict_info, BranchInfo, FileConflict,
 };
 pub use reviewer::{
     prompt_comprehensive_review_with_diff_with_context,

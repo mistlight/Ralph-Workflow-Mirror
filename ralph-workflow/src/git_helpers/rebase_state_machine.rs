@@ -6,7 +6,10 @@
 
 #![deny(unsafe_code)]
 
+use std::fs;
 use std::io;
+use std::io::Write;
+use std::path::Path;
 
 use super::rebase_checkpoint::{
     clear_rebase_checkpoint, load_rebase_checkpoint, rebase_checkpoint_exists,
@@ -15,6 +18,20 @@ use super::rebase_checkpoint::{
 
 /// Default maximum number of recovery attempts.
 const DEFAULT_MAX_RECOVERY_ATTEMPTS: u32 = 3;
+
+/// Rebase lock file name.
+const REBASE_LOCK_FILE: &str = "rebase.lock";
+
+/// Default lock timeout in seconds (30 minutes).
+const DEFAULT_LOCK_TIMEOUT_SECONDS: u64 = 1800;
+
+/// Get the rebase lock file path.
+///
+/// The lock is stored in `.agent/rebase.lock`
+/// relative to the current working directory.
+fn rebase_lock_path() -> String {
+    format!(".agent/{REBASE_LOCK_FILE}")
+}
 
 /// State machine for fault-tolerant rebase operations.
 ///
@@ -195,6 +212,152 @@ pub enum RecoveryAction {
     Skip,
 }
 
+/// RAII-style guard for rebase lock.
+///
+/// Automatically releases the lock when dropped.
+#[cfg(any(test, feature = "test-utils"))]
+pub struct RebaseLock {
+    /// Whether we own the lock
+    owns_lock: bool,
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl Drop for RebaseLock {
+    fn drop(&mut self) {
+        if self.owns_lock {
+            let _ = release_rebase_lock();
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl RebaseLock {
+    /// Create a new lock guard that owns the lock.
+    fn new() -> io::Result<Self> {
+        acquire_rebase_lock()?;
+        Ok(Self { owns_lock: true })
+    }
+
+    /// Relinquish ownership of the lock without releasing it.
+    ///
+    /// This is useful when transferring ownership.
+    #[must_use]
+    pub fn leak(mut self) -> bool {
+        let owned = self.owns_lock;
+        self.owns_lock = false;
+        owned
+    }
+}
+
+/// Acquire the rebase lock.
+///
+/// Creates a lock file with the current process ID and timestamp.
+/// Returns an error if the lock is held by another process.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The lock file exists and is not stale
+/// - The lock file cannot be created
+#[cfg(any(test, feature = "test-utils"))]
+pub fn acquire_rebase_lock() -> io::Result<()> {
+    let lock_path = rebase_lock_path();
+    let path = Path::new(&lock_path);
+
+    // Ensure .agent directory exists
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Check if lock already exists
+    if path.exists() {
+        if !is_lock_stale()? {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Rebase is already in progress. If you believe this is incorrect, \
+                 wait 30 minutes for the lock to expire or manually remove `.agent/rebase.lock`.",
+            ));
+        }
+        // Lock is stale, remove it
+        fs::remove_file(&path)?;
+    }
+
+    // Create lock file with PID and timestamp
+    let pid = std::process::id();
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let lock_content = format!("pid={pid}\ntimestamp={timestamp}\n");
+
+    let mut file = fs::File::create(&path)?;
+    file.write_all(lock_content.as_bytes())?;
+    file.sync_all()?;
+
+    Ok(())
+}
+
+/// Release the rebase lock.
+///
+/// Removes the lock file. Does nothing if no lock exists.
+///
+/// # Errors
+///
+/// Returns an error if the lock file exists but cannot be removed.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn release_rebase_lock() -> io::Result<()> {
+    let lock_path = rebase_lock_path();
+    let path = Path::new(&lock_path);
+
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+
+    Ok(())
+}
+
+/// Check if the lock file is stale.
+///
+/// A lock is considered stale if it's older than the timeout period.
+///
+/// # Returns
+///
+/// Returns `true` if the lock is stale, `false` otherwise.
+#[cfg(any(test, feature = "test-utils"))]
+fn is_lock_stale() -> io::Result<bool> {
+    let lock_path = rebase_lock_path();
+    let path = Path::new(&lock_path);
+
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    // Read lock file to get timestamp
+    let content = fs::read_to_string(&path)?;
+
+    // Parse timestamp from lock file
+    let timestamp_line = content
+        .lines()
+        .find(|line| line.starts_with("timestamp="))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Lock file missing timestamp"))?;
+
+    let timestamp_str = timestamp_line.strip_prefix("timestamp=").ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid timestamp format in lock file",
+        )
+    })?;
+
+    let lock_time = chrono::DateTime::parse_from_rfc3339(timestamp_str).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid timestamp format in lock file",
+        )
+    })?;
+
+    let now = chrono::Utc::now();
+    let elapsed = now.signed_duration_since(lock_time);
+
+    Ok(elapsed.num_seconds() > DEFAULT_LOCK_TIMEOUT_SECONDS as i64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +498,109 @@ mod tests {
         let _ = RecoveryAction::Retry;
         let _ = RecoveryAction::Abort;
         let _ = RecoveryAction::Skip;
+    }
+
+    #[test]
+    fn test_acquire_and_release_rebase_lock() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            // Acquire lock
+            acquire_rebase_lock().unwrap();
+
+            // Verify lock file exists
+            let lock_path = rebase_lock_path();
+            assert!(Path::new(&lock_path).exists());
+
+            // Release lock
+            release_rebase_lock().unwrap();
+
+            // Verify lock file is gone
+            assert!(!Path::new(&lock_path).exists());
+        });
+    }
+
+    #[test]
+    fn test_rebase_lock_prevents_duplicate() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            // Acquire first lock
+            acquire_rebase_lock().unwrap();
+
+            // Trying to acquire again should fail
+            let result = acquire_rebase_lock();
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("already in progress"));
+        });
+    }
+
+    #[test]
+    fn test_rebase_lock_guard_auto_releases() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            {
+                // Create lock guard
+                let _lock = RebaseLock::new().unwrap();
+                let lock_path = rebase_lock_path();
+                assert!(Path::new(&lock_path).exists());
+            }
+            // Lock should be released when guard goes out of scope
+
+            let lock_path = rebase_lock_path();
+            assert!(!Path::new(&lock_path).exists());
+        });
+    }
+
+    #[test]
+    fn test_rebase_lock_guard_leak() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            {
+                let lock = RebaseLock::new().unwrap();
+                let lock_path = rebase_lock_path();
+                assert!(Path::new(&lock_path).exists());
+
+                // Leak the lock - it won't be released
+                lock.leak();
+            }
+
+            // Lock should still exist after guard is dropped
+            let lock_path = rebase_lock_path();
+            assert!(Path::new(&lock_path).exists());
+
+            // Clean up
+            let _ = release_rebase_lock();
+        });
+    }
+
+    #[test]
+    fn test_stale_lock_is_replaced() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            // Create a lock file with an old timestamp
+            let lock_path = rebase_lock_path();
+            let old_timestamp = chrono::Utc::now()
+                - chrono::Duration::seconds(DEFAULT_LOCK_TIMEOUT_SECONDS as i64 + 60);
+            let lock_content = format!("pid=12345\ntimestamp={}\n", old_timestamp.to_rfc3339());
+
+            fs::create_dir_all(".agent").unwrap();
+            fs::write(&lock_path, lock_content).unwrap();
+
+            // Acquire lock should succeed since old lock is stale
+            acquire_rebase_lock().unwrap();
+
+            // Verify new lock file exists
+            assert!(Path::new(&lock_path).exists());
+
+            // Clean up
+            release_rebase_lock().unwrap();
+        });
     }
 }

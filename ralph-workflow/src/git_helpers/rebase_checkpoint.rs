@@ -23,6 +23,24 @@ pub fn rebase_checkpoint_path() -> String {
     format!("{AGENT_DIR}/{REBASE_CHECKPOINT_FILE}")
 }
 
+/// Get the rebase checkpoint backup file path.
+///
+/// The backup is stored in `.agent/rebase_checkpoint.json.bak`
+/// and is used for corruption recovery.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn rebase_checkpoint_backup_path() -> String {
+    format!("{AGENT_DIR}/{REBASE_CHECKPOINT_FILE}.bak")
+}
+
+/// Get the rebase checkpoint backup file path.
+///
+/// The backup is stored in `.agent/rebase_checkpoint.json.bak`
+/// and is used for corruption recovery.
+#[cfg(not(any(test, feature = "test-utils")))]
+fn rebase_checkpoint_backup_path() -> String {
+    format!("{AGENT_DIR}/{REBASE_CHECKPOINT_FILE}.bak")
+}
+
 /// Phase of a rebase operation.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RebasePhase {
@@ -149,6 +167,8 @@ impl RebaseCheckpoint {
 /// then renaming to the final path. This prevents corruption if the
 /// process is interrupted during the write.
 ///
+/// Also creates a backup before overwriting an existing checkpoint.
+///
 /// # Errors
 ///
 /// Returns an error if serialization fails or the file cannot be written.
@@ -162,6 +182,9 @@ pub fn save_rebase_checkpoint(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
 
     // Ensure the .agent directory exists before attempting to write
     fs::create_dir_all(AGENT_DIR)?;
+
+    // Create backup before overwriting existing checkpoint
+    let _ = backup_checkpoint();
 
     // Write atomically by writing to temp file then renaming
     let checkpoint_path_str = rebase_checkpoint_path();
@@ -189,10 +212,12 @@ pub fn save_rebase_checkpoint(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
 /// `Ok(None)` if no checkpoint file exists, or an error if the file
 /// exists but cannot be parsed.
 ///
+/// If the main checkpoint is corrupted, attempts to restore from backup.
+///
 /// # Errors
 ///
 /// Returns an error if the checkpoint file exists but cannot be read
-/// or contains invalid JSON.
+/// or contains invalid JSON, and no valid backup exists.
 pub fn load_rebase_checkpoint() -> io::Result<Option<RebaseCheckpoint>> {
     let checkpoint = rebase_checkpoint_path();
     let path = Path::new(&checkpoint);
@@ -201,12 +226,20 @@ pub fn load_rebase_checkpoint() -> io::Result<Option<RebaseCheckpoint>> {
     }
 
     let content = fs::read_to_string(path)?;
-    let loaded_checkpoint: RebaseCheckpoint = serde_json::from_str(&content).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Failed to parse rebase checkpoint: {e}"),
-        )
-    })?;
+    let loaded_checkpoint: RebaseCheckpoint = match serde_json::from_str(&content) {
+        Ok(cp) => cp,
+        Err(e) => {
+            // Checkpoint is corrupted - try to restore from backup
+            eprintln!("Checkpoint corrupted, attempting restore from backup: {e}");
+            return restore_from_backup();
+        }
+    };
+
+    // Validate the loaded checkpoint
+    if let Err(e) = validate_checkpoint(&loaded_checkpoint) {
+        eprintln!("Checkpoint validation failed, attempting restore from backup: {e}");
+        return restore_from_backup();
+    }
 
     Ok(Some(loaded_checkpoint))
 }
@@ -233,6 +266,117 @@ pub fn clear_rebase_checkpoint() -> io::Result<()> {
 /// Returns `true` if a checkpoint file exists, `false` otherwise.
 pub fn rebase_checkpoint_exists() -> bool {
     Path::new(&rebase_checkpoint_path()).exists()
+}
+
+/// Validate a checkpoint's integrity.
+///
+/// Checks that all required fields are present and valid.
+/// Returns `Ok(())` if valid, or an error describing the issue.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn validate_checkpoint(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
+    validate_checkpoint_impl(checkpoint)
+}
+
+/// Validate a checkpoint's integrity.
+///
+/// Checks that all required fields are present and valid.
+/// Returns `Ok(())` if valid, or an error describing the issue.
+#[cfg(not(any(test, feature = "test-utils")))]
+fn validate_checkpoint(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
+    validate_checkpoint_impl(checkpoint)
+}
+
+/// Implementation of checkpoint validation.
+fn validate_checkpoint_impl(checkpoint: &RebaseCheckpoint) -> io::Result<()> {
+    // Validate upstream branch is not empty (unless it's a new checkpoint)
+    if checkpoint.phase != RebasePhase::NotStarted && checkpoint.upstream_branch.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Checkpoint has empty upstream branch",
+        ));
+    }
+
+    // Validate timestamp format
+    if chrono::DateTime::parse_from_rfc3339(&checkpoint.timestamp).is_err() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Checkpoint has invalid timestamp format",
+        ));
+    }
+
+    // Validate resolved files are a subset of conflicted files
+    for resolved in &checkpoint.resolved_files {
+        if !checkpoint.conflicted_files.contains(resolved) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Resolved file '{}' not found in conflicted files list",
+                    resolved
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Create a backup of the current checkpoint.
+///
+/// Copies the current checkpoint file to a `.bak` file.
+/// Returns `Ok(())` if backup succeeded, or an error if it failed.
+///
+/// If the checkpoint file doesn't exist, this is not an error
+/// (the backup simply doesn't exist).
+fn backup_checkpoint() -> io::Result<()> {
+    let checkpoint_path = rebase_checkpoint_path();
+    let backup_path = rebase_checkpoint_backup_path();
+    let checkpoint = Path::new(&checkpoint_path);
+    let backup = Path::new(&backup_path);
+
+    if !checkpoint.exists() {
+        // No checkpoint to back up - this is fine
+        return Ok(());
+    }
+
+    // Remove existing backup if it exists
+    if backup.exists() {
+        fs::remove_file(&backup)?;
+    }
+
+    // Copy checkpoint to backup
+    fs::copy(&checkpoint, &backup)?;
+    Ok(())
+}
+
+/// Restore a checkpoint from backup.
+///
+/// Attempts to restore from the backup file if the main checkpoint
+/// is corrupted or missing. Returns `Ok(Some(checkpoint))` if restored,
+/// `Ok(None)` if no backup exists, or an error if restoration failed.
+fn restore_from_backup() -> io::Result<Option<RebaseCheckpoint>> {
+    let backup_path = rebase_checkpoint_backup_path();
+    let backup = Path::new(&backup_path);
+
+    if !backup.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&backup)?;
+    let checkpoint: RebaseCheckpoint = serde_json::from_str(&content).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to parse backup checkpoint: {e}"),
+        )
+    })?;
+
+    // Validate the restored checkpoint
+    validate_checkpoint(&checkpoint)?;
+
+    // If valid, copy backup back to main checkpoint
+    let checkpoint_path = rebase_checkpoint_path();
+    fs::copy(&backup, &checkpoint_path)?;
+
+    Ok(Some(checkpoint))
 }
 
 #[cfg(test)]
@@ -414,6 +558,140 @@ mod tests {
                 .expect("checkpoint should exist");
             assert_eq!(loaded.phase, RebasePhase::RebaseComplete);
             assert_eq!(loaded.conflicted_files.len(), 1);
+        });
+    }
+
+    #[test]
+    fn test_validate_checkpoint_valid() {
+        let checkpoint = RebaseCheckpoint::new("main".to_string())
+            .with_phase(RebasePhase::RebaseInProgress)
+            .with_conflicted_file("file1.rs".to_string())
+            .with_resolved_file("file1.rs".to_string());
+
+        assert!(validate_checkpoint(&checkpoint).is_ok());
+    }
+
+    #[test]
+    fn test_validate_checkpoint_empty_upstream() {
+        // NotStarted phase allows empty upstream
+        let checkpoint = RebaseCheckpoint::new("".to_string()).with_phase(RebasePhase::NotStarted);
+        assert!(validate_checkpoint(&checkpoint).is_ok());
+
+        // Other phases require non-empty upstream
+        let checkpoint =
+            RebaseCheckpoint::new("".to_string()).with_phase(RebasePhase::RebaseInProgress);
+        assert!(validate_checkpoint(&checkpoint).is_err());
+    }
+
+    #[test]
+    fn test_validate_checkpoint_invalid_timestamp() {
+        let mut checkpoint = RebaseCheckpoint::new("main".to_string());
+        checkpoint.timestamp = "invalid-timestamp".to_string();
+
+        assert!(validate_checkpoint(&checkpoint).is_err());
+    }
+
+    #[test]
+    fn test_validate_checkpoint_resolved_without_conflicted() {
+        let checkpoint =
+            RebaseCheckpoint::new("main".to_string()).with_resolved_file("file1.rs".to_string());
+
+        // Resolved file not in conflicted list should fail validation
+        assert!(validate_checkpoint(&checkpoint).is_err());
+    }
+
+    #[test]
+    fn test_checkpoint_backup_and_restore() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            // Create and save a checkpoint
+            let checkpoint1 = RebaseCheckpoint::new("main".to_string())
+                .with_phase(RebasePhase::ConflictDetected)
+                .with_conflicted_file("file.rs".to_string());
+
+            save_rebase_checkpoint(&checkpoint1).unwrap();
+
+            // Verify checkpoint and backup exist
+            let checkpoint_path = rebase_checkpoint_path();
+            let backup_path = rebase_checkpoint_backup_path();
+            assert!(Path::new(&checkpoint_path).exists());
+            assert!(Path::new(&backup_path).exists());
+
+            // Corrupt the main checkpoint
+            fs::write(&checkpoint_path, "corrupted data {{{").unwrap();
+
+            // Loading should restore from backup
+            let loaded = load_rebase_checkpoint()
+                .unwrap()
+                .expect("should restore from backup");
+
+            assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
+            assert_eq!(loaded.conflicted_files.len(), 1);
+        });
+    }
+
+    #[test]
+    fn test_checkpoint_save_creates_backup() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            // Create initial checkpoint
+            let checkpoint1 =
+                RebaseCheckpoint::new("main".to_string()).with_phase(RebasePhase::RebaseInProgress);
+            save_rebase_checkpoint(&checkpoint1).unwrap();
+
+            // Save another checkpoint (should create backup)
+            let checkpoint2 =
+                RebaseCheckpoint::new("main".to_string()).with_phase(RebasePhase::RebaseComplete);
+            save_rebase_checkpoint(&checkpoint2).unwrap();
+
+            // Backup should exist
+            let backup_path = rebase_checkpoint_backup_path();
+            assert!(Path::new(&backup_path).exists());
+
+            // Verify backup has old data
+            let backup_content = fs::read_to_string(&backup_path).unwrap();
+            let backup_checkpoint: RebaseCheckpoint =
+                serde_json::from_str(&backup_content).unwrap();
+            assert_eq!(backup_checkpoint.phase, RebasePhase::RebaseInProgress);
+        });
+    }
+
+    #[test]
+    fn test_checkpoint_validation_failure_triggers_restore() {
+        use test_helpers::with_temp_cwd;
+
+        with_temp_cwd(|_dir| {
+            // Create and save a valid checkpoint
+            let checkpoint1 = RebaseCheckpoint::new("main".to_string())
+                .with_phase(RebasePhase::RebaseInProgress)
+                .with_conflicted_file("file.rs".to_string());
+
+            save_rebase_checkpoint(&checkpoint1).unwrap();
+
+            // Manually corrupt the checkpoint with invalid JSON but valid structure
+            let checkpoint_path = rebase_checkpoint_path();
+            let corrupted_json = r#"{
+                "phase": "RebaseInProgress",
+                "upstream_branch": "main",
+                "conflicted_files": ["file.rs"],
+                "resolved_files": ["not_in_conflicted.rs"],
+                "error_count": 0,
+                "last_error": null,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }"#;
+            fs::write(&checkpoint_path, corrupted_json).unwrap();
+
+            // Loading should detect validation failure and restore from backup
+            let loaded = load_rebase_checkpoint()
+                .unwrap()
+                .expect("should restore from backup");
+
+            assert_eq!(loaded.conflicted_files.len(), 1);
+            assert!(!loaded
+                .resolved_files
+                .contains(&"not_in_conflicted.rs".to_string()));
         });
     }
 }
