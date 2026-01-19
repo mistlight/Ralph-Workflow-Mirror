@@ -1087,6 +1087,12 @@ impl ClaudeParser {
         let mut incremental_parser = IncrementalNdjsonParser::new();
         let mut byte_buffer = Vec::new();
 
+        // Track whether we've seen a success result event for GLM/ccs-glm compatibility
+        // Some agents (GLM via CCS) emit both a success result and an error_during_execution
+        // result when they exit with code 1 despite producing valid output. We suppress
+        // the spurious error event to avoid confusing duplicate output.
+        let mut seen_success_result = false;
+
         loop {
             // Read available bytes
             byte_buffer.clear();
@@ -1110,6 +1116,29 @@ impl ClaudeParser {
                     continue;
                 }
 
+                // Check for Result events to handle GLM/ccs-glm duplicate event bug
+                // Some agents emit both success and error_during_execution results
+                let should_skip_result = if trimmed.starts_with('{') {
+                    if let Ok(ClaudeEvent::Result { subtype, .. }) =
+                        serde_json::from_str::<ClaudeEvent>(trimmed)
+                    {
+                        // Suppress error_during_execution if we've already seen a success result
+                        let is_error_result = subtype.as_deref() != Some("success");
+                        if is_error_result && seen_success_result {
+                            true
+                        } else if subtype.as_deref() == Some("success") {
+                            seen_success_result = true;
+                            false
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
                 // In debug mode, also show the raw JSON
                 if self.verbosity.is_debug() {
                     eprintln!(
@@ -1120,6 +1149,16 @@ impl ClaudeParser {
                         &line,
                         c.reset()
                     );
+                }
+
+                // Skip suppressed result events but still log them
+                if should_skip_result {
+                    if let Some(ref mut file) = log_writer {
+                        writeln!(file, "{line}")?;
+                        file.get_mut().sync_all()?;
+                    }
+                    monitor.record_control_event();
+                    continue;
                 }
 
                 // Parse the event once - parse_event handles malformed JSON by returning None
