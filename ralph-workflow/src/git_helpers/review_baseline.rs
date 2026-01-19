@@ -336,6 +336,21 @@ pub fn get_baseline_summary() -> io::Result<BaselineSummary> {
     })
 }
 
+/// Count lines in a blob content.
+///
+/// Returns the number of lines, matching the behavior of counting
+/// newlines and adding 1 (so empty content returns 0, but any content
+/// returns at least 1).
+fn count_lines_in_blob(content: &[u8]) -> usize {
+    if content.is_empty() {
+        return 0;
+    }
+    // Count newlines and add 1 to get the line count
+    // This matches the previous behavior and ensures that even files
+    // without trailing newlines are counted correctly
+    content.iter().filter(|&&c| c == b'\n').count() + 1
+}
+
 /// Get diff statistics for changes since the baseline.
 fn get_diff_stats(repo: &git2::Repository, baseline_oid: &Option<String>) -> io::Result<DiffStats> {
     let baseline_tree = match baseline_oid {
@@ -420,8 +435,7 @@ fn get_diff_stats(repo: &git2::Repository, baseline_oid: &Option<String>) -> io:
     // Count lines added/deleted
     for (blob_id, is_new_or_modified) in delta_ids {
         if let Ok(blob) = repo.find_blob(blob_id) {
-            let content = blob.content();
-            let line_count = content.iter().filter(|&&c| c == b'\n').count() + 1;
+            let line_count = count_lines_in_blob(blob.content());
 
             if is_new_or_modified {
                 stats.lines_added += line_count;

@@ -863,7 +863,11 @@ exit 0
 
 #[test]
 fn ralph_fixer_receives_issues_content() {
-    // Test that fixer receives the ISSUES.md content during fix pass
+    // Test that fixer receives the ISSUES.md content during fix pass.
+    // Note: This test runs in isolation mode (default), so ISSUES.md is deleted
+    // after the fix pass completes. However, the fix phase itself can still read
+    // ISSUES.md during execution - we verify this by writing to fix_log during
+    // the fix phase when ISSUES.md is present.
     let dir = TempDir::new().unwrap();
     let repo = init_git_repo(&dir);
 

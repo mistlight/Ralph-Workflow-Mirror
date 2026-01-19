@@ -65,40 +65,13 @@ impl ReviewMetrics {
         let mut metrics = Self::new();
         metrics.issues_file_found = true;
 
-        // Check for explicit "no issues" declaration
-        // We use line-by-line matching to avoid false positives from phrases like
-        // "No critical security issues found" in review text that does contain issues.
-        // Only lines that are clearly declarations count.
+        // Check for explicit "no issues" declaration AFTER parsing all issue lines.
+        // This ensures we don't set no_issues_declared=true when the review contains
+        // both "No issues found" text AND actual issue checkboxes - the actual issues
+        // take precedence over any textual declaration.
+        //
+        // We defer this check until after we've parsed all issue lines below.
         let content_lower = content.to_lowercase();
-        for line in content_lower.lines() {
-            let trimmed = line.trim();
-            // Only match explicit declarations, not text that happens to contain the phrase
-            // A declaration is typically: "No issues found" or "No issues" at the start of a line
-            // or as the entire line (possibly after list markers)
-            let cleaned = trimmed
-                .trim_start_matches('-')
-                .trim_start_matches('*')
-                .trim();
-
-            if cleaned == "no issues found"
-                || cleaned == "no issues found."
-                || cleaned == "no issues"
-                || cleaned == "no issues."
-                || cleaned == "all issues resolved"
-                || cleaned == "all issues resolved."
-                // Handle "all issues resolved. <additional text>" pattern
-                || cleaned.starts_with("all issues resolved.")
-                // Handle "no issues found" at start without severity markers
-                || cleaned.starts_with("no issues found")
-                    && !cleaned.contains("critical")
-                    && !cleaned.contains("high")
-                    && !cleaned.contains("medium")
-                    && !cleaned.contains("low")
-            {
-                metrics.no_issues_declared = true;
-                break;
-            }
-        }
 
         // Parse issue lines
         // Format: - [ ] Critical: [file:line] Description
@@ -165,10 +138,43 @@ impl ReviewMetrics {
             }
         }
 
-        // If we found actual issues, the "no issues declared" flag is invalid
-        // This handles cases where review text contains "No issues found" somewhere
-        // but the review actually lists issues elsewhere.
-        if metrics.total_issues > 0 {
+        // Check for explicit "no issues" declaration only if no actual issues were found.
+        // This prevents false positives where a review contains both "No issues found" text
+        // AND actual issue checkboxes - the actual issues take precedence.
+        if metrics.total_issues == 0 {
+            for line in content_lower.lines() {
+                let trimmed = line.trim();
+                // Only match explicit declarations, not text that happens to contain the phrase
+                // A declaration is typically: "No issues found" or "No issues" at the start of a line
+                // or as the entire line (possibly after list markers)
+                let cleaned = trimmed
+                    .trim_start_matches('-')
+                    .trim_start_matches('*')
+                    .trim();
+
+                if cleaned == "no issues found"
+                    || cleaned == "no issues found."
+                    || cleaned == "no issues"
+                    || cleaned == "no issues."
+                    || cleaned == "all issues resolved"
+                    || cleaned == "all issues resolved."
+                    // Handle "all issues resolved. <additional text>" pattern
+                    || cleaned.starts_with("all issues resolved.")
+                    // Handle "no issues found" at start without severity markers
+                    || cleaned.starts_with("no issues found")
+                        && !cleaned.contains("critical")
+                        && !cleaned.contains("high")
+                        && !cleaned.contains("medium")
+                        && !cleaned.contains("low")
+                {
+                    metrics.no_issues_declared = true;
+                    break;
+                }
+            }
+        } else {
+            // If we found actual issues, ensure "no issues declared" is false
+            // This handles cases where review text contains "No issues found" somewhere
+            // but the review actually lists issues elsewhere.
             metrics.no_issues_declared = false;
         }
 

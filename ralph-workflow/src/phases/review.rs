@@ -293,9 +293,6 @@ enum ParseResult {
     ParseFailed(String),
 }
 
-/// Maximum number of format correction retries before giving up.
-const MAX_FORMAT_RETRIES: u32 = 5;
-
 /// Log prefix-based file search results.
 fn log_prefix_search_results(logger: &Logger, parent: &Path, prefix: &str) {
     use crate::files::result_extraction::file_finder::{
@@ -454,6 +451,9 @@ fn run_review_pass(
 ) -> anyhow::Result<ReviewPassResult> {
     let issues_path = Path::new(".agent/ISSUES.md");
 
+    // Get the configurable maximum retry count
+    let max_retries = ctx.config.review_format_retries;
+
     // Run initial review
     let mut current_prompt = review_prompt.to_string();
     let mut retry_count = 0;
@@ -514,10 +514,10 @@ fn run_review_pass(
             ParseResult::ParseFailed(error_description) => {
                 retry_count += 1;
 
-                if retry_count > MAX_FORMAT_RETRIES {
+                if retry_count > max_retries {
                     ctx.logger.error(&format!(
                         "Failed to get parseable review output after {} retries. Last error: {}",
-                        MAX_FORMAT_RETRIES, error_description
+                        max_retries, error_description
                     ));
                     // Write a marker file indicating the failure - do NOT assume no issues
                     let failure_marker = format!(
@@ -526,7 +526,7 @@ fn run_review_pass(
                         Last parsing error: {}\n\n\
                         This does NOT mean there are no issues - it means the output format was not recognized.\n\n\
                         Please check the logs in .agent/logs/ for the raw reviewer output.\n",
-                        MAX_FORMAT_RETRIES, error_description
+                        max_retries, error_description
                     );
                     fs::write(issues_path, failure_marker)?;
                     // Continue with fix pass anyway - the fix agent will see the failure message
@@ -536,7 +536,7 @@ fn run_review_pass(
                 ctx.logger.warn(&format!(
                     "Review output format not recognized (attempt {}/{}): {}",
                     retry_count,
-                    MAX_FORMAT_RETRIES + 1,
+                    max_retries + 1,
                     error_description
                 ));
                 ctx.logger

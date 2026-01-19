@@ -240,6 +240,10 @@ pub struct Config {
     /// This field is `pub(crate)` as streaming metrics are an internal concern.
     /// External access is not required; metrics are displayed via CLI flag.
     pub(crate) show_streaming_metrics: bool,
+    /// Maximum number of format correction retries during review output parsing.
+    /// When the reviewer agent produces unparseable output, the orchestrator will
+    /// retry up to this many times with a format correction prompt. Default: 5.
+    pub(crate) review_format_retries: u32,
 }
 
 impl Config {

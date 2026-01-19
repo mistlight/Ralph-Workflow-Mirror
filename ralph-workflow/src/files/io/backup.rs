@@ -169,7 +169,7 @@ pub fn make_prompt_read_only() -> Option<String> {
                 }
             }
             Err(_) => {
-                readonly_warning = Some("Failed to read metadata for PROMPT.md".to_string());
+                readonly_warning = Some("Failed to read PROMPT.md metadata".to_string());
             }
         }
     }
@@ -186,7 +186,7 @@ pub fn make_prompt_read_only() -> Option<String> {
                 }
             }
             Err(_) => {
-                readonly_warning = Some("Failed to read metadata for PROMPT.md".to_string());
+                readonly_warning = Some("Failed to read PROMPT.md metadata".to_string());
             }
         }
     }
@@ -231,11 +231,11 @@ pub fn make_prompt_writable() -> Option<String> {
                 perms.set_mode(0o644); // Owner read-write, group/others read-only
                 if fs::set_permissions(prompt_path, perms).is_err() {
                     writable_warning =
-                        Some("Failed to restore write permissions on PROMPT.md".to_string());
+                        Some("Failed to set write permissions on PROMPT.md".to_string());
                 }
             }
             Err(_) => {
-                writable_warning = Some("Failed to read metadata for PROMPT.md".to_string());
+                writable_warning = Some("Failed to read PROMPT.md metadata".to_string());
             }
         }
     }
@@ -248,11 +248,11 @@ pub fn make_prompt_writable() -> Option<String> {
                 perms.set_readonly(false);
                 if fs::set_permissions(prompt_path, perms).is_err() {
                     writable_warning =
-                        Some("Failed to restore write permissions on PROMPT.md".to_string());
+                        Some("Failed to set write permissions on PROMPT.md".to_string());
                 }
             }
             Err(_) => {
-                writable_warning = Some("Failed to read metadata for PROMPT.md".to_string());
+                writable_warning = Some("Failed to read PROMPT.md metadata".to_string());
             }
         }
     }
