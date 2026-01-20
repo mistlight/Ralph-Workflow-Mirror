@@ -551,6 +551,25 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     );
     save_start_commit_or_warn(ctx);
 
+    // Set up interrupt context for checkpoint saving on Ctrl+C
+    // This must be done after phase_ctx is created
+    let initial_phase = if let Some(ref checkpoint) = resume_checkpoint {
+        checkpoint.phase
+    } else {
+        PipelinePhase::Planning
+    };
+    setup_interrupt_context_for_pipeline(
+        initial_phase,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &phase_ctx.execution_history,
+        &phase_ctx.prompt_history,
+        &run_context,
+    );
+
+    // Ensure interrupt context is cleared on completion
+    let _interrupt_guard = defer_clear_interrupt_context();
+
     // Determine if we should run rebase based on checkpoint or current args
     let should_run_rebase = if let Some(ref checkpoint) = resume_checkpoint {
         // Use checkpoint's skip_rebase value if it has meaningful cli_args
@@ -567,6 +586,14 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if should_run_rebase {
         run_initial_rebase(ctx, &mut phase_ctx, &run_context)?;
+        // Update interrupt context after rebase
+        update_interrupt_context_from_phase(
+            &phase_ctx,
+            PipelinePhase::Planning,
+            config.developer_iters,
+            config.reviewer_reviews,
+            &run_context,
+        );
     } else {
         // Save initial checkpoint when rebase is disabled
         if config.features.checkpoint_enabled && resume_checkpoint.is_none() {
@@ -589,19 +616,51 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
                 let _ = save_checkpoint(&checkpoint);
             }
         }
+        // Update interrupt context after initial checkpoint
+        update_interrupt_context_from_phase(
+            &phase_ctx,
+            PipelinePhase::Planning,
+            config.developer_iters,
+            config.reviewer_reviews,
+            &run_context,
+        );
     }
 
     // Run pipeline phases
     run_development(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
+    // Update interrupt context after development
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        PipelinePhase::Development,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &run_context,
+    );
     check_prompt_restoration(ctx, &mut prompt_monitor, "development");
     update_status("In progress.", config.isolation_mode)?;
 
     run_review_and_fix(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
+    // Update interrupt context after review
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        PipelinePhase::Review,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &run_context,
+    );
     check_prompt_restoration(ctx, &mut prompt_monitor, "review");
 
     // Run post-review rebase (only if explicitly requested via --with-rebase)
     if should_run_rebase {
         run_post_review_rebase(ctx, &mut phase_ctx, &run_context)?;
+        // Update interrupt context after post-review rebase
+        update_interrupt_context_from_phase(
+            &phase_ctx,
+            PipelinePhase::PostRebase,
+            config.developer_iters,
+            config.reviewer_reviews,
+            &run_context,
+        );
     }
 
     update_status("In progress.", config.isolation_mode)?;
@@ -648,6 +707,111 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         prompt_monitor,
     );
     Ok(())
+}
+
+/// Set up the interrupt context with initial pipeline state.
+///
+/// This function initializes the global interrupt context so that if
+/// the user presses Ctrl+C, the interrupt handler can save a checkpoint.
+fn setup_interrupt_context_for_pipeline(
+    phase: PipelinePhase,
+    total_iterations: u32,
+    total_reviewer_passes: u32,
+    execution_history: &crate::checkpoint::ExecutionHistory,
+    prompt_history: &std::collections::HashMap<String, String>,
+    run_context: &crate::checkpoint::RunContext,
+) {
+    use crate::interrupt::{set_interrupt_context, InterruptContext};
+
+    // Determine initial iteration based on phase
+    let (iteration, reviewer_pass) = match phase {
+        PipelinePhase::Development => (1, 0),
+        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
+            (total_iterations, 1)
+        }
+        PipelinePhase::PostRebase | PipelinePhase::CommitMessage => {
+            (total_iterations, total_reviewer_passes)
+        }
+        _ => (0, 0),
+    };
+
+    let context = InterruptContext {
+        phase,
+        iteration,
+        total_iterations,
+        reviewer_pass,
+        total_reviewer_passes,
+        run_context: run_context.clone(),
+        execution_history: execution_history.clone(),
+        prompt_history: prompt_history.clone(),
+    };
+
+    set_interrupt_context(context);
+}
+
+/// Update the interrupt context from the current phase context.
+///
+/// This function should be called after each major phase to keep the
+/// interrupt context up-to-date with the latest execution history.
+fn update_interrupt_context_from_phase(
+    phase_ctx: &crate::phases::PhaseContext,
+    phase: PipelinePhase,
+    total_iterations: u32,
+    total_reviewer_passes: u32,
+    run_context: &crate::checkpoint::RunContext,
+) {
+    use crate::interrupt::{set_interrupt_context, InterruptContext};
+
+    // Determine current iteration based on phase
+    let (iteration, reviewer_pass) = match phase {
+        PipelinePhase::Development => {
+            // Estimate iteration from actual runs
+            let iter = run_context.actual_developer_runs.max(1);
+            (iter, 0)
+        }
+        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
+            (total_iterations, run_context.actual_reviewer_runs.max(1))
+        }
+        PipelinePhase::PostRebase | PipelinePhase::CommitMessage => {
+            (total_iterations, total_reviewer_passes)
+        }
+        _ => (0, 0),
+    };
+
+    let context = InterruptContext {
+        phase,
+        iteration,
+        total_iterations,
+        reviewer_pass,
+        total_reviewer_passes,
+        run_context: run_context.clone(),
+        execution_history: phase_ctx.execution_history.clone(),
+        prompt_history: phase_ctx.clone_prompt_history(),
+    };
+
+    set_interrupt_context(context);
+}
+
+/// Helper to defer clearing interrupt context until function exit.
+///
+/// Uses a scope guard pattern to ensure the interrupt context is cleared
+/// when the pipeline completes successfully, preventing an "interrupted"
+/// checkpoint from being saved after normal completion.
+fn defer_clear_interrupt_context() -> InterruptContextGuard {
+    InterruptContextGuard
+}
+
+/// RAII guard for clearing interrupt context on drop.
+///
+/// Ensures the interrupt context is cleared when the guard is dropped,
+/// preventing an "interrupted" checkpoint from being saved after normal
+/// pipeline completion.
+struct InterruptContextGuard;
+
+impl Drop for InterruptContextGuard {
+    fn drop(&mut self) {
+        crate::interrupt::clear_interrupt_context();
+    }
 }
 
 /// Validate PROMPT.md and set up backup/protection.

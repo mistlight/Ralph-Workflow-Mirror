@@ -562,16 +562,29 @@ impl PipelineCheckpoint {
             PipelinePhase::PostRebase => "Post-review rebase".to_string(),
             PipelinePhase::PostRebaseConflict => "Post-rebase conflict resolution".to_string(),
             PipelinePhase::Interrupted => {
-                format!(
-                    "Interrupted during {} (iteration {}/{})",
-                    if self.iteration > 0 {
-                        "development"
+                // Provide more detailed information for interrupted state
+                let mut parts = vec!["Interrupted".to_string()];
+
+                // Add context about what phase was interrupted
+                if self.iteration > 0 && self.iteration < self.total_iterations {
+                    parts.push(format!(
+                        "during development (iteration {}/{})",
+                        self.iteration, self.total_iterations
+                    ));
+                } else if self.iteration >= self.total_iterations {
+                    if self.reviewer_pass > 0 {
+                        parts.push(format!(
+                            "during review (pass {}/{})",
+                            self.reviewer_pass, self.total_reviewer_passes
+                        ));
                     } else {
-                        "pipeline"
-                    },
-                    self.iteration,
-                    self.total_iterations
-                )
+                        parts.push("after development phase".to_string());
+                    }
+                } else {
+                    parts.push("during pipeline initialization".to_string());
+                }
+
+                parts.join(" ")
             }
         }
     }

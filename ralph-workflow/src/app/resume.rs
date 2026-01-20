@@ -409,7 +409,31 @@ fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
         PipelinePhase::FinalValidation => Some("complete final validation".to_string()),
         PipelinePhase::Complete => Some("pipeline complete!".to_string()),
         PipelinePhase::Rebase => Some("complete rebase operation".to_string()),
-        PipelinePhase::Interrupted => Some("resume from interrupted state".to_string()),
+        PipelinePhase::Interrupted => {
+            // Provide more detailed information for interrupted state
+            // The interrupted phase can occur at any point, so we need to describe
+            // what the user was doing when interrupted
+            let mut context = vec!["resume from interrupted state".to_string()];
+
+            // Add context about what was being worked on
+            if checkpoint.iteration > 0 {
+                context.push(format!(
+                    "(development iteration {}/{})",
+                    checkpoint.iteration, checkpoint.total_iterations
+                ));
+            }
+            if checkpoint.reviewer_pass > 0 {
+                context.push(format!(
+                    "(review pass {}/{})",
+                    checkpoint.reviewer_pass, checkpoint.total_reviewer_passes
+                ));
+            }
+
+            // Explain what will happen on resume
+            context.push("full pipeline will run from interrupted point".to_string());
+
+            Some(context.join(" - "))
+        }
     }
 }
 
