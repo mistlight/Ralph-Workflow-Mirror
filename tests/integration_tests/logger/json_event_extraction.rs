@@ -58,6 +58,9 @@ fn test_logger_json_event_extraction_last_line_without_newline() {
 }
 
 /// Test that extraction works with a trailing newline as well.
+///
+/// This verifies that when JSON events are written with trailing newlines,
+/// the extraction correctly finds the last result event.
 #[test]
 fn test_logger_json_event_extraction_last_line_with_newline() {
     with_default_timeout(|| {
@@ -86,6 +89,9 @@ fn test_logger_json_event_extraction_last_line_with_newline() {
 }
 
 /// Test extraction with only a result event (no other events).
+///
+/// This verifies that when the log contains only a result event,
+/// the extraction correctly retrieves it.
 #[test]
 fn test_logger_json_event_extraction_only_result() {
     with_default_timeout(|| {
@@ -108,6 +114,9 @@ fn test_logger_json_event_extraction_only_result() {
 }
 
 /// Test extraction with mixed content (some non-JSON lines).
+///
+/// This verifies that when the log contains both JSON and non-JSON lines,
+/// the extraction correctly finds the result event.
 #[test]
 fn test_logger_json_event_extraction_mixed_content() {
     with_default_timeout(|| {
@@ -134,6 +143,9 @@ fn test_logger_json_event_extraction_mixed_content() {
 }
 
 /// Test extraction with multiple result events (should pick the best one).
+///
+/// This verifies that when multiple result events exist, the extraction
+/// uses scoring to pick the best one.
 #[test]
 fn test_logger_json_event_extraction_multiple_results() {
     with_default_timeout(|| {
@@ -171,6 +183,9 @@ fn test_logger_json_event_extraction_multiple_results() {
 
 /// Test the exact bug scenario: JSON events with the last one being
 /// a result event without a trailing newline.
+///
+/// This verifies that when the last line is a result event without a trailing newline,
+/// the extraction correctly finds it (this was a reported bug).
 #[test]
 fn test_bug_scenario_last_line_result_extraction() {
     with_default_timeout(|| {
@@ -230,6 +245,9 @@ fn test_bug_scenario_last_line_result_extraction() {
 }
 
 /// Test that extraction handles empty files gracefully.
+///
+/// This verifies that when the log file is empty, the extraction
+/// returns None without producing an error.
 #[test]
 fn test_logger_json_event_extraction_empty_file() {
     with_default_timeout(|| {
@@ -250,6 +268,9 @@ fn test_logger_json_event_extraction_empty_file() {
 }
 
 /// Test that extraction handles non-existent files gracefully.
+///
+/// This verifies that when the log file doesn't exist, the extraction
+/// returns None without producing an error.
 #[test]
 fn test_logger_json_event_extraction_nonexistent_file() {
     with_default_timeout(|| {
@@ -263,9 +284,8 @@ fn test_logger_json_event_extraction_nonexistent_file() {
 
 /// Test Logger → file → extraction flow using Logger::with_log_file().
 ///
-/// This test uses the actual Logger to write JSON events to a file,
-/// then verifies that extraction correctly retrieves the result event.
-/// This tests the full production code path for Logger output.
+/// This verifies that when the actual Logger writes JSON events to a file,
+/// the extraction correctly retrieves the result event.
 #[test]
 fn test_logger_with_log_file_writes_json_events_and_extracts() {
     with_default_timeout(|| {
@@ -307,8 +327,8 @@ fn test_logger_with_log_file_writes_json_events_and_extracts() {
 
 /// Test Logger → file → extraction flow with trailing newline.
 ///
-/// Verifies that the Logger correctly writes content that can be
-/// extracted even when the last line has a trailing newline.
+/// This verifies that when the Logger writes content with trailing newlines,
+/// the extraction correctly retrieves the result event.
 #[test]
 fn test_logger_with_log_file_trailing_newline_extraction() {
     with_default_timeout(|| {
@@ -344,10 +364,8 @@ fn test_logger_with_log_file_trailing_newline_extraction() {
 
 /// Test the specific user-reported bug scenario with Logger.
 ///
-/// The user reported that issues were clearly being produced by the agent,
-/// but the extraction was failing with "No JSON result event found in reviewer logs".
-/// This test verifies that when an agent outputs JSON events (with or without
-/// trailing newlines), the extraction correctly finds them.
+/// This verifies that when an agent outputs JSON events with or without
+/// trailing newlines, the extraction correctly finds them.
 #[test]
 fn test_user_reported_bug_scenario_with_logger() {
     with_default_timeout(|| {
@@ -401,8 +419,8 @@ fn test_user_reported_bug_scenario_with_logger() {
 
 /// Test using Loggable trait as a generic constraint.
 ///
-/// This test demonstrates the Loggable trait's usefulness by writing
-/// a generic function that works with both Logger and TestLogger.
+/// This verifies that when a generic function uses the Loggable trait,
+/// it works correctly with both Logger and TestLogger.
 #[test]
 fn test_loggable_trait_generic_function() {
     with_default_timeout(|| {
@@ -428,9 +446,8 @@ fn test_loggable_trait_generic_function() {
 
 /// Test Logger → file → extraction flow using Loggable trait.
 ///
-/// This test uses the Loggable trait interface to write logs,
-/// demonstrating that the trait provides a unified interface for
-/// both production (Logger) and test (TestLogger) scenarios.
+/// This verifies that when the Loggable trait interface is used to write logs,
+/// the trait provides a unified interface for both production and test scenarios.
 #[test]
 fn test_loggable_trait_with_logger_file_extraction() {
     with_default_timeout(|| {
@@ -479,8 +496,8 @@ fn test_loggable_trait_with_logger_file_extraction() {
 
 /// Test TestLogger → extraction flow using Loggable trait.
 ///
-/// This test verifies that TestLogger correctly implements the Loggable trait
-/// and captures log messages that can be inspected for testing.
+/// This verifies that when TestLogger is used via the Loggable trait,
+/// it correctly implements the trait and captures log messages.
 #[test]
 fn test_loggable_trait_with_testlogger() {
     with_default_timeout(|| {
@@ -507,9 +524,8 @@ fn test_loggable_trait_with_testlogger() {
 
 /// Test that Loggable trait default implementations work correctly.
 ///
-/// This test verifies that the default implementations of info(), success(),
-/// warn(), and error() in the Loggable trait correctly format messages
-/// and delegate to the log() method.
+/// This verifies that when the default implementations of info(), success(),
+/// warn(), and error() in the Loggable trait are used, they correctly format messages.
 #[test]
 fn test_loggable_trait_default_implementations() {
     with_default_timeout(|| {

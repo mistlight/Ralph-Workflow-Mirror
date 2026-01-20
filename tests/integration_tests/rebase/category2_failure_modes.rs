@@ -1106,10 +1106,8 @@ fn rebase_handles_whitespace_only_conflicts() {
 
 /// Test that hook rejection during rebase start is properly detected.
 ///
-/// This test verifies that the system can detect when a pre-rebase hook
-/// rejects the rebase operation. Hooks are user-defined scripts that can
-/// veto Git operations, and the rebase system must properly report these
-/// rejections.
+/// This verifies that when a pre-rebase hook rejects the rebase operation,
+/// the system can detect and report the rejection properly.
 #[test]
 fn rebase_detects_pre_rebase_hook_rejection() {
     with_default_timeout(|| {
@@ -1182,8 +1180,8 @@ fn rebase_detects_pre_rebase_hook_rejection() {
 
 /// Test that commit hook rejection mid-rebase is properly detected.
 ///
-/// This test verifies that the system can detect when a pre-commit or
-/// commit-msg hook rejects a commit during the rebase process.
+/// This verifies that when a pre-commit or commit-msg hook rejects a commit
+/// during the rebase process, the system can detect it properly.
 #[test]
 fn rebase_detects_commit_hook_rejection_mid_rebase() {
     with_default_timeout(|| {
