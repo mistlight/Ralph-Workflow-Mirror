@@ -870,6 +870,96 @@ fn test_glm_assistant_event_before_tool_name_tracked() {
     });
 }
 
+/// Test GLM bug: multiple content blocks with non-sequential indices cause incorrect deduplication.
+///
+/// This reproduces a specific bug where when there are multiple text content blocks
+/// with indices that don't sort correctly lexicographically (e.g., 0, 1, 10, 2),
+/// the deduplication logic incorrectly reconstructs content, causing assistant events
+/// to not be recognized as duplicates.
+///
+/// The bug: `is_duplicate_by_hash` sorts text keys using `format!("{:?}-{}", k.0, k.1)`
+/// which creates lexicographic sort order: "Text-0", "Text-1", "Text-10", "Text-2".
+/// But the correct order is: "Text-0", "Text-1", "Text-2", "Text-10".
+///
+/// This causes the reconstructed content to have blocks in the wrong order,
+/// making hash-based deduplication fail.
+#[test]
+fn test_glm_multiple_content_blocks_lexicographic_sort_bug() {
+    with_default_timeout(|| {
+        let events = [
+            // MessageStart with multiple text content blocks
+            r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_glm_sort_bug","type":"message","role":"assistant","model":"glm-4.7","content":[]}}}"#,
+            // ContentBlockStart for block 0
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+            // Delta for block 0
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Block 0"}}}"#,
+            // ContentBlockStart for block 1
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}}"#,
+            // Delta for block 1
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Block 1"}}}"#,
+            // ContentBlockStart for block 10 (this causes lexicographic sort issue)
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":10,"content_block":{"type":"text","text":""}}}"#,
+            // Delta for block 10
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":10,"delta":{"type":"text_delta","text":"Block 10"}}}"#,
+            // ContentBlockStart for block 2
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":2,"content_block":{"type":"text","text":""}}}"#,
+            // Delta for block 2
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"Block 2"}}}"#,
+            // Assistant event arrives with all accumulated content in correct order
+            // The assistant event has blocks in the correct order: 0, 1, 2, 10
+            // But deduplication reconstructs as: 0, 1, 10, 2 (lexicographic sort)
+            r#"{"type":"assistant","message":{"id":"msg_glm_sort_bug","type":"message","role":"assistant","model":"glm-4.7","content":[{"type":"text","text":"Block 0"},{"type":"text","text":"Block 1"},{"type":"text","text":"Block 2"},{"type":"text","text":"Block 10"}]}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":2}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":10}}"#,
+            r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+        ];
+
+        let vterm = parse_events(&events);
+        let vterm_ref = vterm.borrow();
+        let visible = vterm_ref.get_visible_output();
+
+        // Each block should appear only once (or very few times for in-place updates)
+        // The bug causes duplication because the hash comparison fails
+        let block_0_count = vterm_ref.count_visible_pattern("Block 0");
+        let block_1_count = vterm_ref.count_visible_pattern("Block 1");
+        let block_2_count = vterm_ref.count_visible_pattern("Block 2");
+        let block_10_count = vterm_ref.count_visible_pattern("Block 10");
+
+        // Each block should appear at most 2 times (once for streaming, once for in-place update)
+        assert!(
+            block_0_count <= 2,
+            "GLM BUG: 'Block 0' appears {} times. Lexicographic sort bug causes duplication. Output: {}",
+            block_0_count,
+            visible
+        );
+        assert!(
+            block_1_count <= 2,
+            "GLM BUG: 'Block 1' appears {} times. Output: {}",
+            block_1_count,
+            visible
+        );
+        assert!(
+            block_2_count <= 2,
+            "GLM BUG: 'Block 2' appears {} times. Output: {}",
+            block_2_count,
+            visible
+        );
+        assert!(
+            block_10_count <= 2,
+            "GLM BUG: 'Block 10' appears {} times. Output: {}",
+            block_10_count,
+            visible
+        );
+
+        // Verify no duplicate lines overall
+        assert!(
+            !vterm_ref.has_duplicate_lines(),
+            "Lexicographic sort bug causes duplicate visible lines. Output: {}",
+            visible
+        );
+    });
+}
+
 /// Test with real production log file using VirtualTerminal.
 ///
 /// This verifies that when an actual production log file is parsed,

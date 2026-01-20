@@ -1091,7 +1091,9 @@ impl StreamingSession {
             .keys()
             .filter(|(ct, _)| *ct == ContentType::Text)
             .collect();
-        text_keys.sort_by_key(|k| format!("{:?}-{}", k.0, k.1));
+        // Sort by numeric index (not lexicographic) to preserve actual message order
+        // This is critical for correctness when indices don't sort lexicographically (e.g., 0, 1, 10, 2)
+        text_keys.sort_by_key(|k| k.1.parse::<u64>().unwrap_or(u64::MAX));
 
         // Combine all accumulated text content in sorted order
         let combined_content: String = text_keys
