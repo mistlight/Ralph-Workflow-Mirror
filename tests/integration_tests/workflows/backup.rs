@@ -396,6 +396,10 @@ fn backup_oldest_deleted_when_exceeding_limit() {
     });
 }
 
+/// Test that restoration falls back to backup files when primary is corrupted.
+///
+/// This verifies that when the primary backup is corrupted or missing,
+/// the system can restore PROMPT.md from fallback backup files.
 #[test]
 fn restore_from_fallback_backup_when_primary_corrupted() {
     with_default_timeout(|| {

@@ -23,7 +23,10 @@ use std::io::BufReader;
 use std::rc::Rc;
 use tempfile::TempDir;
 
-/// Test normal flow with step_start, text, and step_finish events.
+/// Test that normal parsing flow produces proper output and log file.
+///
+/// This verifies that when step_start, text, and step_finish events are parsed,
+/// the system renders output correctly and writes events to the log file.
 #[test]
 fn test_opencode_parser_normal_flow() {
     with_default_timeout(|| {
@@ -58,7 +61,10 @@ fn test_opencode_parser_normal_flow() {
     });
 }
 
-/// Test streaming text events accumulate correctly.
+/// Test that streaming text events produce accumulated output.
+///
+/// This verifies that when multiple text events are received,
+/// the system accumulates and renders them correctly in the output.
 #[test]
 fn test_opencode_parser_text_streaming() {
     with_default_timeout(|| {
@@ -84,7 +90,10 @@ fn test_opencode_parser_text_streaming() {
     });
 }
 
-/// Test tool use events with completed status.
+/// Test that tool use events with completed status produce formatted output.
+///
+/// This verifies that when a tool use event with completed status is received,
+/// the system renders the tool name and output appropriately.
 #[test]
 fn test_opencode_parser_tool_use_completed() {
     with_default_timeout(|| {
@@ -103,7 +112,10 @@ fn test_opencode_parser_tool_use_completed() {
     });
 }
 
-/// Test tool use events with started status.
+/// Test that tool use events with started status produce formatted output.
+///
+/// This verifies that when a tool use event with started status is received,
+/// the system renders the tool name and input appropriately.
 #[test]
 fn test_opencode_parser_tool_use_started() {
     with_default_timeout(|| {
@@ -125,7 +137,10 @@ fn test_opencode_parser_tool_use_started() {
     });
 }
 
-/// Test step finish with token statistics.
+/// Test that step finish events with statistics produce detailed output.
+///
+/// This verifies that when a step_finish event includes token counts and cost,
+/// the system displays the statistics in a readable format.
 #[test]
 fn test_opencode_parser_step_finish_with_stats() {
     with_default_timeout(|| {
@@ -147,7 +162,10 @@ fn test_opencode_parser_step_finish_with_stats() {
     });
 }
 
-/// Test step finish with different reasons.
+/// Test that step finish events with different reasons are handled correctly.
+///
+/// This verifies that when step_finish events include various reason codes,
+/// the system processes them appropriately and displays finish messages.
 #[test]
 fn test_opencode_parser_step_finish_reasons() {
     with_default_timeout(|| {
@@ -170,7 +188,10 @@ fn test_opencode_parser_step_finish_reasons() {
     });
 }
 
-/// Test tool output with object payload.
+/// Test that tool use events with object payloads produce formatted output.
+///
+/// This verifies that when a tool use event contains an object output payload,
+/// the system renders the output appropriately.
 #[test]
 fn test_opencode_parser_tool_output_object() {
     with_default_timeout(|| {
@@ -189,7 +210,10 @@ fn test_opencode_parser_tool_output_object() {
     });
 }
 
-/// Test log file is properly flushed.
+/// Test that log files are properly flushed after parsing.
+///
+/// This verifies that when parsing completes, the log file is
+/// immediately readable with all events written to disk.
 #[test]
 fn test_opencode_parser_log_file_flushed() {
     with_default_timeout(|| {
@@ -220,7 +244,10 @@ fn test_opencode_parser_log_file_flushed() {
     });
 }
 
-/// Test multiple tool operations in sequence.
+/// Test that multiple tool operations in sequence produce complete output.
+///
+/// This verifies that when multiple tool use events occur in sequence,
+/// the system renders all tool operations in the output.
 #[test]
 fn test_opencode_parser_tool_sequence() {
     with_default_timeout(|| {
@@ -249,7 +276,10 @@ fn test_opencode_parser_tool_sequence() {
 // Log Content Tests
 // ============================================================================
 
-/// Test log file contains all events for later analysis.
+/// Test that log files contain all events for later analysis.
+///
+/// This verifies that when events are parsed, the system writes all
+/// event types to the log file for subsequent extraction and analysis.
 #[test]
 fn test_opencode_parser_log_contains_events() {
     with_default_timeout(|| {
@@ -287,7 +317,10 @@ fn test_opencode_parser_log_contains_events() {
     });
 }
 
-/// Test multiple steps in conversation.
+/// Test that multiple step conversations produce complete log output.
+///
+/// This verifies that when a conversation spans multiple step_start/step_finish cycles,
+/// the system logs all steps for later analysis.
 #[test]
 fn test_opencode_parser_multiple_steps() {
     with_default_timeout(|| {
@@ -323,7 +356,10 @@ fn test_opencode_parser_multiple_steps() {
 // Error Handling Tests
 // ============================================================================
 
-/// Test handling of malformed JSON.
+/// Test that malformed JSON is handled gracefully without panic.
+///
+/// This verifies that when invalid JSON is encountered in the stream,
+/// the system continues processing subsequent valid events.
 #[test]
 fn test_opencode_parser_malformed_json() {
     with_default_timeout(|| {
@@ -355,7 +391,10 @@ fn test_opencode_parser_malformed_json() {
     });
 }
 
-/// Test handling of truncated stream (network disconnect simulation).
+/// Test that truncated streams are handled gracefully.
+///
+/// This verifies that when a stream ends prematurely without step_finish,
+/// the system writes partial events to the log without crashing.
 #[test]
 fn test_opencode_parser_truncated_stream() {
     with_default_timeout(|| {
@@ -390,7 +429,10 @@ fn test_opencode_parser_truncated_stream() {
     });
 }
 
-/// Test error reason handling in step_finish.
+/// Test that step finish events with error reason are processed correctly.
+///
+/// This verifies that when a step_finish event includes an error reason,
+/// the system still processes content and displays appropriate output.
 #[test]
 fn test_opencode_parser_error_reason() {
     with_default_timeout(|| {
@@ -419,7 +461,10 @@ fn test_opencode_parser_error_reason() {
 // Deduplication Tests
 // ============================================================================
 
-/// Test that consecutive identical text deltas are handled.
+/// Test that consecutive identical text events are filtered appropriately.
+///
+/// This verifies that when the same text is sent multiple times consecutively,
+/// the system handles deduplication to avoid excessive output.
 #[test]
 fn test_opencode_parser_consecutive_text_handled() {
     with_default_timeout(|| {
@@ -450,7 +495,10 @@ fn test_opencode_parser_consecutive_text_handled() {
     });
 }
 
-/// Test that interleaved tool and text events work correctly.
+/// Test that interleaved tool and text events produce complete output.
+///
+/// This verifies that when tool use events are mixed with text events,
+/// the system renders all content in the correct order.
 #[test]
 fn test_opencode_parser_interleaved_tool_text() {
     with_default_timeout(|| {
@@ -486,7 +534,10 @@ fn test_opencode_parser_interleaved_tool_text() {
 // Token/Cost Tracking Tests
 // ============================================================================
 
-/// Test cost and token reporting in step_finish.
+/// Test that cost and token statistics produce detailed output.
+///
+/// This verifies that when step_finish events include cost and token information,
+/// the system displays the statistics in a readable format.
 #[test]
 fn test_opencode_parser_cost_and_tokens() {
     with_default_timeout(|| {

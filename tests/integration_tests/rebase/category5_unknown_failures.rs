@@ -41,6 +41,10 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
         .unwrap_or_else(|| "main".to_string())
 }
 
+/// Test that Unknown error kind exists with proper description.
+///
+/// This verifies that when an Unknown error is constructed, it provides
+/// a description indicating the unknown or unexpected nature of the error.
 #[test]
 fn unknown_error_kind_exists_with_description() {
     with_default_timeout(|| {
@@ -62,6 +66,10 @@ fn unknown_error_kind_exists_with_description() {
     });
 }
 
+/// Test that unexpected git exit codes are handled gracefully.
+///
+/// This verifies that when git returns an unexpected exit code, the system
+/// classifies the error appropriately without crashing.
 #[test]
 fn rebase_handles_unexpected_exit_code() {
     with_default_timeout(|| {
@@ -95,6 +103,10 @@ fn rebase_handles_unexpected_exit_code() {
     });
 }
 
+/// Test that unexpected stderr formats from git are handled gracefully.
+///
+/// This verifies that when git produces unexpected stderr output, the system
+/// handles the error classification without crashing.
 #[test]
 fn rebase_handles_unexpected_stderr_format() {
     with_default_timeout(|| {
@@ -138,6 +150,10 @@ fn rebase_handles_unexpected_stderr_format() {
     });
 }
 
+/// Test that case sensitivity collisions are handled appropriately.
+///
+/// This verifies that when filesystem case sensitivity causes collisions,
+/// the system handles the situation without crashing.
 #[test]
 fn rebase_handles_case_sensitivity_collision() {
     with_default_timeout(|| {
@@ -172,6 +188,10 @@ fn rebase_handles_case_sensitivity_collision() {
     });
 }
 
+/// Test that very long path names are handled during rebase.
+///
+/// This verifies that when deeply nested directory structures are used,
+/// the system handles rebase operations without path length errors.
 #[test]
 fn rebase_handles_long_path_names() {
     with_default_timeout(|| {
@@ -220,6 +240,10 @@ fn rebase_handles_long_path_names() {
     });
 }
 
+/// Test that special characters in filenames are handled during rebase.
+///
+/// This verifies that when files with special characters (spaces, dashes, dots)
+/// are modified, the system handles rebase operations without crashing.
 #[test]
 fn rebase_handles_special_characters_in_filenames() {
     with_default_timeout(|| {
@@ -260,6 +284,10 @@ fn rebase_handles_special_characters_in_filenames() {
     });
 }
 
+/// Test that unexpected git output is classified as Unknown error.
+///
+/// This verifies that when git produces output that cannot be classified,
+/// the system falls back to Unknown error kind with descriptive details.
 #[test]
 fn unknown_error_classification_for_unexpected_output() {
     with_default_timeout(|| {
@@ -284,6 +312,10 @@ fn unknown_error_classification_for_unexpected_output() {
     });
 }
 
+/// Test that concurrent git operations are detected and handled.
+///
+/// This verifies that when rebase-merge directory exists from another operation,
+/// the system detects the concurrent operation without crashing.
 #[test]
 fn rebase_handles_simultaneous_git_operations() {
     with_default_timeout(|| {
@@ -310,6 +342,10 @@ fn rebase_handles_simultaneous_git_operations() {
     });
 }
 
+/// Test that zero-length or corrupted ref updates are handled gracefully.
+///
+/// This verifies that when HEAD file is corrupted or empty, the system
+/// handles rebase operations without crashing.
 #[test]
 fn rebase_handles_zero_length_ref_updates() {
     with_default_timeout(|| {
@@ -342,6 +378,10 @@ fn rebase_handles_zero_length_ref_updates() {
     });
 }
 
+/// Test that Unicode characters in filenames and content are handled.
+///
+/// This verifies that when files with Unicode names are modified,
+/// the system handles rebase operations without encoding errors.
 #[test]
 fn rebase_handles_unicode_in_filenames_and_content() {
     with_default_timeout(|| {

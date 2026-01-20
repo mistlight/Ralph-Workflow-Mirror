@@ -70,8 +70,8 @@ fn test_logger_trait_error_method() {
 
 /// Test that TestLogger line buffering works correctly.
 ///
-/// TestLogger should buffer partial lines and only flush them when
-/// a newline is encountered or flush() is called explicitly.
+/// This verifies that when partial lines are written, the system buffers them
+/// and only flushes when a newline is encountered or flush() is called.
 #[test]
 fn test_logger_line_buffering() {
     with_default_timeout(|| {
@@ -93,9 +93,8 @@ fn test_logger_line_buffering() {
 
 /// Test that TestLogger flush() commits buffered content.
 ///
-/// Note: TestLogger's get_logs() and has_log() methods include buffered
-/// content, so we need to check the internal logs array directly to
-/// verify that buffered content is only added after flush().
+/// This verifies that when flush() is called, the system commits buffered
+/// content and makes it available via get_logs() and has_log().
 #[test]
 fn test_logger_flush_behavior() {
     with_default_timeout(|| {

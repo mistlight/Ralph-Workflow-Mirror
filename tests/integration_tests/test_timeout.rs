@@ -153,6 +153,10 @@ where
 mod tests {
     use super::*;
 
+    /// Test that fast operations complete within timeout.
+    ///
+    /// This verifies that when a fast operation is wrapped with a timeout,
+    /// the operation completes successfully without timing out.
     #[test]
     fn test_with_timeout_success() {
         with_timeout(
@@ -164,6 +168,10 @@ mod tests {
         );
     }
 
+    /// Test that fast operations complete within default timeout.
+    ///
+    /// This verifies that when a fast operation is wrapped with the default timeout,
+    /// the operation completes successfully without timing out.
     #[test]
     fn test_with_default_timeout_success() {
         with_default_timeout(|| {
@@ -172,6 +180,10 @@ mod tests {
         });
     }
 
+    /// Test that slow operations panic with timeout error.
+    ///
+    /// This verifies that when an operation exceeds the timeout duration,
+    /// the test panics with a clear timeout error message.
     #[test]
     #[should_panic(expected = "Test exceeded timeout")]
     fn test_with_timeout_panic_on_slow_operation() {
@@ -183,6 +195,10 @@ mod tests {
         );
     }
 
+    /// Test that timeout error displays helpful message.
+    ///
+    /// This verifies that when a timeout error is displayed,
+    /// it includes information about the timeout duration and external I/O.
     #[test]
     fn test_timeout_error_display() {
         let error = TimeoutError {

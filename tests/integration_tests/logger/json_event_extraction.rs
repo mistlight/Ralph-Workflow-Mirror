@@ -22,9 +22,10 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use tempfile::TempDir;
 
-/// Test that simulates the bug scenario: writing JSON events via file I/O
-/// and then extracting them, verifying that the last line is found even
-/// without a trailing newline.
+/// Test that JSON event extraction works without trailing newline.
+///
+/// This verifies that when JSON events are written via file I/O and the last
+/// event has no trailing newline, the extraction still finds the result event.
 #[test]
 fn test_logger_json_event_extraction_last_line_without_newline() {
     with_default_timeout(|| {
