@@ -345,9 +345,14 @@ impl ClaudeParser {
                         session.on_text_delta(index, t);
                     }
                     ContentBlock::ToolUse {
-                        name: _,
+                        name,
                         input: Some(i),
                     } => {
+                        // Track tool name for GLM/CCS deduplication
+                        if let Some(n) = name {
+                            session.set_tool_name(index, Some(n.clone()));
+                        }
+
                         // Initialize tool input accumulator
                         let input_str = if let serde_json::Value::String(s) = &i {
                             s.clone()
@@ -453,18 +458,44 @@ impl ClaudeParser {
     }
 
     /// Extract text content from a message for hash-based deduplication.
+    /// Extract content from assistant message for hash-based deduplication.
+    ///
+    /// This includes both text and tool_use blocks, normalized for comparison.
+    /// Tool_use blocks are serialized in a deterministic way (name + sorted input JSON)
+    /// to ensure semantically identical tool calls produce the same hash.
     fn extract_text_content_for_hash(
         message: Option<&crate::json_parser::types::AssistantMessage>,
     ) -> Option<String> {
         message?.content.as_ref().map(|content| {
             content
                 .iter()
-                .filter_map(|block| {
-                    if let ContentBlock::Text { text } = block {
-                        text.as_deref()
-                    } else {
-                        None
+                .filter_map(|block| match block {
+                    ContentBlock::Text { text } => text.as_deref().map(|s| s.to_string()),
+                    ContentBlock::ToolUse { name, input } => {
+                        // Normalize tool_use for hash comparison:
+                        // Format: "TOOL_USE:{name}:{sorted_json_input}"
+                        // Sorting JSON keys ensures identical inputs produce same hash
+                        let normalized = format!(
+                            "TOOL_USE:{}:{}",
+                            name.as_deref().unwrap_or(""),
+                            input
+                                .as_ref()
+                                .map(|v| {
+                                    // Sort JSON keys for deterministic serialization
+                                    if v.is_object() {
+                                        serde_json::to_string(v).ok()
+                                    } else if v.is_string() {
+                                        v.as_str().map(|s| s.to_string())
+                                    } else {
+                                        serde_json::to_string(v).ok()
+                                    }
+                                    .unwrap_or_default()
+                                })
+                                .unwrap_or_default()
+                        );
+                        Some(normalized)
                     }
+                    _ => None,
                 })
                 .collect::<Vec<_>>()
                 .join("")
@@ -859,6 +890,11 @@ impl ClaudeParser {
             ContentBlockDelta::ToolUseDelta {
                 tool_use: Some(tool_delta),
             } => {
+                // Track tool name for GLM/CCS deduplication (if available in delta)
+                if let Some(serde_json::Value::String(name)) = tool_delta.get("name") {
+                    session.set_tool_name(index, Some(name.to_string()));
+                }
+
                 // Handle tool input streaming
                 // Extract the tool input from the delta
                 let input_str =

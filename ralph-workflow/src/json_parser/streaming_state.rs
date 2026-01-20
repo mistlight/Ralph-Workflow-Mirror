@@ -310,6 +310,12 @@ pub struct StreamingSession {
     /// the message_id. ALL subsequent streaming deltas for that message_id should be
     /// suppressed to prevent duplication.
     pre_rendered_message_ids: HashSet<String>,
+    /// Track tool names by index for GLM/CCS deduplication.
+    /// GLM sends assistant events with tool_use blocks (name + input) during streaming,
+    /// but only the input is accumulated via deltas. We track the tool name to properly
+    /// reconstruct the normalized representation for deduplication.
+    /// Maps `index` → `tool_name`.
+    tool_names: HashMap<String, Option<String>>,
 }
 
 impl StreamingSession {
@@ -408,6 +414,7 @@ impl StreamingSession {
             self.delta_sizes.clear();
             self.last_rendered.clear();
             self.deduplicator.clear();
+            self.tool_names.clear();
 
             // Restore preserved state
             self.output_started_for_key = preserved_output_started;
@@ -428,6 +435,7 @@ impl StreamingSession {
             self.rendered_content_hashes.clear();
             self.consecutive_duplicates.clear();
             self.deduplicator.clear();
+            self.tool_names.clear();
         }
         // Note: We don't reset current_message_id here - it's set by a separate method
         // This allows for more flexible message ID handling
@@ -922,6 +930,20 @@ impl StreamingSession {
         }
     }
 
+    /// Record the tool name for a specific content block index.
+    ///
+    /// This is used for GLM/CCS deduplication where assistant events contain
+    /// tool_use blocks (name + input) but streaming only accumulates the input.
+    /// By tracking the name separately, we can reconstruct the normalized
+    /// representation for proper hash-based deduplication.
+    ///
+    /// # Arguments
+    /// * `index` - The content block index
+    /// * `name` - The tool name (if available)
+    pub fn set_tool_name(&mut self, index: u64, name: Option<String>) {
+        self.tool_names.insert(index.to_string(), name);
+    }
+
     /// Finalize the message on stop event.
     ///
     /// This should be called when:
@@ -1000,12 +1022,19 @@ impl StreamingSession {
     /// If the combined accumulated content matches the input, it returns true.
     ///
     /// # Arguments
-    /// * `content` - The content to check (typically text content from final message)
+    /// * `content` - The content to check (typically normalized content from assistant events)
     ///
     /// # Returns
     /// * `true` - The content hash matches the previously streamed content
     /// * `false` - The content is different or no content was streamed
     pub fn is_duplicate_by_hash(&self, content: &str) -> bool {
+        // First, check if content contains the TOOL_USE marker from extract_text_content_for_hash
+        if content.contains("TOOL_USE:") {
+            // This is a tool_use block from an assistant event
+            // Parse the tool_use blocks from the content and compare against accumulated ToolInput
+            return self.is_duplicate_tool_use(content);
+        }
+
         // Check if the input content matches ALL accumulated text content combined
         // This handles the case where assistant events arrive during streaming (before message_stop)
         // We collect and combine all text content in index order
@@ -1026,6 +1055,53 @@ impl StreamingSession {
         // Direct string comparison is more reliable than hashing
         // because hashing can have collisions and we want exact match
         combined_content == content
+    }
+
+    /// Check if tool_use content from an assistant event matches accumulated ToolInput.
+    ///
+    /// Assistant events may contain normalized tool_use blocks (with "TOOL_USE:" prefix).
+    /// This method reconstructs the normalized representation from accumulated content
+    /// and checks if it matches the assistant event content.
+    ///
+    /// # Arguments
+    /// * `normalized_content` - Content potentially containing "TOOL_USE:{name}:{input}" markers
+    ///
+    /// # Returns
+    /// * `true` - All tool_use blocks match accumulated content
+    /// * `false` - Tool_use content differs or not accumulated yet
+    fn is_duplicate_tool_use(&self, normalized_content: &str) -> bool {
+        // Reconstruct the normalized representation from accumulated content
+        // For each tool_use index, create "TOOL_USE:{name}:{input}" and check if it's in the content
+        let mut reconstructed = String::new();
+
+        // Get all ToolInput keys and sort by index
+        let mut tool_keys: Vec<_> = self
+            .accumulated
+            .keys()
+            .filter(|(ct, _)| *ct == ContentType::ToolInput)
+            .collect();
+        tool_keys.sort_by_key(|k| k.1.parse::<u64>().unwrap_or(u64::MAX));
+
+        for (ct, index_str) in tool_keys {
+            if let Some(accumulated_input) = self.accumulated.get(&(*ct, index_str.clone())) {
+                // Get the tool name from tracking (if available)
+                let tool_name = self
+                    .tool_names
+                    .get(index_str)
+                    .and_then(|n| n.as_deref())
+                    .unwrap_or("");
+
+                // Normalize: "TOOL_USE:{name}:{input}"
+                reconstructed.push_str(&format!("TOOL_USE:{}:{}", tool_name, accumulated_input));
+            }
+        }
+
+        // Check if the reconstructed content matches the input
+        if reconstructed.is_empty() {
+            return false;
+        }
+
+        normalized_content == reconstructed
     }
 
     /// Get accumulated content for a specific type and index.
