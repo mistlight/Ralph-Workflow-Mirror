@@ -2,11 +2,7 @@
 //!
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format for review issues.
-//!
-//! Note: Currently unused in production (review phase uses reviewer prompts).
-//! Kept for potential future use and test compatibility.
 
-#[cfg(test)]
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 
 /// Validate issues XML content against the XSD schema.
@@ -38,7 +34,6 @@ use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 ///
 /// * `Ok(IssuesElements)` if the XML is valid and contains all required elements
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
-#[cfg(test)]
 pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValidationError> {
     let content = xml_content.trim();
 
@@ -202,7 +197,6 @@ pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValid
 }
 
 /// Extract content from an XML-style tag.
-#[allow(dead_code)]
 fn extract_tag_content(content: &str, tag_name: &str) -> Option<String> {
     let open_tag = format!("<{tag_name}>");
     let close_tag = format!("</{tag_name}>");
@@ -221,7 +215,6 @@ fn extract_tag_content(content: &str, tag_name: &str) -> Option<String> {
 }
 
 /// Advance the content pointer past the specified tag.
-#[allow(dead_code)]
 fn advance_past_tag<'a>(content: &'a str, tag_name: &str) -> &'a str {
     let close_tag = format!("</{tag_name}>");
     let trimmed = content.trim_start();
@@ -235,7 +228,6 @@ fn advance_past_tag<'a>(content: &'a str, tag_name: &str) -> &'a str {
 }
 
 /// Parsed issues elements from valid XML.
-#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssuesElements {
     /// List of issues (if any)
@@ -244,14 +236,15 @@ pub struct IssuesElements {
     pub no_issues_found: Option<String>,
 }
 
-#[cfg(test)]
 impl IssuesElements {
     /// Returns true if there are no issues.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn is_empty(&self) -> bool {
         self.issues.is_empty() && self.no_issues_found.is_some()
     }
 
     /// Returns the number of issues.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn issue_count(&self) -> usize {
         self.issues.len()
     }

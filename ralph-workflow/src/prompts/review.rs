@@ -55,7 +55,6 @@ pub fn prompt_review_xml_with_context(
 /// * `changes_content` - Description of changes made
 /// * `xsd_error` - The XSD validation error message to include in the prompt
 /// * `last_output` - The invalid XML output that failed validation
-#[allow(dead_code)]
 pub fn prompt_review_xsd_retry_with_context(
     context: &TemplateContext,
     prompt_content: &str,

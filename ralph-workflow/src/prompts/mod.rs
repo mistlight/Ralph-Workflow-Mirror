@@ -48,10 +48,9 @@ pub use developer::{
 pub use rebase::{
     build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict,
 };
-#[cfg(any(test, feature = "test-utils"))]
-pub use review::prompt_review_xsd_retry_with_context;
 pub use review::{
     prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context, prompt_review_xml_with_context,
+    prompt_review_xsd_retry_with_context,
 };
 
 #[cfg(any(test, feature = "test-utils"))]

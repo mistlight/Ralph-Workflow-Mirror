@@ -58,10 +58,8 @@ pub use commit::is_conventional_commit_subject;
 pub use xml_extraction_plan::extract_plan_xml;
 pub use xsd_validation_plan::{validate_plan_xml, PlanElements};
 
-// Public exports for issues XML extraction and validation (currently unused in production)
-#[cfg(test)]
+// Public exports for issues XML extraction and validation
 pub use xml_extraction_issues::extract_issues_xml;
-#[cfg(test)]
 pub use xsd_validation_issues::{validate_issues_xml, IssuesElements};
 
 // Public exports for fix result XML extraction and validation (used by fix pass)

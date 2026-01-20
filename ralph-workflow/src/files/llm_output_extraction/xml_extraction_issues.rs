@@ -2,9 +2,6 @@
 //!
 //! This module provides robust extraction of XML issues from various
 //! AI output formats. AI agents may embed XML in unpredictable ways.
-//!
-//! Note: Currently unused in production (review phase uses reviewer prompts).
-//! Kept for potential future use and test compatibility.
 
 use crate::files::llm_output_extraction::cleaning::unescape_json_strings_aggressive;
 
@@ -25,7 +22,6 @@ use crate::files::llm_output_extraction::cleaning::unescape_json_strings_aggress
 ///
 /// * `Some(xml_content)` - The extracted XML content including tags
 /// * `None` - No valid XML issues found
-#[allow(dead_code)]
 pub fn extract_issues_xml(content: &str) -> Option<String> {
     // Strategy 1: Direct XML at start (most efficient)
     if let Some(xml) = try_extract_direct_xml(content) {
@@ -47,7 +43,6 @@ pub fn extract_issues_xml(content: &str) -> Option<String> {
 }
 
 /// Strategy 1: Extract XML that starts with `<ralph-issues>` tag.
-#[allow(dead_code)]
 fn try_extract_direct_xml(content: &str) -> Option<String> {
     let trimmed = content.trim();
 
@@ -67,7 +62,6 @@ fn try_extract_direct_xml(content: &str) -> Option<String> {
 }
 
 /// Strategy 2: Extract XML from markdown code fences.
-#[allow(dead_code)]
 fn try_extract_from_markdown_fence(content: &str) -> Option<String> {
     // Pattern 1: ```xml fence
     if let Some(start) = content.find("```xml") {
@@ -97,7 +91,6 @@ fn try_extract_from_markdown_fence(content: &str) -> Option<String> {
 }
 
 /// Strategy 3: Extract XML from JSON strings (escaped).
-#[allow(dead_code)]
 fn try_extract_from_json_string(content: &str) -> Option<String> {
     // Pattern 1: NDJSON stream with result field
     for line in content.lines() {
@@ -154,13 +147,11 @@ fn try_extract_from_json_string(content: &str) -> Option<String> {
 }
 
 /// Strategy 4: Search for XML tags anywhere in content.
-#[allow(dead_code)]
 fn try_extract_embedded_xml(content: &str) -> Option<String> {
     extract_ralph_issues_from_content(content)
 }
 
 /// Extract `<ralph-issues>...</ralph-issues>` from arbitrary content.
-#[allow(dead_code)]
 fn extract_ralph_issues_from_content(content: &str) -> Option<String> {
     let start = content.find("<ralph-issues>")?;
     let end = content.find("</ralph-issues>")?;

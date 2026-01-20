@@ -18,7 +18,7 @@ use crate::guidelines::ReviewGuidelines;
 use crate::prompts::{
     generate_resume_note, prompt_comprehensive_review_with_diff_with_context,
     prompt_detailed_review_without_guidelines_with_diff_with_context,
-    prompt_incremental_review_with_diff_with_context, prompt_review_xml_with_context,
+    prompt_incremental_review_with_diff_with_context,
     prompt_reviewer_review_with_guidelines_and_diff_with_context,
     prompt_security_focused_review_with_diff_with_context,
     prompt_universal_review_with_diff_with_context, ContextLevel,
@@ -116,95 +116,6 @@ pub fn build_review_prompt(
     };
 
     (label, prompt)
-}
-
-/// Build the XML-based review prompt for XSD retry loop.
-///
-/// This function builds a review prompt using XML output format with XSD validation.
-/// It's used in the new XSD retry loop implementation for the review phase.
-///
-/// # Arguments
-///
-/// * `ctx` - The phase context
-/// * `diff_result` - The diff content to review
-///
-/// # Returns
-///
-/// A tuple of (label, prompt_content) where label describes the prompt type and
-/// prompt_content is the actual prompt to send to the agent.
-#[allow(dead_code)]
-pub fn build_review_xml_prompt(
-    ctx: &PhaseContext<'_>,
-    diff_result: Result<Option<DiffReviewContent>, ()>,
-) -> (String, String) {
-    let (prompt_content, plan_content) = read_prompt_and_plan();
-
-    match diff_result {
-        Ok(Some(diff_content)) => {
-            // Format diff content as CHANGES for the XML template
-            let changes_content = format_diff_for_xml(&diff_content);
-
-            let review_prompt = prompt_review_xml_with_context(
-                ctx.template_context,
-                &prompt_content,
-                &plan_content,
-                &changes_content,
-            );
-
-            (
-                "review (XML with XSD validation)".to_string(),
-                review_prompt,
-            )
-        }
-        Ok(None) => ("review (XML - skipped)".to_string(), String::new()),
-        Err(()) => ("review (XML - error)".to_string(), String::new()),
-    }
-}
-
-/// Format diff content for the XML review template.
-///
-/// Converts the diff content into a format suitable for the CHANGES variable
-/// in the review_xml.txt template.
-#[allow(dead_code)]
-fn format_diff_for_xml(diff_content: &DiffReviewContent) -> String {
-    let mut result = String::new();
-
-    // Add baseline context if available
-    if let Some(ref baseline_short) = diff_content.baseline_short {
-        result.push_str(&format!("## Base Commit: {}\n\n", baseline_short));
-    }
-
-    // Add truncation notice if applicable
-    match diff_content.truncation_level {
-        DiffTruncationLevel::Full => {
-            // No truncation notice needed
-        }
-        DiffTruncationLevel::Abbreviated => {
-            result.push_str(&format!(
-                "**Note:** Diff abbreviated - showing {}/{} files.\n\n",
-                diff_content.shown_file_count.unwrap_or(0),
-                diff_content.total_file_count
-            ));
-        }
-        DiffTruncationLevel::FileList => {
-            result
-                .push_str("**Note:** Only file list shown - reviewer must explore full diff.\n\n");
-        }
-        DiffTruncationLevel::FileListAbbreviated => {
-            result.push_str(&format!(
-                "**Note:** Only {}/{} files shown - reviewer must discover all files.\n\n",
-                diff_content.shown_file_count.unwrap_or(0),
-                diff_content.total_file_count
-            ));
-        }
-    }
-
-    // Add the actual diff content
-    result.push_str("```diff\n");
-    result.push_str(&diff_content.content);
-    result.push_str("\n```\n");
-
-    result
 }
 
 /// Build the universal/simplified review prompt.
