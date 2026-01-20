@@ -245,10 +245,26 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
     logger.info(&format!("Developer agent: {}", checkpoint.developer_agent));
     logger.info(&format!("Reviewer agent: {}", checkpoint.reviewer_agent));
 
+    // Show execution history info if available
+    if let Some(ref history) = checkpoint.execution_history {
+        if !history.steps.is_empty() {
+            logger.info(&format!(
+                "Execution history: {} step(s) recorded",
+                history.steps.len()
+            ));
+        }
+    }
+
     // Show helpful next step based on current phase
     if let Some(next_step) = suggest_next_step(checkpoint) {
         logger.info(&format!("Next: {}", next_step));
     }
+
+    // Show example commands for inspecting state
+    logger.info("");
+    logger.info("To inspect the current state, you can run:");
+    logger.info("  git status        - See current changes");
+    logger.info("  git log --oneline -5 - See recent commits");
 }
 
 /// Suggest the next step based on the current checkpoint phase.
