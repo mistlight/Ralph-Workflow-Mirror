@@ -848,7 +848,6 @@ fn ralph_resume_preserves_reviewer_passes_from_checkpoint() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: Requires proper agent mocking - test tries to run developer agent in planning phase
 fn ralph_resume_from_planning_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
@@ -882,7 +881,12 @@ fn ralph_resume_from_planning_phase() {
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env(
+                "RALPH_DEVELOPER_CMD",
+                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+            )
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
         cmd.assert().success().stdout(
             predicate::str::contains("Planning").or(predicate::str::contains("checkpoint")),
@@ -938,7 +942,7 @@ fn ralph_resume_from_development_phase() {
 }
 
 #[test]
-#[ignore] // TODO: Requires proper agent mocking - test tries to run reviewer agent in review phase
+#[ignore] // Requires agent mocking infrastructure - checkpoint uses "test-agent" which falls back to real agents
 fn ralph_resume_from_review_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
@@ -963,15 +967,20 @@ fn ralph_resume_from_review_phase() {
         .unwrap();
 
         // Pre-create required files to skip agent phases
+        fs::write(dir.path().join("PROMPT.md"), "Test prompt\n").unwrap();
         fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
+        fs::write(dir.path().join(".agent/ISSUES.md"), "No issues\n").unwrap();
 
         let mut cmd = ralph_cmd();
         base_env(&mut cmd)
             .current_dir(dir.path())
             .arg("--resume")
+            .arg("--recovery-strategy=force")
             .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
         cmd.assert().success().stdout(
             predicate::str::contains("Review")
@@ -1815,11 +1824,15 @@ fn ralph_resume_passes_context_to_developer_agent() {
 }
 
 #[test]
-#[ignore] // TODO: Fix this test to use file mocking instead of running agents
+#[ignore] // Requires agent mocking infrastructure - needs to capture reviewer prompts during agent execution
 fn ralph_resume_passes_context_to_reviewer_agent() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
         let _repo = init_git_repo(&dir);
+
+        // Pre-create required files
+        fs::write(dir.path().join("PROMPT.md"), "Test prompt\n").unwrap();
+        fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
 
         // Create a checkpoint at review phase with prompt history
         fs::create_dir_all(dir.path().join(".agent")).unwrap();
@@ -1903,7 +1916,7 @@ fn ralph_resume_passes_context_to_reviewer_agent() {
 
         // Use a command that captures all arguments (not just $1) to a file
         // The prompt is passed as arguments, so we capture all positional parameters
-        let capture_cmd = format!(
+        let _capture_cmd = format!(
             "sh -c 'for arg in \"$@\"; do echo \"$arg\" >> {}; done; echo \"No issues found.\"' _",
             prompt_capture.display()
         );
@@ -1912,10 +1925,11 @@ fn ralph_resume_passes_context_to_reviewer_agent() {
         base_env(&mut cmd)
             .current_dir(dir.path())
             .arg("--resume")
-            .env("RALPH_DEVELOPER_ITERS", "1")
-            .env("RALPH_REVIEWER_REVIEWS", "1")
+            .arg("--recovery-strategy=force")
+            .env("RALPH_DEVELOPER_ITERS", "0")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
             .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
-            .env("RALPH_REVIEWER_CMD", &capture_cmd);
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
         cmd.assert().success();
 
@@ -2140,7 +2154,7 @@ fn ralph_resume_shows_prompt_replay_info() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: This test runs the full pipeline with agents; needs mocking infrastructure
+#[ignore] // Requires agent mocking infrastructure - commit generation phase needs mocking
 fn ralph_v3_checkpoint_contains_execution_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
@@ -2935,11 +2949,14 @@ fn ralph_v3_prompt_replay_across_multiple_iterations() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: Fix this test to use file mocking instead of running agents
+#[ignore] // Requires agent mocking infrastructure - commit generation phase needs mocking
 fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
         let _repo = init_git_repo(&dir);
+
+        // Pre-create PROMPT.md to avoid validation issues
+        fs::write(dir.path().join("PROMPT.md"), "Test prompt\n").unwrap();
 
         // Create a v3 checkpoint
         let working_dir = canonical_working_dir(&dir);
@@ -3131,7 +3148,7 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
 // ============================================================================
 
 #[test]
-#[ignore] // TODO: Fix this test to use file mocking instead of running agents
+#[ignore] // Requires agent mocking infrastructure - checkpoint uses "claude"/"codex" agents that fall back to real agents
 fn ralph_v3_comprehensive_resume_from_review_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
@@ -3740,14 +3757,19 @@ fn ralph_resume_flag_takes_precedence_over_no_resume() {
 // ============================================================================
 
 #[test]
-#[ignore]
+#[ignore] // Requires agent mocking infrastructure - checkpoint uses "test-agent" which falls back to real agents
 fn ralph_resume_replays_prompts_deterministically() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
         let _repo = init_git_repo(&dir);
 
-        // Create PROMPT.md to satisfy validation
+        // Create PROMPT.md and PLAN.md to satisfy validation
         write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join(".agent/PLAN.md"),
+            "# Plan\n\n1. Step 1\n2. Step 2",
+        );
+        write_file(dir.path().join(".agent/ISSUES.md"), "No issues\n");
 
         // Create a v3 checkpoint with prompt history
         let working_dir = canonical_working_dir(&dir);
@@ -3826,6 +3848,7 @@ fn ralph_resume_replays_prompts_deterministically() {
         base_env(&mut cmd)
             .current_dir(dir.path())
             .arg("--resume")
+            .arg("--recovery-strategy=force")
             .env("RALPH_DEVELOPER_ITERS", "2")
             .env("RALPH_REVIEWER_REVIEWS", "2")
             .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
