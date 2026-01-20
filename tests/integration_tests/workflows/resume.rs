@@ -311,12 +311,7 @@ fn ralph_resume_without_checkpoint_starts_fresh() {
 // Working Directory Validation Tests
 // ============================================================================
 
-// TODO: Re-enable this test after fixing the working_dir field deserialization issue
-// The test currently fails because the working_dir field is being deserialized as empty
-// even when the JSON has a non-empty value. This is likely a pre-existing issue with
-// the V1 checkpoint format migration.
 #[test]
-#[ignore]
 fn ralph_resume_validates_working_directory() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
@@ -330,11 +325,12 @@ fn ralph_resume_validates_working_directory() {
 
         // Create checkpoint JSON with wrong working directory
         // We manually construct the JSON to set working_dir to a different value
+        // Using v3 format with all required fields
         fs::write(
             dir.path().join(".agent/checkpoint.json"),
             format!(
                 r#"{{
-            "version": 2,
+            "version": 3,
             "phase": "Development",
             "iteration": 1,
             "total_iterations": 1,
@@ -348,21 +344,31 @@ fn ralph_resume_validates_working_directory() {
                 "reviewer_reviews": 0,
                 "commit_msg": "",
                 "review_depth": null,
-                "skip_rebase": false
+                "skip_rebase": false,
+                "isolation_mode": true,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
                 "cmd": "echo",
                 "output_flag": "",
                 "yolo_flag": null,
-                "can_commit": false
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
             }},
             "reviewer_agent_config": {{
                 "name": "test-agent",
                 "cmd": "echo",
                 "output_flag": "",
                 "yolo_flag": null,
-                "can_commit": false
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
             }},
             "rebase_state": "NotStarted",
             "config_path": null,
@@ -375,7 +381,10 @@ fn ralph_resume_validates_working_directory() {
             "parent_run_id": null,
             "resume_count": 0,
             "actual_developer_runs": 1,
-            "actual_reviewer_runs": 0
+            "actual_reviewer_runs": 0,
+            "execution_history": null,
+            "file_system_state": null,
+            "prompt_history": null
         }}"#,
                 wrong_working_dir
             ),
@@ -392,8 +401,8 @@ fn ralph_resume_validates_working_directory() {
             .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
             .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
-        // Validation error messages go to stdout (via logger)
-        cmd.assert().stdout(
+        // Validation error messages go to stderr (via logger)
+        cmd.assert().stderr(
             predicate::str::contains("Working directory mismatch")
                 .or(predicate::str::contains("validation failed")),
         );

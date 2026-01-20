@@ -210,11 +210,22 @@ pub struct AgentConfigSnapshot {
     /// Whether this agent can commit
     pub can_commit: bool,
     /// Model override (e.g., "-m opencode/glm-4.7-free")
+    /// Default is None for backward compatibility with v1/v2 checkpoints.
+    #[serde(default)]
     pub model_override: Option<String>,
     /// Provider override (e.g., "opencode", "anthropic")
+    /// Default is None for backward compatibility with v1/v2 checkpoints.
+    #[serde(default)]
     pub provider_override: Option<String>,
     /// Context level (0=minimal, 1=normal)
+    /// Default is 1 (normal context) for backward compatibility with v1/v2 checkpoints.
+    #[serde(default = "default_context_level")]
     pub context_level: u8,
+}
+
+/// Default value for context_level (1 = normal context).
+fn default_context_level() -> u8 {
+    1
 }
 
 impl AgentConfigSnapshot {
@@ -234,7 +245,7 @@ impl AgentConfigSnapshot {
             can_commit,
             model_override: None,
             provider_override: None,
-            context_level: 1, // Default to normal context
+            context_level: default_context_level(),
         }
     }
 
@@ -565,14 +576,23 @@ fn load_checkpoint_with_fallback(
     content: &str,
 ) -> Result<PipelineCheckpoint, Box<dyn std::error::Error>> {
     // Try v3 format first (current)
-    if let Ok(checkpoint) = serde_json::from_str::<PipelineCheckpoint>(content) {
-        // Accept v3 (current) or higher
-        if checkpoint.version >= 3 {
+    match serde_json::from_str::<PipelineCheckpoint>(content) {
+        Ok(mut checkpoint) => {
+            // Accept v3 (current) or higher
+            if checkpoint.version >= 3 {
+                return Ok(checkpoint);
+            }
+            // v2 or v1 checkpoint parsed successfully as v3 struct - upgrade version
+            // and add v3 defaults
+            checkpoint.version = CHECKPOINT_VERSION;
             return Ok(checkpoint);
+        }
+        Err(_e) => {
+            // First parse attempt failed, try v2 format below
         }
     }
 
-    // Try v2 format and migrate to v3
+    // If v3 struct parsing failed, try v2 format and migrate to v3
     #[derive(Debug, Clone, Serialize, Deserialize)]
     struct V2Checkpoint {
         version: u32,
@@ -603,6 +623,7 @@ fn load_checkpoint_with_fallback(
 
     if let Ok(v2) = serde_json::from_str::<V2Checkpoint>(content) {
         // Migrate v2 to v3: add new hardened resume fields (empty defaults)
+        // Note: working_dir from v2 checkpoint is preserved
         return Ok(PipelineCheckpoint {
             version: CHECKPOINT_VERSION,
             phase: v2.phase,
