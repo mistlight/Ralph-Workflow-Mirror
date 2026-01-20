@@ -21,6 +21,9 @@ use ralph_workflow::pipeline::test_trait::{AgentCommandResult, AgentExecutor, Mo
 use std::path::{Path, PathBuf};
 
 /// Test that MockGit can be created and used via GitOps trait.
+///
+/// This verifies that when a MockGit instance is created, it can be used
+/// through the GitOps trait interface to perform git operations.
 #[test]
 fn test_mock_git_creation() {
     with_default_timeout(|| {
@@ -30,6 +33,9 @@ fn test_mock_git_creation() {
 }
 
 /// Test that MockGit builder pattern works.
+///
+/// This verifies that when the builder methods are chained, they configure
+/// the MockGit instance with the specified return values for git operations.
 #[test]
 fn test_mock_git_builder() {
     with_default_timeout(|| {
@@ -48,6 +54,9 @@ fn test_mock_git_builder() {
 }
 
 /// Test that MockGit implements GitOps trait.
+///
+/// This verifies that when MockGit is used through the GitOps trait,
+/// it correctly executes trait methods and returns configured results.
 #[test]
 fn test_mock_git_implements_git_ops() {
     with_default_timeout(|| {
@@ -65,6 +74,9 @@ fn test_mock_git_implements_git_ops() {
 }
 
 /// Test that MockGit call capture works.
+///
+/// This verifies that when git operations are called on MockGit,
+/// the call counts and arguments are tracked for assertion.
 #[test]
 fn test_mock_git_call_capture() {
     with_default_timeout(|| {
@@ -83,6 +95,9 @@ fn test_mock_git_call_capture() {
 }
 
 /// Test that MockAgentExecutor can be created and used.
+///
+/// This verifies that when a MockAgentExecutor is created, it can be
+/// used to execute agent commands and track execution state.
 #[test]
 fn test_mock_agent_executor_creation() {
     with_default_timeout(|| {
@@ -92,6 +107,9 @@ fn test_mock_agent_executor_creation() {
 }
 
 /// Test that MockAgentExecutor builder pattern works.
+///
+/// This verifies that when the builder methods are chained, they configure
+/// the MockAgentExecutor with responses for sequential command executions.
 #[test]
 fn test_mock_agent_executor_builder() {
     with_default_timeout(|| {
@@ -124,6 +142,9 @@ fn test_mock_agent_executor_builder() {
 }
 
 /// Test that MockAgentExecutor call capture works.
+///
+/// This verifies that when agent commands are executed, the executor
+/// captures call counts, prompts, and command strings for inspection.
 #[test]
 fn test_mock_agent_executor_call_capture() {
     with_default_timeout(|| {
@@ -165,6 +186,9 @@ fn test_mock_agent_executor_call_capture() {
 }
 
 /// Test that mock error variants work.
+///
+/// This verifies that when mock instances are created in error mode,
+/// they return errors for all operations to test error handling.
 #[test]
 fn test_mock_error_variants() {
     with_default_timeout(|| {
@@ -195,6 +219,9 @@ fn test_mock_error_variants() {
 // ============================================================================
 
 /// Test that MockFileOps can be created and used via FileOps trait.
+///
+/// This verifies that when a MockFileOps is created, it can be used
+/// through the FileOps trait to perform filesystem operations.
 #[test]
 fn test_mock_file_ops_creation() {
     with_default_timeout(|| {
@@ -204,6 +231,9 @@ fn test_mock_file_ops_creation() {
 }
 
 /// Test that MockFileOps builder pattern works for virtual file system.
+///
+/// This verifies that when the builder is used to add files, they exist
+/// in the virtual filesystem and can be read via FileOps trait methods.
 #[test]
 fn test_mock_file_ops_builder() {
     with_default_timeout(|| {
@@ -224,6 +254,9 @@ fn test_mock_file_ops_builder() {
 }
 
 /// Test that MockFileOps captures write operations.
+///
+/// This verifies that when files are written via FileOps trait,
+/// the operations are tracked and written content can be retrieved.
 #[test]
 fn test_mock_file_ops_captures_writes() {
     with_default_timeout(|| {
@@ -251,6 +284,9 @@ fn test_mock_file_ops_captures_writes() {
 }
 
 /// Test that MockFileOps implements FileOps trait with full roundtrip.
+///
+/// This verifies that when FileOps trait methods are used on MockFileOps,
+/// they correctly implement read, write, exists, and remove operations.
 #[test]
 fn test_mock_file_ops_implements_file_ops_trait() {
     with_default_timeout(|| {
@@ -274,6 +310,9 @@ fn test_mock_file_ops_implements_file_ops_trait() {
 }
 
 /// Test that MockFileOps tracks all operations in order.
+///
+/// This verifies that when filesystem operations are performed, they
+/// are recorded in order with their operation types for inspection.
 #[test]
 fn test_mock_file_ops_operation_tracking() {
     with_default_timeout(|| {
@@ -294,6 +333,9 @@ fn test_mock_file_ops_operation_tracking() {
 }
 
 /// Test that MockFileOps error variants work.
+///
+/// This verifies that when MockFileOps is configured for errors,
+/// it returns appropriate error results for read and write operations.
 #[test]
 fn test_mock_file_ops_error_variants() {
     with_default_timeout(|| {
@@ -317,6 +359,9 @@ fn test_mock_file_ops_error_variants() {
 }
 
 /// Test that MockFileOps can simulate agent file operations.
+///
+/// This verifies that when a typical agent workflow is simulated,
+/// all file operations are correctly tracked and can be verified.
 #[test]
 fn test_mock_file_ops_agent_workflow_scenario() {
     with_default_timeout(|| {

@@ -8,6 +8,7 @@
 use std::fs;
 
 use crate::agents::is_glm_like_agent;
+use crate::checkpoint::restore::ResumeContext;
 use crate::config::ReviewDepth;
 use crate::git_helpers::{
     get_git_diff_from_review_baseline, get_review_baseline_info, get_start_commit_summary,
@@ -15,7 +16,7 @@ use crate::git_helpers::{
 };
 use crate::guidelines::ReviewGuidelines;
 use crate::prompts::{
-    prompt_comprehensive_review_with_diff_with_context,
+    generate_resume_note, prompt_comprehensive_review_with_diff_with_context,
     prompt_detailed_review_without_guidelines_with_diff_with_context,
     prompt_incremental_review_with_diff_with_context, prompt_review_xml_with_context,
     prompt_reviewer_review_with_guidelines_and_diff_with_context,
@@ -77,6 +78,7 @@ pub fn build_review_prompt(
     ctx: &PhaseContext<'_>,
     reviewer_context: ContextLevel,
     guidelines: Option<&ReviewGuidelines>,
+    resume_context: Option<&ResumeContext>,
 ) -> (String, String) {
     let diff_result = get_and_validate_diff(ctx);
 
@@ -86,22 +88,34 @@ pub fn build_review_prompt(
         ctx.config.features.force_universal_prompt,
     );
 
-    if use_universal {
-        return build_universal_prompt(ctx, reviewer_context, diff_result);
-    }
+    let (label, prompt) = if use_universal {
+        build_universal_prompt(ctx, reviewer_context, diff_result)
+    } else {
+        match ctx.config.review_depth {
+            ReviewDepth::Security => {
+                build_security_prompt(ctx, reviewer_context, guidelines, diff_result)
+            }
+            ReviewDepth::Incremental => {
+                build_incremental_prompt(ctx, reviewer_context, diff_result)
+            }
+            ReviewDepth::Comprehensive => {
+                build_comprehensive_prompt(ctx, reviewer_context, guidelines, diff_result)
+            }
+            ReviewDepth::Standard => {
+                build_standard_prompt(ctx, reviewer_context, guidelines, diff_result)
+            }
+        }
+    };
 
-    match ctx.config.review_depth {
-        ReviewDepth::Security => {
-            build_security_prompt(ctx, reviewer_context, guidelines, diff_result)
-        }
-        ReviewDepth::Incremental => build_incremental_prompt(ctx, reviewer_context, diff_result),
-        ReviewDepth::Comprehensive => {
-            build_comprehensive_prompt(ctx, reviewer_context, guidelines, diff_result)
-        }
-        ReviewDepth::Standard => {
-            build_standard_prompt(ctx, reviewer_context, guidelines, diff_result)
-        }
-    }
+    // Prepend resume note if this is a resumed session
+    let prompt = if let Some(resume_ctx) = resume_context {
+        let resume_note = generate_resume_note(resume_ctx);
+        format!("{}{}", resume_note, prompt)
+    } else {
+        prompt
+    };
+
+    (label, prompt)
 }
 
 /// Build the XML-based review prompt for XSD retry loop.

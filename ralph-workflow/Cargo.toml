@@ -1,6 +1,6 @@
 [package]
 name = "ralph-workflow"
-version = "0.4.2"
+version = "0.5.0"
 edition = "2021"
 description = "PROMPT-driven multi-agent orchestrator for git repos"
 authors = ["Mistlight"]
@@ -21,11 +21,13 @@ path = "src/main.rs"
 
 [features]
 # INTEGRATION TEST GOES OUTSIDE OF THIS PACKAGE LOOK IN THE PARENT DIRECTORY
-default = ["monitoring"]
+default = ["monitoring", "hardened-resume"]
 # Enable monitoring/debugging APIs (printer, streaming_metrics)
 monitoring = []
 # Enable test utilities (TestLogger, TestPrinter, etc.) for integration testing
 test-utils = []
+# Enable hardened resume functionality (execution history, file state capture, recovery)
+hardened-resume = []
 
 [dependencies]
 # CLI argument parsing
@@ -35,6 +37,9 @@ clap_complete = "4.4"
 # JSON parsing with serde (100x faster than jq spawns)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+# SHA-256 checksums for checkpoint validation
+sha2 = "0.10"
 
 # Date/time handling
 chrono = "0.4"
@@ -69,6 +74,15 @@ git2 = "0.18"
 
 # File system monitoring for PROMPT.md protection
 notify = "6.1"
+
+# UUID generation for unique run identifiers
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+# Compression for large file content in checkpoints
+flate2 = "1.0"
+
+# Base64 encoding for compressed data
+base64 = "0.22"
 
 [dev-dependencies]
 # Testing utilities

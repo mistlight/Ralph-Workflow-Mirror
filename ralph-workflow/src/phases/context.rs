@@ -5,6 +5,8 @@
 //! logging utilities, and runtime state that all phases need access to.
 
 use crate::agents::{AgentRegistry, AgentRole};
+use crate::checkpoint::execution_history::ExecutionHistory;
+use crate::checkpoint::RunContext;
 use crate::config::Config;
 use crate::guidelines::ReviewGuidelines;
 use crate::logger::{Colors, Logger};
@@ -37,9 +39,47 @@ pub struct PhaseContext<'a> {
     pub review_guidelines: Option<&'a ReviewGuidelines>,
     /// Template context for loading user templates.
     pub template_context: &'a TemplateContext,
+    /// Run context for tracking execution lineage and state.
+    pub run_context: RunContext,
+    /// Execution history for tracking pipeline steps.
+    pub execution_history: ExecutionHistory,
+    /// Prompt history for storing prompts used during execution.
+    pub prompt_history: std::collections::HashMap<String, String>,
 }
 
-impl PhaseContext<'_> {}
+impl PhaseContext<'_> {
+    /// Record a completed developer iteration.
+    pub fn record_developer_iteration(&mut self) {
+        self.run_context.record_developer_iteration();
+    }
+
+    /// Record a completed reviewer pass.
+    pub fn record_reviewer_pass(&mut self) {
+        self.run_context.record_reviewer_pass();
+    }
+
+    /// Capture a prompt in the prompt history.
+    ///
+    /// This method stores a prompt with a key for later retrieval on resume.
+    /// The key should uniquely identify the prompt (e.g., "development_1", "review_2").
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Unique identifier for this prompt
+    /// * `prompt` - The prompt text to store
+    pub fn capture_prompt(&mut self, key: &str, prompt: &str) {
+        self.prompt_history
+            .insert(key.to_string(), prompt.to_string());
+    }
+
+    /// Clone the prompt history without consuming it.
+    ///
+    /// This is used when building checkpoints to include the prompts
+    /// while keeping them in the context for subsequent checkpoint saves.
+    pub fn clone_prompt_history(&self) -> std::collections::HashMap<String, String> {
+        self.prompt_history.clone()
+    }
+}
 
 /// Get the primary commit agent from the registry.
 ///
@@ -124,6 +164,9 @@ mod tests {
             reviewer_agent: "reviewer-agent",
             review_guidelines: None,
             template_context: &fixture.template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -159,6 +202,9 @@ mod tests {
             reviewer_agent: "reviewer-agent-1",
             review_guidelines: None,
             template_context: &fixture.template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -186,6 +232,9 @@ mod tests {
             reviewer_agent: "fallback-reviewer",
             review_guidelines: None,
             template_context: &fixture.template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
         };
 
         let result = get_primary_commit_agent(&ctx);

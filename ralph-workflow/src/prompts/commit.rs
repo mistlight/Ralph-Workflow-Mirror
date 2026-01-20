@@ -55,17 +55,10 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
     Template::new(template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
-            // Use fallback template if main template fails
-            let fallback_content = include_str!("templates/fix_mode_fallback.txt");
-            let fallback_template = Template::new(fallback_content);
-            fallback_template
-                .render(&variables)
-                .unwrap_or_else(|_| {
-                    // Last resort emergency fallback
-                    format!(
-                        "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n"
-                    )
-                })
+            // Embedded fallback template (removed separate file - fallbacks now in code)
+            format!(
+                "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n"
+            )
         })
 }
 
@@ -105,20 +98,10 @@ pub fn prompt_fix_with_context(
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
-            // Use fallback template if main template fails
-            let fallback_content = context
-                .registry()
-                .get_template("fix_mode_fallback")
-                .unwrap_or_else(|_| include_str!("templates/fix_mode_fallback.txt").to_string());
-            let fallback_template = Template::new(&fallback_content);
-            fallback_template
-                .render(&variables)
-                .unwrap_or_else(|_| {
-                    // Last resort emergency fallback
-                    format!(
-                        "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n"
-                    )
-                })
+            // Embedded fallback template (removed separate file - fallbacks now in code)
+            format!(
+                "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n"
+            )
         })
 }
 

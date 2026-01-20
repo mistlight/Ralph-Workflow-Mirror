@@ -45,17 +45,10 @@ pub fn prompt_developer_iteration(
     ]);
 
     template.render(&variables).unwrap_or_else(|_| {
-        // Use fallback template if main template fails
-        let fallback_content = include_str!("templates/developer_iteration_fallback.txt");
-        let fallback_template = Template::new(fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n"
-                )
-            })
+        // Embedded fallback template (removed separate file - fallbacks now in code)
+        format!(
+            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n"
+        )
     })
 }
 
@@ -88,17 +81,10 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
     let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
 
     template.render(&variables).unwrap_or_else(|_| {
-        // Use fallback template if main template fails
-        let fallback_content = include_str!("templates/planning_fallback.txt");
-        let fallback_template = Template::new(fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n"
-                )
-            })
+        // Embedded fallback template (removed separate file - fallbacks now in code)
+        format!(
+            "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n"
+        )
     })
 }
 
@@ -141,23 +127,10 @@ pub fn prompt_developer_iteration_with_context(
     ]);
 
     template.render(&variables).unwrap_or_else(|_| {
-        // Use fallback template if main template fails
-        let fallback_content = context
-            .registry()
-            .get_template("developer_iteration_fallback")
-            .unwrap_or_else(|_| {
-                // Fallback to embedded template if registry fails
-                include_str!("templates/developer_iteration_fallback.txt").to_string()
-            });
-        let fallback_template = Template::new(&fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n"
-                )
-            })
+        // Embedded fallback template (removed separate file - fallbacks now in code)
+        format!(
+            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n"
+        )
     })
 }
 
@@ -186,23 +159,10 @@ pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Optio
     let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
 
     template.render(&variables).unwrap_or_else(|_| {
-        // Use fallback template if main template fails
-        let fallback_content = context
-            .registry()
-            .get_template("planning_fallback")
-            .unwrap_or_else(|_| {
-                // Fallback to embedded template if registry fails
-                include_str!("templates/planning_fallback.txt").to_string()
-            });
-        let fallback_template = Template::new(&fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n"
-                )
-            })
+        // Embedded fallback template (removed separate file - fallbacks now in code)
+        format!(
+            "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n"
+        )
     })
 }
 
@@ -268,6 +228,83 @@ pub fn prompt_planning_xsd_retry_with_context(
                  Last output:\n{}\n\n\
                  Please resend your plan in valid XML format:\n\
                  <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n",
+                xsd_error, last_output
+            )
+        })
+}
+
+/// Generate XML-based developer iteration prompt using template registry.
+///
+/// This version uses XML output format with XSD validation for reliable parsing.
+/// It's the recommended format for development iteration going forward.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+pub fn prompt_developer_iteration_xml_with_context(
+    context: &TemplateContext,
+    prompt_content: &str,
+    plan_content: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration_xml")
+        .unwrap_or_else(|_| include_str!("templates/developer_iteration_xml.txt").to_string());
+    let template = Template::new(&template_content);
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+    ]);
+
+    template.render(&variables).unwrap_or_else(|_| {
+        format!(
+            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\n\
+             IMPLEMENTATION PLAN:\n{plan_content}\n\n\
+             Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n"
+        )
+    })
+}
+
+/// Generate XSD validation retry prompt for developer iteration with error feedback.
+///
+/// This prompt is used when an AI agent produces development result XML that fails XSD validation.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+/// * `xsd_error` - The XSD validation error message to include in the prompt
+/// * `last_output` - The invalid XML output that failed validation
+pub fn prompt_developer_iteration_xsd_retry_with_context(
+    context: &TemplateContext,
+    prompt_content: &str,
+    plan_content: &str,
+    xsd_error: &str,
+    last_output: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration_xsd_retry")
+        .unwrap_or_else(|_| {
+            include_str!("templates/developer_iteration_xsd_retry.txt").to_string()
+        });
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("XSD_ERROR", xsd_error.to_string()),
+        ("LAST_OUTPUT", last_output.to_string()),
+    ]);
+    Template::new(&template_content)
+        .render(&variables)
+        .unwrap_or_else(|_| {
+            format!(
+                "Your previous development status failed XSD validation.\n\nError: {}\n\n\
+                 Last output:\n{}\n\n\
+                 Please resend your status in valid XML format:\n\
+                 <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
                 xsd_error, last_output
             )
         })

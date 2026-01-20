@@ -135,6 +135,26 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         m.insert(
+            "developer_iteration_xml",
+            EmbeddedTemplate {
+                name: "developer_iteration_xml",
+                content: include_str!("templates/developer_iteration_xml.txt"),
+                description: "Developer agent implementation mode prompt with XML output format and XSD validation",
+                deprecated: false,
+            },
+        );
+
+        m.insert(
+            "developer_iteration_xsd_retry",
+            EmbeddedTemplate {
+                name: "developer_iteration_xsd_retry",
+                content: include_str!("templates/developer_iteration_xsd_retry.txt"),
+                description: "XSD validation retry prompt for developer iteration",
+                deprecated: false,
+            },
+        );
+
+        m.insert(
             "planning_xml",
             EmbeddedTemplate {
                 name: "planning_xml",
@@ -155,31 +175,11 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         m.insert(
-            "developer_iteration_fallback",
-            EmbeddedTemplate {
-                name: "developer_iteration_fallback",
-                content: include_str!("templates/developer_iteration_fallback.txt"),
-                description: "Fallback developer iteration prompt",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
             "planning",
             EmbeddedTemplate {
                 name: "planning",
                 content: include_str!("templates/planning.txt"),
                 description: "Planning phase prompt for implementation plans (legacy, non-XML)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "planning_fallback",
-            EmbeddedTemplate {
-                name: "planning_fallback",
-                content: include_str!("templates/planning_fallback.txt"),
-                description: "Fallback planning prompt (legacy, non-XML)",
                 deprecated: false,
             },
         );
@@ -238,16 +238,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "fix_mode",
                 content: include_str!("templates/fix_mode.txt"),
                 description: "Fix mode prompt for addressing review issues (legacy, non-XML)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "fix_mode_fallback",
-            EmbeddedTemplate {
-                name: "fix_mode_fallback",
-                content: include_str!("templates/fix_mode_fallback.txt"),
-                description: "Fallback fix mode prompt (legacy, non-XML)",
                 deprecated: false,
             },
         );
@@ -533,14 +523,12 @@ mod tests {
     }
 
     #[test]
-    fn test_fallback_templates_exist() {
-        // Verify all fallback templates exist
-        assert!(get_embedded_template("developer_iteration_fallback").is_some());
-        assert!(get_embedded_template("planning_fallback").is_some());
-        assert!(get_embedded_template("fix_mode_fallback").is_some());
-        assert!(get_embedded_template("conflict_resolution_fallback").is_some());
-        // Note: commit_message_fallback was removed as part of the XML-only with XSD validation approach
-        // The retry strategy now uses in-session XSD validation retries instead of fallback templates
+    fn test_fallback_templates_removed() {
+        // Verify legacy fallback templates have been removed
+        assert!(get_embedded_template("developer_iteration_fallback").is_none());
+        assert!(get_embedded_template("planning_fallback").is_none());
+        assert!(get_embedded_template("fix_mode_fallback").is_none());
+        // Note: Fallbacks are now embedded in code as inline strings, not separate .txt files
     }
 
     #[test]

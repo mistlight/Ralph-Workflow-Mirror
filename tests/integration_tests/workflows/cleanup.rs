@@ -35,6 +35,10 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 // Cleanup and Error Recovery Tests
 // ============================================================================
 
+/// Test that the pipeline cleans up resources when an early error occurs.
+///
+/// This verifies that when a pipeline error occurs early, the system
+/// leaves the repository in a clean state with no uncommitted changes.
 #[test]
 fn ralph_cleans_up_on_early_error() {
     with_default_timeout(|| {
@@ -75,6 +79,10 @@ fn ralph_cleans_up_on_early_error() {
     });
 }
 
+/// Test that cleanup happens even when developer agent has errors.
+///
+/// This verifies that when developer agent errors occur, the system
+/// continues to completion and leaves the repository in a clean state.
 #[test]
 fn ralph_cleanup_on_interrupt_simulation() {
     with_default_timeout(|| {
@@ -111,6 +119,10 @@ fn ralph_cleanup_on_interrupt_simulation() {
     });
 }
 
+/// Test that agent timeouts are handled gracefully.
+///
+/// This verifies that when agent phases are skipped due to zero iterations,
+/// the pipeline completes successfully without agent execution.
 #[test]
 fn ralph_handles_agent_timeout_gracefully() {
     with_default_timeout(|| {
@@ -131,6 +143,10 @@ fn ralph_handles_agent_timeout_gracefully() {
     });
 }
 
+/// Test that invalid config is handled with lenient defaults.
+///
+/// This verifies that when the config file is malformed, the system
+/// uses default configuration and continues successfully.
 #[test]
 fn ralph_handles_invalid_json_in_config() {
     with_default_timeout(|| {
@@ -168,6 +184,10 @@ fn ralph_handles_invalid_json_in_config() {
 // Isolation Mode Tests
 // ============================================================================
 
+/// Test that isolation mode does not create STATUS.md, NOTES.md, or ISSUES.md.
+///
+/// This verifies that when isolation mode is enabled (default), the system
+/// does not create STATUS.md, NOTES.md, or ISSUES.md files.
 #[test]
 fn ralph_isolation_mode_does_not_create_status_notes_issues() {
     with_default_timeout(|| {
@@ -200,6 +220,10 @@ fn ralph_isolation_mode_does_not_create_status_notes_issues() {
     });
 }
 
+/// Test that isolation mode deletes existing STATUS.md, NOTES.md, and ISSUES.md.
+///
+/// This verifies that when isolation mode is enabled and these files exist,
+/// the system deletes them during pipeline execution.
 #[test]
 fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
     with_default_timeout(|| {
@@ -237,6 +261,10 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
     });
 }
 
+/// Test that --no-isolation flag creates STATUS.md, NOTES.md, and ISSUES.md.
+///
+/// This verifies that when the --no-isolation flag is used, the system
+/// creates STATUS.md, NOTES.md, and ISSUES.md files.
 #[test]
 fn ralph_no_isolation_creates_status_notes_issues() {
     with_default_timeout(|| {
@@ -270,6 +298,10 @@ fn ralph_no_isolation_creates_status_notes_issues() {
     });
 }
 
+/// Test that RALPH_ISOLATION_MODE=0 creates STATUS.md, NOTES.md, and ISSUES.md.
+///
+/// This verifies that when isolation mode is disabled via environment variable,
+/// the system creates STATUS.md, NOTES.md, and ISSUES.md files.
 #[test]
 fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
     with_default_timeout(|| {
@@ -303,6 +335,10 @@ fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
     });
 }
 
+/// Test that --no-isolation overwrites existing STATUS.md, NOTES.md, and ISSUES.md.
+///
+/// This verifies that when --no-isolation is used and these files already exist,
+/// the system overwrites them with new content during pipeline execution.
 #[test]
 fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
     with_default_timeout(|| {
@@ -364,6 +400,10 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
 // Resume/Checkpoint Tests
 // ============================================================================
 
+/// Test that resume from checkpoint phase works correctly.
+///
+/// This verifies that when phases are skipped due to zero iterations,
+/// the pipeline completes successfully with phase-skipping behavior.
 #[test]
 fn ralph_resume_continues_from_checkpoint_phase() {
     with_default_timeout(|| {
@@ -387,6 +427,10 @@ fn ralph_resume_continues_from_checkpoint_phase() {
 // Incremental Commit Tests
 // ============================================================================
 
+/// Test that development iteration creates changes for commit.
+///
+/// This verifies that when development iterations are configured,
+/// the infrastructure is in place to create changes that could be committed.
 #[test]
 fn ralph_developer_iteration_creates_changes_for_commit() {
     with_default_timeout(|| {

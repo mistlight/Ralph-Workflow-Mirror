@@ -166,10 +166,6 @@ pub struct FeatureFlags {
     /// Force universal review prompt for all agents (default: auto-detect)
     /// When true, the universal/simplified prompt is always used for review
     pub(crate) force_universal_prompt: bool,
-    /// Whether to enable automatic rebasing before/after pipeline
-    pub(crate) auto_rebase: bool,
-    /// Maximum number of recovery attempts during rebase conflict resolution
-    pub(crate) max_recovery_attempts: u32,
 }
 
 /// Ralph configuration.

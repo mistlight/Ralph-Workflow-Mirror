@@ -23,11 +23,13 @@ mod commit;
 #[cfg(test)]
 mod parsers;
 pub mod xml_extraction;
+mod xml_extraction_development_result;
 mod xml_extraction_fix_result;
 mod xml_extraction_issues;
 mod xml_extraction_plan;
 mod xml_formatter;
 pub mod xsd_validation;
+pub(crate) mod xsd_validation_development_result;
 pub(crate) mod xsd_validation_fix_result;
 pub(crate) mod xsd_validation_issues;
 pub(crate) mod xsd_validation_plan;
@@ -63,6 +65,12 @@ pub use xsd_validation_issues::{validate_issues_xml, IssuesElements};
 // Public exports for fix result XML extraction and validation (used by fix pass)
 pub use xml_extraction_fix_result::extract_fix_result_xml;
 pub use xsd_validation_fix_result::{validate_fix_result_xml, FixResultElements};
+
+// Public exports for development result XML extraction and validation
+pub use xml_extraction_development_result::extract_development_result_xml;
+pub use xsd_validation_development_result::{
+    validate_development_result_xml, DevelopmentResultElements,
+};
 
 // Public export for XML formatting
 pub use xml_formatter::format_xml_for_display;

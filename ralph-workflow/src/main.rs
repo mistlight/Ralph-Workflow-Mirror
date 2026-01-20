@@ -26,6 +26,7 @@ mod diagnostics;
 mod files;
 mod git_helpers;
 mod guidelines;
+mod interrupt;
 mod json_parser;
 mod language_detector;
 mod logger;
@@ -37,17 +38,11 @@ mod review_metrics;
 mod templates;
 
 use crate::cli::Args;
-use crate::git_helpers::cleanup_agent_phase_silent;
 use clap::Parser;
 
 fn main() -> anyhow::Result<()> {
-    // Set up Ctrl+C handler for cleanup on unexpected exit
-    ctrlc::set_handler(move || {
-        eprintln!("\n✋ Interrupted! Cleaning up generated files...");
-        cleanup_agent_phase_silent();
-        std::process::exit(130); // Standard exit code for SIGINT
-    })
-    .ok(); // Ignore errors if handler can't be set (e.g., nested handlers)
+    // Set up Ctrl+C handler for graceful checkpoint save on interrupt
+    crate::interrupt::setup_interrupt_handler();
 
     app::run(Args::parse())
 }

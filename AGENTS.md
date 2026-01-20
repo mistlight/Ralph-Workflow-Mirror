@@ -71,21 +71,38 @@ rg -n -U --pcre2 '(?x)
 ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+
+# Check for forbidden test flags in production code (cfg!(test), test_mode params, etc.)
+# DO NOT MODIFY THIS SCRIPT. If it fails, FIX THE PRODUCTION CODE, not the script.
+./tests/integration_tests/no_test_flags_check.sh
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+
 cargo fmt --all --check
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
 # Lint the main crate (lib only) with all its features
 cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
 # Lint the separate integration test package
 # (test-utils feature is enabled via the integration test crate's Cargo.toml dependency on ralph-workflow)
 cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
 # Run the main crate's unit tests with all features
 cargo test -p ralph-workflow --lib --all-features
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
 # Run the integration tests package
 # (dependency features for ralph-workflow should be enabled via the integration test crate's Cargo.toml)
 cargo test -p ralph-workflow-tests
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
 # Build release artifacts (default-members only)
 cargo build --release

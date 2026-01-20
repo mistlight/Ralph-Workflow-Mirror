@@ -26,9 +26,15 @@ pub mod validation;
 
 use crate::agents::AgentRegistry;
 use crate::app::finalization::finalize_pipeline;
-use crate::app::resume::{phase_rank, should_run_from};
+use crate::app::resume::should_run_from;
 use crate::banner::print_welcome_banner;
-use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+use crate::checkpoint::restore::{
+    calculate_start_iteration, calculate_start_reviewer_pass, should_skip_phase,
+};
+use crate::checkpoint::{
+    save_checkpoint, CheckpointBuilder, PipelineCheckpoint, PipelinePhase, RebaseState,
+};
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
     handle_list_available_agents, handle_list_providers, handle_show_baseline,
@@ -44,13 +50,13 @@ use crate::git_helpers::{
     abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
     get_default_branch, get_repo_root, get_start_commit_summary, is_main_or_master_branch,
     rebase_onto, require_git_repo, reset_start_commit, save_start_commit, start_agent_phase,
-    RebaseResult, RebaseStateMachine,
+    RebaseResult,
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
 use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
-use crate::prompts::template_context::TemplateContext;
+use crate::prompts::{get_stored_or_generate_prompt, template_context::TemplateContext};
 use std::env;
 use std::process::Command;
 
@@ -58,7 +64,7 @@ use config_init::initialize_config;
 use context::PipelineContext;
 use detection::detect_project_stack;
 use plumbing::{handle_apply_commit, handle_generate_commit_msg, handle_show_commit_msg};
-use resume::handle_resume;
+use resume::{handle_resume_with_validation, offer_resume_if_checkpoint_exists};
 use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
@@ -212,8 +218,23 @@ fn handle_plumbing_commands(args: &Args, logger: &Logger, colors: Colors) -> any
         env::set_current_dir(&repo_root)?;
 
         return match reset_start_commit() {
-            Ok(()) => {
-                logger.success("Starting commit reference reset to current HEAD");
+            Ok(result) => {
+                let short_oid = &result.oid[..8.min(result.oid.len())];
+                if result.fell_back_to_head {
+                    logger.success(&format!(
+                        "Starting commit reference reset to current HEAD ({})",
+                        short_oid
+                    ));
+                    logger.info("On main/master branch - using HEAD as baseline");
+                } else if let Some(ref branch) = result.default_branch {
+                    logger.success(&format!(
+                        "Starting commit reference reset to merge-base with '{}' ({})",
+                        branch, short_oid
+                    ));
+                    logger.info("Baseline set to common ancestor with default branch");
+                } else {
+                    logger.success(&format!("Starting commit reference reset ({})", short_oid));
+                }
                 logger.info(".agent/start_commit has been updated");
                 Ok(true)
             }
@@ -439,13 +460,74 @@ fn setup_git_and_prompt_file(
 
 /// Runs the full development/review/commit pipeline.
 fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
-    // Handle --resume
-    let resume_checkpoint = handle_resume(
+    // First, offer interactive resume if checkpoint exists without --resume flag
+    let resume_result = offer_resume_if_checkpoint_exists(
         &ctx.args,
+        &ctx.config,
+        &ctx.registry,
         &ctx.logger,
-        &ctx.developer_display,
-        &ctx.reviewer_display,
+        &ctx.developer_agent,
+        &ctx.reviewer_agent,
     );
+
+    // If interactive resume didn't happen, check for --resume flag
+    let resume_result = match resume_result {
+        Some(result) => Some(result),
+        None => handle_resume_with_validation(
+            &ctx.args,
+            &ctx.config,
+            &ctx.registry,
+            &ctx.logger,
+            &ctx.developer_display,
+            &ctx.reviewer_display,
+        ),
+    };
+
+    let resume_checkpoint = resume_result.map(|r| r.checkpoint);
+
+    // Create run context - either new or from checkpoint
+    let run_context = if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::RunContext;
+        RunContext::from_checkpoint(checkpoint)
+    } else {
+        use crate::checkpoint::RunContext;
+        RunContext::new()
+    };
+
+    // Apply checkpoint configuration restoration if resuming
+    let config = if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::apply_checkpoint_to_config;
+        let mut restored_config = ctx.config.clone();
+        apply_checkpoint_to_config(&mut restored_config, checkpoint);
+        ctx.logger.info("Restored configuration from checkpoint:");
+        if checkpoint.cli_args.developer_iters > 0 {
+            ctx.logger.info(&format!(
+                "  Developer iterations: {} (from checkpoint)",
+                checkpoint.cli_args.developer_iters
+            ));
+        }
+        if checkpoint.cli_args.reviewer_reviews > 0 {
+            ctx.logger.info(&format!(
+                "  Reviewer passes: {} (from checkpoint)",
+                checkpoint.cli_args.reviewer_reviews
+            ));
+        }
+        restored_config
+    } else {
+        ctx.config.clone()
+    };
+
+    // Restore environment variables from checkpoint if resuming
+    if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::restore::restore_environment_from_checkpoint;
+        let restored_count = restore_environment_from_checkpoint(checkpoint);
+        if restored_count > 0 {
+            ctx.logger.info(&format!(
+                "  Restored {} environment variable(s) from checkpoint",
+                restored_count
+            ));
+        }
+    }
 
     // Set up git helpers and agent phase
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
@@ -455,7 +537,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Print welcome banner and validate PROMPT.md
     print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
-    print_pipeline_info(ctx);
+    print_pipeline_info_with_config(ctx, &config);
     validate_prompt_and_setup_backup(ctx)?;
 
     // Set up PROMPT.md monitoring
@@ -463,45 +545,175 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Detect project stack and review guidelines
     let (_project_stack, review_guidelines) =
-        detect_project_stack(&ctx.config, &ctx.repo_root, &ctx.logger, ctx.colors);
+        detect_project_stack(&config, &ctx.repo_root, &ctx.logger, ctx.colors);
 
     print_review_guidelines(ctx, review_guidelines.as_ref());
     println!();
 
     // Create phase context and save starting commit
     let (mut timer, mut stats) = (Timer::new(), Stats::new());
-    let mut phase_ctx =
-        create_phase_context(ctx, &mut timer, &mut stats, review_guidelines.as_ref());
+    let mut phase_ctx = create_phase_context_with_config(
+        ctx,
+        &config,
+        &mut timer,
+        &mut stats,
+        review_guidelines.as_ref(),
+        &run_context,
+        resume_checkpoint.as_ref(),
+    );
     save_start_commit_or_warn(ctx);
 
+    // Set up interrupt context for checkpoint saving on Ctrl+C
+    // This must be done after phase_ctx is created
+    let initial_phase = if let Some(ref checkpoint) = resume_checkpoint {
+        checkpoint.phase
+    } else {
+        PipelinePhase::Planning
+    };
+    setup_interrupt_context_for_pipeline(
+        initial_phase,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &phase_ctx.execution_history,
+        &phase_ctx.prompt_history,
+        &run_context,
+    );
+
+    // Ensure interrupt context is cleared on completion
+    let _interrupt_guard = defer_clear_interrupt_context();
+
+    // Determine if we should run rebase based on checkpoint or current args
+    let should_run_rebase = if let Some(ref checkpoint) = resume_checkpoint {
+        // Use checkpoint's skip_rebase value if it has meaningful cli_args
+        if checkpoint.cli_args.developer_iters > 0 || checkpoint.cli_args.reviewer_reviews > 0 {
+            !checkpoint.cli_args.skip_rebase
+        } else {
+            // Fallback to current args
+            ctx.args.rebase_flags.with_rebase
+        }
+    } else {
+        ctx.args.rebase_flags.with_rebase
+    };
+
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
-    if ctx.args.rebase_flags.with_rebase {
-        run_initial_rebase(&ctx.config, &ctx.template_context, &ctx.logger, ctx.colors)?;
+    if should_run_rebase {
+        run_initial_rebase(ctx, &mut phase_ctx, &run_context)?;
+        // Update interrupt context after rebase
+        update_interrupt_context_from_phase(
+            &phase_ctx,
+            PipelinePhase::Planning,
+            config.developer_iters,
+            config.reviewer_reviews,
+            &run_context,
+        );
+    } else {
+        // Save initial checkpoint when rebase is disabled
+        if config.features.checkpoint_enabled && resume_checkpoint.is_none() {
+            let builder = CheckpointBuilder::new()
+                .phase(PipelinePhase::Planning, 0, config.developer_iters)
+                .reviewer_pass(0, config.reviewer_reviews)
+                .skip_rebase(true) // Rebase is disabled
+                .capture_from_context(
+                    &config,
+                    &ctx.registry,
+                    &ctx.developer_agent,
+                    &ctx.reviewer_agent,
+                    &ctx.logger,
+                    &run_context,
+                )
+                .with_execution_history(phase_ctx.execution_history.clone())
+                .with_prompt_history(phase_ctx.clone_prompt_history());
+
+            if let Some(checkpoint) = builder.build() {
+                let _ = save_checkpoint(&checkpoint);
+            }
+        }
+        // Update interrupt context after initial checkpoint
+        update_interrupt_context_from_phase(
+            &phase_ctx,
+            PipelinePhase::Planning,
+            config.developer_iters,
+            config.reviewer_reviews,
+            &run_context,
+        );
     }
 
     // Run pipeline phases
     run_development(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
+    // Update interrupt context after development
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        PipelinePhase::Development,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &run_context,
+    );
     check_prompt_restoration(ctx, &mut prompt_monitor, "development");
-    update_status("In progress.", ctx.config.isolation_mode)?;
+    update_status("In progress.", config.isolation_mode)?;
 
     run_review_and_fix(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
+    // Update interrupt context after review
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        PipelinePhase::Review,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &run_context,
+    );
     check_prompt_restoration(ctx, &mut prompt_monitor, "review");
 
     // Run post-review rebase (only if explicitly requested via --with-rebase)
-    if ctx.args.rebase_flags.with_rebase {
-        run_post_review_rebase(&ctx.config, &ctx.template_context, &ctx.logger, ctx.colors)?;
+    if should_run_rebase {
+        run_post_review_rebase(ctx, &mut phase_ctx, &run_context)?;
+        // Update interrupt context after post-review rebase
+        update_interrupt_context_from_phase(
+            &phase_ctx,
+            PipelinePhase::PostRebase,
+            config.developer_iters,
+            config.reviewer_reviews,
+            &run_context,
+        );
     }
 
-    update_status("In progress.", ctx.config.isolation_mode)?;
+    update_status("In progress.", config.isolation_mode)?;
 
     run_final_validation(&phase_ctx, resume_checkpoint.as_ref())?;
+
+    // Save Complete checkpoint before clearing (for idempotent resume)
+    if config.features.checkpoint_enabled {
+        let skip_rebase = !ctx.args.rebase_flags.with_rebase;
+        let builder = CheckpointBuilder::new()
+            .phase(
+                PipelinePhase::Complete,
+                config.developer_iters,
+                config.developer_iters,
+            )
+            .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
+            .skip_rebase(skip_rebase)
+            .capture_from_context(
+                &config,
+                &ctx.registry,
+                &ctx.developer_agent,
+                &ctx.reviewer_agent,
+                &ctx.logger,
+                &run_context,
+            );
+
+        let builder = builder
+            .with_execution_history(phase_ctx.execution_history.clone())
+            .with_prompt_history(phase_ctx.clone_prompt_history());
+
+        if let Some(checkpoint) = builder.build() {
+            let _ = save_checkpoint(&checkpoint);
+        }
+    }
 
     // Commit phase
     finalize_pipeline(
         &mut agent_phase_guard,
         &ctx.logger,
         ctx.colors,
-        &ctx.config,
+        &config,
         &timer,
         &stats,
         prompt_monitor,
@@ -509,20 +721,109 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Print pipeline information (working directory and commit message).
-fn print_pipeline_info(ctx: &PipelineContext) {
-    ctx.logger.info(&format!(
-        "Working directory: {}{}{}",
-        ctx.colors.cyan(),
-        ctx.repo_root.display(),
-        ctx.colors.reset()
-    ));
-    ctx.logger.info(&format!(
-        "Commit message: {}{}{}",
-        ctx.colors.cyan(),
-        ctx.config.commit_msg,
-        ctx.colors.reset()
-    ));
+/// Set up the interrupt context with initial pipeline state.
+///
+/// This function initializes the global interrupt context so that if
+/// the user presses Ctrl+C, the interrupt handler can save a checkpoint.
+fn setup_interrupt_context_for_pipeline(
+    phase: PipelinePhase,
+    total_iterations: u32,
+    total_reviewer_passes: u32,
+    execution_history: &crate::checkpoint::ExecutionHistory,
+    prompt_history: &std::collections::HashMap<String, String>,
+    run_context: &crate::checkpoint::RunContext,
+) {
+    use crate::interrupt::{set_interrupt_context, InterruptContext};
+
+    // Determine initial iteration based on phase
+    let (iteration, reviewer_pass) = match phase {
+        PipelinePhase::Development => (1, 0),
+        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
+            (total_iterations, 1)
+        }
+        PipelinePhase::PostRebase | PipelinePhase::CommitMessage => {
+            (total_iterations, total_reviewer_passes)
+        }
+        _ => (0, 0),
+    };
+
+    let context = InterruptContext {
+        phase,
+        iteration,
+        total_iterations,
+        reviewer_pass,
+        total_reviewer_passes,
+        run_context: run_context.clone(),
+        execution_history: execution_history.clone(),
+        prompt_history: prompt_history.clone(),
+    };
+
+    set_interrupt_context(context);
+}
+
+/// Update the interrupt context from the current phase context.
+///
+/// This function should be called after each major phase to keep the
+/// interrupt context up-to-date with the latest execution history.
+fn update_interrupt_context_from_phase(
+    phase_ctx: &crate::phases::PhaseContext,
+    phase: PipelinePhase,
+    total_iterations: u32,
+    total_reviewer_passes: u32,
+    run_context: &crate::checkpoint::RunContext,
+) {
+    use crate::interrupt::{set_interrupt_context, InterruptContext};
+
+    // Determine current iteration based on phase
+    let (iteration, reviewer_pass) = match phase {
+        PipelinePhase::Development => {
+            // Estimate iteration from actual runs
+            let iter = run_context.actual_developer_runs.max(1);
+            (iter, 0)
+        }
+        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
+            (total_iterations, run_context.actual_reviewer_runs.max(1))
+        }
+        PipelinePhase::PostRebase | PipelinePhase::CommitMessage => {
+            (total_iterations, total_reviewer_passes)
+        }
+        _ => (0, 0),
+    };
+
+    let context = InterruptContext {
+        phase,
+        iteration,
+        total_iterations,
+        reviewer_pass,
+        total_reviewer_passes,
+        run_context: run_context.clone(),
+        execution_history: phase_ctx.execution_history.clone(),
+        prompt_history: phase_ctx.clone_prompt_history(),
+    };
+
+    set_interrupt_context(context);
+}
+
+/// Helper to defer clearing interrupt context until function exit.
+///
+/// Uses a scope guard pattern to ensure the interrupt context is cleared
+/// when the pipeline completes successfully, preventing an "interrupted"
+/// checkpoint from being saved after normal completion.
+fn defer_clear_interrupt_context() -> InterruptContextGuard {
+    InterruptContextGuard
+}
+
+/// RAII guard for clearing interrupt context on drop.
+///
+/// Ensures the interrupt context is cleared when the guard is dropped,
+/// preventing an "interrupted" checkpoint from being saved after normal
+/// pipeline completion.
+struct InterruptContextGuard;
+
+impl Drop for InterruptContextGuard {
+    fn drop(&mut self) {
+        crate::interrupt::clear_interrupt_context();
+    }
 }
 
 /// Validate PROMPT.md and set up backup/protection.
@@ -605,15 +906,33 @@ fn print_review_guidelines(
     }
 }
 
-/// Create the phase context for running pipeline phases.
-fn create_phase_context<'ctx>(
+/// Create the phase context with a modified config (for resume restoration).
+fn create_phase_context_with_config<'ctx>(
     ctx: &'ctx PipelineContext,
+    config: &'ctx crate::config::Config,
     timer: &'ctx mut Timer,
     stats: &'ctx mut Stats,
     review_guidelines: Option<&'ctx crate::guidelines::ReviewGuidelines>,
+    run_context: &'ctx crate::checkpoint::RunContext,
+    resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> PhaseContext<'ctx> {
+    // Restore execution history and prompt history from checkpoint if available
+    let (execution_history, prompt_history) = if let Some(checkpoint) = resume_checkpoint {
+        let exec_history = checkpoint
+            .execution_history
+            .clone()
+            .unwrap_or_else(crate::checkpoint::execution_history::ExecutionHistory::new);
+        let prompt_hist = checkpoint.prompt_history.clone().unwrap_or_default();
+        (exec_history, prompt_hist)
+    } else {
+        (
+            crate::checkpoint::execution_history::ExecutionHistory::new(),
+            std::collections::HashMap::new(),
+        )
+    };
+
     PhaseContext {
-        config: &ctx.config,
+        config,
         registry: &ctx.registry,
         logger: &ctx.logger,
         colors: &ctx.colors,
@@ -623,7 +942,26 @@ fn create_phase_context<'ctx>(
         reviewer_agent: &ctx.reviewer_agent,
         review_guidelines,
         template_context: &ctx.template_context,
+        run_context: run_context.clone(),
+        execution_history,
+        prompt_history,
     }
+}
+
+/// Print pipeline info with a specific config.
+fn print_pipeline_info_with_config(ctx: &PipelineContext, config: &crate::config::Config) {
+    ctx.logger.info(&format!(
+        "Working directory: {}{}{}",
+        ctx.colors.cyan(),
+        ctx.repo_root.display(),
+        ctx.colors.reset()
+    ));
+    ctx.logger.info(&format!(
+        "Commit message: {}{}{}",
+        ctx.colors.cyan(),
+        config.commit_msg,
+        ctx.colors.reset()
+    ));
 }
 
 /// Save starting commit or warn if it fails.
@@ -695,13 +1033,13 @@ fn run_development(
     ctx.logger
         .header("PHASE 1: Development", crate::logger::Colors::blue);
 
-    let resume_phase = resume_checkpoint.map(|c| c.phase);
-    let resume_rank = resume_phase.map(phase_rank);
-
-    if resume_rank.is_some_and(|rank| rank >= phase_rank(PipelinePhase::Review)) {
-        ctx.logger
-            .info("Skipping development phase (checkpoint indicates it already completed)");
-        return Ok(());
+    // Check if we should skip this phase based on checkpoint
+    if let Some(checkpoint) = resume_checkpoint {
+        if should_skip_phase(PipelinePhase::Development, checkpoint) {
+            ctx.logger
+                .info("Skipping development phase (checkpoint indicates it already completed)");
+            return Ok(());
+        }
     }
 
     if !should_run_from(PipelinePhase::Planning, resume_checkpoint) {
@@ -710,16 +1048,17 @@ fn run_development(
         return Ok(());
     }
 
-    let start_iter = match resume_phase {
-        Some(PipelinePhase::Planning | PipelinePhase::Development) => resume_checkpoint
-            .map_or(1, |c| c.iteration)
-            .clamp(1, ctx.config.developer_iters),
-        _ => 1,
+    let start_iter = match resume_checkpoint {
+        Some(checkpoint) => calculate_start_iteration(checkpoint, ctx.config.developer_iters),
+        None => 1,
     };
 
-    let resuming_from_development =
-        args.recovery.resume && resume_phase == Some(PipelinePhase::Development);
-    let development_result = run_development_phase(ctx, start_iter, resuming_from_development)?;
+    let resume_context = if args.recovery.resume {
+        resume_checkpoint.map(|c| c.resume_context())
+    } else {
+        None
+    };
+    let development_result = run_development_phase(ctx, start_iter, resume_context.as_ref())?;
 
     if development_result.had_errors {
         ctx.logger
@@ -732,13 +1071,11 @@ fn run_development(
 /// Runs the review and fix phase.
 fn run_review_and_fix(
     ctx: &mut PhaseContext,
-    _args: &Args,
+    args: &Args,
     resume_checkpoint: Option<&PipelineCheckpoint>,
 ) -> anyhow::Result<()> {
     ctx.logger
         .header("PHASE 2: Review & Fix", crate::logger::Colors::magenta);
-
-    let resume_phase = resume_checkpoint.map(|c| c.phase);
 
     // Check if we should run any reviewer phase
     let run_any_reviewer_phase = should_run_from(PipelinePhase::Review, resume_checkpoint)
@@ -747,20 +1084,31 @@ fn run_review_and_fix(
         || should_run_from(PipelinePhase::CommitMessage, resume_checkpoint);
 
     let should_run_review_phase = should_run_from(PipelinePhase::Review, resume_checkpoint)
-        || resume_phase == Some(PipelinePhase::Fix)
-        || resume_phase == Some(PipelinePhase::ReviewAgain);
+        || resume_checkpoint
+            .is_some_and(|c| matches!(c.phase, PipelinePhase::Fix | PipelinePhase::ReviewAgain));
 
     if should_run_review_phase && ctx.config.reviewer_reviews > 0 {
-        let start_pass = match resume_phase {
-            Some(PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain) => {
-                resume_checkpoint
-                    .map_or(1, |c| c.reviewer_pass)
-                    .clamp(1, ctx.config.reviewer_reviews.max(1))
+        let start_pass = match resume_checkpoint {
+            Some(checkpoint) => {
+                calculate_start_reviewer_pass(checkpoint, ctx.config.reviewer_reviews)
             }
-            _ => 1,
+            None => 1,
         };
 
-        let review_result = run_review_phase(ctx, start_pass)?;
+        let resume_context = if args.recovery.resume {
+            resume_checkpoint
+                .filter(|c| {
+                    matches!(
+                        c.phase,
+                        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain
+                    )
+                })
+                .map(|c| c.resume_context())
+        } else {
+            None
+        };
+
+        let review_result = run_review_phase(ctx, start_pass, resume_context.as_ref())?;
         if review_result.completed_early {
             ctx.logger
                 .success("Review phase completed early (no issues found)");
@@ -805,15 +1153,29 @@ fn run_final_validation(
     }
 
     if ctx.config.features.checkpoint_enabled {
-        let _ = save_checkpoint(&PipelineCheckpoint::new(
-            PipelinePhase::FinalValidation,
-            ctx.config.developer_iters,
-            ctx.config.developer_iters,
-            ctx.config.reviewer_reviews,
-            ctx.config.reviewer_reviews,
-            ctx.developer_agent,
-            ctx.reviewer_agent,
-        ));
+        let builder = CheckpointBuilder::new()
+            .phase(
+                PipelinePhase::FinalValidation,
+                ctx.config.developer_iters,
+                ctx.config.developer_iters,
+            )
+            .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+            .capture_from_context(
+                ctx.config,
+                ctx.registry,
+                ctx.developer_agent,
+                ctx.reviewer_agent,
+                ctx.logger,
+                &ctx.run_context,
+            );
+
+        let builder = builder
+            .with_execution_history(ctx.execution_history.clone())
+            .with_prompt_history(ctx.prompt_history.clone());
+
+        if let Some(checkpoint) = builder.build() {
+            let _ = save_checkpoint(&checkpoint);
+        }
     }
 
     ctx.logger
@@ -892,8 +1254,8 @@ fn handle_rebase_only(
                 conflicted_files.len()
             ));
 
-            // Attempt to resolve conflicts with AI
-            match try_resolve_conflicts_with_fallback(
+            // For --rebase-only, we don't have a full PhaseContext, so we use a wrapper
+            match try_resolve_conflicts_without_phase_ctx(
                 &conflicted_files,
                 config,
                 template_context,
@@ -975,80 +1337,301 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 /// - `--with-rebase` CLI flag is set (caller already checked this)
 /// - `auto_rebase` config is enabled (checked here)
 fn run_initial_rebase(
-    config: &crate::config::Config,
-    template_context: &TemplateContext,
-    logger: &Logger,
-    colors: Colors,
+    ctx: &PipelineContext,
+    phase_ctx: &mut PhaseContext,
+    run_context: &crate::checkpoint::RunContext,
 ) -> anyhow::Result<()> {
-    // Check if rebase is enabled via config
-    if !config.features.auto_rebase {
-        logger.info("Rebase disabled via config (auto_rebase=false)");
-        return Ok(());
+    ctx.logger.header("Pre-development rebase", Colors::cyan);
+
+    // Record execution step: pre-rebase started
+    let step = ExecutionStep::new(
+        "PreRebase",
+        0,
+        "pre_rebase_start",
+        StepOutcome::success(None, vec![]),
+    );
+    phase_ctx.execution_history.add_step(step);
+
+    // Save checkpoint at start of pre-rebase phase
+    if ctx.config.features.checkpoint_enabled {
+        let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
+        let mut builder = CheckpointBuilder::new()
+            .phase(PipelinePhase::PreRebase, 0, ctx.config.developer_iters)
+            .reviewer_pass(0, ctx.config.reviewer_reviews)
+            .capture_from_context(
+                &ctx.config,
+                &ctx.registry,
+                &ctx.developer_agent,
+                &ctx.reviewer_agent,
+                &ctx.logger,
+                run_context,
+            );
+
+        // Include prompt history and execution history for hardened resume
+        builder = builder
+            .with_execution_history(phase_ctx.execution_history.clone())
+            .with_prompt_history(phase_ctx.clone_prompt_history());
+
+        if let Some(mut checkpoint) = builder.build() {
+            checkpoint.rebase_state = RebaseState::PreRebaseInProgress {
+                upstream_branch: default_branch,
+            };
+            let _ = save_checkpoint(&checkpoint);
+        }
     }
 
-    logger.header("Pre-development rebase", Colors::cyan);
-
-    // Get the default branch for rebasing
-    let default_branch = get_default_branch()?;
-
-    // Try to load an existing state machine or create a new one
-    let mut state_machine: RebaseStateMachine =
-        match RebaseStateMachine::load_or_create(default_branch.clone()) {
-            Ok(mut machine) => {
-                // Set max recovery attempts from config when creating a new machine
-                // (loaded machines already have their checkpoint state)
-                if machine.phase() == &crate::git_helpers::RebasePhase::NotStarted {
-                    machine =
-                        machine.with_max_recovery_attempts(config.features.max_recovery_attempts);
-                }
-                machine
-            }
-            Err(e) => {
-                logger.warn(&format!("Failed to load rebase state machine: {e}"));
-                // Fall back to basic rebase without state machine
-                return run_fallback_rebase(logger, colors, config, template_context);
-            }
-        };
-
-    // Check if we're resuming from an interrupted rebase
-    let phase = state_machine.phase().clone();
-    if phase != crate::git_helpers::RebasePhase::NotStarted {
-        logger.info(&format!("Resuming rebase from phase: {:?}", phase));
-    }
-
-    // Run rebase with state machine
-    match run_rebase_with_state_machine(
-        &mut state_machine,
-        logger,
-        colors,
-        config,
-        template_context,
-    ) {
+    match run_rebase_to_default(&ctx.logger, ctx.colors) {
         Ok(RebaseResult::Success) => {
-            logger.success("Rebase completed successfully");
-            // Clear checkpoint on success
-            let _ = state_machine.clear_checkpoint();
+            ctx.logger.success("Rebase completed successfully");
+            // Record execution step: pre-rebase completed successfully
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_complete",
+                StepOutcome::success(None, vec![]),
+            );
+            phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint after pre-rebase completes successfully
+            if ctx.config.features.checkpoint_enabled {
+                let builder = CheckpointBuilder::new()
+                    .phase(PipelinePhase::Planning, 0, ctx.config.developer_iters)
+                    .reviewer_pass(0, ctx.config.reviewer_reviews)
+                    .skip_rebase(true) // Pre-rebase is done
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    )
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(checkpoint) = builder.build() {
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
             Ok(())
         }
         Ok(RebaseResult::NoOp { reason }) => {
-            logger.info(&format!("No rebase needed: {reason}"));
-            // Clear checkpoint on no-op
-            let _ = state_machine.clear_checkpoint();
+            ctx.logger.info(&format!("No rebase needed: {reason}"));
+            // Record execution step: pre-rebase skipped
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_skipped",
+                StepOutcome::skipped(reason.clone()),
+            );
+            phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint after pre-rebase no-op
+            if ctx.config.features.checkpoint_enabled {
+                let builder = CheckpointBuilder::new()
+                    .phase(PipelinePhase::Planning, 0, ctx.config.developer_iters)
+                    .reviewer_pass(0, ctx.config.reviewer_reviews)
+                    .skip_rebase(true) // Pre-rebase is done
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    )
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(checkpoint) = builder.build() {
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
-            // Conflicts were resolved during state machine processing
-            logger.success("Rebase completed successfully after conflict resolution");
-            let _ = state_machine.clear_checkpoint();
-            Ok(())
+            // Get the actual conflicted files
+            let conflicted_files = get_conflicted_files()?;
+            if conflicted_files.is_empty() {
+                ctx.logger
+                    .warn("Rebase reported conflicts but no conflicted files found");
+                let _ = abort_rebase();
+                return Ok(());
+            }
+
+            // Record execution step: pre-rebase conflicts detected
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_conflict",
+                StepOutcome::partial(
+                    "Rebase started".to_string(),
+                    format!("{} conflicts detected", conflicted_files.len()),
+                ),
+            );
+            phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint for conflict state
+            if ctx.config.features.checkpoint_enabled {
+                let mut builder = CheckpointBuilder::new()
+                    .phase(
+                        PipelinePhase::PreRebaseConflict,
+                        0,
+                        ctx.config.developer_iters,
+                    )
+                    .reviewer_pass(0, ctx.config.reviewer_reviews)
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    );
+
+                // Include prompt history and execution history for hardened resume
+                builder = builder
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(mut checkpoint) = builder.build() {
+                    checkpoint.rebase_state = RebaseState::HasConflicts {
+                        files: conflicted_files.clone(),
+                    };
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
+            ctx.logger.warn(&format!(
+                "Rebase resulted in {} conflict(s), attempting AI resolution",
+                conflicted_files.len()
+            ));
+
+            // Attempt to resolve conflicts with AI
+            match try_resolve_conflicts_with_fallback(
+                &conflicted_files,
+                &ctx.config,
+                &ctx.template_context,
+                &ctx.logger,
+                ctx.colors,
+                phase_ctx,
+                "PreRebase",
+            ) {
+                Ok(true) => {
+                    // Conflicts resolved, continue the rebase
+                    ctx.logger
+                        .info("Continuing rebase after conflict resolution");
+                    match continue_rebase() {
+                        Ok(()) => {
+                            ctx.logger
+                                .success("Rebase completed successfully after AI resolution");
+                            // Record execution step: conflicts resolved successfully
+                            let step = ExecutionStep::new(
+                                "PreRebase",
+                                0,
+                                "pre_rebase_resolution",
+                                StepOutcome::success(None, vec![]),
+                            );
+                            phase_ctx.execution_history.add_step(step);
+
+                            // Save checkpoint after pre-rebase conflict resolution completes
+                            if ctx.config.features.checkpoint_enabled {
+                                let builder = CheckpointBuilder::new()
+                                    .phase(PipelinePhase::Planning, 0, ctx.config.developer_iters)
+                                    .reviewer_pass(0, ctx.config.reviewer_reviews)
+                                    .skip_rebase(true) // Pre-rebase is done
+                                    .capture_from_context(
+                                        &ctx.config,
+                                        &ctx.registry,
+                                        &ctx.developer_agent,
+                                        &ctx.reviewer_agent,
+                                        &ctx.logger,
+                                        run_context,
+                                    )
+                                    .with_execution_history(phase_ctx.execution_history.clone())
+                                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                                if let Some(checkpoint) = builder.build() {
+                                    let _ = save_checkpoint(&checkpoint);
+                                }
+                            }
+
+                            Ok(())
+                        }
+                        Err(e) => {
+                            ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
+                            let _ = abort_rebase();
+                            // Record execution step: resolution succeeded but continue failed
+                            let step = ExecutionStep::new(
+                                "PreRebase",
+                                0,
+                                "pre_rebase_resolution",
+                                StepOutcome::partial(
+                                    "Conflicts resolved by AI".to_string(),
+                                    format!("Failed to continue rebase: {e}"),
+                                ),
+                            );
+                            phase_ctx.execution_history.add_step(step);
+                            Ok(()) // Continue anyway - conflicts were resolved
+                        }
+                    }
+                }
+                Ok(false) => {
+                    // AI resolution failed
+                    ctx.logger
+                        .warn("AI conflict resolution failed, aborting rebase");
+                    let _ = abort_rebase();
+                    // Record execution step: resolution failed
+                    let step = ExecutionStep::new(
+                        "PreRebase",
+                        0,
+                        "pre_rebase_resolution",
+                        StepOutcome::failure("AI conflict resolution failed".to_string(), true),
+                    );
+                    phase_ctx.execution_history.add_step(step);
+                    Ok(()) // Continue pipeline - don't block on rebase failure
+                }
+                Err(e) => {
+                    ctx.logger.error(&format!("Conflict resolution error: {e}"));
+                    let _ = abort_rebase();
+                    // Record execution step: resolution error
+                    let step = ExecutionStep::new(
+                        "PreRebase",
+                        0,
+                        "pre_rebase_resolution",
+                        StepOutcome::failure(format!("Conflict resolution error: {e}"), true),
+                    );
+                    phase_ctx.execution_history.add_step(step);
+                    Ok(()) // Continue pipeline
+                }
+            }
         }
         Ok(RebaseResult::Failed(err)) => {
-            logger.error(&format!("Rebase failed: {err}"));
-            anyhow::bail!("Rebase failed: {err}")
+            ctx.logger.error(&format!("Rebase failed: {err}"));
+            let _ = abort_rebase();
+            // Record execution step: rebase failed
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_failed",
+                StepOutcome::failure(format!("Rebase failed: {err}"), true),
+            );
+            phase_ctx.execution_history.add_step(step);
+            Ok(()) // Continue pipeline despite failure
         }
         Err(e) => {
-            logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
-            // Don't abort - continue pipeline
+            ctx.logger
+                .warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            // Record execution step: rebase error
+            let step = ExecutionStep::new(
+                "PreRebase",
+                0,
+                "pre_rebase_error",
+                StepOutcome::failure(format!("Rebase error: {e}"), true),
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(())
         }
     }
@@ -1068,80 +1651,320 @@ fn run_initial_rebase(
 /// - `--with-rebase` CLI flag is set (caller already checked this)
 /// - `auto_rebase` config is enabled (checked here)
 fn run_post_review_rebase(
-    config: &crate::config::Config,
-    template_context: &TemplateContext,
-    logger: &Logger,
-    colors: Colors,
+    ctx: &PipelineContext,
+    phase_ctx: &mut PhaseContext,
+    run_context: &crate::checkpoint::RunContext,
 ) -> anyhow::Result<()> {
-    // Check if rebase is enabled via config
-    if !config.features.auto_rebase {
-        logger.info("Rebase disabled via config (auto_rebase=false)");
-        return Ok(());
+    ctx.logger.header("Post-review rebase", Colors::cyan);
+
+    // Record execution step: post-rebase started
+    let step = ExecutionStep::new(
+        "PostRebase",
+        ctx.config.developer_iters,
+        "post_rebase_start",
+        StepOutcome::success(None, vec![]),
+    );
+    phase_ctx.execution_history.add_step(step);
+
+    // Save checkpoint at start of post-rebase phase
+    if ctx.config.features.checkpoint_enabled {
+        let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
+        let mut builder = CheckpointBuilder::new()
+            .phase(
+                PipelinePhase::PostRebase,
+                ctx.config.developer_iters,
+                ctx.config.developer_iters,
+            )
+            .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+            .capture_from_context(
+                &ctx.config,
+                &ctx.registry,
+                &ctx.developer_agent,
+                &ctx.reviewer_agent,
+                &ctx.logger,
+                run_context,
+            );
+
+        // Include prompt history and execution history for hardened resume
+        builder = builder
+            .with_execution_history(phase_ctx.execution_history.clone())
+            .with_prompt_history(phase_ctx.clone_prompt_history());
+
+        if let Some(mut checkpoint) = builder.build() {
+            checkpoint.rebase_state = RebaseState::PostRebaseInProgress {
+                upstream_branch: default_branch,
+            };
+            let _ = save_checkpoint(&checkpoint);
+        }
     }
 
-    logger.header("Post-review rebase", Colors::cyan);
-
-    // Get the default branch for rebasing
-    let default_branch = get_default_branch()?;
-
-    // Try to load an existing state machine or create a new one
-    let mut state_machine: RebaseStateMachine =
-        match RebaseStateMachine::load_or_create(default_branch.clone()) {
-            Ok(mut machine) => {
-                // Set max recovery attempts from config when creating a new machine
-                // (loaded machines already have their checkpoint state)
-                if machine.phase() == &crate::git_helpers::RebasePhase::NotStarted {
-                    machine =
-                        machine.with_max_recovery_attempts(config.features.max_recovery_attempts);
-                }
-                machine
-            }
-            Err(e) => {
-                logger.warn(&format!("Failed to load rebase state machine: {e}"));
-                // Fall back to basic rebase without state machine
-                return run_fallback_rebase(logger, colors, config, template_context);
-            }
-        };
-
-    // Check if we're resuming from an interrupted rebase
-    let phase = state_machine.phase().clone();
-    if phase != crate::git_helpers::RebasePhase::NotStarted {
-        logger.info(&format!("Resuming rebase from phase: {:?}", phase));
-    }
-
-    // Run rebase with state machine
-    match run_rebase_with_state_machine(
-        &mut state_machine,
-        logger,
-        colors,
-        config,
-        template_context,
-    ) {
+    match run_rebase_to_default(&ctx.logger, ctx.colors) {
         Ok(RebaseResult::Success) => {
-            logger.success("Rebase completed successfully");
-            // Clear checkpoint on success
-            let _ = state_machine.clear_checkpoint();
+            ctx.logger.success("Rebase completed successfully");
+            // Record execution step: post-rebase completed successfully
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_complete",
+                StepOutcome::success(None, vec![]),
+            );
+            phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint after post-review rebase completes successfully
+            if ctx.config.features.checkpoint_enabled {
+                let builder = CheckpointBuilder::new()
+                    .phase(
+                        PipelinePhase::CommitMessage,
+                        ctx.config.developer_iters,
+                        ctx.config.developer_iters,
+                    )
+                    .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+                    .skip_rebase(true) // Post-rebase is done
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    )
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(checkpoint) = builder.build() {
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
             Ok(())
         }
         Ok(RebaseResult::NoOp { reason }) => {
-            logger.info(&format!("No rebase needed: {reason}"));
-            // Clear checkpoint on no-op
-            let _ = state_machine.clear_checkpoint();
+            ctx.logger.info(&format!("No rebase needed: {reason}"));
+            // Record execution step: post-rebase skipped
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_skipped",
+                StepOutcome::skipped(reason.clone()),
+            );
+            phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint after post-review rebase no-op
+            if ctx.config.features.checkpoint_enabled {
+                let builder = CheckpointBuilder::new()
+                    .phase(
+                        PipelinePhase::CommitMessage,
+                        ctx.config.developer_iters,
+                        ctx.config.developer_iters,
+                    )
+                    .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+                    .skip_rebase(true) // Post-rebase is done
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    )
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(checkpoint) = builder.build() {
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
-            // Conflicts were resolved during state machine processing
-            logger.success("Rebase completed successfully after conflict resolution");
-            let _ = state_machine.clear_checkpoint();
-            Ok(())
+            // Get the actual conflicted files
+            let conflicted_files = get_conflicted_files()?;
+            if conflicted_files.is_empty() {
+                ctx.logger
+                    .warn("Rebase reported conflicts but no conflicted files found");
+                let _ = abort_rebase();
+                return Ok(());
+            }
+
+            // Record execution step: post-rebase conflicts detected
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_conflict",
+                StepOutcome::partial(
+                    "Rebase started".to_string(),
+                    format!("{} conflicts detected", conflicted_files.len()),
+                ),
+            );
+            phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint for conflict state
+            if ctx.config.features.checkpoint_enabled {
+                let mut builder = CheckpointBuilder::new()
+                    .phase(
+                        PipelinePhase::PostRebaseConflict,
+                        ctx.config.developer_iters,
+                        ctx.config.developer_iters,
+                    )
+                    .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    );
+
+                // Include prompt history and execution history for hardened resume
+                builder = builder
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(mut checkpoint) = builder.build() {
+                    checkpoint.rebase_state = RebaseState::HasConflicts {
+                        files: conflicted_files.clone(),
+                    };
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
+            ctx.logger.warn(&format!(
+                "Rebase resulted in {} conflict(s), attempting AI resolution",
+                conflicted_files.len()
+            ));
+
+            // Attempt to resolve conflicts with AI
+            match try_resolve_conflicts_with_fallback(
+                &conflicted_files,
+                &ctx.config,
+                &ctx.template_context,
+                &ctx.logger,
+                ctx.colors,
+                phase_ctx,
+                "PostRebase",
+            ) {
+                Ok(true) => {
+                    // Conflicts resolved, continue the rebase
+                    ctx.logger
+                        .info("Continuing rebase after conflict resolution");
+                    match continue_rebase() {
+                        Ok(()) => {
+                            ctx.logger
+                                .success("Rebase completed successfully after AI resolution");
+                            // Record execution step: conflicts resolved successfully
+                            let step = ExecutionStep::new(
+                                "PostRebase",
+                                ctx.config.developer_iters,
+                                "post_rebase_resolution",
+                                StepOutcome::success(None, vec![]),
+                            );
+                            phase_ctx.execution_history.add_step(step);
+
+                            // Save checkpoint after post-review rebase conflict resolution completes
+                            if ctx.config.features.checkpoint_enabled {
+                                let builder = CheckpointBuilder::new()
+                                    .phase(
+                                        PipelinePhase::CommitMessage,
+                                        ctx.config.developer_iters,
+                                        ctx.config.developer_iters,
+                                    )
+                                    .reviewer_pass(
+                                        ctx.config.reviewer_reviews,
+                                        ctx.config.reviewer_reviews,
+                                    )
+                                    .skip_rebase(true) // Post-rebase is done
+                                    .capture_from_context(
+                                        &ctx.config,
+                                        &ctx.registry,
+                                        &ctx.developer_agent,
+                                        &ctx.reviewer_agent,
+                                        &ctx.logger,
+                                        run_context,
+                                    )
+                                    .with_execution_history(phase_ctx.execution_history.clone())
+                                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                                if let Some(checkpoint) = builder.build() {
+                                    let _ = save_checkpoint(&checkpoint);
+                                }
+                            }
+
+                            Ok(())
+                        }
+                        Err(e) => {
+                            ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
+                            let _ = abort_rebase();
+                            // Record execution step: resolution succeeded but continue failed
+                            let step = ExecutionStep::new(
+                                "PostRebase",
+                                ctx.config.developer_iters,
+                                "post_rebase_resolution",
+                                StepOutcome::partial(
+                                    "Conflicts resolved by AI".to_string(),
+                                    format!("Failed to continue rebase: {e}"),
+                                ),
+                            );
+                            phase_ctx.execution_history.add_step(step);
+                            Ok(()) // Continue anyway - conflicts were resolved
+                        }
+                    }
+                }
+                Ok(false) => {
+                    // AI resolution failed
+                    ctx.logger
+                        .warn("AI conflict resolution failed, aborting rebase");
+                    let _ = abort_rebase();
+                    // Record execution step: resolution failed
+                    let step = ExecutionStep::new(
+                        "PostRebase",
+                        ctx.config.developer_iters,
+                        "post_rebase_resolution",
+                        StepOutcome::failure("AI conflict resolution failed".to_string(), true),
+                    );
+                    phase_ctx.execution_history.add_step(step);
+                    Ok(()) // Continue pipeline - don't block on rebase failure
+                }
+                Err(e) => {
+                    ctx.logger.error(&format!("Conflict resolution error: {e}"));
+                    let _ = abort_rebase();
+                    // Record execution step: resolution error
+                    let step = ExecutionStep::new(
+                        "PostRebase",
+                        ctx.config.developer_iters,
+                        "post_rebase_resolution",
+                        StepOutcome::failure(format!("Conflict resolution error: {e}"), true),
+                    );
+                    phase_ctx.execution_history.add_step(step);
+                    Ok(()) // Continue pipeline
+                }
+            }
         }
         Ok(RebaseResult::Failed(err)) => {
-            logger.error(&format!("Rebase failed: {err}"));
-            anyhow::bail!("Rebase failed: {err}")
+            ctx.logger.error(&format!("Rebase failed: {err}"));
+            let _ = abort_rebase();
+            // Record execution step: rebase failed
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_failed",
+                StepOutcome::failure(format!("Rebase failed: {err}"), true),
+            );
+            phase_ctx.execution_history.add_step(step);
+            Ok(()) // Continue pipeline despite failure
         }
         Err(e) => {
-            logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
-            // Don't abort - continue pipeline
+            ctx.logger
+                .warn(&format!("Rebase failed, continuing without rebase: {e}"));
+            // Record execution step: rebase error
+            let step = ExecutionStep::new(
+                "PostRebase",
+                ctx.config.developer_iters,
+                "post_rebase_error",
+                StepOutcome::failure(format!("Rebase error: {e}"), true),
+            );
+            phase_ctx.execution_history.add_step(step);
             Ok(())
         }
     }
@@ -1161,14 +1984,16 @@ enum ConflictResolutionResult {
 
 /// Attempt to resolve rebase conflicts with AI fallback.
 ///
-/// This is a helper function that creates a minimal `PhaseContext`
-/// for conflict resolution without requiring full pipeline state.
+/// This function accepts `PhaseContext` to capture prompts and track
+/// execution history for hardened resume functionality.
 fn try_resolve_conflicts_with_fallback(
     conflicted_files: &[String],
     config: &crate::config::Config,
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
+    phase_ctx: &mut PhaseContext<'_>,
+    phase: &str,
 ) -> anyhow::Result<bool> {
     if conflicted_files.is_empty() {
         return Ok(false);
@@ -1180,7 +2005,24 @@ fn try_resolve_conflicts_with_fallback(
     ));
 
     let conflicts = collect_conflict_info_or_error(conflicted_files, logger)?;
-    let resolution_prompt = build_resolution_prompt(&conflicts, template_context);
+
+    // Use stored_or_generate pattern for hardened resume
+    // On resume, use the exact same prompt that was used before
+    let prompt_key = format!("{}_conflict_resolution", phase.to_lowercase());
+    let (resolution_prompt, was_replayed) =
+        get_stored_or_generate_prompt(&prompt_key, &phase_ctx.prompt_history, || {
+            build_resolution_prompt(&conflicts, template_context)
+        });
+
+    // Capture the resolution prompt for deterministic resume (only if newly generated)
+    if !was_replayed {
+        phase_ctx.capture_prompt(&prompt_key, &resolution_prompt);
+    } else {
+        logger.info(&format!(
+            "Using stored prompt from checkpoint for determinism: {}",
+            prompt_key
+        ));
+    }
 
     match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
         Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
@@ -1261,6 +2103,57 @@ fn try_resolve_conflicts_with_fallback(
     }
 }
 
+/// Wrapper for conflict resolution without PhaseContext.
+///
+/// This is used for --rebase-only mode where we don't have a full pipeline context.
+/// It creates a minimal PhaseContext for the conflict resolution call.
+fn try_resolve_conflicts_without_phase_ctx(
+    conflicted_files: &[String],
+    config: &crate::config::Config,
+    template_context: &TemplateContext,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<bool> {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::execution_history::ExecutionHistory;
+    use crate::checkpoint::RunContext;
+    use crate::pipeline::{Stats, Timer};
+
+    // Create minimal PhaseContext for conflict resolution
+    let registry = AgentRegistry::new()?;
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
+    let developer_agent = config.developer_agent.as_deref().unwrap_or("codex");
+
+    let mut phase_ctx = PhaseContext {
+        config,
+        registry: &registry,
+        logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent,
+        reviewer_agent,
+        review_guidelines: None,
+        template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+    };
+
+    try_resolve_conflicts_with_fallback(
+        conflicted_files,
+        config,
+        template_context,
+        logger,
+        colors,
+        &mut phase_ctx,
+        "RebaseOnly",
+    )
+}
+
 /// Collect conflict information from conflicted files.
 fn collect_conflict_info_or_error(
     conflicted_files: &[String],
@@ -1283,17 +2176,16 @@ fn build_resolution_prompt(
     conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
     template_context: &TemplateContext,
 ) -> String {
-    build_enhanced_resolution_prompt(conflicts, None, template_context)
+    build_enhanced_resolution_prompt(conflicts, None::<()>, template_context)
         .unwrap_or_else(|_| String::new())
 }
 
-/// Build the enhanced conflict resolution prompt with optional branch info.
+/// Build the conflict resolution prompt.
 ///
-/// This function uses the enhanced prompt builder when branch info is available,
-/// falling back to the standard prompt when it's not.
+/// This function uses the standard conflict resolution prompt.
 fn build_enhanced_resolution_prompt(
     conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
-    branch_info: Option<&crate::prompts::BranchInfo>,
+    _branch_info: Option<()>, // Kept for API compatibility, currently unused
     template_context: &TemplateContext,
 ) -> anyhow::Result<String> {
     use std::fs;
@@ -1301,26 +2193,15 @@ fn build_enhanced_resolution_prompt(
     let prompt_md_content = fs::read_to_string("PROMPT.md").ok();
     let plan_content = fs::read_to_string(".agent/PLAN.md").ok();
 
-    // Use enhanced prompt with branch info if available
-    if let Some(info) = branch_info {
-        Ok(crate::prompts::build_enhanced_conflict_resolution_prompt(
+    // Use standard prompt
+    Ok(
+        crate::prompts::build_conflict_resolution_prompt_with_context(
             template_context,
             conflicts,
-            Some(info),
             prompt_md_content.as_deref(),
             plan_content.as_deref(),
-        ))
-    } else {
-        // Fall back to standard prompt
-        Ok(
-            crate::prompts::build_conflict_resolution_prompt_with_context(
-                template_context,
-                conflicts,
-                prompt_md_content.as_deref(),
-                plan_content.as_deref(),
-            ),
-        )
-    }
+        ),
+    )
 }
 
 /// Run AI agent to resolve conflicts with fallback mechanism.
@@ -1502,786 +2383,4 @@ fn write_resolved_files(
 
     logger.success(&format!("Successfully resolved {files_written} file(s)"));
     Ok(files_written)
-}
-
-/// Run rebase with fault tolerance using state machine.
-///
-/// This function performs a rebase with automatic recovery from
-/// interruptions and failures. It uses the state machine to track
-/// progress and can resume from checkpoints.
-///
-/// # Arguments
-///
-/// * `state_machine` - Mutable reference to the rebase state machine
-/// * `logger` - Logger for output
-/// * `colors` - Color formatting
-/// * `config` - Application configuration
-/// * `template_context` - Template context for prompts
-///
-/// # Returns
-///
-/// Returns `Ok(RebaseResult)` indicating the outcome, or an error.
-fn run_rebase_with_state_machine(
-    state_machine: &mut RebaseStateMachine,
-    logger: &Logger,
-    colors: Colors,
-    config: &crate::config::Config,
-    template_context: &TemplateContext,
-) -> anyhow::Result<RebaseResult> {
-    use crate::git_helpers::{detect_concurrent_git_operations, RebaseLock, RebasePhase};
-
-    let upstream_branch = state_machine.upstream_branch().to_string();
-    logger.info(&format!(
-        "Rebasing onto {}{}{}",
-        colors.cyan(),
-        upstream_branch,
-        colors.reset()
-    ));
-
-    // Transition to pre-rebase check
-    state_machine.transition_to(RebasePhase::PreRebaseCheck)?;
-
-    // Log current checkpoint state for debugging
-    let checkpoint = state_machine.checkpoint();
-    logger.info(&format!(
-        "Rebase checkpoint: upstream={}, phase={:?}, error_count={}",
-        checkpoint.upstream_branch, checkpoint.phase, checkpoint.error_count
-    ));
-
-    // Acquire rebase lock to prevent concurrent rebases
-    let _lock =
-        RebaseLock::new().map_err(|e| anyhow::anyhow!("Failed to acquire rebase lock: {e}"))?;
-
-    // Validate Git repository state before starting rebase
-    if let Err(e) = crate::git_helpers::validate_git_state() {
-        logger.warn(&format!("Git state validation failed: {e}"));
-        // Try to clean up any stale state that might be causing issues
-        let _ = crate::git_helpers::cleanup_stale_rebase_state();
-    }
-
-    // Check for concurrent Git operations that would block rebase
-    if let Ok(Some(operation)) = detect_concurrent_git_operations() {
-        let operation_desc = operation.description();
-        logger.warn(&format!(
-            "Cannot start rebase: {operation_desc} already in progress"
-        ));
-        return Ok(RebaseResult::Failed(
-            crate::git_helpers::RebaseErrorKind::ConcurrentOperation {
-                operation: operation_desc,
-            },
-        ));
-    }
-
-    // Perform pre-rebase validation
-    // This checks for Category 1 failure modes before attempting the rebase
-    if let Err(e) = crate::git_helpers::validate_rebase_preconditions() {
-        logger.warn(&format!("Pre-rebase validation failed: {e}"));
-        state_machine.record_error(format!("Pre-rebase validation failed: {e}"));
-        // Return NoOp as this is not a transient error
-        return Ok(RebaseResult::NoOp {
-            reason: format!("Pre-rebase validation failed: {e}"),
-        });
-    }
-
-    // Perform the rebase operation
-    state_machine.transition_to(RebasePhase::RebaseInProgress)?;
-
-    // Get the rebase result and handle each case
-    match rebase_onto(&upstream_branch) {
-        Ok(RebaseResult::Success) => {
-            // Perform post-rebase validation
-            state_machine.transition_to(RebasePhase::RebaseComplete)?;
-            if let Err(e) = crate::git_helpers::validate_post_rebase_state() {
-                logger.warn(&format!("Post-rebase validation failed: {e}"));
-                state_machine.record_error(format!("Post-rebase validation failed: {e}"));
-                // Still return success since the rebase itself succeeded
-                // The validation warning is informational
-            }
-            Ok(RebaseResult::Success)
-        }
-        Ok(RebaseResult::NoOp { reason }) => {
-            state_machine.transition_to(RebasePhase::RebaseComplete)?;
-            Ok(RebaseResult::NoOp { reason })
-        }
-        Ok(RebaseResult::Conflicts(files)) => {
-            state_machine.transition_to(RebasePhase::ConflictDetected)?;
-            for file in &files {
-                state_machine.record_conflict(file.clone());
-            }
-
-            logger.warn(&format!(
-                "Rebase resulted in {} conflict(s), attempting AI resolution",
-                state_machine.unresolved_conflict_count()
-            ));
-
-            // Attempt to resolve conflicts with AI
-            let resolution_result = try_resolve_conflicts_with_state_machine(
-                state_machine,
-                config,
-                template_context,
-                logger,
-                colors,
-            )?;
-
-            if resolution_result {
-                // Verify all conflicts are resolved
-                if state_machine.all_conflicts_resolved() {
-                    // Conflicts resolved, continue the rebase
-                    state_machine.transition_to(RebasePhase::CompletingRebase)?;
-                    logger.info("Continuing rebase after conflict resolution");
-                    match continue_rebase() {
-                        Ok(()) => {
-                            // Perform post-rebase validation
-                            if let Err(e) = crate::git_helpers::validate_post_rebase_state() {
-                                logger.warn(&format!("Post-rebase validation failed: {e}"));
-                                state_machine
-                                    .record_error(format!("Post-rebase validation failed: {e}"));
-                                // Still return success since the rebase itself succeeded
-                            }
-                            state_machine.transition_to(RebasePhase::RebaseComplete)?;
-                            Ok(RebaseResult::Success)
-                        }
-                        Err(e) => {
-                            state_machine.record_error(format!("Failed to continue rebase: {e}"));
-                            logger.warn(&format!("Failed to continue rebase: {e}"));
-                            let _ = state_machine.transition_to(RebasePhase::RebaseAborted);
-                            let _ = abort_rebase();
-                            Ok(RebaseResult::Failed(
-                                crate::git_helpers::RebaseErrorKind::ReferenceUpdateFailed {
-                                    reason: format!("Failed to continue: {e}"),
-                                },
-                            ))
-                        }
-                    }
-                } else {
-                    // Not all conflicts were resolved
-                    let remaining = state_machine.unresolved_conflict_count();
-                    state_machine
-                        .record_error(format!("AI resolution left {remaining} conflict(s)"));
-                    logger.warn(&format!(
-                        "AI resolution left {remaining} conflict(s) unresolved"
-                    ));
-                    let _ = state_machine.transition_to(RebasePhase::RebaseAborted);
-                    let _ = abort_rebase();
-                    Ok(RebaseResult::Failed(
-                        crate::git_helpers::RebaseErrorKind::ContentConflict { files },
-                    ))
-                }
-            } else {
-                // AI resolution failed
-                state_machine.record_error("AI conflict resolution failed".to_string());
-                logger.warn("AI conflict resolution failed, aborting rebase");
-                let _ = state_machine.transition_to(RebasePhase::RebaseAborted);
-                let _ = abort_rebase();
-                Ok(RebaseResult::Failed(
-                    crate::git_helpers::RebaseErrorKind::ContentConflict { files },
-                ))
-            }
-        }
-        Ok(RebaseResult::Failed(err)) => {
-            state_machine.record_error(err.description());
-            let _ = state_machine.transition_to(RebasePhase::RebaseAborted);
-            Ok(RebaseResult::Failed(err))
-        }
-        Err(e) => {
-            state_machine.record_error(format!("Rebase error: {e}"));
-            Err(e.into())
-        }
-    }
-}
-
-/// Fallback rebase without state machine.
-///
-/// This function provides a fallback path when the state machine
-/// cannot be initialized or loaded. It uses the old direct rebase
-/// approach.
-fn run_fallback_rebase(
-    logger: &Logger,
-    colors: Colors,
-    config: &crate::config::Config,
-    template_context: &TemplateContext,
-) -> anyhow::Result<()> {
-    logger.warn("Using fallback rebase mode (state machine unavailable)");
-
-    match run_rebase_to_default(logger, colors) {
-        Ok(RebaseResult::Success) => {
-            logger.success("Rebase completed successfully");
-            Ok(())
-        }
-        Ok(RebaseResult::NoOp { reason }) => {
-            logger.info(&format!("No rebase needed: {reason}"));
-            Ok(())
-        }
-        Ok(RebaseResult::Failed(err)) => {
-            logger.error(&format!("Rebase failed: {err}"));
-            anyhow::bail!("Rebase failed: {err}")
-        }
-        Ok(RebaseResult::Conflicts(_conflicts)) => {
-            let conflicted_files = get_conflicted_files()?;
-            if conflicted_files.is_empty() {
-                logger.warn("Rebase reported conflicts but no conflicted files found");
-                let _ = abort_rebase();
-                return Ok(());
-            }
-
-            logger.warn(&format!(
-                "Rebase resulted in {} conflict(s), attempting AI resolution",
-                conflicted_files.len()
-            ));
-
-            match try_resolve_conflicts_with_fallback(
-                &conflicted_files,
-                config,
-                template_context,
-                logger,
-                colors,
-            ) {
-                Ok(true) => {
-                    logger.info("Continuing rebase after conflict resolution");
-                    match continue_rebase() {
-                        Ok(()) => {
-                            logger.success("Rebase completed successfully after AI resolution");
-                            Ok(())
-                        }
-                        Err(e) => {
-                            logger.warn(&format!("Failed to continue rebase: {e}"));
-                            let _ = abort_rebase();
-                            Ok(())
-                        }
-                    }
-                }
-                Ok(false) => {
-                    logger.warn("AI conflict resolution failed, aborting rebase");
-                    let _ = abort_rebase();
-                    Ok(())
-                }
-                Err(e) => {
-                    logger.error(&format!("Conflict resolution error: {e}"));
-                    let _ = abort_rebase();
-                    Ok(())
-                }
-            }
-        }
-        Err(e) => {
-            logger.warn(&format!("Rebase failed, continuing without rebase: {e}"));
-            Ok(())
-        }
-    }
-}
-
-/// Attempt to resolve conflicts with state machine tracking.
-///
-/// This function performs AI-assisted conflict resolution with a mini dev cycle:
-/// 1. AI attempts initial conflict resolution
-/// 2. Resolution is validated (no markers remain, syntax is valid)
-/// 3. If validation fails, fix with additional context
-/// 4. Repeat until resolution succeeds or max attempts reached
-///
-/// # Arguments
-///
-/// * `state_machine` - Mutable reference to the rebase state machine
-/// * `config` - Application configuration
-/// * `template_context` - Template context for prompts
-/// * `logger` - Logger for output
-/// * `colors` - Color formatting
-///
-/// # Returns
-///
-/// Returns `Ok(true)` if conflicts were resolved, `Ok(false)` if resolution failed.
-fn try_resolve_conflicts_with_state_machine(
-    state_machine: &mut RebaseStateMachine,
-    config: &crate::config::Config,
-    template_context: &TemplateContext,
-    logger: &Logger,
-    colors: Colors,
-) -> anyhow::Result<bool> {
-    use crate::git_helpers::RebasePhase;
-
-    // Get the actual conflicted files
-    let conflicted_files = get_conflicted_files()?;
-    if conflicted_files.is_empty() {
-        logger.warn("No conflicted files found despite conflict state");
-        return Ok(false);
-    }
-
-    // Transition to conflict resolution phase
-    state_machine.transition_to(RebasePhase::ConflictResolutionInProgress)?;
-
-    // Collect branch info for enhanced conflict resolution context
-    let upstream_branch = state_machine.upstream_branch().to_string();
-    let branch_info = match crate::prompts::collect_branch_info(&upstream_branch) {
-        Ok(info) => {
-            logger.info(&format!(
-                "Branch context: {} diverging from {} by {} commit(s)",
-                info.current_branch, info.upstream_branch, info.diverging_count
-            ));
-            Some(info)
-        }
-        Err(e) => {
-            logger.warn(&format!(
-                "Failed to collect branch info: {e}, continuing without it"
-            ));
-            None
-        }
-    };
-
-    // Maximum iterations for the review/fix cycle
-    let max_iterations = 3;
-
-    // Track validation failures for better retry feedback
-    let mut previous_validation_failures = Vec::new();
-
-    for iteration in 1..=max_iterations {
-        logger.info(&format!(
-            "Conflict resolution cycle {iteration}/{max_iterations}",
-            iteration = iteration,
-            max_iterations = max_iterations
-        ));
-
-        // Collect conflict info and build prompt
-        let conflicts = collect_conflict_info_or_error(&conflicted_files, logger)?;
-        let resolution_prompt = if iteration == 1 {
-            // First attempt: use enhanced prompt with branch info
-            build_enhanced_resolution_prompt(&conflicts, branch_info.as_ref(), template_context)?
-        } else {
-            // Retry: add context about previous failures with specific feedback
-            let failure_context = if previous_validation_failures.is_empty() {
-                "Your previous resolution attempt was not successful.".to_string()
-            } else {
-                format!(
-                    "Your previous resolution attempt failed validation with these issues:\n\
-                     {}\n\nPlease address these specific issues in your next attempt.",
-                    previous_validation_failures
-                        .iter()
-                        .map(|s| format!("- {s}"))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                )
-            };
-
-            format!(
-                "{}\n\n## Previous Resolution Failed\n\n\
-                 {}\n\n\
-                 **Validation Requirements**:\n\
-                 1. ALL conflict markers (<<<<<<<, =======, >>>>>>>) must be removed\n\
-                 2. The code must be syntactically valid (balanced brackets, etc.)\n\
-                 3. Files must be actually modified (not left unchanged)\n\
-                 4. Git must report no conflicted files after resolution\n\
-                 5. You must preserve the intent of BOTH sides where possible\n\n\
-                 **Guidance for this attempt**:\n\
-                 - Review each file carefully for remaining conflict markers\n\
-                 - Check for syntax errors like unbalanced braces/brackets/parentheses\n\
-                 - Ensure you're not accidentally leaving files unchanged\n\
-                 - Consider using the JSON output format to confirm your resolutions\n\n{}",
-                build_enhanced_resolution_prompt(
-                    &conflicts,
-                    branch_info.as_ref(),
-                    template_context
-                )?,
-                failure_context,
-                if iteration == max_iterations {
-                    "**FINAL ATTEMPT**: If conflicts remain after this attempt, manual intervention will be required. \
-                     Take extra care to ensure all validation criteria are met."
-                } else {
-                    "Please try again with careful attention to the validation feedback above."
-                }
-            )
-        };
-
-        // Run AI conflict resolution
-        match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
-            Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
-                // Agent provided JSON output - attempt to parse and write files
-                // JSON is optional for verification - LibGit2 state is authoritative
-                let resolved_files =
-                    match parse_and_validate_resolved_files(&resolved_content, logger) {
-                        Ok(files) => {
-                            // Write files if JSON was successfully parsed
-                            write_resolved_files(&files, logger)?;
-                            Some(files)
-                        }
-                        Err(_) => {
-                            // JSON parsing failed - this is expected and normal
-                            // We verify conflicts via LibGit2 state, not JSON parsing
-                            None
-                        }
-                    };
-
-                // Clear previous failures before new validation
-                previous_validation_failures.clear();
-
-                // Validate the resolution using LibGit2 state (authoritative source)
-                match validate_conflict_resolution_detailed(logger, &conflicted_files) {
-                    Ok(validation_result) if validation_result.is_valid() => {
-                        // Mark files as resolved
-                        if let Some(ref files) = resolved_files {
-                            for path in files.keys() {
-                                state_machine.record_resolution(path.clone());
-                            }
-                        }
-                        logger.success(&format!(
-                            "All conflicts resolved successfully after {} cycle(s)",
-                            iteration
-                        ));
-                        return Ok(true);
-                    }
-                    Ok(validation_result) => {
-                        // Validation failed - collect specific failures for retry
-                        if !validation_result.files_with_markers.is_empty() {
-                            previous_validation_failures.push(format!(
-                                "Files still have conflict markers: {}",
-                                validation_result.files_with_markers.join(", ")
-                            ));
-                        }
-                        if !validation_result.files_with_syntax_errors.is_empty() {
-                            previous_validation_failures.push(format!(
-                                "Files have syntax errors: {}",
-                                validation_result.files_with_syntax_errors.join(", ")
-                            ));
-                        }
-                        if !validation_result.unmodified_files.is_empty() {
-                            previous_validation_failures.push(format!(
-                                "Files were not modified: {}",
-                                validation_result.unmodified_files.join(", ")
-                            ));
-                        }
-                        // Also check for remaining conflicts from git
-                        let remaining = get_conflicted_files().unwrap_or_default();
-                        if !remaining.is_empty() {
-                            previous_validation_failures.push(format!(
-                                "Git still reports conflicts: {}",
-                                remaining.join(", ")
-                            ));
-                        }
-
-                        state_machine.record_error(format!(
-                            "Conflict resolution validation failed: {}",
-                            validation_result.failure_summary()
-                        ));
-                        logger.warn(&format!(
-                            "Resolution validation failed: {}, retrying...",
-                            validation_result.failure_summary()
-                        ));
-                    }
-                    Err(e) => {
-                        previous_validation_failures.push(format!("Validation error: {e}"));
-                        state_machine.record_error(format!("Validation error: {e}"));
-                        logger.warn(&format!("Resolution validation error: {e}, retrying..."));
-                    }
-                }
-            }
-            Ok(ConflictResolutionResult::FileEditsOnly) => {
-                // Agent resolved conflicts by editing files directly
-                logger.info("Agent resolved conflicts via file edits (no JSON output)");
-
-                // Clear previous failures and validate
-                previous_validation_failures.clear();
-
-                match validate_conflict_resolution_detailed(logger, &conflicted_files) {
-                    Ok(validation_result) if validation_result.is_valid() => {
-                        // Mark all original conflicted files as resolved
-                        for file in &conflicted_files {
-                            state_machine.record_resolution(file.clone());
-                        }
-                        logger.success(&format!(
-                            "All conflicts resolved successfully after {} cycle(s)",
-                            iteration
-                        ));
-                        return Ok(true);
-                    }
-                    Ok(validation_result) => {
-                        // Collect failures for retry
-                        if !validation_result.files_with_markers.is_empty() {
-                            previous_validation_failures.push(format!(
-                                "Files still have conflict markers: {}",
-                                validation_result.files_with_markers.join(", ")
-                            ));
-                        }
-                        if !validation_result.files_with_syntax_errors.is_empty() {
-                            previous_validation_failures.push(format!(
-                                "Files have syntax errors: {}",
-                                validation_result.files_with_syntax_errors.join(", ")
-                            ));
-                        }
-
-                        state_machine.record_error(format!(
-                            "Conflict resolution validation failed: {}",
-                            validation_result.failure_summary()
-                        ));
-                        logger.warn(&format!(
-                            "Resolution validation failed: {}, retrying...",
-                            validation_result.failure_summary()
-                        ));
-                    }
-                    Err(e) => {
-                        previous_validation_failures.push(format!("Validation error: {e}"));
-                        state_machine.record_error(format!("Validation error: {e}"));
-                        logger.warn(&format!("Resolution validation error: {e}, retrying..."));
-                    }
-                }
-            }
-            Ok(ConflictResolutionResult::Failed) | Err(_) => {
-                logger.warn("AI conflict resolution attempt failed");
-
-                // If this is the last iteration, don't retry
-                if iteration >= max_iterations {
-                    break;
-                }
-            }
-        }
-    }
-
-    // All iterations exhausted - try to continue rebase anyway
-    // User may have manually resolved conflicts
-    logger.info("Resolution cycles exhausted, checking for manual resolution...");
-    match crate::git_helpers::continue_rebase() {
-        Ok(()) => {
-            logger.info("Successfully continued rebase (possibly with manual resolution)");
-            // Mark all conflicts as resolved
-            for file in &conflicted_files {
-                state_machine.record_resolution(file.clone());
-            }
-            Ok(true)
-        }
-        Err(rebase_err) => {
-            logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
-            Ok(false)
-        }
-    }
-}
-
-/// Result of validating conflict resolution.
-///
-/// Provides detailed feedback on what failed during validation.
-#[derive(Debug, Clone, Default)]
-struct ConflictValidationResult {
-    /// Files that still have conflict markers
-    pub files_with_markers: Vec<String>,
-    /// Files that have syntax errors (if detectable)
-    pub files_with_syntax_errors: Vec<String>,
-    /// Files that weren't modified despite being conflicted
-    pub unmodified_files: Vec<String>,
-    /// Overall validation status
-    pub is_valid: bool,
-}
-
-impl ConflictValidationResult {
-    /// Returns true if all validations passed.
-    pub fn is_valid(&self) -> bool {
-        self.is_valid
-    }
-
-    /// Returns a summary of validation failures.
-    pub fn failure_summary(&self) -> String {
-        let mut parts = Vec::new();
-
-        if !self.files_with_markers.is_empty() {
-            parts.push(format!(
-                "{} file(s) still have conflict markers",
-                self.files_with_markers.len()
-            ));
-        }
-        if !self.files_with_syntax_errors.is_empty() {
-            parts.push(format!(
-                "{} file(s) have syntax errors",
-                self.files_with_syntax_errors.len()
-            ));
-        }
-        if !self.unmodified_files.is_empty() {
-            parts.push(format!(
-                "{} file(s) were not modified",
-                self.unmodified_files.len()
-            ));
-        }
-
-        if parts.is_empty() {
-            "No specific issues detected".to_string()
-        } else {
-            parts.join(", ")
-        }
-    }
-}
-
-/// Perform basic syntax validation for common file types.
-///
-/// This is a lightweight validation that checks for obvious syntax errors
-/// like unmatched brackets, incomplete statements, etc.
-///
-/// # Arguments
-///
-/// * `extension` - File extension (e.g., "rs", "py", "js")
-/// * `content` - File content to validate
-///
-/// # Returns
-///
-/// Returns `Ok(())` if syntax appears valid, `Err` if issues detected.
-fn validate_file_syntax(extension: &str, content: &str) -> anyhow::Result<()> {
-    match extension {
-        // Rust files - check for balanced braces and parentheses
-        "rs" => {
-            let open_braces = content.matches('{').count();
-            let close_braces = content.matches('}').count();
-            let open_parens = content.matches('(').count();
-            let close_parens = content.matches(')').count();
-            let open_brackets = content.matches('[').count();
-            let close_brackets = content.matches(']').count();
-
-            if open_braces != close_braces {
-                anyhow::bail!("Unbalanced braces: {open_braces} open, {close_braces} close");
-            }
-            if open_parens != close_parens {
-                anyhow::bail!("Unbalanced parentheses: {open_parens} open, {close_parens} close");
-            }
-            if open_brackets != close_brackets {
-                anyhow::bail!("Unbalanced brackets: {open_brackets} open, {close_brackets} close");
-            }
-            Ok(())
-        }
-        // Python files - check for basic indentation consistency
-        "py" => {
-            // Python's syntax is complex; we do a basic check for obvious issues
-            let lines: Vec<&str> = content.lines().collect();
-            for (i, line) in lines.iter().enumerate() {
-                // Check for tabs mixed with spaces (common issue)
-                if line.contains('\t') && line.matches(' ').count() > 0 {
-                    anyhow::bail!("Line {}: mixed tabs and spaces", i + 1);
-                }
-            }
-            Ok(())
-        }
-        // JavaScript/TypeScript - check for balanced braces
-        "js" | "ts" | "jsx" | "tsx" => {
-            let open_braces = content.matches('{').count();
-            let close_braces = content.matches('}').count();
-            let open_parens = content.matches('(').count();
-            let close_parens = content.matches(')').count();
-            let open_brackets = content.matches('[').count();
-            let close_brackets = content.matches(']').count();
-
-            if open_braces != close_braces {
-                anyhow::bail!("Unbalanced braces: {open_braces} open, {close_braces} close");
-            }
-            if open_parens != close_parens {
-                anyhow::bail!("Unbalanced parentheses: {open_parens} open, {close_parens} close");
-            }
-            if open_brackets != close_brackets {
-                anyhow::bail!("Unbalanced brackets: {open_brackets} open, {close_brackets} close");
-            }
-            Ok(())
-        }
-        // JSON files - check for balanced braces and brackets
-        "json" => {
-            let open_braces = content.matches('{').count();
-            let close_braces = content.matches('}').count();
-            let open_brackets = content.matches('[').count();
-            let close_brackets = content.matches(']').count();
-
-            if open_braces != close_braces {
-                anyhow::bail!("Unbalanced braces: {open_braces} open, {close_braces} close");
-            }
-            if open_brackets != close_brackets {
-                anyhow::bail!("Unbalanced brackets: {open_brackets} open, {close_brackets} close");
-            }
-            Ok(())
-        }
-        // YAML files - basic structure check
-        "yaml" | "yml" => {
-            // Check for obvious syntax issues
-            for line in content.lines() {
-                // Check for tabs (YAML doesn't allow tabs for indentation)
-                if line.starts_with('\t') {
-                    anyhow::bail!("YAML files should not use tabs for indentation");
-                }
-            }
-            Ok(())
-        }
-        // Unknown file type - skip validation
-        _ => Ok(()),
-    }
-}
-
-/// Validate that conflict resolution was successful, returning detailed results.
-///
-/// Performs comprehensive validation and returns detailed feedback about
-/// what failed, which can be used to provide better context for retry attempts.
-///
-/// # Arguments
-///
-/// * `logger` - Logger for output
-/// * `original_conflicts` - List of originally conflicted files
-///
-/// # Returns
-///
-/// Returns `Ok(ConflictValidationResult)` with detailed validation results.
-fn validate_conflict_resolution_detailed(
-    logger: &Logger,
-    original_conflicts: &[String],
-) -> anyhow::Result<ConflictValidationResult> {
-    use std::fs;
-
-    let mut validation_result = ConflictValidationResult::default();
-
-    // Check each originally conflicted file
-    for path in original_conflicts {
-        match fs::read_to_string(path) {
-            Ok(content) => {
-                // Check for conflict markers
-                let has_markers = content.contains("<<<<<<<")
-                    || content.contains("=======")
-                    || content.contains(">>>>>>>");
-
-                if has_markers {
-                    validation_result.files_with_markers.push(path.clone());
-                    logger.warn(&format!("File {} still contains conflict markers", path));
-                }
-
-                // Check for basic syntax validation on known file types
-                if let Some(ext) = std::path::Path::new(path).extension() {
-                    if let Some(ext_str) = ext.to_str() {
-                        if validate_file_syntax(ext_str, &content).is_err() {
-                            validation_result
-                                .files_with_syntax_errors
-                                .push(path.clone());
-                            logger.warn(&format!("File {} may have syntax errors", path));
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                logger.warn(&format!("Failed to read file {}: {}", path, e));
-                // If we can't read the file, consider it invalid
-                validation_result.files_with_markers.push(path.clone());
-            }
-        }
-    }
-
-    // Verify with git that no conflicts remain
-    let remaining_conflicts = get_conflicted_files()?;
-    if !remaining_conflicts.is_empty() {
-        logger.warn(&format!(
-            "Git still reports {} conflicted file(s): {}",
-            remaining_conflicts.len(),
-            remaining_conflicts.join(", ")
-        ));
-    }
-
-    // Detect partial resolution: files that still show as conflicted in git
-    for path in original_conflicts {
-        if remaining_conflicts.contains(path)
-            && !validation_result.files_with_markers.contains(path)
-        {
-            // File is still conflicted according to git but has no markers
-            // This might indicate a partial resolution or state issue
-            logger.warn(&format!(
-                "File {} is still marked as conflicted by Git",
-                path
-            ));
-        }
-    }
-
-    validation_result.is_valid = validation_result.files_with_markers.is_empty()
-        && validation_result.files_with_syntax_errors.is_empty()
-        && remaining_conflicts.is_empty();
-
-    Ok(validation_result)
 }

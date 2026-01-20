@@ -48,13 +48,12 @@
       "WebFetch(domain:www.atlassian.com)",
       "WebFetch(domain:lucasfcosta.com)",
       "WebFetch(domain:github.blog)",
-      "Bash(git reset:*)",
+      "Bash(git stash:*)",
+      "Bash(git -C /Users/mistlight/Projects/RalphWithReviewer log origin/main..HEAD --pretty=format:\"%h\" --reverse)",
       "Bash(git worktree:*)",
-      "mcp__filesystem__read_multiple_files",
-      "Bash(git rev-list:*)",
-      "Bash(git cat-file:*)",
-      "Bash(sort:*)",
-      "Bash(du:*)"
+      "Bash(/bin/bash -c 'echo hello')",
+      "mcp__git__git_show",
+      "Bash(chmod:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

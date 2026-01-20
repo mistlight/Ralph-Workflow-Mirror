@@ -634,6 +634,7 @@ fn extract_conflict_files(output: &str) -> Vec<String> {
 /// Represents the various Git operations that may be in progress
 /// and would block a rebase from starting.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(any(test, feature = "test-utils"))]
 pub enum ConcurrentOperation {
     /// A rebase is already in progress.
     Rebase,
@@ -651,6 +652,7 @@ pub enum ConcurrentOperation {
     Unknown(String),
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl ConcurrentOperation {
     /// Returns a human-readable description of the operation.
     pub fn description(&self) -> String {
@@ -694,6 +696,7 @@ impl ConcurrentOperation {
 ///     Err(e) => eprintln!("Error checking: {e}"),
 /// }
 /// ```
+#[cfg(any(test, feature = "test-utils"))]
 pub fn detect_concurrent_git_operations() -> io::Result<Option<ConcurrentOperation>> {
     use std::fs;
 
@@ -791,6 +794,7 @@ pub fn rebase_in_progress_cli() -> io::Result<bool> {
 ///
 /// Provides information about what was cleaned up during the operation.
 #[derive(Debug, Clone, Default)]
+#[cfg(any(test, feature = "test-utils"))]
 pub struct CleanupResult {
     /// List of state files that were cleaned up
     pub cleaned_paths: Vec<String>,
@@ -798,15 +802,14 @@ pub struct CleanupResult {
     pub locks_removed: bool,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl CleanupResult {
     /// Returns true if any cleanup was performed.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn has_cleanup(&self) -> bool {
         !self.cleaned_paths.is_empty() || self.locks_removed
     }
 
     /// Returns the number of items cleaned up.
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn count(&self) -> usize {
         self.cleaned_paths.len() + if self.locks_removed { 1 } else { 0 }
     }
@@ -825,6 +828,7 @@ impl CleanupResult {
 ///
 /// Returns `Ok(CleanupResult)` with details of what was cleaned up,
 /// or an error if cleanup failed catastrophically.
+#[cfg(any(test, feature = "test-utils"))]
 pub fn cleanup_stale_rebase_state() -> io::Result<CleanupResult> {
     use std::fs;
 
@@ -899,6 +903,7 @@ pub fn cleanup_stale_rebase_state() -> io::Result<CleanupResult> {
 ///
 /// Returns `Ok(true)` if the state appears valid, `Ok(false)` if invalid,
 /// or an error if validation failed.
+#[cfg(any(test, feature = "test-utils"))]
 fn validate_state_file(path: &Path) -> io::Result<bool> {
     use std::fs;
 
@@ -1040,6 +1045,7 @@ pub fn attempt_automatic_recovery(
 ///
 /// Returns `Ok(())` if the repository state appears valid,
 /// or an error describing the validation failure.
+#[cfg(any(test, feature = "test-utils"))]
 pub fn validate_git_state() -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
@@ -1169,6 +1175,7 @@ pub fn is_dirty_tree_cli() -> io::Result<bool> {
 ///     Err(e) => eprintln!("Cannot rebase: {e}"),
 /// }
 /// ```
+#[cfg(any(test, feature = "test-utils"))]
 pub fn validate_rebase_preconditions() -> io::Result<()> {
     use std::process::Command;
 
@@ -1259,6 +1266,7 @@ pub fn validate_rebase_preconditions() -> io::Result<()> {
 ///
 /// Returns `Ok(())` if the repository is a full clone, or an error if
 /// it's a shallow clone.
+#[cfg(any(test, feature = "test-utils"))]
 fn check_shallow_clone() -> io::Result<()> {
     use std::fs;
 
@@ -1295,6 +1303,7 @@ fn check_shallow_clone() -> io::Result<()> {
 ///
 /// Returns `Ok(())` if the branch is not checked out elsewhere, or an
 /// error if there's a worktree conflict.
+#[cfg(any(test, feature = "test-utils"))]
 fn check_worktree_conflicts() -> io::Result<()> {
     use std::fs;
 
@@ -1360,6 +1369,7 @@ fn check_worktree_conflicts() -> io::Result<()> {
 ///
 /// Returns `Ok(())` if submodules are in a valid state or no submodules
 /// exist, or an error if there are submodule issues.
+#[cfg(any(test, feature = "test-utils"))]
 fn check_submodule_state() -> io::Result<()> {
     use std::fs;
 
@@ -1420,6 +1430,7 @@ fn check_submodule_state() -> io::Result<()> {
 ///
 /// Returns `Ok(())` if sparse checkout is not enabled or is properly
 /// configured, or an error if there are issues.
+#[cfg(any(test, feature = "test-utils"))]
 fn check_sparse_checkout_state() -> io::Result<()> {
     use std::fs;
 
@@ -1887,6 +1898,7 @@ pub fn verify_rebase_completed(upstream_branch: &str) -> io::Result<bool> {
 /// This is a lightweight validation that runs automatically after successful
 /// rebase. For project-specific validation (tests, builds), use
 /// `validate_post_rebase_with_checks()` instead.
+#[cfg(any(test, feature = "test-utils"))]
 pub fn validate_post_rebase_state() -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
@@ -2174,6 +2186,24 @@ pub fn continue_rebase() -> io::Result<()> {
             "Failed to execute git rebase --continue: {e}"
         ))),
     }
+}
+
+/// Check if a rebase is currently in progress.
+///
+/// This function checks the repository state to determine if a rebase
+/// operation is in progress. This is useful for detecting interrupted
+/// rebases that need to be resumed or aborted.
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if a rebase is in progress, `Ok(false)` otherwise,
+/// or an error if the repository cannot be accessed.
+pub fn rebase_in_progress() -> io::Result<bool> {
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    let state = repo.state();
+    Ok(state == git2::RepositoryState::Rebase
+        || state == git2::RepositoryState::RebaseMerge
+        || state == git2::RepositoryState::RebaseInteractive)
 }
 
 #[cfg(test)]

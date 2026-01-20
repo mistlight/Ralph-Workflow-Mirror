@@ -44,6 +44,10 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
         .unwrap_or_else(|| "main".to_string())
 }
 
+/// Test that content conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when the same file has conflicting changes on both branches,
+/// the system detects the conflict and returns a Conflicts result with affected files.
 #[test]
 fn rebase_handles_content_conflicts() {
     with_default_timeout(|| {
@@ -106,6 +110,10 @@ fn rebase_handles_content_conflicts() {
     });
 }
 
+/// Test that patch application failures produce Conflicts or Failed result.
+///
+/// This verifies that when a patch cannot be cleanly applied during rebase,
+/// the system returns a Conflicts result or Failed result with error details.
 #[test]
 fn rebase_handles_patch_application_failure() {
     with_default_timeout(|| {
@@ -182,6 +190,10 @@ fn rebase_handles_patch_application_failure() {
     });
 }
 
+/// Test that empty commits during rebase produce NoOp or Success result.
+///
+/// This verifies that when a commit becomes empty after rebase (same changes upstream),
+/// the system skips it with NoOp reason or handles it automatically.
 #[test]
 fn rebase_handles_empty_commits() {
     with_default_timeout(|| {
@@ -259,6 +271,10 @@ fn rebase_handles_empty_commits() {
     });
 }
 
+/// Test that add/add conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when the same file is added on both branches with different content,
+/// the system detects the conflict and returns a Conflicts result.
 #[test]
 fn rebase_handles_add_add_conflicts() {
     with_default_timeout(|| {
@@ -322,6 +338,10 @@ fn rebase_handles_add_add_conflicts() {
     });
 }
 
+/// Test that modify/delete conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when a file is modified on one branch and deleted on another,
+/// the system detects the conflict and returns a Conflicts result.
 #[test]
 fn rebase_handles_modify_delete_conflicts() {
     with_default_timeout(|| {
@@ -390,6 +410,10 @@ fn rebase_handles_modify_delete_conflicts() {
     });
 }
 
+/// Test that binary file conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when binary files are modified differently on both branches,
+/// the system detects the conflict and returns a Conflicts result.
 #[test]
 fn rebase_handles_binary_file_conflicts() {
     with_default_timeout(|| {
@@ -461,6 +485,10 @@ fn rebase_handles_binary_file_conflicts() {
     });
 }
 
+/// Test that conflict markers in files are detected and extracted.
+///
+/// This verifies that when a file contains git conflict markers (<<<<<<<, =======, >>>>>>>),
+/// the system can extract and return the marker content.
 #[test]
 fn rebase_detects_conflict_markers_in_file() {
     with_default_timeout(|| {
@@ -497,6 +525,10 @@ some code after"#;
     });
 }
 
+/// Test that clean files without conflicts return empty marker content.
+///
+/// This verifies that when a file has no conflict markers, the system
+/// returns empty content or handles it appropriately.
 #[test]
 fn rebase_detects_no_conflicts_in_clean_file() {
     with_default_timeout(|| {
@@ -525,6 +557,10 @@ fn rebase_detects_no_conflicts_in_clean_file() {
     });
 }
 
+/// Test that autostash with conflicting changes produces appropriate result.
+///
+/// This verifies that when --autostash is used and stashed changes conflict on reapply,
+/// the system handles the situation without crashing.
 #[test]
 fn rebase_handles_autostash_with_conflicts() {
     with_default_timeout(|| {
@@ -591,6 +627,10 @@ fn rebase_handles_autostash_with_conflicts() {
     });
 }
 
+/// Test that rename/rename conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when the same file is renamed to different names on both branches,
+/// the system detects the conflict and returns a Conflicts result.
 #[test]
 fn rebase_handles_rename_rename_conflicts() {
     with_default_timeout(|| {
@@ -667,6 +707,10 @@ fn rebase_handles_rename_rename_conflicts() {
     });
 }
 
+/// Test that directory/file conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when a path is a file on one branch and a directory on another,
+/// the system detects the conflict and returns a Conflicts result.
 #[test]
 fn rebase_handles_directory_file_conflicts() {
     with_default_timeout(|| {
@@ -733,6 +777,10 @@ fn rebase_handles_directory_file_conflicts() {
     });
 }
 
+/// Test that rename/delete conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when a file is renamed on one branch and deleted on another,
+/// the system detects the conflict and returns a Conflicts result.
 #[test]
 fn rebase_handles_rename_delete_conflicts() {
     with_default_timeout(|| {
@@ -808,6 +856,10 @@ fn rebase_handles_rename_delete_conflicts() {
     });
 }
 
+/// Test that symlink conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when a file is converted to a symlink on one branch
+/// and modified on another, the system detects the conflict appropriately.
 #[test]
 fn rebase_handles_symlink_conflicts() {
     with_default_timeout(|| {
@@ -887,6 +939,10 @@ fn rebase_handles_symlink_conflicts() {
     });
 }
 
+/// Test that line ending conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when files have conflicting line endings (CRLF vs LF),
+/// the system detects the conflict and returns a Conflicts result.
 #[test]
 fn rebase_handles_line_ending_conflicts() {
     with_default_timeout(|| {
@@ -969,6 +1025,10 @@ fn rebase_handles_line_ending_conflicts() {
     });
 }
 
+/// Test that whitespace-only conflicts during rebase produce Conflicts result.
+///
+/// This verifies that when files differ only in whitespace, the system
+/// detects the conflict and returns a Conflicts result.
 #[test]
 fn rebase_handles_whitespace_only_conflicts() {
     with_default_timeout(|| {
@@ -1046,10 +1106,8 @@ fn rebase_handles_whitespace_only_conflicts() {
 
 /// Test that hook rejection during rebase start is properly detected.
 ///
-/// This test verifies that the system can detect when a pre-rebase hook
-/// rejects the rebase operation. Hooks are user-defined scripts that can
-/// veto Git operations, and the rebase system must properly report these
-/// rejections.
+/// This verifies that when a pre-rebase hook rejects the rebase operation,
+/// the system can detect and report the rejection properly.
 #[test]
 fn rebase_detects_pre_rebase_hook_rejection() {
     with_default_timeout(|| {
@@ -1122,8 +1180,8 @@ fn rebase_detects_pre_rebase_hook_rejection() {
 
 /// Test that commit hook rejection mid-rebase is properly detected.
 ///
-/// This test verifies that the system can detect when a pre-commit or
-/// commit-msg hook rejects a commit during the rebase process.
+/// This verifies that when a pre-commit or commit-msg hook rejects a commit
+/// during the rebase process, the system can detect it properly.
 #[test]
 fn rebase_detects_commit_hook_rejection_mid_rebase() {
     with_default_timeout(|| {

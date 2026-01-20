@@ -85,10 +85,6 @@ pub struct GeneralBehaviorFlags {
 pub struct GeneralWorkflowFlags {
     /// Enable checkpoint/resume functionality.
     pub checkpoint_enabled: bool,
-    /// Enable automatic rebasing before development.
-    pub auto_rebase: bool,
-    /// Maximum number of recovery attempts during rebase.
-    pub max_recovery_attempts: u32,
 }
 
 /// General configuration execution behavior flags.
@@ -157,8 +153,6 @@ impl Default for GeneralConfig {
             },
             workflow: GeneralWorkflowFlags {
                 checkpoint_enabled: true,
-                auto_rebase: true,
-                max_recovery_attempts: 3,
             },
             execution: GeneralExecutionFlags {
                 force_universal_prompt: false,

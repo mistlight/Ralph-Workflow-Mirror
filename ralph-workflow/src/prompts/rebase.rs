@@ -222,6 +222,7 @@ fn get_language_marker(path: &str) -> String {
 
 /// Information about divergent branches for enhanced conflict resolution.
 #[derive(Debug, Clone)]
+#[cfg(any(test, feature = "test-utils"))]
 pub struct BranchInfo {
     /// The current branch name
     pub current_branch: String,
@@ -247,6 +248,7 @@ pub struct BranchInfo {
 /// * `branch_info` - Optional branch information for enhanced context
 /// * `prompt_md_content` - Optional content from PROMPT.md for task context
 /// * `plan_content` - Optional content from PLAN.md for additional context
+#[cfg(any(test, feature = "test-utils"))]
 pub fn build_enhanced_conflict_resolution_prompt(
     context: &TemplateContext,
     conflicts: &HashMap<String, FileConflict>,
@@ -299,6 +301,7 @@ pub fn build_enhanced_conflict_resolution_prompt(
 ///
 /// This helper builds a branch information section that gets injected
 /// into the context for AI conflict resolution.
+#[cfg(any(test, feature = "test-utils"))]
 fn format_branch_info_section(info: &BranchInfo) -> String {
     let mut section = String::new();
 
@@ -346,6 +349,7 @@ fn format_branch_info_section(info: &BranchInfo) -> String {
 /// # Returns
 ///
 /// Returns `Ok(BranchInfo)` with the gathered information, or an error if git operations fail.
+#[cfg(any(test, feature = "test-utils"))]
 pub fn collect_branch_info(upstream_branch: &str) -> std::io::Result<BranchInfo> {
     use std::process::Command;
 

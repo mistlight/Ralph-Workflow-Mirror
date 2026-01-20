@@ -69,7 +69,8 @@ fn parse_events(events: &[&str]) -> Rc<RefCell<VirtualTerminal>> {
 
 /// Test basic streaming produces correct visible output.
 ///
-/// Verifies that deltas accumulate correctly and the final content is visible.
+/// This verifies that when streaming deltas are received, they accumulate
+/// correctly and the final content is visible without duplicates.
 #[test]
 fn test_streaming_produces_correct_visible_output() {
     with_default_timeout(|| {
@@ -104,8 +105,8 @@ fn test_streaming_produces_correct_visible_output() {
 
 /// Test that snapshot glitches don't cause duplicate visible content.
 ///
-/// A "snapshot glitch" is when the server resends accumulated content as a delta
-/// instead of just the new content. The deduplication system should handle this.
+/// This verifies that when the server resends accumulated content as a delta,
+/// the deduplication system prevents duplicate visible content.
 #[test]
 fn test_snapshot_glitch_no_visible_duplicates() {
     with_default_timeout(|| {
@@ -145,7 +146,8 @@ fn test_snapshot_glitch_no_visible_duplicates() {
 
 /// Test that consecutive identical deltas don't cause duplicate visible content.
 ///
-/// Network glitches can cause the same delta to be sent multiple times.
+/// This verifies that when network glitches cause duplicate deltas,
+/// the deduplication system filters them to prevent visible duplicates.
 #[test]
 fn test_consecutive_identical_deltas_no_duplicates() {
     with_default_timeout(|| {
@@ -182,8 +184,8 @@ fn test_consecutive_identical_deltas_no_duplicates() {
 
 /// Test that assistant event BEFORE streaming doesn't duplicate content.
 ///
-/// In some GLM sessions, an assistant event with full content arrives BEFORE
-/// the streaming deltas. Only one should be rendered.
+/// This verifies that when an assistant event arrives before streaming deltas,
+/// only one is rendered to prevent duplicate visible content.
 #[test]
 fn test_assistant_event_before_streaming_no_duplicates() {
     with_default_timeout(|| {
@@ -217,7 +219,8 @@ fn test_assistant_event_before_streaming_no_duplicates() {
 
 /// Test that assistant event DURING streaming doesn't duplicate content.
 ///
-/// Assistant events can arrive mid-stream with accumulated content.
+/// This verifies that when assistant events arrive mid-stream with accumulated content,
+/// they don't cause duplicate visible content in the terminal.
 #[test]
 fn test_assistant_event_during_streaming_no_duplicates() {
     with_default_timeout(|| {
@@ -258,8 +261,8 @@ fn test_assistant_event_during_streaming_no_duplicates() {
 
 /// Test that intentional repetition is preserved.
 ///
-/// The deduplication system should NOT filter content like "echo echo echo"
-/// where the repetition is part of the actual message.
+/// This verifies that when repetition is part of the actual message content,
+/// the deduplication system preserves it rather than filtering it out.
 #[test]
 fn test_intentional_repetition_preserved() {
     with_default_timeout(|| {
@@ -291,7 +294,8 @@ fn test_intentional_repetition_preserved() {
 
 /// Test alternating pattern is not incorrectly deduplicated.
 ///
-/// Pattern like "Ping Pong Ping Pong" should all appear.
+/// This verifies that when alternating patterns like "Ping Pong Ping Pong"
+/// appear in content, they are preserved and not filtered out.
 #[test]
 fn test_alternating_pattern_preserved() {
     with_default_timeout(|| {
@@ -324,7 +328,8 @@ fn test_alternating_pattern_preserved() {
 
 /// Test content within a single streaming session accumulates correctly.
 ///
-/// Multiple deltas within the same content block should build up content.
+/// This verifies that when multiple deltas arrive in the same content block,
+/// they build up content correctly without duplication.
 #[test]
 fn test_multiple_deltas_accumulate_correctly() {
     with_default_timeout(|| {
@@ -362,7 +367,8 @@ fn test_multiple_deltas_accumulate_correctly() {
 
 /// Test with real production log file using VirtualTerminal.
 ///
-/// This uses an actual log file to verify deduplication works in real scenarios.
+/// This verifies that when an actual production log file is parsed,
+/// the deduplication system prevents duplicate visible content.
 #[test]
 fn test_real_log_file_no_visible_duplicates() {
     with_default_timeout(|| {

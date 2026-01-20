@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="ralph-development-result">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="ralph-status">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="completed"/>
+              <xs:enumeration value="partial"/>
+              <xs:enumeration value="failed"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="ralph-summary" type="xs:string"/>
+        <xs:element name="ralph-files-changed" type="xs:string" minOccurs="0"/>
+        <xs:element name="ralph-next-steps" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

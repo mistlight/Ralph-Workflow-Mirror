@@ -14,6 +14,7 @@ pub mod diagnostics;
 pub mod files;
 pub mod git_helpers;
 pub mod guidelines;
+pub mod interrupt;
 pub mod json_parser;
 pub mod language_detector;
 pub mod logger;

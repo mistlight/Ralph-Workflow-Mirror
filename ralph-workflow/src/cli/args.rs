@@ -225,6 +225,28 @@ pub enum Shell {
     Pwsh,
 }
 
+/// Recovery strategy for checkpoint validation failures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, Default)]
+pub enum RecoveryStrategyArg {
+    /// Fail fast - require user intervention
+    #[default]
+    Fail,
+    /// Attempt automatic recovery where possible
+    Auto,
+    /// Warn but continue (not recommended)
+    Force,
+}
+
+impl From<RecoveryStrategyArg> for crate::checkpoint::recovery::RecoveryStrategy {
+    fn from(arg: RecoveryStrategyArg) -> Self {
+        match arg {
+            RecoveryStrategyArg::Fail => Self::Fail,
+            RecoveryStrategyArg::Auto => Self::Auto,
+            RecoveryStrategyArg::Force => Self::Force,
+        }
+    }
+}
+
 /// Work Guide listing flag.
 #[derive(Parser, Debug, Default)]
 pub struct WorkGuideListFlag {
@@ -348,10 +370,10 @@ pub struct CommitDisplayFlags {
     #[arg(long, help = "Read and display .agent/commit-message.txt", hide = true)]
     pub show_commit_msg: bool,
 
-    /// Reset the starting commit reference to current HEAD
+    /// Reset the starting commit reference to merge-base with main branch
     #[arg(
         long,
-        help = "Reset .agent/start_commit to current HEAD (for incremental diff generation)",
+        help = "Reset .agent/start_commit to merge-base with main branch (for incremental diff generation)",
         hide = true
     )]
     pub reset_start_commit: bool,
@@ -372,6 +394,31 @@ pub struct RecoveryFlags {
         hide = true
     )]
     pub resume: bool,
+
+    /// Do not offer to resume even if a checkpoint exists
+    #[arg(
+        long = "no-resume",
+        help = "Skip interactive resume prompt even if a checkpoint exists (for CI/automation)",
+        hide = true
+    )]
+    pub no_resume: bool,
+
+    /// Inspect checkpoint without resuming
+    #[arg(
+        long = "inspect-checkpoint",
+        help = "Display checkpoint information without resuming (use with --resume to see saved state)",
+        hide = true
+    )]
+    pub inspect_checkpoint: bool,
+
+    /// Recovery strategy when validation fails (requires hardened-resume feature)
+    #[arg(
+        long,
+        value_enum,
+        default_value = "fail",
+        help = "Recovery strategy when checkpoint validation fails (fail=stop, auto=attempt recovery, force=continue anyway)"
+    )]
+    pub recovery_strategy: RecoveryStrategyArg,
 
     /// Validate setup without running agents (dry run)
     #[arg(

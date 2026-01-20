@@ -49,6 +49,10 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 // These integration tests focus on behavior that doesn't require agent execution.
 // ============================================================================
 
+/// Test that setting reviewer_reviews to zero skips the review phase.
+///
+/// This verifies that when a user runs ralph with reviewer_reviews=0,
+/// the review phase is skipped entirely and no ISSUES.md file is created.
 #[test]
 fn ralph_zero_reviewer_reviews_skips_review() {
     with_default_timeout(|| {
@@ -77,6 +81,10 @@ fn ralph_zero_reviewer_reviews_skips_review() {
     });
 }
 
+/// Test that the pipeline succeeds without a review phase.
+///
+/// This verifies that when a user runs ralph with reviewer_reviews=0,
+/// the pipeline completes successfully and outputs "Pipeline Complete".
 #[test]
 fn ralph_succeeds_without_review_phase() {
     with_default_timeout(|| {
@@ -103,6 +111,10 @@ fn ralph_succeeds_without_review_phase() {
     });
 }
 
+/// Test that a commit is created when the review phase is skipped.
+///
+/// This verifies that when a user runs ralph with reviewer_reviews=0,
+/// a commit is still created with a non-empty commit message.
 #[test]
 fn ralph_commit_created_when_review_skipped() {
     with_default_timeout(|| {

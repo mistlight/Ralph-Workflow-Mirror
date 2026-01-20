@@ -64,7 +64,7 @@ occurrences if encountered.
 
 Dead code must be handled by one of the following:
 - Making it used
-- Implement the feature that you will use it on, but just implement it **now**
+- Implement the feature that you will use it on, but just implement it **now** (Remember you have no time constraints or time limit, implement everything fully)
 - Gating it behind a feature flag
 - Moving it to `examples/` or `benches/`
 - Deleting it
@@ -93,26 +93,49 @@ rg -n -U --pcre2 '(?x)
   \s*\]
 ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
+
+# Check integration test compliance (timeout wrappers, doc comments, etc.)
+./tests/integration_tests/compliance_check.sh
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
+
+# Check for forbidden test flags in production code (cfg!(test), test_mode params, etc.)
+# DO NOT MODIFY THIS SCRIPT. If it fails, FIX THE PRODUCTION CODE, not the script.
+./tests/integration_tests/no_test_flags_check.sh
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 
 # DO NOT CHANGE ANY OF THE COMMANDS BELOW
 cargo fmt --all --check
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 
 # Lint the main crate (lib only) with all its features - THIS MUST BE RAN WITH THE EXACT FLAG DO NOT CHANGE
 cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 
 # Lint the separate integration test package (test-utils is enabled via its ralph-workflow dependency)
 cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 
 # Run the main crate's unit tests with all features DO NOT CHANGE
 cargo test -p ralph-workflow --lib --all-features
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
+# THERE CAN BE NO IGNORED TESTS
 
 # Run the integration tests package
 # (dependency features for ralph-workflow should be enabled via ralph-workflow-tests/Cargo.toml) DO NOT CHANGE
 cargo test -p ralph-workflow-tests
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
+# THERE CAN BE NO IGNORED TESTS
 
 # Build release artifacts (default-members only)
 cargo build --release
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 ```

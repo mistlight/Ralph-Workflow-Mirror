@@ -40,6 +40,10 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
         .unwrap_or_else(|| "main".to_string())
 }
 
+/// Test that rebasing onto an invalid revision produces appropriate error.
+///
+/// This verifies that when the target branch does not exist, the system
+/// returns a Failed result with InvalidRevision error details.
 #[test]
 fn rebase_with_invalid_revision_returns_error() {
     with_default_timeout(|| {
@@ -68,6 +72,10 @@ fn rebase_with_invalid_revision_returns_error() {
     });
 }
 
+/// Test that rebasing with dirty working tree is handled appropriately.
+///
+/// This verifies that when there are uncommitted changes, the system
+/// fails with DirtyWorkingTree error or uses autostash if available.
 #[test]
 fn rebase_with_dirty_working_tree_fails() {
     with_default_timeout(|| {
@@ -111,6 +119,10 @@ fn rebase_with_dirty_working_tree_fails() {
     });
 }
 
+/// Test that rebasing with staged changes is handled appropriately.
+///
+/// This verifies that when there are staged changes, the system
+/// fails with DirtyWorkingTree error or uses autostash if available.
 #[test]
 fn rebase_with_staged_changes_fails() {
     with_default_timeout(|| {
@@ -158,6 +170,10 @@ fn rebase_with_staged_changes_fails() {
     });
 }
 
+/// Test that in-progress rebase is detected correctly.
+///
+/// This verifies that when a rebase is already in progress, the system
+/// can detect the rebase state files without crashing.
 #[test]
 fn rebase_detects_existing_rebase_in_progress() {
     with_default_timeout(|| {
@@ -183,6 +199,10 @@ fn rebase_detects_existing_rebase_in_progress() {
     });
 }
 
+/// Test that in-progress merge is detected and handled appropriately.
+///
+/// This verifies that when a merge is in progress, the system
+/// detects the state and handles rebase appropriately.
 #[test]
 fn rebase_detects_merge_in_progress() {
     with_default_timeout(|| {
@@ -219,6 +239,10 @@ fn rebase_detects_merge_in_progress() {
     });
 }
 
+/// Test that missing git config is handled gracefully.
+///
+/// This verifies that when git identity config is missing, the system
+/// handles the situation without crashing.
 #[test]
 fn rebase_handles_missing_git_config() {
     with_default_timeout(|| {
@@ -238,6 +262,10 @@ fn rebase_handles_missing_git_config() {
     });
 }
 
+/// Test that corrupt object database is represented by RepositoryCorrupt error.
+///
+/// This verifies that when the repository object database is corrupted,
+/// the system has an error kind to represent this failure.
 #[test]
 fn rebase_handles_corrupt_object_database() {
     with_default_timeout(|| {
@@ -263,6 +291,10 @@ fn rebase_handles_corrupt_object_database() {
     });
 }
 
+/// Test that in-progress cherry-pick is detected and handled appropriately.
+///
+/// This verifies that when a cherry-pick is in progress, the system
+/// detects the state and handles rebase appropriately.
 #[test]
 fn rebase_detects_cherry_pick_in_progress() {
     with_default_timeout(|| {
@@ -298,6 +330,10 @@ fn rebase_detects_cherry_pick_in_progress() {
     });
 }
 
+/// Test that stale index locks are cleaned up appropriately.
+///
+/// This verifies that when a stale index.lock file exists, the system
+/// can clean it up and proceed with rebase operations.
 #[test]
 fn rebase_handles_locked_index() {
     with_default_timeout(|| {
@@ -331,6 +367,10 @@ fn rebase_handles_locked_index() {
     });
 }
 
+/// Test that in-progress revert is detected and handled appropriately.
+///
+/// This verifies that when a revert is in progress, the system
+/// detects the state and handles rebase appropriately.
 #[test]
 fn rebase_detects_revert_in_progress() {
     with_default_timeout(|| {
@@ -366,6 +406,10 @@ fn rebase_detects_revert_in_progress() {
     });
 }
 
+/// Test that in-progress bisect is detected and handled appropriately.
+///
+/// This verifies that when a bisect is in progress, the system
+/// detects the state and handles rebase appropriately.
 #[test]
 fn rebase_detects_bisect_in_progress() {
     with_default_timeout(|| {
@@ -401,6 +445,10 @@ fn rebase_detects_bisect_in_progress() {
     });
 }
 
+/// Test that worktree conflicts are represented by ConcurrentOperation error.
+///
+/// This verifies that when a branch is checked out in another worktree,
+/// the system has an error kind to represent this concurrent operation.
 #[test]
 fn rebase_handles_worktree_conflicts() {
     with_default_timeout(|| {

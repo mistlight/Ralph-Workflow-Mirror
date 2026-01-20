@@ -32,8 +32,13 @@ pub mod branch;
 mod hooks;
 pub mod identity;
 mod rebase;
+
+#[cfg(any(test, feature = "test-utils"))]
 pub mod rebase_checkpoint;
+
+#[cfg(any(test, feature = "test-utils"))]
 pub mod rebase_state_machine;
+
 mod repo;
 mod review_baseline;
 mod start_commit;
@@ -48,9 +53,8 @@ pub mod test_trait;
 pub use branch::{get_default_branch, is_main_or_master_branch};
 pub use hooks::uninstall_hooks;
 pub use rebase::{
-    abort_rebase, cleanup_stale_rebase_state, continue_rebase, detect_concurrent_git_operations,
-    get_conflict_markers_for_file, get_conflicted_files, rebase_onto, validate_git_state,
-    validate_post_rebase_state, validate_rebase_preconditions, RebaseErrorKind, RebaseResult,
+    abort_rebase, continue_rebase, get_conflict_markers_for_file, get_conflicted_files,
+    rebase_in_progress, rebase_onto, RebaseResult,
 };
 
 // Types that are part of the public API but not used in binary
@@ -59,11 +63,19 @@ pub use rebase::{CleanupResult, ConcurrentOperation};
 
 #[cfg(any(test, feature = "test-utils"))]
 pub use rebase::{
-    attempt_automatic_recovery, is_dirty_tree_cli, rebase_in_progress_cli, restore_from_reflog,
-    validate_post_rebase_with_checks, verify_rebase_completed, PostRebaseValidationResult,
+    attempt_automatic_recovery, cleanup_stale_rebase_state, detect_concurrent_git_operations,
+    is_dirty_tree_cli, rebase_in_progress_cli, restore_from_reflog,
+    validate_post_rebase_with_checks, validate_rebase_preconditions, verify_rebase_completed,
+    PostRebaseValidationResult,
 };
 
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase::RebaseErrorKind;
+
+#[cfg(any(test, feature = "test-utils"))]
 pub use rebase_checkpoint::RebasePhase;
+
+#[cfg(any(test, feature = "test-utils"))]
 pub use rebase_state_machine::{RebaseLock, RebaseStateMachine};
 pub use repo::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,

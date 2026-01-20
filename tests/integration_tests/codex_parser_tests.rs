@@ -23,9 +23,9 @@ use ralph_workflow::logger::Colors;
 use std::io::BufReader;
 use tempfile::TempDir;
 
-/// Test normal flow with turn.completed event.
+/// Test that normal parsing flow produces log file with synthetic result.
 ///
-/// Verifies that when a turn.completed event is received, the synthetic
+/// This verifies that when a turn.completed event is received, the synthetic
 /// result event is written to the log file and can be extracted.
 #[test]
 fn test_codex_parser_normal_flow_with_turn_completed() {
@@ -59,11 +59,10 @@ fn test_codex_parser_normal_flow_with_turn_completed() {
     });
 }
 
-/// Test fallback flow without turn.completed event.
+/// Test that fallback flow without turn.completed produces synthetic result.
 ///
-/// This is the critical bug scenario: when the stream ends without a
-/// turn.completed event, the parser should still write a synthetic result
-/// event with any accumulated content.
+/// This verifies that when the stream ends without a turn.completed event,
+/// the parser writes a synthetic result event with accumulated content.
 #[test]
 fn test_codex_parser_fallback_without_turn_completed() {
     with_default_timeout(|| {
@@ -94,10 +93,10 @@ fn test_codex_parser_fallback_without_turn_completed() {
     });
 }
 
-/// Test last line without trailing newline.
+/// Test that extraction works without trailing newline.
 ///
-/// Verifies that extraction works even when the last line in the log
-/// file doesn't have a trailing newline.
+/// This verifies that when the last line in the log file doesn't have
+/// a trailing newline, extraction still works correctly.
 #[test]
 fn test_codex_parser_last_line_without_trailing_newline() {
     with_default_timeout(|| {
@@ -125,9 +124,10 @@ fn test_codex_parser_last_line_without_trailing_newline() {
     });
 }
 
-/// Test multiple turns with result events.
+/// Test that multiple turns produce result events for each turn.
 ///
-/// Verifies that each completed turn gets its own result event written.
+/// This verifies that when multiple turns complete in a conversation,
+/// each completed turn gets its own result event written to the log.
 #[test]
 fn test_codex_parser_multiple_turns() {
     with_default_timeout(|| {
@@ -167,12 +167,10 @@ fn test_codex_parser_multiple_turns() {
     });
 }
 
-/// Test the exact user-reported bug scenario.
+/// Test that user-reported bug scenario produces extractable result.
 ///
-/// The user reported that issues were being produced but extraction
-/// failed with "No JSON result event found in reviewer logs".
-/// This test verifies that the synthetic result event is written
-/// correctly even when the agent output ends abruptly.
+/// This verifies that when agent output ends abruptly without turn.completed,
+/// the synthetic result event is still written correctly for extraction.
 #[test]
 fn test_user_reported_bug_scenario() {
     with_default_timeout(|| {
@@ -208,10 +206,10 @@ fn test_user_reported_bug_scenario() {
     });
 }
 
-/// Test that empty accumulated content doesn't cause issues.
+/// Test that empty accumulated content doesn't cause parsing errors.
 ///
-/// Verifies that when a turn completes with no accumulated content,
-/// the parser handles it gracefully.
+/// This verifies that when a turn completes with no accumulated content,
+/// the parser handles the situation gracefully without crashing.
 #[test]
 fn test_codex_parser_empty_accumulated_content() {
     with_default_timeout(|| {
@@ -237,10 +235,10 @@ fn test_codex_parser_empty_accumulated_content() {
     });
 }
 
-/// Test that log file is created and properly flushed.
+/// Test that log file is created and flushed after parsing.
 ///
-/// Verifies that the log file exists after parsing and contains
-/// the expected content.
+/// This verifies that when parsing completes, the log file exists
+/// and contains the expected content including synthetic result events.
 #[test]
 fn test_codex_parser_log_file_flushed() {
     with_default_timeout(|| {
@@ -275,10 +273,10 @@ fn test_codex_parser_log_file_flushed() {
     });
 }
 
-/// Test persistence with sync_all.
+/// Test that persistence with sync_all writes events to disk immediately.
 ///
-/// Verifies that the synthetic result event is persisted to disk
-/// and can be read immediately after parsing completes.
+/// This verifies that when parsing completes, the synthetic result event
+/// is persisted to disk and can be read immediately.
 #[test]
 fn test_codex_parser_persistence_with_sync_all() {
     with_default_timeout(|| {

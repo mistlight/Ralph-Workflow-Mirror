@@ -23,6 +23,9 @@ use crate::common::ralph_cmd;
 use crate::test_timeout::with_default_timeout;
 
 /// Test that `ralph --init` exits cleanly without running the pipeline.
+///
+/// This verifies that when --init flag is used, the system exits
+/// successfully after initialization without running the AI pipeline.
 #[test]
 fn test_ralph_init_exits_cleanly() {
     with_default_timeout(|| {
@@ -91,6 +94,9 @@ fn test_ralph_init_exits_cleanly() {
 }
 
 /// Test that `ralph --init bug-fix` creates PROMPT.md and exits.
+///
+/// This verifies that when --init=bug-fix is used, the system creates
+/// the PROMPT.md template file and exits without running the pipeline.
 #[test]
 fn test_ralph_init_with_template_exits_cleanly() {
     with_default_timeout(|| {
@@ -145,6 +151,9 @@ reviewer = ["codex"]
 }
 
 /// Test that `ralph --init` when both config and PROMPT.md exist exits cleanly.
+///
+/// This verifies that when setup is complete and --init is run, the system
+/// shows "Setup complete" message and exits without running the pipeline.
 #[test]
 fn test_ralph_init_when_setup_complete_exits_cleanly() {
     with_default_timeout(|| {
@@ -199,6 +208,9 @@ reviewer = ["codex"]
 }
 
 /// Test that `ralph --init` with an invalid template name exits cleanly.
+///
+/// This verifies that when an invalid template name is provided, the system
+/// shows an error message and exits without running the pipeline.
 #[test]
 fn test_ralph_init_with_invalid_template_exits_cleanly() {
     with_default_timeout(|| {
@@ -250,8 +262,10 @@ reviewer = ["codex"]
     });
 }
 
-/// Test that `ralph --init` when passed with a commit message positionally
-/// interprets the commit message as the template value and exits cleanly.
+/// Test that `ralph --init` with commit message treats it as template value.
+///
+/// This verifies that when --init is passed with a commit message positionally,
+/// the system interprets it as the template value and exits without running pipeline.
 #[test]
 fn test_ralph_init_with_commit_message_exits_cleanly() {
     with_default_timeout(|| {

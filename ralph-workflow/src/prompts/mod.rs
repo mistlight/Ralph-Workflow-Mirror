@@ -18,7 +18,7 @@ mod commit;
 mod developer;
 pub mod partials;
 mod rebase;
-mod review;
+pub mod review;
 pub mod reviewer;
 pub mod template_catalog;
 pub mod template_context;
@@ -28,23 +28,33 @@ pub mod template_registry;
 mod template_validator;
 mod types;
 
+// Re-export ResumeContext for use in prompts
+pub use crate::checkpoint::restore::ResumeContext;
+
 // Re-export all public items for backward compatibility
 pub use commit::{
-    prompt_generate_commit_message_with_diff_with_context, prompt_simplified_commit_with_context,
-    prompt_xsd_retry_with_context,
+    prompt_fix_with_context, prompt_generate_commit_message_with_diff_with_context,
+    prompt_simplified_commit_with_context, prompt_xsd_retry_with_context,
 };
 pub use developer::{
-    prompt_developer_iteration_with_context, prompt_planning_xml_with_context,
-    prompt_planning_xsd_retry_with_context,
+    prompt_developer_iteration_with_context, prompt_developer_iteration_xml_with_context,
+    prompt_developer_iteration_xsd_retry_with_context, prompt_plan_with_context,
+    prompt_planning_xml_with_context, prompt_planning_xsd_retry_with_context,
 };
 pub use rebase::{
-    build_conflict_resolution_prompt_with_context, build_enhanced_conflict_resolution_prompt,
-    collect_branch_info, collect_conflict_info, BranchInfo, FileConflict,
+    build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict,
 };
 pub use review::{
     prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context, prompt_review_xml_with_context,
     prompt_review_xsd_retry_with_context,
 };
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase::build_enhanced_conflict_resolution_prompt;
+
+// Types only used in tests
+#[cfg(any(test, feature = "test-utils"))]
+pub use rebase::{collect_branch_info, BranchInfo};
 pub use reviewer::{
     prompt_comprehensive_review_with_diff_with_context,
     prompt_detailed_review_without_guidelines_with_diff_with_context,
@@ -83,6 +93,10 @@ pub struct PromptConfig {
     pub prompt_and_plan: Option<(String, String)>,
     /// (PROMPT.md, PLAN.md, ISSUES.md) content tuple for fix prompts.
     pub prompt_plan_and_issues: Option<(String, String, String)>,
+    /// Whether this is a resumed session (from a checkpoint).
+    pub is_resume: bool,
+    /// Rich resume context if available.
+    pub resume_context: Option<ResumeContext>,
 }
 
 impl PromptConfig {
@@ -95,6 +109,8 @@ impl PromptConfig {
             prompt_md_content: None,
             prompt_and_plan: None,
             prompt_plan_and_issues: None,
+            is_resume: false,
+            resume_context: None,
         }
     }
 
@@ -108,7 +124,6 @@ impl PromptConfig {
 
     /// Set PROMPT.md content for planning prompts.
     #[must_use = "returns the updated configuration for chaining"]
-    #[cfg(any(test, feature = "test-utils"))]
     pub fn with_prompt_md(mut self, content: String) -> Self {
         self.prompt_md_content = Some(content);
         self
@@ -130,6 +145,228 @@ impl PromptConfig {
     ) -> Self {
         self.prompt_plan_and_issues = Some((prompt, plan, issues));
         self
+    }
+
+    /// Set whether this is a resumed session.
+    #[cfg(test)]
+    #[must_use = "returns the updated configuration for chaining"]
+    pub const fn with_resume(mut self, is_resume: bool) -> Self {
+        self.is_resume = is_resume;
+        self
+    }
+
+    /// Set rich resume context for resumed sessions.
+    #[must_use = "returns the updated configuration for chaining"]
+    pub fn with_resume_context(mut self, context: ResumeContext) -> Self {
+        self.resume_context = Some(context);
+        self.is_resume = true;
+        self
+    }
+}
+
+/// Generate a rich resume note from resume context.
+///
+/// Creates a detailed, context-aware note that helps agents understand
+/// where they are in the pipeline when resuming from a checkpoint.
+///
+/// The note includes:
+/// - Phase and iteration information
+/// - Recent execution history (files modified, issues found/fixed)
+/// - Git commits made during the session
+/// - Guidance on what to focus on
+pub fn generate_resume_note(context: &ResumeContext) -> String {
+    let mut note = String::from("SESSION RESUME CONTEXT\n");
+    note.push_str("====================\n\n");
+
+    // Add phase information with specific context based on phase type
+    match context.phase {
+        crate::checkpoint::state::PipelinePhase::Development => {
+            note.push_str(&format!(
+                "Resuming DEVELOPMENT phase (iteration {} of {})\n",
+                context.iteration + 1,
+                context.total_iterations
+            ));
+        }
+        crate::checkpoint::state::PipelinePhase::Review => {
+            note.push_str(&format!(
+                "Resuming REVIEW phase (pass {} of {})\n",
+                context.reviewer_pass + 1,
+                context.total_reviewer_passes
+            ));
+        }
+        crate::checkpoint::state::PipelinePhase::ReviewAgain => {
+            note.push_str(&format!(
+                "Resuming VERIFICATION REVIEW phase (pass {} of {})\n",
+                context.reviewer_pass + 1,
+                context.total_reviewer_passes
+            ));
+        }
+        crate::checkpoint::state::PipelinePhase::Fix => {
+            note.push_str("Resuming FIX phase\n");
+        }
+        _ => {
+            note.push_str(&format!("Resuming from phase: {}\n", context.phase_name()));
+        }
+    }
+
+    // Add resume count if this has been resumed before
+    if context.resume_count > 0 {
+        note.push_str(&format!(
+            "This session has been resumed {} time(s)\n",
+            context.resume_count
+        ));
+    }
+
+    // Add rebase state if applicable
+    if !matches!(
+        context.rebase_state,
+        crate::checkpoint::state::RebaseState::NotStarted
+    ) {
+        note.push_str(&format!("Rebase state: {:?}\n", context.rebase_state));
+    }
+
+    note.push('\n');
+
+    // Add execution history summary if available
+    if let Some(ref history) = context.execution_history {
+        if !history.steps.is_empty() {
+            note.push_str("RECENT ACTIVITY:\n");
+            note.push_str("----------------\n");
+
+            // Show recent execution steps (last 5)
+            let recent_steps: Vec<_> = history
+                .steps
+                .iter()
+                .rev()
+                .take(5)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+
+            for step in &recent_steps {
+                note.push_str(&format!(
+                    "- [{}] {} (iteration {}): {}\n",
+                    step.step_type,
+                    step.phase,
+                    step.iteration,
+                    step.outcome.brief_description()
+                ));
+
+                // Add files modified count if available
+                if let Some(ref detail) = step.modified_files_detail {
+                    let total_files =
+                        detail.added.len() + detail.modified.len() + detail.deleted.len();
+                    if total_files > 0 {
+                        note.push_str(&format!("  Files: {} changed", total_files));
+                        if !detail.added.is_empty() {
+                            note.push_str(&format!(" ({} added)", detail.added.len()));
+                        }
+                        if !detail.modified.is_empty() {
+                            note.push_str(&format!(" ({} modified)", detail.modified.len()));
+                        }
+                        if !detail.deleted.is_empty() {
+                            note.push_str(&format!(" ({} deleted)", detail.deleted.len()));
+                        }
+                        note.push('\n');
+                    }
+                }
+
+                // Add issues summary if available
+                if let Some(ref issues) = step.issues_summary {
+                    if issues.found > 0 || issues.fixed > 0 {
+                        note.push_str(&format!(
+                            "  Issues: {} found, {} fixed",
+                            issues.found, issues.fixed
+                        ));
+                        if let Some(ref desc) = issues.description {
+                            note.push_str(&format!(" ({})", desc));
+                        }
+                        note.push('\n');
+                    }
+                }
+
+                // Add git commit if available
+                if let Some(ref oid) = step.git_commit_oid {
+                    note.push_str(&format!("  Commit: {}\n", oid));
+                }
+            }
+
+            note.push('\n');
+        }
+    }
+
+    note.push_str("Previous progress is preserved in git history.\n");
+    note.push_str("Check 'git log' for details about what was done before.\n");
+
+    // Add helpful guidance about what the agent should focus on
+    note.push_str("\nGUIDANCE:\n");
+    note.push_str("--------\n");
+    match context.phase {
+        crate::checkpoint::state::PipelinePhase::Development => {
+            note.push_str("Continue working on the implementation tasks from your plan.\n");
+        }
+        crate::checkpoint::state::PipelinePhase::Review
+        | crate::checkpoint::state::PipelinePhase::ReviewAgain => {
+            note.push_str("Review the code changes and provide feedback.\n");
+        }
+        crate::checkpoint::state::PipelinePhase::Fix => {
+            note.push_str("Focus on addressing the issues identified in the review.\n");
+        }
+        _ => {}
+    }
+
+    note.push('\n');
+    note
+}
+
+// Helper trait for brief outcome descriptions
+trait BriefDescription {
+    fn brief_description(&self) -> String;
+}
+
+impl BriefDescription for crate::checkpoint::execution_history::StepOutcome {
+    fn brief_description(&self) -> String {
+        match self {
+            Self::Success {
+                files_modified,
+                output,
+                ..
+            } => {
+                if let Some(ref out) = output {
+                    if !out.is_empty() {
+                        format!("Success - {}", out.lines().next().unwrap_or(""))
+                    } else if !files_modified.is_empty() {
+                        format!("Success - {} files modified", files_modified.len())
+                    } else {
+                        "Success".to_string()
+                    }
+                } else if !files_modified.is_empty() {
+                    format!("Success - {} files modified", files_modified.len())
+                } else {
+                    "Success".to_string()
+                }
+            }
+            Self::Failure {
+                error, recoverable, ..
+            } => {
+                if *recoverable {
+                    format!("Recoverable error - {}", error.lines().next().unwrap_or(""))
+                } else {
+                    format!("Failed - {}", error.lines().next().unwrap_or(""))
+                }
+            }
+            Self::Partial {
+                completed,
+                remaining,
+                ..
+            } => {
+                format!("Partial - {} done, {}", completed, remaining)
+            }
+            Self::Skipped { reason } => {
+                format!("Skipped - {}", reason)
+            }
+        }
     }
 }
 
@@ -157,10 +394,17 @@ pub fn prompt_for_agent(
     template_context: &TemplateContext,
     config: PromptConfig,
 ) -> String {
-    match (role, action) {
-        #[cfg(any(test, feature = "test-utils"))]
+    let resume_note = if let Some(resume_ctx) = &config.resume_context {
+        generate_resume_note(resume_ctx)
+    } else if config.is_resume {
+        // Fallback for backward compatibility when no rich context is available
+        "\nNOTE: This session is resuming from a previous run. Previous progress is preserved in git history. You can check 'git log' for context about what was done before.\n\n".to_string()
+    } else {
+        String::new()
+    };
+
+    let base_prompt = match (role, action) {
         (_, Action::Plan) => {
-            use crate::prompts::developer::prompt_plan_with_context;
             prompt_plan_with_context(template_context, config.prompt_md_content.as_deref())
         }
         (Role::Developer | Role::Reviewer, Action::Iterate) => {
@@ -180,13 +424,66 @@ pub fn prompt_for_agent(
             let (prompt_content, plan_content, issues_content) = config
                 .prompt_plan_and_issues
                 .unwrap_or((String::new(), String::new(), String::new()));
-            prompt_fix_xml_with_context(
+            prompt_fix_with_context(
                 template_context,
                 &prompt_content,
                 &plan_content,
                 &issues_content,
             )
         }
+    };
+
+    // Prepend resume note if applicable
+    if config.is_resume {
+        format!("{}{}", resume_note, base_prompt)
+    } else {
+        base_prompt
+    }
+}
+
+/// Get a stored prompt from history or generate a new one.
+///
+/// This function implements prompt replay for hardened resume functionality.
+/// When resuming from a checkpoint, it checks if a prompt was already used
+/// and returns the stored prompt for deterministic behavior. Otherwise, it
+/// generates a new prompt using the provided generator function.
+///
+/// # Arguments
+///
+/// * `prompt_key` - Unique key identifying this prompt (e.g., "development_1", "review_2")
+/// * `prompt_history` - The prompt history from the checkpoint (if available)
+/// * `generator` - Function to generate the prompt if not found in history
+///
+/// # Returns
+///
+/// A tuple of (prompt, was_replayed) where:
+/// - `prompt` is the prompt string (either replayed or newly generated)
+/// - `was_replayed` is true if the prompt came from history, false if newly generated
+///
+/// # Example
+///
+/// ```rust
+/// let (prompt, was_replayed) = get_stored_or_generate_prompt(
+///     "development_1",
+///     &ctx.prompt_history,
+///     || prompt_for_agent(role, action, context, template_context, config),
+/// );
+/// if was_replayed {
+///     logger.info("Using stored prompt from checkpoint for determinism");
+/// }
+/// ```
+pub fn get_stored_or_generate_prompt<F>(
+    prompt_key: &str,
+    prompt_history: &std::collections::HashMap<String, String>,
+    generator: F,
+) -> (String, bool)
+where
+    F: FnOnce() -> String,
+{
+    if let Some(stored_prompt) = prompt_history.get(prompt_key) {
+        (stored_prompt.clone(), true)
+    } else {
+        (generator(), false)
     }
 }
 
@@ -499,5 +796,181 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_prompt_with_resume_context() {
+        let template_context = TemplateContext::default();
+        let result = prompt_for_agent(
+            Role::Developer,
+            Action::Iterate,
+            ContextLevel::Normal,
+            &template_context,
+            PromptConfig::new()
+                .with_resume(true)
+                .with_iterations(2, 5)
+                .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
+        );
+        // Should include resume note
+        assert!(result.contains("resuming from a previous run"));
+        assert!(result.contains("git log"));
+    }
+
+    #[test]
+    fn test_prompt_with_rich_resume_context_development() {
+        use crate::checkpoint::state::{PipelinePhase, RebaseState};
+
+        let template_context = TemplateContext::default();
+
+        // Create a resume context for development phase
+        let resume_context = ResumeContext {
+            phase: PipelinePhase::Development,
+            iteration: 2,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 3,
+            resume_count: 1,
+            rebase_state: RebaseState::NotStarted,
+            run_id: "test-run-id".to_string(),
+            prompt_history: None,
+            execution_history: None,
+        };
+
+        let result = prompt_for_agent(
+            Role::Developer,
+            Action::Iterate,
+            ContextLevel::Normal,
+            &template_context,
+            PromptConfig::new()
+                .with_resume_context(resume_context)
+                .with_iterations(3, 5)
+                .with_prompt_and_plan("test prompt".to_string(), "test plan".to_string()),
+        );
+
+        // Should include rich resume context
+        assert!(result.contains("SESSION RESUME CONTEXT"));
+        assert!(result.contains("DEVELOPMENT phase"));
+        assert!(result.contains("iteration 3 of 5"));
+        assert!(result.contains("has been resumed 1 time"));
+        assert!(result.contains("Continue working on the implementation"));
+    }
+
+    #[test]
+    fn test_prompt_with_rich_resume_context_review() {
+        use crate::checkpoint::state::{PipelinePhase, RebaseState};
+
+        let template_context = TemplateContext::default();
+
+        // Create a resume context for review phase
+        let resume_context = ResumeContext {
+            phase: PipelinePhase::Review,
+            iteration: 5,
+            total_iterations: 5,
+            reviewer_pass: 1,
+            total_reviewer_passes: 3,
+            resume_count: 2,
+            rebase_state: RebaseState::NotStarted,
+            run_id: "test-run-id".to_string(),
+            prompt_history: None,
+            execution_history: None,
+        };
+
+        let result = prompt_for_agent(
+            Role::Reviewer,
+            Action::Fix,
+            ContextLevel::Normal,
+            &template_context,
+            PromptConfig::new()
+                .with_resume_context(resume_context)
+                .with_prompt_plan_and_issues(
+                    "test prompt".to_string(),
+                    "test plan".to_string(),
+                    "test issues".to_string(),
+                ),
+        );
+
+        // Should include rich resume context for review
+        assert!(result.contains("SESSION RESUME CONTEXT"));
+        assert!(result.contains("REVIEW phase"));
+        assert!(result.contains("pass 2 of 3"));
+        assert!(result.contains("has been resumed 2 time"));
+    }
+
+    #[test]
+    fn test_prompt_with_rich_resume_context_fix() {
+        use crate::checkpoint::state::{PipelinePhase, RebaseState};
+
+        let template_context = TemplateContext::default();
+
+        // Create a resume context for fix phase
+        let resume_context = ResumeContext {
+            phase: PipelinePhase::Fix,
+            iteration: 5,
+            total_iterations: 5,
+            reviewer_pass: 1,
+            total_reviewer_passes: 3,
+            resume_count: 0,
+            rebase_state: RebaseState::NotStarted,
+            run_id: "test-run-id".to_string(),
+            prompt_history: None,
+            execution_history: None,
+        };
+
+        let result = prompt_for_agent(
+            Role::Reviewer,
+            Action::Fix,
+            ContextLevel::Normal,
+            &template_context,
+            PromptConfig::new()
+                .with_resume_context(resume_context)
+                .with_prompt_plan_and_issues(
+                    "test prompt".to_string(),
+                    "test plan".to_string(),
+                    "test issues".to_string(),
+                ),
+        );
+
+        // Should include rich resume context for fix
+        assert!(result.contains("SESSION RESUME CONTEXT"));
+        assert!(result.contains("FIX phase"));
+        assert!(result.contains("Focus on addressing the issues"));
+    }
+
+    #[test]
+    fn test_get_stored_or_generate_prompt_replays_when_available() {
+        let mut history = std::collections::HashMap::new();
+        history.insert("test_key".to_string(), "stored prompt".to_string());
+
+        let (prompt, was_replayed) =
+            get_stored_or_generate_prompt("test_key", &history, || "generated prompt".to_string());
+
+        assert_eq!(prompt, "stored prompt");
+        assert!(was_replayed, "Should have replayed the stored prompt");
+    }
+
+    #[test]
+    fn test_get_stored_or_generate_prompt_generates_when_not_available() {
+        let history = std::collections::HashMap::new();
+
+        let (prompt, was_replayed) = get_stored_or_generate_prompt("missing_key", &history, || {
+            "generated prompt".to_string()
+        });
+
+        assert_eq!(prompt, "generated prompt");
+        assert!(!was_replayed, "Should have generated a new prompt");
+    }
+
+    #[test]
+    fn test_get_stored_or_generate_prompt_with_empty_history() {
+        let history = std::collections::HashMap::new();
+
+        let (prompt, was_replayed) =
+            get_stored_or_generate_prompt("any_key", &history, || "fresh prompt".to_string());
+
+        assert_eq!(prompt, "fresh prompt");
+        assert!(
+            !was_replayed,
+            "Should have generated a new prompt for empty history"
+        );
     }
 }
