@@ -201,12 +201,14 @@ mod tests {
     /// it includes information about the timeout duration and external I/O.
     #[test]
     fn test_timeout_error_display() {
-        let error = TimeoutError {
-            timeout: Duration::from_secs(10),
-        };
-        let msg = format!("{}", error);
-        // Duration debug format is "10s", not "10 seconds"
-        assert!(msg.contains("10s"));
-        assert!(msg.contains("external I/O"));
+        with_default_timeout(|| {
+            let error = TimeoutError {
+                timeout: Duration::from_secs(10),
+            };
+            let msg = format!("{}", error);
+            // Duration debug format is "10s", not "10 seconds"
+            assert!(msg.contains("10s"));
+            assert!(msg.contains("external I/O"));
+        });
     }
 }

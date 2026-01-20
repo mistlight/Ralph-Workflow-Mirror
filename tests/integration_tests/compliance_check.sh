@@ -30,10 +30,9 @@ echo "Running integration test compliance checks..."
 echo "Test directory: $TEST_DIR"
 echo
 
-# Find all Rust files in integration tests (excluding _TEMPLATE.rs and test_timeout.rs)
+# Find all Rust files in integration tests (excluding _TEMPLATE.rs and compliance_check.rs)
 find "$TEST_DIR" -name "*.rs" -type f \
     ! -name "_TEMPLATE.rs" \
-    ! -name "test_timeout.rs" \
     ! -name "compliance_check.rs" \
     ! -path "*/target/*" | sort > "$TEMP_OUTPUT"
 
