@@ -4,9 +4,6 @@
 //! When AI agents return XML, we want to display it in a nice, readable format
 //! rather than showing raw XML.
 
-#![allow(clippy::if_same_then_else)]
-#![allow(clippy::needless_range_loop)]
-
 /// Format XML content for nice display.
 ///
 /// This function prettifies XML by adding proper indentation and line breaks.
@@ -51,7 +48,11 @@ fn pretty_print_xml(xml_content: &str) -> Result<String, String> {
         match c {
             '<' => {
                 // Check if this is a closing tag
-                if i + 1 < chars.len() && chars[i + 1] == '/' {
+                let is_closing_tag = i + 1 < chars.len() && chars[i + 1] == '/';
+                // Check if this is an XML declaration
+                let is_declaration = i + 1 < chars.len() && chars[i + 1] == '?';
+
+                if is_closing_tag {
                     // Closing tag - decrease indent before outputting
                     if in_content && indent > 0 {
                         result.push('\n');
@@ -59,7 +60,7 @@ fn pretty_print_xml(xml_content: &str) -> Result<String, String> {
                     indent = indent.saturating_sub(1);
                     in_tag = true;
                     in_content = false;
-                } else if i + 1 < chars.len() && chars[i + 1] == '?' {
+                } else if is_declaration {
                     // XML declaration - don't indent
                     in_tag = true;
                 } else {
@@ -76,32 +77,31 @@ fn pretty_print_xml(xml_content: &str) -> Result<String, String> {
                 if in_tag {
                     // Check if this is a self-closing tag
                     let is_self_closing = i > 0 && chars[i - 1] == '/';
+                    // Check if this is a declaration
                     let is_declaration = tag_start > 0
                         && chars[tag_start + 1] == '?'
                         && i > 0
                         && chars[i - 1] == '?';
 
-                    // Extract the tag name
-                    let tag_name_start = if chars[tag_start + 1] == '/' {
-                        tag_start + 2
-                    } else if chars[tag_start + 1] == '?' {
+                    // Extract the tag name - both / and ? prefixes skip 2 characters
+                    let skips_prefix = chars[tag_start + 1] == '/' || chars[tag_start + 1] == '?';
+                    let tag_name_start = if skips_prefix {
                         tag_start + 2
                     } else {
                         tag_start + 1
                     };
 
                     let tag_name_end = i;
-                    let mut tag_name = String::new();
-                    for j in tag_name_start..tag_name_end {
-                        if chars[j].is_whitespace() || chars[j] == '/' {
-                            break;
-                        }
-                        tag_name.push(chars[j]);
-                    }
+                    let tag_name: String = chars[tag_name_start..tag_name_end]
+                        .iter()
+                        .take_while(|&c| !c.is_whitespace() && *c != '/')
+                        .collect();
 
                     // Add indentation for opening tags (not self-closing or declaration)
-                    if !is_self_closing && !is_declaration && !chars[tag_start + 1].is_whitespace()
-                    {
+                    let should_indent = !is_self_closing
+                        && !is_declaration
+                        && !chars[tag_start + 1].is_whitespace();
+                    if should_indent {
                         if !result.ends_with('\n') && !result.is_empty() {
                             result.push('\n');
                         }
@@ -111,16 +111,14 @@ fn pretty_print_xml(xml_content: &str) -> Result<String, String> {
                     }
 
                     // Add the tag content
-                    for j in tag_start..=i {
-                        result.push(chars[j]);
-                    }
+                    result.extend(chars[tag_start..=i].iter().copied());
 
                     // Increase indent after opening tag (if not self-closing)
-                    if !is_self_closing
+                    let should_increase_indent = !is_self_closing
                         && !is_declaration
                         && chars[tag_start + 1] != '/'
-                        && !tag_name.is_empty()
-                    {
+                        && !tag_name.is_empty();
+                    if should_increase_indent {
                         indent += 1;
                         in_content = true;
                     }
