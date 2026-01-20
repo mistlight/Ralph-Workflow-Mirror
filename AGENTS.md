@@ -71,6 +71,11 @@ rg -n -U --pcre2 '(?x)
 ' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+
+# Check for forbidden test flags in production code (cfg!(test), test_mode params, etc.)
+# DO NOT MODIFY THIS SCRIPT. If it fails, FIX THE PRODUCTION CODE, not the script.
+./tests/integration_tests/no_test_flags_check.sh
+
 cargo fmt --all --check
 
 # Lint the main crate (lib only) with all its features
