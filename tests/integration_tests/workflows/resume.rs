@@ -445,7 +445,7 @@ fn ralph_checkpoint_records_prompt_md_checksum() {
 // Phase Resume Tests
 // ============================================================================
 
-#\[test\]
+#[test]
 #[ignore] // TODO: Fix this test to use file mocking instead of running agents
 fn ralph_resume_shows_checkpoint_summary() {
     with_default_timeout(|| {
@@ -718,7 +718,7 @@ fn ralph_resume_preserves_developer_iterations_from_checkpoint() {
     });
 }
 
-#\[test\]
+#[test]
 #[ignore] // TODO: Fix this test to use file mocking instead of running agents
 fn ralph_resume_preserves_reviewer_passes_from_checkpoint() {
     with_default_timeout(|| {
@@ -796,11 +796,7 @@ fn ralph_resume_from_planning_phase() {
 
         // Pre-create required files to skip agent phases
         fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
-        fs::write(
-            dir.path().join(".agent/commit-message.txt"),
-            "feat: test\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         let mut cmd = ralph_cmd();
         base_env(&mut cmd)
@@ -889,11 +885,7 @@ fn ralph_resume_from_review_phase() {
 
         // Pre-create required files to skip agent phases
         fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
-        fs::write(
-            dir.path().join(".agent/commit-message.txt"),
-            "feat: test\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         let mut cmd = ralph_cmd();
         base_env(&mut cmd)
@@ -1743,7 +1735,7 @@ fn ralph_resume_passes_context_to_developer_agent() {
     });
 }
 
-#\[test\]
+#[test]
 #[ignore] // TODO: Fix this test to use file mocking instead of running agents
 fn ralph_resume_passes_context_to_reviewer_agent() {
     with_default_timeout(|| {
@@ -1943,11 +1935,7 @@ fn ralph_checkpoint_tracks_prompt_history() {
         // Pre-create required files to skip agent phases
         fs::create_dir_all(dir.path().join(".agent")).unwrap();
         fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
-        fs::write(
-            dir.path().join(".agent/commit-message.txt"),
-            "feat: test\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         // Run pipeline with 0 iterations
         let mut cmd = ralph_cmd();
@@ -2072,7 +2060,7 @@ fn ralph_resume_shows_prompt_replay_info() {
 // V3 Hardened Resume Tests - Execution History
 // ============================================================================
 
-#\[test\]
+#[test]
 #[ignore] // TODO: Fix this test to use file mocking instead of running agents
 fn ralph_v3_checkpoint_contains_execution_history() {
     with_default_timeout(|| {
@@ -2872,7 +2860,7 @@ fn ralph_v3_prompt_replay_across_multiple_iterations() {
 // V3 Hardened Resume Tests - Interactive Resume Offering
 // ============================================================================
 
-#\[test\]
+#[test]
 #[ignore] // TODO: Fix this test to use file mocking instead of running agents
 fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
     with_default_timeout(|| {
@@ -3068,7 +3056,7 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
 // V3 Hardened Resume Tests - Comprehensive End-to-End
 // ============================================================================
 
-#\[test\]
+#[test]
 #[ignore] // TODO: Fix this test to use file mocking instead of running agents
 fn ralph_v3_comprehensive_resume_from_review_phase() {
     with_default_timeout(|| {
