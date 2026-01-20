@@ -53,6 +53,16 @@ pub fn offer_resume_if_checkpoint_exists(
         return None;
     }
 
+    // Skip if --no-resume flag is specified
+    if args.recovery.no_resume {
+        return None;
+    }
+
+    // Skip if RALPH_NO_RESUME_PROMPT env var is set (for CI/automation)
+    if std::env::var("RALPH_NO_RESUME_PROMPT").is_ok() {
+        return None;
+    }
+
     // Skip if not in a TTY (can't prompt user)
     if !can_prompt_user() {
         return None;

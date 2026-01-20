@@ -395,6 +395,14 @@ pub struct RecoveryFlags {
     )]
     pub resume: bool,
 
+    /// Do not offer to resume even if a checkpoint exists
+    #[arg(
+        long = "no-resume",
+        help = "Skip interactive resume prompt even if a checkpoint exists (for CI/automation)",
+        hide = true
+    )]
+    pub no_resume: bool,
+
     /// Recovery strategy when validation fails (requires hardened-resume feature)
     #[arg(
         long,

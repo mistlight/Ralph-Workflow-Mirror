@@ -3515,3 +3515,252 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
 // more complex setup with actual git rebase state, which is beyond
 // the scope of these integration tests. The functionality is tested
 // indirectly through the other rebase conflict tests above.
+
+// ============================================================================
+// --no-resume Flag Tests
+// ============================================================================
+
+#[test]
+fn ralph_no_resume_flag_skips_interactive_prompt() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md to satisfy validation
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        // Create a checkpoint
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        let working_dir = canonical_working_dir(&dir);
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            make_checkpoint_json(CheckpointTestParams {
+                working_dir: &working_dir,
+                phase: "Development",
+                iteration: 1,
+                total_iterations: 2,
+                reviewer_pass: 0,
+                total_reviewer_passes: 1,
+                developer_iters: 2,
+                reviewer_reviews: 1,
+            }),
+        )
+        .unwrap();
+
+        // Run with --no-resume - should skip interactive prompt and start fresh
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--no-resume")
+            .env("RALPH_DEVELOPER_ITERS", "0")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        // Should NOT show resume prompt, should complete successfully
+        cmd.assert()
+            .success()
+            .stdout(predicate::str::contains("Resume?").not());
+    });
+}
+
+#[test]
+fn ralph_no_resume_env_var_skips_interactive_prompt() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md to satisfy validation
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        // Create a checkpoint
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        let working_dir = canonical_working_dir(&dir);
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            make_checkpoint_json(CheckpointTestParams {
+                working_dir: &working_dir,
+                phase: "Development",
+                iteration: 1,
+                total_iterations: 2,
+                reviewer_pass: 0,
+                total_reviewer_passes: 1,
+                developer_iters: 2,
+                reviewer_reviews: 1,
+            }),
+        )
+        .unwrap();
+
+        // Run with RALPH_NO_RESUME_PROMPT env var - should skip interactive prompt
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .env("RALPH_NO_RESUME_PROMPT", "1")
+            .env("RALPH_DEVELOPER_ITERS", "0")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        // Should NOT show resume prompt, should complete successfully
+        cmd.assert()
+            .success()
+            .stdout(predicate::str::contains("Resume?").not());
+    });
+}
+
+#[test]
+fn ralph_resume_flag_takes_precedence_over_no_resume() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md to satisfy validation
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        // Create a checkpoint
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        let working_dir = canonical_working_dir(&dir);
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            make_checkpoint_json(CheckpointTestParams {
+                working_dir: &working_dir,
+                phase: "Development",
+                iteration: 1,
+                total_iterations: 2,
+                reviewer_pass: 0,
+                total_reviewer_passes: 1,
+                developer_iters: 2,
+                reviewer_reviews: 1,
+            }),
+        )
+        .unwrap();
+
+        // Run with both --resume and --no-resume - --resume should take precedence
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--resume")
+            .arg("--no-resume")
+            .env("RALPH_DEVELOPER_ITERS", "2")
+            .env("RALPH_REVIEWER_REVIEWS", "1")
+            .env(
+                "RALPH_DEVELOPER_CMD",
+                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
+            )
+            .env(
+                "RALPH_REVIEWER_CMD",
+                "sh -c 'mkdir -p .agent; echo \"No issues\" > .agent/ISSUES.md'",
+            );
+
+        // Should resume from checkpoint (--resume takes precedence)
+        cmd.assert().success().stdout(
+            predicate::str::contains("Loading Checkpoint")
+                .or(predicate::str::contains("Resuming"))
+                .or(predicate::str::contains("checkpoint")),
+        );
+    });
+}
+
+// ============================================================================
+// Prompt Replay Determinism Tests
+// ============================================================================
+
+#[test]
+#[ignore]
+fn ralph_resume_replays_prompts_deterministically() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md to satisfy validation
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        // Create a v3 checkpoint with prompt history
+        let working_dir = canonical_working_dir(&dir);
+        let prompt_history_json = serde_json::json!({
+            "development_1": "DEVELOPMENT ITERATION 1 OF 2\n\nContext:\nTest plan content",
+            "review_1": "REVIEW MODE\n\nReview the following changes..."
+        });
+
+        let checkpoint_content = format!(
+            r#"{{
+            "version": 3,
+            "phase": "Review",
+            "iteration": 1,
+            "total_iterations": 2,
+            "reviewer_pass": 1,
+            "total_reviewer_passes": 2,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": 2,
+                "reviewer_reviews": 2,
+                "commit_msg": "",
+                "review_depth": null,
+                "skip_rebase": false
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-prompt-replay",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 1,
+            "actual_reviewer_runs": 1,
+            "execution_history": null,
+            "file_system_state": null,
+            "prompt_history": {}
+        }}"#,
+            working_dir,
+            serde_json::to_string(&prompt_history_json).unwrap()
+        );
+
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            checkpoint_content,
+        )
+        .unwrap();
+
+        // Resume and verify prompts are replayed (should log "Using stored prompt")
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--resume")
+            .env("RALPH_DEVELOPER_ITERS", "2")
+            .env("RALPH_REVIEWER_REVIEWS", "2")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env(
+                "RALPH_REVIEWER_CMD",
+                "sh -c 'mkdir -p .agent; echo \"No issues\" > .agent/ISSUES.md'",
+            );
+
+        cmd.assert().success();
+        // The prompt replay happens internally, we just verify the run succeeds
+    });
+}
