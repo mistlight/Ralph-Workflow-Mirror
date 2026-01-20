@@ -23,8 +23,8 @@
 #
 # Forbidden patterns in production code:
 #   1. cfg!(test) - Runtime test detection branches
-#   2. test_mode: bool / is_test: bool - Test mode parameters
-#   3. RUNNING_TESTS / TEST_ENV / IS_TESTING - Environment-based test detection
+#   2. Test mode boolean parameters (test_mode, is_test, skip_*, mock_*, fake_*, etc.)
+#   3. Test/mock/skip environment variable checks (any env var suggesting test bypass)
 #   4. #[cfg(feature = "testing")] dual implementations
 #
 # Allowed patterns (not flagged):
@@ -74,92 +74,117 @@ fi
 # Clear violations file
 : > "$TEMP_VIOLATIONS"
 
-# Use ripgrep for faster and more reliable pattern matching
-# Fall back to grep if rg is not available
-if command -v rg &> /dev/null; then
-    SEARCH_CMD="rg"
-else
-    echo -e "${YELLOW}Warning: ripgrep (rg) not found, falling back to grep${NC}"
-    SEARCH_CMD="grep"
+# Require ripgrep for reliable pattern matching
+if ! command -v rg &> /dev/null; then
+    echo -e "${RED}Error: ripgrep (rg) is required but not found${NC}"
+    echo "Install with: brew install ripgrep (macOS) or cargo install ripgrep"
+    exit 2
 fi
 
+# Helper function to search and record violations
+# Args: $1 = pattern, $2 = description, $3 = violation_type
+search_pattern() {
+    local pattern="$1"
+    local description="$2"
+    local violation_type="$3"
+    
+    rg -n --no-heading "$pattern" "$PROD_DIR" --glob '*.rs' 2>/dev/null | \
+        grep -v '^\s*//' | \
+        grep -v '^\s*\*' | \
+        grep -v '^\s*//!' | \
+        grep -v '^\s*////' | \
+        while IFS=: read -r file line_num content; do
+            echo "$violation_type:$file:$line_num:$description" >> "$TEMP_VIOLATIONS"
+        done || true
+}
+
+##############################################################################
 # Pattern 1: cfg!(test) - Runtime test detection
 # This pattern creates different behavior at runtime based on test mode
+##############################################################################
 echo "Checking for cfg!(test) runtime detection..."
-if [ "$SEARCH_CMD" = "rg" ]; then
-    # Use ripgrep - it handles the pattern matching more reliably
-    # Exclude lines that are comments (start with // or *)
-    rg -n --no-heading 'cfg!\s*\(\s*test\s*\)' "$PROD_DIR" --glob '*.rs' 2>/dev/null | \
-        grep -v '^\s*//' | \
-        grep -v '^\s*\*' | \
-        grep -v '^\s*/\*' | \
-        while IFS=: read -r file line_num content; do
-            echo "cfg!(test):$file:$line_num:runtime test detection" >> "$TEMP_VIOLATIONS"
-        done || true
-else
-    find "$PROD_DIR" -name "*.rs" -type f -exec grep -Hn 'cfg!\s*(\s*test\s*)' {} \; 2>/dev/null | \
-        grep -v '^\s*//' | \
-        while IFS=: read -r file line_num content; do
-            echo "cfg!(test):$file:$line_num:runtime test detection" >> "$TEMP_VIOLATIONS"
-        done || true
-fi
+search_pattern 'cfg!\s*\(\s*test\s*\)' "runtime test detection via cfg!(test)" "cfg_test"
 
-# Pattern 2: test_mode: bool or is_test: bool parameters
+##############################################################################
+# Pattern 2: Test mode boolean parameters
 # These parameters indicate test-conditional logic in function signatures
-echo "Checking for test_mode/is_test boolean parameters..."
-if [ "$SEARCH_CMD" = "rg" ]; then
-    rg -n --no-heading '(test_mode|is_test)\s*:\s*bool' "$PROD_DIR" --glob '*.rs' 2>/dev/null | \
-        grep -v '^\s*//' | \
-        grep -v '^\s*\*' | \
-        while IFS=: read -r file line_num content; do
-            echo "test_param:$file:$line_num:test mode boolean parameter" >> "$TEMP_VIOLATIONS"
-        done || true
-else
-    find "$PROD_DIR" -name "*.rs" -type f -exec grep -EHn '(test_mode|is_test)\s*:\s*bool' {} \; 2>/dev/null | \
-        grep -v '^\s*//' | \
-        while IFS=: read -r file line_num content; do
-            echo "test_param:$file:$line_num:test mode boolean parameter" >> "$TEMP_VIOLATIONS"
-        done || true
-fi
+# Catches: test_mode, is_test, is_testing, skip_validation, mock_mode, 
+#          fake_mode, dry_run (when used for testing), stub_mode, etc.
+##############################################################################
+echo "Checking for test/mock/skip boolean parameters..."
 
-# Pattern 3: Environment-based test detection
-# Checking for RUNNING_TESTS, TEST_ENV, IS_TESTING environment variables
-echo "Checking for test detection environment variables..."
-if [ "$SEARCH_CMD" = "rg" ]; then
-    rg -n --no-heading 'env::var\s*\(\s*"(RUNNING_TESTS|TEST_ENV|IS_TESTING)"' "$PROD_DIR" --glob '*.rs' 2>/dev/null | \
-        grep -v '^\s*//' | \
-        grep -v '^\s*\*' | \
-        while IFS=: read -r file line_num content; do
-            echo "test_env:$file:$line_num:test detection environment variable" >> "$TEMP_VIOLATIONS"
-        done || true
-else
-    find "$PROD_DIR" -name "*.rs" -type f -exec grep -EHn 'env::var\s*\(\s*"(RUNNING_TESTS|TEST_ENV|IS_TESTING)"' {} \; 2>/dev/null | \
-        grep -v '^\s*//' | \
-        while IFS=: read -r file line_num content; do
-            echo "test_env:$file:$line_num:test detection environment variable" >> "$TEMP_VIOLATIONS"
-        done || true
-fi
+# Direct test mode flags
+search_pattern '(test_mode|is_test|is_testing|testing_mode)\s*:\s*bool' \
+    "test mode boolean parameter" "test_param"
 
+# Skip/bypass flags that suggest test shortcuts
+search_pattern '(skip_validation|skip_verify|skip_check|skip_auth|skip_api)\s*:\s*bool' \
+    "skip/bypass boolean parameter (test shortcut)" "skip_param"
+
+# Mock/fake/stub flags
+search_pattern '(mock_mode|fake_mode|stub_mode|use_mock|use_fake|use_stub)\s*:\s*bool' \
+    "mock/fake/stub boolean parameter" "mock_param"
+
+# Disable flags that might be test shortcuts
+search_pattern '(disable_[a-z_]+|no_[a-z_]+_check)\s*:\s*bool' \
+    "disable/no-check boolean parameter" "disable_param"
+
+##############################################################################
+# Pattern 3: Environment-based test/mock detection
+# Catches any environment variable that looks like a test bypass mechanism
+# Uses broad patterns to catch variations like:
+#   RUNNING_TESTS, TEST_MODE, IS_TESTING, SKIP_AUTH, MOCK_API, etc.
+#
+# ALLOWED standard env vars (not flagged):
+#   - NO_COLOR, CLICOLOR, CLICOLOR_FORCE, TERM - Standard terminal config
+#   - CI, GITHUB_ACTIONS, GITLAB_CI - CI detection (not bypass)
+#   - HOME, USER, PATH, PWD, etc. - Standard system vars
+#   - CARGO_*, RUSTFLAGS, etc. - Build configuration
+##############################################################################
+echo "Checking for test/mock/skip environment variables..."
+
+# Test-related env vars (TEST, TESTING, etc.)
+# Excludes: CARGO_TEST_*, which is legitimate cargo config
+search_pattern 'env::var\s*\(\s*"(RUNNING_TEST|IS_TEST|TEST_MODE|TESTING_MODE|IN_TEST)"' \
+    "test-related environment variable" "test_env"
+
+# Skip/bypass env vars for authentication, validation, verification
+# These suggest shortcuts that bypass production behavior
+search_pattern 'env::var\s*\(\s*"(SKIP_AUTH|SKIP_VALIDATION|SKIP_VERIFY|SKIP_CHECK|SKIP_API)"' \
+    "skip/bypass environment variable" "skip_env"
+
+# Mock/fake/stub env vars
+search_pattern 'env::var\s*\(\s*"(MOCK_|FAKE_|STUB_|USE_MOCK|USE_FAKE)[A-Z_]*"' \
+    "mock/fake/stub environment variable" "mock_env"
+
+# Disable env vars that bypass security or validation
+search_pattern 'env::var\s*\(\s*"(DISABLE_AUTH|DISABLE_VALIDATION|DISABLE_VERIFY|DISABLE_SSL|DISABLE_TLS)"' \
+    "disable security/validation environment variable" "disable_env"
+
+# CI-specific bypass vars (sometimes used incorrectly to skip things in CI)
+search_pattern 'env::var\s*\(\s*"(CI_SKIP_|CI_NO_|CI_DISABLE_)[A-Z_]+"' \
+    "CI-specific bypass environment variable" "ci_bypass_env"
+
+##############################################################################
 # Pattern 4: #[cfg(feature = "testing")] for dual implementations
-# This is only a violation if it creates two different implementations
-# We check for the pattern but exclude test-utils which is legitimate
+# This is a violation because it creates two different code paths
+# test-utils is allowed because it only exports test utilities
+##############################################################################
 echo "Checking for testing feature flag dual implementations..."
-if [ "$SEARCH_CMD" = "rg" ]; then
-    rg -n --no-heading '#\[cfg\(feature\s*=\s*"testing"\)\]' "$PROD_DIR" --glob '*.rs' 2>/dev/null | \
-        grep -v '^\s*//' | \
-        grep -v '^\s*\*' | \
-        while IFS=: read -r file line_num content; do
-            echo "testing_feature:$file:$line_num:testing feature flag (use test-utils instead)" >> "$TEMP_VIOLATIONS"
-        done || true
-else
-    find "$PROD_DIR" -name "*.rs" -type f -exec grep -EHn '#\[cfg\(feature\s*=\s*"testing"\)\]' {} \; 2>/dev/null | \
-        grep -v '^\s*//' | \
-        while IFS=: read -r file line_num content; do
-            echo "testing_feature:$file:$line_num:testing feature flag (use test-utils instead)" >> "$TEMP_VIOLATIONS"
-        done || true
-fi
+search_pattern '#\[cfg\(feature\s*=\s*"testing"\)\]' \
+    "testing feature flag (use test-utils instead)" "testing_feature"
 
-# Check for violations
+##############################################################################
+# Pattern 5: Conditional compilation that changes behavior for tests
+# Catches patterns like #[cfg(not(test))] in production logic
+##############################################################################
+echo "Checking for conditional test compilation in logic..."
+search_pattern '#\[cfg\(not\(test\)\)\]' \
+    "conditional compilation excluding tests (creates untested code path)" "cfg_not_test"
+
+##############################################################################
+# Results
+##############################################################################
 echo
 if [ -s "$TEMP_VIOLATIONS" ]; then
     violation_count=$(wc -l < "$TEMP_VIOLATIONS" | tr -d ' ')
@@ -179,6 +204,7 @@ if [ -s "$TEMP_VIOLATIONS" ]; then
     echo "  - Accept trait objects for external dependencies"
     echo "  - Use TempDir for filesystem isolation in tests"
     echo "  - Pass configuration as parameters, not environment checks"
+    echo "  - Use the test-utils feature to expose test helpers, not to change behavior"
     exit 1
 else
     echo -e "${GREEN}All production code complies with test flag rules${NC}"

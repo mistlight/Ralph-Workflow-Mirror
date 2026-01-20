@@ -268,9 +268,15 @@ A compliance checker script validates that production code does not contain forb
 
 The checker validates:
 - No `cfg!(test)` runtime detection in production code
-- No `test_mode: bool` or `is_test: bool` parameters
-- No `RUNNING_TESTS`, `TEST_ENV`, or `IS_TESTING` environment variable checks
+- No `#[cfg(not(test))]` conditional compilation (creates untested code paths)
 - No `#[cfg(feature = "testing")]` dual implementations
+- No test mode boolean parameters (`test_mode`, `is_test`, `is_testing`, etc.)
+- No skip/bypass boolean parameters (`skip_validation`, `skip_auth`, `skip_verify`, etc.)
+- No mock/fake/stub boolean parameters (`mock_mode`, `use_mock`, `fake_mode`, etc.)
+- No test-related environment variables (`RUNNING_TEST`, `IS_TEST`, `TEST_MODE`, etc.)
+- No skip/bypass environment variables (`SKIP_AUTH`, `SKIP_VALIDATION`, etc.)
+- No mock environment variables (`MOCK_*`, `FAKE_*`, `STUB_*`, etc.)
+- No disable security environment variables (`DISABLE_AUTH`, `DISABLE_SSL`, etc.)
 
 **AI AGENTS:** This script is protected. DO NOT modify it to bypass checks. If the script
 fails, the production code has a design problem that must be fixed with proper dependency
