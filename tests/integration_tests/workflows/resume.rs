@@ -2450,12 +2450,22 @@ fn ralph_v3_file_system_state_detects_changes() {
             working_dir, file_system_state_json
         );
 
+        // Debug: print file_system_state_json to verify format
+        eprintln!("DEBUG: file_system_state_json:\n{}", file_system_state_json);
+
         fs::create_dir_all(dir.path().join(".agent")).unwrap();
         fs::write(
             dir.path().join(".agent/checkpoint.json"),
-            checkpoint_content,
+            checkpoint_content.clone(),
         )
         .unwrap();
+
+        // Debug: print checkpoint JSON to verify format
+        eprintln!("DEBUG: Checkpoint JSON:\n{}", checkpoint_content);
+
+        // Debug: verify the file was written correctly
+        let written = fs::read_to_string(dir.path().join(".agent/checkpoint.json")).unwrap();
+        eprintln!("DEBUG: Written file:\n{}", written);
 
 
         // Now modify PROMPT.md
