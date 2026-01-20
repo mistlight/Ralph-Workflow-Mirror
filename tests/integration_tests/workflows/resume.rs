@@ -2457,6 +2457,7 @@ fn ralph_v3_file_system_state_detects_changes() {
         )
         .unwrap();
 
+
         // Now modify PROMPT.md
         write_file(
             dir.path().join("PROMPT.md"),

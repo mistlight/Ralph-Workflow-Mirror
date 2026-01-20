@@ -125,12 +125,14 @@ cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
 cargo test -p ralph-workflow --lib --all-features
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# THERE CAN BE NO IGNORED TESTS
 
 # Run the integration tests package
 # (dependency features for ralph-workflow should be enabled via ralph-workflow-tests/Cargo.toml) DO NOT CHANGE
 cargo test -p ralph-workflow-tests
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# THERE CAN BE NO IGNORED TESTS
 
 # Build release artifacts (default-members only)
 cargo build --release
