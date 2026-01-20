@@ -2,10 +2,14 @@
 //!
 //! Prompts for commit message generation and fix actions.
 
-use crate::files::result_extraction::extract_file_paths_from_issues;
+#![cfg_attr(any(test, feature = "test-utils"), allow(dead_code))]
+
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use std::collections::HashMap;
+
+#[cfg(any(test, feature = "test-utils"))]
+use crate::files::result_extraction::extract_file_paths_from_issues;
 
 /// Generate fix prompt (applies to either role).
 ///
@@ -76,6 +80,7 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
 /// * `prompt_content` - Content of PROMPT.md for context about the original request
 /// * `plan_content` - Content of PLAN.md for context about the implementation plan
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
+#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_fix_with_context(
     context: &TemplateContext,
     prompt_content: &str,
@@ -122,6 +127,7 @@ pub fn prompt_fix_with_context(
 /// If files are found, formats them as a bulleted list with a clear header.
 /// If no files are found, provides a fallback message indicating that the
 /// agent may work on any files in the repository to fix the issues.
+#[cfg(any(test, feature = "test-utils"))]
 fn format_files_section(files: &[String]) -> String {
     if files.is_empty() {
         "================================================================================

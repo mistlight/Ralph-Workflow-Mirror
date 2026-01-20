@@ -42,6 +42,7 @@ pub enum Role {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// Create an implementation plan
+    #[cfg(any(test, feature = "test-utils"))]
     Plan,
     /// Execute an iteration of development
     Iterate,

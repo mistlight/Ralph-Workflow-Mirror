@@ -23,7 +23,14 @@ mod commit;
 #[cfg(test)]
 mod parsers;
 pub mod xml_extraction;
+mod xml_extraction_fix_result;
+mod xml_extraction_issues;
+mod xml_extraction_plan;
+mod xml_formatter;
 pub mod xsd_validation;
+pub(crate) mod xsd_validation_fix_result;
+pub(crate) mod xsd_validation_issues;
+pub(crate) mod xsd_validation_plan;
 
 // Internal types module (only used for tests)
 #[cfg(test)]
@@ -44,6 +51,23 @@ pub use commit::{try_extract_xml_commit_with_trace, CommitExtractionResult};
 pub use commit::is_conventional_commit_subject;
 
 // XSD validation is now internal (pub(crate))
+
+// Public exports for plan XML extraction and validation
+pub use xml_extraction_plan::extract_plan_xml;
+pub use xsd_validation_plan::{validate_plan_xml, PlanElements};
+
+// Public exports for issues XML extraction and validation
+pub use xml_extraction_issues::extract_issues_xml;
+pub use xsd_validation_issues::{validate_issues_xml, IssuesElements};
+
+// Public exports for fix result XML extraction and validation (used by fix pass)
+#[cfg(any(test, feature = "test-utils"))]
+pub use xml_extraction_fix_result::extract_fix_result_xml;
+#[cfg(any(test, feature = "test-utils"))]
+pub use xsd_validation_fix_result::{validate_fix_result_xml, FixResultElements};
+
+// Public export for XML formatting
+pub use xml_formatter::format_xml_for_display;
 
 #[cfg(test)]
 use parsers::{detect_output_format, extract_by_format};

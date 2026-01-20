@@ -9,6 +9,10 @@
 
 use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
+use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
+use crate::files::llm_output_extraction::{
+    extract_plan_xml, format_xml_for_display, validate_plan_xml, PlanElements,
+};
 use crate::files::{delete_plan_file, update_status};
 use crate::files::{extract_plan, extract_plan_from_logs_text};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
@@ -17,7 +21,10 @@ use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback, PipelineRuntime};
-use crate::prompts::{prompt_for_agent, Action, ContextLevel, PromptConfig, Role};
+use crate::prompts::{
+    prompt_for_agent, prompt_planning_xml_with_context, prompt_planning_xsd_retry_with_context,
+    Action, ContextLevel, PromptConfig, Role,
+};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -183,8 +190,8 @@ pub fn run_development_phase(
 
 /// Run the planning step to create PLAN.md.
 ///
-/// The orchestrator ALWAYS extracts and writes PLAN.md from agent JSON output.
-/// Agent file writes are ignored - the orchestrator is the sole writer.
+/// The orchestrator ALWAYS extracts and writes PLAN.md from agent XML output.
+/// Uses XSD validation with retry loop to ensure valid XML format.
 fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
     // Save checkpoint at start of planning phase (if enabled)
     if ctx.config.features.checkpoint_enabled {
@@ -206,73 +213,141 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
     // This prevents agents from discovering PROMPT.md through file exploration,
     // which reduces the risk of accidental deletion.
     let prompt_md_content = std::fs::read_to_string("PROMPT.md").ok();
-
-    let plan_prompt = prompt_for_agent(
-        Role::Developer,
-        Action::Plan,
-        ContextLevel::Normal,
-        ctx.template_context,
-        prompt_md_content
-            .map(|content| PromptConfig::new().with_prompt_md(content))
-            .unwrap_or_default(),
-    );
+    let prompt_md_str = prompt_md_content.as_deref().unwrap_or("");
 
     let log_dir = format!(".agent/logs/planning_{iteration}");
-    let mut runtime = PipelineRuntime {
-        timer: ctx.timer,
-        logger: ctx.logger,
-        colors: ctx.colors,
-        config: ctx.config,
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
-    };
-    let _exit_code = run_with_fallback(
-        AgentRole::Developer,
-        &format!("planning #{iteration}"),
-        &plan_prompt,
-        &log_dir,
-        &mut runtime,
-        ctx.registry,
-        ctx.developer_agent,
-    )?;
-
-    // ORCHESTRATOR-CONTROLLED FILE I/O:
-    // Prefer extraction from JSON log (orchestrator write), but fall back to
-    // agent-written file if extraction fails (legacy/test compatibility).
     let plan_path = Path::new(".agent/PLAN.md");
-    let log_dir_path = Path::new(&log_dir);
 
     // Ensure .agent directory exists
     if let Some(parent) = plan_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let extraction = extract_plan(log_dir_path)?;
+    // In-session retry loop with XSD validation feedback
+    let max_retries = 10;
+    let mut xsd_error: Option<String> = None;
 
-    if let Some(content) = extraction.raw_content {
-        // Extraction succeeded - orchestrator writes the file
-        fs::write(plan_path, &content)?;
-
-        if extraction.is_valid {
-            ctx.logger
-                .success("Plan extracted from agent output (JSON)");
+    for retry_num in 0..max_retries {
+        // For initial attempt, use XML prompt
+        // For retries, use XSD retry prompt with error feedback
+        let plan_prompt = if retry_num == 0 {
+            prompt_planning_xml_with_context(ctx.template_context, Some(prompt_md_str))
         } else {
-            ctx.logger.warn(&format!(
-                "Plan written but validation failed: {}",
-                extraction.validation_warning.unwrap_or_default()
+            ctx.logger.info(&format!(
+                "  In-session retry {}/{} for XSD validation",
+                retry_num,
+                max_retries - 1
             ));
-        }
-    } else {
-        // JSON extraction failed - try text-based fallback
-        ctx.logger
-            .info("No JSON result event found, trying text-based extraction...");
+            if let Some(ref error) = xsd_error {
+                ctx.logger.info(&format!("  XSD error: {}", error));
+            }
 
-        if let Some(text_plan) = extract_plan_from_logs_text(log_dir_path)? {
+            // Read the last output for retry context
+            let last_output = read_last_planning_output(Path::new(&log_dir));
+
+            prompt_planning_xsd_retry_with_context(
+                ctx.template_context,
+                prompt_md_str,
+                xsd_error.as_deref().unwrap_or("Unknown error"),
+                &last_output,
+            )
+        };
+
+        let mut runtime = PipelineRuntime {
+            timer: ctx.timer,
+            logger: ctx.logger,
+            colors: ctx.colors,
+            config: ctx.config,
+            #[cfg(any(test, feature = "test-utils"))]
+            agent_executor: None,
+        };
+
+        let _exit_code = run_with_fallback(
+            AgentRole::Developer,
+            &format!("planning #{}", iteration),
+            &plan_prompt,
+            &log_dir,
+            &mut runtime,
+            ctx.registry,
+            ctx.developer_agent,
+        )?;
+
+        // Extract and validate the plan XML
+        let log_dir_path = Path::new(&log_dir);
+        let plan_content = read_last_planning_output(log_dir_path);
+
+        // Try to extract XML
+        if let Some(xml_content) = extract_plan_xml(&plan_content) {
+            // Try to validate against XSD
+            match validate_plan_xml(&xml_content) {
+                Ok(plan_elements) => {
+                    // XSD validation passed - format and write the plan
+                    let formatted_xml = format_xml_for_display(&xml_content);
+
+                    // Convert XML to markdown format for PLAN.md
+                    let markdown = format_plan_as_markdown(&plan_elements);
+                    fs::write(plan_path, &markdown)?;
+
+                    if retry_num > 0 {
+                        ctx.logger
+                            .success(&format!("Plan validated after {} retries", retry_num));
+                    } else {
+                        ctx.logger.success("Plan extracted and validated (XML)");
+                    }
+
+                    // Display the formatted plan
+                    ctx.logger.info(&format!("\n{}", formatted_xml));
+
+                    return Ok(());
+                }
+                Err(xsd_err) => {
+                    // XSD validation failed - check if we can retry
+                    let error_msg = format_xsd_error(&xsd_err);
+                    ctx.logger
+                        .warn(&format!("  XSD validation failed: {}", error_msg));
+
+                    if retry_num < max_retries - 1 {
+                        // Store error for next retry attempt
+                        xsd_error = Some(error_msg);
+                        // Continue to next retry iteration
+                        continue;
+                    } else {
+                        ctx.logger.warn("  No more in-session retries remaining");
+                        // Fall through to legacy extraction
+                    }
+                }
+            }
+        } else {
+            // No XML found - log and try legacy extraction
+            ctx.logger
+                .info("No XML found in output, trying legacy extraction...");
+        }
+
+        // If we get here, either no XML or XSD validation failed after retries
+        // Try legacy extraction as fallback
+        let extraction = extract_plan(log_dir_path)?;
+
+        if let Some(content) = extraction.raw_content {
+            // Extraction succeeded - orchestrator writes the file
+            fs::write(plan_path, &content)?;
+
+            if extraction.is_valid {
+                ctx.logger
+                    .success("Plan extracted from agent output (JSON fallback)");
+            } else {
+                ctx.logger.warn(&format!(
+                    "Plan written but validation failed: {}",
+                    extraction.validation_warning.unwrap_or_default()
+                ));
+            }
+            return Ok(());
+        } else if let Some(text_plan) = extract_plan_from_logs_text(log_dir_path)? {
             fs::write(plan_path, &text_plan)?;
             ctx.logger
                 .success("Plan extracted from agent output (text fallback)");
+            return Ok(());
         } else {
-            // Text extraction also failed - check if agent wrote the file directly (legacy fallback)
+            // Check if agent wrote the file directly (legacy fallback)
             let agent_wrote_file = plan_path
                 .exists()
                 .then(|| fs::read_to_string(plan_path).ok())
@@ -281,22 +356,83 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
 
             if agent_wrote_file {
                 ctx.logger.info("Using agent-written PLAN.md (legacy mode)");
-            } else {
-                // No content from any source - write placeholder and fail
-                // The placeholder serves as a recovery mechanism (file exists for debugging)
-                // but the pipeline should still fail because we can't proceed without a plan
-                let placeholder = "# Plan\n\nAgent produced no extractable plan content.\n";
-                fs::write(plan_path, placeholder)?;
-                ctx.logger
-                    .error("No plan content found in agent output - wrote placeholder");
-                anyhow::bail!(
-                    "Planning agent completed successfully but no plan was found in output"
-                );
+                return Ok(());
             }
+
+            // No content from any source - write placeholder and fail
+            let placeholder = "# Plan\n\nAgent produced no extractable plan content.\n";
+            fs::write(plan_path, placeholder)?;
+            ctx.logger
+                .error("No plan content found in agent output - wrote placeholder");
+            anyhow::bail!("Planning agent completed successfully but no plan was found in output");
         }
     }
 
     Ok(())
+}
+
+/// Read the last planning output from logs.
+fn read_last_planning_output(log_dir: &Path) -> String {
+    // Try to read from the latest log file
+    let log_path = log_dir.join("latest.log");
+    if let Ok(content) = fs::read_to_string(&log_path) {
+        return content;
+    }
+
+    // Fallback to reading all .log files in the directory
+    if let Ok(entries) = fs::read_dir(log_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("log") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    return content;
+                }
+            }
+        }
+    }
+
+    String::new()
+}
+
+/// Format XSD error for display.
+fn format_xsd_error(error: &XsdValidationError) -> String {
+    format!(
+        "{} - expected: {}, found: {}",
+        error.element_path, error.expected, error.found
+    )
+}
+
+/// Format plan elements as markdown for PLAN.md.
+fn format_plan_as_markdown(elements: &PlanElements) -> String {
+    let mut result = String::new();
+
+    result.push_str("## Summary\n\n");
+    result.push_str(&elements.summary);
+    result.push_str("\n\n");
+
+    result.push_str("## Implementation Steps\n\n");
+    result.push_str(&elements.implementation_steps);
+    result.push_str("\n\n");
+
+    if let Some(ref critical_files) = elements.critical_files {
+        result.push_str("## Critical Files for Implementation\n\n");
+        result.push_str(critical_files);
+        result.push_str("\n\n");
+    }
+
+    if let Some(ref risks) = elements.risks_mitigations {
+        result.push_str("## Risks & Mitigations\n\n");
+        result.push_str(risks);
+        result.push_str("\n\n");
+    }
+
+    if let Some(ref verification) = elements.verification_strategy {
+        result.push_str("## Verification Strategy\n\n");
+        result.push_str(verification);
+        result.push_str("\n\n");
+    }
+
+    result
 }
 
 /// Verify that PLAN.md exists and is non-empty.

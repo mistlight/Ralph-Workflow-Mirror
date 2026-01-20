@@ -18,6 +18,7 @@ mod commit;
 mod developer;
 pub mod partials;
 mod rebase;
+mod review;
 pub mod reviewer;
 pub mod template_catalog;
 pub mod template_context;
@@ -29,14 +30,18 @@ mod types;
 
 // Re-export all public items for backward compatibility
 pub use commit::{
-    prompt_fix_with_context, prompt_generate_commit_message_with_diff_with_context,
-    prompt_simplified_commit_with_context, prompt_xsd_retry_with_context,
+    prompt_generate_commit_message_with_diff_with_context, prompt_simplified_commit_with_context,
+    prompt_xsd_retry_with_context,
 };
-pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
+pub use developer::{
+    prompt_developer_iteration_with_context, prompt_planning_xml_with_context,
+    prompt_planning_xsd_retry_with_context,
+};
 pub use rebase::{
     build_conflict_resolution_prompt_with_context, build_enhanced_conflict_resolution_prompt,
     collect_branch_info, collect_conflict_info, BranchInfo, FileConflict,
 };
+pub use review::prompt_fix_xml_with_context;
 pub use reviewer::{
     prompt_comprehensive_review_with_diff_with_context,
     prompt_detailed_review_without_guidelines_with_diff_with_context,
@@ -100,6 +105,7 @@ impl PromptConfig {
 
     /// Set PROMPT.md content for planning prompts.
     #[must_use = "returns the updated configuration for chaining"]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn with_prompt_md(mut self, content: String) -> Self {
         self.prompt_md_content = Some(content);
         self
@@ -149,7 +155,9 @@ pub fn prompt_for_agent(
     config: PromptConfig,
 ) -> String {
     match (role, action) {
+        #[cfg(any(test, feature = "test-utils"))]
         (_, Action::Plan) => {
+            use crate::prompts::developer::prompt_plan_with_context;
             prompt_plan_with_context(template_context, config.prompt_md_content.as_deref())
         }
         (Role::Developer | Role::Reviewer, Action::Iterate) => {
@@ -169,7 +177,7 @@ pub fn prompt_for_agent(
             let (prompt_content, plan_content, issues_content) = config
                 .prompt_plan_and_issues
                 .unwrap_or((String::new(), String::new(), String::new()));
-            prompt_fix_with_context(
+            prompt_fix_xml_with_context(
                 template_context,
                 &prompt_content,
                 &plan_content,

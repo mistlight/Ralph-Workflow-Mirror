@@ -1,0 +1,58 @@
+{# ============================================================================ #}
+{# Template: planning_xsd_retry.txt                                             #}
+{# Version: 1.0                                                                 #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Retry prompt when XML validation fails during planning phase.              #}
+{#   Provides specific XSD error feedback to guide the AI agent.                #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   {{PROMPT}} - Original user requirements (required)                         #}
+{#   {{XSD_ERROR}} - XSD validation error message (required)                    #}
+{#   {{LAST_OUTPUT}} - The invalid XML output (required)                        #}
+{#                                                                             #}
+{# OUTPUT FORMAT:                                                               #}
+{#   Same as planning_xml.txt - valid <ralph-plan> XML                         #}
+{# ============================================================================ #}
+
+Your previous plan output failed XSD validation.
+
+═══════════════════════════════════════════════════════════════════════════════
+XSD VALIDATION ERROR
+═══════════════════════════════════════════════════════════════════════════════
+
+{{XSD_ERROR}}
+
+═══════════════════════════════════════════════════════════════════════════════
+YOUR LAST OUTPUT (INVALID)
+═══════════════════════════════════════════════════════════════════════════════
+
+{{LAST_OUTPUT}}
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEND WITH PROPER XML FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+USER REQUIREMENTS:
+{{PROMPT}}
+
+You MUST resend your plan using the correct XML format.
+
+<ralph-plan>
+<ralph-summary>One paragraph explaining what will be done and why.</ralph-summary>
+<ralph-implementation-steps>Numbered, actionable steps.</ralph-implementation-steps>
+<ralph-critical-files>List of key files (optional).</ralph-critical-files>
+<ralph-risks-mitigations>Risks and mitigations (optional).</ralph-risks-mitigations>
+<ralph-verification-strategy>How to verify (optional).</ralph-verification-strategy>
+</ralph-plan>
+
+REQUIREMENTS:
+- Start IMMEDIATELY with <ralph-plan> (no text before)
+- End with </ralph-plan> (no text after)
+- <ralph-summary> and <ralph-implementation-steps> are REQUIRED
+- Other tags are optional
+- NO markdown code fences
+- NO analysis outside the XML
+
+Resend your plan now with the correct XML format.

@@ -14,6 +14,9 @@
 use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, PipelineCheckpoint, PipelinePhase};
 use crate::files::extract_issues;
+use crate::files::llm_output_extraction::{
+    extract_issues_xml, validate_issues_xml, IssuesElements,
+};
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::git_helpers::{
     get_baseline_summary, git_snapshot, update_review_baseline, CommitResultFallback,
@@ -575,6 +578,37 @@ fn extract_and_validate_review_output(
     log_dir: &str,
     issues_path: &Path,
 ) -> anyhow::Result<ParseResult> {
+    // First, try XML extraction (new format)
+    let log_content = read_log_content(Path::new(log_dir));
+    if let Some(xml_content) = extract_issues_xml(&log_content) {
+        match validate_issues_xml(&xml_content) {
+            Ok(issues_elements) => {
+                // XSD validation passed - convert to markdown and write
+                let markdown = format_issues_as_markdown(&issues_elements);
+                fs::write(issues_path, &markdown)?;
+
+                if issues_elements.is_empty() {
+                    ctx.logger.success("No issues found (validated XML)");
+                    return Ok(ParseResult::NoIssuesExplicit);
+                }
+
+                ctx.logger.success(&format!(
+                    "Issues extracted: {} total (validated XML)",
+                    issues_elements.issue_count()
+                ));
+                return Ok(ParseResult::IssuesFound);
+            }
+            Err(xsd_err) => {
+                // XSD validation failed - log error and fall through to legacy extraction
+                ctx.logger.warn(&format!(
+                    "XML extraction found but XSD validation failed: {} - expected: {}, found: {}",
+                    xsd_err.element_path, xsd_err.expected, xsd_err.found
+                ));
+            }
+        }
+    }
+
+    // Fall back to existing JSON/text extraction
     let extraction = extract_issues(Path::new(log_dir))?;
 
     // First, try to get content from extraction or legacy file
@@ -651,6 +685,44 @@ fn extract_and_validate_review_output(
         content_len,
         preview
     )))
+}
+
+/// Read log content from the log directory.
+fn read_log_content(log_dir: &Path) -> String {
+    let log_path = log_dir.join("latest.log");
+    if let Ok(content) = fs::read_to_string(&log_path) {
+        return content;
+    }
+
+    // Fallback to reading any .log file
+    if let Ok(entries) = fs::read_dir(log_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("log") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    return content;
+                }
+            }
+        }
+    }
+
+    String::new()
+}
+
+/// Format issues elements as markdown for ISSUES.md.
+fn format_issues_as_markdown(elements: &IssuesElements) -> String {
+    let mut result = String::new();
+
+    if let Some(ref no_issues_msg) = elements.no_issues_found {
+        result.push_str(no_issues_msg);
+        return result;
+    }
+
+    for (i, issue) in elements.issues.iter().enumerate() {
+        result.push_str(&format!("{}. {}\n\n", i + 1, issue));
+    }
+
+    result
 }
 
 /// Build a prompt to ask the agent to reformat its output.

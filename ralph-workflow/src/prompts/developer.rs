@@ -172,6 +172,7 @@ pub fn prompt_developer_iteration_with_context(
 /// * `prompt_content` - Optional PROMPT.md content to include directly in the prompt.
 ///   When provided, the agent doesn't need to discover PROMPT.md through file exploration,
 ///   which prevents accidental deletion.
+#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Option<&str>) -> String {
     let template_content = context
         .registry()
@@ -203,6 +204,73 @@ pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Optio
                 )
             })
     })
+}
+
+/// Generate XML-based planning prompt using template registry.
+///
+/// This version uses XML output format with XSD validation for reliable parsing.
+/// It's the recommended format for planning going forward.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - Optional PROMPT.md content to include directly in the prompt.
+pub fn prompt_planning_xml_with_context(
+    context: &TemplateContext,
+    prompt_content: Option<&str>,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("planning_xml")
+        .unwrap_or_else(|_| include_str!("templates/planning_xml.txt").to_string());
+    let template = Template::new(&template_content);
+    let prompt_md = prompt_content.unwrap_or("No requirements provided");
+    let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
+
+    template.render(&variables).unwrap_or_else(|_| {
+        format!(
+            "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\n\
+             Output format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n"
+        )
+    })
+}
+
+/// Generate XSD validation retry prompt for planning with error feedback.
+///
+/// This prompt is used when an AI agent produces plan XML that fails XSD validation.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - Original user requirements
+/// * `xsd_error` - The XSD validation error message to include in the prompt
+/// * `last_output` - The invalid XML output that failed validation
+pub fn prompt_planning_xsd_retry_with_context(
+    context: &TemplateContext,
+    prompt_content: &str,
+    xsd_error: &str,
+    last_output: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("planning_xsd_retry")
+        .unwrap_or_else(|_| include_str!("templates/planning_xsd_retry.txt").to_string());
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("XSD_ERROR", xsd_error.to_string()),
+        ("LAST_OUTPUT", last_output.to_string()),
+    ]);
+    Template::new(&template_content)
+        .render(&variables)
+        .unwrap_or_else(|_| {
+            format!(
+                "Your previous plan failed XSD validation.\n\nError: {}\n\n\
+                 Last output:\n{}\n\n\
+                 Please resend your plan in valid XML format:\n\
+                 <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n",
+                xsd_error, last_output
+            )
+        })
 }
 
 #[cfg(test)]

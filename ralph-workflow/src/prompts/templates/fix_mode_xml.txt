@@ -1,0 +1,121 @@
+{# ============================================================================ #}
+{# Template: fix_mode_xml.txt                                                   #}
+{# Version: 1.0                                                                 #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Prompt for fix mode to address issues found during review.                 #}
+{#   Uses XML output format for reliable parsing.                              #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   {{PROMPT}} - Original user requirements (required)                         #}
+{#   {{PLAN}} - Implementation plan (required)                                  #}
+{#   {{ISSUES}} - Issues from review (required)                                 #}
+{#   {{FILES_TO_MODIFY}} - Files that may be modified (required)                #}
+{#                                                                             #}
+{# OUTPUT FORMAT:                                                              #}
+{#   <ralph-fix-result>                                                         #}
+{#     <ralph-status>all_issues_addressed|issues_remain|no_issues_found</ralph-status> #}
+{#     <ralph-summary>Optional summary of fixes</ralph-summary>                 #}
+{#   </ralph-fix-result>                                                        #}
+{#                                                                             #}
+{# EXTRACTION:                                                                 #}
+{#   Parsed by extract_fix_result_xml() in xml_extraction_fix_result.rs        #}
+{#   Validated by validate_fix_result_xml() in xsd_validation_fix_result.rs    #}
+{# ============================================================================ #}
+
+You are in FIX MODE. Address issues found during review.
+
+═══════════════════════════════════════════════════════════════════════════════
+ISSUES FROM REVIEW
+═══════════════════════════════════════════════════════════════════════════════
+
+{{ISSUES}}
+
+═══════════════════════════════════════════════════════════════════════════════
+FILES YOU MAY MODIFY
+═══════════════════════════════════════════════════════════════════════════════
+
+{{FILES_TO_MODIFY}}
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+ORIGINAL REQUEST:
+{{PROMPT}}
+
+IMPLEMENTATION PLAN:
+{{PLAN}}
+
+═══════════════════════════════════════════════════════════════════════════════
+YOUR TASK
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Review the ISSUES content above carefully
+2. Fix the issues by modifying the appropriate files
+3. Verify your fixes work correctly
+
+CRITICAL CONSTRAINTS:
+- You MUST use your available tools to read files before editing them
+- If specific files are listed above, you MUST ONLY modify those listed files
+- If no specific files are listed, you MAY modify ANY files needed to fix the issues
+- You MUST NOT modify the ISSUES content - it is provided for reference only
+- Your work MUST be limited to fixing issues described above
+
+FAULT TOLERANCE FOR VAGUE ISSUE DESCRIPTIONS:
+- If an issue description lacks file references, you MAY explore the codebase LIMITEDLY to locate the relevant code
+- When exploring, use git grep or ripgrep ONLY to find files containing the function/class names or keywords mentioned in the issue
+- Once you locate the relevant files, you MUST stop exploring and focus on fixing
+- Do NOT explore beyond what is necessary to locate the code mentioned in the issue
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT - XML (CRITICAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+After fixing the issues, you MUST output your completion status using ONLY these XML tags:
+
+<ralph-fix-result>
+<ralph-status>all_issues_addressed</ralph-status>
+<ralph-summary>All reported issues have been fixed. The null pointer check was added,
+password hashing is now implemented, and test coverage has been expanded.</ralph-summary>
+</ralph-fix-result>
+
+Valid status values are:
+- `all_issues_addressed` - You believe all issues have been fixed
+- `issues_remain` - You believe issues still exist (some couldn't be fixed)
+- `no_issues_found` - The ISSUES content was empty (no issues to fix)
+
+### CRITICAL OUTPUT INSTRUCTIONS:
+
+1. After completing your fixes, output the XML
+2. Start with <ralph-fix-result> (no text before)
+3. End with </ralph-fix-result> (no text after)
+4. <ralph-status> is REQUIRED
+5. <ralph-summary> is optional but recommended
+6. NO markdown code fences around the XML
+7. NO analysis or commentary outside the XML
+
+### CORRECT OUTPUT EXAMPLES:
+
+Example 1 - All issues fixed:
+<ralph-fix-result>
+<ralph-status>all_issues_addressed</ralph-status>
+<ralph-summary>Fixed all 3 issues: Added null pointer check, implemented password hashing
+with bcrypt, and expanded test coverage for error cases.</ralph-summary>
+</ralph-fix-result>
+
+Example 2 - Some issues remain:
+<ralph-fix-result>
+<ralph-status>issues_remain</ralph-status>
+<ralph-summary>Fixed 2 of 3 issues. The SQL injection vulnerability has been addressed
+with parameterized queries, and password hashing is implemented. However, the test
+expansion requires clarification on expected error scenarios.</ralph-summary>
+</ralph-fix-result>
+
+Example 3 - No issues were found:
+<ralph-fix-result>
+<ralph-status>no_issues_found</ralph-status>
+</ralph-fix-result>
+
+Fix the issues now and output your completion status in the required XML format.
