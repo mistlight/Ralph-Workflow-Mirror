@@ -1180,7 +1180,7 @@ mod tests {
         // - Known problematic patterns -> AgentSpecificQuirk or ToolExecutionFailed (both trigger fallback)
         use crate::agents::error::AgentErrorKind;
 
-        // Empty stderr - unknown error, should retry
+        // Empty stderr with GLM agent - treat as retryable quirk
         let error = AgentErrorKind::classify_with_agent(1, "", Some("ccs/glm"), None);
         assert_eq!(error, AgentErrorKind::RetryableAgentQuirk);
 

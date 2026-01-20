@@ -3507,7 +3507,10 @@ fn ralph_v3_comprehensive_resume_from_review_phase() {
 
         // Pre-create ISSUES.md and commit-message.txt to satisfy validation
         write_file(dir.path().join(".agent/ISSUES.md"), "No issues\n");
-        write_file(dir.path().join(".agent/commit-message.txt"), "feat: add feature X\n");
+        write_file(
+            dir.path().join(".agent/commit-message.txt"),
+            "feat: add feature X\n",
+        );
 
         // Resume from Complete phase
         let mut cmd = ralph_cmd();

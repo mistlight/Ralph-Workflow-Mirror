@@ -252,11 +252,7 @@ impl AgentErrorKind {
                 || stderr_lower.contains("space")
                 // Agent-specific known patterns (from check_agent_specific_quirks)
                 || (stderr_lower.contains("glm") && stderr_lower.contains("failed"))
-                || (stderr_lower.contains("ccs") && stderr_lower.contains("failed"))
-                || (stderr_lower.contains("glm")
-                    && (stderr_lower.contains("permission")
-                        || stderr_lower.contains("denied")
-                        || stderr_lower.contains("unauthorized")));
+                || (stderr_lower.contains("ccs") && stderr_lower.contains("failed"));
 
             if has_known_problematic_pattern {
                 // Known issue - should fallback

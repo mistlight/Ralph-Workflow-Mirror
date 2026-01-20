@@ -54,7 +54,10 @@ pub struct InterruptContext {
 /// This function is typically called at the start of `run_pipeline()`
 /// to ensure the interrupt handler has the most up-to-date context.
 pub fn set_interrupt_context(context: InterruptContext) {
-    let mut ctx = INTERRUPT_CONTEXT.lock().unwrap();
+    let mut ctx = INTERRUPT_CONTEXT.lock().unwrap_or_else(|poison| {
+        // If mutex is poisoned, recover the guard and clear the state
+        poison.into_inner()
+    });
     *ctx = Some(context);
 }
 
@@ -63,7 +66,10 @@ pub fn set_interrupt_context(context: InterruptContext) {
 /// This should be called when the pipeline completes successfully
 /// to prevent saving an interrupt checkpoint after normal completion.
 pub fn clear_interrupt_context() {
-    let mut ctx = INTERRUPT_CONTEXT.lock().unwrap();
+    let mut ctx = INTERRUPT_CONTEXT.lock().unwrap_or_else(|poison| {
+        // If mutex is poisoned, recover the guard and clear the state
+        poison.into_inner()
+    });
     *ctx = None;
 }
 
@@ -80,7 +86,10 @@ pub fn setup_interrupt_handler() {
         eprintln!("\n✋ Interrupt received! Saving checkpoint...");
 
         // Try to save checkpoint if context is available
-        let ctx = INTERRUPT_CONTEXT.lock().unwrap();
+        let ctx = INTERRUPT_CONTEXT.lock().unwrap_or_else(|poison| {
+            // If mutex is poisoned, recover the guard (context may be inconsistent)
+            poison.into_inner()
+        });
         if let Some(ref context) = *ctx {
             if let Err(e) = save_interrupt_checkpoint(context) {
                 eprintln!("Warning: Failed to save checkpoint: {}", e);
