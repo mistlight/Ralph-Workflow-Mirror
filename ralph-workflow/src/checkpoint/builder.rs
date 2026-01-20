@@ -160,14 +160,18 @@ impl CheckpointBuilder {
         let review_depth_str = review_depth_to_string(config.review_depth);
         let skip_rebase = self.skip_rebase.unwrap_or(false);
 
-        let snapshot = CliArgsSnapshot::new(
+        let snapshot = crate::checkpoint::state::CliArgsSnapshotBuilder::new(
             config.developer_iters,
             config.reviewer_reviews,
             config.commit_msg.clone(),
             review_depth_str,
             skip_rebase,
             config.isolation_mode,
-        );
+        )
+        .verbosity(config.verbosity as u8)
+        .show_streaming_metrics(config.show_streaming_metrics)
+        .reviewer_json_parser(config.reviewer_json_parser.clone())
+        .build();
         self.cli_args = Some(snapshot);
         self
     }
@@ -340,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_builder_basic() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true);
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -392,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_prompt_history() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true);
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -427,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_prompt_history_multiple() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true);
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =

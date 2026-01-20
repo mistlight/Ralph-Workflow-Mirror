@@ -65,6 +65,17 @@ pub struct CliArgsSnapshot {
     /// Default is true for backward compatibility with v1/v2 checkpoints.
     #[serde(default = "default_isolation_mode")]
     pub isolation_mode: bool,
+    /// Verbosity level (0=Quiet, 1=Normal, 2=Verbose, 3=Full, 4=Debug)
+    /// Default is 2 (Verbose) for backward compatibility.
+    #[serde(default = "default_verbosity")]
+    pub verbosity: u8,
+    /// Show streaming quality metrics at the end of agent output
+    /// Default is false for backward compatibility.
+    #[serde(default)]
+    pub show_streaming_metrics: bool,
+    /// JSON parser override for the reviewer agent (claude, codex, gemini, opencode, generic)
+    #[serde(default)]
+    pub reviewer_json_parser: Option<String>,
 }
 
 /// Default value for isolation_mode (true = isolation enabled).
@@ -72,8 +83,29 @@ fn default_isolation_mode() -> bool {
     true
 }
 
-impl CliArgsSnapshot {
-    /// Create a snapshot from CLI argument values.
+/// Default value for verbosity (2 = Verbose).
+fn default_verbosity() -> u8 {
+    2
+}
+
+/// Builder for creating [`CliArgsSnapshot`] instances.
+///
+/// Provides a fluent interface for constructing CLI argument snapshots
+/// without exceeding function argument limits.
+pub struct CliArgsSnapshotBuilder {
+    developer_iters: u32,
+    reviewer_reviews: u32,
+    commit_msg: String,
+    review_depth: Option<String>,
+    skip_rebase: bool,
+    isolation_mode: bool,
+    verbosity: u8,
+    show_streaming_metrics: bool,
+    reviewer_json_parser: Option<String>,
+}
+
+impl CliArgsSnapshotBuilder {
+    /// Create a new builder with required fields.
     pub fn new(
         developer_iters: u32,
         reviewer_reviews: u32,
@@ -89,7 +121,75 @@ impl CliArgsSnapshot {
             review_depth,
             skip_rebase,
             isolation_mode,
+            verbosity: 2,
+            show_streaming_metrics: false,
+            reviewer_json_parser: None,
         }
+    }
+
+    /// Set the verbosity level.
+    pub fn verbosity(mut self, verbosity: u8) -> Self {
+        self.verbosity = verbosity;
+        self
+    }
+
+    /// Set whether to show streaming metrics.
+    pub fn show_streaming_metrics(mut self, show: bool) -> Self {
+        self.show_streaming_metrics = show;
+        self
+    }
+
+    /// Set the reviewer JSON parser override.
+    pub fn reviewer_json_parser(mut self, parser: Option<String>) -> Self {
+        self.reviewer_json_parser = parser;
+        self
+    }
+
+    /// Build the snapshot.
+    pub fn build(self) -> CliArgsSnapshot {
+        CliArgsSnapshot {
+            developer_iters: self.developer_iters,
+            reviewer_reviews: self.reviewer_reviews,
+            commit_msg: self.commit_msg,
+            review_depth: self.review_depth,
+            skip_rebase: self.skip_rebase,
+            isolation_mode: self.isolation_mode,
+            verbosity: self.verbosity,
+            show_streaming_metrics: self.show_streaming_metrics,
+            reviewer_json_parser: self.reviewer_json_parser,
+        }
+    }
+}
+
+impl CliArgsSnapshot {
+    /// Create a snapshot from CLI argument values.
+    ///
+    /// This is a convenience method for test code.
+    /// For production code, use [`CliArgsSnapshotBuilder`] for better readability.
+    #[cfg(test)]
+    pub fn new(
+        developer_iters: u32,
+        reviewer_reviews: u32,
+        commit_msg: String,
+        review_depth: Option<String>,
+        skip_rebase: bool,
+        isolation_mode: bool,
+        verbosity: u8,
+        show_streaming_metrics: bool,
+        reviewer_json_parser: Option<String>,
+    ) -> Self {
+        CliArgsSnapshotBuilder::new(
+            developer_iters,
+            reviewer_reviews,
+            commit_msg,
+            review_depth,
+            skip_rebase,
+            isolation_mode,
+        )
+        .verbosity(verbosity)
+        .show_streaming_metrics(show_streaming_metrics)
+        .reviewer_json_parser(reviewer_json_parser)
+        .build()
     }
 }
 
@@ -620,7 +720,7 @@ fn load_checkpoint_with_fallback(
             timestamp: legacy.timestamp,
             developer_agent: legacy.developer_agent.clone(),
             reviewer_agent: legacy.reviewer_agent.clone(),
-            cli_args: CliArgsSnapshot::new(0, 0, String::new(), None, false, true),
+            cli_args: CliArgsSnapshotBuilder::new(0, 0, String::new(), None, false, true).build(),
             developer_agent_config: AgentConfigSnapshot::new(
                 legacy.developer_agent.clone(),
                 String::new(),
@@ -767,7 +867,17 @@ mod tests {
 
     /// Helper function to create a checkpoint for testing.
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32) -> PipelineCheckpoint {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test commit".to_string(), None, false, true);
+        let cli_args = CliArgsSnapshot::new(
+            5,
+            2,
+            "test commit".to_string(),
+            None,
+            false,
+            true,
+            2,
+            false,
+            None,
+        );
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -837,7 +947,8 @@ mod tests {
 
     #[test]
     fn test_checkpoint_from_params() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".to_string(), None, false, true);
+        let cli_args =
+            CliArgsSnapshot::new(5, 2, "test".to_string(), None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -893,7 +1004,17 @@ mod tests {
             total_reviewer_passes: 3,
             developer_agent: "claude",
             reviewer_agent: "codex",
-            cli_args: CliArgsSnapshot::new(5, 3, "test".to_string(), None, false, true),
+            cli_args: CliArgsSnapshot::new(
+                5,
+                3,
+                "test".to_string(),
+                None,
+                false,
+                true,
+                2,
+                false,
+                None,
+            ),
             developer_agent_config: AgentConfigSnapshot::new(
                 "claude".into(),
                 "cmd".into(),
@@ -984,6 +1105,9 @@ mod tests {
                 Some("standard".into()),
                 false,
                 true,
+                2,
+                false,
+                None,
             ),
             developer_agent_config: AgentConfigSnapshot::new(
                 "aider".into(),
@@ -1040,6 +1164,9 @@ mod tests {
             Some("comprehensive".into()),
             true,
             true,
+            3,
+            true,
+            Some("claude".to_string()),
         );
 
         assert_eq!(snapshot.developer_iters, 10);
@@ -1048,6 +1175,9 @@ mod tests {
         assert_eq!(snapshot.review_depth, Some("comprehensive".to_string()));
         assert!(snapshot.skip_rebase);
         assert!(snapshot.isolation_mode);
+        assert_eq!(snapshot.verbosity, 3);
+        assert!(snapshot.show_streaming_metrics);
+        assert_eq!(snapshot.reviewer_json_parser, Some("claude".to_string()));
     }
 
     #[test]
