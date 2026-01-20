@@ -233,17 +233,30 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
         ));
     }
 
-    // Show original configuration
-    let cli = &checkpoint.cli_args;
-    if cli.developer_iters > 0 || cli.reviewer_reviews > 0 {
-        logger.info(&format!(
-            "Original configuration: -D {} -R {}",
-            cli.developer_iters, cli.reviewer_reviews
-        ));
+    // Show the reconstructed command that was used
+    if let Some(reconstructed_command) = reconstruct_command(checkpoint) {
+        logger.info(&format!("Original command: {}", reconstructed_command));
     }
 
+    // Show agent configuration details
     logger.info(&format!("Developer agent: {}", checkpoint.developer_agent));
     logger.info(&format!("Reviewer agent: {}", checkpoint.reviewer_agent));
+
+    // Show model overrides if present
+    if let Some(ref model) = checkpoint.developer_agent_config.model_override {
+        logger.info(&format!("Developer model: {}", model));
+    }
+    if let Some(ref model) = checkpoint.reviewer_agent_config.model_override {
+        logger.info(&format!("Reviewer model: {}", model));
+    }
+
+    // Show provider overrides if present
+    if let Some(ref provider) = checkpoint.developer_agent_config.provider_override {
+        logger.info(&format!("Developer provider: {}", provider));
+    }
+    if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
+        logger.info(&format!("Reviewer provider: {}", provider));
+    }
 
     // Show execution history info if available
     if let Some(ref history) = checkpoint.execution_history {
@@ -267,16 +280,109 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
     logger.info("  git log --oneline -5 - See recent commits");
 }
 
+/// Reconstruct the original command from checkpoint data.
+///
+/// This function attempts to reconstruct the exact command that was used
+/// to create the checkpoint, including all relevant flags and options.
+fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
+    let cli = &checkpoint.cli_args;
+    let mut parts = vec!["ralph".to_string()];
+
+    // Add -D flag
+    if cli.developer_iters > 0 {
+        parts.push(format!("-D {}", cli.developer_iters));
+    }
+
+    // Add -R flag
+    if cli.reviewer_reviews > 0 {
+        parts.push(format!("-R {}", cli.reviewer_reviews));
+    }
+
+    // Add --commit-msg if specified
+    if !cli.commit_msg.is_empty() {
+        parts.push(format!("--commit-msg \"{}\"", cli.commit_msg));
+    }
+
+    // Add --review-depth if specified
+    if let Some(ref depth) = cli.review_depth {
+        parts.push(format!("--review-depth {}", depth));
+    }
+
+    // Add --skip-rebase if true
+    if cli.skip_rebase {
+        parts.push("--skip-rebase".to_string());
+    }
+
+    // Add --no-isolation if false (isolation_mode defaults to true)
+    if !cli.isolation_mode {
+        parts.push("--no-isolation".to_string());
+    }
+
+    // Add verbosity flags
+    match cli.verbosity {
+        0 => parts.push("--quiet".to_string()),
+        1 => {} // Normal is default
+        2 => parts.push("--verbose".to_string()),
+        3 => parts.push("--full".to_string()),
+        4 => parts.push("--debug".to_string()),
+        _ => {}
+    }
+
+    // Add --show-streaming-metrics if true
+    if cli.show_streaming_metrics {
+        parts.push("--show-streaming-metrics".to_string());
+    }
+
+    // Add --reviewer-json-parser if specified
+    if let Some(ref parser) = cli.reviewer_json_parser {
+        parts.push(format!("--reviewer-json-parser {}", parser));
+    }
+
+    // Add --agent flags if agents differ from defaults
+    // Note: We can't determine defaults here, so we always show them
+    parts.push(format!("--agent {}", checkpoint.developer_agent));
+    parts.push(format!("--reviewer-agent {}", checkpoint.reviewer_agent));
+
+    // Add model overrides if present
+    if let Some(ref model) = checkpoint.developer_agent_config.model_override {
+        parts.push(format!("--model \"{}\"", model));
+    }
+    if let Some(ref model) = checkpoint.reviewer_agent_config.model_override {
+        parts.push(format!("--reviewer-model \"{}\"", model));
+    }
+
+    // Add provider overrides if present
+    if let Some(ref provider) = checkpoint.developer_agent_config.provider_override {
+        parts.push(format!("--provider \"{}\"", provider));
+    }
+    if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
+        parts.push(format!("--reviewer-provider \"{}\"", provider));
+    }
+
+    if parts.len() > 1 {
+        Some(parts.join(" "))
+    } else {
+        None
+    }
+}
+
 /// Suggest the next step based on the current checkpoint phase.
+///
+/// Returns a detailed, actionable description of what will happen next
+/// when the user resumes from this checkpoint.
 fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
     match checkpoint.phase {
-        PipelinePhase::Planning => Some("continue creating implementation plan".to_string()),
+        PipelinePhase::Planning => {
+            Some("continue creating implementation plan from PROMPT.md".to_string())
+        }
         PipelinePhase::PreRebase => Some("complete rebase before starting development".to_string()),
-        PipelinePhase::PreRebaseConflict => Some("resolve rebase conflicts".to_string()),
+        PipelinePhase::PreRebaseConflict => {
+            Some("resolve rebase conflicts then continue to development".to_string())
+        }
         PipelinePhase::Development => {
             if checkpoint.iteration < checkpoint.total_iterations {
                 Some(format!(
-                    "continue development iteration {} of {}",
+                    "continue development iteration {} of {} (will use same prompts as before)",
                     checkpoint.iteration + 1,
                     checkpoint.total_iterations
                 ))
@@ -287,7 +393,7 @@ fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
         PipelinePhase::Review => {
             if checkpoint.reviewer_pass < checkpoint.total_reviewer_passes {
                 Some(format!(
-                    "continue review pass {} of {}",
+                    "continue review pass {} of {} (will review recent changes)",
                     checkpoint.reviewer_pass + 1,
                     checkpoint.total_reviewer_passes
                 ))
