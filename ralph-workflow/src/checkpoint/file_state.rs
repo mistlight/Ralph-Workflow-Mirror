@@ -20,6 +20,10 @@ pub struct FileSystemState {
     pub git_head_oid: Option<String>,
     /// Git branch name (if available)
     pub git_branch: Option<String>,
+    /// Git status output (porcelain format) for tracking staged/unstaged changes
+    pub git_status: Option<String>,
+    /// List of modified files from git diff
+    pub git_modified_files: Option<Vec<String>>,
 }
 
 impl FileSystemState {
@@ -98,7 +102,7 @@ impl FileSystemState {
         self.files.insert(path.to_string(), snapshot);
     }
 
-    /// Capture git HEAD state.
+    /// Capture git HEAD state and working tree status.
     fn capture_git_state(&mut self) {
         // Try to get HEAD OID
         if let Ok(output) = std::process::Command::new("git")
@@ -120,6 +124,37 @@ impl FileSystemState {
                 let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !branch.is_empty() && branch != "HEAD" {
                     self.git_branch = Some(branch);
+                }
+            }
+        }
+
+        // Capture git status --porcelain for tracking staged/unstaged changes
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["status", "--porcelain"])
+            .output()
+        {
+            if output.status.success() {
+                let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !status.is_empty() {
+                    self.git_status = Some(status);
+                }
+            }
+        }
+
+        // Capture list of modified files from git diff
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["diff", "--name-only"])
+            .output()
+        {
+            if output.status.success() {
+                let diff_output = String::from_utf8_lossy(&output.stdout);
+                let modified_files: Vec<String> = diff_output
+                    .lines()
+                    .map(|line| line.trim().to_string())
+                    .filter(|line| !line.is_empty())
+                    .collect();
+                if !modified_files.is_empty() {
+                    self.git_modified_files = Some(modified_files);
                 }
             }
         }
@@ -212,6 +247,9 @@ pub enum ValidationError {
     /// Git HEAD has changed
     GitHeadChanged { expected: String, actual: String },
 
+    /// Git working tree has changes (files modified, staged, etc.)
+    GitWorkingTreeChanged { changes: String },
+
     /// Git state is invalid
     GitStateInvalid { reason: String },
 }
@@ -230,6 +268,9 @@ impl std::fmt::Display for ValidationError {
             }
             Self::GitHeadChanged { expected, actual } => {
                 write!(f, "Git HEAD changed: expected {}, got {}", expected, actual)
+            }
+            Self::GitWorkingTreeChanged { changes } => {
+                write!(f, "Git working tree changed: {}", changes)
             }
             Self::GitStateInvalid { reason } => {
                 write!(f, "Git state invalid: {}", reason)
@@ -290,6 +331,9 @@ impl ValidationError {
                 } else {
                     format!("Review git state: {} - run git status", reason)
                 }
+            }
+            Self::GitWorkingTreeChanged { .. } => {
+                "Run: git status to review changes, or git stash to save changes".to_string()
             }
         }
     }

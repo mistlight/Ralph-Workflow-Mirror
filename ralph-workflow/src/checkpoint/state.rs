@@ -6,6 +6,7 @@
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -268,6 +269,56 @@ impl AgentConfigSnapshot {
     }
 }
 
+/// Snapshot of environment variables for idempotent recovery.
+///
+/// Captures environment variables that affect pipeline execution,
+/// particularly RALPH_* variables, to ensure the same configuration
+/// when resuming.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct EnvironmentSnapshot {
+    /// All RALPH_* environment variables at checkpoint time
+    #[serde(default)]
+    pub ralph_vars: HashMap<String, String>,
+    /// Other relevant environment variables
+    #[serde(default)]
+    pub other_vars: HashMap<String, String>,
+}
+
+impl EnvironmentSnapshot {
+    /// Capture the current environment variables relevant to Ralph.
+    pub fn capture_current() -> Self {
+        let mut ralph_vars = HashMap::new();
+        let mut other_vars = HashMap::new();
+
+        // Capture all RALPH_* environment variables
+        for (key, value) in std::env::vars() {
+            if key.starts_with("RALPH_") {
+                ralph_vars.insert(key, value);
+            }
+        }
+
+        // Capture other relevant variables
+        let relevant_keys = [
+            "EDITOR",
+            "VISUAL",
+            "GIT_AUTHOR_NAME",
+            "GIT_AUTHOR_EMAIL",
+            "GIT_COMMITTER_NAME",
+            "GIT_COMMITTER_EMAIL",
+        ];
+        for key in &relevant_keys {
+            if let Ok(value) = std::env::var(key) {
+                other_vars.insert(key.to_string(), value);
+            }
+        }
+
+        Self {
+            ralph_vars,
+            other_vars,
+        }
+    }
+}
+
 /// Parameters for creating a new checkpoint.
 ///
 /// Groups all the parameters needed to create a checkpoint, avoiding
@@ -474,6 +525,9 @@ pub struct PipelineCheckpoint {
     /// Stored prompts used during this run
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_history: Option<std::collections::HashMap<String, String>>,
+    /// Environment snapshot for idempotent recovery
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env_snapshot: Option<EnvironmentSnapshot>,
 }
 
 impl PipelineCheckpoint {
@@ -524,6 +578,7 @@ impl PipelineCheckpoint {
             execution_history: None,
             file_system_state: None,
             prompt_history: None,
+            env_snapshot: None,
         }
     }
 
@@ -681,6 +736,7 @@ fn load_checkpoint_with_fallback(
             execution_history: None,
             file_system_state: None,
             prompt_history: None,
+            env_snapshot: None,
         });
     }
 
@@ -741,6 +797,7 @@ fn load_checkpoint_with_fallback(
             execution_history: None,
             file_system_state: None,
             prompt_history: None,
+            env_snapshot: None,
         });
     }
 
@@ -800,6 +857,7 @@ fn load_checkpoint_with_fallback(
             execution_history: None,
             file_system_state: None,
             prompt_history: None,
+            env_snapshot: None,
         });
     }
 

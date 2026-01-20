@@ -16,6 +16,9 @@ pub enum StepOutcome {
         output: Option<String>,
         /// Files modified by this step
         files_modified: Vec<String>,
+        /// Exit code if applicable (0 for success)
+        #[serde(default)]
+        exit_code: Option<i32>,
     },
     /// Step failed with error
     Failure {
@@ -23,6 +26,12 @@ pub enum StepOutcome {
         error: String,
         /// Whether this is recoverable
         recoverable: bool,
+        /// Exit code if applicable (non-zero for failure)
+        #[serde(default)]
+        exit_code: Option<i32>,
+        /// Signals received during execution (e.g., "SIGINT", "SIGTERM")
+        #[serde(default)]
+        signals: Vec<String>,
     },
     /// Step partially completed (may need retry)
     Partial {
@@ -30,12 +39,50 @@ pub enum StepOutcome {
         completed: String,
         /// What remains
         remaining: String,
+        /// Exit code if applicable
+        #[serde(default)]
+        exit_code: Option<i32>,
     },
     /// Step was skipped (e.g., already done)
     Skipped {
         /// Reason for skipping
         reason: String,
     },
+}
+
+impl StepOutcome {
+    /// Create a Success outcome with default values.
+    pub fn success(output: Option<String>, files_modified: Vec<String>) -> Self {
+        Self::Success {
+            output,
+            files_modified,
+            exit_code: Some(0),
+        }
+    }
+
+    /// Create a Failure outcome with default values.
+    pub fn failure(error: String, recoverable: bool) -> Self {
+        Self::Failure {
+            error,
+            recoverable,
+            exit_code: None,
+            signals: Vec::new(),
+        }
+    }
+
+    /// Create a Partial outcome with default values.
+    pub fn partial(completed: String, remaining: String) -> Self {
+        Self::Partial {
+            completed,
+            remaining,
+            exit_code: None,
+        }
+    }
+
+    /// Create a Skipped outcome.
+    pub fn skipped(reason: String) -> Self {
+        Self::Skipped { reason }
+    }
 }
 
 /// A single execution step in the pipeline history.
@@ -55,6 +102,9 @@ pub struct ExecutionStep {
     pub agent: Option<String>,
     /// Duration in seconds (if available)
     pub duration_secs: Option<u64>,
+    /// When a checkpoint was saved during this step (ISO 8601 format string)
+    #[serde(default)]
+    pub checkpoint_saved_at: Option<String>,
 }
 
 impl ExecutionStep {
@@ -68,6 +118,7 @@ impl ExecutionStep {
             outcome,
             agent: None,
             duration_secs: None,
+            checkpoint_saved_at: None,
         }
     }
 
@@ -84,6 +135,18 @@ impl ExecutionStep {
     }
 }
 
+/// Default threshold for storing file content in snapshots (10KB).
+///
+/// Files smaller than this threshold will have their full content stored
+/// in the checkpoint for automatic recovery on resume.
+const DEFAULT_CONTENT_THRESHOLD: u64 = 10 * 1024;
+
+/// Maximum file size that will be compressed in snapshots (100KB).
+///
+/// Files between DEFAULT_CONTENT_THRESHOLD and this size that are key files
+/// (PROMPT.md, PLAN.md, ISSUES.md) will be compressed before storing.
+const MAX_COMPRESS_SIZE: u64 = 100 * 1024;
+
 /// Snapshot of a file's state at a point in time.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileSnapshot {
@@ -93,28 +156,70 @@ pub struct FileSnapshot {
     pub checksum: String,
     /// File size in bytes
     pub size: u64,
-    /// For small files (< 1KB), store full content
+    /// For small files (< 10KB by default), store full content
     pub content: Option<String>,
+    /// Compressed content (base64-encoded gzip) for larger key files
+    pub compressed_content: Option<String>,
     /// Whether the file existed
     pub exists: bool,
 }
 
 impl FileSnapshot {
-    /// Create a new file snapshot.
+    /// Create a new file snapshot with the default content threshold (10KB).
     pub fn new(path: &str, checksum: String, size: u64, exists: bool) -> Self {
-        let content = if exists && size < 1024 {
-            // For small files, read and store content
-            std::fs::read_to_string(path).ok()
-        } else {
-            None
-        };
+        Self::with_max_size(path, checksum, size, exists, DEFAULT_CONTENT_THRESHOLD)
+    }
+
+    /// Create a new file snapshot with a custom content threshold.
+    ///
+    /// Files smaller than `max_size` bytes will have their content stored.
+    /// Key files (PROMPT.md, PLAN.md, ISSUES.md) may be compressed if they
+    /// are between max_size and MAX_COMPRESS_SIZE.
+    pub fn with_max_size(
+        path: &str,
+        checksum: String,
+        size: u64,
+        exists: bool,
+        max_size: u64,
+    ) -> Self {
+        let mut content = None;
+        let mut compressed_content = None;
+
+        if exists {
+            let is_key_file = path.contains("PROMPT.md")
+                || path.contains("PLAN.md")
+                || path.contains("ISSUES.md")
+                || path.contains("NOTES.md");
+
+            if size < max_size {
+                // For small files, read and store content directly
+                content = std::fs::read_to_string(path).ok();
+            } else if is_key_file && size < MAX_COMPRESS_SIZE {
+                // For larger key files, compress the content
+                if let Ok(data) = std::fs::read(path) {
+                    compressed_content = compress_data(&data).ok();
+                }
+            }
+        }
 
         Self {
             path: path.to_string(),
             checksum,
             size,
             content,
+            compressed_content,
             exists,
+        }
+    }
+
+    /// Get the file content, decompressing if necessary.
+    pub fn get_content(&self) -> Option<String> {
+        if let Some(ref content) = self.content {
+            Some(content.clone())
+        } else if let Some(ref compressed) = self.compressed_content {
+            decompress_data(compressed).ok()
+        } else {
+            None
         }
     }
 
@@ -125,6 +230,7 @@ impl FileSnapshot {
             checksum: String::new(),
             size: 0,
             content: None,
+            compressed_content: None,
             exists: false,
         }
     }
@@ -151,6 +257,48 @@ impl FileSnapshot {
             None => false,
         }
     }
+}
+
+/// Compress data using gzip and encode as base64.
+///
+/// This is used to store larger file content in checkpoints without
+/// bloating the checkpoint file size too much.
+fn compress_data(data: &[u8]) -> Result<String, std::io::Error> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(data)?;
+    let compressed = encoder.finish()?;
+
+    Ok(STANDARD.encode(&compressed))
+}
+
+/// Decompress data that was compressed with compress_data.
+fn decompress_data(encoded: &str) -> Result<String, std::io::Error> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+
+    let compressed = STANDARD.decode(encoded).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Base64 decode error: {}", e),
+        )
+    })?;
+
+    let mut decoder = GzDecoder::new(compressed.as_slice());
+    let mut decompressed = Vec::new();
+    decoder.read_to_end(&mut decompressed)?;
+
+    String::from_utf8(decompressed).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("UTF-8 decode error: {}", e),
+        )
+    })
 }
 
 /// Execution history tracking.
@@ -180,10 +328,7 @@ mod tests {
 
     #[test]
     fn test_execution_step_new() {
-        let outcome = StepOutcome::Success {
-            output: None,
-            files_modified: vec!["test.txt".to_string()],
-        };
+        let outcome = StepOutcome::success(None, vec!["test.txt".to_string()]);
 
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
 
@@ -196,10 +341,7 @@ mod tests {
 
     #[test]
     fn test_execution_step_with_agent() {
-        let outcome = StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        };
+        let outcome = StepOutcome::success(None, vec![]);
 
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome)
             .with_agent("claude")
@@ -231,10 +373,7 @@ mod tests {
     #[test]
     fn test_execution_history_add_step() {
         let mut history = ExecutionHistory::new();
-        let outcome = StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        };
+        let outcome = StepOutcome::success(None, vec![]);
 
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
 

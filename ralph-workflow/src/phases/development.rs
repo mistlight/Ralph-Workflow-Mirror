@@ -188,15 +188,9 @@ pub fn run_development_phase(
         {
             let duration = dev_start_time.elapsed().as_secs();
             let outcome = if exit_code != 0 {
-                StepOutcome::Failure {
-                    error: format!("Agent exited with code {exit_code}"),
-                    recoverable: true,
-                }
+                StepOutcome::failure(format!("Agent exited with code {exit_code}"), true)
             } else {
-                StepOutcome::Success {
-                    output: None,
-                    files_modified: vec![],
-                }
+                StepOutcome::success(None, vec![])
             };
             let step = ExecutionStep::new("Development", i, "dev_run", outcome)
                 .with_agent(ctx.developer_agent)
@@ -424,10 +418,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
             "Planning",
             iteration,
             "plan_generation",
-            StepOutcome::Success {
-                output: None,
-                files_modified: vec![".agent/PLAN.md".to_string()],
-            },
+            StepOutcome::success(None, vec![".agent/PLAN.md".to_string()]),
         )
         .with_agent(ctx.developer_agent)
         .with_duration(duration);
@@ -555,10 +546,7 @@ fn handle_commit_after_development(
                         "Development",
                         iteration,
                         "commit",
-                        StepOutcome::Success {
-                            output: Some(oid.to_string()),
-                            files_modified: vec![],
-                        },
+                        StepOutcome::success(Some(oid.to_string()), vec![]),
                     )
                     .with_agent(&agent)
                     .with_duration(duration);
@@ -575,9 +563,7 @@ fn handle_commit_after_development(
                         "Development",
                         iteration,
                         "commit",
-                        StepOutcome::Skipped {
-                            reason: "No meaningful changes to commit".to_string(),
-                        },
+                        StepOutcome::skipped("No meaningful changes to commit".to_string()),
                     )
                     .with_duration(duration);
                     ctx.execution_history.add_step(step);
@@ -595,10 +581,7 @@ fn handle_commit_after_development(
                         "Development",
                         iteration,
                         "commit",
-                        StepOutcome::Failure {
-                            error: err.to_string(),
-                            recoverable: false,
-                        },
+                        StepOutcome::failure(err.to_string(), false),
                     )
                     .with_duration(duration);
                     ctx.execution_history.add_step(step);
@@ -618,10 +601,7 @@ fn handle_commit_after_development(
                 "Development",
                 iteration,
                 "commit",
-                StepOutcome::Failure {
-                    error: "No commit agent available".to_string(),
-                    recoverable: true,
-                },
+                StepOutcome::failure("No commit agent available".to_string(), true),
             )
             .with_duration(duration);
             ctx.execution_history.add_step(step);

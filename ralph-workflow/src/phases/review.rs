@@ -372,10 +372,7 @@ fn handle_skipped_cycle(
                         "Review",
                         iteration,
                         "commit",
-                        StepOutcome::Success {
-                            output: Some(oid.to_string()),
-                            files_modified: vec![],
-                        },
+                        StepOutcome::success(Some(oid.to_string()), vec![]),
                     )
                     .with_agent(&agent)
                     .with_duration(duration);
@@ -389,9 +386,7 @@ fn handle_skipped_cycle(
                         "Review",
                         iteration,
                         "commit",
-                        StepOutcome::Skipped {
-                            reason: "No meaningful changes to commit".to_string(),
-                        },
+                        StepOutcome::skipped("No meaningful changes to commit".to_string()),
                     )
                     .with_duration(duration);
                     ctx.execution_history.add_step(step);
@@ -404,10 +399,7 @@ fn handle_skipped_cycle(
                         "Review",
                         iteration,
                         "commit",
-                        StepOutcome::Failure {
-                            error: err.to_string(),
-                            recoverable: false,
-                        },
+                        StepOutcome::failure(err.to_string(), false),
                     )
                     .with_duration(duration);
                     ctx.execution_history.add_step(step);
@@ -423,10 +415,7 @@ fn handle_skipped_cycle(
                 "Review",
                 iteration,
                 "commit",
-                StepOutcome::Failure {
-                    error: "No commit agent available".to_string(),
-                    recoverable: true,
-                },
+                StepOutcome::failure("No commit agent available".to_string(), true),
             )
             .with_duration(duration);
             ctx.execution_history.add_step(step);
@@ -684,10 +673,10 @@ fn run_review_pass(
                     "Review",
                     j,
                     "review",
-                    StepOutcome::Success {
-                        output: Some("Issues found".to_string()),
-                        files_modified: vec![".agent/ISSUES.md".to_string()],
-                    },
+                    StepOutcome::success(
+                        Some("Issues found".to_string()),
+                        vec![".agent/ISSUES.md".to_string()],
+                    ),
                 )
                 .with_agent(ctx.reviewer_agent)
                 .with_duration(attempt_duration);
@@ -707,10 +696,7 @@ fn run_review_pass(
                     "Review",
                     j,
                     "review",
-                    StepOutcome::Success {
-                        output: Some("No issues found".to_string()),
-                        files_modified: vec![],
-                    },
+                    StepOutcome::success(Some("No issues found".to_string()), vec![]),
                 )
                 .with_agent(ctx.reviewer_agent)
                 .with_duration(attempt_duration);
@@ -723,10 +709,7 @@ fn run_review_pass(
                     "Review",
                     j,
                     "review",
-                    StepOutcome::Failure {
-                        error: format!("Parse failed: {error_description}"),
-                        recoverable: true,
-                    },
+                    StepOutcome::failure(format!("Parse failed: {error_description}"), true),
                 )
                 .with_agent(ctx.reviewer_agent)
                 .with_duration(attempt_duration);
@@ -1051,17 +1034,9 @@ fn run_fix_pass(
     ctx.stats.reviewer_runs_completed += 1;
 
     let duration = fix_start_time.elapsed().as_secs();
-    let step = ExecutionStep::new(
-        "Review",
-        j,
-        "fix",
-        StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        },
-    )
-    .with_agent(ctx.reviewer_agent)
-    .with_duration(duration);
+    let step = ExecutionStep::new("Review", j, "fix", StepOutcome::success(None, vec![]))
+        .with_agent(ctx.reviewer_agent)
+        .with_duration(duration);
     ctx.execution_history.add_step(step);
 
     // Clean up ISSUES.md after each fix cycle in isolation mode
@@ -1120,10 +1095,7 @@ fn handle_post_fix_commit(
                         "Review",
                         iteration,
                         "commit",
-                        StepOutcome::Success {
-                            output: Some(oid.to_string()),
-                            files_modified: vec![],
-                        },
+                        StepOutcome::success(Some(oid.to_string()), vec![]),
                     )
                     .with_agent(&agent)
                     .with_duration(duration);
@@ -1137,9 +1109,7 @@ fn handle_post_fix_commit(
                         "Review",
                         iteration,
                         "commit",
-                        StepOutcome::Skipped {
-                            reason: "No meaningful changes to commit".to_string(),
-                        },
+                        StepOutcome::skipped("No meaningful changes to commit".to_string()),
                     )
                     .with_duration(duration);
                     ctx.execution_history.add_step(step);
@@ -1154,10 +1124,7 @@ fn handle_post_fix_commit(
                         "Review",
                         iteration,
                         "commit",
-                        StepOutcome::Failure {
-                            error: err.to_string(),
-                            recoverable: false,
-                        },
+                        StepOutcome::failure(err.to_string(), false),
                     )
                     .with_duration(duration);
                     ctx.execution_history.add_step(step);
@@ -1174,10 +1141,7 @@ fn handle_post_fix_commit(
                 "Review",
                 iteration,
                 "commit",
-                StepOutcome::Failure {
-                    error: "No commit agent available".to_string(),
-                    recoverable: true,
-                },
+                StepOutcome::failure("No commit agent available".to_string(), true),
             )
             .with_duration(duration);
             ctx.execution_history.add_step(step);

@@ -78,6 +78,12 @@ notify = "6.1"
 # UUID generation for unique run identifiers
 uuid = { version = "1.10", features = ["v4", "serde"] }
 
+# Compression for large file content in checkpoints
+flate2 = "1.0"
+
+# Base64 encoding for compressed data
+base64 = "0.22"
+
 [dev-dependencies]
 # Testing utilities
 tempfile = "3.10"

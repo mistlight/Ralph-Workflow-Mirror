@@ -154,10 +154,9 @@ fn can_prompt_user() -> bool {
 fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) {
     use chrono::{DateTime, Local, NaiveDateTime};
 
-    logger.info(&format!(
-        "You were in the middle of: {}",
-        checkpoint.description()
-    ));
+    // Display phase with emoji indicator
+    let phase_emoji = get_phase_emoji(checkpoint.phase);
+    logger.info(&format!("{} {}", phase_emoji, checkpoint.description()));
 
     // Calculate and display time elapsed
     // Parse the timestamp string which is in "YYYY-MM-DD HH:MM:SS" format
@@ -211,17 +210,25 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
         }
     }
 
-    // Show progress
+    // Show progress with visual bar
     if checkpoint.total_iterations > 0 {
+        let progress_bar = create_progress_bar(
+            checkpoint.actual_developer_runs,
+            checkpoint.total_iterations,
+        );
         logger.info(&format!(
-            "Progress: {} of {} development iteration(s) completed",
-            checkpoint.actual_developer_runs, checkpoint.total_iterations
+            "Development: {} {}/{} completed",
+            progress_bar, checkpoint.actual_developer_runs, checkpoint.total_iterations
         ));
     }
     if checkpoint.total_reviewer_passes > 0 {
+        let progress_bar = create_progress_bar(
+            checkpoint.actual_reviewer_runs,
+            checkpoint.total_reviewer_passes,
+        );
         logger.info(&format!(
-            "Progress: {} of {} review pass(es) completed",
-            checkpoint.actual_reviewer_runs, checkpoint.total_reviewer_passes
+            "Review: {} {}/{} completed",
+            progress_bar, checkpoint.actual_reviewer_runs, checkpoint.total_reviewer_passes
         ));
     }
 
@@ -507,6 +514,25 @@ pub fn handle_resume_with_validation(
     developer_agent: &str,
     reviewer_agent: &str,
 ) -> Option<ResumeResult> {
+    // Handle --inspect-checkpoint flag
+    if args.recovery.inspect_checkpoint {
+        match load_checkpoint() {
+            Ok(Some(checkpoint)) => {
+                logger.header("CHECKPOINT INSPECTION", crate::logger::Colors::cyan);
+                display_detailed_checkpoint_info(&checkpoint, logger);
+                std::process::exit(0);
+            }
+            Ok(None) => {
+                logger.error("No checkpoint found to inspect.");
+                std::process::exit(1);
+            }
+            Err(e) => {
+                logger.error(&format!("Failed to load checkpoint: {}", e));
+                std::process::exit(1);
+            }
+        }
+    }
+
     if !args.recovery.resume {
         return None;
     }
@@ -696,7 +722,7 @@ fn attempt_recovery_for_error(
         ValidationError::FileContentChanged { path } => {
             // Try to restore from snapshot if content is available
             if let Some(snapshot) = file_system_state.files.get(path) {
-                if let Some(content) = &snapshot.content {
+                if let Some(content) = snapshot.get_content() {
                     fs::write(path, content).map_err(|e| format!("Failed to write file: {}", e))?;
                     logger.info(&format!("Restored {} from checkpoint content.", path));
                     return Ok(());
@@ -712,10 +738,14 @@ fn attempt_recovery_for_error(
         ValidationError::GitStateInvalid { .. } => {
             Err("Git state validation requires manual intervention".to_string())
         }
+        ValidationError::GitWorkingTreeChanged { .. } => {
+            // Working tree changes are not automatically recoverable
+            Err("Git working tree changes require manual intervention".to_string())
+        }
         ValidationError::FileMissing { path } => {
             // Can't recover a missing file unless we have content
             if let Some(snapshot) = file_system_state.files.get(path) {
-                if let Some(content) = &snapshot.content {
+                if let Some(content) = snapshot.get_content() {
                     fs::write(path, content).map_err(|e| format!("Failed to write file: {}", e))?;
                     logger.info(&format!("Restored missing {} from checkpoint.", path));
                     return Ok(());
@@ -891,5 +921,243 @@ pub const fn should_run_from(
     match resume_checkpoint {
         None => true,
         Some(checkpoint) => phase_rank(phase) >= phase_rank(checkpoint.phase),
+    }
+}
+
+/// Create a visual progress bar for checkpoint summary display.
+fn create_progress_bar(current: u32, total: u32) -> String {
+    if total == 0 {
+        return "[----]".to_string();
+    }
+
+    let width = 20; // Total width of progress bar
+    let filled = ((current as f64 / total as f64) * width as f64).round() as usize;
+    let filled = filled.min(width);
+
+    let mut bar = String::from("[");
+    for i in 0..width {
+        if i < filled {
+            bar.push('=');
+        } else {
+            bar.push('-');
+        }
+    }
+    bar.push(']');
+
+    let percentage = ((current as f64 / total as f64) * 100.0).round() as u32;
+    format!("{} {}%", bar, percentage)
+}
+
+/// Display detailed checkpoint information for inspection.
+///
+/// This function shows comprehensive checkpoint details when the user
+/// runs with the --inspect-checkpoint flag.
+fn display_detailed_checkpoint_info(checkpoint: &PipelineCheckpoint, logger: &Logger) {
+    use chrono::{DateTime, Local, NaiveDateTime};
+
+    logger.info(&format!("Phase: {}", checkpoint.phase));
+    logger.info(&format!("Timestamp: {}", checkpoint.timestamp));
+
+    // Calculate and display time elapsed
+    if let Ok(dt) = NaiveDateTime::parse_from_str(&checkpoint.timestamp, "%Y-%m-%d %H:%M:%S") {
+        let checkpoint_time =
+            DateTime::<Local>::from_naive_utc_and_offset(dt, Local::now().offset().to_owned());
+        let now = Local::now();
+        let duration = now.signed_duration_since(checkpoint_time);
+
+        let time_str = if duration.num_days() > 0 {
+            format!("{} day(s) ago", duration.num_days())
+        } else if duration.num_hours() > 0 {
+            format!("{} hour(s) ago", duration.num_hours())
+        } else if duration.num_minutes() > 0 {
+            format!("{} minute(s) ago", duration.num_minutes())
+        } else {
+            "just now".to_string()
+        };
+        logger.info(&format!("Time elapsed: {}", time_str));
+    }
+
+    logger.info("");
+    logger.info("Configuration:");
+
+    // Show iterations and reviews
+    if checkpoint.total_iterations > 0 {
+        let progress_bar = create_progress_bar(
+            checkpoint.actual_developer_runs,
+            checkpoint.total_iterations,
+        );
+        logger.info(&format!(
+            "  Development: {} {}/{}",
+            progress_bar, checkpoint.actual_developer_runs, checkpoint.total_iterations
+        ));
+    }
+    if checkpoint.total_reviewer_passes > 0 {
+        let progress_bar = create_progress_bar(
+            checkpoint.actual_reviewer_runs,
+            checkpoint.total_reviewer_passes,
+        );
+        logger.info(&format!(
+            "  Review: {} {}/{}",
+            progress_bar, checkpoint.actual_reviewer_runs, checkpoint.total_reviewer_passes
+        ));
+    }
+
+    logger.info("");
+    logger.info("Agents:");
+    logger.info(&format!("  Developer: {}", checkpoint.developer_agent));
+    logger.info(&format!("  Reviewer: {}", checkpoint.reviewer_agent));
+
+    // Show model overrides
+    if let Some(ref model) = checkpoint.developer_agent_config.model_override {
+        logger.info(&format!("  Developer model: {}", model));
+    }
+    if let Some(ref model) = checkpoint.reviewer_agent_config.model_override {
+        logger.info(&format!("  Reviewer model: {}", model));
+    }
+    if let Some(ref provider) = checkpoint.developer_agent_config.provider_override {
+        logger.info(&format!("  Developer provider: {}", provider));
+    }
+    if let Some(ref provider) = checkpoint.reviewer_agent_config.provider_override {
+        logger.info(&format!("  Reviewer provider: {}", provider));
+    }
+
+    // Show CLI args
+    if let Some(ref cmd) = reconstruct_command(checkpoint) {
+        logger.info("");
+        logger.info(&format!("Command: {}", cmd));
+    }
+
+    // Show resume count
+    if checkpoint.resume_count > 0 {
+        logger.info("");
+        logger.info(&format!(
+            "Resumed {} time(s) before",
+            checkpoint.resume_count
+        ));
+    }
+
+    // Show run ID
+    logger.info("");
+    logger.info(&format!("Run ID: {}", checkpoint.run_id));
+    if let Some(ref parent_id) = checkpoint.parent_run_id {
+        logger.info(&format!("Parent Run ID: {}", parent_id));
+    }
+
+    // Show rebase state if applicable
+    if matches!(
+        checkpoint.rebase_state,
+        crate::checkpoint::RebaseState::HasConflicts { .. }
+    ) {
+        logger.info("");
+        logger.warn("Rebase conflicts detected:");
+        if let crate::checkpoint::RebaseState::HasConflicts { files } = &checkpoint.rebase_state {
+            for file in files.iter().take(10) {
+                logger.info(&format!("  - {}", file));
+            }
+            if files.len() > 10 {
+                logger.info(&format!("  ... and {} more", files.len() - 10));
+            }
+        }
+    }
+
+    // Show execution history if available
+    if let Some(ref history) = checkpoint.execution_history {
+        if !history.steps.is_empty() {
+            logger.info("");
+            logger.info(&format!(
+                "Execution History: {} step(s)",
+                history.steps.len()
+            ));
+            for (i, step) in history.steps.iter().take(10).enumerate() {
+                let outcome_str = match &step.outcome {
+                    crate::checkpoint::execution_history::StepOutcome::Success { .. } => "✓",
+                    crate::checkpoint::execution_history::StepOutcome::Failure { .. } => "✗",
+                    crate::checkpoint::execution_history::StepOutcome::Partial { .. } => "◐",
+                    crate::checkpoint::execution_history::StepOutcome::Skipped { .. } => "○",
+                };
+                logger.info(&format!(
+                    "  {}. {} {} ({})",
+                    i + 1,
+                    outcome_str,
+                    step.step_type,
+                    step.phase
+                ));
+            }
+            if history.steps.len() > 10 {
+                logger.info(&format!(
+                    "  ... and {} more steps",
+                    history.steps.len() - 10
+                ));
+            }
+        }
+    }
+
+    // Show file system state if available
+    if let Some(ref fs_state) = checkpoint.file_system_state {
+        logger.info("");
+        logger.info(&format!(
+            "File System State: {} file(s) tracked",
+            fs_state.files.len()
+        ));
+
+        // Show git state
+        if let Some(ref branch) = fs_state.git_branch {
+            logger.info(&format!("  Git branch: {}", branch));
+        }
+        if let Some(ref head) = fs_state.git_head_oid {
+            logger.info(&format!("  Git HEAD: {}", head));
+        }
+        if let Some(ref status) = fs_state.git_status {
+            if !status.is_empty() {
+                logger.warn("  Git working tree has changes:");
+                for line in status.lines().take(5) {
+                    logger.info(&format!("    {}", line));
+                }
+            }
+        }
+    }
+
+    // Show environment snapshot if available
+    if let Some(ref env_snap) = checkpoint.env_snapshot {
+        if !env_snap.ralph_vars.is_empty() {
+            logger.info("");
+            logger.info(&format!(
+                "Environment Variables: {} RALPH_* var(s)",
+                env_snap.ralph_vars.len()
+            ));
+            for (key, value) in env_snap.ralph_vars.iter().take(10) {
+                logger.info(&format!("  {}={}", key, value));
+            }
+            if env_snap.ralph_vars.len() > 10 {
+                logger.info(&format!(
+                    "  ... and {} more",
+                    env_snap.ralph_vars.len() - 10
+                ));
+            }
+        }
+    }
+
+    // Show working directory
+    logger.info("");
+    logger.info(&format!("Working directory: {}", checkpoint.working_dir));
+}
+
+/// Get an emoji indicator for a pipeline phase.
+fn get_phase_emoji(phase: PipelinePhase) -> &'static str {
+    match phase {
+        PipelinePhase::Rebase => "🔄",
+        PipelinePhase::Planning => "📋",
+        PipelinePhase::Development => "🔨",
+        PipelinePhase::Review => "👀",
+        PipelinePhase::Fix => "🔧",
+        PipelinePhase::ReviewAgain => "🔍",
+        PipelinePhase::CommitMessage => "📝",
+        PipelinePhase::FinalValidation => "✅",
+        PipelinePhase::Complete => "🎉",
+        PipelinePhase::PreRebase => "⏪",
+        PipelinePhase::PreRebaseConflict => "⚠️",
+        PipelinePhase::PostRebase => "⏩",
+        PipelinePhase::PostRebaseConflict => "⚠️",
+        PipelinePhase::Interrupted => "⏸️",
     }
 }

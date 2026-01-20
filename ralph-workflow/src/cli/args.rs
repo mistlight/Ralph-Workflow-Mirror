@@ -403,6 +403,14 @@ pub struct RecoveryFlags {
     )]
     pub no_resume: bool,
 
+    /// Inspect checkpoint without resuming
+    #[arg(
+        long = "inspect-checkpoint",
+        help = "Display checkpoint information without resuming (use with --resume to see saved state)",
+        hide = true
+    )]
+    pub inspect_checkpoint: bool,
+
     /// Recovery strategy when validation fails (requires hardened-resume feature)
     #[arg(
         long,

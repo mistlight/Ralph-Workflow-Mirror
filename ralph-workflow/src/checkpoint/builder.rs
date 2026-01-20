@@ -324,6 +324,10 @@ impl CheckpointBuilder {
         // Capture and populate file system state
         checkpoint.file_system_state = Some(FileSystemState::capture_current());
 
+        // Capture and populate environment snapshot
+        checkpoint.env_snapshot =
+            Some(crate::checkpoint::state::EnvironmentSnapshot::capture_current());
+
         Some(checkpoint)
     }
 }

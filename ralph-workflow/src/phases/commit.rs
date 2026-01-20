@@ -1123,10 +1123,7 @@ pub fn commit_with_generated_message(
                     "commit",
                     0,
                     "commit_generation",
-                    StepOutcome::Failure {
-                        error: format!("Failed to generate commit message: {e}"),
-                        recoverable: false,
-                    },
+                    StepOutcome::failure(format!("Failed to generate commit message: {e}"), false),
                 )
                 .with_agent(commit_agent)
                 .with_duration(start_time.elapsed().as_secs()),
@@ -1148,17 +1145,14 @@ pub fn commit_with_generated_message(
         };
         // Record completion with fallback in execution history
         let outcome = match &commit_result {
-            CommitResultFallback::Success(oid) => StepOutcome::Success {
-                output: Some(format!("Commit created: {oid}")),
-                files_modified: vec![".".to_string()],
-            },
-            CommitResultFallback::NoChanges => StepOutcome::Skipped {
-                reason: "No changes to commit".to_string(),
-            },
-            CommitResultFallback::Failed(e) => StepOutcome::Failure {
-                error: e.clone(),
-                recoverable: false,
-            },
+            CommitResultFallback::Success(oid) => StepOutcome::success(
+                Some(format!("Commit created: {oid}")),
+                vec![".".to_string()],
+            ),
+            CommitResultFallback::NoChanges => {
+                StepOutcome::skipped("No changes to commit".to_string())
+            }
+            CommitResultFallback::Failed(e) => StepOutcome::failure(e.clone(), false),
         };
         ctx.execution_history.add_step(
             ExecutionStep::new("commit", 0, "commit_generation", outcome)
@@ -1175,17 +1169,14 @@ pub fn commit_with_generated_message(
         };
         // Record completion in execution history
         let outcome = match &commit_result {
-            CommitResultFallback::Success(oid) => StepOutcome::Success {
-                output: Some(format!("Commit created: {oid}")),
-                files_modified: vec![".".to_string()],
-            },
-            CommitResultFallback::NoChanges => StepOutcome::Skipped {
-                reason: "No changes to commit".to_string(),
-            },
-            CommitResultFallback::Failed(e) => StepOutcome::Failure {
-                error: e.clone(),
-                recoverable: false,
-            },
+            CommitResultFallback::Success(oid) => StepOutcome::success(
+                Some(format!("Commit created: {oid}")),
+                vec![".".to_string()],
+            ),
+            CommitResultFallback::NoChanges => {
+                StepOutcome::skipped("No changes to commit".to_string())
+            }
+            CommitResultFallback::Failed(e) => StepOutcome::failure(e.clone(), false),
         };
         ctx.execution_history.add_step(
             ExecutionStep::new("commit", 0, "commit_generation", outcome)

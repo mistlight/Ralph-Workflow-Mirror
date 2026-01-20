@@ -1336,10 +1336,7 @@ fn run_initial_rebase(
         "PreRebase",
         0,
         "pre_rebase_start",
-        StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        },
+        StepOutcome::success(None, vec![]),
     );
     phase_ctx.execution_history.add_step(step);
 
@@ -1379,10 +1376,7 @@ fn run_initial_rebase(
                 "PreRebase",
                 0,
                 "pre_rebase_complete",
-                StepOutcome::Success {
-                    output: Some("Rebase completed successfully".to_string()),
-                    files_modified: vec![],
-                },
+                StepOutcome::success(None, vec![]),
             );
             phase_ctx.execution_history.add_step(step);
 
@@ -1417,9 +1411,7 @@ fn run_initial_rebase(
                 "PreRebase",
                 0,
                 "pre_rebase_skipped",
-                StepOutcome::Skipped {
-                    reason: reason.clone(),
-                },
+                StepOutcome::skipped(reason.clone()),
             );
             phase_ctx.execution_history.add_step(step);
 
@@ -1462,10 +1454,10 @@ fn run_initial_rebase(
                 "PreRebase",
                 0,
                 "pre_rebase_conflict",
-                StepOutcome::Partial {
-                    completed: "Rebase started".to_string(),
-                    remaining: format!("{} conflicts detected", conflicted_files.len()),
-                },
+                StepOutcome::partial(
+                    "Rebase started".to_string(),
+                    format!("{} conflicts detected", conflicted_files.len()),
+                ),
             );
             phase_ctx.execution_history.add_step(step);
 
@@ -1528,10 +1520,7 @@ fn run_initial_rebase(
                                 "PreRebase",
                                 0,
                                 "pre_rebase_resolution",
-                                StepOutcome::Success {
-                                    output: Some("Conflicts resolved by AI".to_string()),
-                                    files_modified: conflicted_files.clone(),
-                                },
+                                StepOutcome::success(None, vec![]),
                             );
                             phase_ctx.execution_history.add_step(step);
 
@@ -1567,10 +1556,10 @@ fn run_initial_rebase(
                                 "PreRebase",
                                 0,
                                 "pre_rebase_resolution",
-                                StepOutcome::Partial {
-                                    completed: "Conflicts resolved by AI".to_string(),
-                                    remaining: format!("Failed to continue rebase: {e}"),
-                                },
+                                StepOutcome::partial(
+                                    "Conflicts resolved by AI".to_string(),
+                                    format!("Failed to continue rebase: {e}"),
+                                ),
                             );
                             phase_ctx.execution_history.add_step(step);
                             Ok(()) // Continue anyway - conflicts were resolved
@@ -1587,10 +1576,7 @@ fn run_initial_rebase(
                         "PreRebase",
                         0,
                         "pre_rebase_resolution",
-                        StepOutcome::Failure {
-                            error: "AI conflict resolution failed".to_string(),
-                            recoverable: true,
-                        },
+                        StepOutcome::failure("AI conflict resolution failed".to_string(), true),
                     );
                     phase_ctx.execution_history.add_step(step);
                     Ok(()) // Continue pipeline - don't block on rebase failure
@@ -1603,10 +1589,7 @@ fn run_initial_rebase(
                         "PreRebase",
                         0,
                         "pre_rebase_resolution",
-                        StepOutcome::Failure {
-                            error: format!("Conflict resolution error: {e}"),
-                            recoverable: true,
-                        },
+                        StepOutcome::failure(format!("Conflict resolution error: {e}"), true),
                     );
                     phase_ctx.execution_history.add_step(step);
                     Ok(()) // Continue pipeline
@@ -1621,10 +1604,7 @@ fn run_initial_rebase(
                 "PreRebase",
                 0,
                 "pre_rebase_failed",
-                StepOutcome::Failure {
-                    error: format!("Rebase failed: {err}"),
-                    recoverable: true,
-                },
+                StepOutcome::failure(format!("Rebase failed: {err}"), true),
             );
             phase_ctx.execution_history.add_step(step);
             Ok(()) // Continue pipeline despite failure
@@ -1637,10 +1617,7 @@ fn run_initial_rebase(
                 "PreRebase",
                 0,
                 "pre_rebase_error",
-                StepOutcome::Failure {
-                    error: format!("Rebase error: {e}"),
-                    recoverable: true,
-                },
+                StepOutcome::failure(format!("Rebase error: {e}"), true),
             );
             phase_ctx.execution_history.add_step(step);
             Ok(())
@@ -1673,10 +1650,7 @@ fn run_post_review_rebase(
         "PostRebase",
         ctx.config.developer_iters,
         "post_rebase_start",
-        StepOutcome::Success {
-            output: None,
-            files_modified: vec![],
-        },
+        StepOutcome::success(None, vec![]),
     );
     phase_ctx.execution_history.add_step(step);
 
@@ -1720,10 +1694,7 @@ fn run_post_review_rebase(
                 "PostRebase",
                 ctx.config.developer_iters,
                 "post_rebase_complete",
-                StepOutcome::Success {
-                    output: Some("Rebase completed successfully".to_string()),
-                    files_modified: vec![],
-                },
+                StepOutcome::success(None, vec![]),
             );
             phase_ctx.execution_history.add_step(step);
 
@@ -1762,9 +1733,7 @@ fn run_post_review_rebase(
                 "PostRebase",
                 ctx.config.developer_iters,
                 "post_rebase_skipped",
-                StepOutcome::Skipped {
-                    reason: reason.clone(),
-                },
+                StepOutcome::skipped(reason.clone()),
             );
             phase_ctx.execution_history.add_step(step);
 
@@ -1811,10 +1780,10 @@ fn run_post_review_rebase(
                 "PostRebase",
                 ctx.config.developer_iters,
                 "post_rebase_conflict",
-                StepOutcome::Partial {
-                    completed: "Rebase started".to_string(),
-                    remaining: format!("{} conflicts detected", conflicted_files.len()),
-                },
+                StepOutcome::partial(
+                    "Rebase started".to_string(),
+                    format!("{} conflicts detected", conflicted_files.len()),
+                ),
             );
             phase_ctx.execution_history.add_step(step);
 
@@ -1877,10 +1846,7 @@ fn run_post_review_rebase(
                                 "PostRebase",
                                 ctx.config.developer_iters,
                                 "post_rebase_resolution",
-                                StepOutcome::Success {
-                                    output: Some("Conflicts resolved by AI".to_string()),
-                                    files_modified: conflicted_files.clone(),
-                                },
+                                StepOutcome::success(None, vec![]),
                             );
                             phase_ctx.execution_history.add_step(step);
 
@@ -1923,10 +1889,10 @@ fn run_post_review_rebase(
                                 "PostRebase",
                                 ctx.config.developer_iters,
                                 "post_rebase_resolution",
-                                StepOutcome::Partial {
-                                    completed: "Conflicts resolved by AI".to_string(),
-                                    remaining: format!("Failed to continue rebase: {e}"),
-                                },
+                                StepOutcome::partial(
+                                    "Conflicts resolved by AI".to_string(),
+                                    format!("Failed to continue rebase: {e}"),
+                                ),
                             );
                             phase_ctx.execution_history.add_step(step);
                             Ok(()) // Continue anyway - conflicts were resolved
@@ -1943,10 +1909,7 @@ fn run_post_review_rebase(
                         "PostRebase",
                         ctx.config.developer_iters,
                         "post_rebase_resolution",
-                        StepOutcome::Failure {
-                            error: "AI conflict resolution failed".to_string(),
-                            recoverable: true,
-                        },
+                        StepOutcome::failure("AI conflict resolution failed".to_string(), true),
                     );
                     phase_ctx.execution_history.add_step(step);
                     Ok(()) // Continue pipeline - don't block on rebase failure
@@ -1959,10 +1922,7 @@ fn run_post_review_rebase(
                         "PostRebase",
                         ctx.config.developer_iters,
                         "post_rebase_resolution",
-                        StepOutcome::Failure {
-                            error: format!("Conflict resolution error: {e}"),
-                            recoverable: true,
-                        },
+                        StepOutcome::failure(format!("Conflict resolution error: {e}"), true),
                     );
                     phase_ctx.execution_history.add_step(step);
                     Ok(()) // Continue pipeline
@@ -1977,10 +1937,7 @@ fn run_post_review_rebase(
                 "PostRebase",
                 ctx.config.developer_iters,
                 "post_rebase_failed",
-                StepOutcome::Failure {
-                    error: format!("Rebase failed: {err}"),
-                    recoverable: true,
-                },
+                StepOutcome::failure(format!("Rebase failed: {err}"), true),
             );
             phase_ctx.execution_history.add_step(step);
             Ok(()) // Continue pipeline despite failure
@@ -1993,10 +1950,7 @@ fn run_post_review_rebase(
                 "PostRebase",
                 ctx.config.developer_iters,
                 "post_rebase_error",
-                StepOutcome::Failure {
-                    error: format!("Rebase error: {e}"),
-                    recoverable: true,
-                },
+                StepOutcome::failure(format!("Rebase error: {e}"), true),
             );
             phase_ctx.execution_history.add_step(step);
             Ok(())
