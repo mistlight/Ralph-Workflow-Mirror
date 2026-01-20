@@ -234,6 +234,50 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
 
     logger.info(&format!("Developer agent: {}", checkpoint.developer_agent));
     logger.info(&format!("Reviewer agent: {}", checkpoint.reviewer_agent));
+
+    // Show helpful next step based on current phase
+    if let Some(next_step) = suggest_next_step(checkpoint) {
+        logger.info(&format!("Next: {}", next_step));
+    }
+}
+
+/// Suggest the next step based on the current checkpoint phase.
+fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
+    match checkpoint.phase {
+        PipelinePhase::Planning => Some("continue creating implementation plan".to_string()),
+        PipelinePhase::PreRebase => Some("complete rebase before starting development".to_string()),
+        PipelinePhase::PreRebaseConflict => Some("resolve rebase conflicts".to_string()),
+        PipelinePhase::Development => {
+            if checkpoint.iteration < checkpoint.total_iterations {
+                Some(format!(
+                    "continue development iteration {} of {}",
+                    checkpoint.iteration + 1,
+                    checkpoint.total_iterations
+                ))
+            } else {
+                Some("move to review phase".to_string())
+            }
+        }
+        PipelinePhase::Review => {
+            if checkpoint.reviewer_pass < checkpoint.total_reviewer_passes {
+                Some(format!(
+                    "continue review pass {} of {}",
+                    checkpoint.reviewer_pass + 1,
+                    checkpoint.total_reviewer_passes
+                ))
+            } else {
+                Some("complete review cycle".to_string())
+            }
+        }
+        PipelinePhase::Fix => Some("address issues from code review".to_string()),
+        PipelinePhase::ReviewAgain => Some("complete verification review".to_string()),
+        PipelinePhase::PostRebase => Some("complete post-development rebase".to_string()),
+        PipelinePhase::PostRebaseConflict => Some("resolve post-rebase conflicts".to_string()),
+        PipelinePhase::CommitMessage => Some("finalize commit message".to_string()),
+        PipelinePhase::FinalValidation => Some("complete final validation".to_string()),
+        PipelinePhase::Complete => Some("pipeline complete!".to_string()),
+        PipelinePhase::Rebase => Some("complete rebase operation".to_string()),
+    }
 }
 
 /// Prompt user to decide whether to resume or start fresh.

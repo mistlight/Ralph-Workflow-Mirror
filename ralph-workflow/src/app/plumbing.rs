@@ -162,6 +162,7 @@ pub fn handle_generate_commit_msg(
         &mut runtime,
         developer_agent,
         template_context,
+        &std::collections::HashMap::new(), // Empty prompt history for plumbing command
     )
     .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;
 

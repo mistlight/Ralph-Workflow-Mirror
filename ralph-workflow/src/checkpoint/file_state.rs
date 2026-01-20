@@ -228,19 +228,50 @@ impl ValidationError {
     pub fn recovery_suggestion(&self) -> String {
         match self {
             Self::FileMissing { path } => {
-                format!("Restore {} from backup or recreate it", path)
+                if path.contains("PROMPT.md")
+                    || path.contains("PLAN.md")
+                    || path.contains("ISSUES.md")
+                {
+                    format!(
+                        "Restore {} from .agent/checkpoint.json or recreate from requirements",
+                        path
+                    )
+                } else if path.contains(".agent/") {
+                    format!(
+                        "Restore {} from checkpoint or delete checkpoint to start fresh",
+                        path
+                    )
+                } else {
+                    format!("Restore {} from backup or recreate it", path)
+                }
             }
             Self::FileUnexpectedlyExists { path } => {
-                format!("Remove {} if it should not exist", path)
+                format!("Remove {} with: rm {}", path, path)
             }
             Self::FileContentChanged { path } => {
-                format!("Restore {} to its previous state or review changes", path)
+                if path.contains("PROMPT.md") {
+                    format!(
+                        "Review {} changes - ensure requirements are still captured",
+                        path
+                    )
+                } else {
+                    format!("Restore {} to its previous state or review changes", path)
+                }
             }
             Self::GitHeadChanged { expected, .. } => {
-                format!("Reset git HEAD to {} or review the changes", expected)
+                format!(
+                    "Run: git reset {} (or review changes with git diff)",
+                    expected
+                )
             }
-            Self::GitStateInvalid { .. } => {
-                "Review git state and ensure repository is in a valid state".to_string()
+            Self::GitStateInvalid { reason } => {
+                if reason.contains("detached") {
+                    "Run: git checkout <branch-name> to attach to a branch".to_string()
+                } else if reason.contains("merge") || reason.contains("rebase") {
+                    "Run: git status to check for conflicts, then resolve or abort".to_string()
+                } else {
+                    format!("Review git state: {} - run git status", reason)
+                }
             }
         }
     }

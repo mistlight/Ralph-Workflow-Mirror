@@ -56,7 +56,7 @@ use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
 use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
-use crate::prompts::template_context::TemplateContext;
+use crate::prompts::{get_stored_or_generate_prompt, template_context::TemplateContext};
 use std::env;
 use std::process::Command;
 
@@ -1670,11 +1670,24 @@ fn try_resolve_conflicts_with_fallback(
     ));
 
     let conflicts = collect_conflict_info_or_error(conflicted_files, logger)?;
-    let resolution_prompt = build_resolution_prompt(&conflicts, template_context);
 
-    // Capture the resolution prompt for deterministic resume
+    // Use stored_or_generate pattern for hardened resume
+    // On resume, use the exact same prompt that was used before
     let prompt_key = format!("{}_conflict_resolution", phase.to_lowercase());
-    phase_ctx.capture_prompt(&prompt_key, &resolution_prompt);
+    let (resolution_prompt, was_replayed) =
+        get_stored_or_generate_prompt(&prompt_key, &phase_ctx.prompt_history, || {
+            build_resolution_prompt(&conflicts, template_context)
+        });
+
+    // Capture the resolution prompt for deterministic resume (only if newly generated)
+    if !was_replayed {
+        phase_ctx.capture_prompt(&prompt_key, &resolution_prompt);
+    } else {
+        logger.info(&format!(
+            "Using stored prompt from checkpoint for determinism: {}",
+            prompt_key
+        ));
+    }
 
     match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
         Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
