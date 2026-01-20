@@ -159,7 +159,7 @@ impl PromptConfig {
 ///
 /// Creates a detailed, context-aware note that helps agents understand
 /// where they are in the pipeline when resuming from a checkpoint.
-fn generate_resume_note(context: &ResumeContext) -> String {
+pub fn generate_resume_note(context: &ResumeContext) -> String {
     let mut note = String::from("SESSION RESUME CONTEXT\n");
     note.push_str("====================\n\n");
 
