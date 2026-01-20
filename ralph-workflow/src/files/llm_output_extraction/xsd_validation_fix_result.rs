@@ -3,8 +3,6 @@
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format for fix results.
 
-#![allow(dead_code)]
-
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 
 /// Validate fix result XML content against the XSD schema.

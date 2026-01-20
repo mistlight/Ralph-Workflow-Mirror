@@ -135,11 +135,21 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         m.insert(
-            "planning",
+            "planning_xml",
             EmbeddedTemplate {
-                name: "planning",
-                content: include_str!("templates/planning.txt"),
-                description: "Planning phase prompt for implementation plans",
+                name: "planning_xml",
+                content: include_str!("templates/planning_xml.txt"),
+                description: "Planning phase prompt with XML output format and XSD validation",
+                deprecated: false,
+            },
+        );
+
+        m.insert(
+            "planning_xsd_retry",
+            EmbeddedTemplate {
+                name: "planning_xsd_retry",
+                content: include_str!("templates/planning_xsd_retry.txt"),
+                description: "XSD validation retry prompt for planning phase",
                 deprecated: false,
             },
         );
@@ -155,11 +165,45 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         m.insert(
+            "planning",
+            EmbeddedTemplate {
+                name: "planning",
+                content: include_str!("templates/planning.txt"),
+                description: "Planning phase prompt for implementation plans (legacy, non-XML)",
+                deprecated: false,
+            },
+        );
+
+        m.insert(
             "planning_fallback",
             EmbeddedTemplate {
                 name: "planning_fallback",
                 content: include_str!("templates/planning_fallback.txt"),
-                description: "Fallback planning prompt",
+                description: "Fallback planning prompt (legacy, non-XML)",
+                deprecated: false,
+            },
+        );
+
+        // ============================================================================
+        // Review XML Templates
+        // ============================================================================
+
+        m.insert(
+            "review_xml",
+            EmbeddedTemplate {
+                name: "review_xml",
+                content: include_str!("templates/review_xml.txt"),
+                description: "Review mode prompt with XML output format and XSD validation",
+                deprecated: false,
+            },
+        );
+
+        m.insert(
+            "review_xsd_retry",
+            EmbeddedTemplate {
+                name: "review_xsd_retry",
+                content: include_str!("templates/review_xsd_retry.txt"),
+                description: "XSD validation retry prompt for review mode",
                 deprecated: false,
             },
         );
@@ -169,11 +213,31 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         // ============================================================================
 
         m.insert(
+            "fix_mode_xml",
+            EmbeddedTemplate {
+                name: "fix_mode_xml",
+                content: include_str!("templates/fix_mode_xml.txt"),
+                description: "Fix mode prompt with XML output format and XSD validation",
+                deprecated: false,
+            },
+        );
+
+        m.insert(
+            "fix_mode_xsd_retry",
+            EmbeddedTemplate {
+                name: "fix_mode_xsd_retry",
+                content: include_str!("templates/fix_mode_xsd_retry.txt"),
+                description: "XSD validation retry prompt for fix mode",
+                deprecated: false,
+            },
+        );
+
+        m.insert(
             "fix_mode",
             EmbeddedTemplate {
                 name: "fix_mode",
                 content: include_str!("templates/fix_mode.txt"),
-                description: "Fix mode prompt for addressing review issues",
+                description: "Fix mode prompt for addressing review issues (legacy, non-XML)",
                 deprecated: false,
             },
         );
@@ -183,7 +247,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             EmbeddedTemplate {
                 name: "fix_mode_fallback",
                 content: include_str!("templates/fix_mode_fallback.txt"),
-                description: "Fallback fix mode prompt",
+                description: "Fallback fix mode prompt (legacy, non-XML)",
                 deprecated: false,
             },
         );

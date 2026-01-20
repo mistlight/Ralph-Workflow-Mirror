@@ -3,8 +3,6 @@
 //! This module provides robust extraction of XML fix results from various
 //! AI output formats. AI agents may embed XML in unpredictable ways.
 
-#![allow(dead_code)]
-
 use crate::files::llm_output_extraction::cleaning::unescape_json_strings_aggressive;
 
 /// Extract XML fix result from AI output using multiple strategies.

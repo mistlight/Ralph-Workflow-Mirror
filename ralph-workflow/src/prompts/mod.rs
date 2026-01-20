@@ -41,7 +41,10 @@ pub use rebase::{
     build_conflict_resolution_prompt_with_context, build_enhanced_conflict_resolution_prompt,
     collect_branch_info, collect_conflict_info, BranchInfo, FileConflict,
 };
-pub use review::prompt_fix_xml_with_context;
+pub use review::{
+    prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context, prompt_review_xml_with_context,
+    prompt_review_xsd_retry_with_context,
+};
 pub use reviewer::{
     prompt_comprehensive_review_with_diff_with_context,
     prompt_detailed_review_without_guidelines_with_diff_with_context,

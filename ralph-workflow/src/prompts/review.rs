@@ -2,8 +2,6 @@
 //!
 //! Prompts for review and fix result generation using XML format with XSD validation.
 
-#![cfg_attr(any(test, feature = "test-utils"), allow(dead_code))]
-
 use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
@@ -19,7 +17,6 @@ use std::collections::HashMap;
 /// * `prompt_content` - Original user requirements
 /// * `plan_content` - Implementation plan
 /// * `changes_content` - Description of changes made
-#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_review_xml_with_context(
     context: &TemplateContext,
     prompt_content: &str,
@@ -58,7 +55,6 @@ pub fn prompt_review_xml_with_context(
 /// * `changes_content` - Description of changes made
 /// * `xsd_error` - The XSD validation error message to include in the prompt
 /// * `last_output` - The invalid XML output that failed validation
-#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_review_xsd_retry_with_context(
     context: &TemplateContext,
     prompt_content: &str,
@@ -168,7 +164,6 @@ pub fn prompt_fix_xml_with_context(
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
 /// * `xsd_error` - The XSD validation error message to include in the prompt
 /// * `last_output` - The invalid XML output that failed validation
-#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_fix_xsd_retry_with_context(
     context: &TemplateContext,
     issues_content: &str,

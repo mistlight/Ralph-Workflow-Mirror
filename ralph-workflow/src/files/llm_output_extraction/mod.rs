@@ -61,9 +61,7 @@ pub use xml_extraction_issues::extract_issues_xml;
 pub use xsd_validation_issues::{validate_issues_xml, IssuesElements};
 
 // Public exports for fix result XML extraction and validation (used by fix pass)
-#[cfg(any(test, feature = "test-utils"))]
 pub use xml_extraction_fix_result::extract_fix_result_xml;
-#[cfg(any(test, feature = "test-utils"))]
 pub use xsd_validation_fix_result::{validate_fix_result_xml, FixResultElements};
 
 // Public export for XML formatting
