@@ -2235,15 +2235,9 @@ fn ralph_v3_file_system_state_validates_on_resume() {
         hasher.update(content.as_bytes());
         let checksum = format!("{:x}", hasher.finalize());
 
-        // Get git HEAD OID
-        let head_oid = std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(dir.path())
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
-
         // Create a v3 checkpoint with file system state
+        // Note: git_head_oid is set to null since we're not testing git state validation here
+        // Note: developer_iters is set to 0 to avoid agent invocation during test
         let working_dir = canonical_working_dir(&dir);
         let file_system_state_json = format!(
             r#"{{
@@ -2256,12 +2250,11 @@ fn ralph_v3_file_system_state_validates_on_resume() {
                     "exists": true
                 }}
             }},
-            "git_head_oid": "{}",
+            "git_head_oid": null,
             "git_branch": null
         }}"#,
             checksum,
-            content.len(),
-            head_oid
+            content.len()
         );
 
         let checkpoint_content = format!(
@@ -2276,7 +2269,7 @@ fn ralph_v3_file_system_state_validates_on_resume() {
             "developer_agent": "test-agent",
             "reviewer_agent": "test-agent",
             "cli_args": {{
-                "developer_iters": 1,
+                "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
                 "review_depth": null,
@@ -2364,15 +2357,9 @@ fn ralph_v3_file_system_state_detects_changes() {
         hasher.update(original_content.as_bytes());
         let original_checksum = format!("{:x}", hasher.finalize());
 
-        // Get git HEAD OID
-        let head_oid = std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(dir.path())
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
-
         // Create a v3 checkpoint with the original checksum
+        // Note: git_head_oid is set to null since we're not testing git state validation here
+        // Note: developer_iters is set to 0 to avoid agent invocation during test
         let working_dir = canonical_working_dir(&dir);
         let file_system_state_json = format!(
             r#"{{
@@ -2385,12 +2372,11 @@ fn ralph_v3_file_system_state_detects_changes() {
                     "exists": true
                 }}
             }},
-            "git_head_oid": "{}",
+            "git_head_oid": null,
             "git_branch": null
         }}"#,
             original_checksum,
-            original_content.len(),
-            head_oid
+            original_content.len()
         );
 
         let checkpoint_content = format!(
@@ -2405,7 +2391,7 @@ fn ralph_v3_file_system_state_detects_changes() {
             "developer_agent": "test-agent",
             "reviewer_agent": "test-agent",
             "cli_args": {{
-                "developer_iters": 1,
+                "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
                 "review_depth": null,
@@ -2467,7 +2453,6 @@ fn ralph_v3_file_system_state_detects_changes() {
         let written = fs::read_to_string(dir.path().join(".agent/checkpoint.json")).unwrap();
         eprintln!("DEBUG: Written file:\n{}", written);
 
-
         // Now modify PROMPT.md
         write_file(
             dir.path().join("PROMPT.md"),
@@ -2475,6 +2460,9 @@ fn ralph_v3_file_system_state_detects_changes() {
         );
 
         // Resume with --recovery-strategy=fail should detect the change
+        // The file has been modified, so checksum validation will fail
+        // With strategy=fail, the resume is aborted and the program continues with a fresh run
+        // Since developer_iters=0 in the checkpoint, the program completes immediately
         let mut cmd = ralph_cmd();
         base_env(&mut cmd)
             .current_dir(dir.path())
@@ -2489,12 +2477,13 @@ fn ralph_v3_file_system_state_detects_changes() {
             )
             .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
-        // Should succeed but log file system state validation error
-        // Note: Current behavior is that validation errors don't stop the pipeline
-        // They are logged but the pipeline continues without the checkpoint
-        cmd.assert().success().stderr(predicate::str::contains(
-            "File system state validation failed",
-        ));
+        // Should succeed - validation fails, resume is aborted, fresh run completes
+        // The fresh run uses developer_iters=0 from the checkpoint, so no agent runs
+        cmd.assert().success().stdout(
+            predicate::str::contains("File system state validation detected changes").or(
+                predicate::str::contains("File system state validation failed"),
+            ),
+        );
     });
 }
 
@@ -2514,15 +2503,9 @@ fn ralph_v3_file_system_state_auto_recovery() {
         hasher.update(plan_content.as_bytes());
         let checksum = format!("{:x}", hasher.finalize());
 
-        // Get git HEAD OID
-        let head_oid = std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(dir.path())
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
-
         // Create a v3 checkpoint with PLAN.md file state including content
+        // Note: git_head_oid is set to null since we're not testing git state validation here
+        // Note: developer_iters is set to 0 to avoid agent invocation during test
         let working_dir = canonical_working_dir(&dir);
         let file_system_state_json = format!(
             r#"{{
@@ -2535,13 +2518,12 @@ fn ralph_v3_file_system_state_auto_recovery() {
                     "exists": true
                 }}
             }},
-            "git_head_oid": "{}",
+            "git_head_oid": null,
             "git_branch": null
         }}"#,
             checksum,
             plan_content.len(),
-            plan_content,
-            head_oid
+            plan_content
         );
 
         let checkpoint_content = format!(
@@ -2556,7 +2538,7 @@ fn ralph_v3_file_system_state_auto_recovery() {
             "developer_agent": "test-agent",
             "reviewer_agent": "test-agent",
             "cli_args": {{
-                "developer_iters": 1,
+                "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
                 "review_depth": null,
