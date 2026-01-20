@@ -310,6 +310,12 @@ pub struct StreamingSession {
     /// the message_id. ALL subsequent streaming deltas for that message_id should be
     /// suppressed to prevent duplication.
     pre_rendered_message_ids: HashSet<String>,
+    /// Track content hashes of assistant events that have been rendered during streaming.
+    /// This prevents duplicate assistant events with the same content from being rendered
+    /// multiple times. GLM/CCS may send multiple assistant events during streaming with
+    /// the same content but different message_ids.
+    /// This is preserved across `MessageStart` boundaries to handle mid-stream assistant events.
+    rendered_assistant_content_hashes: HashSet<u64>,
     /// Track tool names by index for GLM/CCS deduplication.
     /// GLM sends assistant events with tool_use blocks (name + input) during streaming,
     /// but only the input is accumulated via deltas. We track the tool name to properly
@@ -514,6 +520,34 @@ impl StreamingSession {
     /// * `false` - This message was not pre-rendered, allow streaming output
     pub fn is_message_pre_rendered(&self, message_id: &str) -> bool {
         self.pre_rendered_message_ids.contains(message_id)
+    }
+
+    /// Check if assistant event content has already been rendered.
+    ///
+    /// This prevents duplicate assistant events with the same content from being rendered
+    /// multiple times. GLM/CCS may send multiple assistant events during streaming with
+    /// the same content but different message_ids.
+    ///
+    /// # Arguments
+    /// * `content_hash` - The hash of the assistant event content
+    ///
+    /// # Returns
+    /// * `true` - This content was already rendered, suppress rendering
+    /// * `false` - This content was not rendered, allow rendering
+    pub fn is_assistant_content_rendered(&self, content_hash: u64) -> bool {
+        self.rendered_assistant_content_hashes
+            .contains(&content_hash)
+    }
+
+    /// Mark assistant event content as having been rendered.
+    ///
+    /// This should be called after rendering an assistant event to prevent
+    /// duplicate rendering of the same content.
+    ///
+    /// # Arguments
+    /// * `content_hash` - The hash of the assistant event content that was rendered
+    pub fn mark_assistant_content_rendered(&mut self, content_hash: u64) {
+        self.rendered_assistant_content_hashes.insert(content_hash);
     }
 
     /// Mark the start of a content block.
@@ -1023,19 +1057,33 @@ impl StreamingSession {
     ///
     /// # Arguments
     /// * `content` - The content to check (typically normalized content from assistant events)
+    /// * `tool_name_hints` - Optional tool names from assistant event (by content block index)
     ///
     /// # Returns
     /// * `true` - The content hash matches the previously streamed content
     /// * `false` - The content is different or no content was streamed
-    pub fn is_duplicate_by_hash(&self, content: &str) -> bool {
-        // First, check if content contains the TOOL_USE marker from extract_text_content_for_hash
-        if content.contains("TOOL_USE:") {
-            // This is a tool_use block from an assistant event
-            // Parse the tool_use blocks from the content and compare against accumulated ToolInput
-            return self.is_duplicate_tool_use(content);
+    pub fn is_duplicate_by_hash(
+        &self,
+        content: &str,
+        tool_name_hints: Option<&std::collections::HashMap<usize, String>>,
+    ) -> bool {
+        // Check if content contains both text and tool_use markers (mixed content)
+        let has_tool_use = content.contains("TOOL_USE:");
+        let has_text = self
+            .accumulated
+            .keys()
+            .any(|(ct, _)| *ct == ContentType::Text);
+
+        if has_tool_use && has_text {
+            // Mixed content: both text and tool_use need to be checked
+            // Reconstruct the full normalized content from both text and tool_use
+            return self.is_duplicate_mixed_content(content, tool_name_hints);
+        } else if has_tool_use {
+            // Only tool_use content
+            return self.is_duplicate_tool_use(content, tool_name_hints);
         }
 
-        // Check if the input content matches ALL accumulated text content combined
+        // Only text content - check if the input content matches ALL accumulated text content combined
         // This handles the case where assistant events arrive during streaming (before message_stop)
         // We collect and combine all text content in index order
         let mut text_keys: Vec<_> = self
@@ -1057,6 +1105,72 @@ impl StreamingSession {
         combined_content == content
     }
 
+    /// Check if mixed content (text + tool_use) from an assistant event matches accumulated content.
+    ///
+    /// This handles the case where assistant events contain both text and tool_use blocks.
+    /// We reconstruct the full normalized content from both text and tool_use accumulated content
+    /// and compare it against the assistant event content.
+    ///
+    /// # Arguments
+    /// * `normalized_content` - Content potentially containing both text and "TOOL_USE:{name}:{input}" markers
+    /// * `tool_name_hints` - Optional tool names from assistant event (by content block index)
+    ///
+    /// # Returns
+    /// * `true` - All content (text + tool_use) matches accumulated content
+    /// * `false` - Content differs or not accumulated yet
+    fn is_duplicate_mixed_content(
+        &self,
+        normalized_content: &str,
+        tool_name_hints: Option<&std::collections::HashMap<usize, String>>,
+    ) -> bool {
+        // Collect all content blocks in order (text and tool_use interleaved)
+        // We need to reconstruct the exact order as it appears in the assistant event
+        let mut reconstructed = String::new();
+
+        // Get all accumulated content keys and sort by index
+        let mut all_keys: Vec<_> = self.accumulated.keys().collect();
+        all_keys.sort_by_key(|k| {
+            // Sort by content type first (Text before ToolInput), then by index
+            let type_order = match k.0 {
+                ContentType::Text => 0,
+                ContentType::ToolInput => 1,
+                ContentType::Thinking => 2,
+            };
+            let index = k.1.parse::<u64>().unwrap_or(u64::MAX);
+            (type_order, index)
+        });
+
+        for (ct, index_str) in all_keys {
+            if let Some(accumulated_content) = self.accumulated.get(&(*ct, index_str.clone())) {
+                match ct {
+                    ContentType::Text => {
+                        // Text content is added as-is
+                        reconstructed.push_str(accumulated_content);
+                    }
+                    ContentType::ToolInput => {
+                        // Tool_use content needs normalization with tool name
+                        let index_num = index_str.parse::<usize>().unwrap_or(0);
+                        let tool_name = tool_name_hints
+                            .and_then(|hints| hints.get(&index_num).map(|s| s.as_str()))
+                            .or_else(|| self.tool_names.get(index_str).and_then(|n| n.as_deref()))
+                            .unwrap_or("");
+
+                        // Normalize: "TOOL_USE:{name}:{input}"
+                        reconstructed
+                            .push_str(&format!("TOOL_USE:{}:{}", tool_name, accumulated_content));
+                    }
+                    ContentType::Thinking => {
+                        // Thinking content - not currently used in assistant events
+                        // but included for completeness
+                    }
+                }
+            }
+        }
+
+        // Check if the reconstructed content matches the input
+        normalized_content == reconstructed
+    }
+
     /// Check if tool_use content from an assistant event matches accumulated ToolInput.
     ///
     /// Assistant events may contain normalized tool_use blocks (with "TOOL_USE:" prefix).
@@ -1065,11 +1179,16 @@ impl StreamingSession {
     ///
     /// # Arguments
     /// * `normalized_content` - Content potentially containing "TOOL_USE:{name}:{input}" markers
+    /// * `tool_name_hints` - Optional tool names from assistant event (by content block index)
     ///
     /// # Returns
     /// * `true` - All tool_use blocks match accumulated content
     /// * `false` - Tool_use content differs or not accumulated yet
-    fn is_duplicate_tool_use(&self, normalized_content: &str) -> bool {
+    fn is_duplicate_tool_use(
+        &self,
+        normalized_content: &str,
+        tool_name_hints: Option<&std::collections::HashMap<usize, String>>,
+    ) -> bool {
         // Reconstruct the normalized representation from accumulated content
         // For each tool_use index, create "TOOL_USE:{name}:{input}" and check if it's in the content
         let mut reconstructed = String::new();
@@ -1084,11 +1203,11 @@ impl StreamingSession {
 
         for (ct, index_str) in tool_keys {
             if let Some(accumulated_input) = self.accumulated.get(&(*ct, index_str.clone())) {
-                // Get the tool name from tracking (if available)
-                let tool_name = self
-                    .tool_names
-                    .get(index_str)
-                    .and_then(|n| n.as_deref())
+                // Get the tool name from hints first (from assistant event), then from tracking
+                let index_num = index_str.parse::<usize>().unwrap_or(0);
+                let tool_name = tool_name_hints
+                    .and_then(|hints| hints.get(&index_num).map(|s| s.as_str()))
+                    .or_else(|| self.tool_names.get(index_str).and_then(|n| n.as_deref()))
                     .unwrap_or("");
 
                 // Normalize: "TOOL_USE:{name}:{input}"
@@ -2244,7 +2363,7 @@ mod tests {
         session.on_message_stop();
 
         // Same content should be detected as duplicate
-        assert!(session.is_duplicate_by_hash("Hello World"));
+        assert!(session.is_duplicate_by_hash("Hello World", None));
     }
 
     #[test]
@@ -2255,7 +2374,7 @@ mod tests {
         session.on_message_stop();
 
         // Different content should NOT be detected as duplicate
-        assert!(!session.is_duplicate_by_hash("Different content"));
+        assert!(!session.is_duplicate_by_hash("Different content", None));
     }
 
     #[test]
@@ -2263,7 +2382,7 @@ mod tests {
         let session = StreamingSession::new();
 
         // No content streamed, so no hash
-        assert!(!session.is_duplicate_by_hash("Hello World"));
+        assert!(!session.is_duplicate_by_hash("Hello World", None));
     }
 
     #[test]
@@ -2277,8 +2396,8 @@ mod tests {
         // Hash should be computed from all blocks
         assert!(session.final_content_hash.is_some());
         // Individual content shouldn't match the combined hash
-        assert!(!session.is_duplicate_by_hash("First block"));
-        assert!(!session.is_duplicate_by_hash("Second block"));
+        assert!(!session.is_duplicate_by_hash("First block", None));
+        assert!(!session.is_duplicate_by_hash("Second block", None));
     }
 
     #[test]

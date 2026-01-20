@@ -694,6 +694,182 @@ fn test_multiple_deltas_accumulate_correctly() {
 // Real Log File Test
 // =============================================================================
 
+/// Test GLM bug: assistant event arrives AFTER MessageStart but BEFORE streaming deltas.
+///
+/// This reproduces a specific GLM bug where:
+/// 1. MessageStart arrives (setting the message_id)
+/// 2. ContentBlockStart arrives with tool_use but no input
+/// 3. Assistant event arrives with full content (BEFORE any ToolUseDelta)
+/// 4. ToolUseDelta arrives after the assistant event
+///
+/// The bug: When the assistant event arrives BEFORE any streaming deltas,
+/// `has_any_streamed_content()` returns false, so the assistant event is rendered.
+/// Then when the ToolUseDelta arrives, it's ALSO rendered, causing duplication.
+#[test]
+fn test_glm_assistant_event_before_streaming_deltas() {
+    with_default_timeout(|| {
+        let events = [
+            // MessageStart with same message_id as assistant event
+            r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_glm_bug_early","type":"message","role":"assistant","model":"glm-4.7","content":[]}}}"#,
+            // ContentBlockStart with tool_use
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_123","name":"Glob"}}}"#,
+            // Assistant event arrives BEFORE any ToolUseDelta (message_id matches)
+            // At this point, has_any_streamed_content() is false, so this gets rendered
+            r#"{"type":"assistant","message":{"id":"msg_glm_bug_early","type":"message","role":"assistant","model":"glm-4.7","content":[{"type":"tool_use","id":"call_123","name":"Glob","input":{"pattern":"**/*.rs"}}]}}"#,
+            // ToolUseDelta arrives AFTER the assistant event
+            // This should be suppressed since assistant event was already rendered
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"pattern\":\"**/*.rs\"}"}}}"#,
+            // ContentBlockStop
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#,
+            // MessageStop
+            r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+        ];
+
+        let vterm = parse_events(&events);
+        let vterm_ref = vterm.borrow();
+        let visible = vterm_ref.get_visible_output();
+
+        // "Glob" (the tool name) should appear only once
+        let tool_count = vterm_ref.count_visible_pattern("Tool");
+        assert!(
+            tool_count <= 1,
+            "GLM BUG: Tool appears {} times. Assistant event before streaming deltas should not cause duplication. Output: {}",
+            tool_count,
+            visible
+        );
+
+        // Pattern should appear only once
+        let pattern_count = vterm_ref.count_visible_pattern("**/*.rs");
+        assert!(
+            pattern_count <= 2,
+            "GLM BUG: Pattern '**/*.rs' appears {} times. Output: {}",
+            pattern_count,
+            visible
+        );
+    });
+}
+
+/// Test GLM bug: assistant event arrives BEFORE tool name is tracked, with DIFFERENT message_id.
+///
+/// This reproduces a specific GLM bug where:
+/// 1. MessageStart arrives with empty content
+/// 2. ContentBlockStart arrives with tool_use that has no input (input is None)
+///    - The pattern `ContentBlock::ToolUse { name, input: Some(i) }` doesn't match
+///    - So set_tool_name is NOT called
+/// 3. ToolUseDelta arrives WITHOUT name field (so name is still not tracked)
+/// 4. Assistant event arrives with DIFFERENT message_id (CCS layer transformation)
+///    and full tool_use content
+///
+/// The bug: When the assistant event arrives, `tool_names` doesn't have the tool name,
+/// so `is_duplicate_tool_use` produces "TOOL_USE::" instead of "TOOL_USE:Glob:...",
+/// causing the hash comparison to fail and the assistant event to be rendered again.
+/// Since the message_id is different, the message_id check also fails to deduplicate.
+#[test]
+fn test_glm_assistant_event_before_tool_name_tracked_different_id() {
+    with_default_timeout(|| {
+        let events = [
+            // MessageStart with empty content (no tool_use block, so no name to track)
+            r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_glm_bug_streaming","type":"message","role":"assistant","model":"glm-4.7","content":[]}}}"#,
+            // ContentBlockStart with tool_use but NO input field (input is null/None)
+            // The pattern `ContentBlock::ToolUse { name, input: Some(i) }` does NOT match
+            // so set_tool_name is NOT called here
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_123","name":"Glob"}}}"#,
+            // ToolUseDelta WITHOUT name field (GLM may not send name in delta)
+            // This means set_tool_name is still NOT called
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"pattern\":\"**/*.rs\"}"}}}"#,
+            // Assistant event arrives with DIFFERENT message_id (CCS layer may have changed it)
+            // and full tool_use content (including name)
+            // This should be deduplicated via hash, but the bug causes it to be rendered again
+            r#"{"type":"assistant","message":{"id":"msg_glm_bug_assistant","type":"message","role":"assistant","model":"glm-4.7","content":[{"type":"tool_use","id":"call_123","name":"Glob","input":{"pattern":"**/*.rs"}}]}}"#,
+            // ContentBlockStop
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#,
+            // MessageStop
+            r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+        ];
+
+        let vterm = parse_events(&events);
+        let vterm_ref = vterm.borrow();
+        let visible = vterm_ref.get_visible_output();
+
+        // "Glob" (the tool name) should appear only once
+        let tool_count = vterm_ref.count_visible_pattern("Tool");
+        assert!(
+            tool_count <= 1,
+            "GLM BUG: Tool appears {} times. Assistant event should not duplicate streaming output even when tool name wasn't tracked before and message_id differs. Output: {}",
+            tool_count,
+            visible
+        );
+
+        // Pattern should appear only once (or few times for in-place updates)
+        let pattern_count = vterm_ref.count_visible_pattern("**/*.rs");
+        assert!(
+            pattern_count <= 2,
+            "GLM BUG: Pattern '**/*.rs' appears {} times. Output: {}",
+            pattern_count,
+            visible
+        );
+    });
+}
+
+/// Test GLM bug: assistant event arrives BEFORE tool name is tracked.
+///
+/// This reproduces a specific GLM bug where:
+/// 1. MessageStart arrives with empty content
+/// 2. ContentBlockStart arrives with tool_use that has no input (input is None)
+///    - The pattern `ContentBlock::ToolUse { name, input: Some(i) }` doesn't match
+///    - So set_tool_name is NOT called
+/// 3. ToolUseDelta arrives WITHOUT name field (so name is still not tracked)
+/// 4. Assistant event arrives with full tool_use content
+///
+/// The bug: When the assistant event arrives, `tool_names` doesn't have the tool name,
+/// so `is_duplicate_tool_use` produces "TOOL_USE::" instead of "TOOL_USE:Glob:...",
+/// causing the hash comparison to fail and the assistant event to be rendered again.
+#[test]
+fn test_glm_assistant_event_before_tool_name_tracked() {
+    with_default_timeout(|| {
+        let events = [
+            // MessageStart with empty content (no tool_use block, so no name to track)
+            r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_glm_bug_001","type":"message","role":"assistant","model":"glm-4.7","content":[]}}}"#,
+            // ContentBlockStart with tool_use but NO input field (input is null/None)
+            // The pattern `ContentBlock::ToolUse { name, input: Some(i) }` does NOT match
+            // so set_tool_name is NOT called here
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_123","name":"Glob"}}}"#,
+            // ToolUseDelta WITHOUT name field (GLM may not send name in delta)
+            // This means set_tool_name is still NOT called
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"pattern\":\"**/*.rs\"}"}}}"#,
+            // Assistant event arrives with full tool_use content (including name)
+            // This should be deduplicated, but the bug causes it to be rendered again
+            r#"{"type":"assistant","message":{"id":"msg_glm_bug_001","type":"message","role":"assistant","model":"glm-4.7","content":[{"type":"tool_use","id":"call_123","name":"Glob","input":{"pattern":"**/*.rs"}}]}}"#,
+            // ContentBlockStop
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#,
+            // MessageStop
+            r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+        ];
+
+        let vterm = parse_events(&events);
+        let vterm_ref = vterm.borrow();
+        let visible = vterm_ref.get_visible_output();
+
+        // "Glob" (the tool name) should appear only once
+        let tool_count = vterm_ref.count_visible_pattern("Tool");
+        assert!(
+            tool_count <= 1,
+            "GLM BUG: Tool appears {} times. Assistant event should not duplicate streaming output even when tool name wasn't tracked before. Output: {}",
+            tool_count,
+            visible
+        );
+
+        // Pattern should appear only once (or few times for in-place updates)
+        let pattern_count = vterm_ref.count_visible_pattern("**/*.rs");
+        assert!(
+            pattern_count <= 2,
+            "GLM BUG: Pattern '**/*.rs' appears {} times. Output: {}",
+            pattern_count,
+            visible
+        );
+    });
+}
+
 /// Test with real production log file using VirtualTerminal.
 ///
 /// This verifies that when an actual production log file is parsed,

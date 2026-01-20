@@ -463,15 +463,31 @@ impl ClaudeParser {
     /// This includes both text and tool_use blocks, normalized for comparison.
     /// Tool_use blocks are serialized in a deterministic way (name + sorted input JSON)
     /// to ensure semantically identical tool calls produce the same hash.
+    ///
+    /// # Returns
+    /// A tuple of (normalized_content, tool_names_by_index) where:
+    /// - normalized_content: The concatenated normalized content (text + tool_use markers)
+    /// - tool_names_by_index: Map from content block index to tool name (for tool_use blocks)
     fn extract_text_content_for_hash(
         message: Option<&crate::json_parser::types::AssistantMessage>,
-    ) -> Option<String> {
+    ) -> Option<(String, std::collections::HashMap<usize, String>)> {
         message?.content.as_ref().map(|content| {
-            content
-                .iter()
-                .filter_map(|block| match block {
-                    ContentBlock::Text { text } => text.as_deref().map(|s| s.to_string()),
+            let mut normalized_parts = Vec::new();
+            let mut tool_names = std::collections::HashMap::new();
+
+            for (index, block) in content.iter().enumerate() {
+                match block {
+                    ContentBlock::Text { text } => {
+                        if let Some(text) = text.as_deref() {
+                            normalized_parts.push(text.to_string());
+                        }
+                    }
                     ContentBlock::ToolUse { name, input } => {
+                        // Track tool name by index for hash-based deduplication
+                        if let Some(name_str) = name.as_deref() {
+                            tool_names.insert(index, name_str.to_string());
+                        }
+
                         // Normalize tool_use for hash comparison:
                         // Format: "TOOL_USE:{name}:{sorted_json_input}"
                         // Sorting JSON keys ensures identical inputs produce same hash
@@ -493,12 +509,13 @@ impl ClaudeParser {
                                 })
                                 .unwrap_or_default()
                         );
-                        Some(normalized)
+                        normalized_parts.push(normalized);
                     }
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("")
+                    _ => {}
+                }
+            }
+
+            (normalized_parts.join(""), tool_names)
         })
     }
 
@@ -507,6 +524,9 @@ impl ClaudeParser {
         &self,
         message: Option<&crate::json_parser::types::AssistantMessage>,
     ) -> bool {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
         let session = self.streaming_session.borrow();
 
         // Extract message_id from the assistant message
@@ -531,11 +551,29 @@ impl ClaudeParser {
             }
         }
 
-        // If no message_id match, fall back to hash-based deduplication
-        let text_content_for_hash = Self::extract_text_content_for_hash(message);
-        if let Some(ref text_content) = text_content_for_hash {
+        // Check if this exact assistant content has been rendered before
+        // This handles the case where GLM sends multiple assistant events during
+        // streaming with the same content but different message_ids
+        let content_for_hash = Self::extract_text_content_for_hash(message);
+        if let Some((ref text_content, _)) = content_for_hash {
             if !text_content.is_empty() {
-                return session.is_duplicate_by_hash(text_content);
+                // Compute hash of the assistant event content
+                let mut hasher = DefaultHasher::new();
+                text_content.hash(&mut hasher);
+                let content_hash = hasher.finish();
+
+                // Check if this content was already rendered
+                if session.is_assistant_content_rendered(content_hash) {
+                    return true;
+                }
+            }
+        }
+
+        // If no message_id match, fall back to hash-based deduplication
+        // extract_text_content_for_hash now returns (content, tool_names_by_index)
+        if let Some((ref text_content, ref tool_names)) = content_for_hash {
+            if !text_content.is_empty() {
+                return session.is_duplicate_by_hash(text_content, Some(tool_names));
             }
         }
 
@@ -664,6 +702,9 @@ impl ClaudeParser {
         &self,
         message: Option<crate::json_parser::types::AssistantMessage>,
     ) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
         // CRITICAL FIX: When ANY content has been streamed via deltas,
         // the Assistant event should NOT display it again.
         // The Assistant event represents the "complete" message, but if we've
@@ -677,13 +718,28 @@ impl ClaudeParser {
             if let Some(ref content) = msg.content {
                 self.format_content_blocks(&mut out, content, &self.display_name, self.colors);
 
-                // If we successfully rendered content, mark the message as pre-rendered
-                // so that ALL subsequent streaming deltas for this message are suppressed.
-                // This handles the case where assistant event arrives BEFORE streaming starts.
+                // If we successfully rendered content, mark it as rendered
                 if !out.is_empty() {
+                    let mut session = self.streaming_session.borrow_mut();
+
+                    // Mark the message as pre-rendered so that ALL subsequent streaming
+                    // deltas for this message are suppressed.
+                    // This handles the case where assistant event arrives BEFORE streaming starts.
                     if let Some(ref message_id) = msg.id {
-                        let mut session = self.streaming_session.borrow_mut();
                         session.mark_message_pre_rendered(message_id);
+                    }
+
+                    // Mark the assistant content as rendered by hash to prevent duplicate
+                    // assistant events with the same content but different message_ids
+                    if let Some((ref text_content, _)) =
+                        Self::extract_text_content_for_hash(message.as_ref())
+                    {
+                        if !text_content.is_empty() {
+                            let mut hasher = DefaultHasher::new();
+                            text_content.hash(&mut hasher);
+                            let content_hash = hasher.finish();
+                            session.mark_assistant_content_rendered(content_hash);
+                        }
                     }
                 }
             }
