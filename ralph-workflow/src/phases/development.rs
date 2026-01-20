@@ -16,7 +16,6 @@ use crate::files::llm_output_extraction::{
     validate_development_result_xml, validate_plan_xml, PlanElements,
 };
 use crate::files::{delete_plan_file, update_status};
-use crate::files::{extract_plan, extract_plan_from_logs_text};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
@@ -245,10 +244,14 @@ struct DevIterationResult {
 
 /// Run a single development iteration with XML extraction and XSD validation retry loop.
 ///
-/// This function wraps the developer agent execution with a retry loop that:
-/// 1. Uses XML-based prompt on first attempt
-/// 2. On XSD validation failure, retries with XSD error feedback
-/// 3. Falls back to continuing without XML if retries exhausted
+/// This function implements a nested loop structure:
+/// - **Outer loop (continuation)**: Continue while status != "completed" (max 100)
+/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 10)
+///
+/// The continuation logic ignores non-XSD errors and only looks for valid XML.
+/// If XML passes XSD validation with status="completed", we're done for this iteration.
+/// If XML passes XSD validation with status="partial", we continue the outer loop.
+/// If XML passes XSD validation with status="failed", we continue the outer loop.
 ///
 /// The development iteration produces side effects (file changes) as its primary output.
 /// The XML status is secondary - we use it for logging/tracking but don't fail the
@@ -264,153 +267,247 @@ fn run_development_iteration_with_xml_retry(
     let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
     let log_dir = format!(".agent/logs/developer_{iteration}");
 
-    let max_retries = 10;
-    let mut xsd_error: Option<String> = None;
+    let max_xsd_retries = 10;
+    let max_continuations = 100; // Safety limit to prevent infinite loops
+    let mut final_summary: Option<String> = None;
+    let mut final_files_changed: Option<Vec<String>> = None;
+    let mut had_any_error = false;
 
-    for retry_num in 0..max_retries {
-        // For initial attempt, use XML prompt
-        // For retries, use XSD retry prompt with error feedback
-        let dev_prompt = if retry_num == 0 {
-            // Use prompt replay if available, otherwise generate new prompt
-            let prompt_key = format!("development_{}", iteration);
-            let (prompt, was_replayed) =
-                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                    prompt_developer_iteration_xml_with_context(
-                        ctx.template_context,
-                        &prompt_md,
-                        &plan_md,
-                    )
-                });
-
-            // Capture the prompt for checkpoint/resume (only if newly generated)
-            if !was_replayed {
-                ctx.capture_prompt(&prompt_key, &prompt);
-            } else {
-                ctx.logger.info(&format!(
-                    "Using stored prompt from checkpoint for determinism: {}",
-                    prompt_key
-                ));
-            }
-
-            prompt
-        } else {
+    // Outer loop: Continue until agent returns status="completed" or we hit the limit
+    'continuation: for continuation_num in 0..max_continuations {
+        let is_continuation = continuation_num > 0;
+        if is_continuation {
             ctx.logger.info(&format!(
-                "  In-session retry {}/{} for XSD validation",
-                retry_num,
-                max_retries - 1
+                "Continuation {} of {} (status was not 'completed')",
+                continuation_num, max_continuations
             ));
-            if let Some(ref error) = xsd_error {
-                ctx.logger.info(&format!("  XSD error: {}", error));
-            }
+        }
 
-            // Read the last output for retry context
-            let last_output = read_last_development_output(Path::new(&log_dir));
+        let mut xsd_error: Option<String> = None;
 
-            // Add resume context if applicable
-            let mut prompt_config = PromptConfig::new()
-                .with_iterations(iteration, ctx.config.developer_iters)
-                .with_prompt_and_plan(prompt_md.clone(), plan_md.clone());
+        // Inner loop: XSD validation retry with error feedback
+        for retry_num in 0..max_xsd_retries {
+            let is_retry = retry_num > 0;
+            let total_attempts = continuation_num * max_xsd_retries + retry_num + 1;
 
-            if resuming_into_development {
-                if let Some(resume_ctx) = resume_context {
-                    prompt_config = prompt_config.with_resume_context(resume_ctx.clone());
+            // For initial attempt, use XML prompt
+            // For retries, use XSD retry prompt with error feedback
+            let dev_prompt = if !is_retry && !is_continuation {
+                // First attempt ever - use initial XML prompt
+                let prompt_key = format!("development_{}", iteration);
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        prompt_developer_iteration_xml_with_context(
+                            ctx.template_context,
+                            &prompt_md,
+                            &plan_md,
+                        )
+                    });
+
+                if !was_replayed {
+                    ctx.capture_prompt(&prompt_key, &prompt);
+                } else {
+                    ctx.logger.info(&format!(
+                        "Using stored prompt from checkpoint for determinism: {}",
+                        prompt_key
+                    ));
                 }
+
+                prompt
+            } else if !is_continuation {
+                // XSD retry only (no continuation yet)
+                ctx.logger.info(&format!(
+                    "  In-session retry {}/{} for XSD validation (total attempt: {})",
+                    retry_num,
+                    max_xsd_retries - 1,
+                    total_attempts
+                ));
+                if let Some(ref error) = xsd_error {
+                    ctx.logger.info(&format!("  XSD error: {}", error));
+                }
+
+                let last_output = read_last_development_output(Path::new(&log_dir));
+
+                prompt_developer_iteration_xsd_retry_with_context(
+                    ctx.template_context,
+                    &prompt_md,
+                    &plan_md,
+                    xsd_error.as_deref().unwrap_or("Unknown error"),
+                    &last_output,
+                )
+            } else if !is_retry {
+                // Continuation only (first XSD attempt after continuation)
+                ctx.logger.info(&format!(
+                    "  Continuation attempt {} (XSD validation attempt {}/{})",
+                    total_attempts,
+                    1,
+                    max_xsd_retries
+                ));
+
+                prompt_developer_iteration_xml_with_context(
+                    ctx.template_context,
+                    &prompt_md,
+                    &plan_md,
+                )
+            } else {
+                // Both continuation and XSD retry
+                ctx.logger.info(&format!(
+                    "  Continuation retry {}/{} for XSD validation (total attempt: {})",
+                    retry_num,
+                    max_xsd_retries - 1,
+                    total_attempts
+                ));
+                if let Some(ref error) = xsd_error {
+                    ctx.logger.info(&format!("  XSD error: {}", error));
+                }
+
+                let last_output = read_last_development_output(Path::new(&log_dir));
+
+                prompt_developer_iteration_xsd_retry_with_context(
+                    ctx.template_context,
+                    &prompt_md,
+                    &plan_md,
+                    xsd_error.as_deref().unwrap_or("Unknown error"),
+                    &last_output,
+                )
+            };
+
+            // Run the agent
+            let exit_code = {
+                let mut runtime = PipelineRuntime {
+                    timer: ctx.timer,
+                    logger: ctx.logger,
+                    colors: ctx.colors,
+                    config: ctx.config,
+                    #[cfg(any(test, feature = "test-utils"))]
+                    agent_executor: None,
+                };
+                run_with_fallback(
+                    AgentRole::Developer,
+                    &format!(
+                        "run #{}{}",
+                        iteration,
+                        if is_continuation {
+                            format!(" (continuation {})", continuation_num)
+                        } else {
+                            String::new()
+                        }
+                    ),
+                    &dev_prompt,
+                    &log_dir,
+                    &mut runtime,
+                    ctx.registry,
+                    ctx.developer_agent,
+                )?
+            };
+
+            // Track if any agent run had an error (for final result)
+            if exit_code != 0 {
+                had_any_error = true;
             }
 
-            // Generate the retry prompt
-            prompt_developer_iteration_xsd_retry_with_context(
-                ctx.template_context,
-                &prompt_md,
-                &plan_md,
-                xsd_error.as_deref().unwrap_or("Unknown error"),
-                &last_output,
-            )
-        };
+            // Extract and validate the development result XML
+            let log_dir_path = Path::new(&log_dir);
+            let dev_content = read_last_development_output(log_dir_path);
 
-        // Run the agent
-        let exit_code = {
-            let mut runtime = PipelineRuntime {
-                timer: ctx.timer,
-                logger: ctx.logger,
-                colors: ctx.colors,
-                config: ctx.config,
-                #[cfg(any(test, feature = "test-utils"))]
-                agent_executor: None,
-            };
-            run_with_fallback(
-                AgentRole::Developer,
-                &format!("run #{iteration}"),
-                &dev_prompt,
-                &log_dir,
-                &mut runtime,
-                ctx.registry,
-                ctx.developer_agent,
-            )?
-        };
+            // Try to extract XML
+            if let Some(xml_content) = extract_development_result_xml(&dev_content) {
+                // Try to validate against XSD
+                match validate_development_result_xml(&xml_content) {
+                    Ok(result_elements) => {
+                        // XSD validation passed - format and log the result
+                        let formatted_xml = format_xml_for_display(&xml_content);
 
-        // Extract and validate the development result XML
-        let log_dir_path = Path::new(&log_dir);
-        let dev_content = read_last_development_output(log_dir_path);
+                        if is_retry {
+                            ctx.logger
+                                .success(&format!("Status validated after {} retries", retry_num));
+                        } else {
+                            ctx.logger.success("Status extracted and validated (XML)");
+                        }
 
-        // Try to extract XML
-        if let Some(xml_content) = extract_development_result_xml(&dev_content) {
-            // Try to validate against XSD
-            match validate_development_result_xml(&xml_content) {
-                Ok(result_elements) => {
-                    // XSD validation passed - format and log the result
-                    let formatted_xml = format_xml_for_display(&xml_content);
+                        // Display the formatted status
+                        ctx.logger.info(&format!("\n{}", formatted_xml));
 
-                    if retry_num > 0 {
-                        ctx.logger
-                            .success(&format!("Status validated after {} retries", retry_num));
-                    } else {
-                        ctx.logger.success("Status extracted and validated (XML)");
-                    }
-
-                    // Display the formatted status
-                    ctx.logger.info(&format!("\n{}", formatted_xml));
-
-                    return Ok(DevIterationResult {
-                        had_error: exit_code != 0,
-                        summary: Some(result_elements.summary),
-                        files_changed: result_elements
+                        // Store the results
+                        final_summary = Some(result_elements.summary.clone());
+                        final_files_changed = result_elements
                             .files_changed
-                            .map(|f| f.lines().map(|s| s.to_string()).collect()),
+                            .as_ref()
+                            .map(|f| f.lines().map(|s| s.to_string()).collect());
+
+                        // Check the status to determine if we should continue
+                        if result_elements.is_completed() {
+                            // Status is "completed" - we're done with this iteration
+                            return Ok(DevIterationResult {
+                                had_error: had_any_error,
+                                summary: final_summary,
+                                files_changed: final_files_changed,
+                            });
+                        } else if result_elements.is_partial() {
+                            // Status is "partial" - continue the outer loop
+                            ctx.logger
+                                .info("Status is 'partial' - continuing with same iteration");
+                            continue 'continuation;
+                        } else if result_elements.is_failed() {
+                            // Status is "failed" - continue the outer loop
+                            ctx.logger
+                                .warn("Status is 'failed' - continuing with same iteration");
+                            continue 'continuation;
+                        }
+                    }
+                    Err(xsd_err) => {
+                        // XSD validation failed - check if we can retry
+                        let error_msg = format_xsd_error(&xsd_err);
+                        ctx.logger
+                            .warn(&format!("  XSD validation failed: {}", error_msg));
+
+                        if retry_num < max_xsd_retries - 1 {
+                            // Store error for next retry attempt
+                            xsd_error = Some(error_msg);
+                            // Continue to next XSD retry iteration
+                            continue;
+                        } else {
+                            ctx.logger.warn("  No more in-session XSD retries remaining");
+                            // Fall through to return what we have
+                            break 'continuation;
+                        }
+                    }
+                }
+            } else {
+                // No XML found - we only accept XML format now
+                if retry_num < max_xsd_retries - 1 {
+                    ctx.logger
+                        .warn("No XML status found in output - treating as XSD error");
+                    xsd_error = Some("No XML found - agent must output XML in <ralph-development-result> tags".to_string());
+                    // Continue to next retry attempt to get proper XML
+                    continue;
+                } else {
+                    ctx.logger.error("No XML status found after all retries - cannot continue");
+                    // We cannot continue without valid XML
+                    return Ok(DevIterationResult {
+                        had_error: true,
+                        summary: Some("Failed: No valid XML output produced".to_string()),
+                        files_changed: None,
                     });
                 }
-                Err(xsd_err) => {
-                    // XSD validation failed - check if we can retry
-                    let error_msg = format_xsd_error(&xsd_err);
-                    ctx.logger
-                        .warn(&format!("  XSD validation failed: {}", error_msg));
-
-                    if retry_num < max_retries - 1 {
-                        // Store error for next retry attempt
-                        xsd_error = Some(error_msg);
-                        // Continue to next retry iteration
-                        continue;
-                    } else {
-                        ctx.logger.warn("  No more in-session retries remaining");
-                        // Fall through to return the exit code status
-                        break;
-                    }
-                }
             }
-        } else {
-            // No XML found - log and continue with execution status
-            ctx.logger
-                .info("No XML status found in output, using agent exit code");
-            // Continue with execution status
-            break;
         }
+
+        // If we've exhausted XSD retries, break the continuation loop
+        ctx.logger.warn("XSD retry loop exhausted - stopping continuation");
+        break;
     }
 
-    // If we get here, either no XML or XSD validation failed after all retries
-    // Return based on the exit code from the last attempt
+    // If we get here, we exhausted the continuation limit or XSD retries
     Ok(DevIterationResult {
-        had_error: false, // We'll determine this from the exit code in the caller
-        summary: None,
-        files_changed: None,
+        had_error: had_any_error,
+        summary: final_summary.or_else(|| {
+            Some(format!(
+                "Continuation stopped after {} attempts",
+                max_continuations * max_xsd_retries
+            ))
+        }),
+        files_changed: final_files_changed,
     })
 }
 
@@ -557,6 +654,20 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
                     // Display the formatted plan
                     ctx.logger.info(&format!("\n{}", formatted_xml));
 
+                    // Record execution history before returning
+                    {
+                        let duration = start_time.elapsed().as_secs();
+                        let step = ExecutionStep::new(
+                            "Planning",
+                            iteration,
+                            "plan_generation",
+                            StepOutcome::success(None, vec![".agent/PLAN.md".to_string()]),
+                        )
+                        .with_agent(ctx.developer_agent)
+                        .with_duration(duration);
+                        ctx.execution_history.add_step(step);
+                    }
+
                     return Ok(());
                 }
                 Err(xsd_err) => {
@@ -571,76 +682,44 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
                         // Continue to next retry iteration
                         continue;
                     } else {
-                        ctx.logger.warn("  No more in-session retries remaining");
-                        // Fall through to legacy extraction
+                        ctx.logger.error("  No more in-session XSD retries remaining");
+                        // Fall through to error - no more fallbacks
                     }
                 }
             }
         } else {
-            // No XML found - log and try legacy extraction
-            ctx.logger
-                .info("No XML found in output, trying legacy extraction...");
-        }
-
-        // If we get here, either no XML or XSD validation failed after retries
-        // Try legacy extraction as fallback
-        let extraction = extract_plan(log_dir_path)?;
-
-        if let Some(content) = extraction.raw_content {
-            // Extraction succeeded - orchestrator writes the file
-            fs::write(plan_path, &content)?;
-
-            if extraction.is_valid {
+            // No XML found - treat as XSD error and retry
+            if retry_num < max_retries - 1 {
                 ctx.logger
-                    .success("Plan extracted from agent output (JSON fallback)");
+                    .warn("No XML found in output - treating as XSD error");
+                xsd_error = Some("No XML found - agent must output XML in <ralph-plan> tags".to_string());
+                // Continue to next retry attempt
+                continue;
             } else {
-                ctx.logger.warn(&format!(
-                    "Plan written but validation failed: {}",
-                    extraction.validation_warning.unwrap_or_default()
-                ));
+                ctx.logger.error("No XML found after all retries - cannot create plan");
+                // Write placeholder and fail
+                let placeholder = "# Plan\n\nAgent produced no valid XML output. Only XML format is accepted.\n";
+                fs::write(plan_path, placeholder)?;
+                anyhow::bail!("Planning agent did not produce valid XML output after {} attempts", max_retries);
             }
-            return Ok(());
-        } else if let Some(text_plan) = extract_plan_from_logs_text(log_dir_path)? {
-            fs::write(plan_path, &text_plan)?;
-            ctx.logger
-                .success("Plan extracted from agent output (text fallback)");
-            return Ok(());
-        } else {
-            // Check if agent wrote the file directly (legacy fallback)
-            let agent_wrote_file = plan_path
-                .exists()
-                .then(|| fs::read_to_string(plan_path).ok())
-                .flatten()
-                .is_some_and(|s| !s.trim().is_empty());
-
-            if agent_wrote_file {
-                ctx.logger.info("Using agent-written PLAN.md (legacy mode)");
-                return Ok(());
-            }
-
-            // No content from any source - write placeholder and fail
-            let placeholder = "# Plan\n\nAgent produced no extractable plan content.\n";
-            fs::write(plan_path, placeholder)?;
-            ctx.logger
-                .error("No plan content found in agent output - wrote placeholder");
-            anyhow::bail!("Planning agent completed successfully but no plan was found in output");
         }
     }
 
+    // Record execution history for failed planning (should never be reached since we always return above)
     {
         let duration = start_time.elapsed().as_secs();
         let step = ExecutionStep::new(
             "Planning",
             iteration,
             "plan_generation",
-            StepOutcome::success(None, vec![".agent/PLAN.md".to_string()]),
+            StepOutcome::failure("No valid XML output produced".to_string(), false),
         )
         .with_agent(ctx.developer_agent)
         .with_duration(duration);
         ctx.execution_history.add_step(step);
     }
 
-    Ok(())
+    anyhow::bail!("Planning failed after {} XSD retry attempts", max_retries)
 }
 
 /// Read the last planning output from logs.

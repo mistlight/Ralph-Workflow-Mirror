@@ -15,6 +15,10 @@ use crate::agents::AgentRole;
 use crate::checkpoint::restore::ResumeContext;
 use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase};
 use crate::files::extract_issues;
+use crate::files::llm_output_extraction::{
+    extract_fix_result_xml, format_xml_for_display, validate_fix_result_xml,
+};
+use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::git_helpers::{
     get_baseline_summary, git_snapshot, update_review_baseline, CommitResultFallback,
@@ -25,7 +29,8 @@ use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback_and_validator, FallbackConfig, PipelineRuntime};
 use crate::prompts::{
-    get_stored_or_generate_prompt, prompt_for_agent, Action, ContextLevel, PromptConfig, Role,
+    get_stored_or_generate_prompt, prompt_fix_xml_with_context,
+    prompt_fix_xsd_retry_with_context, prompt_for_agent, Action, ContextLevel, PromptConfig, Role,
 };
 use crate::review_metrics::ReviewMetrics;
 use std::fs;
@@ -934,7 +939,42 @@ fn handle_postflight_validation(ctx: &PhaseContext<'_>, j: u32) {
     }
 }
 
+/// Read the last fix output from logs.
+fn read_last_fix_output(log_dir: &Path) -> String {
+    // Try to read from the latest log file
+    let log_path = log_dir.join("latest.log");
+    if let Ok(content) = fs::read_to_string(&log_path) {
+        return content;
+    }
+
+    // Fallback to reading all .log files in the directory
+    if let Ok(entries) = fs::read_dir(log_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("log") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    return content;
+                }
+            }
+        }
+    }
+
+    String::new()
+}
+
+/// Format XSD error for display (for fix result).
+fn format_xsd_error_for_fix(error: &XsdValidationError) -> String {
+    format!(
+        "{} - expected: {}, found: {}",
+        error.element_path, error.expected, error.found
+    )
+}
+
 /// Run the fix pass for a single cycle.
+///
+/// This function implements a nested loop structure similar to development:
+/// - **Outer loop (continuation)**: Continue while status != "all_issues_addressed" (max 100)
+/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 10)
 fn run_fix_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
@@ -950,102 +990,279 @@ fn run_fix_pass(
     let plan_content = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
     let issues_content = fs::read_to_string(".agent/ISSUES.md").unwrap_or_default();
 
-    let mut prompt_config = PromptConfig::new().with_prompt_plan_and_issues(
-        prompt_content.clone(),
-        plan_content,
-        issues_content,
-    );
+    let log_dir = format!(".agent/logs/reviewer_fix_{j}");
 
-    // Set resume context if this is the first pass of a resumed session
-    if let Some(resume_ctx) = resume_context {
-        prompt_config = prompt_config.with_resume_context(resume_ctx.clone());
-    }
+    let max_xsd_retries = 10;
+    let max_continuations = 100; // Safety limit to prevent infinite loops
+    let mut had_any_error = false;
 
-    // Use prompt replay if available, otherwise generate new fix prompt
-    let prompt_key = format!("fix_{}", j);
-    let (fix_prompt, was_replayed) =
-        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-            prompt_for_agent(
-                Role::Reviewer,
-                Action::Fix,
-                reviewer_context,
-                ctx.template_context,
-                prompt_config.clone(),
-            )
-        });
+    // Outer loop: Continue until agent returns status="all_issues_addressed" or "no_issues_found"
+    'continuation: for continuation_num in 0..max_continuations {
+        let is_continuation = continuation_num > 0;
+        if is_continuation {
+            ctx.logger.info(&format!(
+                "Fix continuation {} of {} (status was not complete)",
+                continuation_num, max_continuations
+            ));
+        }
 
-    // Capture the fix prompt for checkpoint/resume (only if newly generated)
-    if !was_replayed {
-        ctx.capture_prompt(&prompt_key, &fix_prompt);
-    } else {
-        ctx.logger.info(&format!(
-            "Using stored prompt from checkpoint for determinism: {}",
-            prompt_key
-        ));
-    }
+        let mut xsd_error: Option<String> = None;
 
-    // Log the fix prompt details for debugging (when verbose)
-    if ctx.config.verbosity.is_debug() {
-        ctx.logger.info(&format!(
-            "Fix prompt length: {} characters",
-            fix_prompt.len()
-        ));
-        ctx.logger.info(&format!(
-            "Fix prompt contains constraints: {}",
-            fix_prompt.contains("MUST NOT") && fix_prompt.contains("CRITICAL CONSTRAINTS")
-        ));
-    }
+        // Inner loop: XSD validation retry with error feedback
+        for retry_num in 0..max_xsd_retries {
+            let is_retry = retry_num > 0;
+            let total_attempts = continuation_num * max_xsd_retries + retry_num + 1;
 
-    let _ = {
-        let mut runtime = PipelineRuntime {
-            timer: ctx.timer,
-            logger: ctx.logger,
-            colors: ctx.colors,
-            config: ctx.config,
-            #[cfg(any(test, feature = "test-utils"))]
-            agent_executor: None,
-        };
+            // For initial attempt, use XML prompt
+            // For retries, use XSD retry prompt with error feedback
+            let fix_prompt = if !is_retry && !is_continuation {
+                // First attempt ever - use initial XML prompt
+                let prompt_key = format!("fix_{}", j);
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        prompt_fix_xml_with_context(
+                            ctx.template_context,
+                            &prompt_content,
+                            &plan_content,
+                            &issues_content,
+                        )
+                    });
 
-        // Output validator: checks if fixer produced valid JSON output
-        // This is critical for GLM agents which may exit with code 1 even when successful
-        let validate_output: crate::pipeline::OutputValidator =
-            |log_dir_path: &Path, _logger: &crate::logger::Logger| -> std::io::Result<bool> {
-                use crate::files::result_extraction::extract_last_result;
-                match extract_last_result(log_dir_path) {
-                    Ok(Some(_)) => Ok(true), // Valid JSON output exists
-                    Ok(None) => Ok(false),   // No JSON output found
-                    Err(_) => Ok(true), // On error, assume success (let later validation handle it)
+                if !was_replayed {
+                    ctx.capture_prompt(&prompt_key, &prompt);
+                } else {
+                    ctx.logger.info(&format!(
+                        "Using stored prompt from checkpoint for determinism: {}",
+                        prompt_key
+                    ));
                 }
+
+                prompt
+            } else if !is_continuation {
+                // XSD retry only (no continuation yet)
+                ctx.logger.info(&format!(
+                    "  In-session retry {}/{} for XSD validation (total attempt: {})",
+                    retry_num,
+                    max_xsd_retries - 1,
+                    total_attempts
+                ));
+                if let Some(ref error) = xsd_error {
+                    ctx.logger.info(&format!("  XSD error: {}", error));
+                }
+
+                let last_output = read_last_fix_output(Path::new(&log_dir));
+
+                prompt_fix_xsd_retry_with_context(
+                    ctx.template_context,
+                    &issues_content,
+                    xsd_error.as_deref().unwrap_or("Unknown error"),
+                    &last_output,
+                )
+            } else if !is_retry {
+                // Continuation only (first XSD attempt after continuation)
+                ctx.logger.info(&format!(
+                    "  Continuation attempt {} (XSD validation attempt {}/{})",
+                    total_attempts,
+                    1,
+                    max_xsd_retries
+                ));
+
+                prompt_fix_xml_with_context(
+                    ctx.template_context,
+                    &prompt_content,
+                    &plan_content,
+                    &issues_content,
+                )
+            } else {
+                // Both continuation and XSD retry
+                ctx.logger.info(&format!(
+                    "  Continuation retry {}/{} for XSD validation (total attempt: {})",
+                    retry_num,
+                    max_xsd_retries - 1,
+                    total_attempts
+                ));
+                if let Some(ref error) = xsd_error {
+                    ctx.logger.info(&format!("  XSD error: {}", error));
+                }
+
+                let last_output = read_last_fix_output(Path::new(&log_dir));
+
+                prompt_fix_xsd_retry_with_context(
+                    ctx.template_context,
+                    &issues_content,
+                    xsd_error.as_deref().unwrap_or("Unknown error"),
+                    &last_output,
+                )
             };
 
-        let log_dir = format!(".agent/logs/reviewer_fix_{j}");
-        let mut fallback_config = FallbackConfig {
-            role: AgentRole::Reviewer,
-            base_label: &format!("fix #{j}"),
-            prompt: &fix_prompt,
-            logfile_prefix: &log_dir,
-            runtime: &mut runtime,
-            registry: ctx.registry,
-            primary_agent: ctx.reviewer_agent,
-            output_validator: Some(validate_output),
-        };
-        run_with_fallback_and_validator(&mut fallback_config)
-    };
-    ctx.stats.reviewer_runs_completed += 1;
+            // Log the fix prompt details for debugging (when verbose)
+            if ctx.config.verbosity.is_debug() && !is_continuation && !is_retry {
+                ctx.logger.info(&format!(
+                    "Fix prompt length: {} characters",
+                    fix_prompt.len()
+                ));
+            }
 
-    let duration = fix_start_time.elapsed().as_secs();
-    let step = ExecutionStep::new("Review", j, "fix", StepOutcome::success(None, vec![]))
-        .with_agent(ctx.reviewer_agent)
-        .with_duration(duration);
-    ctx.execution_history.add_step(step);
+            // Run the agent
+            let exit_code = {
+                let mut runtime = PipelineRuntime {
+                    timer: ctx.timer,
+                    logger: ctx.logger,
+                    colors: ctx.colors,
+                    config: ctx.config,
+                    #[cfg(any(test, feature = "test-utils"))]
+                    agent_executor: None,
+                };
 
-    // Clean up ISSUES.md after each fix cycle in isolation mode
-    if ctx.config.isolation_mode {
-        delete_issues_file_for_isolation(ctx.logger)?;
+                // Output validator: checks if fixer produced valid JSON output
+                let validate_output: crate::pipeline::OutputValidator =
+                    |log_dir_path: &Path, _logger: &crate::logger::Logger| -> std::io::Result<bool> {
+                        use crate::files::result_extraction::extract_last_result;
+                        match extract_last_result(log_dir_path) {
+                            Ok(Some(_)) => Ok(true),
+                            Ok(None) => Ok(false),
+                            Err(_) => Ok(true),
+                        }
+                    };
+
+                let mut fallback_config = FallbackConfig {
+                    role: AgentRole::Reviewer,
+                    base_label: &format!(
+                        "fix #{}{}",
+                        j,
+                        if is_continuation {
+                            format!(" (continuation {})", continuation_num)
+                        } else {
+                            String::new()
+                        }
+                    ),
+                    prompt: &fix_prompt,
+                    logfile_prefix: &log_dir,
+                    runtime: &mut runtime,
+                    registry: ctx.registry,
+                    primary_agent: ctx.reviewer_agent,
+                    output_validator: Some(validate_output),
+                };
+                run_with_fallback_and_validator(&mut fallback_config)
+            };
+
+            ctx.stats.reviewer_runs_completed += 1;
+
+            // Track if any agent run had an error
+            if exit_code != 0 {
+                had_any_error = true;
+            }
+
+            // Extract and validate the fix result XML
+            let log_dir_path = Path::new(&log_dir);
+            let fix_content = read_last_fix_output(log_dir_path);
+
+            // Try to extract XML
+            if let Some(xml_content) = extract_fix_result_xml(&fix_content) {
+                // Try to validate against XSD
+                match validate_fix_result_xml(&xml_content) {
+                    Ok(result_elements) => {
+                        // XSD validation passed - format and log the result
+                        let formatted_xml = format_xml_for_display(&xml_content);
+
+                        if is_retry {
+                            ctx.logger
+                                .success(&format!("Fix validated after {} retries", retry_num));
+                        } else {
+                            ctx.logger.success("Fix status extracted and validated (XML)");
+                        }
+
+                        // Display the formatted status
+                        ctx.logger.info(&format!("\n{}", formatted_xml));
+
+                        // Check the status to determine if we should continue
+                        if result_elements.is_complete() || result_elements.is_no_issues() {
+                            // Status is "all_issues_addressed" or "no_issues_found" - we're done
+                            let duration = fix_start_time.elapsed().as_secs();
+                            let step = ExecutionStep::new(
+                                "Review",
+                                j,
+                                "fix",
+                                StepOutcome::success(
+                                    result_elements.summary,
+                                    vec![],
+                                ),
+                            )
+                            .with_agent(ctx.reviewer_agent)
+                            .with_duration(duration);
+                            ctx.execution_history.add_step(step);
+
+                            return Ok(());
+                        } else if result_elements.has_remaining_issues() {
+                            // Status is "issues_remain" - continue the outer loop
+                            ctx.logger
+                                .info("Status is 'issues_remain' - continuing with same fix pass");
+                            continue 'continuation;
+                        }
+                    }
+                    Err(xsd_err) => {
+                        // XSD validation failed - check if we can retry
+                        let error_msg = format_xsd_error_for_fix(&xsd_err);
+                        ctx.logger
+                            .warn(&format!("  XSD validation failed: {}", error_msg));
+
+                        if retry_num < max_xsd_retries - 1 {
+                            // Store error for next retry attempt
+                            xsd_error = Some(error_msg);
+                            // Continue to next XSD retry iteration
+                            continue;
+                        } else {
+                            ctx.logger.warn("  No more in-session XSD retries remaining");
+                            // Fall through to return what we have
+                            break 'continuation;
+                        }
+                    }
+                }
+            } else {
+                // No XML found - we only accept XML format now
+                if retry_num < max_xsd_retries - 1 {
+                    ctx.logger
+                        .warn("No XML status found in output - treating as XSD error");
+                    xsd_error = Some("No XML found - agent must output XML in <ralph-fix-result> tags".to_string());
+                    // Continue to next retry attempt to get proper XML
+                    continue;
+                } else {
+                    ctx.logger.error("No XML status found after all retries - cannot continue");
+                    // We cannot continue without valid XML
+                    let duration = fix_start_time.elapsed().as_secs();
+                    let step = ExecutionStep::new(
+                        "Review",
+                        j,
+                        "fix",
+                        StepOutcome::failure("No valid XML output produced".to_string(), true),
+                    )
+                    .with_agent(ctx.reviewer_agent)
+                    .with_duration(duration);
+                    ctx.execution_history.add_step(step);
+                    anyhow::bail!("Fix agent did not produce valid XML output after {} attempts", max_xsd_retries);
+                }
+            }
+        }
+
+        // If we've exhausted XSD retries, break the continuation loop
+        ctx.logger.warn("XSD retry loop exhausted - stopping continuation");
+        break;
     }
 
-    // Periodic restoration check - ensure PROMPT.md still exists
-    ensure_prompt_integrity(ctx.logger, "review", j);
+    // If we get here, we exhausted the continuation limit
+    let duration = fix_start_time.elapsed().as_secs();
+    let step = ExecutionStep::new(
+        "Review",
+        j,
+        "fix",
+        StepOutcome::failure(
+            format!("Continuation stopped after {} attempts", max_continuations * max_xsd_retries),
+            true,
+        ),
+    )
+    .with_agent(ctx.reviewer_agent)
+    .with_duration(duration);
+    ctx.execution_history.add_step(step);
 
     Ok(())
 }
