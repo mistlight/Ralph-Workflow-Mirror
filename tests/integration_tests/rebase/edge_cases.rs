@@ -39,6 +39,10 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
         .unwrap_or_else(|| "main".to_string())
 }
 
+/// Test that rebasing when on main/master branch produces NoOp result.
+///
+/// This verifies that when the current branch is main or master, the system
+/// skips rebase and returns NoOp with a clear reason message.
 #[test]
 fn rebase_on_main_branch_returns_noop() {
     with_default_timeout(|| {
@@ -77,6 +81,10 @@ fn rebase_on_main_branch_returns_noop() {
     });
 }
 
+/// Test that rebasing an up-to-date branch produces NoOp result.
+///
+/// This verifies that when the current branch has no unique commits,
+/// the system skips rebase and returns NoOp or immediate Success.
 #[test]
 fn rebase_already_uptodate_returns_noop() {
     with_default_timeout(|| {
@@ -116,6 +124,10 @@ fn rebase_already_uptodate_returns_noop() {
     });
 }
 
+/// Test that rebasing an empty repository produces NoOp or Failed result.
+///
+/// This verifies that when a repository has no commits (unborn HEAD),
+/// the system cannot rebase and returns an appropriate error result.
 #[test]
 fn rebase_empty_repo_returns_noop() {
     with_default_timeout(|| {
@@ -151,6 +163,10 @@ fn rebase_empty_repo_returns_noop() {
     });
 }
 
+/// Test that rebasing with unborn HEAD produces NoOp or Failed result.
+///
+/// This verifies that when HEAD is unborn (no commits yet), the system
+/// detects the empty repository state and returns an appropriate result.
 #[test]
 fn rebase_unborn_head_returns_noop() {
     with_default_timeout(|| {
@@ -188,6 +204,10 @@ fn rebase_unborn_head_returns_noop() {
     });
 }
 
+/// Test that rebasing a branch with no unique changes produces NoOp result.
+///
+/// This verifies that when a feature branch points to the same commit as
+/// the target branch, the system recognizes there are no commits to rebase.
 #[test]
 fn rebase_with_no_changes_returns_noop() {
     with_default_timeout(|| {
@@ -227,6 +247,10 @@ fn rebase_with_no_changes_returns_noop() {
     });
 }
 
+/// Test that rebasing on main/master branch skips the rebase operation.
+///
+/// This verifies that when the current branch is detected as main or master,
+/// the system bypasses the rebase entirely and returns a NoOp result.
 #[test]
 fn rebase_skipped_when_branch_is_main() {
     with_default_timeout(|| {
@@ -267,6 +291,10 @@ fn rebase_skipped_when_branch_is_main() {
     });
 }
 
+/// Test that rebasing onto a nonexistent branch produces a Failed result.
+///
+/// This verifies that when the target branch does not exist in the repository,
+/// the system returns a Failed result with an InvalidRevision error.
 #[test]
 fn rebase_with_nonexistent_upstream_fails() {
     with_default_timeout(|| {
@@ -294,6 +322,10 @@ fn rebase_with_nonexistent_upstream_fails() {
     });
 }
 
+/// Test that rebase error handling represents shallow clone limitations.
+///
+/// This verifies that the RebaseErrorKind enum can represent errors that
+/// occur when a shallow clone lacks the required history for rebasing.
 #[test]
 fn rebase_detects_shallow_clone_limitations() {
     with_default_timeout(|| {
@@ -316,6 +348,10 @@ fn rebase_detects_shallow_clone_limitations() {
     });
 }
 
+/// Test that rebasing with detached HEAD produces NoOp or Success result.
+///
+/// This verifies that when HEAD is detached from any branch, the system
+/// handles the state gracefully without crashing or producing unclear errors.
 #[test]
 fn rebase_handles_detached_head() {
     with_default_timeout(|| {
@@ -359,6 +395,10 @@ fn rebase_handles_detached_head() {
     });
 }
 
+/// Test that rebasing with an ambiguous revision produces appropriate error.
+///
+/// This verifies that when the upstream revision is ambiguous or invalid,
+/// the system returns a Failed result with a clear error description.
 #[test]
 fn rebase_with_ambiguous_revision_fails() {
     with_default_timeout(|| {
@@ -387,6 +427,10 @@ fn rebase_with_ambiguous_revision_fails() {
     });
 }
 
+/// Test that rebasing with an invalid branch name produces appropriate error.
+///
+/// This verifies that when the branch name contains invalid characters or
+/// patterns, the system returns a Failed result with a clear error message.
 #[test]
 fn rebase_validates_branch_name() {
     with_default_timeout(|| {
@@ -413,6 +457,10 @@ fn rebase_validates_branch_name() {
     });
 }
 
+/// Test that rebasing unrelated branches produces NoOp or Failed result.
+///
+/// This verifies that when branches have no common ancestor, the system
+/// detects the unrelated histories and returns an appropriate result.
 #[test]
 fn rebase_with_unrelated_branches_returns_noop() {
     with_default_timeout(|| {
@@ -488,6 +536,10 @@ fn rebase_with_unrelated_branches_returns_noop() {
     });
 }
 
+/// Test that rebasing on detached HEAD returns NoOp with clear reason.
+///
+/// This verifies that when HEAD is detached, the system returns NoOp with
+/// a reason message that mentions the detached HEAD state.
 #[test]
 fn rebase_on_detached_head_returns_noop_with_clear_reason() {
     with_default_timeout(|| {
@@ -535,6 +587,10 @@ fn rebase_on_detached_head_returns_noop_with_clear_reason() {
     });
 }
 
+/// Test that rebase completion verification detects successful rebase.
+///
+/// This verifies that when a rebase completes successfully, the system
+/// can verify that the current branch is now descendant of the upstream.
 #[test]
 fn verify_rebase_completed_detects_incomplete_rebase() {
     with_default_timeout(|| {
@@ -583,6 +639,10 @@ fn verify_rebase_completed_detects_incomplete_rebase() {
     });
 }
 
+/// Test that rebase completion verification returns false when diverged.
+///
+/// This verifies that when branches have diverged but not yet been rebased,
+/// the system correctly identifies that rebase is not yet complete.
 #[test]
 fn verify_rebase_completed_returns_false_when_diverged() {
     with_default_timeout(|| {
@@ -632,6 +692,10 @@ fn verify_rebase_completed_returns_false_when_diverged() {
     });
 }
 
+/// Test that rebase precondition validation detects dirty working tree.
+///
+/// This verifies that when there are uncommitted changes, the system
+/// fails precondition validation with an error about the dirty state.
 #[test]
 fn validate_rebase_preconditions_detects_dirty_tree() {
     with_default_timeout(|| {
@@ -662,6 +726,10 @@ fn validate_rebase_preconditions_detects_dirty_tree() {
     });
 }
 
+/// Test that rebase precondition validation succeeds with clean repository.
+///
+/// This verifies that when the working tree is clean with no uncommitted
+/// changes, the system passes precondition validation successfully.
 #[test]
 fn validate_rebase_preconditions_succeeds_on_clean_repo() {
     with_default_timeout(|| {
@@ -681,6 +749,10 @@ fn validate_rebase_preconditions_succeeds_on_clean_repo() {
     });
 }
 
+/// Test that rebase precondition validation detects shallow clones.
+///
+/// This verifies that when a repository is a shallow clone with incomplete
+/// history, the system fails precondition validation with an appropriate error.
 #[test]
 fn validate_rebase_preconditions_detects_shallow_clone() {
     with_default_timeout(|| {
@@ -722,6 +794,10 @@ fn validate_rebase_preconditions_detects_shallow_clone() {
     });
 }
 
+/// Test that rebase precondition validation detects uninitialized submodules.
+///
+/// This verifies that when .gitmodules exists but submodules are not
+/// initialized, the system fails precondition validation appropriately.
 #[test]
 fn validate_rebase_preconditions_detects_uninitialized_submodules() {
     with_default_timeout(|| {
@@ -763,6 +839,10 @@ fn validate_rebase_preconditions_detects_uninitialized_submodules() {
     });
 }
 
+/// Test that rebase precondition validation succeeds with initialized submodules.
+///
+/// This verifies that when .gitmodules exists and submodules are properly
+/// initialized, the system passes precondition validation successfully.
 #[test]
 fn validate_rebase_preconditions_succeeds_with_initialized_submodules() {
     with_default_timeout(|| {
@@ -802,6 +882,10 @@ fn validate_rebase_preconditions_succeeds_with_initialized_submodules() {
     });
 }
 
+/// Test that rebase precondition validation succeeds without submodules.
+///
+/// This verifies that when no .gitmodules file exists (no submodules),
+/// the system passes precondition validation successfully.
 #[test]
 fn validate_rebase_preconditions_succeeds_without_submodules() {
     with_default_timeout(|| {
@@ -824,6 +908,10 @@ fn validate_rebase_preconditions_succeeds_without_submodules() {
     });
 }
 
+/// Test that rebase precondition validation detects misconfigured sparse checkout.
+///
+/// This verifies that when sparse checkout is enabled but the sparse-checkout
+/// file is missing, the system fails precondition validation appropriately.
 #[test]
 fn validate_rebase_preconditions_detects_misconfigured_sparse_checkout() {
     with_default_timeout(|| {
@@ -865,6 +953,10 @@ fn validate_rebase_preconditions_detects_misconfigured_sparse_checkout() {
     });
 }
 
+/// Test that rebase precondition validation succeeds with proper sparse checkout.
+///
+/// This verifies that when sparse checkout is enabled and properly configured
+/// with a valid sparse-checkout file, the system passes precondition validation.
 #[test]
 fn validate_rebase_preconditions_succeeds_with_proper_sparse_checkout() {
     with_default_timeout(|| {
@@ -898,6 +990,10 @@ fn validate_rebase_preconditions_succeeds_with_proper_sparse_checkout() {
     });
 }
 
+/// Test that rebase precondition validation detects empty sparse checkout config.
+///
+/// This verifies that when the sparse-checkout file exists but is empty,
+/// the system fails precondition validation with an appropriate error.
 #[test]
 fn validate_rebase_preconditions_detects_empty_sparse_checkout_config() {
     with_default_timeout(|| {
@@ -939,6 +1035,10 @@ fn validate_rebase_preconditions_detects_empty_sparse_checkout_config() {
     });
 }
 
+/// Test that rebasing with line ending conflicts produces appropriate result.
+///
+/// This verifies that when files have conflicting line endings (CRLF vs LF),
+/// the system handles the conflicts through Git's auto-resolution or conflict detection.
 #[test]
 fn rebase_with_line_ending_conflict_resolves() {
     with_default_timeout(|| {
@@ -1008,6 +1108,10 @@ fn rebase_with_line_ending_conflict_resolves() {
     });
 }
 
+/// Test that rebasing with binary file conflicts produces appropriate result.
+///
+/// This verifies that when binary files are modified differently on each branch,
+/// the system detects conflicts or handles the merge appropriately.
 #[test]
 fn rebase_with_binary_file_conflict() {
     with_default_timeout(|| {
@@ -1054,6 +1158,10 @@ fn rebase_with_binary_file_conflict() {
     });
 }
 
+/// Test that rebasing with symlink conflicts produces appropriate result.
+///
+/// This verifies that when a file is replaced with a symlink on one branch,
+/// the system detects the conflict or handles the merge appropriately.
 #[test]
 fn rebase_with_symlink_conflict() {
     with_default_timeout(|| {
@@ -1108,6 +1216,10 @@ fn rebase_with_symlink_conflict() {
     });
 }
 
+/// Test that rebase precondition validation handles long path names.
+///
+/// This verifies that when deeply nested directory structures approach
+/// path length limits, the system handles the situation gracefully.
 #[test]
 fn validate_rebase_preconditions_detects_path_length() {
     with_default_timeout(|| {
@@ -1156,6 +1268,10 @@ fn validate_rebase_preconditions_detects_path_length() {
     });
 }
 
+/// Test that rebasing with case sensitivity collisions produces appropriate result.
+///
+/// This verifies that when the same filename differs only in case on different
+/// branches, the system handles the conflict based on filesystem sensitivity.
 #[test]
 fn rebase_with_case_sensitivity_collision() {
     with_default_timeout(|| {
@@ -1202,6 +1318,10 @@ fn rebase_with_case_sensitivity_collision() {
     });
 }
 
+/// Test that concurrent rebase operations use locking mechanism.
+///
+/// This verifies that when a rebase lock is held, the system's locking
+/// mechanism prevents concurrent rebase operations from conflicting.
 #[test]
 fn detect_concurrent_rebase_locking() {
     with_default_timeout(|| {
@@ -1242,6 +1362,10 @@ fn detect_concurrent_rebase_locking() {
     });
 }
 
+/// Test that Git version meets minimum requirements for rebase operations.
+///
+/// This verifies that the system can check the Git version and ensure
+/// required features are available for rebase operations.
 #[test]
 fn validate_git_version_requirements() {
     with_default_timeout(|| {
@@ -1300,6 +1424,10 @@ fn validate_git_version_requirements() {
     });
 }
 
+/// Test that rebasing with large files produces appropriate result.
+///
+/// This verifies that when large files (>100MB) are modified during rebase,
+/// the system handles them appropriately or fails with clear error messages.
 #[test]
 fn rebase_with_large_file_handling() {
     with_default_timeout(|| {
@@ -1370,6 +1498,10 @@ fn rebase_with_large_file_handling() {
     });
 }
 
+/// Test that rebasing with rename/rename conflicts produces appropriate result.
+///
+/// This verifies that when both branches rename the same file to different
+/// names, the system detects the conflict or handles the merge appropriately.
 #[test]
 fn rebase_handles_rename_rename_conflict() {
     with_default_timeout(|| {
@@ -1431,6 +1563,10 @@ fn rebase_handles_rename_rename_conflict() {
     });
 }
 
+/// Test that rebasing with directory/file conflicts produces appropriate result.
+///
+/// This verifies that when one branch creates a directory and another creates
+/// a file with the same name, the system detects the conflict appropriately.
 #[test]
 fn rebase_handles_directory_file_conflict() {
     with_default_timeout(|| {
@@ -1497,6 +1633,10 @@ fn rebase_handles_directory_file_conflict() {
     });
 }
 
+/// Test that rebasing with nested repository directories produces appropriate result.
+///
+/// This verifies that when branches contain nested directories with files,
+/// the system handles the rebase without crashing or producing unclear errors.
 #[test]
 fn rebase_handles_nested_repository() {
     with_default_timeout(|| {

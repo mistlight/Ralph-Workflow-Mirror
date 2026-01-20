@@ -89,6 +89,9 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
 }
 
 /// Test that conflict detection works correctly for single file conflicts.
+///
+/// This verifies that when a file contains git conflict markers, the system
+/// detects them correctly and reports the conflict state.
 #[test]
 fn test_detect_single_file_conflict() {
     with_default_timeout(|| {
@@ -111,6 +114,9 @@ fn test_detect_single_file_conflict() {
 }
 
 /// Test that conflict detection works correctly for multiple file conflicts.
+///
+/// This verifies that when multiple files contain conflict markers, the system
+/// detects all of them and reports the complete conflict state.
 #[test]
 fn test_detect_multiple_file_conflicts() {
     with_default_timeout(|| {
@@ -141,6 +147,9 @@ fn test_detect_multiple_file_conflicts() {
 }
 
 /// Test that we can distinguish between resolved and unresolved conflicts.
+///
+/// This verifies that when some files are resolved and others are not, the system
+/// correctly identifies which files still contain conflict markers.
 #[test]
 fn test_distinct_resolved_unresolved_conflicts() {
     with_default_timeout(|| {
@@ -170,7 +179,10 @@ fn test_distinct_resolved_unresolved_conflicts() {
     });
 }
 
-/// Test validation of balanced delimiters in files.
+/// Test that validation detects balanced delimiters in source files.
+///
+/// This verifies that when braces, brackets, and parentheses are balanced,
+/// the validation passes, and when unbalanced, it fails appropriately.
 #[test]
 fn test_validate_balanced_delimiters() {
     with_default_timeout(|| {
@@ -203,6 +215,9 @@ fn test_validate_balanced_delimiters() {
 }
 
 /// Test that AI leaving conflict markers is detected.
+///
+/// This verifies that when an AI "resolution" still contains conflict markers,
+/// the system detects the incomplete resolution and reports it.
 #[test]
 fn test_ai_leaves_conflict_markers_is_detected() {
     with_default_timeout(|| {
@@ -224,7 +239,10 @@ fn test_ai_leaves_conflict_markers_is_detected() {
     });
 }
 
-/// Test detection of partial conflict resolution.
+/// Test that partial conflict resolution is detected correctly.
+///
+/// This verifies that when some conflicts are resolved and others are not,
+/// the system identifies the partial resolution state accurately.
 #[test]
 fn test_detect_partial_conflict_resolution() {
     with_default_timeout(|| {
@@ -251,7 +269,10 @@ fn test_detect_partial_conflict_resolution() {
     });
 }
 
-/// Test validation of complete conflict resolution.
+/// Test that complete conflict resolution is validated correctly.
+///
+/// This verifies that when all conflicts are resolved with no markers remaining,
+/// the system validates the complete resolution state successfully.
 #[test]
 fn test_validate_complete_conflict_resolution() {
     with_default_timeout(|| {
@@ -270,7 +291,10 @@ fn test_validate_complete_conflict_resolution() {
     });
 }
 
-/// Test rebase with actual merge conflicts is detected.
+/// Test that rebase with actual merge conflicts is detected.
+///
+/// This verifies that when a rebase encounters conflicting changes, the system
+/// detects the conflicts and returns a Conflicts result with affected files.
 #[test]
 fn test_rebase_with_conflicts_is_detected() {
     with_default_timeout(|| {
@@ -339,7 +363,10 @@ fn test_rebase_with_conflicts_is_detected() {
     });
 }
 
-/// Test recovery action decision for various error types.
+/// Test that recovery action decisions are made correctly for error types.
+///
+/// This verifies that when different error types occur, the system
+/// chooses the appropriate recovery action (Continue, Retry, Abort, or Skip).
 #[test]
 fn test_recovery_action_decision_logic() {
     with_default_timeout(|| {
@@ -384,7 +411,10 @@ fn test_recovery_action_decision_logic() {
     });
 }
 
-/// Test that already up-to-date branch returns NoOp.
+/// Test that rebasing an up-to-date branch returns NoOp result.
+///
+/// This verifies that when a feature branch has no unique commits,
+/// the system skips rebase and returns NoOp or immediate Success.
 #[test]
 fn test_rebase_already_up_to_date() {
     with_default_timeout(|| {
@@ -421,7 +451,10 @@ fn test_rebase_already_up_to_date() {
     });
 }
 
-/// Test that rebase fails correctly when no common ancestor exists.
+/// Test that rebasing without common ancestor produces appropriate error.
+///
+/// This verifies that when branches have no common ancestor or the target
+/// branch doesn't exist, the system returns Failed or NoOp result.
 #[test]
 fn test_rebase_no_common_ancestor() {
     with_default_timeout(|| {
@@ -450,7 +483,10 @@ fn test_rebase_no_common_ancestor() {
     });
 }
 
-/// Test state machine correctly tracks conflict resolution.
+/// Test that state machine tracks conflict resolution progress correctly.
+///
+/// This verifies that when conflicts are recorded and resolved, the system
+/// tracks the resolution state and reports when all conflicts are resolved.
 #[test]
 fn test_state_machine_tracks_conflict_resolution() {
     with_default_timeout(|| {
@@ -480,7 +516,10 @@ fn test_state_machine_tracks_conflict_resolution() {
     });
 }
 
-/// Test that checkpoint can be saved and loaded for recovery.
+/// Test that checkpoints can be saved and loaded for recovery.
+///
+/// This verifies that when a checkpoint is saved, it can be loaded
+/// later with all state preserved for recovery operations.
 #[test]
 fn test_checkpoint_save_and_load() {
     with_default_timeout(|| {
@@ -520,7 +559,10 @@ fn test_checkpoint_save_and_load() {
     });
 }
 
-/// Test recovery from checkpoint after interruption.
+/// Test that recovery from checkpoint after interruption works correctly.
+///
+/// This verifies that when a rebase is interrupted and later resumed,
+/// the system restores state from the checkpoint and can continue recovery.
 #[test]
 fn test_recovery_from_checkpoint() {
     with_default_timeout(|| {
@@ -553,6 +595,9 @@ fn test_recovery_from_checkpoint() {
 }
 
 /// Test that rebase lock prevents concurrent operations.
+///
+/// This verifies that when a rebase lock is held, concurrent rebase
+/// operations cannot proceed until the lock is released.
 #[test]
 fn test_rebase_lock_prevents_concurrent() {
     with_default_timeout(|| {
@@ -581,6 +626,9 @@ fn test_rebase_lock_prevents_concurrent() {
 }
 
 /// Test that stale lock is cleaned up and can be acquired.
+///
+/// This verifies that when a stale lock file exists, the system
+/// cleans it up and allows new operations to proceed.
 #[test]
 fn test_stale_lock_is_cleaned_up() {
     with_default_timeout(|| {

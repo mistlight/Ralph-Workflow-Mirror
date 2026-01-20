@@ -47,6 +47,10 @@ fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
     repo
 }
 
+/// Test that the `--reset-start-commit` flag updates the `.agent/start_commit` file.
+///
+/// This verifies that when a user invokes ralph with the `--reset-start-commit` flag,
+/// the `.agent/start_commit` file is updated to contain the OID of the current HEAD commit.
 #[test]
 fn ralph_reset_start_commit_flag_works() {
     with_default_timeout(|| {
@@ -83,6 +87,11 @@ fn ralph_reset_start_commit_flag_works() {
     });
 }
 
+/// Test that the `.agent/start_commit` file is created during pipeline execution.
+///
+/// This verifies that when a user runs ralph with a change to commit,
+/// the `.agent/start_commit` file is created containing a valid OID
+/// or the empty repo marker, enabling cumulative diffs for reviewers.
 #[test]
 fn ralph_start_commit_created_during_pipeline() {
     with_default_timeout(|| {
@@ -119,6 +128,11 @@ fn ralph_start_commit_created_during_pipeline() {
     });
 }
 
+/// Test that the start_commit persists across multiple pipeline runs.
+///
+/// This verifies that when a user runs ralph multiple times without resetting,
+/// the `.agent/start_commit` file maintains the same OID value across runs,
+/// ensuring cumulative diffs work correctly for reviewers.
 #[test]
 fn ralph_start_commit_persists_across_pipeline_runs() {
     with_default_timeout(|| {
@@ -164,6 +178,11 @@ fn ralph_start_commit_persists_across_pipeline_runs() {
     });
 }
 
+/// Test that the `--reset-start-commit` flag fails gracefully on an empty repository.
+///
+/// This verifies that when a user invokes ralph with `--reset-start-commit`
+/// in a repository with no commits (unborn HEAD), the command fails
+/// but succeeds after an initial commit is created.
 #[test]
 fn ralph_save_start_commit_handles_empty_repo() {
     with_default_timeout(|| {

@@ -23,7 +23,10 @@ use std::io::BufReader;
 use std::rc::Rc;
 use tempfile::TempDir;
 
-/// Test normal flow with init, message, and result events.
+/// Test that normal parsing flow produces proper output and log file.
+///
+/// This verifies that when init, message, and result events are parsed,
+/// the system renders output correctly and writes events to the log file.
 #[test]
 fn test_gemini_parser_normal_flow() {
     with_default_timeout(|| {
@@ -64,7 +67,10 @@ fn test_gemini_parser_normal_flow() {
     });
 }
 
-/// Test streaming delta messages accumulate correctly.
+/// Test that streaming delta messages produce accumulated output.
+///
+/// This verifies that when delta events are received incrementally,
+/// the system accumulates and renders them correctly in the output.
 #[test]
 fn test_gemini_parser_delta_streaming() {
     with_default_timeout(|| {
@@ -89,7 +95,10 @@ fn test_gemini_parser_delta_streaming() {
     });
 }
 
-/// Test tool use events are formatted correctly.
+/// Test that tool use events produce formatted output.
+///
+/// This verifies that when a tool use event is received, the system
+/// renders the tool name and parameters in a readable format.
 #[test]
 fn test_gemini_parser_tool_use() {
     with_default_timeout(|| {
@@ -109,7 +118,10 @@ fn test_gemini_parser_tool_use() {
     });
 }
 
-/// Test tool result events show success/failure status.
+/// Test that tool result events produce status information.
+///
+/// This verifies that when a tool result event is received, the system
+/// displays the success/failure status and output content.
 #[test]
 fn test_gemini_parser_tool_result() {
     with_default_timeout(|| {
@@ -131,7 +143,10 @@ fn test_gemini_parser_tool_result() {
     });
 }
 
-/// Test error events are handled properly.
+/// Test that error events produce error output.
+///
+/// This verifies that when an error event is received, the system
+/// displays the error message and code appropriately.
 #[test]
 fn test_gemini_parser_error_event() {
     with_default_timeout(|| {
@@ -154,7 +169,10 @@ fn test_gemini_parser_error_event() {
     });
 }
 
-/// Test result event with statistics.
+/// Test that result events with statistics produce detailed output.
+///
+/// This verifies that when a result event includes token counts and
+/// duration, the system displays the statistics in a readable format.
 #[test]
 fn test_gemini_parser_result_with_stats() {
     with_default_timeout(|| {
@@ -187,7 +205,10 @@ fn test_gemini_parser_result_with_stats() {
     });
 }
 
-/// Test user role messages.
+/// Test that user role messages produce user-labeled output.
+///
+/// This verifies that when a message with user role is received,
+/// the system renders the content with appropriate user labeling.
 #[test]
 fn test_gemini_parser_user_message() {
     with_default_timeout(|| {
@@ -210,7 +231,10 @@ fn test_gemini_parser_user_message() {
     });
 }
 
-/// Test log file is properly flushed.
+/// Test that log files are properly flushed after parsing.
+///
+/// This verifies that when parsing completes, the log file is
+/// immediately readable with all events written to disk.
 #[test]
 fn test_gemini_parser_log_file_flushed() {
     with_default_timeout(|| {
@@ -244,7 +268,10 @@ fn test_gemini_parser_log_file_flushed() {
 // Deduplication Tests
 // ============================================================================
 
-/// Test that consecutive identical deltas are filtered.
+/// Test that consecutive identical deltas are filtered from output.
+///
+/// This verifies that when the same delta content is received multiple
+/// times consecutively, the system filters out duplicate lines.
 #[test]
 fn test_gemini_parser_consecutive_duplicates_filtered() {
     with_default_timeout(|| {
@@ -274,7 +301,10 @@ fn test_gemini_parser_consecutive_duplicates_filtered() {
     });
 }
 
-/// Test that snapshot-as-delta is handled correctly.
+/// Test that snapshot-as-delta glitches are handled correctly.
+///
+/// This verifies that when accumulated content is sent as a delta event
+/// (snapshot glitch), the system avoids rendering duplicate content.
 #[test]
 fn test_gemini_parser_snapshot_glitch() {
     with_default_timeout(|| {
@@ -303,7 +333,10 @@ fn test_gemini_parser_snapshot_glitch() {
     });
 }
 
-/// Test intentional repetition is preserved.
+/// Test that intentional repetition patterns are preserved in output.
+///
+/// This verifies that when content contains legitimate repeated phrases,
+/// the system preserves them rather than filtering as duplicates.
 #[test]
 fn test_gemini_parser_intentional_repetition_preserved() {
     with_default_timeout(|| {
@@ -333,7 +366,10 @@ fn test_gemini_parser_intentional_repetition_preserved() {
 // Log Content Tests
 // ============================================================================
 
-/// Test log file contains all events for later analysis.
+/// Test that log files contain all events for later analysis.
+///
+/// This verifies that when events are parsed, the system writes all
+/// event types to the log file for subsequent extraction and analysis.
 #[test]
 fn test_gemini_parser_log_contains_events() {
     with_default_timeout(|| {
@@ -370,7 +406,10 @@ fn test_gemini_parser_log_contains_events() {
     });
 }
 
-/// Test multiple turn conversation.
+/// Test that multiple-turn conversations produce complete log output.
+///
+/// This verifies that when a conversation spans multiple user-assistant
+/// exchanges, the system logs all turns for later analysis.
 #[test]
 fn test_gemini_parser_multiple_turns() {
     with_default_timeout(|| {
@@ -405,7 +444,10 @@ fn test_gemini_parser_multiple_turns() {
 // Error Handling Tests
 // ============================================================================
 
-/// Test handling of malformed JSON.
+/// Test that malformed JSON is handled gracefully without panic.
+///
+/// This verifies that when invalid JSON is encountered in the stream,
+/// the system continues processing subsequent valid events.
 #[test]
 fn test_gemini_parser_malformed_json() {
     with_default_timeout(|| {
@@ -436,7 +478,10 @@ fn test_gemini_parser_malformed_json() {
     });
 }
 
-/// Test handling of network error simulation (truncated response).
+/// Test that truncated streams are handled gracefully.
+///
+/// This verifies that when a stream ends prematurely without a result event,
+/// the system writes partial events to the log without crashing.
 #[test]
 fn test_gemini_parser_truncated_stream() {
     with_default_timeout(|| {
@@ -474,11 +519,10 @@ fn test_gemini_parser_truncated_stream() {
 // GLM/CCS Protocol Quirks Tests
 // ============================================================================
 
-/// Test that snapshot-as-delta is handled correctly (GLM/CCS protocol quirk).
+/// Test that snapshot-as-delta glitches are filtered from output.
 ///
-/// GLM agents can sometimes send accumulated content as a "delta"
-/// (a snapshot glitch). The deduplication system should detect and
-/// filter this to avoid rendering the same content twice.
+/// This verifies that when accumulated content is sent as a delta event
+/// (GLM/CCS protocol quirk), the system avoids rendering duplicate content.
 #[test]
 fn test_gemini_parser_snapshot_as_delta_glitch() {
     with_default_timeout(|| {
@@ -514,10 +558,10 @@ fn test_gemini_parser_snapshot_as_delta_glitch() {
     });
 }
 
-/// Test that alternating deltas are NOT filtered (not consecutive duplicates).
+/// Test that alternating deltas are not filtered as consecutive duplicates.
 ///
-/// GLM agents sometimes send deltas in alternating patterns (A, B, A, B).
-/// These are NOT consecutive duplicates and should all be processed.
+/// This verifies that when deltas alternate between different values
+/// (A, B, A, B pattern), the system processes all of them without filtering.
 #[test]
 fn test_gemini_parser_alternating_deltas_not_filtered() {
     with_default_timeout(|| {
@@ -546,10 +590,10 @@ fn test_gemini_parser_alternating_deltas_not_filtered() {
     });
 }
 
-/// Test that consecutive identical deltas are filtered.
+/// Test that consecutive identical deltas are filtered from output.
 ///
-/// When GLM agents send the same delta multiple times consecutively
-/// (a resend glitch), these duplicates should be filtered.
+/// This verifies that when the same delta is sent multiple times consecutively
+/// (GLM resend glitch), the system filters out duplicate lines.
 #[test]
 fn test_gemini_parser_consecutive_identical_deltas_filtered() {
     with_default_timeout(|| {
@@ -583,10 +627,10 @@ fn test_gemini_parser_consecutive_identical_deltas_filtered() {
     });
 }
 
-/// Test that repeated init events don't cause issues.
+/// Test that repeated init events are handled without state corruption.
 ///
-/// GLM agents sometimes send multiple init events during a conversation.
-/// The parser should handle this gracefully without state corruption.
+/// This verifies that when multiple init events are received during a
+/// conversation (GLM protocol quirk), the system handles them gracefully.
 #[test]
 fn test_gemini_parser_repeated_init_events() {
     with_default_timeout(|| {
@@ -613,10 +657,10 @@ fn test_gemini_parser_repeated_init_events() {
     });
 }
 
-/// Test that tool use events intermixed with text deltas don't cause duplicates.
+/// Test that interleaved tool use and text deltas produce no duplicates.
 ///
-/// GLM agents can interleave tool use blocks with text blocks.
-/// Switching between them should not cause duplicate rendering.
+/// This verifies that when tool use events are mixed with text deltas,
+/// the system switches contexts without rendering duplicate lines.
 #[test]
 fn test_gemini_parser_tool_use_interleaved_with_text() {
     with_default_timeout(|| {

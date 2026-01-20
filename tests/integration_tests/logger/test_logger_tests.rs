@@ -19,6 +19,9 @@ use ralph_workflow::logger::Loggable;
 use std::io::Write;
 
 /// Test that TestLogger implements the Loggable trait correctly.
+///
+/// This verifies that when the log() method is called on TestLogger,
+/// it correctly captures the message for later inspection.
 #[test]
 fn test_logger_trait_log_method() {
     with_default_timeout(|| {
@@ -29,6 +32,9 @@ fn test_logger_trait_log_method() {
 }
 
 /// Test that TestLogger info() method formats correctly.
+///
+/// This verifies that when the info() method is called, the message
+/// is formatted with the "[INFO]" prefix.
 #[test]
 fn test_logger_trait_info_method() {
     with_default_timeout(|| {
@@ -39,6 +45,9 @@ fn test_logger_trait_info_method() {
 }
 
 /// Test that TestLogger success() method formats correctly.
+///
+/// This verifies that when the success() method is called, the message
+/// is formatted with the "[OK]" prefix.
 #[test]
 fn test_logger_trait_success_method() {
     with_default_timeout(|| {
@@ -49,6 +58,9 @@ fn test_logger_trait_success_method() {
 }
 
 /// Test that TestLogger warn() method formats correctly.
+///
+/// This verifies that when the warn() method is called, the message
+/// is formatted with the "[WARN]" prefix.
 #[test]
 fn test_logger_trait_warn_method() {
     with_default_timeout(|| {
@@ -59,6 +71,9 @@ fn test_logger_trait_warn_method() {
 }
 
 /// Test that TestLogger error() method formats correctly.
+///
+/// This verifies that when the error() method is called, the message
+/// is formatted with the "[ERROR]" prefix.
 #[test]
 fn test_logger_trait_error_method() {
     with_default_timeout(|| {
@@ -70,8 +85,8 @@ fn test_logger_trait_error_method() {
 
 /// Test that TestLogger line buffering works correctly.
 ///
-/// TestLogger should buffer partial lines and only flush them when
-/// a newline is encountered or flush() is called explicitly.
+/// This verifies that when partial lines are written, the system buffers them
+/// and only flushes when a newline is encountered or flush() is called.
 #[test]
 fn test_logger_line_buffering() {
     with_default_timeout(|| {
@@ -93,9 +108,8 @@ fn test_logger_line_buffering() {
 
 /// Test that TestLogger flush() commits buffered content.
 ///
-/// Note: TestLogger's get_logs() and has_log() methods include buffered
-/// content, so we need to check the internal logs array directly to
-/// verify that buffered content is only added after flush().
+/// This verifies that when flush() is called, the system commits buffered
+/// content and makes it available via get_logs() and has_log().
 #[test]
 fn test_logger_flush_behavior() {
     with_default_timeout(|| {
@@ -121,6 +135,9 @@ fn test_logger_flush_behavior() {
 }
 
 /// Test that TestLogger correctly handles JSON events via Write trait.
+///
+/// This verifies that when JSON events are written via the Write trait,
+/// they are captured correctly and can be retrieved later.
 #[test]
 fn test_logger_json_events_via_write() {
     with_default_timeout(|| {
@@ -138,6 +155,9 @@ fn test_logger_json_events_via_write() {
 }
 
 /// Test that TestLogger can be used as a generic Loggable constraint.
+///
+/// This verifies that when a function requires a Loggable trait bound,
+/// TestLogger can be passed and used correctly.
 #[test]
 fn test_logger_generic_constraint() {
     with_default_timeout(|| {
@@ -155,6 +175,9 @@ fn test_logger_generic_constraint() {
 }
 
 /// Test that TestLogger clear() removes all logs.
+///
+/// This verifies that when clear() is called, all captured logs
+/// are removed and the logger returns to an empty state.
 #[test]
 fn test_logger_clear() {
     with_default_timeout(|| {
@@ -172,6 +195,9 @@ fn test_logger_clear() {
 }
 
 /// Test that TestLogger count_pattern() works correctly.
+///
+/// This verifies that when count_pattern() is called, it returns
+/// the number of log entries matching the given pattern.
 #[test]
 fn test_logger_count_pattern() {
     with_default_timeout(|| {
@@ -187,6 +213,9 @@ fn test_logger_count_pattern() {
 }
 
 /// Test that TestLogger correctly handles mixed Loggable and Write usage.
+///
+/// This verifies that when Loggable trait methods and Write trait methods
+/// are used together, all logs are captured correctly.
 #[test]
 fn test_logger_mixed_usage() {
     with_default_timeout(|| {

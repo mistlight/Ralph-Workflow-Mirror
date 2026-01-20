@@ -35,6 +35,10 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 // Config and Init Tests
 // ============================================================================
 
+/// Test that ralph --init-legacy creates a config file.
+///
+/// This verifies that when ralph --init-legacy is run, the system
+/// creates .agent/agents.toml with default configuration sections.
 #[test]
 fn ralph_init_creates_config_file() {
     with_default_timeout(|| {
@@ -71,6 +75,10 @@ fn ralph_init_creates_config_file() {
     });
 }
 
+/// Test that ralph --init-legacy preserves existing config files.
+///
+/// This verifies that when a config file already exists, the system
+/// reports it exists and does not overwrite the original content.
 #[test]
 fn ralph_init_reports_existing_config() {
     with_default_timeout(|| {
@@ -106,6 +114,10 @@ reviewer = ["codex"]
     });
 }
 
+/// Test that ralph --init-global creates unified config file.
+///
+/// This verifies that when ralph --init-global is run, the system
+/// creates ralph-workflow.toml in the XDG config home directory.
 #[test]
 fn ralph_first_run_creates_config_and_exits() {
     with_default_timeout(|| {
@@ -144,6 +156,10 @@ fn ralph_first_run_creates_config_and_exits() {
     });
 }
 
+/// Test that agent chain first entries are used as default agents.
+///
+/// This verifies that when no explicit agent selection is made, the system
+/// uses the first entry in the agent_chain configuration.
 #[test]
 fn ralph_uses_agent_chain_first_entries_as_defaults() {
     with_default_timeout(|| {
@@ -182,6 +198,10 @@ reviewer = ["aider", "codex"]
 // Quick Mode Tests
 // ============================================================================
 
+/// Test that quick mode sets minimal iteration counts.
+///
+/// This verifies that when --quick flag is used, the system
+/// configures minimal developer and reviewer iteration counts.
 #[test]
 fn ralph_quick_mode_sets_minimal_iterations() {
     with_default_timeout(|| {
@@ -205,6 +225,10 @@ fn ralph_quick_mode_sets_minimal_iterations() {
     });
 }
 
+/// Test that quick mode short flag -Q works correctly.
+///
+/// This verifies that when the -Q short flag is used, the system
+/// enables quick mode the same as --quick.
 #[test]
 fn ralph_quick_mode_short_flag_works() {
     with_default_timeout(|| {
@@ -230,6 +254,10 @@ fn ralph_quick_mode_short_flag_works() {
     });
 }
 
+/// Test that explicit iteration counts override quick mode.
+///
+/// This verifies that when both --quick and explicit --developer-iters
+/// are provided, the explicit value takes precedence.
 #[test]
 fn ralph_quick_mode_explicit_iters_override() {
     with_default_timeout(|| {
@@ -255,6 +283,10 @@ fn ralph_quick_mode_explicit_iters_override() {
     });
 }
 
+/// Test that rapid mode sets two developer iterations.
+///
+/// This verifies that when --rapid flag is used, the system
+/// configures developer_iters=2 and reviewer_reviews=1.
 #[test]
 fn ralph_rapid_mode_sets_two_iterations() {
     with_default_timeout(|| {
@@ -280,6 +312,10 @@ fn ralph_rapid_mode_sets_two_iterations() {
     });
 }
 
+/// Test that rapid mode short flag -U works correctly.
+///
+/// This verifies that when the -U short flag is used, the system
+/// enables rapid mode the same as --rapid.
 #[test]
 fn ralph_rapid_mode_short_flag_works() {
     with_default_timeout(|| {
@@ -309,6 +345,10 @@ fn ralph_rapid_mode_short_flag_works() {
 // Stack Detection Tests
 // ============================================================================
 
+/// Test that stack detection works for Rust projects.
+///
+/// This verifies that when a Rust project is detected, the system
+/// identifies the stack correctly and uses appropriate build commands.
 #[test]
 fn ralph_stack_detection_rust_project() {
     with_default_timeout(|| {
@@ -349,6 +389,10 @@ tokio = "1.0"
     });
 }
 
+/// Test that stack detection works for JavaScript projects.
+///
+/// This verifies that when a JavaScript/React project is detected,
+/// the system identifies the stack and uses appropriate build commands.
 #[test]
 fn ralph_stack_detection_javascript_project() {
     with_default_timeout(|| {
@@ -389,6 +433,10 @@ fn ralph_stack_detection_javascript_project() {
     });
 }
 
+/// Test that stack detection can be disabled via environment variable.
+///
+/// This verifies that when RALPH_AUTO_DETECT_STACK is set to false,
+/// the system skips automatic stack detection.
 #[test]
 fn ralph_stack_detection_disabled() {
     with_default_timeout(|| {
@@ -419,6 +467,10 @@ name = "test"
     });
 }
 
+/// Test that stack detection handles mixed-language projects.
+///
+/// This verifies that when a project contains multiple languages,
+/// the system detects the primary stack appropriately.
 #[test]
 fn ralph_mixed_language_project() {
     with_default_timeout(|| {
@@ -457,6 +509,10 @@ version = "0.1.0"
 // Review Depth Tests
 // ============================================================================
 
+/// Test that standard review depth configures the review process.
+///
+/// This verifies that when RALPH_REVIEW_DEPTH is set to standard,
+/// the system uses standard-level review configurations.
 #[test]
 fn ralph_review_depth_standard() {
     with_default_timeout(|| {
@@ -476,6 +532,10 @@ fn ralph_review_depth_standard() {
     });
 }
 
+/// Test that comprehensive review depth configures detailed review.
+///
+/// This verifies that when RALPH_REVIEW_DEPTH is set to comprehensive,
+/// the system uses thorough review configurations.
 #[test]
 fn ralph_review_depth_comprehensive() {
     with_default_timeout(|| {
@@ -495,6 +555,10 @@ fn ralph_review_depth_comprehensive() {
     });
 }
 
+/// Test that security review depth configures security-focused review.
+///
+/// This verifies that when RALPH_REVIEW_DEPTH is set to security,
+/// the system uses security-oriented review configurations.
 #[test]
 fn ralph_review_depth_security() {
     with_default_timeout(|| {
@@ -514,6 +578,10 @@ fn ralph_review_depth_security() {
     });
 }
 
+/// Test that incremental review depth focuses on git diff.
+///
+/// This verifies that when RALPH_REVIEW_DEPTH is set to incremental,
+/// the system configures review to focus on changed files only.
 #[test]
 fn ralph_review_depth_incremental() {
     with_default_timeout(|| {

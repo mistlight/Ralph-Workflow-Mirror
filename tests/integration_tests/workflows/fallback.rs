@@ -43,6 +43,11 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 // Agent Command Execution Tests
 // ============================================================================
 
+/// Test that setting iterations to zero skips the respective phase.
+///
+/// This verifies that when a user runs ralph with both developer_iters=0
+/// and reviewer_reviews=0, the agent phases are skipped and the pipeline
+/// completes successfully without creating agent-related files.
 #[test]
 fn ralph_skips_phases_with_zero_iterations() {
     with_default_timeout(|| {
@@ -73,6 +78,11 @@ fn ralph_skips_phases_with_zero_iterations() {
     });
 }
 
+/// Test that the pipeline succeeds with both developer and review phases skipped.
+///
+/// This verifies that when a user runs ralph with both developer_iters=0
+/// and reviewer_reviews=0, the pipeline completes successfully and a commit
+/// is created with a non-empty commit message.
 #[test]
 fn ralph_succeeds_with_zero_iterations() {
     with_default_timeout(|| {

@@ -35,6 +35,10 @@ fn get_default_branch_name(repo: &git2::Repository) -> String {
         .unwrap_or_else(|| "main".to_string())
 }
 
+/// Test that ValidationFailed error kind is properly represented.
+///
+/// This verifies that when a ValidationFailed error is constructed,
+/// the error description contains details about the validation failure.
 #[test]
 fn rebase_detects_validation_failure() {
     with_default_timeout(|| {
@@ -48,6 +52,10 @@ fn rebase_detects_validation_failure() {
     });
 }
 
+/// Test that ValidationFailed error is categorized as Category 3.
+///
+/// This verifies that when a ValidationFailed error occurs, the system
+/// correctly categorizes it as a post-rebase failure.
 #[test]
 fn rebase_validation_error_has_correct_category() {
     with_default_timeout(|| {
@@ -60,6 +68,10 @@ fn rebase_validation_error_has_correct_category() {
     });
 }
 
+/// Test that test failures after rebase are detected.
+///
+/// This verifies that when tests fail after rebase completes, the system
+/// can represent this scenario with a ValidationFailed error.
 #[test]
 fn rebase_detects_test_failures() {
     with_default_timeout(|| {
@@ -79,6 +91,10 @@ fn rebase_detects_test_failures() {
     });
 }
 
+/// Test that build failures after rebase are detected.
+///
+/// This verifies that when build fails after rebase completes, the system
+/// can represent this scenario with a ValidationFailed error.
 #[test]
 fn rebase_detects_build_failures() {
     with_default_timeout(|| {
@@ -96,6 +112,10 @@ fn rebase_detects_build_failures() {
     });
 }
 
+/// Test that lint violations after rebase are detected.
+///
+/// This verifies that when clippy/fmt fails after rebase completes,
+/// the system can represent this scenario with a ValidationFailed error.
 #[test]
 fn rebase_detects_lint_violations() {
     with_default_timeout(|| {
@@ -113,6 +133,10 @@ fn rebase_detects_lint_violations() {
     });
 }
 
+/// Test that lockfile changes after rebase are detected.
+///
+/// This verifies that when lockfile drift occurs after rebase, the system
+/// can represent this scenario with a ValidationFailed error.
 #[test]
 fn rebase_detects_lockfile_changes() {
     with_default_timeout(|| {
@@ -130,6 +154,10 @@ fn rebase_detects_lockfile_changes() {
     });
 }
 
+/// Test that validation failures are not automatically recoverable.
+///
+/// This verifies that when ValidationFailed errors occur, the system
+/// marks them as not recoverable without manual intervention.
 #[test]
 fn rebase_validation_failure_not_recoverable() {
     with_default_timeout(|| {
@@ -143,6 +171,10 @@ fn rebase_validation_failure_not_recoverable() {
     });
 }
 
+/// Test that successful rebase produces no validation error.
+///
+/// This verifies that when a rebase completes successfully with all
+/// validation checks passing, the system returns Success or NoOp result.
 #[test]
 fn rebase_successful_rebase_has_no_validation_error() {
     with_default_timeout(|| {
@@ -182,6 +214,10 @@ fn rebase_successful_rebase_has_no_validation_error() {
     });
 }
 
+/// Test that submodule pointer changes after rebase are detected.
+///
+/// This verifies that when submodule pointers diverge after rebase,
+/// the system can represent this scenario with a ValidationFailed error.
 #[test]
 fn rebase_handles_submodule_pointer_changes() {
     with_default_timeout(|| {
