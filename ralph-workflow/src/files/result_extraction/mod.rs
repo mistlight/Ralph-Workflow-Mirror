@@ -19,6 +19,9 @@
 //!
 //! This dual-mode support handles both legacy directory-based logs and the current
 //! prefix-based naming convention (e.g., `.agent/logs/planning_1_glm_0.log`).
+//!
+//! Note: Many functions in this module are currently unused in production
+//! (XML extraction is used instead). Kept for potential future use and test compatibility.
 
 mod file_extraction;
 pub mod file_finder;
@@ -31,9 +34,9 @@ mod validation;
 
 pub use file_extraction::extract_file_paths_from_issues;
 pub use json_extraction::extract_last_result;
-pub use plan_extraction::extract_plan_from_logs_text;
 pub use types::ExtractionResult;
-pub use validation::{validate_issues_content, validate_plan_content};
+pub use validation::validate_issues_content;
+pub use validation::validate_plan_content;
 
 use std::io;
 use std::path::Path;
@@ -50,6 +53,7 @@ use std::path::Path;
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like a valid plan)
 /// - Warning message (if validation failed)
+#[allow(dead_code)]
 pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 

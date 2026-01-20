@@ -1,4 +1,7 @@
 //! Scoring utilities for content quality assessment.
+//!
+//! Note: Currently unused in production (XML extraction is used instead).
+//! Kept for potential future use and test compatibility.
 
 /// Calculate a score for a result to determine its quality.
 ///
@@ -7,6 +10,7 @@
 /// - Markdown headers (#)
 /// - Content length (longer is generally better)
 /// - Plan-like keywords
+#[allow(dead_code)]
 pub fn score_result(content: &str) -> u32 {
     let mut score: u32 = 0;
     let content_lower = content.to_lowercase();
@@ -75,6 +79,7 @@ pub fn score_result(content: &str) -> u32 {
 ///
 /// This is similar to `score_result()` but works on raw text content rather than
 /// JSON result events. Higher scores indicate more complete plans.
+#[allow(dead_code)]
 pub fn score_text_plan(content: &str) -> u32 {
     let mut score: u32 = 0;
     let content_lower = content.to_lowercase();

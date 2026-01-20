@@ -82,16 +82,22 @@ You **must** run the following commands and ensure they succeed.
 
 ```bash
 # THIS IS VERY IMPORTANT!!!! THIS COMMANDS MUST NOT PRODUCE ANY OUTPUT!!! NOTHING AT ALL SHOULD DISPLAY WITH THIS COMMAND
-rg -n -U --pcre2 '(?x)
-  \#\s*!?\[\s*
-  (?!cfg(?:_attr)?\b)     # <-- cfg is fine, we only care about allow and expect()
+rg -n -U --pcre2 '
+(?x)
+\#\s*!?\[\s*
+(?:
   (allow|expect)
-  \s*\(
-    [^()\]]*
-    (?:\([^()\]]*\)[^()\]]*)*
-  \)
-  \s*\]
-' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+|
+  cfg_attr\s*\(
+    [^()]*? , \s*
+    (allow|expect)
+)
+\s*\(
+  [^()\]]*
+  (?:\([^()\]]*\)[^()\]]*)*
+\)
+\s*\]' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 

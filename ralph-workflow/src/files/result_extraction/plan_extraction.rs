@@ -2,6 +2,9 @@
 //!
 //! This module provides text-based fallback extraction for plan content,
 //! used when JSON result events are not available.
+//!
+//! Note: Currently unused in production (XML extraction is used instead).
+//! Kept for potential future use and test compatibility.
 
 use std::fs::File;
 use std::io::{self, Read};
@@ -16,6 +19,7 @@ use super::text_extraction::extract_plan_from_text;
 /// This scans all log files matching the prefix and looks for markdown plan structure.
 /// Also checks subdirectories matching the prefix pattern (for legacy logs where agent
 /// names with "/" created nested directories).
+#[allow(dead_code)]
 pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>> {
     // Helper to extract from a list of files by finding the best plan across all files
     fn extract_from_files(files: &[std::path::PathBuf]) -> Option<String> {

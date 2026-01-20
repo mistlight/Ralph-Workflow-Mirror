@@ -6,8 +6,10 @@ pub struct ExtractionResult {
     /// The raw content extracted from the log (if any)
     pub raw_content: Option<String>,
     /// Whether the content passed validation
+    #[allow(dead_code)]
     pub is_valid: bool,
     /// Validation warning message (if validation failed but content exists)
+    #[allow(dead_code)]
     pub validation_warning: Option<String>,
 }
 

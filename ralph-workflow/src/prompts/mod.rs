@@ -32,21 +32,26 @@ mod types;
 pub use crate::checkpoint::restore::ResumeContext;
 
 // Re-export all public items for backward compatibility
+#[cfg(any(test, feature = "test-utils"))]
+pub use commit::prompt_fix_with_context;
 pub use commit::{
-    prompt_fix_with_context, prompt_generate_commit_message_with_diff_with_context,
-    prompt_simplified_commit_with_context, prompt_xsd_retry_with_context,
+    prompt_generate_commit_message_with_diff_with_context, prompt_simplified_commit_with_context,
+    prompt_xsd_retry_with_context,
 };
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
 pub use developer::{
-    prompt_developer_iteration_with_context, prompt_developer_iteration_xml_with_context,
-    prompt_developer_iteration_xsd_retry_with_context, prompt_plan_with_context,
+    prompt_developer_iteration_xml_with_context, prompt_developer_iteration_xsd_retry_with_context,
     prompt_planning_xml_with_context, prompt_planning_xsd_retry_with_context,
 };
 pub use rebase::{
     build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict,
 };
+#[cfg(any(test, feature = "test-utils"))]
+pub use review::prompt_review_xsd_retry_with_context;
 pub use review::{
     prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context, prompt_review_xml_with_context,
-    prompt_review_xsd_retry_with_context,
 };
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -75,11 +80,14 @@ pub use template_validator::{
     extract_metadata, extract_partials, extract_variables, validate_template, ValidationError,
     ValidationWarning,
 };
-pub use types::{Action, ContextLevel, Role};
+pub use types::ContextLevel;
+#[cfg(any(test, feature = "test-utils"))]
+pub use types::{Action, Role};
 
 /// Configuration for prompt generation.
 ///
 /// Groups related parameters to reduce function argument count.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[must_use]
 pub struct PromptConfig {
@@ -99,6 +107,7 @@ pub struct PromptConfig {
     pub resume_context: Option<ResumeContext>,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl PromptConfig {
     /// Create a new prompt configuration with default values.
     #[must_use = "configuration is required for prompt generation"]
@@ -387,6 +396,7 @@ impl BriefDescription for crate::checkpoint::execution_history::StepOutcome {
 /// * `context` - The context level (minimal or normal)
 /// * `template_context` - Template context for user template overrides
 /// * `config` - Prompt configuration with content variables
+#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_for_agent(
     role: Role,
     action: Action,

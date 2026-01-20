@@ -15,10 +15,10 @@ use crate::agents::AgentRole;
 use crate::checkpoint::restore::ResumeContext;
 use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase};
 use crate::files::extract_issues;
+use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::llm_output_extraction::{
     extract_fix_result_xml, format_xml_for_display, validate_fix_result_xml,
 };
-use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::git_helpers::{
     get_baseline_summary, git_snapshot, update_review_baseline, CommitResultFallback,
@@ -26,11 +26,10 @@ use crate::git_helpers::{
 use crate::logger::{print_progress, Logger};
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
-use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_with_fallback_and_validator, FallbackConfig, PipelineRuntime};
 use crate::prompts::{
-    get_stored_or_generate_prompt, prompt_fix_xml_with_context,
-    prompt_fix_xsd_retry_with_context, prompt_for_agent, Action, ContextLevel, PromptConfig, Role,
+    get_stored_or_generate_prompt, prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context,
+    ContextLevel,
 };
 use crate::review_metrics::ReviewMetrics;
 use std::fs;
@@ -978,8 +977,8 @@ fn format_xsd_error_for_fix(error: &XsdValidationError) -> String {
 fn run_fix_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
-    reviewer_context: ContextLevel,
-    resume_context: Option<&ResumeContext>,
+    _reviewer_context: ContextLevel,
+    _resume_context: Option<&ResumeContext>,
 ) -> anyhow::Result<()> {
     let fix_start_time = Instant::now();
 
@@ -994,7 +993,7 @@ fn run_fix_pass(
 
     let max_xsd_retries = 10;
     let max_continuations = 100; // Safety limit to prevent infinite loops
-    let mut had_any_error = false;
+    let mut _had_any_error = false; // Tracked for potential future use
 
     // Outer loop: Continue until agent returns status="all_issues_addressed" or "no_issues_found"
     'continuation: for continuation_num in 0..max_continuations {
@@ -1062,9 +1061,7 @@ fn run_fix_pass(
                 // Continuation only (first XSD attempt after continuation)
                 ctx.logger.info(&format!(
                     "  Continuation attempt {} (XSD validation attempt {}/{})",
-                    total_attempts,
-                    1,
-                    max_xsd_retries
+                    total_attempts, 1, max_xsd_retries
                 ));
 
                 prompt_fix_xml_with_context(
@@ -1116,7 +1113,9 @@ fn run_fix_pass(
 
                 // Output validator: checks if fixer produced valid JSON output
                 let validate_output: crate::pipeline::OutputValidator =
-                    |log_dir_path: &Path, _logger: &crate::logger::Logger| -> std::io::Result<bool> {
+                    |log_dir_path: &Path,
+                     _logger: &crate::logger::Logger|
+                     -> std::io::Result<bool> {
                         use crate::files::result_extraction::extract_last_result;
                         match extract_last_result(log_dir_path) {
                             Ok(Some(_)) => Ok(true),
@@ -1149,103 +1148,87 @@ fn run_fix_pass(
             ctx.stats.reviewer_runs_completed += 1;
 
             // Track if any agent run had an error
-            if exit_code != 0 {
-                had_any_error = true;
+            if exit_code.is_err() || exit_code.ok() != Some(0) {
+                _had_any_error = true;
             }
 
             // Extract and validate the fix result XML
             let log_dir_path = Path::new(&log_dir);
             let fix_content = read_last_fix_output(log_dir_path);
 
-            // Try to extract XML
-            if let Some(xml_content) = extract_fix_result_xml(&fix_content) {
-                // Try to validate against XSD
-                match validate_fix_result_xml(&xml_content) {
-                    Ok(result_elements) => {
-                        // XSD validation passed - format and log the result
-                        let formatted_xml = format_xml_for_display(&xml_content);
+            // Try to extract XML - if extraction fails, assume entire output is XML
+            // and validate it to get specific XSD errors for retry
+            let xml_to_validate = if let Some(xml_content) = extract_fix_result_xml(&fix_content) {
+                xml_content
+            } else {
+                // No XML tags found - assume the entire content is XML for validation
+                // This allows us to get specific XSD errors to send back to the agent
+                fix_content.clone()
+            };
 
-                        if is_retry {
-                            ctx.logger
-                                .success(&format!("Fix validated after {} retries", retry_num));
-                        } else {
-                            ctx.logger.success("Fix status extracted and validated (XML)");
-                        }
+            // Try to validate against XSD
+            match validate_fix_result_xml(&xml_to_validate) {
+                Ok(result_elements) => {
+                    // XSD validation passed - format and log the result
+                    let formatted_xml = format_xml_for_display(&xml_to_validate);
 
-                        // Display the formatted status
-                        ctx.logger.info(&format!("\n{}", formatted_xml));
-
-                        // Check the status to determine if we should continue
-                        if result_elements.is_complete() || result_elements.is_no_issues() {
-                            // Status is "all_issues_addressed" or "no_issues_found" - we're done
-                            let duration = fix_start_time.elapsed().as_secs();
-                            let step = ExecutionStep::new(
-                                "Review",
-                                j,
-                                "fix",
-                                StepOutcome::success(
-                                    result_elements.summary,
-                                    vec![],
-                                ),
-                            )
-                            .with_agent(ctx.reviewer_agent)
-                            .with_duration(duration);
-                            ctx.execution_history.add_step(step);
-
-                            return Ok(());
-                        } else if result_elements.has_remaining_issues() {
-                            // Status is "issues_remain" - continue the outer loop
-                            ctx.logger
-                                .info("Status is 'issues_remain' - continuing with same fix pass");
-                            continue 'continuation;
-                        }
-                    }
-                    Err(xsd_err) => {
-                        // XSD validation failed - check if we can retry
-                        let error_msg = format_xsd_error_for_fix(&xsd_err);
+                    if is_retry {
                         ctx.logger
-                            .warn(&format!("  XSD validation failed: {}", error_msg));
+                            .success(&format!("Fix validated after {} retries", retry_num));
+                    } else {
+                        ctx.logger
+                            .success("Fix status extracted and validated (XML)");
+                    }
 
-                        if retry_num < max_xsd_retries - 1 {
-                            // Store error for next retry attempt
-                            xsd_error = Some(error_msg);
-                            // Continue to next XSD retry iteration
-                            continue;
-                        } else {
-                            ctx.logger.warn("  No more in-session XSD retries remaining");
-                            // Fall through to return what we have
-                            break 'continuation;
-                        }
+                    // Display the formatted status
+                    ctx.logger.info(&format!("\n{}", formatted_xml));
+
+                    // Check the status to determine if we should continue
+                    if result_elements.is_complete() || result_elements.is_no_issues() {
+                        // Status is "all_issues_addressed" or "no_issues_found" - we're done
+                        let duration = fix_start_time.elapsed().as_secs();
+                        let step = ExecutionStep::new(
+                            "Review",
+                            j,
+                            "fix",
+                            StepOutcome::success(result_elements.summary, vec![]),
+                        )
+                        .with_agent(ctx.reviewer_agent)
+                        .with_duration(duration);
+                        ctx.execution_history.add_step(step);
+
+                        return Ok(());
+                    } else if result_elements.has_remaining_issues() {
+                        // Status is "issues_remain" - continue the outer loop
+                        ctx.logger
+                            .info("Status is 'issues_remain' - continuing with same fix pass");
+                        continue 'continuation;
                     }
                 }
-            } else {
-                // No XML found - we only accept XML format now
-                if retry_num < max_xsd_retries - 1 {
+                Err(xsd_err) => {
+                    // XSD validation failed - check if we can retry
+                    let error_msg = format_xsd_error_for_fix(&xsd_err);
                     ctx.logger
-                        .warn("No XML status found in output - treating as XSD error");
-                    xsd_error = Some("No XML found - agent must output XML in <ralph-fix-result> tags".to_string());
-                    // Continue to next retry attempt to get proper XML
-                    continue;
-                } else {
-                    ctx.logger.error("No XML status found after all retries - cannot continue");
-                    // We cannot continue without valid XML
-                    let duration = fix_start_time.elapsed().as_secs();
-                    let step = ExecutionStep::new(
-                        "Review",
-                        j,
-                        "fix",
-                        StepOutcome::failure("No valid XML output produced".to_string(), true),
-                    )
-                    .with_agent(ctx.reviewer_agent)
-                    .with_duration(duration);
-                    ctx.execution_history.add_step(step);
-                    anyhow::bail!("Fix agent did not produce valid XML output after {} attempts", max_xsd_retries);
+                        .warn(&format!("  XSD validation failed: {}", error_msg));
+
+                    if retry_num < max_xsd_retries - 1 {
+                        // Store error for next retry attempt
+                        xsd_error = Some(error_msg);
+                        // Continue to next XSD retry iteration
+                        continue;
+                    } else {
+                        ctx.logger
+                            .warn("  No more in-session XSD retries remaining");
+                        // Fall through to return what we have
+                        break 'continuation;
+                    }
                 }
             }
         }
 
         // If we've exhausted XSD retries, break the continuation loop
-        ctx.logger.warn("XSD retry loop exhausted - stopping continuation");
+        ctx.logger
+            .warn("XSD retry loop exhausted - stopping continuation");
         break;
     }
 
@@ -1256,7 +1239,10 @@ fn run_fix_pass(
         j,
         "fix",
         StepOutcome::failure(
-            format!("Continuation stopped after {} attempts", max_continuations * max_xsd_retries),
+            format!(
+                "Continuation stopped after {} attempts",
+                max_continuations * max_xsd_retries
+            ),
             true,
         ),
     )

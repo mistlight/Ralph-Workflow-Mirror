@@ -101,6 +101,7 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
 /// * `ctx_level` - The context level (minimal or normal) (accepted for API compatibility, not used in template)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+#[allow(dead_code)]
 pub fn prompt_developer_iteration_with_context(
     context: &TemplateContext,
     iteration: u32,

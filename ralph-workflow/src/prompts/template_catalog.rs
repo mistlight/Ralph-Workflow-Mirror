@@ -129,7 +129,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             EmbeddedTemplate {
                 name: "developer_iteration",
                 content: include_str!("templates/developer_iteration.txt"),
-                description: "Developer agent implementation mode prompt",
+                description: "[TEST-ONLY LEGACY] Developer agent implementation mode prompt (non-XML). Use developer_iteration_xml for production.",
                 deprecated: false,
             },
         );
@@ -179,7 +179,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             EmbeddedTemplate {
                 name: "planning",
                 content: include_str!("templates/planning.txt"),
-                description: "Planning phase prompt for implementation plans (legacy, non-XML)",
+                description: "[TEST-ONLY LEGACY] Planning phase prompt for implementation plans (non-XML). Use planning_xml for production.",
                 deprecated: false,
             },
         );
@@ -237,7 +237,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             EmbeddedTemplate {
                 name: "fix_mode",
                 content: include_str!("templates/fix_mode.txt"),
-                description: "Fix mode prompt for addressing review issues (legacy, non-XML)",
+                description: "[TEST-ONLY LEGACY] Fix mode prompt for addressing review issues (non-XML). Use fix_mode_xml for production.",
                 deprecated: false,
             },
         );
