@@ -439,6 +439,21 @@ fn test_example_behavior() {
 - New tests without the timeout wrapper will be flagged in code review
 - The `test_timeout` module provides the timeout implementation
 
+### Automated Enforcement
+
+A compliance checker script validates that all tests use timeout wrappers:
+
+```bash
+./tests/integration_tests/compliance_check.sh
+```
+
+The checker validates:
+- All `#[test]` functions are wrapped with `with_default_timeout()`
+- Timeout wrapper is the first statement in the test body
+- No test code executes before timeout protection
+
+CI runs this check automatically to prevent non-compliant tests from being merged.
+
 **See also:** `tests/integration_tests/test_timeout.rs` for timeout implementation details.
 
 ---

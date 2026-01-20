@@ -12,6 +12,10 @@
 //! non-negotiable rules for behavior-based testing, mocking strategy, and when
 //! to update tests.
 //!
+//! **Timeout Enforcement:** ALL integration tests MUST be wrapped with
+//! `with_default_timeout()` to prevent indefinite test hangs. This is enforced
+//! by automated compliance checking.
+//!
 //! # Checklist for New Tests
 //!
 //! Before writing a new integration test, verify:
@@ -22,6 +26,7 @@
 //! - [ ] **No internal knowledge**: Does the test avoid importing internal/private modules?
 //! - [ ] **Deterministic**: Will this test produce the same result every time?
 //! - [ ] **Isolated**: Does this test clean up after itself and not affect other tests?
+//! - [ ] **Timeout protection**: Is the test wrapped with `with_default_timeout()`?
 //!
 //! # Common Patterns
 //!
@@ -39,37 +44,41 @@
 //! use ralph_workflow::cli::args::Verbosity;
 //! use ralph_workflow::colors::Colors;
 //!
+//! use crate::test_timeout::with_default_timeout;
+//!
 //! /// Test that [SCENARIO] produces [EXPECTED BEHAVIOR].
 //! ///
 //! /// This verifies that when [CONDITION], the system [OBSERVABLE OUTCOME].
 //! #[test]
 //! fn test_scenario_produces_expected_behavior() {
-//!     // Setup: Create test printer and parser
-//!     let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-//!     let printer: SharedPrinter = test_printer.clone();
-//!     let parser = ClaudeParser::with_printer(Colors::new(), Verbosity::Normal, printer);
+//!     with_default_timeout(|| {
+//!         // Setup: Create test printer and parser
+//!         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+//!         let printer: SharedPrinter = test_printer.clone();
+//!         let parser = ClaudeParser::with_printer(Colors::new(), Verbosity::Normal, printer);
 //!
-//!     // Input: Construct the scenario
-//!     let input = r#"{"type":"stream_event",...}"#;
+//!         // Input: Construct the scenario
+//!         let input = r#"{"type":"stream_event",...}"#;
 //!
-//!     // Execute: Run through real code path
-//!     let cursor = Cursor::new(input);
-//!     parser.parse_stream(std::io::BufReader::new(cursor))
-//!         .expect("parse_stream should succeed");
+//!         // Execute: Run through real code path
+//!         let cursor = Cursor::new(input);
+//!         parser.parse_stream(std::io::BufReader::new(cursor))
+//!             .expect("parse_stream should succeed");
 //!
-//!     // Assert: Verify OBSERVABLE behavior
-//!     let printer_ref = test_printer.borrow();
-//!     let output = printer_ref.get_output();
+//!         // Assert: Verify OBSERVABLE behavior
+//!         let printer_ref = test_printer.borrow();
+//!         let output = printer_ref.get_output();
 //!
-//!     // Good: Assert on what the user would see
-//!     assert!(output.contains("expected content"), "Should render expected content");
+//!         // Good: Assert on what the user would see
+//!         assert!(output.contains("expected content"), "Should render expected content");
 //!
-//!     // Good: Assert on behavioral metrics
-//!     let metrics = parser.streaming_metrics();
-//!     assert_eq!(metrics.some_count, expected, "Should track expected metric");
+//!         // Good: Assert on behavioral metrics
+//!         let metrics = parser.streaming_metrics();
+//!         assert_eq!(metrics.some_count, expected, "Should track expected metric");
 //!
-//!     // Bad: Don't assert on internal state
-//!     // assert_eq!(parser.internal_buffer.len(), 5); // WRONG!
+//!         // Bad: Don't assert on internal state
+//!         // assert_eq!(parser.internal_buffer.len(), 5); // WRONG!
+//!     });
 //! }
 //! ```
 //!
@@ -82,32 +91,35 @@
 //! use predicates::prelude::*;
 //!
 //! use crate::common::ralph_cmd;
+//! use crate::test_timeout::with_default_timeout;
 //!
 //! /// Test that [CLI SCENARIO] produces [EXPECTED BEHAVIOR].
 //! ///
 //! /// This verifies that when [CONDITION], the CLI [OBSERVABLE OUTCOME].
 //! #[test]
 //! fn test_cli_scenario_produces_expected_behavior() {
-//!     // Setup: Create isolated environment
-//!     let dir = TempDir::new().unwrap();
+//!     with_default_timeout(|| {
+//!         // Setup: Create isolated environment
+//!         let dir = TempDir::new().unwrap();
 //!
-//!     // Setup: Create any required fixtures
-//!     std::fs::write(dir.path().join("input.txt"), "test content").unwrap();
+//!         // Setup: Create any required fixtures
+//!         std::fs::write(dir.path().join("input.txt"), "test content").unwrap();
 //!
-//!     // Execute: Run the CLI as a subprocess (true black-box test)
-//!     let mut cmd = ralph_cmd();
-//!     cmd.current_dir(dir.path())
-//!         .env("SOME_CONFIG", "value")      // Control environment
-//!         .arg("--some-flag")
-//!         .arg("input.txt");
+//!         // Execute: Run the CLI as a subprocess (true black-box test)
+//!         let mut cmd = ralph_cmd();
+//!         cmd.current_dir(dir.path())
+//!             .env("SOME_CONFIG", "value")      // Control environment
+//!             .arg("--some-flag")
+//!             .arg("input.txt");
 //!
-//!     // Assert: Verify OBSERVABLE BEHAVIOR
-//!     cmd.assert()
-//!         .success()                                    // Exit code
-//!         .stdout(predicate::str::contains("expected")); // Output
+//!         // Assert: Verify OBSERVABLE BEHAVIOR
+//!         cmd.assert()
+//!             .success()                                    // Exit code
+//!             .stdout(predicate::str::contains("expected")); // Output
 //!
-//!     // Assert: Verify SIDE EFFECTS (files created, etc.)
-//!     assert!(dir.path().join("output.txt").exists(), "Should create output file");
+//!         // Assert: Verify SIDE EFFECTS (files created, etc.)
+//!         assert!(dir.path().join("output.txt").exists(), "Should create output file");
+//!     });
 //! }
 //! ```
 //!
