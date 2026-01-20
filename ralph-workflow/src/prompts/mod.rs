@@ -159,6 +159,12 @@ impl PromptConfig {
 ///
 /// Creates a detailed, context-aware note that helps agents understand
 /// where they are in the pipeline when resuming from a checkpoint.
+///
+/// The note includes:
+/// - Phase and iteration information
+/// - Recent execution history (files modified, issues found/fixed)
+/// - Git commits made during the session
+/// - Guidance on what to focus on
 pub fn generate_resume_note(context: &ResumeContext) -> String {
     let mut note = String::from("SESSION RESUME CONTEXT\n");
     note.push_str("====================\n\n");
@@ -210,10 +216,83 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
         note.push_str(&format!("Rebase state: {:?}\n", context.rebase_state));
     }
 
-    note.push_str("\nPrevious progress is preserved in git history.\n");
+    note.push('\n');
+
+    // Add execution history summary if available
+    if let Some(ref history) = context.execution_history {
+        if !history.steps.is_empty() {
+            note.push_str("RECENT ACTIVITY:\n");
+            note.push_str("----------------\n");
+
+            // Show recent execution steps (last 5)
+            let recent_steps: Vec<_> = history
+                .steps
+                .iter()
+                .rev()
+                .take(5)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+
+            for step in &recent_steps {
+                note.push_str(&format!(
+                    "- [{}] {} (iteration {}): {}\n",
+                    step.step_type,
+                    step.phase,
+                    step.iteration,
+                    step.outcome.brief_description()
+                ));
+
+                // Add files modified count if available
+                if let Some(ref detail) = step.modified_files_detail {
+                    let total_files =
+                        detail.added.len() + detail.modified.len() + detail.deleted.len();
+                    if total_files > 0 {
+                        note.push_str(&format!("  Files: {} changed", total_files));
+                        if !detail.added.is_empty() {
+                            note.push_str(&format!(" ({} added)", detail.added.len()));
+                        }
+                        if !detail.modified.is_empty() {
+                            note.push_str(&format!(" ({} modified)", detail.modified.len()));
+                        }
+                        if !detail.deleted.is_empty() {
+                            note.push_str(&format!(" ({} deleted)", detail.deleted.len()));
+                        }
+                        note.push('\n');
+                    }
+                }
+
+                // Add issues summary if available
+                if let Some(ref issues) = step.issues_summary {
+                    if issues.found > 0 || issues.fixed > 0 {
+                        note.push_str(&format!(
+                            "  Issues: {} found, {} fixed",
+                            issues.found, issues.fixed
+                        ));
+                        if let Some(ref desc) = issues.description {
+                            note.push_str(&format!(" ({})", desc));
+                        }
+                        note.push('\n');
+                    }
+                }
+
+                // Add git commit if available
+                if let Some(ref oid) = step.git_commit_oid {
+                    note.push_str(&format!("  Commit: {}\n", oid));
+                }
+            }
+
+            note.push('\n');
+        }
+    }
+
+    note.push_str("Previous progress is preserved in git history.\n");
     note.push_str("Check 'git log' for details about what was done before.\n");
 
     // Add helpful guidance about what the agent should focus on
+    note.push_str("\nGUIDANCE:\n");
+    note.push_str("--------\n");
     match context.phase {
         crate::checkpoint::state::PipelinePhase::Development => {
             note.push_str("Continue working on the implementation tasks from your plan.\n");
@@ -230,6 +309,56 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
 
     note.push('\n');
     note
+}
+
+// Helper trait for brief outcome descriptions
+trait BriefDescription {
+    fn brief_description(&self) -> String;
+}
+
+impl BriefDescription for crate::checkpoint::execution_history::StepOutcome {
+    fn brief_description(&self) -> String {
+        match self {
+            Self::Success {
+                files_modified,
+                output,
+                ..
+            } => {
+                if let Some(ref out) = output {
+                    if !out.is_empty() {
+                        format!("Success - {}", out.lines().next().unwrap_or(""))
+                    } else if !files_modified.is_empty() {
+                        format!("Success - {} files modified", files_modified.len())
+                    } else {
+                        "Success".to_string()
+                    }
+                } else if !files_modified.is_empty() {
+                    format!("Success - {} files modified", files_modified.len())
+                } else {
+                    "Success".to_string()
+                }
+            }
+            Self::Failure {
+                error, recoverable, ..
+            } => {
+                if *recoverable {
+                    format!("Recoverable error - {}", error.lines().next().unwrap_or(""))
+                } else {
+                    format!("Failed - {}", error.lines().next().unwrap_or(""))
+                }
+            }
+            Self::Partial {
+                completed,
+                remaining,
+                ..
+            } => {
+                format!("Partial - {} done, {}", completed, remaining)
+            }
+            Self::Skipped { reason } => {
+                format!("Skipped - {}", reason)
+            }
+        }
+    }
 }
 
 /// Generate a prompt for any agent type.
@@ -695,6 +824,7 @@ mod tests {
             rebase_state: RebaseState::NotStarted,
             run_id: "test-run-id".to_string(),
             prompt_history: None,
+            execution_history: None,
         };
 
         let result = prompt_for_agent(
@@ -733,6 +863,7 @@ mod tests {
             rebase_state: RebaseState::NotStarted,
             run_id: "test-run-id".to_string(),
             prompt_history: None,
+            execution_history: None,
         };
 
         let result = prompt_for_agent(
@@ -773,6 +904,7 @@ mod tests {
             rebase_state: RebaseState::NotStarted,
             run_id: "test-run-id".to_string(),
             prompt_history: None,
+            execution_history: None,
         };
 
         let result = prompt_for_agent(

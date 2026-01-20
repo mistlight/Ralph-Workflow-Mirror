@@ -4296,3 +4296,527 @@ fn ralph_checkpoint_saved_at_pipeline_start() {
         );
     });
 }
+
+// ============================================================================
+// Enhanced Execution History Tests (v3+ with new fields)
+// ============================================================================
+
+#[test]
+fn ralph_v3_execution_step_contains_git_commit_oid() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        let working_dir = canonical_working_dir(&dir);
+
+        // Create checkpoint with enhanced execution step containing git_commit_oid
+        let checkpoint_content = format!(
+            r#"{{
+            "version": 3,
+            "phase": "Development",
+            "iteration": 1,
+            "total_iterations": 3,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 1,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": 3,
+                "reviewer_reviews": 1,
+                "commit_msg": "",
+                "review_depth": null,
+                "skip_rebase": true,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-git-commit-oid",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 1,
+            "actual_reviewer_runs": 0,
+            "execution_history": {{
+                "steps": [
+                    {{
+                        "phase": "Development",
+                        "iteration": 1,
+                        "step_type": "dev_run",
+                        "timestamp": "2024-01-01 12:00:00",
+                        "outcome": {{
+                            "Success": {{
+                                "output": "Implementation complete",
+                                "files_modified": ["src/lib.rs"],
+                                "exit_code": 0
+                            }}
+                        }},
+                        "agent": "test-agent",
+                        "duration_secs": 120,
+                        "checkpoint_saved_at": null,
+                        "git_commit_oid": "abc123def456",
+                        "modified_files_detail": {{
+                            "added": ["src/new.rs"],
+                            "modified": ["src/lib.rs"],
+                            "deleted": []
+                        }},
+                        "prompt_used": "Implement feature X",
+                        "issues_summary": {{
+                            "found": 0,
+                            "fixed": 0,
+                            "description": null
+                        }}
+                    }}
+                ],
+                "file_snapshots": {{}}
+            }},
+            "file_system_state": null,
+            "prompt_history": {{
+                "development_1": "Implement feature X"
+            }}
+        }}"#,
+            working_dir
+        );
+
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            checkpoint_content,
+        )
+        .unwrap();
+
+        // Verify checkpoint contains the new fields before resume
+        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+        let checkpoint_content_verify = fs::read_to_string(&checkpoint_path).unwrap();
+        assert!(
+            checkpoint_content_verify.contains("git_commit_oid"),
+            "Checkpoint should contain git_commit_oid field"
+        );
+        assert!(
+            checkpoint_content_verify.contains("abc123def456"),
+            "Checkpoint should contain the git commit OID value"
+        );
+
+        // Verify checkpoint can be loaded with the new fields
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--resume")
+            .env("RALPH_DEVELOPER_ITERS", "3")
+            .env("RALPH_REVIEWER_REVIEWS", "1")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        cmd.assert().success();
+    });
+}
+
+#[test]
+fn ralph_v3_execution_step_serialization_with_new_fields() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        let working_dir = canonical_working_dir(&dir);
+
+        // Create checkpoint with all new fields
+        let checkpoint_content = format!(
+            r#"{{
+            "version": 3,
+            "phase": "Development",
+            "iteration": 1,
+            "total_iterations": 2,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 1,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": 2,
+                "reviewer_reviews": 0,
+                "commit_msg": "",
+                "review_depth": null,
+                "skip_rebase": true,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-new-fields",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 1,
+            "actual_reviewer_runs": 0,
+            "execution_history": {{
+                "steps": [
+                    {{
+                        "phase": "Development",
+                        "iteration": 1,
+                        "step_type": "dev_run",
+                        "timestamp": "2024-01-01 12:00:00",
+                        "outcome": {{
+                            "Success": {{
+                                "output": "Implementation complete",
+                                "files_modified": [],
+                                "exit_code": 0
+                            }}
+                        }},
+                        "agent": "test-agent",
+                        "duration_secs": 60,
+                        "checkpoint_saved_at": null,
+                        "git_commit_oid": null,
+                        "modified_files_detail": null,
+                        "prompt_used": "Implement the feature",
+                        "issues_summary": {{
+                            "found": 3,
+                            "fixed": 0,
+                            "description": "3 clippy warnings found"
+                        }}
+                    }}
+                ],
+                "file_snapshots": {{}}
+            }},
+            "file_system_state": null,
+            "prompt_history": {{
+                "development_1": "Implement the feature"
+            }}
+        }}"#,
+            working_dir
+        );
+
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            checkpoint_content,
+        )
+        .unwrap();
+
+        // Verify checkpoint can be loaded
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--resume")
+            .env("RALPH_DEVELOPER_ITERS", "2")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        cmd.assert().success();
+    });
+}
+
+#[test]
+fn ralph_v3_backward_compatible_missing_new_fields() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        let working_dir = canonical_working_dir(&dir);
+
+        // Create checkpoint WITHOUT the new fields (backward compatibility)
+        let checkpoint_content = format!(
+            r#"{{
+            "version": 3,
+            "phase": "Development",
+            "iteration": 1,
+            "total_iterations": 3,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 1,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": 3,
+                "reviewer_reviews": 1,
+                "commit_msg": "",
+                "review_depth": null,
+                "skip_rebase": true,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-backward-compat",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 1,
+            "actual_reviewer_runs": 0,
+            "execution_history": {{
+                "steps": [
+                    {{
+                        "phase": "Development",
+                        "iteration": 1,
+                        "step_type": "dev_run",
+                        "timestamp": "2024-01-01 12:00:00",
+                        "outcome": {{
+                            "Success": {{
+                                "output": "Implementation complete",
+                                "files_modified": ["src/lib.rs"],
+                                "exit_code": 0
+                            }}
+                        }},
+                        "agent": "test-agent",
+                        "duration_secs": 120,
+                        "checkpoint_saved_at": null
+                    }}
+                ],
+                "file_snapshots": {{}}
+            }},
+            "file_system_state": null,
+            "prompt_history": null
+        }}"#,
+            working_dir
+        );
+
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            checkpoint_content,
+        )
+        .unwrap();
+
+        // Verify checkpoint can still be loaded (backward compatibility)
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--resume")
+            .env("RALPH_DEVELOPER_ITERS", "3")
+            .env("RALPH_REVIEWER_REVIEWS", "1")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        cmd.assert().success();
+    });
+}
+
+#[test]
+fn ralph_v3_resume_note_contains_execution_history() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        let working_dir = canonical_working_dir(&dir);
+
+        // Create checkpoint with execution history
+        let checkpoint_content = format!(
+            r#"{{
+            "version": 3,
+            "phase": "Development",
+            "iteration": 1,
+            "total_iterations": 3,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 1,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": 3,
+                "reviewer_reviews": 1,
+                "commit_msg": "",
+                "review_depth": null,
+                "skip_rebase": true,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-resume-note",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 1,
+            "actual_reviewer_runs": 0,
+            "execution_history": {{
+                "steps": [
+                    {{
+                        "phase": "Development",
+                        "iteration": 1,
+                        "step_type": "dev_run",
+                        "timestamp": "2024-01-01 12:00:00",
+                        "outcome": {{
+                            "Success": {{
+                                "output": "Implementation complete",
+                                "files_modified": ["src/lib.rs", "src/main.rs"],
+                                "exit_code": 0
+                            }}
+                        }},
+                        "agent": "test-agent",
+                        "duration_secs": 120,
+                        "checkpoint_saved_at": null,
+                        "git_commit_oid": "abc123",
+                        "modified_files_detail": {{
+                            "added": ["src/new.rs"],
+                            "modified": ["src/lib.rs"],
+                            "deleted": ["src/old.rs"]
+                        }},
+                        "prompt_used": "Implement feature X",
+                        "issues_summary": {{
+                            "found": 5,
+                            "fixed": 3,
+                            "description": "3 clippy warnings fixed"
+                        }}
+                    }}
+                ],
+                "file_snapshots": {{}}
+            }},
+            "file_system_state": null,
+            "prompt_history": {{
+                "development_1": "Implement feature X"
+            }}
+        }}"#,
+            working_dir
+        );
+
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            checkpoint_content,
+        )
+        .unwrap();
+
+        // Verify the checkpoint contains execution history
+        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+        let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+
+        // Verify checkpoint contains the new fields
+        assert!(
+            checkpoint_content.contains("execution_history"),
+            "Checkpoint should contain execution_history"
+        );
+        assert!(
+            checkpoint_content.contains("modified_files_detail"),
+            "Checkpoint should contain modified_files_detail"
+        );
+        assert!(
+            checkpoint_content.contains("issues_summary"),
+            "Checkpoint should contain issues_summary"
+        );
+
+        // Verify checkpoint can be loaded
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--resume")
+            .env("RALPH_DEVELOPER_ITERS", "3")
+            .env("RALPH_REVIEWER_REVIEWS", "1")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        cmd.assert().success();
+    });
+}

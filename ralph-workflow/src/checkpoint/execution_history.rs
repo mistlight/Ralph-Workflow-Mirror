@@ -85,8 +85,36 @@ impl StepOutcome {
     }
 }
 
+/// Detailed information about files modified in a step.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct ModifiedFilesDetail {
+    /// Files added
+    #[serde(default)]
+    pub added: Vec<String>,
+    /// Files modified
+    #[serde(default)]
+    pub modified: Vec<String>,
+    /// Files deleted
+    #[serde(default)]
+    pub deleted: Vec<String>,
+}
+
+/// Summary of issues found and fixed during a step.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct IssuesSummary {
+    /// Number of issues found
+    #[serde(default)]
+    pub found: u32,
+    /// Number of issues fixed
+    #[serde(default)]
+    pub fixed: u32,
+    /// Description of issues (e.g., "3 clippy warnings, 2 test failures")
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
 /// A single execution step in the pipeline history.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecutionStep {
     /// Phase this step belongs to
     pub phase: String,
@@ -105,6 +133,18 @@ pub struct ExecutionStep {
     /// When a checkpoint was saved during this step (ISO 8601 format string)
     #[serde(default)]
     pub checkpoint_saved_at: Option<String>,
+    /// Git commit OID created during this step (if any)
+    #[serde(default)]
+    pub git_commit_oid: Option<String>,
+    /// Detailed information about files modified
+    #[serde(default)]
+    pub modified_files_detail: Option<ModifiedFilesDetail>,
+    /// The prompt text used for this step (for deterministic replay)
+    #[serde(default)]
+    pub prompt_used: Option<String>,
+    /// Issues summary (found and fixed counts)
+    #[serde(default)]
+    pub issues_summary: Option<IssuesSummary>,
 }
 
 impl ExecutionStep {
@@ -119,6 +159,10 @@ impl ExecutionStep {
             agent: None,
             duration_secs: None,
             checkpoint_saved_at: None,
+            git_commit_oid: None,
+            modified_files_detail: None,
+            prompt_used: None,
+            issues_summary: None,
         }
     }
 
@@ -148,7 +192,7 @@ const DEFAULT_CONTENT_THRESHOLD: u64 = 10 * 1024;
 const MAX_COMPRESS_SIZE: u64 = 100 * 1024;
 
 /// Snapshot of a file's state at a point in time.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct FileSnapshot {
     /// Path to the file
     pub path: String,
@@ -302,7 +346,7 @@ fn decompress_data(encoded: &str) -> Result<String, std::io::Error> {
 }
 
 /// Execution history tracking.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct ExecutionHistory {
     /// All execution steps in order
     pub steps: Vec<ExecutionStep>,
@@ -337,6 +381,11 @@ mod tests {
         assert_eq!(step.step_type, "dev_run");
         assert!(step.agent.is_none());
         assert!(step.duration_secs.is_none());
+        // Verify new fields are None by default
+        assert!(step.git_commit_oid.is_none());
+        assert!(step.modified_files_detail.is_none());
+        assert!(step.prompt_used.is_none());
+        assert!(step.issues_summary.is_none());
     }
 
     #[test]
@@ -349,6 +398,34 @@ mod tests {
 
         assert_eq!(step.agent, Some("claude".to_string()));
         assert_eq!(step.duration_secs, Some(120));
+    }
+
+    #[test]
+    fn test_execution_step_new_fields_default() {
+        let outcome = StepOutcome::success(None, vec![]);
+        let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
+
+        // Verify new fields are None by default
+        assert!(step.git_commit_oid.is_none());
+        assert!(step.modified_files_detail.is_none());
+        assert!(step.prompt_used.is_none());
+        assert!(step.issues_summary.is_none());
+    }
+
+    #[test]
+    fn test_modified_files_detail_default() {
+        let detail = ModifiedFilesDetail::default();
+        assert!(detail.added.is_empty());
+        assert!(detail.modified.is_empty());
+        assert!(detail.deleted.is_empty());
+    }
+
+    #[test]
+    fn test_issues_summary_default() {
+        let summary = IssuesSummary::default();
+        assert_eq!(summary.found, 0);
+        assert_eq!(summary.fixed, 0);
+        assert!(summary.description.is_none());
     }
 
     #[test]
@@ -382,5 +459,42 @@ mod tests {
         assert_eq!(history.steps.len(), 1);
         assert_eq!(history.steps[0].phase, "Development");
         assert_eq!(history.steps[0].iteration, 1);
+    }
+
+    #[test]
+    fn test_execution_step_serialization_with_new_fields() {
+        // Create a step with new fields via JSON to test backward compatibility
+        let json_str = r#"{
+            "phase": "Review",
+            "iteration": 1,
+            "step_type": "review",
+            "timestamp": "2025-01-20 12:00:00",
+            "outcome": {"Success": {"output": null, "files_modified": [], "exit_code": 0}},
+            "agent": null,
+            "duration_secs": null,
+            "checkpoint_saved_at": null,
+            "git_commit_oid": "abc123",
+            "modified_files_detail": {
+                "added": ["a.rs"],
+                "modified": [],
+                "deleted": []
+            },
+            "prompt_used": "Fix issues",
+            "issues_summary": {
+                "found": 2,
+                "fixed": 2,
+                "description": "All fixed"
+            }
+        }"#;
+
+        let deserialized: ExecutionStep = serde_json::from_str(json_str).unwrap();
+
+        assert_eq!(deserialized.git_commit_oid, Some("abc123".to_string()));
+        assert_eq!(
+            deserialized.modified_files_detail.as_ref().unwrap().added,
+            vec!["a.rs"]
+        );
+        assert_eq!(deserialized.prompt_used, Some("Fix issues".to_string()));
+        assert_eq!(deserialized.issues_summary.as_ref().unwrap().found, 2);
     }
 }

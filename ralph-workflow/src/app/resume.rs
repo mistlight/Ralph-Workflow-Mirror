@@ -630,8 +630,13 @@ fn validate_file_system_state(
     logger.warn("File system state validation detected changes:");
 
     for error in &errors {
+        let (problem, commands) = error.recovery_commands();
         logger.warn(&format!("  - {}", error));
-        logger.info(&format!("    Suggestion: {}", error.recovery_suggestion()));
+        logger.info(&format!("    What's wrong: {}", problem));
+        logger.info("    How to fix:");
+        for cmd in commands {
+            logger.info(&format!("      {}", cmd));
+        }
     }
 
     // Handle based on the recovery strategy

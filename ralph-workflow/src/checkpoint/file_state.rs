@@ -283,57 +283,163 @@ impl std::error::Error for ValidationError {}
 
 /// Recovery suggestion for a validation error.
 impl ValidationError {
-    /// Get a suggested recovery action for this error.
-    pub fn recovery_suggestion(&self) -> String {
+    /// Get a structured recovery guide with "What's wrong" and "How to fix" sections.
+    ///
+    /// Returns a tuple of (problem_description, recovery_commands) where:
+    /// - problem_description explains what the issue is
+    /// - recovery_commands is a vector of suggested commands to fix it
+    pub fn recovery_commands(&self) -> (String, Vec<String>) {
         match self {
             Self::FileMissing { path } => {
-                if path.contains("PROMPT.md")
-                    || path.contains("PLAN.md")
-                    || path.contains("ISSUES.md")
-                {
-                    format!(
-                        "Restore {} from .agent/checkpoint.json or recreate from requirements",
-                        path
-                    )
+                let problem = format!(
+                    "The file '{}' is missing but was present when the checkpoint was created.",
+                    path
+                );
+                let commands = if path.contains("PROMPT.md") {
+                    vec![
+                        format!("# Check if file exists elsewhere"),
+                        format!("find . -name 'PROMPT.md' -type f 2>/dev/null"),
+                        format!(""),
+                        format!("# Or recreate from requirements"),
+                        format!("# Restore from backup or recreate PROMPT.md"),
+                        format!(""),
+                        format!("# If unrecoverable, delete checkpoint to start fresh"),
+                        format!("rm .agent/checkpoint.json"),
+                    ]
                 } else if path.contains(".agent/") {
-                    format!(
-                        "Restore {} from checkpoint or delete checkpoint to start fresh",
-                        path
-                    )
+                    vec![
+                        format!("# Agent files should be restored from checkpoint if available"),
+                        format!(""),
+                        format!("# Or delete checkpoint to start fresh"),
+                        format!("rm .agent/checkpoint.json"),
+                    ]
                 } else {
-                    format!("Restore {} from backup or recreate it", path)
-                }
+                    vec![
+                        format!("# Restore from backup or recreate"),
+                        format!("git checkout HEAD -- {}", path),
+                        format!(""),
+                        format!("# Or if unrecoverable, delete checkpoint"),
+                        format!("rm .agent/checkpoint.json"),
+                    ]
+                };
+                (problem, commands)
             }
             Self::FileUnexpectedlyExists { path } => {
-                format!("Remove {} with: rm {}", path, path)
+                let problem = format!("The file '{}' should not exist but was found.", path);
+                let commands = vec![
+                    format!("# Review the file to see if it should be kept"),
+                    format!("cat {}", path),
+                    format!(""),
+                    format!("# If it should be removed:"),
+                    format!("rm {}", path),
+                    format!(""),
+                    format!("# Or if it should be kept, delete the checkpoint to start fresh"),
+                    format!("rm .agent/checkpoint.json"),
+                ];
+                (problem, commands)
             }
             Self::FileContentChanged { path } => {
-                if path.contains("PROMPT.md") {
-                    format!(
-                        "Review {} changes - ensure requirements are still captured",
-                        path
-                    )
+                let problem = format!(
+                    "The content of '{}' has changed since the checkpoint was created.",
+                    path
+                );
+                let commands = if path.contains("PROMPT.md") {
+                    vec![
+                        format!("# Review the changes to ensure requirements are still correct"),
+                        format!("git diff -- {}", path),
+                        format!(""),
+                        format!("# If changes are incorrect, revert:"),
+                        format!("git checkout HEAD -- {}", path),
+                        format!(""),
+                        format!("# If changes are correct and intentional, use --recovery-strategy=force"),
+                    ]
                 } else {
-                    format!("Restore {} to its previous state or review changes", path)
-                }
+                    vec![
+                        format!("# Review the changes"),
+                        format!("git diff -- {}", path),
+                        format!(""),
+                        format!("# If changes are incorrect, revert:"),
+                        format!("git checkout HEAD -- {}", path),
+                        format!(""),
+                        format!("# Or stash current changes and restore from checkpoint"),
+                        format!("git stash"),
+                    ]
+                };
+                (problem, commands)
             }
-            Self::GitHeadChanged { expected, .. } => {
-                format!(
-                    "Run: git reset {} (or review changes with git diff)",
-                    expected
-                )
+            Self::GitHeadChanged { expected, actual } => {
+                let problem = format!("Git HEAD has changed from {} to {}. New commits may have been made or HEAD was reset.", expected, actual);
+                let commands = vec![
+                    format!("# View the commits that were made after checkpoint"),
+                    format!("git log {}..HEAD --oneline", expected),
+                    format!(""),
+                    format!("# Option 1: Reset to checkpoint state"),
+                    format!("git reset {}", expected),
+                    format!(""),
+                    format!("# Option 2: Accept new state and delete checkpoint"),
+                    format!("rm .agent/checkpoint.json"),
+                    format!(""),
+                    format!("# Option 3: Use --recovery-strategy=force to proceed anyway (risky)"),
+                ];
+                (problem, commands)
             }
             Self::GitStateInvalid { reason } => {
-                if reason.contains("detached") {
-                    "Run: git checkout <branch-name> to attach to a branch".to_string()
+                let problem = format!("Git state is invalid: {}", reason);
+                let commands = if reason.contains("detached") {
+                    vec![
+                        format!("# View current branch situation"),
+                        format!("git branch -a"),
+                        format!(""),
+                        format!("# Reattach to a branch"),
+                        format!("git checkout <branch-name>"),
+                        format!(""),
+                        format!("# Or list recent commits to choose from"),
+                        format!("git log --oneline -10"),
+                    ]
                 } else if reason.contains("merge") || reason.contains("rebase") {
-                    "Run: git status to check for conflicts, then resolve or abort".to_string()
+                    vec![
+                        format!("# Check current git status"),
+                        format!("git status"),
+                        format!(""),
+                        format!("# Option 1: Continue the operation"),
+                        format!("# (resolve conflicts, then git add/rm && git continue)"),
+                        format!(""),
+                        format!("# Option 2: Abort the operation"),
+                        format!("git merge --abort  # or 'git rebase --abort'"),
+                        format!(""),
+                        format!("# Option 3: Delete checkpoint and start fresh"),
+                        format!("rm .agent/checkpoint.json"),
+                    ]
                 } else {
-                    format!("Review git state: {} - run git status", reason)
-                }
+                    vec![
+                        format!("# Check current git status"),
+                        format!("git status"),
+                        format!(""),
+                        format!("# Fix the reported issue or delete checkpoint to start fresh"),
+                        format!("rm .agent/checkpoint.json"),
+                    ]
+                };
+                (problem, commands)
             }
-            Self::GitWorkingTreeChanged { .. } => {
-                "Run: git status to review changes, or git stash to save changes".to_string()
+            Self::GitWorkingTreeChanged { changes } => {
+                let problem = format!("Git working tree has uncommitted changes: {}", changes);
+                let commands = vec![
+                    format!("# View what changed"),
+                    format!("git status"),
+                    format!("git diff"),
+                    format!(""),
+                    format!("# Option 1: Commit the changes"),
+                    format!("git add -A && git commit -m 'Save work before resume'"),
+                    format!(""),
+                    format!("# Option 2: Stash the changes"),
+                    format!("git stash push -m 'Work saved before resume'"),
+                    format!(""),
+                    format!("# Option 3: Discard the changes"),
+                    format!("git reset --hard HEAD"),
+                    format!(""),
+                    format!("# Option 4: Use --recovery-strategy=force to proceed anyway"),
+                ];
+                (problem, commands)
             }
         }
     }
@@ -448,12 +554,84 @@ mod tests {
         let err = ValidationError::FileMissing {
             path: "test.txt".to_string(),
         };
-        assert!(err.recovery_suggestion().contains("test.txt"));
+        let (problem, commands) = err.recovery_commands();
+        assert!(problem.contains("test.txt"));
+        assert!(!commands.is_empty());
 
         let err = ValidationError::GitHeadChanged {
             expected: "abc123".to_string(),
             actual: "def456".to_string(),
         };
-        assert!(err.recovery_suggestion().contains("abc123"));
+        let (problem, commands) = err.recovery_commands();
+        assert!(problem.contains("abc123"));
+        assert!(commands.iter().any(|c| c.contains("git reset")));
+    }
+
+    #[test]
+    fn test_validation_error_recovery_commands_file_missing() {
+        let err = ValidationError::FileMissing {
+            path: "PROMPT.md".to_string(),
+        };
+        let (problem, commands) = err.recovery_commands();
+
+        assert!(problem.contains("missing"));
+        assert!(problem.contains("PROMPT.md"));
+        assert!(!commands.is_empty());
+        assert!(commands.iter().any(|c| c.contains("find")));
+    }
+
+    #[test]
+    fn test_validation_error_recovery_commands_git_head_changed() {
+        let err = ValidationError::GitHeadChanged {
+            expected: "abc123".to_string(),
+            actual: "def456".to_string(),
+        };
+        let (problem, commands) = err.recovery_commands();
+
+        assert!(problem.contains("changed"));
+        assert!(problem.contains("abc123"));
+        assert!(problem.contains("def456"));
+        assert!(!commands.is_empty());
+        assert!(commands.iter().any(|c| c.contains("git reset")));
+        assert!(commands.iter().any(|c| c.contains("git log")));
+    }
+
+    #[test]
+    fn test_validation_error_recovery_commands_working_tree_changed() {
+        let err = ValidationError::GitWorkingTreeChanged {
+            changes: "M file1.txt\nM file2.txt".to_string(),
+        };
+        let (problem, commands) = err.recovery_commands();
+
+        assert!(problem.contains("uncommitted changes"));
+        assert!(!commands.is_empty());
+        assert!(commands.iter().any(|c| c.contains("git status")));
+        assert!(commands.iter().any(|c| c.contains("git stash")));
+        assert!(commands.iter().any(|c| c.contains("git commit")));
+    }
+
+    #[test]
+    fn test_validation_error_recovery_commands_git_state_invalid() {
+        let err = ValidationError::GitStateInvalid {
+            reason: "detached HEAD state".to_string(),
+        };
+        let (problem, commands) = err.recovery_commands();
+
+        assert!(problem.contains("detached HEAD state"));
+        assert!(!commands.is_empty());
+        assert!(commands.iter().any(|c| c.contains("git checkout")));
+    }
+
+    #[test]
+    fn test_validation_error_recovery_commands_file_content_changed() {
+        let err = ValidationError::FileContentChanged {
+            path: "PROMPT.md".to_string(),
+        };
+        let (problem, commands) = err.recovery_commands();
+
+        assert!(problem.contains("changed"));
+        assert!(problem.contains("PROMPT.md"));
+        assert!(!commands.is_empty());
+        assert!(commands.iter().any(|c| c.contains("git diff")));
     }
 }

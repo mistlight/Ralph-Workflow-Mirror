@@ -3,6 +3,7 @@
 //! This module provides functionality to restore pipeline state from a checkpoint,
 //! including CLI arguments and configuration overrides.
 
+use crate::checkpoint::execution_history::ExecutionHistory;
 use crate::checkpoint::state::{PipelineCheckpoint, PipelinePhase, RebaseState};
 use crate::config::Config;
 
@@ -31,6 +32,8 @@ pub struct ResumeContext {
     pub run_id: String,
     /// Captured prompts from the original run for deterministic replay
     pub prompt_history: Option<std::collections::HashMap<String, String>>,
+    /// Execution history from the checkpoint (if available)
+    pub execution_history: Option<ExecutionHistory>,
 }
 
 impl ResumeContext {
@@ -83,6 +86,7 @@ impl PipelineCheckpoint {
             rebase_state: self.rebase_state.clone(),
             run_id: self.run_id.clone(),
             prompt_history: self.prompt_history.clone(),
+            execution_history: self.execution_history.clone(),
         }
     }
 }
@@ -466,6 +470,7 @@ mod tests {
             rebase_state: RebaseState::default(),
             run_id: "test".to_string(),
             prompt_history: None,
+            execution_history: None,
         };
 
         assert_eq!(ctx.phase_name(), "Development iteration 3/5");
@@ -483,6 +488,7 @@ mod tests {
             rebase_state: RebaseState::default(),
             run_id: "test".to_string(),
             prompt_history: None,
+            execution_history: None,
         };
 
         assert_eq!(ctx.phase_name(), "Review (pass 2/3)");
@@ -500,6 +506,7 @@ mod tests {
             rebase_state: RebaseState::default(),
             run_id: "test".to_string(),
             prompt_history: None,
+            execution_history: None,
         };
 
         assert_eq!(ctx.phase_name(), "Verification review 3/3");
@@ -517,6 +524,7 @@ mod tests {
             rebase_state: RebaseState::default(),
             run_id: "test".to_string(),
             prompt_history: None,
+            execution_history: None,
         };
 
         assert_eq!(ctx.phase_name(), "Fix");
