@@ -3892,7 +3892,8 @@ fn ralph_v3_checkpoint_contains_execution_history_after_failure() {
         let dir = TempDir::new().unwrap();
         let _repo = init_git_repo(&dir);
 
-        // Create a failing run to leave a v3 checkpoint
+        // Create a failing run to leave a v3 checkpoint.
+        // The agent creates whitespace-only PLAN.md which fails validation.
         let mut cmd = ralph_cmd();
         base_env(&mut cmd)
             .current_dir(dir.path())
@@ -3909,11 +3910,27 @@ fn ralph_v3_checkpoint_contains_execution_history_after_failure() {
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
 
-        // Verify v3 checkpoint has execution_history
-        assert!(
-            checkpoint_content.contains("\"execution_history\""),
-            "V3 checkpoint should contain execution_history"
-        );
+        // Parse the checkpoint JSON to verify execution_history structure
+        let checkpoint: serde_json::Value =
+            serde_json::from_str(&checkpoint_content).expect("Checkpoint should be valid JSON");
+
+        // Verify v3 checkpoint has execution_history field with proper structure
+        let execution_history = checkpoint
+            .get("execution_history")
+            .and_then(|v| v.as_object())
+            .expect("V3 checkpoint should have execution_history object");
+
+        // Verify execution_history has steps array (may be empty for early failures)
+        let _steps = execution_history
+            .get("steps")
+            .and_then(|v| v.as_array())
+            .expect("Execution history should have steps array");
+
+        // Verify file_snapshots exists
+        let _file_snapshots = execution_history
+            .get("file_snapshots")
+            .and_then(|v| v.as_object())
+            .expect("Execution history should have file_snapshots object");
     });
 }
 
