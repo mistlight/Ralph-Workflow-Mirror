@@ -272,11 +272,77 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
                 "Execution history: {} step(s) recorded",
                 history.steps.len()
             ));
+
+            // Show recent activity (last 5 steps) with user-friendly details
+            let recent_steps: Vec<_> = history
+                .steps
+                .iter()
+                .rev()
+                .take(5)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+
+            logger.info("");
+            logger.info("Recent Activity:");
+
+            for step in &recent_steps {
+                let outcome_emoji = match step.outcome {
+                    crate::checkpoint::execution_history::StepOutcome::Success { .. } => "✓",
+                    crate::checkpoint::execution_history::StepOutcome::Failure { .. } => "✗",
+                    crate::checkpoint::execution_history::StepOutcome::Partial { .. } => "◐",
+                    crate::checkpoint::execution_history::StepOutcome::Skipped { .. } => "○",
+                };
+
+                logger.info(&format!(
+                    "  {} {} ({})",
+                    outcome_emoji, step.step_type, step.phase
+                ));
+
+                // Add files modified count if available
+                if let Some(ref detail) = step.modified_files_detail {
+                    let total_files =
+                        detail.added.len() + detail.modified.len() + detail.deleted.len();
+                    if total_files > 0 {
+                        let mut file_summary = String::from("    Files: ");
+                        let mut parts = Vec::new();
+                        if !detail.added.is_empty() {
+                            parts.push(format!("{} added", detail.added.len()));
+                        }
+                        if !detail.modified.is_empty() {
+                            parts.push(format!("{} modified", detail.modified.len()));
+                        }
+                        if !detail.deleted.is_empty() {
+                            parts.push(format!("{} deleted", detail.deleted.len()));
+                        }
+                        file_summary.push_str(&parts.join(", "));
+                        logger.info(&file_summary);
+                    }
+                }
+
+                // Add issues summary if available
+                if let Some(ref issues) = step.issues_summary {
+                    if issues.found > 0 || issues.fixed > 0 {
+                        logger.info(&format!(
+                            "    Issues: {} found, {} fixed",
+                            issues.found, issues.fixed
+                        ));
+                    }
+                }
+
+                // Add git commit if available (shortened)
+                if let Some(ref oid) = step.git_commit_oid {
+                    let short_oid = if oid.len() > 8 { &oid[..8] } else { oid };
+                    logger.info(&format!("    Commit: {}", short_oid));
+                }
+            }
         }
     }
 
     // Show helpful next step based on current phase
     if let Some(next_step) = suggest_next_step(checkpoint) {
+        logger.info("");
         logger.info(&format!("Next: {}", next_step));
     }
 
