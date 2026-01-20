@@ -4,6 +4,7 @@
 //! ensuring the environment matches the checkpoint and detecting configuration changes.
 
 use crate::agents::AgentRegistry;
+use crate::checkpoint::file_state::ValidationError as FsValidationError;
 use crate::checkpoint::state::{calculate_file_checksum, AgentConfigSnapshot, PipelineCheckpoint};
 use crate::config::Config;
 use std::path::Path;
@@ -61,6 +62,7 @@ impl ValidationResult {
 /// - Working directory matches
 /// - PROMPT.md hasn't changed (if checksum available)
 /// - Agent configurations are compatible
+/// - File system state matches (for v3+ checkpoints)
 ///
 /// # Arguments
 ///
@@ -98,6 +100,9 @@ pub fn validate_checkpoint(
 
     // Check for iteration count mismatches (warning only)
     result = result.merge(validate_iteration_counts(checkpoint, current_config));
+
+    // Validate file system state (v3+)
+    result = result.merge(validate_file_system_state(checkpoint));
 
     result
 }
@@ -218,6 +223,45 @@ pub fn validate_iteration_counts(
             "Reviewer reviews changed: {} (checkpoint) vs {} (current config). Using checkpoint value.",
             saved_rev_reviews, current_config.reviewer_reviews
         ));
+    }
+
+    result
+}
+
+/// Validate file system state matches the checkpoint.
+///
+/// For v3+ checkpoints, validates that tracked files haven't changed.
+/// Missing file_system_state means pre-v3 checkpoint, which is a warning.
+pub fn validate_file_system_state(checkpoint: &PipelineCheckpoint) -> ValidationResult {
+    let Some(ref fs_state) = checkpoint.file_system_state else {
+        return ValidationResult::ok()
+            .with_warning("No file system state in checkpoint (pre-v3 format)");
+    };
+
+    let mut result = ValidationResult::ok();
+
+    // Validate each tracked file
+    for error in fs_state.validate() {
+        // Convert FileSystemState validation errors to ValidationResult errors
+        // Git HEAD changes are warnings (user may have made changes intentionally)
+        // File changes are errors (affects resume determinism)
+        match &error {
+            FsValidationError::GitHeadChanged { .. } => {
+                result = result.with_warning(format!(
+                    "File system validation: {} (Suggestion: {})",
+                    error,
+                    error.recovery_suggestion()
+                ));
+            }
+            _ => {
+                result.is_valid = false;
+                result.errors.push(format!(
+                    "File system validation: {} (Suggestion: {})",
+                    error,
+                    error.recovery_suggestion()
+                ));
+            }
+        }
     }
 
     result

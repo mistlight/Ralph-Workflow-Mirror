@@ -567,6 +567,28 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if should_run_rebase {
         run_initial_rebase(ctx, &mut phase_ctx, &run_context)?;
+    } else {
+        // Save initial checkpoint when rebase is disabled
+        if config.features.checkpoint_enabled && resume_checkpoint.is_none() {
+            let builder = CheckpointBuilder::new()
+                .phase(PipelinePhase::Planning, 0, config.developer_iters)
+                .reviewer_pass(0, config.reviewer_reviews)
+                .skip_rebase(true) // Rebase is disabled
+                .capture_from_context(
+                    &config,
+                    &ctx.registry,
+                    &ctx.developer_agent,
+                    &ctx.reviewer_agent,
+                    &ctx.logger,
+                    &run_context,
+                )
+                .with_execution_history(phase_ctx.execution_history.clone())
+                .with_prompt_history(phase_ctx.clone_prompt_history());
+
+            if let Some(checkpoint) = builder.build() {
+                let _ = save_checkpoint(&checkpoint);
+            }
+        }
     }
 
     // Run pipeline phases
@@ -1199,6 +1221,29 @@ fn run_initial_rebase(
                 },
             );
             phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint after pre-rebase completes successfully
+            if ctx.config.features.checkpoint_enabled {
+                let builder = CheckpointBuilder::new()
+                    .phase(PipelinePhase::Planning, 0, ctx.config.developer_iters)
+                    .reviewer_pass(0, ctx.config.reviewer_reviews)
+                    .skip_rebase(true) // Pre-rebase is done
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    )
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(checkpoint) = builder.build() {
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
             Ok(())
         }
         Ok(RebaseResult::NoOp { reason }) => {
@@ -1213,6 +1258,29 @@ fn run_initial_rebase(
                 },
             );
             phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint after pre-rebase no-op
+            if ctx.config.features.checkpoint_enabled {
+                let builder = CheckpointBuilder::new()
+                    .phase(PipelinePhase::Planning, 0, ctx.config.developer_iters)
+                    .reviewer_pass(0, ctx.config.reviewer_reviews)
+                    .skip_rebase(true) // Pre-rebase is done
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    )
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(checkpoint) = builder.build() {
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
@@ -1302,6 +1370,29 @@ fn run_initial_rebase(
                                 },
                             );
                             phase_ctx.execution_history.add_step(step);
+
+                            // Save checkpoint after pre-rebase conflict resolution completes
+                            if ctx.config.features.checkpoint_enabled {
+                                let builder = CheckpointBuilder::new()
+                                    .phase(PipelinePhase::Planning, 0, ctx.config.developer_iters)
+                                    .reviewer_pass(0, ctx.config.reviewer_reviews)
+                                    .skip_rebase(true) // Pre-rebase is done
+                                    .capture_from_context(
+                                        &ctx.config,
+                                        &ctx.registry,
+                                        &ctx.developer_agent,
+                                        &ctx.reviewer_agent,
+                                        &ctx.logger,
+                                        run_context,
+                                    )
+                                    .with_execution_history(phase_ctx.execution_history.clone())
+                                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                                if let Some(checkpoint) = builder.build() {
+                                    let _ = save_checkpoint(&checkpoint);
+                                }
+                            }
+
                             Ok(())
                         }
                         Err(e) => {
@@ -1471,6 +1562,33 @@ fn run_post_review_rebase(
                 },
             );
             phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint after post-review rebase completes successfully
+            if ctx.config.features.checkpoint_enabled {
+                let builder = CheckpointBuilder::new()
+                    .phase(
+                        PipelinePhase::CommitMessage,
+                        ctx.config.developer_iters,
+                        ctx.config.developer_iters,
+                    )
+                    .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+                    .skip_rebase(true) // Post-rebase is done
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    )
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(checkpoint) = builder.build() {
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
             Ok(())
         }
         Ok(RebaseResult::NoOp { reason }) => {
@@ -1485,6 +1603,33 @@ fn run_post_review_rebase(
                 },
             );
             phase_ctx.execution_history.add_step(step);
+
+            // Save checkpoint after post-review rebase no-op
+            if ctx.config.features.checkpoint_enabled {
+                let builder = CheckpointBuilder::new()
+                    .phase(
+                        PipelinePhase::CommitMessage,
+                        ctx.config.developer_iters,
+                        ctx.config.developer_iters,
+                    )
+                    .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
+                    .skip_rebase(true) // Post-rebase is done
+                    .capture_from_context(
+                        &ctx.config,
+                        &ctx.registry,
+                        &ctx.developer_agent,
+                        &ctx.reviewer_agent,
+                        &ctx.logger,
+                        run_context,
+                    )
+                    .with_execution_history(phase_ctx.execution_history.clone())
+                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                if let Some(checkpoint) = builder.build() {
+                    let _ = save_checkpoint(&checkpoint);
+                }
+            }
+
             Ok(())
         }
         Ok(RebaseResult::Conflicts(_conflicts)) => {
@@ -1574,6 +1719,36 @@ fn run_post_review_rebase(
                                 },
                             );
                             phase_ctx.execution_history.add_step(step);
+
+                            // Save checkpoint after post-review rebase conflict resolution completes
+                            if ctx.config.features.checkpoint_enabled {
+                                let builder = CheckpointBuilder::new()
+                                    .phase(
+                                        PipelinePhase::CommitMessage,
+                                        ctx.config.developer_iters,
+                                        ctx.config.developer_iters,
+                                    )
+                                    .reviewer_pass(
+                                        ctx.config.reviewer_reviews,
+                                        ctx.config.reviewer_reviews,
+                                    )
+                                    .skip_rebase(true) // Post-rebase is done
+                                    .capture_from_context(
+                                        &ctx.config,
+                                        &ctx.registry,
+                                        &ctx.developer_agent,
+                                        &ctx.reviewer_agent,
+                                        &ctx.logger,
+                                        run_context,
+                                    )
+                                    .with_execution_history(phase_ctx.execution_history.clone())
+                                    .with_prompt_history(phase_ctx.clone_prompt_history());
+
+                                if let Some(checkpoint) = builder.build() {
+                                    let _ = save_checkpoint(&checkpoint);
+                                }
+                            }
+
                             Ok(())
                         }
                         Err(e) => {

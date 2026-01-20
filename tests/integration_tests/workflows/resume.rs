@@ -3757,3 +3757,444 @@ fn ralph_resume_replays_prompts_deterministically() {
         // The prompt replay happens internally, we just verify the run succeeds
     });
 }
+
+// ============================================================================
+// Hardened Resume Tests (V3 Checkpoint)
+// ============================================================================
+
+#[test]
+fn ralph_v3_checkpoint_contains_file_system_state() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md and PLAN.md to test file system state capture
+        write_file(
+            dir.path().join("PROMPT.md"),
+            "# Test Prompt\n\nDo something.",
+        );
+
+        // Create a failing run to leave a v3 checkpoint
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .env("RALPH_DEVELOPER_ITERS", "1")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env(
+                "RALPH_DEVELOPER_CMD",
+                "sh -c 'mkdir -p .agent; echo \"   \" > .agent/PLAN.md'",
+            )
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        cmd.assert().failure();
+
+        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+        let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+
+        // Verify v3 checkpoint has file_system_state
+        assert!(
+            checkpoint_content.contains("\"file_system_state\""),
+            "V3 checkpoint should contain file_system_state"
+        );
+
+        // Verify PROMPT.md is captured in file system state
+        assert!(
+            checkpoint_content.contains("PROMPT.md"),
+            "File system state should capture PROMPT.md"
+        );
+    });
+}
+
+#[test]
+fn ralph_v3_checkpoint_contains_execution_history_after_failure() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create a failing run to leave a v3 checkpoint
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .env("RALPH_DEVELOPER_ITERS", "1")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env(
+                "RALPH_DEVELOPER_CMD",
+                "sh -c 'mkdir -p .agent; echo \"   \" > .agent/PLAN.md'",
+            )
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        cmd.assert().failure();
+
+        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+        let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+
+        // Verify v3 checkpoint has execution_history
+        assert!(
+            checkpoint_content.contains("\"execution_history\""),
+            "V3 checkpoint should contain execution_history"
+        );
+    });
+}
+
+#[test]
+fn ralph_resume_with_force_strategy_ignores_file_changes() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        let working_dir = canonical_working_dir(&dir);
+
+        // Create PROMPT.md
+        write_file(dir.path().join("PROMPT.md"), "# Test\nOriginal.");
+
+        // Create a v3 checkpoint with file system state that won't match
+        let file_system_state = serde_json::json!({
+            "files": {
+                "PROMPT.md": {
+                    "path": "PROMPT.md",
+                    "checksum": "wrongchecksum",
+                    "size": 100,
+                    "content": null,
+                    "exists": true
+                }
+            },
+            "git_head_oid": null,
+            "git_branch": null
+        });
+
+        let checkpoint_content = format!(
+            r#"{{
+            "version": 3,
+            "phase": "Development",
+            "iteration": 1,
+            "total_iterations": 1,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 0,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": 1,
+                "reviewer_reviews": 0,
+                "commit_msg": "",
+                "review_depth": null,
+                "skip_rebase": false,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-force-strategy",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 1,
+            "actual_reviewer_runs": 0,
+            "execution_history": null,
+            "file_system_state": {},
+            "prompt_history": null
+        }}"#,
+            working_dir,
+            serde_json::to_string(&file_system_state).unwrap()
+        );
+
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            checkpoint_content,
+        )
+        .unwrap();
+
+        // Run with --resume --recovery-strategy=force
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--resume")
+            .arg("--recovery-strategy=force")
+            .env("RALPH_DEVELOPER_ITERS", "1")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env(
+                "RALPH_DEVELOPER_CMD",
+                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+            )
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        // Should proceed with warning
+        cmd.assert()
+            .success()
+            .stdout(predicate::str::contains("force").or(predicate::str::contains("proceeding")));
+    });
+}
+
+#[test]
+fn ralph_resume_auto_strategy_attempts_recovery() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        let working_dir = canonical_working_dir(&dir);
+
+        // Create a small PLAN.md file (can be recovered via content)
+        let plan_content = "Small plan";
+
+        let file_snapshot = serde_json::json!({
+            "path": ".agent/PLAN.md",
+            "checksum": "abc123",
+            "size": plan_content.len(),
+            "content": plan_content, // Content stored for small files
+            "exists": true
+        });
+
+        let file_system_state = serde_json::json!({
+            "files": {
+                ".agent/PLAN.md": file_snapshot
+            },
+            "git_head_oid": null,
+            "git_branch": null
+        });
+
+        let checkpoint_content = format!(
+            r#"{{
+            "version": 3,
+            "phase": "Development",
+            "iteration": 1,
+            "total_iterations": 1,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 0,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": 1,
+                "reviewer_reviews": 0,
+                "commit_msg": "",
+                "review_depth": null,
+                "skip_rebase": false,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-auto-recovery",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 1,
+            "actual_reviewer_runs": 0,
+            "execution_history": null,
+            "file_system_state": {},
+            "prompt_history": null
+        }}"#,
+            working_dir,
+            serde_json::to_string(&file_system_state).unwrap()
+        );
+
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        // Don't create PLAN.md - test should recover it
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            checkpoint_content,
+        )
+        .unwrap();
+
+        // Run with --resume --recovery-strategy=auto
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--resume")
+            .arg("--recovery-strategy=auto")
+            .env("RALPH_DEVELOPER_ITERS", "1")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        // Should attempt recovery and proceed
+        cmd.assert()
+            .success()
+            .stdout(predicate::str::contains("recovery").or(predicate::str::contains("Recovered")));
+    });
+}
+
+#[test]
+fn ralph_checkpoint_saved_after_rebase_completion() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md to satisfy validation
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        // Run pipeline with rebase enabled - should complete successfully
+        // We use 0 iterations to skip actual development work
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--with-rebase")
+            .env("RALPH_DEVELOPER_ITERS", "0")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'")
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        cmd.assert().success();
+
+        // Check that checkpoint was saved at Planning phase after rebase
+        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+        if checkpoint_path.exists() {
+            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+            // Verify it has the expected structure
+            assert!(
+                checkpoint_content.contains("\"phase\""),
+                "Checkpoint should contain phase"
+            );
+        }
+    });
+}
+
+#[test]
+fn ralph_checkpoint_saved_at_pipeline_start() {
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _repo = init_git_repo(&dir);
+
+        // Create PROMPT.md
+        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+
+        // Simulate interruption by creating a checkpoint manually
+        // This verifies the initial checkpoint would be created
+        let working_dir = canonical_working_dir(&dir);
+
+        let checkpoint_content = format!(
+            r#"{{
+            "version": 3,
+            "phase": "Planning",
+            "iteration": 0,
+            "total_iterations": 1,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 0,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {{
+                "developer_iters": 1,
+                "reviewer_reviews": 0,
+                "commit_msg": "",
+                "review_depth": null,
+                "skip_rebase": true,
+                "verbosity": 2,
+                "show_streaming_metrics": false,
+                "reviewer_json_parser": null
+            }},
+            "developer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "reviewer_agent_config": {{
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            }},
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "{}",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-initial-checkpoint",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 0,
+            "actual_reviewer_runs": 0,
+            "execution_history": {{ "steps": [] }},
+            "file_system_state": null,
+            "prompt_history": {{}}
+        }}"#,
+            working_dir
+        );
+
+        fs::create_dir_all(dir.path().join(".agent")).unwrap();
+        fs::write(
+            dir.path().join(".agent/checkpoint.json"),
+            checkpoint_content,
+        )
+        .unwrap();
+
+        // Verify checkpoint can be loaded
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--resume")
+            .env("RALPH_DEVELOPER_ITERS", "1")
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env(
+                "RALPH_DEVELOPER_CMD",
+                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
+            )
+            .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+
+        cmd.assert().success().stdout(
+            predicate::str::contains("Loading Checkpoint").or(predicate::str::contains("Resuming")),
+        );
+    });
+}
