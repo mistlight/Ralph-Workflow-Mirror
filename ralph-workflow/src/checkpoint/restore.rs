@@ -103,14 +103,10 @@ impl PipelineCheckpoint {
 pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineCheckpoint) {
     let cli_args = &checkpoint.cli_args;
 
-    // Only override if checkpoint has meaningful values
-    if cli_args.developer_iters > 0 {
-        config.developer_iters = cli_args.developer_iters;
-    }
-
-    if cli_args.reviewer_reviews > 0 {
-        config.reviewer_reviews = cli_args.reviewer_reviews;
-    }
+    // Always restore developer_iters and reviewer_reviews from checkpoint
+    // to ensure exact state restoration, even if zero
+    config.developer_iters = cli_args.developer_iters;
+    config.reviewer_reviews = cli_args.reviewer_reviews;
 
     if !cli_args.commit_msg.is_empty() {
         config.commit_msg = cli_args.commit_msg.clone();
@@ -148,10 +144,8 @@ pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineChec
         config.git_user_email = Some(email.clone());
     }
 
-    // Apply isolation_mode from checkpoint if it has meaningful cli_args
-    if cli_args.developer_iters > 0 || cli_args.reviewer_reviews > 0 {
-        config.isolation_mode = cli_args.isolation_mode;
-    }
+    // Always restore isolation_mode from checkpoint for exact state restoration
+    config.isolation_mode = cli_args.isolation_mode;
 
     // Apply verbosity level from checkpoint
     config.verbosity = crate::config::types::Verbosity::from(cli_args.verbosity);

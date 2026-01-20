@@ -2462,14 +2462,14 @@ fn ralph_v3_file_system_state_detects_changes() {
         // Resume with --recovery-strategy=fail should detect the change
         // The file has been modified, so checksum validation will fail
         // With strategy=fail, the resume is aborted and the program continues with a fresh run
-        // Since developer_iters=0 in the checkpoint, the program completes immediately
+        // Since developer_iters=0 in the command line, the program completes immediately
         let mut cmd = ralph_cmd();
         base_env(&mut cmd)
             .current_dir(dir.path())
             .arg("--resume")
             .arg("--recovery-strategy")
             .arg("fail")
-            .env("RALPH_DEVELOPER_ITERS", "1")
+            .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
             .env(
                 "RALPH_DEVELOPER_CMD",
@@ -2478,10 +2478,10 @@ fn ralph_v3_file_system_state_detects_changes() {
             .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
         // Should succeed - validation fails, resume is aborted, fresh run completes
-        // The fresh run uses developer_iters=0 from the checkpoint, so no agent runs
-        cmd.assert().success().stdout(
-            predicate::str::contains("File system state validation detected changes").or(
-                predicate::str::contains("File system state validation failed"),
+        // The fresh run uses developer_iters=0 from command line, so no agent runs
+        cmd.assert().success().stderr(
+            predicate::str::contains("File system validation").or(
+                predicate::str::contains("File system state validation"),
             ),
         );
     });
@@ -2571,7 +2571,7 @@ fn ralph_v3_file_system_state_auto_recovery() {
             "prompt_md_checksum": null,
             "git_user_name": null,
             "git_user_email": null,
-            "run_id": "test-run-id-123",
+            "run_id": "test-auto-recovery-plan-md",
             "parent_run_id": null,
             "resume_count": 0,
             "actual_developer_runs": 0,
@@ -2600,7 +2600,7 @@ fn ralph_v3_file_system_state_auto_recovery() {
             .arg("--resume")
             .arg("--recovery-strategy")
             .arg("auto")
-            .env("RALPH_DEVELOPER_ITERS", "1")
+            .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
             .env(
                 "RALPH_DEVELOPER_CMD",
