@@ -47,6 +47,10 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 // These integration tests focus on behavior that doesn't require agent execution.
 // ============================================================================
 
+/// Test that the plan phase is skipped when developer_iters is set to zero.
+///
+/// This verifies that when a user runs ralph with developer_iters=0,
+/// the planning phase is skipped entirely and no PLAN.md file is created.
 #[test]
 fn ralph_skips_plan_phase_when_zero_developer_iters() {
     with_default_timeout(|| {
@@ -74,6 +78,10 @@ fn ralph_skips_plan_phase_when_zero_developer_iters() {
     });
 }
 
+/// Test that a commit can be created without a plan when developer_iters is zero.
+///
+/// This verifies that when a user runs ralph with developer_iters=0,
+/// a commit is created successfully without requiring a PLAN.md file.
 #[test]
 fn ralph_commit_without_plan_succeeds() {
     with_default_timeout(|| {

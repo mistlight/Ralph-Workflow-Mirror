@@ -66,6 +66,10 @@ fn create_reviewer_issues(dir: &tempfile::TempDir, issues: &str) {
 // Start Commit Persistence Tests
 // ============================================================================
 
+/// Test that start_commit persists across pipeline runs.
+///
+/// This verifies that when a pipeline run creates a start_commit,
+/// it persists unchanged across subsequent runs without automatic updates.
 #[test]
 fn ralph_start_commit_persisted_across_runs() {
     with_default_timeout(|| {
@@ -119,6 +123,10 @@ fn ralph_start_commit_persisted_across_runs() {
     });
 }
 
+/// Test that --reset-start-commit updates baseline to current HEAD.
+///
+/// This verifies that when the --reset-start-commit flag is used, the system
+/// updates the start_commit to point to the current HEAD commit.
 #[test]
 fn ralph_baseline_reset_command_works() {
     with_default_timeout(|| {
@@ -168,6 +176,10 @@ fn ralph_baseline_reset_command_works() {
     });
 }
 
+/// Test that diff is generated from start_commit, not repo beginning.
+///
+/// This verifies that when start_commit is established, subsequent diffs
+/// are generated from that baseline, not from the beginning of the repository.
 #[test]
 fn ralph_diff_from_start_commit() {
     with_default_timeout(|| {
@@ -210,6 +222,10 @@ fn ralph_diff_from_start_commit() {
 // Stale Baseline Tests
 // ============================================================================
 
+/// Test that stale baseline summary is displayed during review cycles.
+///
+/// This verifies that when multiple commits exist after start_commit,
+/// the system displays baseline summary information during review.
 #[test]
 fn ralph_stale_baseline_warning() {
     with_default_timeout(|| {
@@ -257,6 +273,10 @@ fn ralph_stale_baseline_warning() {
 // Review Baseline Tests
 // ============================================================================
 
+/// Test that review_baseline.txt is updated after each fix pass.
+///
+/// This verifies that when review-fix cycles are executed, the system
+/// updates the review_baseline.txt file appropriately.
 #[test]
 fn ralph_review_baseline_updated_after_fix() {
     with_default_timeout(|| {
@@ -288,6 +308,10 @@ fn ralph_review_baseline_updated_after_fix() {
 // Diff Accuracy Tests
 // ============================================================================
 
+/// Test that diff shows only changes from start_commit to HEAD.
+///
+/// This verifies that when start_commit is established, the git diff
+/// only shows changes from that baseline, not the entire repository history.
 #[test]
 fn ralph_diff_shows_correct_range() {
     with_default_timeout(|| {
@@ -354,6 +378,10 @@ fn ralph_diff_shows_correct_range() {
     });
 }
 
+/// Test that empty diff skips review gracefully.
+///
+/// This verifies that when there are no changes since start_commit,
+/// the system completes successfully without performing unnecessary review.
 #[test]
 fn ralph_empty_diff_skips_review() {
     with_default_timeout(|| {
@@ -387,6 +415,10 @@ fn ralph_empty_diff_skips_review() {
     });
 }
 
+/// Test that diff after fix cycles shows only new changes.
+///
+/// This verifies that when fix passes create commits, the next review cycle
+/// only shows new changes, not changes already addressed in previous cycles.
 #[test]
 fn ralph_diff_after_fix_cycles_shows_only_new_changes() {
     with_default_timeout(|| {
@@ -445,6 +477,10 @@ fn ralph_handles_large_diff() {
     });
 }
 
+/// Test that external git changes are handled gracefully.
+///
+/// This verifies that when external git changes occur during review,
+/// the system handles them without crashing or data loss.
 #[test]
 fn ralph_handles_external_git_changes() {
     with_default_timeout(|| {
@@ -483,6 +519,10 @@ fn ralph_handles_external_git_changes() {
 // Start Commit UX Tests (Step 3 from hardening plan)
 // ============================================================================
 
+/// Test that start_commit information is displayed at pipeline start.
+///
+/// This verifies that when a pipeline run begins, the system displays
+/// information about the start_commit baseline.
 #[test]
 fn ralph_start_commit_shown_at_pipeline_start() {
     with_default_timeout(|| {
@@ -530,6 +570,10 @@ fn ralph_start_commit_shown_at_pipeline_start() {
     });
 }
 
+/// Test that stale start_commit warning is shown at pipeline start.
+///
+/// This verifies that when the start_commit is significantly behind HEAD,
+/// the system displays a warning about the stale baseline at pipeline start.
 #[test]
 fn ralph_stale_start_commit_warning_at_start() {
     with_default_timeout(|| {
@@ -574,6 +618,10 @@ fn ralph_stale_start_commit_warning_at_start() {
 // Additional Edge Case Tests (Step 4 from hardening plan)
 // ============================================================================
 
+/// Test that corrupted start_commit file is recovered gracefully.
+///
+/// This verifies that when the .agent/start_commit file contains invalid data,
+/// the system recovers by creating a new valid start_commit.
 #[test]
 fn ralph_handles_corrupted_start_commit_file() {
     with_default_timeout(|| {
@@ -608,6 +656,10 @@ fn ralph_handles_corrupted_start_commit_file() {
     });
 }
 
+/// Test that corrupted review_baseline.txt is handled gracefully.
+///
+/// This verifies that when the .agent/review_baseline.txt file contains invalid data,
+/// the system handles the situation without crashing.
 #[test]
 fn ralph_handles_corrupted_review_baseline_file() {
     with_default_timeout(|| {

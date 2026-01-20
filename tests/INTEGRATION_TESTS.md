@@ -409,6 +409,55 @@ fn test_cli_behavior() {
 
 ---
 
+## Timeout Enforcement
+
+### Rule: All Tests MUST Have Timeouts
+
+**ALL integration tests MUST be wrapped with `with_default_timeout()` to prevent indefinite test hangs.**
+
+```rust
+use crate::test_timeout::with_default_timeout;
+
+#[test]
+fn test_example_behavior() {
+    with_default_timeout(|| {
+        // test code here
+    });
+}
+```
+
+**Why this is required:**
+
+- Integration tests may involve external I/O (filesystem, subprocess execution)
+- Tests that hang block the entire test suite and CI/CD pipelines
+- A 10-second timeout prevents indefinite waits while allowing reasonable test execution time
+- Without timeouts, a single hung test can waste hours of CI resources
+
+**Enforcement:**
+
+- All existing tests use `with_default_timeout()` wrapper
+- New tests without the timeout wrapper will be flagged in code review
+- The `test_timeout` module provides the timeout implementation
+
+### Automated Enforcement
+
+A compliance checker script validates that all tests use timeout wrappers:
+
+```bash
+./tests/integration_tests/compliance_check.sh
+```
+
+The checker validates:
+- All `#[test]` functions are wrapped with `with_default_timeout()`
+- Timeout wrapper is the first statement in the test body
+- No test code executes before timeout protection
+
+CI runs this check automatically to prevent non-compliant tests from being merged.
+
+**See also:** `tests/integration_tests/test_timeout.rs` for timeout implementation details.
+
+---
+
 ## Writing New Integration Tests
 
 ### Checklist
@@ -421,6 +470,7 @@ Before writing a new integration test, verify:
 - [ ] **No internal knowledge**: Does the test avoid importing internal/private modules?
 - [ ] **Deterministic**: Will this test produce the same result every time?
 - [ ] **Isolated**: Does this test clean up after itself and not affect other tests?
+- [ ] **Timeout protection**: Is the test wrapped with `with_default_timeout()`?
 
 ### Anti-Patterns to Avoid
 
@@ -435,40 +485,44 @@ Before writing a new integration test, verify:
 ### Example: Adding a New Deduplication Test
 
 ```rust
+use crate::test_timeout::with_default_timeout;
+
 /// Test that [SPECIFIC SCENARIO] produces [EXPECTED BEHAVIOR].
 ///
 /// This verifies that when [CONDITION], the system [OBSERVABLE OUTCOME].
 #[test]
 fn test_specific_scenario_expected_behavior() {
-    // Setup: Create test printer and parser
-    let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
-    let printer: SharedPrinter = test_printer.clone();
-    let parser = ClaudeParser::with_printer(Colors::new(), Verbosity::Normal, printer);
+    with_default_timeout(|| {
+        // Setup: Create test printer and parser
+        let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+        let printer: SharedPrinter = test_printer.clone();
+        let parser = ClaudeParser::with_printer(Colors::new(), Verbosity::Normal, printer);
 
-    // Input: Construct the scenario
-    let events = [
-        // ... events that trigger the scenario
-    ];
-    let input = events.join("\n");
-    
-    // Execute: Run through real code path
-    let cursor = Cursor::new(input);
-    parser.parse_stream(std::io::BufReader::new(cursor))
-        .expect("parse_stream should succeed");
+        // Input: Construct the scenario
+        let events = [
+            // ... events that trigger the scenario
+        ];
+        let input = events.join("\n");
 
-    // Assert: Verify OBSERVABLE behavior
-    let printer_ref = test_printer.borrow();
-    let output = printer_ref.get_output();
-    
-    // Good: Assert on what the user would see
-    assert!(output.contains("expected content"), "Should render expected content");
-    
-    // Good: Assert on behavioral metrics
-    let metrics = parser.streaming_metrics();
-    assert_eq!(metrics.some_count, expected, "Should track expected metric");
-    
-    // Bad: Don't assert on internal state
-    // assert_eq!(parser.internal_buffer.len(), 5); // WRONG!
+        // Execute: Run through real code path
+        let cursor = Cursor::new(input);
+        parser.parse_stream(std::io::BufReader::new(cursor))
+            .expect("parse_stream should succeed");
+
+        // Assert: Verify OBSERVABLE behavior
+        let printer_ref = test_printer.borrow();
+        let output = printer_ref.get_output();
+
+        // Good: Assert on what the user would see
+        assert!(output.contains("expected content"), "Should render expected content");
+
+        // Good: Assert on behavioral metrics
+        let metrics = parser.streaming_metrics();
+        assert_eq!(metrics.some_count, expected, "Should track expected metric");
+
+        // Bad: Don't assert on internal state
+        // assert_eq!(parser.internal_buffer.len(), 5); // WRONG!
+    });
 }
 ```
 

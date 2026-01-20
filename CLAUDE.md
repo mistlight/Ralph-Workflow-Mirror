@@ -95,6 +95,9 @@ rg -n -U --pcre2 '(?x)
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
 # IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
 
+# Check integration test compliance (timeout wrappers, doc comments, etc.)
+./tests/integration_tests/compliance_check.sh
+
 # DO NOT CHANGE ANY OF THE COMMANDS BELOW
 cargo fmt --all --check
 
