@@ -366,6 +366,8 @@ pub enum PipelinePhase {
     PostRebase,
     /// During post-review conflict resolution
     PostRebaseConflict,
+    /// Pipeline was interrupted (e.g., by Ctrl+C)
+    Interrupted,
 }
 
 impl std::fmt::Display for PipelinePhase {
@@ -384,6 +386,7 @@ impl std::fmt::Display for PipelinePhase {
             Self::PreRebaseConflict => write!(f, "Pre-Rebase Conflict"),
             Self::PostRebase => write!(f, "Post-Rebase"),
             Self::PostRebaseConflict => write!(f, "Post-Rebase Conflict"),
+            Self::Interrupted => write!(f, "Interrupted"),
         }
     }
 }
@@ -558,6 +561,18 @@ impl PipelineCheckpoint {
             PipelinePhase::PreRebaseConflict => "Pre-rebase conflict resolution".to_string(),
             PipelinePhase::PostRebase => "Post-review rebase".to_string(),
             PipelinePhase::PostRebaseConflict => "Post-rebase conflict resolution".to_string(),
+            PipelinePhase::Interrupted => {
+                format!(
+                    "Interrupted during {} (iteration {}/{})",
+                    if self.iteration > 0 {
+                        "development"
+                    } else {
+                        "pipeline"
+                    },
+                    self.iteration,
+                    self.total_iterations
+                )
+            }
         }
     }
 
@@ -964,6 +979,7 @@ mod tests {
             format!("{}", PipelinePhase::PostRebaseConflict),
             "Post-Rebase Conflict"
         );
+        assert_eq!(format!("{}", PipelinePhase::Interrupted), "Interrupted");
     }
 
     #[test]

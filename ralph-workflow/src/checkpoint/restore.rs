@@ -62,6 +62,7 @@ impl ResumeContext {
             PipelinePhase::PreRebaseConflict => "Pre-Rebase Conflict".to_string(),
             PipelinePhase::PostRebase => "Post-Rebase".to_string(),
             PipelinePhase::PostRebaseConflict => "Post-Rebase Conflict".to_string(),
+            PipelinePhase::Interrupted => "Interrupted".to_string(),
         }
     }
 }

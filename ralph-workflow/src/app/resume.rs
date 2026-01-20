@@ -409,6 +409,7 @@ fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
         PipelinePhase::FinalValidation => Some("complete final validation".to_string()),
         PipelinePhase::Complete => Some("pipeline complete!".to_string()),
         PipelinePhase::Rebase => Some("complete rebase operation".to_string()),
+        PipelinePhase::Interrupted => Some("resume from interrupted state".to_string()),
     }
 }
 
@@ -854,6 +855,7 @@ pub const fn phase_rank(p: PipelinePhase) -> u8 {
         PipelinePhase::CommitMessage => 10,
         PipelinePhase::FinalValidation => 11,
         PipelinePhase::Complete => 12,
+        PipelinePhase::Interrupted => 13, // Highest rank, run everything
     }
 }
 

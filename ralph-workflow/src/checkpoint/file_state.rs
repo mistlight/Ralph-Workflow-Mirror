@@ -32,28 +32,46 @@ impl FileSystemState {
     ///
     /// This includes files that are critical for pipeline execution:
     /// - PROMPT.md: The primary task description
-    /// - PLAN.md: The implementation plan (if exists)
-    /// - ISSUES.md: Review findings (if exists)
+    /// - .agent/PLAN.md: The implementation plan (if exists)
+    /// - .agent/ISSUES.md: Review findings (if exists)
     /// - .agent/config.toml: Agent configuration (if exists)
+    /// - .agent/start_commit: Baseline commit reference (if exists)
+    /// - .agent/NOTES.md: Development notes (if exists)
+    /// - .agent/status: Pipeline status file (if exists)
     pub fn capture_current() -> Self {
         let mut state = Self::new();
 
         // Always capture PROMPT.md
         state.capture_file("PROMPT.md");
 
-        // Capture PLAN.md if it exists
-        if Path::new("PLAN.md").exists() {
-            state.capture_file("PLAN.md");
+        // Capture .agent/PLAN.md if it exists (moved to .agent directory)
+        if Path::new(".agent/PLAN.md").exists() {
+            state.capture_file(".agent/PLAN.md");
         }
 
-        // Capture ISSUES.md if it exists
-        if Path::new("ISSUES.md").exists() {
-            state.capture_file("ISSUES.md");
+        // Capture .agent/ISSUES.md if it exists (moved to .agent directory)
+        if Path::new(".agent/ISSUES.md").exists() {
+            state.capture_file(".agent/ISSUES.md");
         }
 
         // Capture .agent/config.toml if it exists
         if Path::new(".agent/config.toml").exists() {
             state.capture_file(".agent/config.toml");
+        }
+
+        // Capture .agent/start_commit if it exists
+        if Path::new(".agent/start_commit").exists() {
+            state.capture_file(".agent/start_commit");
+        }
+
+        // Capture .agent/NOTES.md if it exists
+        if Path::new(".agent/NOTES.md").exists() {
+            state.capture_file(".agent/NOTES.md");
+        }
+
+        // Capture .agent/status if it exists
+        if Path::new(".agent/status").exists() {
+            state.capture_file(".agent/status");
         }
 
         // Try to capture git state
