@@ -877,12 +877,13 @@ fn test_glm_assistant_event_before_tool_name_tracked() {
 /// the deduplication logic incorrectly reconstructs content, causing assistant events
 /// to not be recognized as duplicates.
 ///
-/// The bug: `is_duplicate_by_hash` sorts text keys using `format!("{:?}-{}", k.0, k.1)`
-/// which creates lexicographic sort order: "Text-0", "Text-1", "Text-10", "Text-2".
+/// The bug: Text key sorting used `format!("{:?}-{}", k.0, k.1)` which creates
+/// lexicographic sort order: "Text-0", "Text-1", "Text-10", "Text-2".
 /// But the correct order is: "Text-0", "Text-1", "Text-2", "Text-10".
 ///
 /// This causes the reconstructed content to have blocks in the wrong order,
-/// making hash-based deduplication fail.
+/// making hash-based deduplication fail. The fix uses numeric sorting
+/// (k.1.parse::<u64>()) instead of lexicographic string sorting.
 #[test]
 fn test_glm_multiple_content_blocks_lexicographic_sort_bug() {
     with_default_timeout(|| {
@@ -926,27 +927,28 @@ fn test_glm_multiple_content_blocks_lexicographic_sort_bug() {
         let block_10_count = vterm_ref.count_visible_pattern("Block 10");
 
         // Each block should appear at most 2 times (once for streaming, once for in-place update)
+        // The bug causes 3+ appearances when lexicographic sort breaks deduplication
         assert!(
             block_0_count <= 2,
-            "GLM BUG: 'Block 0' appears {} times. Lexicographic sort bug causes duplication. Output: {}",
+            "GLM BUG: 'Block 0' appears {} times (expected <= 2). Lexicographic sort bug causes duplication. Output: {}",
             block_0_count,
             visible
         );
         assert!(
             block_1_count <= 2,
-            "GLM BUG: 'Block 1' appears {} times. Output: {}",
+            "GLM BUG: 'Block 1' appears {} times (expected <= 2). Output: {}",
             block_1_count,
             visible
         );
         assert!(
             block_2_count <= 2,
-            "GLM BUG: 'Block 2' appears {} times. Output: {}",
+            "GLM BUG: 'Block 2' appears {} times (expected <= 2). Output: {}",
             block_2_count,
             visible
         );
         assert!(
             block_10_count <= 2,
-            "GLM BUG: 'Block 10' appears {} times. Output: {}",
+            "GLM BUG: 'Block 10' appears {} times (expected <= 2). Output: {}",
             block_10_count,
             visible
         );

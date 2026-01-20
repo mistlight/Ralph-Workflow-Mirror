@@ -1030,10 +1030,19 @@ impl StreamingSession {
         let mut hasher = DefaultHasher::new();
 
         // Collect and sort keys for consistent hashing
-        // Note: We can't sort ContentType directly, so we convert to tuple representation
+        // Sort by numeric index (not lexicographic) to preserve actual message order.
+        // This is critical for correctness when indices don't sort lexicographically
+        // (e.g., 0, 1, 10, 2 should sort as 0, 1, 2, 10).
         let mut keys: Vec<_> = self.accumulated.keys().collect();
-        // Sort by string representation for consistency (not perfect but good enough for deduplication)
-        keys.sort_by_key(|k| format!("{:?}-{}", k.0, k.1));
+        keys.sort_by_key(|k| {
+            let type_order = match k.0 {
+                ContentType::Text => 0,
+                ContentType::ToolInput => 1,
+                ContentType::Thinking => 2,
+            };
+            let index = k.1.parse::<u64>().unwrap_or(u64::MAX);
+            (index, type_order)
+        });
 
         for key in keys {
             if let Some(content) = self.accumulated.get(key) {
@@ -1093,6 +1102,9 @@ impl StreamingSession {
             .collect();
         // Sort by numeric index (not lexicographic) to preserve actual message order
         // This is critical for correctness when indices don't sort lexicographically (e.g., 0, 1, 10, 2)
+        // unwrap_or(u64::MAX) handles non-numeric indices by sorting them last; this should
+        // never happen in practice since GLM always sends numeric string indices, but if
+        // it does occur, it indicates a protocol violation and will be visible in output
         text_keys.sort_by_key(|k| k.1.parse::<u64>().unwrap_or(u64::MAX));
 
         // Combine all accumulated text content in sorted order
@@ -2417,6 +2429,46 @@ mod tests {
 
         // Same content should produce the same hash
         assert_eq!(session1.final_content_hash, session2.final_content_hash);
+    }
+
+    #[test]
+    fn test_content_hash_multiple_content_blocks_non_sequential_indices() {
+        // Test that content hash uses numeric sorting, not lexicographic sorting.
+        // This prevents bugs when GLM sends non-sequential indices like 0, 1, 10, 2.
+        // With lexicographic sorting, indices would be ordered as 0, 1, 10, 2,
+        // but with numeric sorting they should be ordered as 0, 1, 2, 10.
+        let mut session1 = StreamingSession::new();
+        session1.on_message_start();
+        // Add content in non-sequential order: 0, 1, 10, 2
+        session1.on_text_delta(0, "Block 0");
+        session1.on_text_delta(1, "Block 1");
+        session1.on_text_delta(10, "Block 10");
+        session1.on_text_delta(2, "Block 2");
+        session1.on_message_stop();
+
+        let mut session2 = StreamingSession::new();
+        session2.on_message_start();
+        // Add the same content but in numeric order: 0, 1, 2, 10
+        session2.on_text_delta(0, "Block 0");
+        session2.on_text_delta(1, "Block 1");
+        session2.on_text_delta(2, "Block 2");
+        session2.on_text_delta(10, "Block 10");
+        session2.on_message_stop();
+
+        // Both sessions should produce the same hash because they contain the same content
+        // in the same logical order (sorted by numeric index, not insertion order)
+        assert_eq!(
+            session1.final_content_hash,
+            session2.final_content_hash,
+            "Content hash should be consistent regardless of insertion order when using numeric sorting"
+        );
+
+        // Verify that is_duplicate_by_hash also works correctly
+        let combined_content = "Block 0Block 1Block 2Block 10";
+        assert!(
+            session1.is_duplicate_by_hash(combined_content, None),
+            "is_duplicate_by_hash should match content in numeric order"
+        );
     }
 
     // Tests for rapid index switching edge case (RFC-003)
