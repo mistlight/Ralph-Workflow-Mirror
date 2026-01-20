@@ -254,8 +254,27 @@ Need to test code that uses external dependency?
 These rules are enforced by:
 
 1. **Code review** - Reviewers must reject test-only flags in production code
-2. **CI checks** - Grep for forbidden patterns (`cfg!(test)`, `test_mode`, etc.)
+2. **CI checks** - Automated scripts check for forbidden patterns
 3. **Test isolation** - Tests that make real external calls will fail in CI
+
+#### Automated Test Flag Checker
+
+A compliance checker script validates that production code does not contain forbidden test flags:
+
+```bash
+# DO NOT MODIFY THIS SCRIPT. If it fails, FIX THE PRODUCTION CODE, not the script.
+./tests/integration_tests/no_test_flags_check.sh
+```
+
+The checker validates:
+- No `cfg!(test)` runtime detection in production code
+- No `test_mode: bool` or `is_test: bool` parameters
+- No `RUNNING_TESTS`, `TEST_ENV`, or `IS_TESTING` environment variable checks
+- No `#[cfg(feature = "testing")]` dual implementations
+
+**AI AGENTS:** This script is protected. DO NOT modify it to bypass checks. If the script
+fails, the production code has a design problem that must be fixed with proper dependency
+injection, not by changing the enforcement script.
 
 **If you find existing code that violates these rules**, fix it as part of your change
 or file an issue to track the technical debt.

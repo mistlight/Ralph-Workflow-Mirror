@@ -370,10 +370,10 @@ pub struct CommitDisplayFlags {
     #[arg(long, help = "Read and display .agent/commit-message.txt", hide = true)]
     pub show_commit_msg: bool,
 
-    /// Reset the starting commit reference to current HEAD
+    /// Reset the starting commit reference to merge-base with main branch
     #[arg(
         long,
-        help = "Reset .agent/start_commit to current HEAD (for incremental diff generation)",
+        help = "Reset .agent/start_commit to merge-base with main branch (for incremental diff generation)",
         hide = true
     )]
     pub reset_start_commit: bool,

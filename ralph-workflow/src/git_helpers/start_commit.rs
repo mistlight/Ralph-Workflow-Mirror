@@ -194,22 +194,108 @@ pub fn load_start_point() -> io::Result<StartPoint> {
     Ok(StartPoint::Commit(oid))
 }
 
-/// Reset the starting commit to current HEAD.
+/// Result of resetting the start commit.
+#[derive(Debug, Clone)]
+pub struct ResetStartCommitResult {
+    /// The OID that start_commit was set to.
+    pub oid: String,
+    /// The default branch used for merge-base calculation (if applicable).
+    pub default_branch: Option<String>,
+    /// Whether we fell back to HEAD (when on main/master branch).
+    pub fell_back_to_head: bool,
+}
+
+/// Reset the starting commit to merge-base with the default branch.
 ///
-/// This is a CLI command that updates `.agent/start_commit` to the current
-/// HEAD commit. It's useful when the user wants to start tracking from a
-/// different baseline.
+/// This is a CLI command that updates `.agent/start_commit` to the merge-base
+/// between HEAD and the default branch (main/master). This provides a better
+/// baseline for feature branch workflows, showing only changes since branching.
+///
+/// If the current branch is main/master itself, falls back to current HEAD.
 ///
 /// # Errors
 ///
 /// Returns an error if:
 /// - The current HEAD cannot be determined
+/// - The default branch cannot be found
+/// - No common ancestor exists between HEAD and the default branch
 /// - The file cannot be written
-pub fn reset_start_commit() -> io::Result<()> {
-    // Unlike `save_start_commit`, a reset is an explicit user request and should
-    // fail on empty repositories where there is no HEAD commit to reference.
-    let oid = get_current_head_oid()?;
-    write_start_commit_with_oid(&oid)
+pub fn reset_start_commit() -> io::Result<ResetStartCommitResult> {
+    let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
+
+    // Get current HEAD
+    let head = repo.head().map_err(|e| {
+        if e.code() == git2::ErrorCode::UnbornBranch {
+            io::Error::new(io::ErrorKind::NotFound, "No commits yet (unborn branch)")
+        } else {
+            to_io_error(&e)
+        }
+    })?;
+    let head_commit = head.peel_to_commit().map_err(|e| to_io_error(&e))?;
+
+    // Check if we're on main/master - if so, fall back to HEAD
+    let current_branch = head.shorthand().unwrap_or("HEAD");
+    if current_branch == "main" || current_branch == "master" {
+        let oid = head_commit.id().to_string();
+        write_start_commit_with_oid(&oid)?;
+        return Ok(ResetStartCommitResult {
+            oid,
+            default_branch: None,
+            fell_back_to_head: true,
+        });
+    }
+
+    // Get the default branch
+    let default_branch = super::branch::get_default_branch()?;
+
+    // Find the default branch commit
+    let default_ref = format!("refs/heads/{}", default_branch);
+    let default_commit = match repo.find_reference(&default_ref) {
+        Ok(reference) => reference.peel_to_commit().map_err(|e| to_io_error(&e))?,
+        Err(_) => {
+            // Try origin/<default_branch> as fallback
+            let origin_ref = format!("refs/remotes/origin/{}", default_branch);
+            match repo.find_reference(&origin_ref) {
+                Ok(reference) => reference.peel_to_commit().map_err(|e| to_io_error(&e))?,
+                Err(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        format!(
+                            "Default branch '{}' not found locally or in origin. \
+                             Make sure the branch exists.",
+                            default_branch
+                        ),
+                    ));
+                }
+            }
+        }
+    };
+
+    // Calculate merge-base
+    let merge_base = repo
+        .merge_base(head_commit.id(), default_commit.id())
+        .map_err(|e| {
+            if e.code() == git2::ErrorCode::NotFound {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!(
+                        "No common ancestor between current branch and '{}' (unrelated branches)",
+                        default_branch
+                    ),
+                )
+            } else {
+                to_io_error(&e)
+            }
+        })?;
+
+    let oid = merge_base.to_string();
+    write_start_commit_with_oid(&oid)?;
+
+    Ok(ResetStartCommitResult {
+        oid,
+        default_branch: Some(default_branch),
+        fell_back_to_head: false,
+    })
 }
 
 /// Start commit summary for display.

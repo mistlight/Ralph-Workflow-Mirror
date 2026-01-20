@@ -98,6 +98,10 @@ rg -n -U --pcre2 '(?x)
 # Check integration test compliance (timeout wrappers, doc comments, etc.)
 ./tests/integration_tests/compliance_check.sh
 
+# Check for forbidden test flags in production code (cfg!(test), test_mode params, etc.)
+# DO NOT MODIFY THIS SCRIPT. If it fails, FIX THE PRODUCTION CODE, not the script.
+./tests/integration_tests/no_test_flags_check.sh
+
 # DO NOT CHANGE ANY OF THE COMMANDS BELOW
 cargo fmt --all --check
 
