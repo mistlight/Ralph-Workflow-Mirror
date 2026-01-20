@@ -123,14 +123,15 @@ fn ralph_start_commit_persisted_across_runs() {
     });
 }
 
-/// Test that --reset-start-commit updates baseline to current HEAD.
+/// Test that --reset-start-commit updates baseline appropriately.
 ///
 /// This verifies that when the --reset-start-commit flag is used, the system
-/// updates the start_commit to point to the current HEAD commit.
+/// updates the start_commit. On main/master, it uses HEAD; on feature branches,
+/// it uses the merge-base with the default branch.
 #[test]
 fn ralph_baseline_reset_command_works() {
     with_default_timeout(|| {
-        // Test that --reset-start-commit updates the baseline to current HEAD
+        // Test that --reset-start-commit updates the baseline
         let dir = TempDir::new().unwrap();
         let repo = init_git_repo(&dir);
 

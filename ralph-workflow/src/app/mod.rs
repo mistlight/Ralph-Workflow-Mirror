@@ -212,8 +212,23 @@ fn handle_plumbing_commands(args: &Args, logger: &Logger, colors: Colors) -> any
         env::set_current_dir(&repo_root)?;
 
         return match reset_start_commit() {
-            Ok(()) => {
-                logger.success("Starting commit reference reset to current HEAD");
+            Ok(result) => {
+                let short_oid = &result.oid[..8.min(result.oid.len())];
+                if result.fell_back_to_head {
+                    logger.success(&format!(
+                        "Starting commit reference reset to current HEAD ({})",
+                        short_oid
+                    ));
+                    logger.info("On main/master branch - using HEAD as baseline");
+                } else if let Some(ref branch) = result.default_branch {
+                    logger.success(&format!(
+                        "Starting commit reference reset to merge-base with '{}' ({})",
+                        branch, short_oid
+                    ));
+                    logger.info("Baseline set to common ancestor with default branch");
+                } else {
+                    logger.success(&format!("Starting commit reference reset ({})", short_oid));
+                }
                 logger.info(".agent/start_commit has been updated");
                 Ok(true)
             }
