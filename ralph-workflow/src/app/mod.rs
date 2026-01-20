@@ -517,6 +517,18 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         ctx.config.clone()
     };
 
+    // Restore environment variables from checkpoint if resuming
+    if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::restore::restore_environment_from_checkpoint;
+        let restored_count = restore_environment_from_checkpoint(checkpoint);
+        if restored_count > 0 {
+            ctx.logger.info(&format!(
+                "  Restored {} environment variable(s) from checkpoint",
+                restored_count
+            ));
+        }
+    }
+
     // Set up git helpers and agent phase
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
     cleanup_orphaned_marker(&ctx.logger)?;

@@ -160,6 +160,41 @@ pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineChec
     }
 }
 
+/// Restore environment variables from a checkpoint.
+///
+/// This function restores environment variables that were captured in the
+/// checkpoint's environment snapshot, ensuring the resumed pipeline uses
+/// the same environment configuration as the original run.
+///
+/// # Arguments
+///
+/// * `checkpoint` - The checkpoint to restore environment from
+///
+/// # Returns
+///
+/// The number of environment variables restored.
+pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> usize {
+    let Some(ref env_snap) = checkpoint.env_snapshot else {
+        return 0;
+    };
+
+    let mut restored = 0;
+
+    // Restore RALPH_* variables
+    for (key, value) in &env_snap.ralph_vars {
+        std::env::set_var(key, value);
+        restored += 1;
+    }
+
+    // Restore other relevant variables
+    for (key, value) in &env_snap.other_vars {
+        std::env::set_var(key, value);
+        restored += 1;
+    }
+
+    restored
+}
+
 /// Calculate the starting iteration for development phase resume.
 ///
 /// When resuming from a checkpoint in the development phase, this determines
