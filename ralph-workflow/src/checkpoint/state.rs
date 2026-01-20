@@ -61,6 +61,15 @@ pub struct CliArgsSnapshot {
     pub review_depth: Option<String>,
     /// Whether to skip automatic rebase
     pub skip_rebase: bool,
+    /// Isolation mode: when false, NOTES.md and ISSUES.md persist between iterations
+    /// Default is true for backward compatibility with v1/v2 checkpoints.
+    #[serde(default = "default_isolation_mode")]
+    pub isolation_mode: bool,
+}
+
+/// Default value for isolation_mode (true = isolation enabled).
+fn default_isolation_mode() -> bool {
+    true
 }
 
 impl CliArgsSnapshot {
@@ -71,6 +80,7 @@ impl CliArgsSnapshot {
         commit_msg: String,
         review_depth: Option<String>,
         skip_rebase: bool,
+        isolation_mode: bool,
     ) -> Self {
         Self {
             developer_iters,
@@ -78,6 +88,7 @@ impl CliArgsSnapshot {
             commit_msg,
             review_depth,
             skip_rebase,
+            isolation_mode,
         }
     }
 }
@@ -609,7 +620,7 @@ fn load_checkpoint_with_fallback(
             timestamp: legacy.timestamp,
             developer_agent: legacy.developer_agent.clone(),
             reviewer_agent: legacy.reviewer_agent.clone(),
-            cli_args: CliArgsSnapshot::new(0, 0, String::new(), None, false),
+            cli_args: CliArgsSnapshot::new(0, 0, String::new(), None, false, true),
             developer_agent_config: AgentConfigSnapshot::new(
                 legacy.developer_agent.clone(),
                 String::new(),
@@ -756,7 +767,7 @@ mod tests {
 
     /// Helper function to create a checkpoint for testing.
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32) -> PipelineCheckpoint {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test commit".to_string(), None, false);
+        let cli_args = CliArgsSnapshot::new(5, 2, "test commit".to_string(), None, false, true);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -826,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_checkpoint_from_params() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".to_string(), None, false);
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".to_string(), None, false, true);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -882,7 +893,7 @@ mod tests {
             total_reviewer_passes: 3,
             developer_agent: "claude",
             reviewer_agent: "codex",
-            cli_args: CliArgsSnapshot::new(5, 3, "test".to_string(), None, false),
+            cli_args: CliArgsSnapshot::new(5, 3, "test".to_string(), None, false, true),
             developer_agent_config: AgentConfigSnapshot::new(
                 "claude".into(),
                 "cmd".into(),
@@ -966,7 +977,14 @@ mod tests {
             total_reviewer_passes: 2,
             developer_agent: "aider",
             reviewer_agent: "opencode",
-            cli_args: CliArgsSnapshot::new(5, 2, "fix".to_string(), Some("standard".into()), false),
+            cli_args: CliArgsSnapshot::new(
+                5,
+                2,
+                "fix".to_string(),
+                Some("standard".into()),
+                false,
+                true,
+            ),
             developer_agent_config: AgentConfigSnapshot::new(
                 "aider".into(),
                 "aider".into(),
@@ -1021,6 +1039,7 @@ mod tests {
             "feat: new feature".to_string(),
             Some("comprehensive".into()),
             true,
+            true,
         );
 
         assert_eq!(snapshot.developer_iters, 10);
@@ -1028,6 +1047,7 @@ mod tests {
         assert_eq!(snapshot.commit_msg, "feat: new feature");
         assert_eq!(snapshot.review_depth, Some("comprehensive".to_string()));
         assert!(snapshot.skip_rebase);
+        assert!(snapshot.isolation_mode);
     }
 
     #[test]

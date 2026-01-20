@@ -48,6 +48,8 @@ pub struct CheckpointBuilder {
     // Hardened resume fields
     execution_history: Option<ExecutionHistory>,
     prompt_history: Option<std::collections::HashMap<String, String>>,
+    // Optional skip_rebase flag for CLI args capture
+    skip_rebase: Option<bool>,
 }
 
 impl Default for CheckpointBuilder {
@@ -77,6 +79,7 @@ impl CheckpointBuilder {
             run_context: None,
             execution_history: None,
             prompt_history: None,
+            skip_rebase: None,
         }
     }
 
@@ -146,16 +149,24 @@ impl CheckpointBuilder {
         self
     }
 
+    /// Set the skip_rebase flag for CLI args capture.
+    pub fn skip_rebase(mut self, value: bool) -> Self {
+        self.skip_rebase = Some(value);
+        self
+    }
+
     /// Capture CLI arguments from a Config.
     pub fn capture_cli_args(mut self, config: &Config) -> Self {
         let review_depth_str = review_depth_to_string(config.review_depth);
+        let skip_rebase = self.skip_rebase.unwrap_or(false);
 
         let snapshot = CliArgsSnapshot::new(
             config.developer_iters,
             config.reviewer_reviews,
             config.commit_msg.clone(),
             review_depth_str,
-            false, // skip_rebase - will be set from args if needed
+            skip_rebase,
+            config.isolation_mode,
         );
         self.cli_args = Some(snapshot);
         self
@@ -329,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_builder_basic() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false);
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -381,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_prompt_history() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false);
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -416,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_prompt_history_multiple() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false);
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =

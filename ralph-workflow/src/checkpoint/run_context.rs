@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn test_run_context_from_checkpoint() {
         // Create a mock checkpoint
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".to_string(), None, false);
+        let cli_args = CliArgsSnapshot::new(5, 2, "test".to_string(), None, false, true);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =

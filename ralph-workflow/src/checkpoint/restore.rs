@@ -147,6 +147,11 @@ pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineChec
     if let Some(ref email) = checkpoint.git_user_email {
         config.git_user_email = Some(email.clone());
     }
+
+    // Apply isolation_mode from checkpoint if it has meaningful cli_args
+    if cli_args.developer_iters > 0 || cli_args.reviewer_reviews > 0 {
+        config.isolation_mode = cli_args.isolation_mode;
+    }
 }
 
 /// Calculate the starting iteration for development phase resume.
@@ -289,7 +294,7 @@ mod tests {
     };
 
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32, pass: u32) -> PipelineCheckpoint {
-        let cli_args = CliArgsSnapshot::new(5, 3, "test commit".to_string(), None, false);
+        let cli_args = CliArgsSnapshot::new(5, 3, "test commit".to_string(), None, false, true);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =

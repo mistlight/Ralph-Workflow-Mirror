@@ -551,8 +551,21 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     );
     save_start_commit_or_warn(ctx);
 
+    // Determine if we should run rebase based on checkpoint or current args
+    let should_run_rebase = if let Some(ref checkpoint) = resume_checkpoint {
+        // Use checkpoint's skip_rebase value if it has meaningful cli_args
+        if checkpoint.cli_args.developer_iters > 0 || checkpoint.cli_args.reviewer_reviews > 0 {
+            !checkpoint.cli_args.skip_rebase
+        } else {
+            // Fallback to current args
+            ctx.args.rebase_flags.with_rebase
+        }
+    } else {
+        ctx.args.rebase_flags.with_rebase
+    };
+
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
-    if ctx.args.rebase_flags.with_rebase {
+    if should_run_rebase {
         run_initial_rebase(ctx, &mut phase_ctx, &run_context)?;
     }
 
@@ -565,7 +578,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     check_prompt_restoration(ctx, &mut prompt_monitor, "review");
 
     // Run post-review rebase (only if explicitly requested via --with-rebase)
-    if ctx.args.rebase_flags.with_rebase {
+    if should_run_rebase {
         run_post_review_rebase(ctx, &mut phase_ctx, &run_context)?;
     }
 
@@ -575,6 +588,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled {
+        let skip_rebase = !ctx.args.rebase_flags.with_rebase;
         let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::Complete,
@@ -582,6 +596,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
                 config.developer_iters,
             )
             .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
+            .skip_rebase(skip_rebase)
             .capture_from_context(
                 &config,
                 &ctx.registry,
