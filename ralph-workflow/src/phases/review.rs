@@ -289,6 +289,33 @@ pub fn run_review_phase(
 
         // Check for changes and create commit if modified
         prev_snap = handle_post_fix_commit(ctx, j, &prev_snap)?;
+
+        // Save checkpoint after review-fix cycle completes (if enabled)
+        // This checkpoint captures the completed cycle so resume won't re-run it
+        if ctx.config.features.checkpoint_enabled {
+            let next_pass = j + 1;
+            let builder = CheckpointBuilder::new()
+                .phase(
+                    PipelinePhase::Review,
+                    ctx.config.developer_iters,
+                    ctx.config.developer_iters,
+                )
+                .reviewer_pass(next_pass, ctx.config.reviewer_reviews)
+                .capture_from_context(
+                    ctx.config,
+                    ctx.registry,
+                    ctx.developer_agent,
+                    ctx.reviewer_agent,
+                    ctx.logger,
+                    &ctx.run_context,
+                )
+                .with_execution_history(ctx.execution_history.clone())
+                .with_prompt_history(ctx.clone_prompt_history());
+
+            if let Some(checkpoint) = builder.build() {
+                let _ = save_checkpoint(&checkpoint);
+            }
+        }
     }
 
     // Provide feedback if any review cycles were skipped

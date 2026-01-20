@@ -241,6 +241,33 @@ pub fn run_development_phase(
             ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
         }
         ctx.logger.success("PLAN.md deleted");
+
+        // Save checkpoint after iteration completes (if enabled)
+        // This checkpoint captures the completed iteration so resume won't re-run it
+        if ctx.config.features.checkpoint_enabled {
+            let next_iteration = i + 1;
+            let builder = CheckpointBuilder::new()
+                .phase(
+                    PipelinePhase::Development,
+                    next_iteration,
+                    ctx.config.developer_iters,
+                )
+                .reviewer_pass(0, ctx.config.reviewer_reviews)
+                .capture_from_context(
+                    ctx.config,
+                    ctx.registry,
+                    ctx.developer_agent,
+                    ctx.reviewer_agent,
+                    ctx.logger,
+                    &ctx.run_context,
+                )
+                .with_execution_history(ctx.execution_history.clone())
+                .with_prompt_history(ctx.clone_prompt_history());
+
+            if let Some(checkpoint) = builder.build() {
+                let _ = save_checkpoint(&checkpoint);
+            }
+        }
     }
 
     Ok(DevelopmentResult { had_errors })
