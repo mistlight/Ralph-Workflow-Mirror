@@ -177,6 +177,12 @@ impl ExecutionStep {
         self.duration_secs = Some(duration_secs);
         self
     }
+
+    /// Set the git commit OID created during this step.
+    pub fn with_git_commit_oid(mut self, oid: &str) -> Self {
+        self.git_commit_oid = Some(oid.to_string());
+        self
+    }
 }
 
 /// Default threshold for storing file content in snapshots (10KB).

@@ -170,6 +170,9 @@ pub struct CommitMessageResult {
     pub success: bool,
     /// Path to the agent log file for debugging (currently unused but kept for API compatibility)
     pub _log_path: String,
+    /// Prompts that were generated during this commit generation (key -> prompt)
+    /// This is used for capturing prompts in checkpoints for deterministic resume
+    pub generated_prompts: std::collections::HashMap<String, String>,
 }
 
 /// Truncate diff if it's too large for agents with small context windows.
@@ -501,10 +504,12 @@ fn handle_commit_extraction_result(
             let message = extraction.clone().into_message();
             attempt_log.set_outcome(AttemptOutcome::Success(message.clone()));
             *last_extraction = Some(extraction);
+            // Note: generated_prompts is collected in the context and returned later
             Some(Ok(CommitMessageResult {
                 message,
                 success: true,
                 _log_path: log_file,
+                generated_prompts: std::collections::HashMap::new(),
             }))
         }
         Ok(None) => {
@@ -554,6 +559,9 @@ struct CommitAttemptContext<'a> {
     prompt_history: &'a HashMap<String, String>,
     /// Unique key for this commit generation attempt
     prompt_key: String,
+    /// Output map to capture prompts that were newly generated (not replayed)
+    /// This is used for checkpoint/resume determinism
+    generated_prompts: &'a mut std::collections::HashMap<String, String>,
 }
 
 /// Run a single commit attempt with the given strategy and agent.
@@ -564,7 +572,7 @@ struct CommitAttemptContext<'a> {
 /// or None if we should continue to the next strategy.
 fn run_commit_attempt_with_agent(
     strategy: CommitRetryStrategy,
-    ctx: &CommitAttemptContext<'_>,
+    ctx: &mut CommitAttemptContext<'_>,
     runtime: &mut PipelineRuntime,
     registry: &AgentRegistry,
     agent: &str,
@@ -613,6 +621,10 @@ fn run_commit_attempt_with_agent(
                 "Using stored prompt from checkpoint for determinism: {}",
                 prompt_key
             ));
+        } else if !was_replayed {
+            // Capture the newly generated prompt for checkpoint/resume
+            ctx.generated_prompts
+                .insert(prompt_key.clone(), prompt.clone());
         }
 
         // Create attempt log
@@ -768,7 +780,11 @@ fn run_commit_attempt_with_agent(
 }
 
 /// Return the hardcoded fallback commit message as last resort.
-fn return_hardcoded_fallback(log_file: &str, runtime: &PipelineRuntime) -> CommitMessageResult {
+fn return_hardcoded_fallback(
+    log_file: &str,
+    runtime: &PipelineRuntime,
+    generated_prompts: std::collections::HashMap<String, String>,
+) -> CommitMessageResult {
     runtime.logger.warn("");
     runtime.logger.warn("All recovery methods failed:");
     runtime.logger.warn("  - All 9 prompt variants exhausted");
@@ -790,6 +806,7 @@ fn return_hardcoded_fallback(log_file: &str, runtime: &PipelineRuntime) -> Commi
         message: HARDCODED_FALLBACK_COMMIT.to_string(),
         success: true,
         _log_path: log_file.to_string(),
+        generated_prompts,
     }
 }
 
@@ -870,19 +887,23 @@ pub fn generate_commit_message(
             .as_secs()
     );
 
-    let attempt_ctx = CommitAttemptContext {
+    // Map to capture newly generated prompts for checkpoint/resume
+    let mut generated_prompts = std::collections::HashMap::new();
+
+    let mut attempt_ctx = CommitAttemptContext {
         working_diff: &working_diff,
         log_dir,
         diff_was_truncated: diff_was_pre_truncated,
         template_context,
         prompt_history,
         prompt_key,
+        generated_prompts: &mut generated_prompts,
     };
 
     // Try each agent with all prompt variants
     if let Some(result) = try_agents_with_strategies(
         &agents_to_try,
-        &attempt_ctx,
+        &mut attempt_ctx,
         runtime,
         registry,
         &mut last_extraction,
@@ -890,7 +911,11 @@ pub fn generate_commit_message(
         &mut total_attempts,
     ) {
         log_completion(runtime, &session, total_attempts, &result);
-        return result;
+        // Include generated prompts in the result
+        return result.map(|mut r| {
+            r.generated_prompts = generated_prompts;
+            r
+        });
     }
 
     // Handle fallback cases
@@ -903,6 +928,7 @@ pub fn generate_commit_message(
         &session,
         total_attempts,
         last_extraction.as_ref(),
+        generated_prompts,
     )
 }
 
@@ -938,7 +964,7 @@ fn create_commit_log_session(log_dir: &str, runtime: &mut PipelineRuntime) -> Co
 /// available agents before we try degraded fallback prompts.
 fn try_agents_with_strategies(
     agents: &[&str],
-    ctx: &CommitAttemptContext<'_>,
+    ctx: &mut CommitAttemptContext<'_>,
     runtime: &mut PipelineRuntime,
     registry: &AgentRegistry,
     last_extraction: &mut Option<CommitExtractionResult>,
@@ -1026,6 +1052,7 @@ fn handle_commit_fallbacks(
     session: &CommitLogSession,
     total_attempts: usize,
     last_extraction: Option<&CommitExtractionResult>,
+    generated_prompts: std::collections::HashMap<String, String>,
 ) -> anyhow::Result<CommitMessageResult> {
     // Use message from last extraction if available
     // (XSD validation already passed if we have an extraction)
@@ -1043,6 +1070,7 @@ fn handle_commit_fallbacks(
             message,
             success: true,
             _log_path: ctx.log_file.to_string(),
+            generated_prompts,
         });
     }
 
@@ -1055,7 +1083,11 @@ fn handle_commit_fallbacks(
         "Commit generation complete after {total_attempts} attempts (hardcoded fallback). Logs: {}",
         session.run_dir().display()
     ));
-    Ok(return_hardcoded_fallback(ctx.log_file, runtime))
+    Ok(return_hardcoded_fallback(
+        ctx.log_file,
+        runtime,
+        generated_prompts,
+    ))
 }
 
 /// Create a commit with an automatically generated message using the standard pipeline.
@@ -1132,6 +1164,11 @@ pub fn commit_with_generated_message(
         }
     };
 
+    // Capture generated prompts for checkpoint/resume
+    for (key, prompt) in result.generated_prompts {
+        ctx.capture_prompt(&key, &prompt);
+    }
+
     // Check if generation succeeded
     if !result.success || result.message.trim().is_empty() {
         // This should never happen after our fixes, but add defensive fallback
@@ -1178,11 +1215,17 @@ pub fn commit_with_generated_message(
             }
             CommitResultFallback::Failed(e) => StepOutcome::failure(e.clone(), false),
         };
-        ctx.execution_history.add_step(
-            ExecutionStep::new("commit", 0, "commit_generation", outcome)
-                .with_agent(commit_agent)
-                .with_duration(start_time.elapsed().as_secs()),
-        );
+        let oid_for_history = match &commit_result {
+            CommitResultFallback::Success(oid) => Some(oid.to_string()),
+            _ => None,
+        };
+        let mut step = ExecutionStep::new("commit", 0, "commit_generation", outcome)
+            .with_agent(commit_agent)
+            .with_duration(start_time.elapsed().as_secs());
+        if let Some(ref oid) = oid_for_history {
+            step = step.with_git_commit_oid(oid);
+        }
+        ctx.execution_history.add_step(step);
         commit_result
     }
 }
