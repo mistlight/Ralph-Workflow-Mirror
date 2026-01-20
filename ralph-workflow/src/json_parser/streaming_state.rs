@@ -320,8 +320,8 @@ pub struct StreamingSession {
     /// GLM sends assistant events with tool_use blocks (name + input) during streaming,
     /// but only the input is accumulated via deltas. We track the tool name to properly
     /// reconstruct the normalized representation for deduplication.
-    /// Maps `index` → `tool_name`.
-    tool_names: HashMap<String, Option<String>>,
+    /// Maps the content block index to the tool name.
+    tool_names: HashMap<u64, Option<String>>,
 }
 
 impl StreamingSession {
@@ -975,7 +975,7 @@ impl StreamingSession {
     /// * `index` - The content block index
     /// * `name` - The tool name (if available)
     pub fn set_tool_name(&mut self, index: u64, name: Option<String>) {
-        self.tool_names.insert(index.to_string(), name);
+        self.tool_names.insert(index, name);
     }
 
     /// Finalize the message on stop event.
@@ -1071,8 +1071,8 @@ impl StreamingSession {
         let has_tool_use = content.contains("TOOL_USE:");
         let has_text = self
             .accumulated
-            .keys()
-            .any(|(ct, _)| *ct == ContentType::Text);
+            .iter()
+            .any(|((ct, _), v)| *ct == ContentType::Text && !v.is_empty());
 
         if has_tool_use && has_text {
             // Mixed content: both text and tool_use need to be checked
@@ -1130,14 +1130,14 @@ impl StreamingSession {
         // Get all accumulated content keys and sort by index
         let mut all_keys: Vec<_> = self.accumulated.keys().collect();
         all_keys.sort_by_key(|k| {
-            // Sort by content type first (Text before ToolInput), then by index
+            // Sort by index first (to preserve actual order), then by content type as tiebreaker
+            let index = k.1.parse::<u64>().unwrap_or(u64::MAX);
             let type_order = match k.0 {
                 ContentType::Text => 0,
                 ContentType::ToolInput => 1,
                 ContentType::Thinking => 2,
             };
-            let index = k.1.parse::<u64>().unwrap_or(u64::MAX);
-            (type_order, index)
+            (index, type_order)
         });
 
         for (ct, index_str) in all_keys {
@@ -1149,10 +1149,10 @@ impl StreamingSession {
                     }
                     ContentType::ToolInput => {
                         // Tool_use content needs normalization with tool name
-                        let index_num = index_str.parse::<usize>().unwrap_or(0);
+                        let index_num = index_str.parse::<u64>().unwrap_or(0);
                         let tool_name = tool_name_hints
-                            .and_then(|hints| hints.get(&index_num).map(|s| s.as_str()))
-                            .or_else(|| self.tool_names.get(index_str).and_then(|n| n.as_deref()))
+                            .and_then(|hints| hints.get(&(index_num as usize)).map(|s| s.as_str()))
+                            .or_else(|| self.tool_names.get(&index_num).and_then(|n| n.as_deref()))
                             .unwrap_or("");
 
                         // Normalize: "TOOL_USE:{name}:{input}"
@@ -1204,10 +1204,10 @@ impl StreamingSession {
         for (ct, index_str) in tool_keys {
             if let Some(accumulated_input) = self.accumulated.get(&(*ct, index_str.clone())) {
                 // Get the tool name from hints first (from assistant event), then from tracking
-                let index_num = index_str.parse::<usize>().unwrap_or(0);
+                let index_num = index_str.parse::<u64>().unwrap_or(0);
                 let tool_name = tool_name_hints
-                    .and_then(|hints| hints.get(&index_num).map(|s| s.as_str()))
-                    .or_else(|| self.tool_names.get(index_str).and_then(|n| n.as_deref()))
+                    .and_then(|hints| hints.get(&(index_num as usize)).map(|s| s.as_str()))
+                    .or_else(|| self.tool_names.get(&index_num).and_then(|n| n.as_deref()))
                     .unwrap_or("");
 
                 // Normalize: "TOOL_USE:{name}:{input}"

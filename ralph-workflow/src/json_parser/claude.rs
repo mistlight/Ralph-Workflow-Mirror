@@ -345,9 +345,10 @@ impl ClaudeParser {
                         session.on_text_delta(index, t);
                     }
                     ContentBlock::ToolUse { name, input } => {
-                        // Track tool name for GLM/CCS deduplication
-                        // IMPORTANT: Always track the tool name, even when input is None
-                        // GLM may send ContentBlockStart with name but no input, then send input via delta
+                        // Track tool name for GLM/CCS deduplication.
+                        // IMPORTANT: Track the tool name when provided, even when input is None.
+                        // GLM may send ContentBlockStart with name but no input, then send input via delta.
+                        // We only store when we have a name to avoid overwriting a previous tool name with None.
                         if let Some(n) = name {
                             session.set_tool_name(index, Some(n.clone()));
                         }
@@ -458,7 +459,6 @@ impl ClaudeParser {
         }
     }
 
-    /// Extract text content from a message for hash-based deduplication.
     /// Extract content from assistant message for hash-based deduplication.
     ///
     /// This includes both text and tool_use blocks, normalized for comparison.
