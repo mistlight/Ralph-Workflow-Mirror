@@ -2480,9 +2480,8 @@ fn ralph_v3_file_system_state_detects_changes() {
         // Should succeed - validation fails, resume is aborted, fresh run completes
         // The fresh run uses developer_iters=0 from command line, so no agent runs
         cmd.assert().success().stderr(
-            predicate::str::contains("File system validation").or(
-                predicate::str::contains("File system state validation"),
-            ),
+            predicate::str::contains("File system validation")
+                .or(predicate::str::contains("File system state validation")),
         );
     });
 }
