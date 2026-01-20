@@ -344,22 +344,23 @@ impl ClaudeParser {
                         // Initial text in ContentBlockStart - treat as first delta
                         session.on_text_delta(index, t);
                     }
-                    ContentBlock::ToolUse {
-                        name,
-                        input: Some(i),
-                    } => {
+                    ContentBlock::ToolUse { name, input } => {
                         // Track tool name for GLM/CCS deduplication
+                        // IMPORTANT: Always track the tool name, even when input is None
+                        // GLM may send ContentBlockStart with name but no input, then send input via delta
                         if let Some(n) = name {
                             session.set_tool_name(index, Some(n.clone()));
                         }
 
-                        // Initialize tool input accumulator
-                        let input_str = if let serde_json::Value::String(s) = &i {
-                            s.clone()
-                        } else {
-                            format_tool_input(i)
-                        };
-                        session.on_tool_input_delta(index, &input_str);
+                        // Initialize tool input accumulator only if input is present
+                        if let Some(i) = input {
+                            let input_str = if let serde_json::Value::String(s) = &i {
+                                s.clone()
+                            } else {
+                                format_tool_input(i)
+                            };
+                            session.on_tool_input_delta(index, &input_str);
+                        }
                     }
                     _ => {}
                 }
