@@ -1,16 +1,18 @@
 {# ============================================================================ #}
 {# Template: developer_iteration_xsd_retry.txt                                   #}
-{# Version: 2.0                                                                 #}
+{# Version: 3.0 - File-based context to avoid prompt bloat                      #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
 {#   Retry prompt when XML validation fails during development iteration.      #}
-{#   Includes the EXACT XSD schema the output must conform to.                 #}
+{#   XSD schema and last output are written to files to keep prompt small.      #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
 {#   {{XSD_ERROR}} - XSD validation error message (required)                   #}
-{#   {{LAST_OUTPUT}} - The invalid XML output (required)                       #}
-{#   {{XSD_SCHEMA}} - The complete XSD schema for development result validation #}
+{#                                                                             #}
+{# FILES TO READ:                                                               #}
+{#   .agent/tmp/development_result.xsd - The XSD schema your output must conform to #}
+{#   .agent/tmp/last_output.xml        - Your previous invalid output          #}
 {#                                                                             #}
 {# OUTPUT FORMAT:                                                               #}
 {#   Valid <ralph-development-result> XML conforming to the XSD schema         #}
@@ -25,16 +27,13 @@ XSD VALIDATION ERROR
 {{XSD_ERROR}}
 
 ═══════════════════════════════════════════════════════════════════════════════
-YOUR LAST OUTPUT (INVALID)
+CONTEXT FILES (READ THESE)
 ═══════════════════════════════════════════════════════════════════════════════
 
-{{LAST_OUTPUT}}
+1. Read `.agent/tmp/development_result.xsd` - This is the XSD schema your output MUST conform to.
+2. Read `.agent/tmp/last_output.xml` - This is your previous invalid output.
 
-═══════════════════════════════════════════════════════════════════════════════
-XSD SCHEMA (your output MUST conform to this schema)
-═══════════════════════════════════════════════════════════════════════════════
-
-{{XSD_SCHEMA}}
+Study both files carefully to understand what went wrong and how to fix it.
 
 ═══════════════════════════════════════════════════════════════════════════════
 CRITICAL RULES

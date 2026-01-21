@@ -204,10 +204,42 @@ pub fn prompt_planning_xml_with_context(
 /// The XSD schema for plan validation - included at compile time
 const PLAN_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/plan.xsd");
 
+/// Directory for XSD retry context files
+const XSD_RETRY_TMP_DIR: &str = ".agent/tmp";
+
+/// Write XSD retry context files to `.agent/tmp/` directory.
+///
+/// This writes the XSD schema and last output to files so they don't bloat the prompt.
+/// The agent should read these files to understand what went wrong.
+fn write_planning_xsd_retry_files(last_output: &str) {
+    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
+    if std::fs::create_dir_all(tmp_dir).is_err() {
+        return;
+    }
+
+    let _ = std::fs::write(tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA);
+    let _ = std::fs::write(tmp_dir.join("last_output.xml"), last_output);
+}
+
+/// Write XSD retry context files for development iteration to `.agent/tmp/` directory.
+fn write_dev_iteration_xsd_retry_files(last_output: &str) {
+    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
+    if std::fs::create_dir_all(tmp_dir).is_err() {
+        return;
+    }
+
+    let _ = std::fs::write(
+        tmp_dir.join("development_result.xsd"),
+        DEVELOPMENT_RESULT_XSD_SCHEMA,
+    );
+    let _ = std::fs::write(tmp_dir.join("last_output.xml"), last_output);
+}
+
 /// Generate XSD validation retry prompt for planning with error feedback.
 ///
 /// This prompt is used when an AI agent produces plan XML that fails XSD validation.
-/// The prompt includes the error, the last output (for context), and the full XSD schema.
+/// The XSD schema and last output are written to files at `.agent/tmp/` to avoid
+/// bloating the prompt. The agent should read these files.
 ///
 /// # Arguments
 ///
@@ -221,20 +253,20 @@ pub fn prompt_planning_xsd_retry_with_context(
     xsd_error: &str,
     last_output: &str,
 ) -> String {
+    // Write context files to .agent/tmp/ for the agent to read
+    write_planning_xsd_retry_files(last_output);
+
     let template_content = context
         .registry()
         .get_template("planning_xsd_retry")
         .unwrap_or_else(|_| include_str!("templates/planning_xsd_retry.txt").to_string());
-    let variables = HashMap::from([
-        ("XSD_ERROR", xsd_error.to_string()),
-        ("LAST_OUTPUT", last_output.to_string()),
-        ("XSD_SCHEMA", PLAN_XSD_SCHEMA.to_string()),
-    ]);
+    let variables = HashMap::from([("XSD_ERROR", xsd_error.to_string())]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
             format!(
                 "Your previous plan failed XSD validation.\n\nError: {}\n\n\
+                 Read .agent/tmp/plan.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
                  Please resend your plan in valid XML format conforming to the XSD schema.\n",
                 xsd_error
             )
@@ -278,43 +310,41 @@ pub fn prompt_developer_iteration_xml_with_context(
 /// Generate XSD validation retry prompt for developer iteration with error feedback.
 ///
 /// This prompt is used when an AI agent produces development result XML that fails XSD validation.
+/// The XSD schema and last output are written to files at `.agent/tmp/` to avoid
+/// bloating the prompt. The agent should read these files.
 ///
 /// # Arguments
 ///
 /// * `context` - Template context containing the template registry
-/// * `prompt_content` - The original user request (PROMPT.md content)
-/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+/// * `_prompt_content` - The original user request (unused - kept for API compatibility)
+/// * `_plan_content` - The implementation plan (unused - kept for API compatibility)
 /// * `xsd_error` - The XSD validation error message to include in the prompt
 /// * `last_output` - The invalid XML output that failed validation
 pub fn prompt_developer_iteration_xsd_retry_with_context(
     context: &TemplateContext,
-    prompt_content: &str,
-    plan_content: &str,
+    _prompt_content: &str,
+    _plan_content: &str,
     xsd_error: &str,
     last_output: &str,
 ) -> String {
+    // Write context files to .agent/tmp/ for the agent to read
+    write_dev_iteration_xsd_retry_files(last_output);
+
     let template_content = context
         .registry()
         .get_template("developer_iteration_xsd_retry")
         .unwrap_or_else(|_| {
             include_str!("templates/developer_iteration_xsd_retry.txt").to_string()
         });
-    let variables = HashMap::from([
-        ("PROMPT", prompt_content.to_string()),
-        ("PLAN", plan_content.to_string()),
-        ("XSD_ERROR", xsd_error.to_string()),
-        ("LAST_OUTPUT", last_output.to_string()),
-        ("XSD_SCHEMA", DEVELOPMENT_RESULT_XSD_SCHEMA.to_string()),
-    ]);
+    let variables = HashMap::from([("XSD_ERROR", xsd_error.to_string())]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
             format!(
                 "Your previous development status failed XSD validation.\n\nError: {}\n\n\
-                 Last output:\n{}\n\n\
-                 Please resend your status in valid XML format:\n\
-                 <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
-                xsd_error, last_output
+                 Read .agent/tmp/development_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
+                 Please resend your status in valid XML format conforming to the XSD schema.\n",
+                xsd_error
             )
         })
 }

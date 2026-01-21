@@ -15,6 +15,22 @@ use crate::files::result_extraction::extract_file_paths_from_issues;
 const COMMIT_MESSAGE_XSD_SCHEMA: &str =
     include_str!("../files/llm_output_extraction/commit_message.xsd");
 
+/// Directory for XSD retry context files
+const XSD_RETRY_TMP_DIR: &str = ".agent/tmp";
+
+/// Write XSD retry context files for commit message to `.agent/tmp/` directory.
+fn write_commit_xsd_retry_files(diff: &str) {
+    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
+    if std::fs::create_dir_all(tmp_dir).is_err() {
+        return;
+    }
+    let _ = std::fs::write(
+        tmp_dir.join("commit_message.xsd"),
+        COMMIT_MESSAGE_XSD_SCHEMA,
+    );
+    let _ = std::fs::write(tmp_dir.join("diff.txt"), diff);
+}
+
 /// Generate fix prompt (applies to either role).
 ///
 /// This prompt is agent-agnostic and works with any AI coding assistant.
@@ -288,6 +304,8 @@ pub fn prompt_simplified_commit_with_context(context: &TemplateContext, diff: &s
 ///
 /// This prompt is used when an AI agent produces XML that fails XSD validation.
 /// It provides clear, actionable error feedback to help the agent fix the issue.
+/// The XSD schema and diff are written to files at `.agent/tmp/` to avoid
+/// bloating the prompt. The agent should read these files.
 ///
 /// # Arguments
 ///
@@ -299,25 +317,24 @@ pub fn prompt_xsd_retry_with_context(
     diff: &str,
     xsd_error: &str,
 ) -> String {
+    // Write context files to .agent/tmp/ for the agent to read
+    write_commit_xsd_retry_files(diff);
+
     let template_content = context
         .registry()
         .get_template("commit_xsd_retry")
         .unwrap_or_else(|_| include_str!("templates/commit_xsd_retry.txt").to_string());
-    let variables = std::collections::HashMap::from([
-        ("DIFF", diff.to_string()),
-        ("XSD_ERROR", xsd_error.to_string()),
-        ("XSD_SCHEMA", COMMIT_MESSAGE_XSD_SCHEMA.to_string()),
-    ]);
+    let variables = HashMap::from([("XSD_ERROR", xsd_error.to_string())]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
             // Fallback to simple retry prompt if template rendering fails
             format!(
                 "Your previous commit message failed validation.\n\nError: {}\n\n\
-                 Please fix it and output a valid commit message in XML format:\n\
-                 <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>\n\n\
-                 Diff:\n{}",
-                xsd_error, diff
+                 Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/diff.txt for the diff.\n\
+                 Please fix it and output a valid commit message in XML format conforming to the XSD schema.\n"
+                ,
+                xsd_error
             )
         })
 }
