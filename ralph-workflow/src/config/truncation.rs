@@ -14,6 +14,9 @@
 //! - `command`: Command execution strings
 //! - `agent_msg`: Agent messages/thinking
 
+/// Maximum number of lines to show for multi-line tool output.
+pub const MAX_OUTPUT_LINES: usize = 5;
+
 /// Truncation limits for Quiet verbosity mode.
 ///
 /// Quiet mode uses aggressive truncation to minimize output noise.
@@ -32,15 +35,10 @@ pub mod quiet {
 ///
 /// Normal mode provides balanced output with moderate truncation
 /// for better usability while still keeping output manageable.
-///
-/// NOTE: `TOOL_INPUT` and `TOOL_RESULT` are generous in Normal mode
-/// because tool outputs provide crucial context for understanding
-/// agent behavior. Users need to see what files contain and what
-/// commands return to follow along with the agent's work.
 pub mod normal {
     pub const TEXT: usize = 1000;
-    pub const TOOL_RESULT: usize = 2000;
-    pub const TOOL_INPUT: usize = 999_999; // Unlimited - don't truncate tool input
+    pub const TOOL_RESULT: usize = 500;
+    pub const TOOL_INPUT: usize = 300;
     pub const USER: usize = 200;
     pub const RESULT: usize = 3000;
     pub const COMMAND: usize = 400;
@@ -50,16 +48,12 @@ pub mod normal {
 
 /// Truncation limits for Verbose verbosity mode.
 ///
-/// Verbose is the default mode, providing generous limits to help
-/// users understand agent behavior without being overwhelming.
-///
-/// NOTE: `TOOL_INPUT` and `TOOL_RESULT` are unlimited in Verbose mode
-/// to match interactive CLI behavior where users expect to see full
-/// tool outputs including file contents and command results.
+/// Verbose is the default mode, providing reasonable limits to help
+/// users understand agent behavior without overwhelming output.
 pub mod verbose {
     pub const TEXT: usize = 2000;
-    pub const TOOL_RESULT: usize = 999_999; // Unlimited - show full tool outputs
-    pub const TOOL_INPUT: usize = 999_999; // Unlimited - don't truncate tool input
+    pub const TOOL_RESULT: usize = 500;
+    pub const TOOL_INPUT: usize = 300;
     pub const USER: usize = 400;
     pub const RESULT: usize = 5000;
     pub const COMMAND: usize = 400;

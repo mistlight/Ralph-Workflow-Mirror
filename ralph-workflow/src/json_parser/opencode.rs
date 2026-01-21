@@ -757,7 +757,7 @@ impl OpenCodeParser {
     /// Format tool output with proper multi-line handling
     ///
     /// For single-line outputs, shows inline. For multi-line outputs (like file contents),
-    /// preserves line structure with proper indentation for readability.
+    /// shows only the first few lines as a preview.
     fn format_tool_output(
         &self,
         out: &mut String,
@@ -766,11 +766,13 @@ impl OpenCodeParser {
         prefix: &str,
         c: Colors,
     ) {
+        use crate::config::truncation::MAX_OUTPUT_LINES;
+
         let lines: Vec<&str> = output.lines().collect();
         let is_multiline = lines.len() > 1;
 
         if is_multiline {
-            // Multi-line output: show header then indented content
+            // Multi-line output: show header then first few lines
             let _ = writeln!(
                 out,
                 "{}[{}]{} {}  └─ Output:{}",
@@ -781,26 +783,20 @@ impl OpenCodeParser {
                 c.reset()
             );
 
-            // Calculate how many lines we can show within the limit
             let mut chars_used = 0;
-            let mut lines_shown = 0;
             let indent = format!("{}[{}]{}     ", c.dim(), prefix, c.reset());
 
-            for line in &lines {
-                if chars_used + line.len() > limit {
-                    // Show truncation indicator
-                    let _ = writeln!(
-                        out,
-                        "{}{}...({} more lines)",
-                        indent,
-                        c.dim(),
-                        lines.len() - lines_shown
-                    );
+            for (lines_shown, line) in lines.iter().enumerate() {
+                // Stop if we've shown enough lines OR exceeded char limit
+                if lines_shown >= MAX_OUTPUT_LINES || chars_used + line.len() > limit {
+                    let remaining = lines.len() - lines_shown;
+                    if remaining > 0 {
+                        let _ = writeln!(out, "{}{}...({} more lines)", indent, c.dim(), remaining);
+                    }
                     break;
                 }
                 let _ = writeln!(out, "{}{}{}{}", indent, c.dim(), line, c.reset());
-                chars_used += line.len() + 1; // +1 for newline
-                lines_shown += 1;
+                chars_used += line.len() + 1;
             }
         } else {
             // Single-line output: show inline
