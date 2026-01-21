@@ -1,0 +1,405 @@
+//! OpenCode agent resolver for dynamic provider/model configuration.
+//!
+//! This module provides dynamic agent resolution for OpenCode using the syntax
+//! `opencode/provider/model` (e.g., `opencode/anthropic/claude-sonnet-4-5`).
+//!
+//! The resolver validates provider/model combinations against the OpenCode API
+//! catalog and generates `AgentConfig` instances on-the-fly with the appropriate
+//! command-line flags.
+//!
+//! # Usage
+//!
+//! ```ignore
+//! // In agent chain configuration:
+//! [agent_chain]
+//! developer = ["opencode/anthropic/claude-sonnet-4-5", "claude"]
+//! ```
+//!
+//! # Supported Patterns
+//!
+//! - `opencode/provider/model` - Dynamic provider/model from API catalog
+//! - `opencode` - Base OpenCode agent (uses default or user-specified provider/model)
+
+use crate::agents::config::AgentConfig;
+use crate::agents::opencode_api::ApiCatalog;
+use crate::agents::parser::JsonParserType;
+use strsim::levenshtein;
+
+/// OpenCode agent resolver for dynamic provider/model configuration.
+///
+/// Validates provider/model combinations against the OpenCode API catalog
+/// and generates `AgentConfig` instances with the appropriate command-line flags.
+pub struct OpenCodeResolver {
+    /// OpenCode API catalog with available providers and models.
+    catalog: ApiCatalog,
+}
+
+impl OpenCodeResolver {
+    /// Create a new OpenCode resolver with the given API catalog.
+    pub fn new(catalog: ApiCatalog) -> Self {
+        Self { catalog }
+    }
+
+    /// Try to resolve an agent name to an `AgentConfig`.
+    ///
+    /// Supports the following patterns:
+    /// - `opencode/provider/model` - Dynamic provider/model from API catalog
+    ///
+    /// Returns `None` if the name doesn't match the OpenCode pattern or if
+    /// the provider/model combination is not found in the catalog.
+    pub fn try_resolve(&self, name: &str) -> Option<AgentConfig> {
+        // Check if it starts with "opencode/"
+        if !name.starts_with("opencode/") {
+            return None;
+        }
+
+        // Parse the pattern: "opencode/provider/model"
+        let parts: Vec<&str> = name.split('/').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+
+        let _opencode = parts[0];
+        let provider = parts[1];
+        let model = parts[2];
+
+        // Validate provider and model exist in catalog
+        if !self.catalog.has_provider(provider) {
+            return None;
+        }
+        if !self.catalog.has_model(provider, model) {
+            return None;
+        }
+
+        // Build the agent config
+        Some(self.build_config(provider, model))
+    }
+
+    /// Build an `AgentConfig` for the given provider/model.
+    fn build_config(&self, provider: &str, model: &str) -> AgentConfig {
+        // OpenCode command syntax: opencode run -m provider/model
+        // The model_flag is the "-m provider/model" part
+        let model_flag = format!("-m {}/{}", provider, model);
+
+        AgentConfig {
+            cmd: "opencode run".to_string(),
+            output_flag: "--format json".to_string(),
+            yolo_flag: "--auto-approve".to_string(),
+            verbose_flag: "--log-level DEBUG --print-logs".to_string(),
+            can_commit: true,
+            json_parser: JsonParserType::OpenCode,
+            model_flag: Some(model_flag),
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            env_vars: std::collections::HashMap::new(),
+            display_name: Some(format!("OpenCode ({})", provider)),
+        }
+    }
+
+    /// Validate a provider/model combination.
+    ///
+    /// Returns an error if the provider or model doesn't exist in the catalog.
+    pub fn validate(&self, provider: &str, model: &str) -> Result<(), ValidationError> {
+        if !self.catalog.has_provider(provider) {
+            return Err(ValidationError::ProviderNotFound {
+                provider: provider.to_string(),
+                suggestions: self.suggest_providers(provider),
+            });
+        }
+
+        if !self.catalog.has_model(provider, model) {
+            return Err(ValidationError::ModelNotFound {
+                provider: provider.to_string(),
+                model: model.to_string(),
+                suggestions: self.suggest_models(provider, model),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Suggest similar provider names for a typo.
+    fn suggest_providers(&self, provider: &str) -> Vec<String> {
+        let mut suggestions: Vec<_> = self
+            .catalog
+            .provider_names()
+            .into_iter()
+            .map(|p| {
+                let distance = levenshtein(provider, &p);
+                (p, distance)
+            })
+            .filter(|(_, d)| *d <= 3)
+            .collect();
+
+        suggestions.sort_by_key(|(_, d)| *d);
+        suggestions.into_iter().map(|(p, _)| p).take(3).collect()
+    }
+
+    /// Suggest similar model names for a typo.
+    fn suggest_models(&self, provider: &str, model: &str) -> Vec<String> {
+        let mut suggestions: Vec<_> = self
+            .catalog
+            .get_model_ids(provider)
+            .into_iter()
+            .map(|m| {
+                let distance = levenshtein(model, &m);
+                (m, distance)
+            })
+            .filter(|(_, d)| *d <= 3)
+            .collect();
+
+        suggestions.sort_by_key(|(_, d)| *d);
+        suggestions.into_iter().map(|(m, _)| m).take(3).collect()
+    }
+
+    /// Get a user-friendly error message for a validation error.
+    pub fn format_error(&self, error: &ValidationError, agent_name: &str) -> String {
+        match error {
+            ValidationError::ProviderNotFound {
+                provider,
+                suggestions,
+            } => {
+                let mut msg = format!(
+                    "Error: OpenCode provider '{}' not found in API catalog.\n",
+                    provider
+                );
+                if let Some(closest) = suggestions.first() {
+                    msg.push_str(&format!("Did you mean: {}?\n", closest));
+                }
+                msg.push_str(&format!("Agent reference: {}\n", agent_name));
+                msg.push_str("Available providers: ");
+                msg.push_str(&self.catalog.provider_names().join(", "));
+                msg.push_str("\n\nPlease update your agent configuration.");
+                msg
+            }
+            ValidationError::ModelNotFound {
+                provider,
+                model,
+                suggestions,
+            } => {
+                let mut msg = format!(
+                    "Error: OpenCode model '{}/{}' not found in API catalog.\n",
+                    provider, model
+                );
+                if let Some(closest) = suggestions.first() {
+                    msg.push_str(&format!("Did you mean: {}/{}?\n", provider, closest));
+                }
+                msg.push_str(&format!("Agent reference: {}\n", agent_name));
+                msg.push_str(&format!("Available models for '{}': ", provider));
+                msg.push_str(&self.catalog.get_model_ids(provider).join(", "));
+                msg.push_str("\n\nPlease update your agent configuration.");
+                msg
+            }
+        }
+    }
+}
+
+/// Errors that can occur during OpenCode agent validation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValidationError {
+    /// Provider not found in the API catalog.
+    ProviderNotFound {
+        provider: String,
+        suggestions: Vec<String>,
+    },
+    /// Model not found for the given provider.
+    ModelNotFound {
+        provider: String,
+        model: String,
+        suggestions: Vec<String>,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::opencode_api::{Model, Provider};
+    use std::collections::HashMap;
+
+    fn mock_api_catalog() -> ApiCatalog {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            Provider {
+                id: "anthropic".to_string(),
+                name: "Anthropic".to_string(),
+                description: "Anthropic Claude models".to_string(),
+            },
+        );
+        providers.insert(
+            "openai".to_string(),
+            Provider {
+                id: "openai".to_string(),
+                name: "OpenAI".to_string(),
+                description: "OpenAI GPT models".to_string(),
+            },
+        );
+
+        let mut models = HashMap::new();
+        models.insert(
+            "anthropic".to_string(),
+            vec![
+                Model {
+                    id: "claude-sonnet-4-5".to_string(),
+                    name: "Claude Sonnet 4.5".to_string(),
+                    description: "Latest Claude Sonnet".to_string(),
+                    context_length: Some(200000),
+                },
+                Model {
+                    id: "claude-opus-4".to_string(),
+                    name: "Claude Opus 4".to_string(),
+                    description: "Most capable Claude".to_string(),
+                    context_length: Some(200000),
+                },
+            ],
+        );
+        models.insert(
+            "openai".to_string(),
+            vec![Model {
+                id: "gpt-4".to_string(),
+                name: "GPT-4".to_string(),
+                description: "OpenAI's GPT-4".to_string(),
+                context_length: Some(8192),
+            }],
+        );
+
+        ApiCatalog {
+            providers,
+            models,
+            cached_at: Some(chrono::Utc::now()),
+            ttl_seconds: 86400,
+        }
+    }
+
+    #[test]
+    fn test_try_resolve_valid_pattern() {
+        let catalog = mock_api_catalog();
+        let resolver = OpenCodeResolver::new(catalog);
+
+        let config = resolver.try_resolve("opencode/anthropic/claude-sonnet-4-5");
+        assert!(config.is_some());
+
+        let config = config.unwrap();
+        assert_eq!(config.cmd, "opencode run");
+        assert_eq!(
+            config.model_flag,
+            Some("-m anthropic/claude-sonnet-4-5".to_string())
+        );
+        assert_eq!(config.json_parser, JsonParserType::OpenCode);
+    }
+
+    #[test]
+    fn test_try_resolve_invalid_pattern() {
+        let catalog = mock_api_catalog();
+        let resolver = OpenCodeResolver::new(catalog);
+
+        // Not an opencode pattern
+        assert!(resolver.try_resolve("claude").is_none());
+        assert!(resolver.try_resolve("ccs/glm").is_none());
+
+        // Malformed opencode pattern
+        assert!(resolver.try_resolve("opencode").is_none());
+        assert!(resolver.try_resolve("opencode/anthropic").is_none());
+
+        // Unknown provider
+        assert!(resolver.try_resolve("opencode/unknown/model").is_none());
+
+        // Unknown model
+        assert!(resolver
+            .try_resolve("opencode/anthropic/unknown-model")
+            .is_none());
+    }
+
+    #[test]
+    fn test_validate_valid_provider_model() {
+        let catalog = mock_api_catalog();
+        let resolver = OpenCodeResolver::new(catalog);
+
+        assert!(resolver.validate("anthropic", "claude-sonnet-4-5").is_ok());
+        assert!(resolver.validate("openai", "gpt-4").is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_provider() {
+        let catalog = mock_api_catalog();
+        let resolver = OpenCodeResolver::new(catalog);
+
+        let result = resolver.validate("unknown", "model");
+        assert!(result.is_err());
+
+        if let Err(ValidationError::ProviderNotFound { provider, .. }) = result {
+            assert_eq!(provider, "unknown");
+        } else {
+            panic!("Expected ProviderNotFound error");
+        }
+    }
+
+    #[test]
+    fn test_validate_invalid_model() {
+        let catalog = mock_api_catalog();
+        let resolver = OpenCodeResolver::new(catalog);
+
+        let result = resolver.validate("anthropic", "unknown-model");
+        assert!(result.is_err());
+
+        if let Err(ValidationError::ModelNotFound { model, .. }) = result {
+            assert_eq!(model, "unknown-model");
+        } else {
+            panic!("Expected ModelNotFound error");
+        }
+    }
+
+    #[test]
+    fn test_build_config() {
+        let catalog = mock_api_catalog();
+        let resolver = OpenCodeResolver::new(catalog);
+
+        let config = resolver.build_config("anthropic", "claude-sonnet-4-5");
+
+        assert_eq!(config.cmd, "opencode run");
+        assert_eq!(
+            config.model_flag,
+            Some("-m anthropic/claude-sonnet-4-5".to_string())
+        );
+        assert_eq!(config.output_flag, "--format json");
+        assert_eq!(config.yolo_flag, "--auto-approve");
+        assert_eq!(config.json_parser, JsonParserType::OpenCode);
+        assert!(config.can_commit);
+    }
+
+    #[test]
+    fn test_format_error_provider_not_found() {
+        let catalog = mock_api_catalog();
+        let resolver = OpenCodeResolver::new(catalog);
+
+        let error = ValidationError::ProviderNotFound {
+            provider: "antrhopic".to_string(),
+            suggestions: vec!["anthropic".to_string()],
+        };
+
+        let msg = resolver.format_error(&error, "opencode/antrhopic/claude-sonnet-4-5");
+
+        assert!(msg.contains("antrhopic"));
+        assert!(msg.contains("anthropic"));
+        assert!(msg.contains("opencode/antrhopic/claude-sonnet-4-5"));
+        assert!(msg.contains("Available providers"));
+    }
+
+    #[test]
+    fn test_format_error_model_not_found() {
+        let catalog = mock_api_catalog();
+        let resolver = OpenCodeResolver::new(catalog);
+
+        let error = ValidationError::ModelNotFound {
+            provider: "anthropic".to_string(),
+            model: "claude-sonnet-4".to_string(),
+            suggestions: vec!["claude-sonnet-4-5".to_string()],
+        };
+
+        let msg = resolver.format_error(&error, "opencode/anthropic/claude-sonnet-4");
+
+        assert!(msg.contains("anthropic/claude-sonnet-4"));
+        assert!(msg.contains("claude-sonnet-4-5"));
+        assert!(msg.contains("Available models"));
+    }
+}

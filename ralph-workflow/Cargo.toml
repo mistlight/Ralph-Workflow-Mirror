@@ -84,6 +84,12 @@ flate2 = "1.0"
 # Base64 encoding for compressed data
 base64 = "0.22"
 
+# Simple HTTP client for fetching OpenCode API catalog
+ureq = { version = "3.0", features = ["json"] }
+
+# Levenshtein distance for fuzzy suggestions
+strsim = "0.11"
+
 [dev-dependencies]
 # Testing utilities
 tempfile = "3.10"

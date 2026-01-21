@@ -18,26 +18,45 @@
 //! [agent_chain]
 //! developer = ["ccs/work", "claude"]
 //! ```
+//!
+//! # OpenCode Dynamic Provider/Model Support
+//!
+//! The registry supports OpenCode dynamic provider/model using `opencode/provider/model` syntax.
+//! Provider/model combinations are validated against the OpenCode API catalog.
+//!
+//! ```ignore
+//! // Using OpenCode dynamic provider/model in agent chains
+//! [agent_chain]
+//! developer = ["opencode/anthropic/claude-sonnet-4-5", "claude"]
+//! reviewer = ["opencode/openai/gpt-4", "codex"]
+//! ```
 use super::ccs::CcsAliasResolver;
 use super::config::{AgentConfig, AgentConfigError, AgentsConfigFile, DEFAULT_AGENTS_TOML};
 use super::fallback::{AgentRole, FallbackConfig};
+use super::opencode_resolver::OpenCodeResolver;
 use super::parser::JsonParserType;
 use super::retry_timer::{production_timer, RetryTimerProvider};
+use crate::agents::opencode_api::ApiCatalog;
 use crate::config::{CcsAliasConfig, CcsConfig};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-/// Agent registry with CCS alias support.
+/// Agent registry with CCS alias and OpenCode dynamic provider/model support.
 ///
 /// CCS aliases are eagerly resolved and registered as regular agents
 /// when set via `set_ccs_aliases()`. This allows `get()` to work
 /// uniformly for both regular agents and CCS aliases.
+///
+/// OpenCode provider/model combinations are resolved on-the-fly using
+/// the `opencode/` prefix.
 pub struct AgentRegistry {
     agents: HashMap<String, AgentConfig>,
     fallback: FallbackConfig,
     /// CCS alias resolver for `ccs/alias` syntax.
     ccs_resolver: CcsAliasResolver,
+    /// OpenCode resolver for `opencode/provider/model` syntax.
+    opencode_resolver: Option<OpenCodeResolver>,
     /// Retry timer provider for controlling sleep behavior in retry logic.
     retry_timer: Arc<dyn RetryTimerProvider>,
 }
@@ -52,6 +71,7 @@ impl AgentRegistry {
             agents: HashMap::new(),
             fallback,
             ccs_resolver: CcsAliasResolver::empty(),
+            opencode_resolver: None,
             retry_timer: production_timer(),
         };
 
@@ -60,6 +80,13 @@ impl AgentRegistry {
         }
 
         Ok(registry)
+    }
+
+    /// Set the OpenCode API catalog for dynamic provider/model resolution.
+    ///
+    /// This enables resolution of `opencode/provider/model` agent references.
+    pub fn set_opencode_catalog(&mut self, catalog: ApiCatalog) {
+        self.opencode_resolver = Some(OpenCodeResolver::new(catalog));
     }
 
     /// Set CCS aliases for the registry.
@@ -86,15 +113,23 @@ impl AgentRegistry {
         self.agents.insert(name.to_string(), config);
     }
 
-    /// Resolve an agent's configuration, including on-the-fly CCS references.
+    /// Resolve an agent's configuration, including on-the-fly CCS and OpenCode references.
     ///
     /// CCS supports direct execution via `ccs/<alias>` even when the alias isn't
     /// pre-registered in config; those are resolved lazily here.
+    ///
+    /// OpenCode supports dynamic provider/model via `opencode/provider/model` syntax;
+    /// those are validated against the API catalog and resolved lazily here.
     pub fn resolve_config(&self, name: &str) -> Option<AgentConfig> {
         self.agents
             .get(name)
             .cloned()
             .or_else(|| self.ccs_resolver.try_resolve(name))
+            .or_else(|| {
+                self.opencode_resolver
+                    .as_ref()
+                    .and_then(|r| r.try_resolve(name))
+            })
     }
 
     /// Get display name for an agent.
@@ -122,6 +157,7 @@ impl AgentRegistry {
     ///
     /// This handles common typos and alternative forms:
     /// - `ccs/<unregistered>`: Returns the name as-is for direct CCS execution
+    /// - `opencode/provider/model`: Returns the name as-is for dynamic resolution
     /// - Other fuzzy matches: Returns the canonical name if a match is found
     /// - Exact matches: Returns the name as-is
     ///
@@ -137,6 +173,15 @@ impl AgentRegistry {
             return Some(name.to_string());
         }
 
+        // Handle opencode/provider/model pattern - return as-is for dynamic resolution
+        if name.starts_with("opencode/") {
+            // Validate that it has the right format (opencode/provider/model)
+            let parts: Vec<&str> = name.split('/').collect();
+            if parts.len() == 3 && parts[0] == "opencode" {
+                return Some(name.to_string());
+            }
+        }
+
         // Handle common typos/alternatives
         let normalized = name.to_lowercase();
         let alternatives = Self::get_fuzzy_alternatives(&normalized);
@@ -145,6 +190,13 @@ impl AgentRegistry {
             // If it's a ccs/ pattern, return it for direct CCS execution
             if alt.starts_with("ccs/") {
                 return Some(alt);
+            }
+            // If it's an opencode/ pattern, validate the format
+            if alt.starts_with("opencode/") {
+                let parts: Vec<&str> = alt.split('/').collect();
+                if parts.len() == 3 && parts[0] == "opencode" {
+                    return Some(alt);
+                }
             }
             // Otherwise check if it exists in the registry
             if self.agents.contains_key(&alt) {

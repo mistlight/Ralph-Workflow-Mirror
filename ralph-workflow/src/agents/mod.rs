@@ -62,10 +62,13 @@ mod ccs_env;
 mod config;
 mod error;
 pub mod fallback;
+pub mod opencode_api;
+mod opencode_resolver;
 mod parser;
 mod providers;
 mod registry;
 mod retry_timer;
+pub mod validation;
 
 // Re-export public types for crate-level access
 pub use ccs::is_ccs_ref;

@@ -459,920 +459,110 @@ retry_delay_ms = 1000
 #   - Provider fallback can mix all: try free Zen first, then Z.AI Coding Plan, then direct API
 
 # =============================================================================
-# OPENCODE MULTI-CONFIGURATION EXAMPLES (Agent Aliases)
+# OPENCODE DYNAMIC PROVIDER/MODEL SUPPORT
 # =============================================================================
-# OpenCode supports multiple providers via the -m flag. You can create separate
-# agent entries ("aliases") for different OpenCode configurations, allowing you
-# to use them as distinct fallback entries in your agent chain.
+# OpenCode agents are now DYNAMIC based on the official OpenCode API catalog.
 #
-# This is different from provider_fallback, which tries different models within
-# a single agent run. Agent aliases give you full control over each configuration.
+# The provider/model list is fetched from https://models.dev/api.json and cached
+# for 24 hours. Set RALPH_OPENCODE_CACHE_TTL_SECONDS to customize the cache duration.
 #
-# COMPARISON OF FALLBACK MECHANISMS:
-# ----------------------------------
-# 1. Agent-level fallback (agent_chain):
-#    - Different agents tried in sequence: ["opencode", "claude", "codex"]
-#    - Each agent is a completely different tool
+# USAGE
+# -----
+# Use the "opencode/provider/model" syntax in your agent chain configuration:
 #
-# 2. Provider-level fallback (provider_fallback.opencode):
-#    - Different models tried within ONE opencode run
-#    - Example: try GLM free tier, then Claude Sonnet if rate limited
-#    - Configured as: provider_fallback.opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
+#   [agent_chain]
+#   developer = ["opencode/opencode/glm-4.7-free", "opencode/anthropic/claude-sonnet-4-5", "claude"]
+#   reviewer = ["opencode/anthropic/claude-sonnet-4-5", "claude"]
 #
-# 3. Agent aliases (shown below):
-#    - Multiple opencode entries with DIFFERENT names
-#    - Each can have different model_flag, output_flag, etc.
-#    - Used in agent_chain as distinct fallback entries
-#    - Gives maximum control over configuration per entry
-
-# -------------------------------------------------------------------------
-# OPENCODE ZEN PROVIDER ALIASES (routed through OpenCode's gateway)
-# -------------------------------------------------------------------------
-# These use the "opencode/*" model prefix which routes through OpenCode's
-# Zen gateway service. Requires OpenCode Zen account (opencode auth login
-# -> select "OpenCode Zen").
-
-# OpenCode with GLM via Zen (free tier, lowest cost, try first)
-# Uses: opencode/glm-4.7-free - routed through OpenCode Zen
-[agents.opencode-zen-glm]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m opencode/glm-4.7-free"
-display_name = "OpenCode with GLM (Zen)"
-
-# OpenCode with Claude via Zen (premium, routed through OpenCode Zen billing)
-# Uses: opencode/claude-sonnet-4 - Claude via OpenCode Zen routing
-[agents.opencode-zen-claude]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m opencode/claude-sonnet-4"
-display_name = "OpenCode with Claude (Zen)"
-
-# OpenCode with Zen default routing (intelligent model selection)
-# Note: Zen mode refers to OpenCode's default intelligent routing,
-# which automatically selects the best model for the task
-[agents.opencode-zen]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-display_name = "OpenCode with Zen (Auto)"
-# No model_flag - uses opencode's default model selection
-
-# -------------------------------------------------------------------------
-# Z.AI DIRECT PROVIDER ALIASES (connects directly to Z.AI API)
-# -------------------------------------------------------------------------
-# These use the "zai/*" model prefix which connects directly to Z.AI's API.
-# Note: "zhipuai/*" is also supported as an alternative prefix for Z.AI.
-# Requires Z.AI API key configured in OpenCode via `opencode auth login` and
-# selecting "Z.AI" or "Z.AI Coding Plan".
+# DYNAMIC VALIDATION
+# ------------------
+# At startup, Ralph validates all "opencode/*" agent references against the
+# cached API catalog. If a provider or model doesn't exist, you'll see a helpful
+# error message with suggestions for typos.
 #
-# NOTE: This is DIFFERENT from OpenCode Zen (opencode/*) which routes through
-# OpenCode's gateway. Z.AI Direct connects to api.z.ai endpoints.
-
-# OpenCode with Z.AI GLM Direct (Z.AI's flagship coding model)
-# Uses: zai/glm-4.7 - direct connection to Z.AI API
-[agents.opencode-zai-glm]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m zai/glm-4.7"
-display_name = "OpenCode with Z.AI GLM"
-
-# OpenCode with Z.AI GLM-4.5 Direct (alternative tier)
-# Uses: zai/glm-4.5 - direct connection to Z.AI API
-[agents.opencode-zai-glm45]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m zai/glm-4.5"
-display_name = "OpenCode with Z.AI GLM-4.5"
-
-# -------------------------------------------------------------------------
-# Z.AI CODING PLAN PROVIDER ALIASES (Z.AI's Coding Plan subscription tier)
-# -------------------------------------------------------------------------
-# These use the same Z.AI API but with the Coding Plan subscription,
-# offering 3x usage at 1/7 the cost. Requires Z.AI Coding Plan subscription.
-# Run `opencode auth login` and select "Z.AI Coding Plan" to authenticate.
+# COMMON PROVIDERS
+# ----------------
+# - opencode/*       - OpenCode Zen gateway (requires opencode auth login)
+# - anthropic/*      - Direct Anthropic API (requires ANTHROPIC_API_KEY)
+# - openai/*         - Direct OpenAI API (requires OPENAI_API_KEY)
+# - google/*         - Google AI Studio (requires GOOGLE_GENERATIVE_AI_API_KEY)
+# - zai/*            - Z.AI Direct API (requires Z.AI credentials)
+# - deepseek/*       - DeepSeek API (requires DEEPSEEK_API_KEY)
+# - groq/*           - Groq ultra-fast inference (requires GROQ_API_KEY)
+# - ollama/*         - Local Ollama models (requires ollama serve)
+# - And 60+ more providers - see https://models.dev for the full list
 #
-# NOTE: This is a SEPARATE subscription tier from regular Z.AI Direct!
-# The model prefix remains zai/*; the tier is selected during `opencode auth login`.
-
-# OpenCode with Z.AI GLM Coding Plan (3x usage, 1/7 cost)
-# Uses: zai/glm-4.7 - Z.AI API with Coding Plan pricing (auth selection)
-[agents.opencode-zai-glm-codingplan]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m zai/glm-4.7"
-display_name = "OpenCode with Z.AI GLM (Coding Plan)"
-
-# OpenCode with Z.AI GLM-4.5 Coding Plan (3x usage, 1/7 cost)
-# Uses: zai/glm-4.5 - Z.AI API with Coding Plan pricing (auth selection)
-[agents.opencode-zai-glm45-codingplan]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m zai/glm-4.5"
-display_name = "OpenCode with Z.AI GLM-4.5 (Coding Plan)"
-
-# -------------------------------------------------------------------------
-# DIRECT API PROVIDER ALIASES (uses your own API keys)
-# -------------------------------------------------------------------------
-# These use provider-specific prefixes (anthropic/*, openai/*) which
-# connect directly to the provider's API. Requires your own API key
-# configured via: opencode auth <provider>
-
-# OpenCode with direct Anthropic API (requires ANTHROPIC_API_KEY)
-# Uses: anthropic/claude-sonnet-4 - direct API call, your billing
-[agents.opencode-direct-claude]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m anthropic/claude-sonnet-4"
-display_name = "OpenCode with Anthropic (Direct)"
-
-# OpenCode with direct OpenAI API (requires OPENAI_API_KEY)
-# Uses: openai/gpt-4o - direct API call, your billing
-[agents.opencode-openai]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m openai/gpt-4o"
-display_name = "OpenCode with OpenAI (Direct)"
-
-# -------------------------------------------------------------------------
-# GOOGLE PROVIDER ALIASES (Google AI Studio & Vertex AI)
-# -------------------------------------------------------------------------
-# Google AI Studio uses the "google/*" prefix with GOOGLE_GENERATIVE_AI_API_KEY
-# Google Vertex AI uses "google-vertex/*" and requires GCP project setup
-
-# OpenCode with Google AI Studio (requires GOOGLE_GENERATIVE_AI_API_KEY)
-# Uses: google/gemini-2.0-flash - Google's fastest Gemini model
-[agents.opencode-google]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m google/gemini-2.0-flash"
-display_name = "OpenCode with Google"
-
-# OpenCode with Google Gemini Pro (requires GOOGLE_GENERATIVE_AI_API_KEY)
-# Uses: google/gemini-1.5-pro - Google's most capable Gemini model
-[agents.opencode-gemini-pro]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m google/gemini-1.5-pro"
-display_name = "OpenCode with Gemini Pro"
-
-# -------------------------------------------------------------------------
-# GROQ PROVIDER ALIASES (Ultra-fast inference)
-# -------------------------------------------------------------------------
-# Groq provides lightning-fast inference for open-source models
-# Requires GROQ_API_KEY from https://groq.com
-
-# OpenCode with Groq Llama (ultra-fast Llama 3.3 70B)
-# Uses: groq/llama-3.3-70b-versatile - fast, versatile model
-[agents.opencode-groq]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m groq/llama-3.3-70b-versatile"
-display_name = "OpenCode with Groq"
-
-# OpenCode with Groq Mixtral (fast Mixtral 8x7B)
-# Uses: groq/mixtral-8x7b - efficient mixture-of-experts
-[agents.opencode-groq-mixtral]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m groq/mixtral-8x7b-32768"
-display_name = "OpenCode with Groq Mixtral"
-
-# -------------------------------------------------------------------------
-# OPENROUTER PROVIDER ALIASES (Multi-provider gateway)
-# -------------------------------------------------------------------------
-# OpenRouter provides access to multiple providers through a single API
-# Requires OPENROUTER_API_KEY from https://openrouter.ai
-
-# OpenCode with OpenRouter Claude (routes to Anthropic via OpenRouter)
-# Uses: openrouter/anthropic/claude-3.5-sonnet
-[agents.opencode-openrouter]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m openrouter/anthropic/claude-3.5-sonnet"
-display_name = "OpenCode with OpenRouter"
-
-# -------------------------------------------------------------------------
-# DEEPSEEK PROVIDER ALIASES (Cost-effective coding models)
-# -------------------------------------------------------------------------
-# DeepSeek provides very cost-effective models with strong coding abilities
-# Requires DEEPSEEK_API_KEY from https://platform.deepseek.com
-
-# OpenCode with DeepSeek Chat (general-purpose, very affordable)
-# Uses: deepseek/deepseek-chat
-[agents.opencode-deepseek]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m deepseek/deepseek-chat"
-display_name = "OpenCode with DeepSeek"
-
-# OpenCode with DeepSeek Coder (optimized for code)
-# Uses: deepseek/deepseek-coder
-[agents.opencode-deepseek-coder]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m deepseek/deepseek-coder"
-display_name = "OpenCode with DeepSeek Coder"
-
-# -------------------------------------------------------------------------
-# XAI PROVIDER ALIASES (Grok models)
-# -------------------------------------------------------------------------
-# xAI provides Grok models with unique capabilities
-# Requires XAI_API_KEY from https://x.ai
-
-# OpenCode with xAI Grok 2 (latest Grok model)
-# Uses: xai/grok-2
-[agents.opencode-xai]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m xai/grok-2"
-display_name = "OpenCode with xAI Grok"
-
-# Alias for Grok
-[agents.opencode-grok]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m xai/grok-2"
-display_name = "OpenCode with Grok"
-
-# -------------------------------------------------------------------------
-# MISTRAL PROVIDER ALIASES (European AI leader)
-# -------------------------------------------------------------------------
-# Mistral AI provides powerful models including Codestral for coding
-# Requires MISTRAL_API_KEY from https://mistral.ai
-
-# OpenCode with Mistral Large (flagship model)
-# Uses: mistral/mistral-large-latest
-[agents.opencode-mistral]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m mistral/mistral-large-latest"
-display_name = "OpenCode with Mistral"
-
-# OpenCode with Codestral (code-specialized model)
-# Uses: mistral/codestral-latest
-[agents.opencode-codestral]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m mistral/codestral-latest"
-display_name = "OpenCode with Codestral"
-
-# -------------------------------------------------------------------------
-# MOONSHOT PROVIDER ALIASES (Kimi K2 models)
-# -------------------------------------------------------------------------
-# Moonshot AI provides Kimi models with very long context windows
-# Requires MOONSHOT_API_KEY from https://moonshot.ai
-
-# OpenCode with Kimi K2 (Moonshot's flagship model)
-# Uses: moonshot/kimi-k2
-[agents.opencode-moonshot]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m moonshot/kimi-k2"
-display_name = "OpenCode with Kimi"
-
-# Alias for Kimi
-[agents.opencode-kimi]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m moonshot/kimi-k2"
-display_name = "OpenCode with Kimi"
-
-# -------------------------------------------------------------------------
-# MINIMAX PROVIDER ALIASES
-# -------------------------------------------------------------------------
-# MiniMax provides powerful models with multimodal capabilities
-# Requires MINIMAX_API_KEY
-
-# OpenCode with MiniMax (abab6.5 model)
-# Uses: minimax/abab6.5-chat
-[agents.opencode-minimax]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m minimax/abab6.5-chat"
-display_name = "OpenCode with MiniMax"
-
-# -------------------------------------------------------------------------
-# CLOUD PROVIDER ALIASES (AWS Bedrock, Azure OpenAI)
-# -------------------------------------------------------------------------
-# These require cloud-specific configuration (AWS credentials, Azure setup)
-
-# OpenCode with Amazon Bedrock Claude (requires AWS credentials)
-# Uses: amazon-bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0
-# Note: Requires aws configure with appropriate permissions
-[agents.opencode-bedrock]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m amazon-bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0"
-display_name = "OpenCode with AWS Bedrock"
-
-# OpenCode with Azure OpenAI (requires Azure configuration)
-# Uses: azure-openai/gpt-4o
-# Note: Requires AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT
-[agents.opencode-azure]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m azure-openai/gpt-4o"
-display_name = "OpenCode with Azure OpenAI"
-
-# -------------------------------------------------------------------------
-# LOCAL PROVIDER ALIASES (Ollama, LM Studio)
-# -------------------------------------------------------------------------
-# Local providers run models on your own hardware - no API keys needed
-
-# OpenCode with Ollama (local LLM server)
-# Uses: ollama/llama3 - requires 'ollama serve' running locally
-[agents.opencode-ollama]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m ollama/llama3"
-display_name = "OpenCode with Ollama"
-
-# OpenCode with Ollama CodeLlama (local code-specialized model)
-# Uses: ollama/codellama - requires 'ollama pull codellama' first
-[agents.opencode-ollama-code]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m ollama/codellama"
-display_name = "OpenCode with Ollama CodeLlama"
-
-# OpenCode with LM Studio (local model runner)
-# Uses: lmstudio/local-model - requires LM Studio server running
-[agents.opencode-lmstudio]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m lmstudio/local-model"
-display_name = "OpenCode with LM Studio"
-
-# -------------------------------------------------------------------------
-# FAST INFERENCE PROVIDER ALIASES (Together, Fireworks)
-# -------------------------------------------------------------------------
-# These providers offer fast inference for open-source models
-
-# OpenCode with Together AI (fast open-source models)
-# Uses: together/meta-llama/Llama-3-70b-chat-hf
-# Requires TOGETHER_API_KEY
-[agents.opencode-together]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m together/meta-llama/Llama-3-70b-chat-hf"
-display_name = "OpenCode with Together"
-
-# OpenCode with Fireworks AI (optimized inference)
-# Uses: fireworks/accounts/fireworks/models/llama-v3p1-70b-instruct
-# Requires FIREWORKS_API_KEY
-[agents.opencode-fireworks]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m fireworks/accounts/fireworks/models/llama-v3p1-70b-instruct"
-display_name = "OpenCode with Fireworks"
-
-# -------------------------------------------------------------------------
-# COHERE PROVIDER ALIASES
-# -------------------------------------------------------------------------
-# Cohere provides Command models with strong reasoning
-# Requires COHERE_API_KEY
-
-# OpenCode with Cohere Command R+ (most capable Cohere model)
-# Uses: cohere/command-r-plus
-[agents.opencode-cohere]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m cohere/command-r-plus"
-display_name = "OpenCode with Cohere"
-
-# -------------------------------------------------------------------------
-# GITHUB COPILOT PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# GitHub Copilot provides access to GPT-4, Claude, and Gemini models
-# Requires GitHub Copilot subscription (via VS Code or gh copilot)
-
-# OpenCode with GitHub Copilot (GPT-4o through Copilot)
-# Uses: copilot/gpt-4o
-[agents.opencode-copilot]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m copilot/gpt-4o"
-display_name = "OpenCode with GitHub Copilot"
-
-# -------------------------------------------------------------------------
-# DEEP INFRA PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# Deep Infra provides fast inference for open-source models
-# Requires DEEPINFRA_API_KEY from https://deepinfra.com
-
-# OpenCode with Deep Infra (Llama 3.3 70B)
-# Uses: deep-infra/meta-llama/Llama-3.3-70B-Instruct
-[agents.opencode-deepinfra]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m deep-infra/meta-llama/Llama-3.3-70B-Instruct"
-display_name = "OpenCode with Deep Infra"
-
-# -------------------------------------------------------------------------
-# HUGGING FACE PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# Hugging Face provides open-source model hub inference
-# Requires HF_TOKEN from https://huggingface.co/settings/tokens
-
-# OpenCode with Hugging Face (Qwen Coder)
-# Uses: huggingface/Qwen/Qwen2.5-Coder-32B
-[agents.opencode-huggingface]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m huggingface/Qwen/Qwen2.5-Coder-32B"
-display_name = "OpenCode with Hugging Face"
-
-# -------------------------------------------------------------------------
-# PERPLEXITY PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# Perplexity provides AI search and reasoning models
-# Requires PERPLEXITY_API_KEY from https://perplexity.ai
-
-# OpenCode with Perplexity (Sonar Pro)
-# Uses: perplexity/sonar-pro
-[agents.opencode-perplexity]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m perplexity/sonar-pro"
-display_name = "OpenCode with Perplexity"
-
-# -------------------------------------------------------------------------
-# CEREBRAS PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# Cerebras provides ultra-fast inference
-# Requires CEREBRAS_API_KEY from https://cerebras.ai
-
-# OpenCode with Cerebras (Llama 3.3 70B - ultra-fast)
-# Uses: cerebras/llama3.3-70b
-[agents.opencode-cerebras]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m cerebras/llama3.3-70b"
-display_name = "OpenCode with Cerebras"
-
-# -------------------------------------------------------------------------
-# SAMBANOVA PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# SambaNova provides enterprise AI platform inference
-# Requires SAMBANOVA_API_KEY from https://sambanova.ai
-
-# OpenCode with SambaNova (Llama 3.3 70B)
-# Uses: sambanova/Meta-Llama-3.3-70B-Instruct
-[agents.opencode-sambanova]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m sambanova/Meta-Llama-3.3-70B-Instruct"
-display_name = "OpenCode with SambaNova"
-
-# -------------------------------------------------------------------------
-# REPLICATE PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# Replicate runs ML models in the cloud
-# Requires REPLICATE_API_TOKEN from https://replicate.com
-
-# OpenCode with Replicate (Llama 3)
-# Uses: replicate/meta/llama-3-70b-instruct
-[agents.opencode-replicate]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m replicate/meta/llama-3-70b-instruct"
-display_name = "OpenCode with Replicate"
-
-# -------------------------------------------------------------------------
-# AI21 PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# AI21 provides Jamba models
-# Requires AI21_API_KEY from https://studio.ai21.com
-
-# OpenCode with AI21 (Jamba 1.5 Large)
-# Uses: ai21/jamba-1.5-large
-[agents.opencode-ai21]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m ai21/jamba-1.5-large"
-display_name = "OpenCode with AI21"
-
-# -------------------------------------------------------------------------
-# CLOUDFLARE PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# Cloudflare Workers AI provides edge inference
-# Requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN
-
-# OpenCode with Cloudflare (Llama 3.1)
-# Uses: cloudflare/@cf/meta/llama-3.1-8b-instruct
-[agents.opencode-cloudflare]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m cloudflare/@cf/meta/llama-3.1-8b-instruct"
-display_name = "OpenCode with Cloudflare"
-
-# -------------------------------------------------------------------------
-# GOOGLE VERTEX AI PROVIDER ALIAS
-# -------------------------------------------------------------------------
-# Google Vertex AI requires GCP project setup
-# Requires gcloud auth + GOOGLE_VERTEX_PROJECT
-
-# OpenCode with Google Vertex AI (Gemini 2.0 Flash)
-# Uses: google-vertex/gemini-2.0-flash
-[agents.opencode-vertex]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m google-vertex/gemini-2.0-flash"
-display_name = "OpenCode with Vertex AI"
-
-# -------------------------------------------------------------------------
-# CLOUD PLATFORM PROVIDER ALIASES
-# -------------------------------------------------------------------------
-# These providers offer cloud-based ML inference infrastructure
-
-# OpenCode with Baseten (ML inference infrastructure)
-# Uses: baseten/llama-3-70b
-# Requires: opencode /connect baseten
-[agents.opencode-baseten]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m baseten/llama-3-70b"
-display_name = "OpenCode with Baseten"
-
-# OpenCode with Cortecs (AI compute platform)
-# Uses: cortecs/llama-3-70b
-# Requires: opencode /connect cortecs
-[agents.opencode-cortecs]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m cortecs/llama-3-70b"
-display_name = "OpenCode with Cortecs"
-
-# OpenCode with Scaleway (European cloud AI)
-# Uses: scaleway/llama-3-70b
-# Requires: opencode /connect scaleway
-[agents.opencode-scaleway]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m scaleway/llama-3-70b"
-display_name = "OpenCode with Scaleway"
-
-# OpenCode with OVHcloud (European cloud AI)
-# Uses: ovhcloud/llama-3-70b
-# Requires: opencode /connect ovhcloud
-[agents.opencode-ovhcloud]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m ovhcloud/llama-3-70b"
-display_name = "OpenCode with OVHcloud"
-
-# -------------------------------------------------------------------------
-# AI GATEWAY PROVIDER ALIASES
-# -------------------------------------------------------------------------
-# These providers offer AI gateway/multiplexer services
-
-# OpenCode with Vercel AI Gateway
-# Uses: vercel/gpt-4o
-# Requires: opencode /connect vercel
-[agents.opencode-vercel]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m vercel/gpt-4o"
-display_name = "OpenCode with Vercel"
-
-# OpenCode with Helicone (AI observability gateway)
-# Uses: helicone/gpt-4o
-# Requires: opencode /connect helicone
-[agents.opencode-helicone]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m helicone/gpt-4o"
-display_name = "OpenCode with Helicone"
-
-# OpenCode with IO.NET (Distributed GPU network)
-# Uses: io-net/llama-3-70b
-# Requires: opencode /connect io-net
-[agents.opencode-ionet]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m io-net/llama-3-70b"
-display_name = "OpenCode with IO.NET"
-
-# OpenCode with Nebius (Cloud AI infrastructure)
-# Uses: nebius/llama-3-70b
-# Requires: opencode /connect nebius
-[agents.opencode-nebius]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m nebius/llama-3-70b"
-display_name = "OpenCode with Nebius"
-
-# OpenCode with ZenMux (AI multiplexer gateway)
-# Uses: zenmux/gpt-4o
-# Requires: opencode /connect zenmux
-[agents.opencode-zenmux]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m zenmux/gpt-4o"
-display_name = "OpenCode with ZenMux"
-
-# -------------------------------------------------------------------------
-# ENTERPRISE/INDUSTRY PROVIDER ALIASES
-# -------------------------------------------------------------------------
-# These providers offer enterprise-grade AI services
-
-# OpenCode with SAP AI Core (40+ models through SAP)
-# Uses: sap-ai-core/gpt-4o
-# Requires: set AICORE_SERVICE_KEY, AICORE_DEPLOYMENT_ID, AICORE_RESOURCE_GROUP
-[agents.opencode-sap]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m sap-ai-core/gpt-4o"
-display_name = "OpenCode with SAP AI Core"
-
-# OpenCode with Azure Cognitive Services
-# Uses: azure-cognitive-services/gpt-4o
-# Requires: set AZURE_COGNITIVE_SERVICES_RESOURCE_NAME
-[agents.opencode-azure-cognitive]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m azure-cognitive-services/gpt-4o"
-display_name = "OpenCode with Azure Cognitive"
-
-# -------------------------------------------------------------------------
-# SPECIALIZED INFERENCE PROVIDER ALIASES
-# -------------------------------------------------------------------------
-# These providers offer specialized inference capabilities
-
-# OpenCode with Venice AI (Privacy-focused AI)
-# Uses: venice-ai/llama-3-70b
-# Requires: opencode /connect venice-ai
-[agents.opencode-venice]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m venice-ai/llama-3-70b"
-display_name = "OpenCode with Venice AI"
-
-# OpenCode with Ollama Cloud (Cloud-hosted Ollama)
-# Uses: ollama-cloud/llama3
-# Requires: opencode /connect ollama-cloud
-[agents.opencode-ollama-cloud]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m ollama-cloud/llama3"
-display_name = "OpenCode with Ollama Cloud"
-
-# OpenCode with llama.cpp (Native llama.cpp inference)
-# Uses: llama.cpp/local-model - requires llama-server running locally
-# No API key needed, runs locally
-[agents.opencode-llamacpp]
-cmd = "opencode run"
-output_flag = "--format json"
-yolo_flag = "--auto-approve"
-verbose_flag = "--log-level DEBUG --print-logs"
-can_commit = true
-json_parser = "opencode"
-model_flag = "-m llama.cpp/local-model"
-display_name = "OpenCode with llama.cpp"
-
+# EXAMPLES
+# --------
+# # Try free GLM first, then Claude via Anthropic direct API
+# developer = ["opencode/opencode/glm-4.7-free", "opencode/anthropic/claude-sonnet-4-5", "claude"]
+#
+# # Z.AI Coding Plan (3x usage, 1/7 cost) with fallback to Zen
+# developer = ["opencode/zai/glm-4.7", "opencode/opencode/claude-sonnet-4", "claude"]
+#
+# # Local Ollama with cloud backup
+# developer = ["opencode/ollama/llama3", "opencode/openai/gpt-4o", "claude"]
+#
+# # Multiple OpenCode agents in the same chain (each represents a SEPARATE agent)
+# developer = ["opencode/zai/glm-4.7", "opencode/anthropic/claude-sonnet-4-5"]
+# reviewer = ["opencode/opencode/glm-4.7-free"]
+#
+# PROVIDER-LEVEL FALLBACK (Legacy - Still Supported)
+# --------------------------------------------------
+# For backward compatibility, you can still use provider_fallback:
+#
+#   provider_fallback.opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
+#
+# This tries different models within a single opencode run before switching
+# to the next agent in the chain.
+#
+# FINDING AVAILABLE MODELS
+# -------------------------
+# To see all available providers and models:
+# 1. Check the API catalog: https://models.dev
+# 2. Or inspect the cache file: ~/.cache/ralph-workflow/opencode-api-cache.json
+# 3. Run: ralph --developer-agent opencode/anthropic/claude-sonnet-4-5 --trace
+#    (validation errors will show available options)
+#
+# AUTHENTICATION
+# --------------
+# Most providers require API keys or authentication:
+# - Direct API providers (anthropic, openai, etc.): Run: opencode auth <provider>
+# - OpenCode Zen: Run: opencode auth login (select "OpenCode Zen")
+# - Z.AI: Run: opencode auth login (select "Z.AI" or "Z.AI Coding Plan")
+# - Local providers (ollama, lmstudio): Just start the service first
+#
+# UNATTENDED OPERATION
+# --------------------
+# All OpenCode invocations use --auto-approve flag for unattended operation.
+# Ralph is designed to run without user interaction (yolo mode).
 # -------------------------------------------------------------------------
 # EXAMPLE AGENT CHAINS
 # -------------------------------------------------------------------------
 # Example 1: OpenCode Zen only (all requests go through OpenCode billing)
 # [agent_chain]
-# developer = ["opencode-zen-glm", "opencode-zen-claude", "claude"]
-# reviewer = ["opencode-zen-claude", "claude"]
+# developer = ["opencode/opencode/glm-4.7-free", "opencode/opencode/claude-sonnet-4", "claude"]
+# reviewer = ["opencode/opencode/claude-sonnet-4", "claude"]
 #
 # Example 2: Direct API only (use your own Anthropic/OpenAI keys)
 # [agent_chain]
-# developer = ["opencode-direct-claude", "opencode-direct-openai", "claude"]
-# reviewer = ["opencode-direct-claude", "claude"]
+# developer = ["opencode/anthropic/claude-sonnet-4", "opencode/openai/gpt-4o", "claude"]
+# reviewer = ["opencode/anthropic/claude-sonnet-4", "claude"]
 #
 # Example 3: Mixed fallback (try free Zen first, then direct API)
 # [agent_chain]
-# developer = ["opencode-zen-glm", "opencode-direct-claude", "claude"]
-# reviewer = ["opencode-zen-claude", "opencode-direct-claude"]
+# developer = ["opencode/opencode/glm-4.7-free", "opencode/anthropic/claude-sonnet-4", "claude"]
+# reviewer = ["opencode/opencode/claude-sonnet-4", "opencode/anthropic/claude-sonnet-4"]
 #
 # Example 4: Z.AI Direct only (all requests go directly to Z.AI)
 # [agent_chain]
-# developer = ["opencode-zai-glm", "opencode-zen-glm", "claude"]
-# reviewer = ["opencode-zai-glm", "claude"]
+# developer = ["opencode/zai/glm-4.7", "opencode/opencode/glm-4.7-free", "claude"]
+# reviewer = ["opencode/zai/glm-4.7", "claude"]
 #
 # Example 5: Full fallback chain (Z.AI Direct -> Zen -> Direct API)
 # [agent_chain]
-# developer = ["opencode-zai-glm", "opencode-zen-glm", "opencode-direct-claude"]
-# reviewer = ["opencode-zai-glm", "opencode-zen-claude", "opencode-direct-claude"]
+# developer = ["opencode/zai/glm-4.7", "opencode/opencode/glm-4.7-free", "opencode/anthropic/claude-sonnet-4"]
+# reviewer = ["opencode/zai/glm-4.7", "opencode/opencode/claude-sonnet-4", "opencode/anthropic/claude-sonnet-4"]
 
 # =============================================================================
 # CUSTOM AGENT EXAMPLE

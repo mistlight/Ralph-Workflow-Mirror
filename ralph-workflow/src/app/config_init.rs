@@ -5,8 +5,13 @@
 //! - Applying environment variable and CLI overrides
 //! - Selecting default agents from fallback chains
 //! - Loading agent registry data from unified config
+//! - Fetching and caching OpenCode API catalog for dynamic provider/model resolution
 
-use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
+use crate::agents::opencode_api::load_api_catalog;
+use crate::agents::{
+    global_agents_config_path, validation as agent_validation, AgentRegistry, AgentRole,
+    ConfigSource,
+};
 use crate::cli::{
     apply_args_to_config, handle_extended_help, handle_generate_completion, handle_init_global,
     handle_init_legacy, handle_init_prompt, handle_list_work_guides, handle_smart_init, Args,
@@ -215,7 +220,53 @@ fn load_agent_registry(
         }
     }
 
+    // Load OpenCode API catalog if there are any opencode/* references
+    setup_opencode_catalog(&mut registry, unified)?;
+
     Ok((registry, sources))
+}
+
+/// Setup OpenCode API catalog for dynamic provider/model resolution.
+///
+/// This function:
+/// 1. Checks if there are any `opencode/*` references in the configured agent chains
+/// 2. If yes, fetches/loads the cached OpenCode API catalog
+/// 3. Sets the catalog on the registry for dynamic agent resolution
+/// 4. Validates all opencode/* references and reports errors with suggestions
+fn setup_opencode_catalog(
+    registry: &mut AgentRegistry,
+    unified: Option<&UnifiedConfig>,
+) -> anyhow::Result<()> {
+    // Collect fallback config from unified config or registry defaults
+    let fallback = unified
+        .and_then(|u| u.agent_chain.as_ref())
+        .cloned()
+        .unwrap_or_else(|| registry.fallback_config().clone());
+
+    // Check if there are any opencode/* references
+    let opencode_refs = agent_validation::get_opencode_refs(&fallback);
+    if opencode_refs.is_empty() {
+        // No opencode references, skip catalog loading
+        return Ok(());
+    }
+
+    // Load the API catalog (fetches from API or uses cache)
+    let catalog = load_api_catalog().map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to load OpenCode API catalog. \
+            This is required for the following agent references: {opencode_refs:?}. \
+            Error: {e}"
+        )
+    })?;
+
+    // Set the catalog on the registry for dynamic resolution
+    registry.set_opencode_catalog(catalog.clone());
+
+    // Validate all opencode/* references
+    agent_validation::validate_opencode_agents(&fallback, &catalog)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    Ok(())
 }
 
 /// Applies default agent selection from fallback chains.

@@ -1,0 +1,163 @@
+//! OpenCode API catalog fetching.
+//!
+//! This module handles HTTP requests to fetch the OpenCode model catalog
+//! from https://models.dev/api.json.
+
+use crate::agents::opencode_api::cache::{save_catalog, CacheError};
+use crate::agents::opencode_api::types::ApiCatalog;
+use crate::agents::opencode_api::{API_URL, DEFAULT_CACHE_TTL_SECONDS};
+use std::time::Duration;
+
+/// Fetch the OpenCode API catalog from the remote endpoint.
+///
+/// This function makes an HTTP GET request to the OpenCode API endpoint
+/// and parses the JSON response into an `ApiCatalog`.
+///
+/// The fetched catalog is automatically cached to disk for future use.
+pub fn fetch_api_catalog() -> Result<ApiCatalog, CacheError> {
+    // Build HTTP agent with timeout
+    let agent = ureq::Agent::new_with_config(
+        ureq::config::Config::builder()
+            .timeout_global(Some(Duration::from_secs(10)))
+            .build(),
+    );
+
+    // Fetch the API catalog
+    let mut response = agent
+        .get(API_URL)
+        .call()
+        .map_err(|e: ureq::Error| CacheError::FetchError(e.to_string()))?;
+
+    // Parse the JSON directly from response body
+    let mut catalog: ApiCatalog = response
+        .body_mut()
+        .read_json()
+        .map_err(|e| CacheError::FetchError(e.to_string()))?;
+
+    // Set metadata
+    catalog.cached_at = Some(chrono::Utc::now());
+    catalog.ttl_seconds = std::env::var("RALPH_OPENCODE_CACHE_TTL_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_CACHE_TTL_SECONDS);
+
+    // Save to cache
+    if let Err(e) = save_catalog(&catalog) {
+        eprintln!("Warning: Failed to cache OpenCode API catalog: {}", e);
+    }
+
+    Ok(catalog)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::opencode_api::types::{Model, Provider};
+    use std::collections::HashMap;
+
+    /// Create a mock API catalog for testing.
+    pub fn mock_api_catalog() -> ApiCatalog {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "opencode".to_string(),
+            Provider {
+                id: "opencode".to_string(),
+                name: "OpenCode".to_string(),
+                description: "Open source AI coding tool".to_string(),
+            },
+        );
+        providers.insert(
+            "anthropic".to_string(),
+            Provider {
+                id: "anthropic".to_string(),
+                name: "Anthropic".to_string(),
+                description: "Anthropic Claude models".to_string(),
+            },
+        );
+        providers.insert(
+            "openai".to_string(),
+            Provider {
+                id: "openai".to_string(),
+                name: "OpenAI".to_string(),
+                description: "OpenAI GPT models".to_string(),
+            },
+        );
+
+        let mut models = HashMap::new();
+        models.insert(
+            "opencode".to_string(),
+            vec![Model {
+                id: "glm-4.7-free".to_string(),
+                name: "GLM-4.7 Free".to_string(),
+                description: "Open source GLM model".to_string(),
+                context_length: Some(128000),
+            }],
+        );
+        models.insert(
+            "anthropic".to_string(),
+            vec![
+                Model {
+                    id: "claude-sonnet-4-5".to_string(),
+                    name: "Claude Sonnet 4.5".to_string(),
+                    description: "Latest Claude Sonnet".to_string(),
+                    context_length: Some(200000),
+                },
+                Model {
+                    id: "claude-opus-4".to_string(),
+                    name: "Claude Opus 4".to_string(),
+                    description: "Most capable Claude".to_string(),
+                    context_length: Some(200000),
+                },
+            ],
+        );
+        models.insert(
+            "openai".to_string(),
+            vec![Model {
+                id: "gpt-4".to_string(),
+                name: "GPT-4".to_string(),
+                description: "OpenAI's GPT-4".to_string(),
+                context_length: Some(8192),
+            }],
+        );
+
+        ApiCatalog {
+            providers,
+            models,
+            cached_at: Some(chrono::Utc::now()),
+            ttl_seconds: DEFAULT_CACHE_TTL_SECONDS,
+        }
+    }
+
+    #[test]
+    fn test_mock_api_catalog_structure() {
+        let catalog = mock_api_catalog();
+
+        // Verify providers
+        assert_eq!(catalog.providers.len(), 3);
+        assert!(catalog.has_provider("opencode"));
+        assert!(catalog.has_provider("anthropic"));
+        assert!(catalog.has_provider("openai"));
+
+        // Verify models
+        assert!(catalog.has_model("opencode", "glm-4.7-free"));
+        assert!(catalog.has_model("anthropic", "claude-sonnet-4-5"));
+        assert!(catalog.has_model("anthropic", "claude-opus-4"));
+        assert!(catalog.has_model("openai", "gpt-4"));
+
+        // Verify model retrieval
+        let model = catalog.get_model("anthropic", "claude-sonnet-4-5").unwrap();
+        assert_eq!(model.id, "claude-sonnet-4-5");
+        assert_eq!(model.context_length, Some(200000));
+    }
+
+    #[test]
+    fn test_catalog_ttl_default() {
+        let catalog = mock_api_catalog();
+        assert_eq!(catalog.ttl_seconds, DEFAULT_CACHE_TTL_SECONDS);
+    }
+
+    #[test]
+    fn test_api_url_constant() {
+        assert_eq!(API_URL, "https://models.dev/api.json");
+    }
+}
