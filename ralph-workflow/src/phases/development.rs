@@ -421,10 +421,24 @@ fn run_development_iteration_with_xml_retry(
             // This is best-effort - if extraction fails, we just won't use session continuation
             if session_info.is_none() {
                 if let Some(agent_config) = ctx.registry.resolve_config(ctx.developer_agent) {
+                    ctx.logger.info(&format!(
+                        "  [dev] Extracting session from {:?} with parser {:?}",
+                        log_dir_path, agent_config.json_parser
+                    ));
                     session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                         log_dir_path,
                         agent_config.json_parser,
                     );
+                    if let Some(ref info) = session_info {
+                        ctx.logger.info(&format!(
+                            "  [dev] Extracted session: agent={}, session_id={}...",
+                            info.agent_name,
+                            &info.session_id[..8.min(info.session_id.len())]
+                        ));
+                    } else {
+                        ctx.logger
+                            .warn("  [dev] Failed to extract session info from log");
+                    }
                 }
             }
 
@@ -656,7 +670,6 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
         // Extract session info for potential retry (only if we don't have it yet)
         // This is best-effort - if extraction fails, we just won't use session continuation
         if session_info.is_none() {
-            // Determine the parser type from the primary agent config
             if let Some(agent_config) = ctx.registry.resolve_config(ctx.developer_agent) {
                 session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                     log_dir_path,
@@ -777,49 +790,7 @@ fn read_last_development_output(log_prefix: &Path) -> String {
 /// This is a shared helper for reading log output. Truncation of large prompts
 /// is handled centrally in `build_agent_command` to prevent E2BIG errors.
 fn read_last_output_from_prefix(log_prefix: &Path) -> String {
-    let parent = log_prefix.parent().unwrap_or(Path::new("."));
-    let prefix_str = log_prefix
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-
-    // Find all log files matching the prefix pattern and get the most recently modified one
-    let mut best_file: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
-
-    if let Ok(entries) = fs::read_dir(parent) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                // Match files that start with our prefix and end with .log
-                if filename.starts_with(prefix_str)
-                    && filename.len() > prefix_str.len()
-                    && filename.ends_with(".log")
-                {
-                    // Get modification time for this file
-                    if let Ok(metadata) = fs::metadata(&path) {
-                        if let Ok(modified) = metadata.modified() {
-                            match &best_file {
-                                None => best_file = Some((path.clone(), modified)),
-                                Some((_, best_time)) if modified > *best_time => {
-                                    best_file = Some((path.clone(), modified));
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Read the most recently modified matching log file
-    if let Some((path, _)) = best_file {
-        if let Ok(content) = fs::read_to_string(&path) {
-            return content;
-        }
-    }
-
-    String::new()
+    crate::pipeline::logfile::read_most_recent_logfile(log_prefix)
 }
 
 /// Format XSD error for display.

@@ -144,7 +144,7 @@ ralph.dev/
 
 2. **Problem Statement**
    - "AI agents require babysitting"
-   - "Context switching kills productivity"  
+   - "Context switching kills productivity"
    - "Long tasks need checkpoint/resume"
 
 3. **Solution Overview**
@@ -174,7 +174,36 @@ ralph.dev/
    - Automatic Code Review
    - Conventional Commits
 
-6. **Quick Start**
+6. **RECOMMENDED: Git Worktree Workflow**
+
+   Ralph is designed for **unattended, long-running tasks**. A single Ralph run can take anywhere from 30 minutes to overnight depending on task complexity and iteration counts.
+
+   **The Problem**: Running Ralph directly on your main branch blocks you from working on other features while Ralph processes.
+
+   **The Solution**: Git worktrees allow multiple working directories for the same repository, each on a different branch. This is the **RECOMMENDED workflow** for Ralph.
+
+   ```bash
+   # From your main repository, create worktrees for parallel features
+   git worktree add ../feature-auth feature/auth
+   git worktree add ../feature-api feature/api
+   git worktree add ../bugfix-login bugfix/login
+
+   # Run Ralph in each worktree simultaneously
+   cd ../feature-auth && ralph "implement user auth"
+   cd ../feature-api && ralph "implement REST API"
+   cd ../bugfix-login && ralph -Q "fix login timeout"
+
+   # In your main worktree, continue your own work while Ralph runs in parallel
+   ```
+
+   **Benefits**:
+   - Run multiple Ralph sessions overnight on different features
+   - Keep working in your main repository while Ralph processes
+   - Each worktree has independent git state (commits don't interfere)
+   - Easy cleanup after merging: `git worktree remove ../feature-auth`
+
+7. **Quick Start**
+
    ```bash
    # Install Ralph
    cargo install ralph-workflow
@@ -182,10 +211,11 @@ ralph.dev/
    # Initialize in your project (smart init - infers what you need)
    ralph --init
 
-   # Write your specification
-   vim PROMPT.md
+   # Write your specification (use a Work Guide for structure)
+   ralph --init bug-fix  # Creates PROMPT.md from template
+   # Then edit PROMPT.md with your specific task details
 
-   # Run unattended (commit message is optional - defaults to "chore: apply PROMPT loop + review/fix/review")
+   # Run Ralph (commit message is optional - uses default if omitted)
    ralph
    # OR with custom commit message:
    ralph "feat: implement user authentication"
@@ -193,19 +223,42 @@ ralph.dev/
    # Go to sleep. Wake up to finished code.
    ```
 
-   **Recommended: Git Worktree Workflow**
+   **Getting Started Overnight**:
 
-   Ralph is designed for unattended, long-running tasks. Using Git worktrees lets you run multiple Ralph sessions in parallel without blocking your main development workflow:
+   Ralph is perfect for overnight runs with small, well-scoped prompts:
 
    ```bash
-   # Create worktrees for parallel features
-   git worktree add ../feature-auth feature/auth
-   git worktree add ../feature-api feature/api
+   # 1. Initialize config (if not already done)
+   ralph --init
 
-   # Run Ralph in each worktree simultaneously
-   cd ../feature-auth && ralph "implement user auth"
-   cd ../feature-api && ralph "implement REST API"
+   # 2. Create a simple PROMPT.md for overnight work
+   cat > PROMPT.md << 'EOF'
+   # Task: Add User Authentication
+
+   Implement JWT-based authentication:
+   - Login endpoint with email/password
+   - JWT token generation and validation
+   - Protected routes middleware
+   - Password hashing with bcrypt
+   - Unit tests for auth functions
+
+   Use existing project patterns in src/auth/.
+   EOF
+
+   # 3. Run with higher iteration count for overnight processing
+   ralph -D 10 -R 5
+   # -D 10: 10 developer iterations (more thorough)
+   # -R 5:  5 review cycles (comprehensive review)
    ```
+
+   **Quick Presets** (for common task sizes):
+   | Command | Dev Iterations | Review Cycles | Best For |
+   |---------|---------------|---------------|----------|
+   | `ralph -Q` | 1 | 1 | Small fixes, typos (10-30 min) |
+   | `ralph -U` | 2 | 1 | Minor changes (20-60 min) |
+   | `ralph` | 5 | 2 | Standard features (1-3 hours) |
+   | `ralph -D 10 -R 5` | 10 | 5 | Complex features (3-8 hours) |
+   | `ralph -L` | 15 | 10 | Critical features (8-12 hours) |
 
 ---
 
@@ -428,25 +481,58 @@ export async function GET() {
 **Content**:
 
 1. **File Location**: `~/.config/ralph-workflow.toml`
+   - Default path: `~/.config/ralph-workflow.toml`
+   - Respects `XDG_CONFIG_HOME` if set
+   - Created automatically on first run with `ralph --init`
 
 2. **Configuration Sections**:
 
-   **`[general]`** - Global settings (from `GeneralConfig` struct):
+   **`[general]`** - Global settings:
    ```toml
    [general]
-   verbosity = 2                    # 0=quiet, 1=normal, 2=verbose, 3=full, 4=debug
-   interactive = true               # Keep agent in foreground
-   isolation_mode = true            # Delete NOTES.md/ISSUES.md at start
-   auto_detect_stack = true         # Detect Rust/JS/Python for review
-   checkpoint_enabled = true        # Enable checkpoint/resume
-   developer_iters = 5              # Developer iterations
-   reviewer_reviews = 2             # Review cycles
-   developer_context = 1            # 0=minimal, 1=standard, 2=full
+   # Verbosity: 0=quiet, 1=normal, 2=verbose, 3=full, 4=debug
+   verbosity = 2
+
+   # Interactive mode (keep agent in foreground)
+   interactive = true
+
+   # Isolation mode (delete NOTES.md/ISSUES.md at start)
+   isolation_mode = true
+
+   # Auto-detect project stack (Rust/JS/Python) for review guidelines
+   auto_detect_stack = true
+
+   # Enable checkpoint/resume for interrupted runs
+   checkpoint_enabled = true
+
+   # Enable automatic rebasing before/after pipeline
+   auto_rebase = true
+
+   # Maximum recovery attempts during rebase conflict resolution
+   max_recovery_attempts = 3
+
+   # Number of developer iterations (default: 5)
+   developer_iters = 5
+
+   # Number of review cycles (0=skip review, 1=one cycle, default: 2)
+   reviewer_reviews = 2
+
+   # Context levels (0=minimal, 1=standard, 2=full)
+   developer_context = 1
    reviewer_context = 0
-   review_depth = "standard"        # standard/comprehensive/security/incremental
+
+   # Review depth: standard, comprehensive, security, incremental
+   review_depth = "standard"
+
+   # Strict PROMPT.md validation
+   strict_validation = false
+
+   # Git user identity (optional, falls back to git config)
+   # git_user_name = "Your Name"
+   # git_user_email = "your.email@example.com"
    ```
 
-   **`[ccs]`** - CCS defaults (from `CcsConfig` struct):
+   **`[ccs]`** - CCS defaults (for all CCS aliases unless overridden):
    ```toml
    [ccs]
    output_flag = "--output-format=stream-json"
@@ -461,14 +547,18 @@ export async function GET() {
    **`[ccs_aliases]`** - CCS profile shortcuts:
    ```toml
    [ccs_aliases]
+   # Simple string form (uses [ccs] defaults)
    work = "ccs work"
    personal = "ccs personal"
    glm = "ccs glm"
+
+   # Table form (override specific settings)
    gemini = { cmd = "ccs gemini", json_parser = "claude" }
    ```
 
-   **`[agents]`** - Custom agent definitions (from `AgentConfigToml`):
+   **`[agents]`** - Custom agent definitions:
    ```toml
+   # Define custom agents or override built-ins
    [agents.my-claude-opus]
    cmd = "claude"
    output_flag = "--output-format=stream-json"
@@ -481,21 +571,35 @@ export async function GET() {
    **`[agent_chain]`** - Fallback configuration:
    ```toml
    [agent_chain]
+   # Primary agent first, fallbacks after
    developer = ["claude", "codex", "opencode"]
    reviewer = ["codex", "claude"]
    commit = ["claude", "codex", "opencode"]
+
    max_retries = 3
    retry_delay_ms = 1000
+
+   # Optional: Provider-level fallback for OpenCode
+   # [agent_chain.provider_fallback]
+   # opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
    ```
 
-3. **Environment Variables** (from `src/cli/args.rs`):
+3. **Environment Variables**:
    | Variable | Purpose |
    |----------|---------|
    | `RALPH_DEVELOPER_ITERS` | Override dev iterations |
    | `RALPH_REVIEWER_REVIEWS` | Override review cycles |
    | `RALPH_VERBOSITY` | Output verbosity (0-4) |
+   | `RALPH_GIT_USER_NAME` | Git user name for commits |
+   | `RALPH_GIT_USER_EMAIL` | Git user email for commits |
+   | `RALPH_DEVELOPER_AGENT` | Override developer agent |
+   | `RALPH_REVIEWER_AGENT` | Override reviewer agent |
+   | `RALPH_DEVELOPER_MODEL` | Override developer model flag |
+   | `RALPH_REVIEWER_MODEL` | Override reviewer model flag |
+   | `RALPH_DEVELOPER_PROVIDER` | Override developer provider |
+   | `RALPH_REVIEWER_PROVIDER` | Override reviewer provider |
+   | `RALPH_REVIEWER_JSON_PARSER` | Override JSON parser |
    | `RALPH_CCS_DEBUG` | Enable CCS debug logging |
-   | `RALPH_REVIEWER_UNIVERSAL_PROMPT` | Force simplified review prompt |
 
 4. **YOLO Mode (Unattended Operation)**:
 
@@ -628,13 +732,13 @@ reviewer = ["codex", "claude"]
 
 ### 4.7 Unattended Operation Guide (`/docs/unattended`)
 
-**Source Reference**: `ralph-workflow/examples/ralph-workflow.toml` (YOLO mode section)
+**Source Reference**: `ralph-workflow/examples/ralph-workflow.toml`, `src/cli/presets.rs`
 
 **Content**:
 
 1. **Philosophy**
    > "Think like a Product Manager, not a Pair Programmer"
-   
+
    - AI agents cannot ask clarification questions in unattended mode
    - Detailed specs prevent bad assumptions
    - Define edge cases upfront
@@ -646,7 +750,7 @@ reviewer = ["codex", "claude"]
    - No prompts for file operations
    - No confirmation for tool calls
    - Fully autonomous code changes
-   
+
    This is deliberate: permission is given upfront when you run Ralph.
    ```
 
@@ -665,9 +769,26 @@ reviewer = ["codex", "claude"]
    - Reference existing code patterns
    - Specify test requirements
 
-5. **Overnight/Long-Running Operation**:
+5. **CLI Presets for Task Sizing**:
 
-   Ralph is designed to run unattended for extended periods. Here's how to get started easily with a small prompt that can run overnight:
+   Ralph provides preset configurations for common task types. Use these to control how long Ralph runs:
+
+   | Preset | Flag | Dev Iterations | Review Cycles | Estimated Time | Best For |
+   |--------|------|---------------|---------------|----------------|----------|
+   | Quick | `-Q` | 1 | 1 | 10-30 min | Typos, small fixes |
+   | Rapid | `-U` | 2 | 1 | 20-60 min | Minor changes |
+   | Standard | `-S` | 5 | 2 | 1-3 hours | Standard features (default) |
+   | Thorough | `-T` | 10 | 5 | 3-8 hours | Complex features |
+   | Long | `-L` | 15 | 10 | 8-12 hours | Critical features |
+
+   You can also customize iterations directly:
+   ```bash
+   ralph -D 10 -R 5  # 10 dev iterations, 5 review cycles
+   ```
+
+6. **Getting Started Overnight**:
+
+   Ralph is perfect for overnight runs with small, well-scoped prompts:
 
    **Quick Start for Overnight Runs**:
    ```bash
@@ -704,12 +825,8 @@ reviewer = ["codex", "claude"]
    | `ralph -D 10 -R 5` | 3-8 hours | Complex features (overnight) |
    | `ralph -L` (long: 15+10) | 8-12 hours | Critical features (full night) |
 
-   **Session Continuation**:
-   - If Ralph is interrupted, run `ralph --resume` to continue
-   - Ralph will show progress and ask if you want to continue
-   - Use `ralph --no-resume` in scripts to skip the prompt
+7. **RECOMMENDED: Worktree Workflow for Parallel Overnight Runs**:
 
-   **Using Worktrees for Parallel Overnight Runs**:
    ```bash
    # Set up multiple worktrees before leaving
    git worktree add ../feature-auth feature/auth
@@ -722,24 +839,18 @@ reviewer = ["codex", "claude"]
    # Check progress in the morning
    ```
 
-6. **Worktree Strategy** (RECOMMENDED for parallel features):
-   ```bash
-   # Create worktrees for parallel development
-   git worktree add ../feature-auth feature/auth
-   git worktree add ../feature-api feature/api
-
-   # Run Ralph in each worktree
-   cd ../feature-auth && ralph
-   cd ../feature-api && ralph
-   ```
-
    **Why Worktrees?**
    - Ralph is designed for unattended, long-running tasks (hours to overnight)
    - Running Ralph on main blocks you from working on other features
    - Worktrees let you run multiple Ralph sessions in parallel
    - Each worktree has its own git state, so commits don't interfere
 
-7. **Checkpoint/Resume**:
+8. **Session Continuation**:
+   - If Ralph is interrupted, run `ralph --resume` to continue
+   - Ralph will show progress and ask if you want to continue
+   - Use `ralph --no-resume` in scripts to skip the prompt
+
+9. **Checkpoint/Resume**:
    - Checkpoints stored in `.agent/checkpoint.json`
    - Interactive resume prompt when checkpoint exists
    - Resume with `ralph --resume`
@@ -926,36 +1037,36 @@ Ralph has **two different types of templates** - understanding the difference is
 
 ### 4.11 Work Guide Reference (`/docs/work-guides`)
 
-**Source Reference**: `ralph-workflow/src/cli/init.rs`
+**Source Reference**: `ralph-workflow/src/templates/mod.rs`
 
 **What are Work Guides?**
 
 Work Guides are templates for creating `PROMPT.md` files. They help you describe your work to the AI agents in a structured way. Each Work Guide is designed for a specific type of task.
 
-**Available Work Guides**:
+**Available Work Guides** (20 total):
 
 | Work Guide | Description | Use For |
 |------------|-------------|---------|
-| **quick** | Quick/small changes | Typos, minor fixes |
-| **bug-fix** | Bug fix with investigation | Debugging and fixing bugs |
-| **feature-spec** | Product specification | New features with full details |
-| **refactor** | Code refactoring | Restructuring code while preserving behavior |
-| **test** | Test writing | Adding tests with edge case considerations |
-| **docs** | Documentation update | Updating docs with completeness checklist |
-| **code-review** | Structured code review | Pull request reviews |
-| **cli-tool** | CLI tool development | Command-line tools with argument parsing |
-| **web-api** | REST/HTTP API | API endpoints with error handling |
-| **ui-component** | UI component | Frontend components with accessibility |
-| **onboarding** | Learning a codebase | Understanding a new project |
-| **performance-optimization** | Performance improvements | Benchmarking and optimization |
-| **security-audit** | Security review | OWASP Top 10 coverage |
-| **api-integration** | API integration | External APIs with retry logic |
-| **database-migration** | Database changes | Zero-downtime migrations |
-| **dependency-update** | Updating dependencies | Breaking change handling |
-| **data-pipeline** | Data pipeline | ETL and monitoring |
-| **debug-triage** | Issue investigation | Systematic debugging |
-| **tech-debt** | Technical debt cleanup | Prioritized refactoring |
-| **release** | Release preparation | Versioning and changelog |
+| **quick** | Quick/small change template (minimal) | Typos, minor fixes |
+| **bug-fix** | Bug fix with investigation guidance | Debugging and fixing bugs |
+| **feature-spec** | Comprehensive product specification | New features with full details |
+| **refactor** | Code refactoring with behavior preservation | Restructuring code while preserving behavior |
+| **test** | Test writing with edge case considerations | Adding tests |
+| **docs** | Documentation update with completeness checklist | Updating documentation |
+| **code-review** | Structured code review for pull requests | Code review feedback |
+| **cli-tool** | CLI tool with argument parsing and completion | Command-line tools |
+| **web-api** | Web API with REST design and error handling | REST/HTTP API endpoints |
+| **ui-component** | UI component with accessibility and responsive design | Frontend components |
+| **onboarding** | Onboarding template for learning new codebases | Understanding a new project |
+| **performance-optimization** | Performance optimization with benchmarking guidance | Performance improvements |
+| **security-audit** | Security audit covering OWASP Top 10 | Security review |
+| **api-integration** | API integration with retry logic and resilience | External API integrations |
+| **database-migration** | Database migration with zero-downtime strategies | Database changes |
+| **dependency-update** | Dependency update with breaking change handling | Updating dependencies |
+| **data-pipeline** | Data pipeline with ETL and monitoring guidance | Data pipelines |
+| **debug-triage** | Debug triage for systematic issue investigation | Issue investigation |
+| **tech-debt** | Technical debt refactoring with prioritization | Debt cleanup |
+| **release** | Release preparation with versioning checklist | Release preparation |
 
 **Using Work Guides**:
 
@@ -977,7 +1088,7 @@ ralph --init feature-spec --force-overwrite
 
 The `--init` flag without a value uses smart inference:
 - No config? Creates `~/.config/ralph-workflow.toml`
-- Config exists, no PROMPT.md? Prompts for Work Guide (interactive) or creates minimal PROMPT.md (non-interactive)
+- Config exists, no PROMPT.md? Creates PROMPT.md (prompts for Work Guide in interactive mode)
 - Both exist? Shows setup complete message
 
 **Example: Creating a Bug Fix Work Guide**:
@@ -1438,7 +1549,7 @@ export const OPENCODE_PROVIDERS = [
 
 **Subheadline**: Ralph manages your AI coding agents through long-running tasks with automatic fallback, review cycles, and checkpoint/resume. Write your spec, start Ralph, and come back to finished code.
 
-**CTA Primary**: Get Started  
+**CTA Primary**: Get Started
 **CTA Secondary**: Read the Docs
 
 ### Supported Agents Section
@@ -1473,10 +1584,11 @@ cargo install ralph-workflow
 cd your-project
 ralph --init
 
-# Create PROMPT.md with your specification
-vim PROMPT.md
+# Write your specification (use a Work Guide for structure)
+ralph --init bug-fix  # Creates PROMPT.md from template
+# Then edit PROMPT.md with your specific task details
 
-# Run unattended (commit message is optional - uses default if omitted)
+# Run Ralph (commit message is optional - uses default if omitted)
 ralph
 # OR with custom commit message:
 ralph "feat: implement user authentication"
@@ -1484,9 +1596,37 @@ ralph "feat: implement user authentication"
 # Go to sleep. Wake up to finished code.
 ```
 
-**Tip: Use Git Worktrees for Parallel Development**
+**Getting Started Overnight**:
 
-Ralph is designed for long-running unattended tasks. Using Git worktrees lets you run multiple Ralph sessions simultaneously:
+Ralph is perfect for overnight runs with small, well-scoped prompts:
+
+```bash
+# 1. Initialize config
+ralph --init
+
+# 2. Create a simple PROMPT.md for overnight work
+cat > PROMPT.md << 'EOF'
+# Task: Add User Authentication
+
+Implement JWT-based authentication:
+- Login endpoint with email/password
+- JWT token generation and validation
+- Protected routes middleware
+- Password hashing with bcrypt
+- Unit tests for auth functions
+
+Use existing project patterns in src/auth/.
+EOF
+
+# 3. Run with higher iteration count for overnight processing
+ralph -D 10 -R 5
+# -D 10: 10 developer iterations (more thorough)
+# -R 5:  5 review cycles (comprehensive review)
+```
+
+**RECOMMENDED: Git Worktrees for Parallel Development**
+
+Ralph is designed for **unattended, long-running tasks**. A single Ralph run can take anywhere from 30 minutes to overnight depending on task complexity. Using Git worktrees lets you run multiple Ralph sessions simultaneously:
 
 ```bash
 # Create worktrees for different features
@@ -1496,7 +1636,15 @@ git worktree add ../feature-api feature/api
 # Run Ralph in each worktree overnight
 cd ../feature-auth && ralph "implement user auth"
 cd ../feature-api && ralph "implement REST API"
+
+# In your main worktree, continue your own work while Ralph runs in parallel
 ```
+
+**Benefits**:
+- Run multiple Ralph sessions overnight on different features
+- Keep working in your main repository while Ralph processes
+- Each worktree has independent git state (commits don't interfere)
+- Easy cleanup: `git worktree remove ../feature-auth`
 
 ---
 

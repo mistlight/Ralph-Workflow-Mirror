@@ -244,11 +244,10 @@ pub fn extract_session_info_from_log_prefix(
     use crate::agents::JsonParserType;
 
     // Find the most recent log file matching the prefix
-    let log_file = find_most_recent_log_file(log_prefix)?;
+    let log_file = super::logfile::find_most_recent_logfile(log_prefix)?;
 
-    // Extract agent name from log file name
-    // Log files are named: {prefix}_{agent}_{model_index}.log or {prefix}_{agent}.log
-    let agent_name = extract_agent_name_from_log_file(&log_file, log_prefix)?;
+    // Extract agent name from log file name using unified logfile module
+    let agent_name = super::logfile::extract_agent_name_from_logfile(&log_file, log_prefix)?;
 
     // Extract session ID based on parser type
     let session_id = match parser_type {
@@ -263,81 +262,6 @@ pub fn extract_session_info_from_log_prefix(
         agent_name,
         log_file,
     })
-}
-
-/// Extract agent name from a log file path.
-///
-/// Log files are named: `{prefix}_{agent}_{model_index}.log` or `{prefix}_{agent}.log`
-/// For example: `.agent/logs/planning_1_ccs-glm_0.log` -> `ccs-glm`
-fn extract_agent_name_from_log_file(log_file: &Path, log_prefix: &Path) -> Option<String> {
-    let filename = log_file.file_name()?.to_str()?;
-    let prefix_filename = log_prefix.file_name()?.to_str()?;
-
-    // Remove the prefix and the leading underscore
-    if !filename.starts_with(prefix_filename) {
-        return None;
-    }
-    let after_prefix = &filename[prefix_filename.len()..];
-    let after_prefix = after_prefix.strip_prefix('_')?;
-
-    // Remove the .log extension
-    let without_ext = after_prefix.strip_suffix(".log")?;
-
-    // The format is either "agent" or "agent_modelindex"
-    // Find the last underscore followed by a number
-    if let Some(last_underscore) = without_ext.rfind('_') {
-        let after_underscore = &without_ext[last_underscore + 1..];
-        // Check if what follows is a number (model index)
-        if after_underscore.chars().all(|c| c.is_ascii_digit()) {
-            // Return everything before the last underscore
-            return Some(without_ext[..last_underscore].to_string());
-        }
-    }
-
-    // No model index suffix, the whole thing is the agent name
-    Some(without_ext.to_string())
-}
-
-/// Find the most recent log file matching a prefix pattern.
-///
-/// Log files are named `{prefix}_{agent}_{model}.log`, e.g.:
-/// `.agent/logs/planning_1_ccs-glm_0.log`
-fn find_most_recent_log_file(log_prefix: &Path) -> Option<std::path::PathBuf> {
-    let parent = log_prefix.parent().unwrap_or(Path::new("."));
-    let prefix_str = log_prefix
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-
-    let mut best_file: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
-
-    if let Ok(entries) = fs::read_dir(parent) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                // Match files that start with our prefix and end with .log
-                if filename.starts_with(prefix_str)
-                    && filename.len() > prefix_str.len()
-                    && filename.ends_with(".log")
-                {
-                    // Get modification time for this file
-                    if let Ok(metadata) = fs::metadata(&path) {
-                        if let Ok(modified) = metadata.modified() {
-                            match &best_file {
-                                None => best_file = Some((path.clone(), modified)),
-                                Some((_, best_time)) if modified > *best_time => {
-                                    best_file = Some((path.clone(), modified));
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    best_file.map(|(path, _)| path)
 }
 
 #[cfg(test)]
@@ -484,13 +408,15 @@ mod tests {
     }
 
     // ===== Agent name extraction tests =====
+    // Note: These tests use the unified logfile module. The tests are kept here
+    // for session-specific integration testing.
 
     #[test]
     fn test_extract_agent_name_with_model_index() {
         use std::path::PathBuf;
         let log_file = PathBuf::from(".agent/logs/planning_1_ccs-glm_0.log");
         let log_prefix = PathBuf::from(".agent/logs/planning_1");
-        let result = extract_agent_name_from_log_file(&log_file, &log_prefix);
+        let result = super::super::logfile::extract_agent_name_from_logfile(&log_file, &log_prefix);
         assert_eq!(result, Some("ccs-glm".to_string()));
     }
 
@@ -499,7 +425,7 @@ mod tests {
         use std::path::PathBuf;
         let log_file = PathBuf::from(".agent/logs/planning_1_claude.log");
         let log_prefix = PathBuf::from(".agent/logs/planning_1");
-        let result = extract_agent_name_from_log_file(&log_file, &log_prefix);
+        let result = super::super::logfile::extract_agent_name_from_logfile(&log_file, &log_prefix);
         assert_eq!(result, Some("claude".to_string()));
     }
 
@@ -508,7 +434,7 @@ mod tests {
         use std::path::PathBuf;
         let log_file = PathBuf::from(".agent/logs/planning_1_glm-direct_2.log");
         let log_prefix = PathBuf::from(".agent/logs/planning_1");
-        let result = extract_agent_name_from_log_file(&log_file, &log_prefix);
+        let result = super::super::logfile::extract_agent_name_from_logfile(&log_file, &log_prefix);
         assert_eq!(result, Some("glm-direct".to_string()));
     }
 
@@ -519,7 +445,7 @@ mod tests {
         let log_file =
             PathBuf::from(".agent/logs/planning_1_opencode-anthropic-claude-sonnet-4_0.log");
         let log_prefix = PathBuf::from(".agent/logs/planning_1");
-        let result = extract_agent_name_from_log_file(&log_file, &log_prefix);
+        let result = super::super::logfile::extract_agent_name_from_logfile(&log_file, &log_prefix);
         assert_eq!(
             result,
             Some("opencode-anthropic-claude-sonnet-4".to_string())
@@ -531,7 +457,7 @@ mod tests {
         use std::path::PathBuf;
         let log_file = PathBuf::from(".agent/logs/review_1_claude_0.log");
         let log_prefix = PathBuf::from(".agent/logs/planning_1");
-        let result = extract_agent_name_from_log_file(&log_file, &log_prefix);
+        let result = super::super::logfile::extract_agent_name_from_logfile(&log_file, &log_prefix);
         assert_eq!(result, None);
     }
 }

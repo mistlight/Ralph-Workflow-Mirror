@@ -153,6 +153,78 @@ impl AgentRegistry {
             .unwrap_or_else(|| name.to_string())
     }
 
+    /// Find the registry name for an agent given its log file name.
+    ///
+    /// Log file names use a sanitized form of the registry name where `/` is
+    /// replaced with `-` to avoid creating subdirectories. This function
+    /// reverses that sanitization to find the original registry name.
+    ///
+    /// This is used for session continuation, where the agent name is extracted
+    /// from log file names (e.g., "ccs-glm", "opencode-anthropic-claude-sonnet-4")
+    /// but we need to look up the agent in the registry (which uses names like
+    /// "ccs/glm", "opencode/anthropic/claude-sonnet-4").
+    ///
+    /// # Strategy
+    ///
+    /// 1. Check if the name is already a valid registry key (no sanitization needed)
+    /// 2. Search registered agents for one whose sanitized name matches
+    /// 3. Try common patterns like "ccs-X" → "ccs/X", "opencode-X-Y" → "opencode/X/Y"
+    ///
+    /// # Arguments
+    ///
+    /// * `logfile_name` - The agent name extracted from a log file (e.g., "ccs-glm")
+    ///
+    /// # Returns
+    ///
+    /// The registry name if found (e.g., "ccs/glm"), or `None` if no match.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// assert_eq!(registry.resolve_from_logfile_name("ccs-glm"), Some("ccs/glm".to_string()));
+    /// assert_eq!(registry.resolve_from_logfile_name("claude"), Some("claude".to_string()));
+    /// assert_eq!(registry.resolve_from_logfile_name("opencode-anthropic-claude-sonnet-4"),
+    ///            Some("opencode/anthropic/claude-sonnet-4".to_string()));
+    /// ```
+    pub fn resolve_from_logfile_name(&self, logfile_name: &str) -> Option<String> {
+        // First check if the name is exactly a registry name (no sanitization was needed)
+        if self.agents.contains_key(logfile_name) {
+            return Some(logfile_name.to_string());
+        }
+
+        // Search registered agents for one whose sanitized name matches
+        for name in self.agents.keys() {
+            let sanitized = name.replace('/', "-");
+            if sanitized == logfile_name {
+                return Some(name.clone());
+            }
+        }
+
+        // Try to resolve dynamically for unregistered agents
+        // CCS pattern: "ccs-alias" → "ccs/alias"
+        if let Some(alias) = logfile_name.strip_prefix("ccs-") {
+            let registry_name = format!("ccs/{}", alias);
+            // CCS agents can be resolved dynamically even if not pre-registered
+            return Some(registry_name);
+        }
+
+        // OpenCode pattern: "opencode-provider-model" → "opencode/provider/model"
+        // Note: This is tricky because model names can contain hyphens
+        // We rely on the fact that OpenCode providers don't contain hyphens
+        if let Some(rest) = logfile_name.strip_prefix("opencode-") {
+            if let Some(first_hyphen) = rest.find('-') {
+                let provider = &rest[..first_hyphen];
+                let model = &rest[first_hyphen + 1..];
+                let registry_name = format!("opencode/{}/{}", provider, model);
+                // OpenCode agents can be resolved dynamically
+                return Some(registry_name);
+            }
+        }
+
+        // No match found
+        None
+    }
+
     /// Resolve a fuzzy agent name to a canonical agent name.
     ///
     /// This handles common typos and alternative forms:
@@ -676,6 +748,101 @@ mod tests {
 
         // Unknown agent returns the key as-is
         assert_eq!(registry.display_name("unknown"), "unknown");
+    }
+
+    #[test]
+    fn test_resolve_from_logfile_name() {
+        let mut registry = AgentRegistry::new().unwrap();
+
+        // Register a CCS agent with slash in name
+        registry.register(
+            "ccs/glm",
+            AgentConfig {
+                cmd: "ccs glm".to_string(),
+                output_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+                model_flag: None,
+                print_flag: "-p".to_string(),
+                streaming_flag: "--include-partial-messages".to_string(),
+                session_flag: "--resume {}".to_string(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: Some("ccs-glm".to_string()),
+            },
+        );
+
+        // Register a plain agent without slash
+        registry.register(
+            "claude",
+            AgentConfig {
+                cmd: "claude -p".to_string(),
+                output_flag: "--output-format=stream-json".to_string(),
+                yolo_flag: "--dangerously-skip-permissions".to_string(),
+                verbose_flag: "--verbose".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::Claude,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: "--include-partial-messages".to_string(),
+                session_flag: "--resume {}".to_string(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: None,
+            },
+        );
+
+        // Register an OpenCode agent with multiple slashes
+        registry.register(
+            "opencode/anthropic/claude-sonnet-4",
+            AgentConfig {
+                cmd: "opencode run".to_string(),
+                output_flag: "--format json".to_string(),
+                yolo_flag: String::new(),
+                verbose_flag: "--log-level DEBUG".to_string(),
+                can_commit: true,
+                json_parser: JsonParserType::OpenCode,
+                model_flag: Some("-p anthropic -m claude-sonnet-4".to_string()),
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: "-s {}".to_string(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: Some("OpenCode (anthropic)".to_string()),
+            },
+        );
+
+        // Test: Agent names that don't need sanitization
+        assert_eq!(
+            registry.resolve_from_logfile_name("claude"),
+            Some("claude".to_string())
+        );
+
+        // Test: CCS agent - sanitized name resolved to registry name
+        assert_eq!(
+            registry.resolve_from_logfile_name("ccs-glm"),
+            Some("ccs/glm".to_string())
+        );
+
+        // Test: OpenCode agent - sanitized name resolved to registry name
+        assert_eq!(
+            registry.resolve_from_logfile_name("opencode-anthropic-claude-sonnet-4"),
+            Some("opencode/anthropic/claude-sonnet-4".to_string())
+        );
+
+        // Test: Unregistered CCS agent - should still resolve via pattern matching
+        assert_eq!(
+            registry.resolve_from_logfile_name("ccs-zai"),
+            Some("ccs/zai".to_string())
+        );
+
+        // Test: Unregistered OpenCode agent - should still resolve via pattern matching
+        assert_eq!(
+            registry.resolve_from_logfile_name("opencode-google-gemini-pro"),
+            Some("opencode/google/gemini-pro".to_string())
+        );
+
+        // Test: Unknown agent returns None
+        assert_eq!(registry.resolve_from_logfile_name("unknown-agent"), None);
     }
 
     #[test]

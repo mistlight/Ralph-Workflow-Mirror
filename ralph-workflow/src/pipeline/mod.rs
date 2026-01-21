@@ -6,6 +6,7 @@
 //! - Command execution helpers with fault-tolerant fallback chains
 //! - Timer utilities for tracking execution duration
 //! - Session management for agent continuation
+//! - Log file path management
 //!
 //! # Module Structure
 //!
@@ -13,11 +14,13 @@
 //! - [`runner`] - Pipeline runtime and command execution with fallback
 //! - [`types`] - Pipeline statistics tracking and RAII guards
 //! - [`session`] - Session extraction and continuation for XSD retries
+//! - [`logfile`] - Unified log file path creation, parsing, and discovery
 
 #![deny(unsafe_code)]
 
 mod clipboard;
 mod fallback;
+pub mod logfile;
 mod model_flag;
 mod prompt;
 mod runner;

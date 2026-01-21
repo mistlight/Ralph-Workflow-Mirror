@@ -1087,3 +1087,354 @@ fi
         "Session continuation should have been attempted once"
     );
 }
+
+/// Test that session continuation resolves sanitized agent names from log files.
+///
+/// This is a regression test for the bug where session_info.agent_name extracted
+/// from log file names (e.g., "ccs-glm") couldn't be resolved to registry names
+/// (e.g., "ccs/glm") because the lookup used the wrong name format.
+///
+/// The fix was to add `resolve_from_logfile_name()` which reverses the
+/// sanitization done when creating log file names.
+#[cfg(unix)]
+#[test]
+fn session_continuation_resolves_sanitized_agent_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let session_flag_found = dir.path().join("session_flag_found.txt");
+
+    // Create a script that checks for the session flag
+    let agent_script = dir.path().join("agent.sh");
+    std::fs::write(
+        &agent_script,
+        format!(
+            r#"#!/bin/sh
+# Check if --resume flag is present
+for arg in "$@"; do
+    case "$arg" in
+        --resume) touch "{}" ;;
+    esac
+done
+exit 0
+"#,
+            session_flag_found.display()
+        ),
+    )
+    .unwrap();
+
+    // Set up registry with a CCS agent (registry name has slash: "ccs/test-agent")
+    let mut registry = AgentRegistry::new().unwrap();
+    let defaults = crate::config::CcsConfig {
+        output_flag: String::new(),
+        yolo_flag: String::new(),
+        verbose_flag: String::new(),
+        print_flag: String::new(),
+        streaming_flag: String::new(),
+        json_parser: "generic".to_string(),
+        can_commit: true,
+    };
+
+    let mut aliases = HashMap::new();
+    aliases.insert(
+        "test-agent".to_string(), // Will become "ccs/test-agent" in registry
+        crate::config::CcsAliasConfig {
+            cmd: format!("sh {}", agent_script.display()),
+            session_flag: Some("--resume {}".to_string()),
+            ..Default::default()
+        },
+    );
+    registry.set_ccs_aliases(&aliases, defaults);
+
+    // Set up runtime
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config {
+        verbosity: Verbosity::Quiet,
+        prompt_path: dir.path().join("prompt.txt"),
+        ..Config::default()
+    };
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
+    };
+
+    // Create session info with SANITIZED agent name (as extracted from log file)
+    // This is the key: the agent_name is "ccs-test-agent" (hyphen), not "ccs/test-agent" (slash)
+    // This simulates what happens when session_info is extracted from a log file named
+    // "planning_1_ccs-test-agent_0.log"
+    let session_info = crate::pipeline::session::SessionInfo {
+        session_id: "ses_test123".to_string(),
+        agent_name: "ccs-test-agent".to_string(), // SANITIZED name (hyphen instead of slash)
+        log_file: dir.path().join("fake.log"),
+    };
+
+    // Run with retry_num = 1 (XSD retry) - should use session continuation
+    // despite the sanitized agent name
+    let mut xsd_config = crate::pipeline::XsdRetryConfig {
+        role: crate::agents::AgentRole::Developer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: &dir.path().join("logs").display().to_string(),
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/test-agent",
+        session_info: Some(&session_info),
+        retry_num: 1, // XSD retry
+        output_validator: None,
+    };
+
+    let exit = crate::pipeline::run_xsd_retry_with_session(&mut xsd_config).unwrap();
+
+    assert_eq!(exit, 0, "Agent should succeed");
+
+    // Verify session flag was passed - this proves that:
+    // 1. The sanitized name "ccs-test-agent" was resolved to "ccs/test-agent"
+    // 2. The agent config was found in the registry
+    // 3. Session continuation was used (not fallback)
+    assert!(
+        session_flag_found.exists(),
+        "Session continuation should work with sanitized agent names from log files. \
+         The name 'ccs-test-agent' should resolve to 'ccs/test-agent' in the registry."
+    );
+}
+
+/// End-to-end test: Session ID extraction from log file and reuse on retry.
+///
+/// This test exercises the complete session continuation flow:
+/// 1. First agent run outputs NDJSON with session_id to log file
+/// 2. Session ID is extracted from the log file
+/// 3. On retry, the same session ID is passed back to the agent
+///
+/// This is a regression test ensuring that the full pipeline works correctly
+/// when session IDs need to be extracted from log files (as happens in production).
+#[cfg(unix)]
+#[test]
+fn session_continuation_e2e_extracts_session_from_logfile() {
+    let dir = tempfile::tempdir().unwrap();
+    let logs_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&logs_dir).unwrap();
+
+    let received_session_id = dir.path().join("received_session_id.txt");
+
+    // Create first agent script that outputs NDJSON with session_id (Claude format)
+    let first_agent_script = dir.path().join("first_agent.sh");
+    std::fs::write(
+        &first_agent_script,
+        r#"#!/bin/sh
+# Output Claude-format NDJSON with session_id
+echo '{"type":"system","subtype":"init","session_id":"ses_extracted_abc123"}'
+echo '{"type":"assistant","message":{"content":"Hello"}}'
+exit 0
+"#,
+    )
+    .unwrap();
+
+    // Create second agent script that captures the session ID from --resume flag
+    let second_agent_script = dir.path().join("second_agent.sh");
+    std::fs::write(
+        &second_agent_script,
+        format!(
+            r#"#!/bin/sh
+# Capture the session ID passed via --resume
+for arg in "$@"; do
+    case "$arg" in
+        ses_*) echo "$arg" > "{}" ;;
+    esac
+done
+exit 0
+"#,
+            received_session_id.display()
+        ),
+    )
+    .unwrap();
+
+    // Set up registry with a CCS agent that supports session continuation
+    let mut registry = AgentRegistry::new().unwrap();
+    let defaults = crate::config::CcsConfig {
+        output_flag: String::new(),
+        yolo_flag: String::new(),
+        verbose_flag: String::new(),
+        print_flag: String::new(),
+        streaming_flag: String::new(),
+        json_parser: "claude".to_string(), // Use Claude parser to extract session_id
+        can_commit: true,
+    };
+
+    // First agent (for initial run)
+    let mut aliases = HashMap::new();
+    aliases.insert(
+        "e2e-agent".to_string(),
+        crate::config::CcsAliasConfig {
+            cmd: format!("sh {}", first_agent_script.display()),
+            session_flag: Some("--resume {}".to_string()),
+            json_parser: Some("claude".to_string()),
+            ..Default::default()
+        },
+    );
+    registry.set_ccs_aliases(&aliases, defaults.clone());
+
+    // Set up runtime
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config {
+        verbosity: Verbosity::Quiet,
+        prompt_path: dir.path().join("prompt.txt"),
+        ..Config::default()
+    };
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
+    };
+
+    // Run first attempt (retry_num = 0) - this creates the log file with session_id
+    let log_prefix = logs_dir.join("test_1");
+    let mut xsd_config = crate::pipeline::XsdRetryConfig {
+        role: crate::agents::AgentRole::Developer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: &log_prefix.display().to_string(),
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/e2e-agent",
+        session_info: None, // No session info on first attempt
+        retry_num: 0,
+        output_validator: None,
+    };
+
+    let exit = crate::pipeline::run_xsd_retry_with_session(&mut xsd_config).unwrap();
+    assert_eq!(exit, 0, "First agent run should succeed");
+
+    // Extract session info from the log file (this is what happens in production)
+    let agent_config = registry.resolve_config("ccs/e2e-agent").unwrap();
+    let session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
+        &log_prefix,
+        agent_config.json_parser,
+    );
+
+    // Verify session was extracted
+    assert!(
+        session_info.is_some(),
+        "Session info should be extracted from log file"
+    );
+    let session_info = session_info.unwrap();
+    assert_eq!(
+        session_info.session_id, "ses_extracted_abc123",
+        "Session ID should match what the agent output"
+    );
+    // The agent name should be the sanitized form (as extracted from log filename)
+    assert_eq!(
+        session_info.agent_name, "ccs-e2e-agent",
+        "Agent name should be sanitized form from log filename"
+    );
+
+    // Now update the agent to the second script that captures the session ID
+    let mut aliases2 = HashMap::new();
+    aliases2.insert(
+        "e2e-agent".to_string(),
+        crate::config::CcsAliasConfig {
+            cmd: format!("sh {}", second_agent_script.display()),
+            session_flag: Some("--resume {}".to_string()),
+            json_parser: Some("claude".to_string()),
+            ..Default::default()
+        },
+    );
+    registry.set_ccs_aliases(&aliases2, defaults);
+
+    // Run retry (retry_num = 1) with the extracted session info
+    let mut runtime2 = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
+    };
+
+    let mut xsd_config2 = crate::pipeline::XsdRetryConfig {
+        role: crate::agents::AgentRole::Developer,
+        base_label: "test",
+        prompt: "retry prompt",
+        logfile_prefix: &log_prefix.display().to_string(),
+        runtime: &mut runtime2,
+        registry: &registry,
+        primary_agent: "ccs/e2e-agent",
+        session_info: Some(&session_info), // Pass the extracted session info
+        retry_num: 1,                      // XSD retry
+        output_validator: None,
+    };
+
+    let exit2 = crate::pipeline::run_xsd_retry_with_session(&mut xsd_config2).unwrap();
+    assert_eq!(exit2, 0, "Retry should succeed");
+
+    // Verify the session ID was passed to the agent on retry
+    assert!(
+        received_session_id.exists(),
+        "Agent should have received session ID on retry. \
+         This verifies that: \
+         1. Session ID was extracted from the log file \
+         2. Sanitized agent name 'ccs-e2e-agent' was resolved to 'ccs/e2e-agent' \
+         3. Session continuation passed the session ID via --resume flag"
+    );
+
+    let received = std::fs::read_to_string(&received_session_id).unwrap();
+    assert_eq!(
+        received.trim(),
+        "ses_extracted_abc123",
+        "The exact session ID from the first run should be passed to the retry"
+    );
+}
+
+/// Test that resolve_from_logfile_name works for OpenCode agents.
+///
+/// OpenCode agents have names like "opencode/anthropic/claude-sonnet-4" which
+/// get sanitized to "opencode-anthropic-claude-sonnet-4" in log file names.
+#[test]
+fn test_resolve_from_logfile_name_opencode() {
+    let mut registry = AgentRegistry::new().unwrap();
+
+    // Register an OpenCode agent
+    registry.register(
+        "opencode/anthropic/claude-sonnet-4",
+        crate::agents::AgentConfig {
+            cmd: "opencode run".to_string(),
+            output_flag: "--format json".to_string(),
+            yolo_flag: String::new(),
+            verbose_flag: "--log-level DEBUG".to_string(),
+            can_commit: true,
+            json_parser: crate::agents::JsonParserType::OpenCode,
+            model_flag: Some("-p anthropic -m claude-sonnet-4".to_string()),
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            session_flag: "-s {}".to_string(),
+            env_vars: std::collections::HashMap::new(),
+            display_name: Some("OpenCode (anthropic)".to_string()),
+        },
+    );
+
+    // Test that sanitized name resolves correctly
+    let resolved = registry.resolve_from_logfile_name("opencode-anthropic-claude-sonnet-4");
+    assert_eq!(
+        resolved,
+        Some("opencode/anthropic/claude-sonnet-4".to_string()),
+        "Sanitized OpenCode agent name should resolve to registry name"
+    );
+
+    // Test that unregistered OpenCode agent can also be resolved via pattern matching
+    let resolved_dynamic = registry.resolve_from_logfile_name("opencode-google-gemini-pro");
+    assert_eq!(
+        resolved_dynamic,
+        Some("opencode/google/gemini-pro".to_string()),
+        "Unregistered OpenCode agent should resolve via pattern matching"
+    );
+}

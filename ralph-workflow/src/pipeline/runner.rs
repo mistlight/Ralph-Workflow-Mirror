@@ -175,10 +175,7 @@ fn build_execution_metadata(
     let model_suffix = model_flag.map(|m| format!(" [{m}]")).unwrap_or_default();
     let display_name_with_suffix = format!("{display_name}{model_suffix}");
     let label = format!("{base_label} ({display_name_with_suffix})");
-    // Sanitize agent name for log file path - replace "/" with "-" to avoid
-    // creating subdirectories (e.g., "ccs/glm" -> "ccs-glm")
-    let safe_agent_name = agent_name.replace('/', "-");
-    let logfile = format!("{logfile_prefix}_{safe_agent_name}_{model_index}.log");
+    let logfile = super::logfile::build_logfile_path(logfile_prefix, agent_name, model_index);
     (label, logfile, display_name_with_suffix)
 }
 
@@ -581,6 +578,12 @@ pub fn run_xsd_retry_with_session(config: &mut XsdRetryConfig<'_, '_>) -> std::i
     // Try session continuation first (if we have session info and it's a retry)
     if config.retry_num > 0 {
         if let Some(session_info) = config.session_info {
+            // Log session continuation attempt
+            config.runtime.logger.info(&format!(
+                "  Attempting session continuation with {} (session: {}...)",
+                session_info.agent_name,
+                &session_info.session_id[..8.min(session_info.session_id.len())]
+            ));
             match try_session_continuation(config, session_info) {
                 SessionContinuationResult::Ran {
                     logfile: _,
@@ -589,13 +592,25 @@ pub fn run_xsd_retry_with_session(config: &mut XsdRetryConfig<'_, '_>) -> std::i
                     // Session continuation ran - agent was invoked and produced a log file
                     // Return the exit code; the caller will check for valid XML
                     // Even if exit_code != 0, there might be valid XML in the log
+                    config
+                        .runtime
+                        .logger
+                        .info("  Session continuation succeeded");
                     return Ok(exit_code);
                 }
                 SessionContinuationResult::Fallback => {
                     // Session continuation failed to start - fall through to normal behavior
-                    // This is silent and expected - no special logging needed
+                    config
+                        .runtime
+                        .logger
+                        .warn("  Session continuation failed, falling back to new session");
                 }
             }
+        } else {
+            config
+                .runtime
+                .logger
+                .warn("  No session info available for retry, starting new session");
         }
     }
 
@@ -626,8 +641,17 @@ fn try_session_continuation(
     config: &mut XsdRetryConfig<'_, '_>,
     session_info: &crate::pipeline::session::SessionInfo,
 ) -> SessionContinuationResult {
+    // The agent name from session_info is extracted from log file names, which use
+    // sanitized names (e.g., "ccs-glm", "opencode-anthropic-claude-sonnet-4") instead
+    // of registry names (e.g., "ccs/glm", "opencode/anthropic/claude-sonnet-4").
+    // We need to resolve the sanitized name back to the registry name.
+    let registry_name = config
+        .registry
+        .resolve_from_logfile_name(&session_info.agent_name)
+        .unwrap_or_else(|| session_info.agent_name.clone());
+
     // Check if the agent supports session continuation
-    let agent_config = match config.registry.resolve_config(&session_info.agent_name) {
+    let agent_config = match config.registry.resolve_config(&registry_name) {
         Some(cfg) => cfg,
         None => {
             // Agent not found - fall back silently
