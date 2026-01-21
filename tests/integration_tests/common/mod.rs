@@ -69,17 +69,17 @@ fn find_cargo_target_dir() -> PathBuf {
         return PathBuf::from(target_dir);
     }
 
-    // Then check the current directory's target subdirectory
-    let current_dir = env::current_dir().unwrap();
-    let mut target_dir = current_dir.join("target");
+    // Use CARGO_MANIFEST_DIR which is set at compile time and points to the
+    // package directory (tests/ in this case). This is more reliable than
+    // current_dir() which can be affected by test parallelism.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let manifest_path = PathBuf::from(manifest_dir);
 
-    // If we're in the tests directory, go up to the workspace root
-    if target_dir.join("Cargo.toml").exists() {
-        // We're at the workspace level, use target directly
-    } else if current_dir.ends_with("tests") {
-        // We're in the tests directory, go up to workspace root
-        target_dir = current_dir.parent().unwrap().join("target");
-    }
+    // Go up from tests/ to workspace root, then into target/
+    let workspace_root = manifest_path
+        .parent()
+        .expect("tests/ should have a parent directory");
+    let target_dir = workspace_root.join("target");
 
     // Use debug or release based on profile
     // During tests, cargo uses the debug profile by default

@@ -27,7 +27,6 @@
 //! - `opencode/anthropic/claude-sonnet-4` → `opencode-anthropic-claude-sonnet-4`
 
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
 /// Sanitize an agent name for use in file paths.
