@@ -1030,14 +1030,14 @@ fn format_rich_content(
                     result.push_str("| ");
                     result.push_str(&t.columns.join(" | "));
                     result.push_str(" |\n");
-                    result.push_str("|");
+                    result.push('|');
                     for _ in &t.columns {
                         result.push_str(" --- |");
                     }
                     result.push('\n');
                 } else if let Some(first_row) = t.rows.first() {
                     // Infer column count from first row
-                    result.push_str("|");
+                    result.push('|');
                     for _ in &first_row.cells {
                         result.push_str(" --- |");
                     }

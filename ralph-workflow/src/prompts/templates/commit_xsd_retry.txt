@@ -1,77 +1,53 @@
 {# ============================================================================ #}
 {# Template: commit_xsd_retry.txt                                              #}
-{# Version: 1.0                                                                #}
+{# Version: 2.0                                                                #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
 {#   Retry prompt for commit message generation when XSD validation fails.     #}
-{#   Provides clear error feedback to help the AI agent fix the issue.         #}
+{#   Includes the EXACT XSD schema the output must conform to.                 #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
 {#   {{DIFF}} - The git diff to analyze (required)                             #}
-{#   {{XSD_ERROR}} - The XSD validation error message (required)                #}
+{#   {{XSD_ERROR}} - The XSD validation error message (required)               #}
+{#   {{XSD_SCHEMA}} - The complete XSD schema for commit message validation    #}
 {#                                                                             #}
-{# USAGE:                                                                      #}
-{#   Used when in-session retry is needed after XSD validation failure.        #}
-{#   The agent is told exactly what went wrong and how to fix it.             #}
+{# OUTPUT FORMAT:                                                               #}
+{#   Valid <ralph-commit> XML conforming to the XSD schema                     #}
 {# ============================================================================ #}
 {{> shared/_safety_no_execute}}
 
 The commit message you provided failed XSD validation. Please fix it and try again.
 
-## XSD Validation Error
+═══════════════════════════════════════════════════════════════════════════════
+XSD VALIDATION ERROR
+═══════════════════════════════════════════════════════════════════════════════
 
 {{XSD_ERROR}}
 
-## What This Means
+═══════════════════════════════════════════════════════════════════════════════
+XSD SCHEMA (your output MUST conform to this schema)
+═══════════════════════════════════════════════════════════════════════════════
 
-Your previous output does not conform to the required XML format for commit messages.
-The error above explains exactly what went wrong and how to fix it.
+{{XSD_SCHEMA}}
 
-## Required Format
+═══════════════════════════════════════════════════════════════════════════════
+DIFF (for reference)
+═══════════════════════════════════════════════════════════════════════════════
 
-You MUST output your commit message using ONLY these XML tags:
-
-<ralph-commit>
-<ralph-subject>type(scope): description</ralph-subject>
-<ralph-body>Optional body text here.
-Can span multiple lines.</ralph-body>
-</ralph-commit>
-
-### Key Rules:
-
-1. **Start immediately with `<ralph-commit>`** - NO text before it
-2. **Use ONLY valid tags**: `<ralph-subject>`, `<ralph-body>`, `<ralph-body-summary>`, `<ralph-body-details>`, `<ralph-body-footer>`
-3. **Subject is required** and must follow conventional commit format (type: description or type(scope): description)
-4. **Body is optional** - omit it entirely if not needed
-5. **End with `</ralph-commit>`** - NO text after it
-
-## Valid Commit Types
-
-- **feat**: A new feature
-- **fix**: A bug fix
-- **docs**: Documentation changes
-- **style**: Code style changes (no logic change)
-- **refactor**: Code restructuring without changing behavior
-- **perf**: Performance improvement
-- **test**: Adding or updating tests
-- **build**: Build system or dependency changes
-- **ci**: CI/CD configuration changes
-- **chore**: Other changes
-
-## Your Task
-
-1. **Fix the specific error** mentioned in the XSD validation error above
-2. **Analyze the diff** below to generate a proper commit message
-3. **Output ONLY the XML** - no explanation, no preamble
-
----
-
-DIFF:
 {{DIFF}}
 
----
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL RULES
+═══════════════════════════════════════════════════════════════════════════════
 
-## Output ONLY the corrected XML:
+1. Start IMMEDIATELY with <ralph-commit> - NO text before it
+2. End with </ralph-commit> - NO text after it
+3. <ralph-subject> is REQUIRED and must follow conventional commit format
+   (type: description or type(scope): description)
+4. Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore
+5. <ralph-body> is optional - omit entirely if not needed
+6. NO markdown code fences around the XML
+7. NO explanation or preamble - output ONLY the XML
 
-(Start with <ralph-commit> and end with </ralph-commit>)
+Fix the validation error and output ONLY the corrected XML.

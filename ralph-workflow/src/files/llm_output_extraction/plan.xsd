@@ -78,11 +78,13 @@
     </xs:sequence>
   </xs:complexType>
   
-  <!-- List item (can contain nested content including lists) -->
+  <!-- List item (can contain nested content including code blocks, paragraphs, and lists) -->
   <xs:complexType name="ListItemType" mixed="true">
     <xs:choice minOccurs="0" maxOccurs="unbounded">
       <xs:element name="emphasis" type="xs:string"/>
       <xs:element name="code" type="xs:string"/>
+      <xs:element name="code-block" type="CodeBlockType"/>
+      <xs:element name="paragraph" type="ParagraphType"/>
       <xs:element name="list" type="ListType"/>
     </xs:choice>
   </xs:complexType>

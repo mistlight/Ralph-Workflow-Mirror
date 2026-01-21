@@ -38,14 +38,10 @@ use std::path::Path;
 ///
 /// This struct ensures session continuation is only attempted with the same agent.
 /// When the agent changes (due to fallback), the session must be reset.
-/// Tracks session state for agent continuation.
 ///
-/// This struct ensures session continuation is only attempted with the same agent.
-/// When the agent changes (due to fallback), the session must be reset.
-///
-/// NOTE: This is infrastructure for potential future use. Currently, SessionInfo
-/// is passed directly without using SessionState for tracking.
-#[allow(dead_code)]
+/// NOTE: This is currently only used in tests. When this functionality is needed
+/// in production code, remove the `#[cfg(test)]` attribute.
+#[cfg(test)]
 #[derive(Debug, Clone, Default)]
 pub struct SessionState {
     /// The session ID from the agent's output
@@ -54,7 +50,7 @@ pub struct SessionState {
     agent_name: Option<String>,
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 impl SessionState {
     /// Create a new empty session state.
     pub fn new() -> Self {

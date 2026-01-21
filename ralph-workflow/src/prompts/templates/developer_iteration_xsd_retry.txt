@@ -1,20 +1,19 @@
 {# ============================================================================ #}
 {# Template: developer_iteration_xsd_retry.txt                                   #}
-{# Version: 1.0                                                                 #}
+{# Version: 2.0                                                                 #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
 {#   Retry prompt when XML validation fails during development iteration.      #}
-{#   Provides specific XSD error feedback to guide the AI agent.               #}
+{#   Includes the EXACT XSD schema the output must conform to.                 #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
-{#   {{PROMPT}} - Original user request from PROMPT.md (required)              #}
-{#   {{PLAN}} - Implementation plan from .agent/PLAN.md (required)             #}
 {#   {{XSD_ERROR}} - XSD validation error message (required)                   #}
 {#   {{LAST_OUTPUT}} - The invalid XML output (required)                       #}
+{#   {{XSD_SCHEMA}} - The complete XSD schema for development result validation #}
 {#                                                                             #}
 {# OUTPUT FORMAT:                                                               #}
-{#   Same as developer_iteration_xml.txt - valid <ralph-development-result> XML #}
+{#   Valid <ralph-development-result> XML conforming to the XSD schema         #}
 {# ============================================================================ #}
 
 Your previous development status output failed XSD validation.
@@ -32,32 +31,22 @@ YOUR LAST OUTPUT (INVALID)
 {{LAST_OUTPUT}}
 
 ═══════════════════════════════════════════════════════════════════════════════
-RESEND WITH PROPER XML FORMAT
+XSD SCHEMA (your output MUST conform to this schema)
 ═══════════════════════════════════════════════════════════════════════════════
 
-You should have already completed your work. Now you need to report your completion
-status using the correct XML format.
+{{XSD_SCHEMA}}
 
-<ralph-development-result>
-<ralph-status>completed</ralph-status>
-<ralph-summary>Brief summary of what was done.</ralph-summary>
-<ralph-files-changed>Optional list of files modified</ralph-files-changed>
-<ralph-next-steps>Optional next steps</ralph-next-steps>
-</ralph-development-result>
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL RULES
+═══════════════════════════════════════════════════════════════════════════════
 
-Valid status values:
-- `completed` - You completed all the work you intended to do
-- `partial` - You made progress but more work remains
-- `failed` - You could not complete the work
+1. Start IMMEDIATELY with <ralph-development-result> - NO text before it
+2. End with </ralph-development-result> - NO text after it
+3. <ralph-status> is REQUIRED and must be one of: completed, partial, failed
+4. <ralph-summary> is REQUIRED and must be non-empty
+5. <ralph-files-changed> is optional
+6. <ralph-next-steps> is optional
+7. NO markdown code fences around the XML
+8. NO commentary outside the XML
 
-REQUIREMENTS:
-- Start IMMEDIATELY with <ralph-development-result> (no text before)
-- End with </ralph-development-result> (no text after)
-- <ralph-status> is REQUIRED and must be one of the valid values
-- <ralph-summary> is REQUIRED
-- <ralph-files-changed> is optional
-- <ralph-next-steps> is optional
-- NO markdown code fences
-- NO commentary outside the XML
-
-Resend your completion status now with the correct XML format.
+Fix the validation error and resend your completion status with the correct XML format.

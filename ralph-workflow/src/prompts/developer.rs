@@ -9,6 +9,10 @@ use super::template_engine::Template;
 #[cfg(any(test, feature = "test-utils"))]
 use super::types::ContextLevel;
 
+/// The XSD schema for development result validation - included at compile time
+const DEVELOPMENT_RESULT_XSD_SCHEMA: &str =
+    include_str!("../files/llm_output_extraction/development_result.xsd");
+
 /// Generate developer iteration prompt.
 ///
 /// Note: We do NOT tell the agent how many total iterations exist.
@@ -197,19 +201,23 @@ pub fn prompt_planning_xml_with_context(
     })
 }
 
+/// The XSD schema for plan validation - included at compile time
+const PLAN_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/plan.xsd");
+
 /// Generate XSD validation retry prompt for planning with error feedback.
 ///
 /// This prompt is used when an AI agent produces plan XML that fails XSD validation.
+/// The prompt includes the error, the last output (for context), and the full XSD schema.
 ///
 /// # Arguments
 ///
 /// * `context` - Template context containing the template registry
-/// * `prompt_content` - Original user requirements
+/// * `_prompt_content` - Original user requirements (unused - kept for API compatibility)
 /// * `xsd_error` - The XSD validation error message to include in the prompt
 /// * `last_output` - The invalid XML output that failed validation
 pub fn prompt_planning_xsd_retry_with_context(
     context: &TemplateContext,
-    prompt_content: &str,
+    _prompt_content: &str,
     xsd_error: &str,
     last_output: &str,
 ) -> String {
@@ -218,19 +226,17 @@ pub fn prompt_planning_xsd_retry_with_context(
         .get_template("planning_xsd_retry")
         .unwrap_or_else(|_| include_str!("templates/planning_xsd_retry.txt").to_string());
     let variables = HashMap::from([
-        ("PROMPT", prompt_content.to_string()),
         ("XSD_ERROR", xsd_error.to_string()),
         ("LAST_OUTPUT", last_output.to_string()),
+        ("XSD_SCHEMA", PLAN_XSD_SCHEMA.to_string()),
     ]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
             format!(
                 "Your previous plan failed XSD validation.\n\nError: {}\n\n\
-                 Last output:\n{}\n\n\
-                 Please resend your plan in valid XML format:\n\
-                 <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n",
-                xsd_error, last_output
+                 Please resend your plan in valid XML format conforming to the XSD schema.\n",
+                xsd_error
             )
         })
 }
@@ -298,6 +304,7 @@ pub fn prompt_developer_iteration_xsd_retry_with_context(
         ("PLAN", plan_content.to_string()),
         ("XSD_ERROR", xsd_error.to_string()),
         ("LAST_OUTPUT", last_output.to_string()),
+        ("XSD_SCHEMA", DEVELOPMENT_RESULT_XSD_SCHEMA.to_string()),
     ]);
     Template::new(&template_content)
         .render(&variables)

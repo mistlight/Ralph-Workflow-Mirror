@@ -1,11 +1,11 @@
 {# ============================================================================ #}
 {# Template: review_xsd_retry.txt                                               #}
-{# Version: 1.0                                                                 #}
+{# Version: 2.0                                                                 #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
 {#   Retry prompt when XML validation fails during review phase.                #}
-{#   Provides specific XSD error feedback to guide the AI agent.                #}
+{#   Includes the EXACT XSD schema the output must conform to.                  #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
 {#   {{PROMPT}} - Original user requirements (required)                         #}
@@ -13,9 +13,10 @@
 {#   {{CHANGES}} - Description of changes made (required)                       #}
 {#   {{XSD_ERROR}} - XSD validation error message (required)                    #}
 {#   {{LAST_OUTPUT}} - The invalid XML output (required)                        #}
+{#   {{XSD_SCHEMA}} - The complete XSD schema for issues validation (required)  #}
 {#                                                                             #}
 {# OUTPUT FORMAT:                                                               #}
-{#   Same as review_xml.txt - valid <ralph-issues> XML                         #}
+{#   Valid <ralph-issues> XML conforming to the XSD schema                     #}
 {# ============================================================================ #}
 
 Your previous review output failed XSD validation.
@@ -33,34 +34,28 @@ YOUR LAST OUTPUT (INVALID)
 {{LAST_OUTPUT}}
 
 ═══════════════════════════════════════════════════════════════════════════════
-RESEND WITH PROPER XML FORMAT
+XSD SCHEMA (your output MUST conform to this schema)
 ═══════════════════════════════════════════════════════════════════════════════
 
-CONTEXT:
-- Original Requirements: {{PROMPT}}
-- Plan: {{PLAN}}
-- Changes: {{CHANGES}}
+{{XSD_SCHEMA}}
 
-You MUST resend your review using the correct XML format.
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT (for reference)
+═══════════════════════════════════════════════════════════════════════════════
 
-If issues are found:
-<ralph-issues>
-<ralph-issue>[Severity] file:line - Description. Fix suggestion.</ralph-issue>
-<ralph-issue>[Severity] file:line - Description. Fix suggestion.</ralph-issue>
-...
-</ralph-issues>
+Original Requirements: {{PROMPT}}
+Plan: {{PLAN}}
+Changes: {{CHANGES}}
 
-If no issues found:
-<ralph-issues>
-<ralph-no-issues-found>No issues found.</ralph-no-issues-found>
-</ralph-issues>
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL RULES
+═══════════════════════════════════════════════════════════════════════════════
 
-REQUIREMENTS:
-- Start IMMEDIATELY with <ralph-issues> (no text before)
-- End with </ralph-issues> (no text after)
-- Use either <ralph-issue> elements OR <ralph-no-issues-found>, not both
-- Each <ralph-issue> should contain severity, location, description, fix
-- NO markdown code fences
-- NO analysis outside the XML
+1. Start IMMEDIATELY with <ralph-issues> - NO text before it
+2. End with </ralph-issues> - NO text after it
+3. Use either <ralph-issue> elements OR <ralph-no-issues-found>, NOT both
+4. Each <ralph-issue> should contain severity, location, description, fix suggestion
+5. NO markdown code fences around the XML
+6. NO analysis or commentary outside the XML
 
-Resend your review now with the correct XML format.
+Fix the validation error and resend your review with the correct XML format.

@@ -11,6 +11,10 @@ use std::collections::HashMap;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::files::result_extraction::extract_file_paths_from_issues;
 
+/// The XSD schema for commit message validation - included at compile time
+const COMMIT_MESSAGE_XSD_SCHEMA: &str =
+    include_str!("../files/llm_output_extraction/commit_message.xsd");
+
 /// Generate fix prompt (applies to either role).
 ///
 /// This prompt is agent-agnostic and works with any AI coding assistant.
@@ -302,6 +306,7 @@ pub fn prompt_xsd_retry_with_context(
     let variables = std::collections::HashMap::from([
         ("DIFF", diff.to_string()),
         ("XSD_ERROR", xsd_error.to_string()),
+        ("XSD_SCHEMA", COMMIT_MESSAGE_XSD_SCHEMA.to_string()),
     ]);
     Template::new(&template_content)
         .render(&variables)

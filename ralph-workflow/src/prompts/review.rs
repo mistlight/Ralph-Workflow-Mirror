@@ -7,6 +7,12 @@ use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use std::collections::HashMap;
 
+/// The XSD schema for issues validation - included at compile time
+const ISSUES_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/issues.xsd");
+
+/// The XSD schema for fix result validation - included at compile time
+const FIX_RESULT_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/fix_result.xsd");
+
 /// Generate XML-based review prompt using template registry.
 ///
 /// This version uses XML output format with XSD validation for reliable parsing.
@@ -73,6 +79,7 @@ pub fn prompt_review_xsd_retry_with_context(
         ("CHANGES", changes_content.to_string()),
         ("XSD_ERROR", xsd_error.to_string()),
         ("LAST_OUTPUT", last_output.to_string()),
+        ("XSD_SCHEMA", ISSUES_XSD_SCHEMA.to_string()),
     ]);
     Template::new(&template_content)
         .render(&variables)
@@ -184,6 +191,7 @@ pub fn prompt_fix_xsd_retry_with_context(
         ("FILES_TO_MODIFY", files_section),
         ("XSD_ERROR", xsd_error.to_string()),
         ("LAST_OUTPUT", last_output.to_string()),
+        ("XSD_SCHEMA", FIX_RESULT_XSD_SCHEMA.to_string()),
     ]);
     Template::new(&template_content)
         .render(&variables)
