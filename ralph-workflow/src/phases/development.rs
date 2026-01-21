@@ -233,13 +233,14 @@ pub fn run_development_phase(
 }
 
 /// Result of a single development iteration.
-struct DevIterationResult {
-    /// Whether an error occurred during the iteration.
-    had_error: bool,
+#[derive(Debug)]
+pub struct DevIterationResult {
+    /// Whether an error occurred during iteration.
+    pub had_error: bool,
     /// Optional summary of what was done.
-    summary: Option<String>,
+    pub summary: Option<String>,
     /// Optional list of files changed.
-    files_changed: Option<Vec<String>>,
+    pub files_changed: Option<Vec<String>>,
 }
 
 /// Run a single development iteration with XML extraction and XSD validation retry loop.
@@ -256,7 +257,7 @@ struct DevIterationResult {
 /// The development iteration produces side effects (file changes) as its primary output.
 /// The XML status is secondary - we use it for logging/tracking but don't fail the
 /// entire iteration if XML is missing or invalid.
-fn run_development_iteration_with_xml_retry(
+pub fn run_development_iteration_with_xml_retry(
     ctx: &mut PhaseContext<'_>,
     iteration: u32,
     _developer_context: ContextLevel,
@@ -541,7 +542,7 @@ fn run_development_iteration_with_xml_retry(
 ///
 /// The orchestrator ALWAYS extracts and writes PLAN.md from agent XML output.
 /// Uses XSD validation with retry loop to ensure valid XML format.
-fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
+pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
     let start_time = Instant::now();
     // Save checkpoint at start of planning phase (if enabled)
     if ctx.config.features.checkpoint_enabled {

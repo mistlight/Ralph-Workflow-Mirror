@@ -429,9 +429,10 @@ fn handle_skipped_cycle(
 }
 
 /// Result of running a review pass.
-struct ReviewPassResult {
+#[derive(Debug)]
+pub struct ReviewPassResult {
     /// Whether the review found no issues and should exit early.
-    early_exit: bool,
+    pub early_exit: bool,
 }
 
 /// Result of parsing review output.
@@ -599,7 +600,7 @@ fn log_extraction_diagnostics(logger: &Logger, log_dir: &str) {
 /// This function implements a nested loop structure similar to fix:
 /// - **Outer loop (continuation)**: Not used for review (single pass)
 /// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 100)
-fn run_review_pass(
+pub fn run_review_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
     review_label: &str,
@@ -1068,7 +1069,7 @@ fn format_xsd_error_for_fix(error: &XsdValidationError) -> String {
 /// This function implements a nested loop structure similar to development:
 /// - **Outer loop (continuation)**: Continue while status != "all_issues_addressed" (max 100)
 /// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 100)
-fn run_fix_pass(
+pub fn run_fix_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
     _reviewer_context: ContextLevel,

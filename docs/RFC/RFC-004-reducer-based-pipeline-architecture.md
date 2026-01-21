@@ -17,6 +17,8 @@ This RFC proposes refactoring Ralph's core systems from procedural control flow 
 - **Rebase handling** (pre/post rebase, conflict resolution)
 - **Agent fallback chain** (primary → fallback → retry logic)
 - **Commit generation** (message generation with retries)
+- **Developer Retry Logic** (when planner failed retry, then if planning fail then agent fallback, dev agent retry logic and fallback, dev agent incomplete and continue logic, etc.)
+
 
 The core change replaces scattered state mutations with a pure `reduce(state, event) -> state` function, making all state transitions explicit, testing trivial, and checkpoint/resume automatic.
 
