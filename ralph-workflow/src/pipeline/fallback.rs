@@ -1,6 +1,8 @@
 //! Fallback logic for agent execution with retries.
 
-use crate::agents::{is_glm_like_agent, AgentErrorKind, JsonParserType, RetryTimerProvider};
+use crate::agents::{
+    is_glm_like_agent, is_opencode_agent, AgentErrorKind, JsonParserType, RetryTimerProvider,
+};
 use crate::common::{format_argv_for_log, split_command, truncate_text};
 use crate::logger::Logger;
 use std::io;
@@ -260,7 +262,11 @@ pub fn try_agent_with_retries(
         .as_ref()
         .map(|m| format!(" [{m}]"))
         .unwrap_or_default();
-    let is_glm_agent = is_glm_like_agent(config.agent_name);
+    // Check if this is a GLM-like agent that's NOT using OpenCode.
+    // OpenCode handles GLM models differently (via --auto-approve) and doesn't
+    // have the same compatibility issues as CCS/Claude-based GLM.
+    let is_glm_agent =
+        is_glm_like_agent(config.agent_name) && !is_opencode_agent(config.agent_name);
 
     // GLM-specific diagnostic output (only on first try to avoid spam)
     if is_glm_agent {
