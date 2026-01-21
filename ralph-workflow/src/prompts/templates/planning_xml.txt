@@ -40,94 +40,99 @@ PHASE 1: UNDERSTANDING
 USER REQUIREMENTS:
 {{PROMPT}}
 
-Understand:
-- The Goal: What is the desired end state?
-- Acceptance Checks: What specific conditions must be satisfied?
-- Constraints: Any requirements, limitations, or quality standards mentioned?
+Before you begin work, think carefully about what the code you'll be editing is
+supposed to do based on filenames, directory structure, and the requirements above.
 
-If requirements are ambiguous, note them for clarification in the plan.
+Understand thoroughly:
+- **The Goal**: What is the desired end state? What problem are we solving?
+- **Acceptance Criteria**: What specific conditions must be satisfied for success?
+- **Constraints**: Any requirements, limitations, quality standards, or boundaries?
+- **Scope**: What is in scope vs out of scope? Don't expand beyond what's asked.
+
+If requirements are ambiguous, note them explicitly in the plan. Do NOT guess or
+make assumptions - identify what needs clarification.
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 2: EXPLORATION
 ═══════════════════════════════════════════════════════════════════════════════
-Explore the codebase using read-only tools to understand:
-- Current architecture and patterns used
-- Relevant existing code that will need changes
-- Dependencies and potential impacts
-- Similar implementations that can serve as reference
-- Test patterns and coverage expectations
 
-Be thorough. Quality exploration leads to better plans.
+You should use the available search tools extensively to understand the codebase.
+Use them both in parallel and sequentially as needed. Be thorough - quality
+exploration leads to better plans.
+
+Explore to understand:
+- **Current architecture**: How is the codebase organized? What patterns are used?
+- **Relevant existing code**: What files will need changes? What do they do?
+- **Dependencies and impacts**: What other code depends on what you'll change?
+- **Similar implementations**: Are there existing patterns you can follow as reference?
+- **Test patterns**: How are tests structured? What coverage is expected?
+- **Conventions**: What naming conventions, libraries, and frameworks are used?
+
+IMPORTANT: Never assume a library or framework is available. Check package.json,
+Cargo.toml, or equivalent to verify dependencies before planning to use them.
+
+When you find code conventions, mimic them. Look at neighboring files to understand:
+- Framework choices and library usage
+- Naming conventions and typing patterns
+- Error handling approaches
+- Documentation style
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 3: DESIGN
 ═══════════════════════════════════════════════════════════════════════════════
-Design your implementation approach:
-- What changes need to be made and in what order?
-- Are there multiple valid approaches? Evaluate trade-offs.
-- What are the potential risks or challenges?
-- How does this integrate with existing code patterns?
+
+Design your implementation approach with care:
+
+- **Changes needed**: What specific changes need to be made and in what order?
+  Be precise about which files, functions, or modules will be affected.
+
+- **Trade-off analysis**: Are there multiple valid approaches? Evaluate them:
+  - What are the pros and cons of each?
+  - Which approach is most idiomatic for this codebase?
+  - Which minimizes risk and complexity?
+
+- **Risk identification**: What are the potential risks or challenges?
+  - What could go wrong?
+  - What edge cases need handling?
+  - What are the security implications?
+
+- **Integration strategy**: How does this integrate with existing code?
+  - Fix problems at the root cause, not with surface-level patches
+  - Avoid unnecessary complexity
+  - Keep changes minimal and focused on the task
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 4: REVIEW
 ═══════════════════════════════════════════════════════════════════════════════
-Validate your plan against the requirements:
-- Does the approach satisfy ALL acceptance checks?
-- Are there edge cases or error scenarios to handle?
+
+Before finalizing, validate your plan against the requirements:
+
+- Does the approach satisfy ALL acceptance criteria from Phase 1?
+- Are there edge cases or error scenarios that need handling?
 - Is the plan specific enough to implement without ambiguity?
 - Have you identified the correct files to modify?
+- Are the steps in the right order (respecting dependencies)?
+- Is the scope appropriate - not too narrow, not too broad?
+
+If you discover gaps, return to earlier phases to address them.
 
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 5: WRITE PLAN
 ═══════════════════════════════════════════════════════════════════════════════
-OUTPUT your plan using ONLY these XML tags:
+
+Output your plan as XML. Start IMMEDIATELY with <ralph-plan> - no text before or after.
+No markdown fences around the XML.
 
 <ralph-plan>
-<ralph-summary>One paragraph explaining what will be done and why.</ralph-summary>
-<ralph-implementation-steps>Numbered, actionable steps. Be specific about:
+<ralph-summary>Explanation of what will be done and why.</ralph-summary>
+<ralph-implementation-steps>Numbered, actionable steps with details about:
 - What each step accomplishes
 - Which files are affected
 - Dependencies between steps</ralph-implementation-steps>
-<ralph-critical-files>List 3-5 key files that will be created or modified:
-- `path/to/file.rs` - Brief justification for why this file needs changes</ralph-critical-files>
-<ralph-risks-mitigations>Challenges identified during exploration and how to handle them.</ralph-risks-mitigations>
-<ralph-verification-strategy>How to verify acceptance checks are met:
-- Specific tests to run
-- Manual verification steps
-- Success criteria</ralph-verification-strategy>
+<ralph-critical-files>Key files that will be created or modified with justification.</ralph-critical-files>
+<ralph-risks-mitigations>Challenges identified and how to handle them.</ralph-risks-mitigations>
+<ralph-verification-strategy>How to verify the implementation is correct.</ralph-verification-strategy>
 </ralph-plan>
 
-### CRITICAL OUTPUT INSTRUCTIONS:
-
-1. Start your response IMMEDIATELY with <ralph-plan>
-2. NO text before <ralph-plan>
-3. NO text after </ralph-plan>
-4. All tags except <ralph-summary> and <ralph-implementation-steps> are optional
-5. Use actual newlines inside elements for readability
-6. NO markdown code fences around the XML
-7. NO analysis or thinking outside the XML
-
-### CORRECT OUTPUT EXAMPLE:
-
-<ralph-plan>
-<ralph-summary>Add XML-based communication with XSD validation for development and fixer agents,
-following the same pattern as the commit agent. This ensures consistent behavior and guarantees
-that agents write all expected data.</ralph-summary>
-
-<ralph-implementation-steps>1. Create XSD schema files for plan, issues, and fix_result formats
-2. Create XML extraction modules for each format with 4-strategy extraction
-3. Create XSD validation modules for each format
-4. Update development phase to use XML extraction and validation with retry loop
-5. Update review phase to use XML extraction and validation
-6. Create prompt templates with XML format specifications</ralph-implementation-steps>
-<ralph-critical-files>- `ralph-workflow/src/files/llm_output_extraction/plan.xsd` - XSD schema for plan validation
-- `ralph-workflow/src/phases/development.rs` - Main orchestration for planning phase
-- `ralph-workflow/src/prompts/templates/planning_xml.txt` - Prompt template with XML format</ralph-critical-files>
-<ralph-risks-mitigations>Risk: AI agents may struggle with XML format.
-Mitigation: Use proven retry-with-XSD-error pattern from commit agent (up to 10 retries).
-Provide clear examples in prompt templates.</ralph-risks-mitigations>
-<ralph-verification-strategy>- Run unit tests for all XSD validation modules
-- Run integration tests for planning phase with XSD validation
-- Test that invalid XML triggers retry with specific XSD error
-- Verify that valid XML is accepted and processed correctly</ralph-verification-strategy>
-</ralph-plan>
+Only <ralph-summary> and <ralph-implementation-steps> are required.
+Be as detailed as the task requires - complex tasks need comprehensive plans.

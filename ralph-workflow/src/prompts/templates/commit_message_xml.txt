@@ -138,86 +138,25 @@ Fixes #42
 
 ---
 
-## OUTPUT FORMAT - XML (CRITICAL)
+## OUTPUT FORMAT
 
-You MUST output your commit message using ONLY these XML tags:
+Output as XML. Start IMMEDIATELY with <ralph-commit> - no text before or after.
+No markdown fences. No analysis or thinking outside the XML.
 
 <ralph-commit>
 <ralph-subject>type(scope): description</ralph-subject>
-<ralph-body>Optional body text here.
-Can span multiple lines.
-Leave empty or omit if no body needed.</ralph-body>
+<ralph-body>Optional body explaining the change.
+Can span multiple lines.</ralph-body>
 </ralph-commit>
 
-### WHAT NOT TO OUTPUT (WRONG):
-
-WRONG - Do not include ANY text before the XML:
-```
-Here is the commit message:
-<ralph-commit>...</ralph-commit>
-```
-
-WRONG - Do not include analysis or thinking:
-```
-Looking at this diff, I can see that...
-<ralph-commit>...</ralph-commit>
-```
-
-WRONG - Do not use JSON format:
-```
-{"subject": "feat: add feature", "body": null}
-```
-
-WRONG - Do not use markdown code fences around the XML:
-```
-```xml
-<ralph-commit>...</ralph-commit>
-```
-```
-
-### CORRECT OUTPUT (RIGHT):
-
-Example 1 - Subject only (no body):
+For complex changes, use detailed body tags instead of <ralph-body>:
 <ralph-commit>
-<ralph-subject>fix: prevent null pointer in user lookup</ralph-subject>
+<ralph-subject>type(scope): description</ralph-subject>
+<ralph-body-summary>Brief summary of the change.</ralph-body-summary>
+<ralph-body-details>- Detailed bullet points
+- Of what changed</ralph-body-details>
+<ralph-body-footer>BREAKING CHANGE: or Fixes #123</ralph-body-footer>
 </ralph-commit>
 
-Example 2 - Subject with simple body:
-<ralph-commit>
-<ralph-subject>feat(auth): add OAuth2 login flow</ralph-subject>
-<ralph-body>Implement Google and GitHub OAuth providers.
-Add session management for OAuth tokens.
-Includes database migrations for storing OAuth credentials.</ralph-body>
-</ralph-commit>
-
-Example 3 - Detailed body (for complex changes):
-<ralph-commit>
-<ralph-subject>refactor(pipeline): restructure commit generation</ralph-subject>
-<ralph-body-summary>Improve reliability of commit message generation by adding
-per-attempt logging and enhanced error recovery.</ralph-body-summary>
-<ralph-body-details>- Add ExtractionAttemptTrace for detailed parsing diagnostics
-- Implement character position tracking for XML extraction
-- Add partial output detection for incomplete responses
-- Improve fallback messaging with actionable suggestions</ralph-body-details>
-<ralph-body-footer>Fixes #42</ralph-body-footer>
-</ralph-commit>
-
-Example 4 - Breaking change with detailed body:
-<ralph-commit>
-<ralph-subject>feat!: drop Python 3.7 support</ralph-subject>
-<ralph-body-summary>Minimum Python version is now 3.8.</ralph-body-summary>
-<ralph-body-details>- Remove compatibility shims for 3.7
-- Update CI to test only 3.8+
-- Add walrus operator usage
-- Use positional-only parameters</ralph-body-details>
-<ralph-body-footer>BREAKING CHANGE: Python 3.7 is no longer supported.</ralph-body-footer>
-</ralph-commit>
-
-### KEY POINTS:
-- Start your response IMMEDIATELY with <ralph-commit>
-- NO text before <ralph-commit>
-- NO text after </ralph-commit>
-- Actual newlines are fine inside the body (unlike JSON)
-- Body tags are optional - omit them entirely if no body is needed
-- Use EITHER <ralph-body> OR the detailed tags (<ralph-body-summary>, <ralph-body-details>, <ralph-body-footer>), not both
-- Prefer detailed tags for changes touching 3+ files or requiring explanation
+Only <ralph-subject> is required. Body tags are optional.
+Use EITHER <ralph-body> OR the detailed tags, not both.

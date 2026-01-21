@@ -40,74 +40,65 @@ CHANGES MADE:
 {{CHANGES}}
 
 ═══════════════════════════════════════════════════════════════════════════════
-REVIEW INSTRUCTIONS
+REVIEW TASK
 ═══════════════════════════════════════════════════════════════════════════════
 
-Review the implementation against the requirements and plan. Look for:
+Review the implementation against the requirements and plan. Your goal is to
+identify real issues that would cause problems - not to nitpick style preferences.
+
+Focus on finding:
+
 1. **Correctness issues**: Bugs, logic errors, incorrect behavior
-2. **Code quality issues**: Violates project style guide, poor practices
-3. **Missing functionality**: Requirements not implemented
-4. **Edge cases**: Unhandled error conditions, boundary cases
+   - Does the code do what it's supposed to do?
+   - Are there off-by-one errors, null pointer risks, or race conditions?
+
+2. **Missing functionality**: Requirements not implemented
+   - Does the implementation satisfy ALL acceptance criteria?
+   - Are there edge cases that aren't handled?
+
+3. **Code quality issues**: Violations of project patterns or poor practices
+   - Does the code follow the project's existing conventions?
+   - Are there obvious violations of DRY, separation of concerns, etc.?
+
+4. **Error handling gaps**: Unhandled error conditions
+   - What happens when things go wrong?
+   - Are errors properly propagated or swallowed?
+
 5. **Security issues**: Potential vulnerabilities
+   - Input validation, injection risks, exposed secrets?
+
 6. **Testing gaps**: Missing or inadequate tests
+   - Are the new code paths tested?
+   - Do tests cover edge cases and error conditions?
 
 For each issue found, provide:
 - File and line reference (e.g., `src/file.rs:42`)
 - Severity level (Critical, High, Medium, Low)
-- Description of the problem
-- Suggested fix
+- Clear description of the problem
+- Suggested fix or approach
+
+Do NOT report:
+- Style preferences that don't affect correctness
+- Issues in code that wasn't changed (unless the changes broke it)
+- Hypothetical issues without evidence
 
 ═══════════════════════════════════════════════════════════════════════════════
-OUTPUT FORMAT - XML (CRITICAL)
+OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════════════════════════
 
-You MUST output your review using ONLY these XML tags:
+Output as XML. Start IMMEDIATELY with <ralph-issues> - no text before or after.
+No markdown fences.
 
-If issues are found:
+If issues found:
 <ralph-issues>
-<ralph-issue>[Critical] src/file.rs:42 - Null pointer dereference possible here.
-The function doesn't check if `config` is None before accessing `config.value`.
-Fix: Add a check: `if let Some(config) = &config { ... }`</ralph-issue>
-<ralph-issue>[Medium] src/api.rs:123 - Error handling is incomplete.
-The function returns an empty string on error instead of propagating the error.
-Consider returning `Result<T, E>` to allow callers to handle errors properly.</ralph-issue>
+<ralph-issue>[Severity] file:line - Description of the issue.
+Suggested fix: How to address it.</ralph-issue>
+<ralph-issue>Additional issues as needed...</ralph-issue>
 </ralph-issues>
 
-If no issues are found:
+If no issues:
 <ralph-issues>
-<ralph-no-issues-found>No issues found. The implementation satisfies all requirements
-and follows the project's code quality standards.</ralph-no-issues-found>
+<ralph-no-issues-found>Explanation of why the implementation is correct.</ralph-no-issues-found>
 </ralph-issues>
 
-### CRITICAL OUTPUT INSTRUCTIONS:
-
-1. Start your response IMMEDIATELY with <ralph-issues>
-2. NO text before <ralph-issues>
-3. NO text after </ralph-issues>
-4. Use either <ralph-issue> elements OR <ralph-no-issues-found>, not both
-5. Include as many <ralph-issue> elements as needed
-6. NO markdown code fences around the XML
-7. Each issue should have: severity, file:line reference, description, fix suggestion
-
-### CORRECT OUTPUT EXAMPLE (ISSUES FOUND):
-
-<ralph-issues>
-<ralph-issue>[Critical] src/auth.rs:56 - SQL injection vulnerability.
-User input is directly interpolated into the query string.
-Fix: Use parameterized queries: `db.query("SELECT * FROM users WHERE id = ?", &user_id)`</ralph-issue>
-<ralph-issue>[High] src/auth.rs:78 - Password stored in plain text.
-Passwords should be hashed before storing.
-Fix: Use bcrypt or argon2: `let hash = bcrypt::hash(password, DEFAULT_COST)?`</ralph-issue>
-<ralph-issue>[Medium] tests/auth_test.rs:12 - Test doesn't verify error conditions.
-The test only checks success cases.
-Fix: Add tests for invalid passwords, non-existent users, database errors</ralph-issue>
-</ralph-issues>
-
-### CORRECT OUTPUT EXAMPLE (NO ISSUES):
-
-<ralph-issues>
-<ralph-no-issues-found>No issues found. The implementation correctly handles all requirements,
-includes proper error handling, and has comprehensive test coverage.</ralph-no-issues-found>
-</ralph-issues>
-
-Review the implementation now and output your findings in the required XML format.
+Document all issues found - be thorough in your analysis.
