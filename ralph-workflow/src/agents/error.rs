@@ -322,11 +322,14 @@ impl AgentErrorKind {
 
         // Token/context exhaustion (API-side)
         // Check this BEFORE GLM agent-specific fallback to ensure TokenExhausted is detected
+        // Note: "too long" is specifically for API token limits, not OS argument limits
+        // We exclude "argument list too long" which is an E2BIG OS error
         if stderr_lower.contains("token")
             || stderr_lower.contains("context length")
             || stderr_lower.contains("maximum context")
-            || stderr_lower.contains("too long")
             || stderr_lower.contains("input too large")
+            || (stderr_lower.contains("too long")
+                && !stderr_lower.contains("argument list too long"))
         {
             return Some(Self::TokenExhausted);
         }
@@ -392,7 +395,7 @@ impl AgentErrorKind {
         None
     }
 
-    /// Check for resource exhaustion errors (disk, memory, process).
+    /// Check for resource exhaustion errors (disk, memory, process, arg list).
     fn check_resource_errors(exit_code: i32, stderr_lower: &str) -> Option<Self> {
         // Disk space exhaustion
         if stderr_lower.contains("no space left")
@@ -402,6 +405,17 @@ impl AgentErrorKind {
             || stderr_lower.contains("insufficient storage")
         {
             return Some(Self::DiskFull);
+        }
+
+        // Argument list too long (E2BIG) - prompt exceeds OS limit
+        // Exit code 7 is the E2BIG errno value used by spawn_agent_process
+        // This should trigger fallback to another agent (the prompt size issue
+        // may be transient due to XSD retry context accumulation)
+        if exit_code == 7
+            || stderr_lower.contains("argument list too long")
+            || stderr_lower.contains("e2big")
+        {
+            return Some(Self::ToolExecutionFailed);
         }
 
         // Process killed (OOM or signals)
@@ -641,6 +655,19 @@ mod tests {
         );
         assert_eq!(
             classify(1, "insufficient permissions"),
+            AgentErrorKind::ToolExecutionFailed
+        );
+
+        // Argument list too long (E2BIG) - should trigger fallback
+        assert_eq!(
+            classify(7, "argument list too long"),
+            AgentErrorKind::ToolExecutionFailed
+        );
+        assert_eq!(
+            classify(
+                7,
+                "opencode: Argument list too long (prompt exceeds OS limit)"
+            ),
             AgentErrorKind::ToolExecutionFailed
         );
 

@@ -321,35 +321,41 @@ fn build_agent_command(
     Ok((argv, command))
 }
 
-/// Spawns the agent process with special error handling for `NotFound` and `PermissionDenied`.
-fn spawn_agent_process(
-    mut command: Command,
-    argv: &[String],
-) -> io::Result<Result<Child, CommandResult>> {
+/// Spawns the agent process, converting ALL spawn errors into `CommandResult`.
+///
+/// This ensures that any failure to spawn the agent process is handled by the
+/// fallback system instead of crashing the pipeline. Common errors:
+/// - `NotFound` (exit code 127): Command not found
+/// - `PermissionDenied` (exit code 126): Permission denied  
+/// - `ArgumentListTooLong` (exit code 7): Prompt too large for command-line argument
+/// - Other errors (exit code 1): Converted to CommandResult for fallback handling
+fn spawn_agent_process(mut command: Command, argv: &[String]) -> Result<Child, CommandResult> {
     match command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
     {
-        Ok(child) => Ok(Ok(child)),
-        Err(e)
-            if matches!(
-                e.kind(),
-                io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
-            ) =>
-        {
-            let exit_code = if e.kind() == io::ErrorKind::NotFound {
-                127
-            } else {
-                126
+        Ok(child) => Ok(child),
+        Err(e) => {
+            // Convert ALL spawn errors to CommandResult so fallback can handle them.
+            // This prevents any spawn failure from crashing the entire pipeline.
+            let (exit_code, detail) = match e.kind() {
+                io::ErrorKind::NotFound => (127, "command not found"),
+                io::ErrorKind::PermissionDenied => (126, "permission denied"),
+                io::ErrorKind::ArgumentListTooLong => {
+                    (7, "argument list too long (prompt exceeds OS limit)")
+                }
+                io::ErrorKind::InvalidInput => (22, "invalid input"),
+                io::ErrorKind::OutOfMemory => (12, "out of memory"),
+                _ => (1, "spawn failed"),
             };
-            Ok(Err(CommandResult {
+
+            Err(CommandResult {
                 exit_code,
-                stderr: format!("{}: {}", argv[0], e),
-            }))
+                stderr: format!("{}: {} - {}", argv[0], detail, e),
+            })
         }
-        Err(e) => Err(e),
     }
 }
 
@@ -574,7 +580,7 @@ fn run_with_subprocess(
         *runtime.colors,
     )?;
 
-    let mut child = match spawn_agent_process(command, &argv)? {
+    let mut child = match spawn_agent_process(command, &argv) {
         Ok(child) => child,
         Err(result) => return Ok(result),
     };
@@ -663,7 +669,7 @@ fn run_with_subprocess(
         *runtime.colors,
     )?;
 
-    let mut child = match spawn_agent_process(command, &argv)? {
+    let mut child = match spawn_agent_process(command, &argv) {
         Ok(child) => child,
         Err(result) => return Ok(result),
     };
