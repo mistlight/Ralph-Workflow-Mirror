@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Development Result XSD Schema
+  
+  Allows <code> elements within text content for escaping special characters
+  like <, >, and & (e.g., comparisons, generics, logical operators).
+-->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  
+  <!-- Text with optional inline code elements -->
+  <xs:complexType name="TextWithCodeType" mixed="true">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="code" type="xs:string"/>
+    </xs:choice>
+  </xs:complexType>
+  
   <xs:element name="ralph-development-result">
     <xs:complexType>
       <xs:sequence>
@@ -12,9 +26,9 @@
             </xs:restriction>
           </xs:simpleType>
         </xs:element>
-        <xs:element name="ralph-summary" type="xs:string"/>
-        <xs:element name="ralph-files-changed" type="xs:string" minOccurs="0"/>
-        <xs:element name="ralph-next-steps" type="xs:string" minOccurs="0"/>
+        <xs:element name="ralph-summary" type="TextWithCodeType"/>
+        <xs:element name="ralph-files-changed" type="TextWithCodeType" minOccurs="0"/>
+        <xs:element name="ralph-next-steps" type="TextWithCodeType" minOccurs="0"/>
       </xs:sequence>
     </xs:complexType>
   </xs:element>

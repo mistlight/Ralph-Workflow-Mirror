@@ -4,6 +4,7 @@
 //! AI output formats. AI agents may embed XML in unpredictable ways.
 
 use crate::files::llm_output_extraction::cleaning::unescape_json_strings_aggressive;
+use crate::files::llm_output_extraction::xml_helpers::sanitize_xml_content;
 
 /// Extract XML development result from AI output using multiple strategies.
 ///
@@ -161,7 +162,13 @@ fn extract_ralph_development_result_from_content(content: &str) -> Option<String
     }
 
     let xml_end = end + "</ralph-development-result>".len();
-    Some(content[start..xml_end].to_string())
+    let extracted = &content[start..xml_end];
+
+    // Step 1: Unescape JSON string escape sequences (e.g., \n -> newline)
+    let unescaped = unescape_json_strings_aggressive(extracted);
+
+    // Step 2: Sanitize XML content - escape unescaped <, >, & in text elements
+    Some(sanitize_xml_content(&unescaped))
 }
 
 #[cfg(test)]

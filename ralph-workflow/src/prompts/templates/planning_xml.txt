@@ -138,6 +138,10 @@ PHASE 5: WRITE STRUCTURED PLAN
 Output your plan as structured XML. Start IMMEDIATELY with <ralph-plan>.
 No markdown fences around the XML. No text before or after the XML.
 
+IMPORTANT: If you need to include <, >, or & characters (e.g., comparisons, generics,
+logical operators), wrap them in <code>...</code> or <code-block>...</code-block> elements.
+Example: Use <code>a < b</code> instead of writing "a < b" directly in text.
+
 ALL SECTIONS ARE REQUIRED:
 - ralph-summary (with context and at least 3 scope-items)
 - ralph-implementation-steps (with numbered steps)

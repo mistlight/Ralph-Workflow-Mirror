@@ -336,6 +336,7 @@ fn read_text_until_end(
                     expected: format!("closing </{}>", String::from_utf8_lossy(end_tag)),
                     found: "end of file".to_string(),
                     suggestion: "Check XML is well-formed".to_string(),
+                    example: None,
                 });
             }
             Ok(_) => {} // Skip other events
@@ -346,6 +347,7 @@ fn read_text_until_end(
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -378,6 +380,7 @@ fn skip_to_end(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> Result<(), XsdVali
                     expected: format!("closing </{}>", String::from_utf8_lossy(end_tag)),
                     found: "end of file".to_string(),
                     suggestion: "Check XML is well-formed".to_string(),
+                    example: None,
                 });
             }
             Ok(_) => {}
@@ -388,6 +391,7 @@ fn skip_to_end(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> Result<(), XsdVali
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -461,6 +465,7 @@ fn read_inner_xml(
                     expected: format!("closing </{}>", String::from_utf8_lossy(end_tag)),
                     found: "end of file".to_string(),
                     suggestion: "Check XML is well-formed".to_string(),
+                    example: None,
                 });
             }
             Ok(_) => {}
@@ -471,6 +476,7 @@ fn read_inner_xml(
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -626,6 +632,7 @@ fn parse_rich_content(content: &str) -> Result<RichContent, XsdValidationError> 
                                 found: level.to_string(),
                                 suggestion: "Use level=\"2\", level=\"3\", or level=\"4\""
                                     .to_string(),
+                                example: None,
                             });
                         }
                         elements.push(ContentElement::Heading(Heading { level, text }));
@@ -644,6 +651,7 @@ fn parse_rich_content(content: &str) -> Result<RichContent, XsdValidationError> 
                                     found: list_type_str.to_string(),
                                     suggestion: "Use type=\"ordered\" or type=\"unordered\""
                                         .to_string(),
+                                    example: None,
                                 });
                             }
                         };
@@ -669,6 +677,7 @@ fn parse_rich_content(content: &str) -> Result<RichContent, XsdValidationError> 
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -683,6 +692,7 @@ fn parse_rich_content(content: &str) -> Result<RichContent, XsdValidationError> 
             found: "empty content".to_string(),
             suggestion: "Add <paragraph>, <code-block>, <table>, <list>, or <heading> elements"
                 .to_string(),
+            example: None,
         });
     }
 
@@ -749,6 +759,7 @@ fn parse_list(reader: &mut Reader<&[u8]>, list_type: ListType) -> Result<List, X
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -762,6 +773,7 @@ fn parse_list(reader: &mut Reader<&[u8]>, list_type: ListType) -> Result<List, X
             expected: "at least one <item> element".to_string(),
             found: "empty list".to_string(),
             suggestion: "Add <item>...</item> to the list".to_string(),
+            example: None,
         });
     }
 
@@ -801,6 +813,7 @@ fn parse_table(reader: &mut Reader<&[u8]>) -> Result<Table, XsdValidationError> 
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -814,6 +827,7 @@ fn parse_table(reader: &mut Reader<&[u8]>) -> Result<Table, XsdValidationError> 
             expected: "at least one <row> element".to_string(),
             found: "no rows".to_string(),
             suggestion: "Add <row><cell>...</cell></row> to the table".to_string(),
+            example: None,
         });
     }
 
@@ -873,6 +887,7 @@ fn parse_row(reader: &mut Reader<&[u8]>) -> Result<Row, XsdValidationError> {
             expected: "at least one <cell> in each row".to_string(),
             found: "empty row".to_string(),
             suggestion: "Add <cell> elements to the row".to_string(),
+            example: None,
         });
     }
 
@@ -908,6 +923,7 @@ fn parse_summary(reader: &mut Reader<&[u8]>) -> Result<PlanSummary, XsdValidatio
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -920,6 +936,7 @@ fn parse_summary(reader: &mut Reader<&[u8]>) -> Result<PlanSummary, XsdValidatio
         expected: "<context> element".to_string(),
         found: "no <context> found".to_string(),
         suggestion: "Add <context>Description of what is being done</context>".to_string(),
+        example: None,
     })?;
 
     if context.is_empty() {
@@ -929,6 +946,7 @@ fn parse_summary(reader: &mut Reader<&[u8]>) -> Result<PlanSummary, XsdValidatio
             expected: "non-empty context".to_string(),
             found: "empty context".to_string(),
             suggestion: "Provide a description of what is being done".to_string(),
+            example: None,
         });
     }
 
@@ -941,6 +959,7 @@ fn parse_summary(reader: &mut Reader<&[u8]>) -> Result<PlanSummary, XsdValidatio
             suggestion:
                 "Add more <scope-item count=\"N\" category=\"X\">description</scope-item> elements"
                     .to_string(),
+            example: None,
         });
     }
 
@@ -999,6 +1018,7 @@ fn parse_steps(reader: &mut Reader<&[u8]>) -> Result<Vec<Step>, XsdValidationErr
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -1012,6 +1032,7 @@ fn parse_steps(reader: &mut Reader<&[u8]>) -> Result<Vec<Step>, XsdValidationErr
             expected: "at least one <step> element".to_string(),
             found: "no steps".to_string(),
             suggestion: "Add <step number=\"1\">...</step>".to_string(),
+            example: None,
         });
     }
 
@@ -1031,6 +1052,7 @@ fn parse_single_step(
             expected: "number attribute".to_string(),
             found: "no number attribute".to_string(),
             suggestion: "Add number=\"N\" to the step".to_string(),
+            example: None,
         })?
         .parse()
         .map_err(|_| XsdValidationError {
@@ -1039,6 +1061,7 @@ fn parse_single_step(
             expected: "positive integer".to_string(),
             found: attrs.get("number").cloned().unwrap_or_default(),
             suggestion: "Use a positive integer for step number".to_string(),
+            example: None,
         })?;
 
     let step_type = attrs
@@ -1102,6 +1125,7 @@ fn parse_single_step(
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -1114,6 +1138,7 @@ fn parse_single_step(
         expected: "<title> element".to_string(),
         found: "no <title> found".to_string(),
         suggestion: "Add <title>Step title</title>".to_string(),
+        example: None,
     })?;
 
     // Validate file-change steps have target-files
@@ -1125,6 +1150,7 @@ fn parse_single_step(
             found: "no target-files".to_string(),
             suggestion: "Add <target-files><file path=\"...\" action=\"modify\"/></target-files>"
                 .to_string(),
+            example: None,
         });
     }
 
@@ -1134,6 +1160,7 @@ fn parse_single_step(
         expected: "<content> element".to_string(),
         found: "no <content> found".to_string(),
         suggestion: "Add <content><paragraph>...</paragraph></content>".to_string(),
+        example: None,
     })?;
 
     Ok(Step {
@@ -1160,6 +1187,7 @@ fn parse_file_element(attrs: &HashMap<String, String>) -> Result<TargetFile, Xsd
             expected: "path attribute".to_string(),
             found: "no path attribute".to_string(),
             suggestion: "Add path=\"...\" to the file element".to_string(),
+            example: None,
         })?;
 
     let action_str = attrs
@@ -1171,6 +1199,7 @@ fn parse_file_element(attrs: &HashMap<String, String>) -> Result<TargetFile, Xsd
             expected: "action attribute".to_string(),
             found: "no action attribute".to_string(),
             suggestion: "Add action=\"create|modify|delete\" to the file element".to_string(),
+            example: None,
         })?;
 
     let action = FileAction::from_str(&action_str).ok_or_else(|| XsdValidationError {
@@ -1179,6 +1208,7 @@ fn parse_file_element(attrs: &HashMap<String, String>) -> Result<TargetFile, Xsd
         expected: "create, modify, or delete".to_string(),
         found: action_str,
         suggestion: "Use action=\"create\", action=\"modify\", or action=\"delete\"".to_string(),
+        example: None,
     })?;
 
     Ok(TargetFile { path, action })
@@ -1246,6 +1276,7 @@ fn parse_critical_files(reader: &mut Reader<&[u8]>) -> Result<CriticalFiles, Xsd
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -1259,6 +1290,7 @@ fn parse_critical_files(reader: &mut Reader<&[u8]>) -> Result<CriticalFiles, Xsd
             expected: "at least one <file> element".to_string(),
             found: "no files".to_string(),
             suggestion: "Add <file path=\"...\" action=\"modify\"/> to primary-files".to_string(),
+            example: None,
         });
     }
 
@@ -1286,6 +1318,7 @@ fn parse_primary_files(reader: &mut Reader<&[u8]>) -> Result<Vec<PrimaryFile>, X
                         expected: "path attribute".to_string(),
                         found: "no path attribute".to_string(),
                         suggestion: "Add path=\"...\" to the file element".to_string(),
+                        example: None,
                     })?;
 
                 let action_str =
@@ -1299,6 +1332,7 @@ fn parse_primary_files(reader: &mut Reader<&[u8]>) -> Result<Vec<PrimaryFile>, X
                             found: "no action attribute".to_string(),
                             suggestion: "Add action=\"create|modify|delete\" to the file element"
                                 .to_string(),
+                            example: None,
                         })?;
 
                 let action =
@@ -1310,6 +1344,7 @@ fn parse_primary_files(reader: &mut Reader<&[u8]>) -> Result<Vec<PrimaryFile>, X
                         suggestion:
                             "Use action=\"create\", action=\"modify\", or action=\"delete\""
                                 .to_string(),
+                        example: None,
                     })?;
 
                 files.push(PrimaryFile {
@@ -1349,6 +1384,7 @@ fn parse_reference_files(
                         expected: "path attribute".to_string(),
                         found: "no path attribute".to_string(),
                         suggestion: "Add path=\"...\" to the file element".to_string(),
+                        example: None,
                     })?;
 
                 let purpose = attrs
@@ -1360,6 +1396,7 @@ fn parse_reference_files(
                         expected: "purpose attribute".to_string(),
                         found: "no purpose attribute".to_string(),
                         suggestion: "Add purpose=\"...\" to the file element".to_string(),
+                        example: None,
                     })?;
 
                 files.push(ReferenceFile { path, purpose });
@@ -1400,6 +1437,7 @@ fn parse_risks_mitigations(
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -1415,6 +1453,7 @@ fn parse_risks_mitigations(
             suggestion:
                 "Add <risk-pair severity=\"medium\"><risk>...</risk><mitigation>...</mitigation></risk-pair>"
                     .to_string(),
+                    example: None,
         });
     }
 
@@ -1457,6 +1496,7 @@ fn parse_risk_pair(
         expected: "<risk> element".to_string(),
         found: "no <risk> found".to_string(),
         suggestion: "Add <risk>Risk description</risk>".to_string(),
+        example: None,
     })?;
 
     let mitigation = mitigation.ok_or_else(|| XsdValidationError {
@@ -1465,6 +1505,7 @@ fn parse_risk_pair(
         expected: "<mitigation> element".to_string(),
         found: "no <mitigation> found".to_string(),
         suggestion: "Add <mitigation>How to mitigate</mitigation>".to_string(),
+        example: None,
     })?;
 
     Ok(RiskPair {
@@ -1496,6 +1537,7 @@ fn parse_verification_strategy(
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -1511,6 +1553,7 @@ fn parse_verification_strategy(
             suggestion:
                 "Add <verification><method>...</method><expected-outcome>...</expected-outcome></verification>"
                     .to_string(),
+            example: None,
         });
     }
 
@@ -1552,6 +1595,7 @@ fn parse_single_verification(
         expected: "<method> element".to_string(),
         found: "no <method> found".to_string(),
         suggestion: "Add <method>How to verify</method>".to_string(),
+        example: None,
     })?;
 
     let expected_outcome = expected_outcome.ok_or_else(|| XsdValidationError {
@@ -1560,6 +1604,7 @@ fn parse_single_verification(
         expected: "<expected-outcome> element".to_string(),
         found: "no <expected-outcome> found".to_string(),
         suggestion: "Add <expected-outcome>What success looks like</expected-outcome>".to_string(),
+        example: None,
     })?;
 
     Ok(Verification {
@@ -1633,6 +1678,7 @@ pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidatio
                     expected: "valid XML".to_string(),
                     found: format!("parse error: {}", e),
                     suggestion: "Check XML syntax".to_string(),
+                    example: None,
                 });
             }
         }
@@ -1646,6 +1692,7 @@ pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidatio
             expected: "<ralph-plan> as root element".to_string(),
             found: "no <ralph-plan> found".to_string(),
             suggestion: "Wrap your plan in <ralph-plan> tags".to_string(),
+            example: None,
         });
     }
 
@@ -1657,6 +1704,7 @@ pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidatio
         suggestion:
             "Add <ralph-summary><context>...</context><scope-items>...</scope-items></ralph-summary>"
                 .to_string(),
+        example: None,
     })?;
 
     let steps = steps.ok_or_else(|| XsdValidationError {
@@ -1666,6 +1714,7 @@ pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidatio
         found: "no <ralph-implementation-steps> found".to_string(),
         suggestion: "Add <ralph-implementation-steps><step>...</step></ralph-implementation-steps>"
             .to_string(),
+        example: None,
     })?;
 
     let critical_files = critical_files.ok_or_else(|| XsdValidationError {
@@ -1676,6 +1725,7 @@ pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidatio
         suggestion:
             "Add <ralph-critical-files><primary-files>...</primary-files></ralph-critical-files>"
                 .to_string(),
+        example: None,
     })?;
 
     let risks_mitigations = risks_mitigations.ok_or_else(|| XsdValidationError {
@@ -1686,6 +1736,7 @@ pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidatio
         suggestion:
             "Add <ralph-risks-mitigations><risk-pair>...</risk-pair></ralph-risks-mitigations>"
                 .to_string(),
+        example: None,
     })?;
 
     let verification_strategy = verification_strategy.ok_or_else(|| XsdValidationError {
@@ -1694,6 +1745,7 @@ pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidatio
         expected: "<ralph-verification-strategy> element".to_string(),
         found: "no <ralph-verification-strategy> found".to_string(),
         suggestion: "Add <ralph-verification-strategy><verification>...</verification></ralph-verification-strategy>".to_string(),
+        example: None,
     })?;
 
     Ok(PlanElements {

@@ -28,6 +28,7 @@ mod xml_extraction_fix_result;
 mod xml_extraction_issues;
 mod xml_extraction_plan;
 mod xml_formatter;
+pub(crate) mod xml_helpers;
 pub mod xsd_validation;
 pub(crate) mod xsd_validation_development_result;
 pub(crate) mod xsd_validation_fix_result;

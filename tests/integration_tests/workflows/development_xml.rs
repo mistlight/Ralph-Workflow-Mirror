@@ -171,7 +171,11 @@ fn test_development_xml_missing_status_fails_validation() {
         );
 
         let error = validated.unwrap_err();
-        assert_eq!(error.element_path, "ralph-status");
+        assert!(
+            error.element_path.contains("ralph-status"),
+            "Error path should mention ralph-status, got: {}",
+            error.element_path
+        );
         assert!(error.expected.contains("required"));
     });
 }
@@ -194,7 +198,11 @@ fn test_development_xml_missing_summary_fails_validation() {
         );
 
         let error = validated.unwrap_err();
-        assert_eq!(error.element_path, "ralph-summary");
+        assert!(
+            error.element_path.contains("ralph-summary"),
+            "Error path should mention ralph-summary, got: {}",
+            error.element_path
+        );
     });
 }
 

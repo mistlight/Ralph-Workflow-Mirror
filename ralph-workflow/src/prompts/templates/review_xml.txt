@@ -89,6 +89,10 @@ OUTPUT FORMAT
 Output as XML. Start IMMEDIATELY with <ralph-issues> - no text before or after.
 No markdown fences.
 
+IMPORTANT: If you need to include <, >, or & characters (e.g., comparisons, generics,
+logical operators), wrap them in <code>...</code> tags.
+Example: Use <code>a < b</code> instead of writing "a < b" directly in text.
+
 If issues found:
 <ralph-issues>
 <ralph-issue>[Severity] file:line - Description of the issue.

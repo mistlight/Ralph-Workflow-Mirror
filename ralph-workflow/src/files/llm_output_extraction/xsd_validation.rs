@@ -3,11 +3,20 @@
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format.
 //!
-//! The validation is implemented as a lightweight custom validator that
-//! checks the XML structure against the defined schema without requiring
-//! heavy external dependencies.
+//! Uses quick_xml for robust XML parsing with proper whitespace handling.
 
 use crate::files::llm_output_extraction::commit::is_conventional_commit_subject;
+use crate::files::llm_output_extraction::xml_helpers::{
+    create_reader, duplicate_element_error, malformed_xml_error, missing_required_error,
+    read_text_until_end, skip_to_end, text_outside_tags_error, unexpected_element_error,
+};
+use quick_xml::events::Event;
+
+/// Example of a valid commit message XML for error messages.
+const EXAMPLE_COMMIT_XML: &str = r#"<ralph-commit>
+<ralph-subject>feat(api): add user authentication</ralph-subject>
+<ralph-body>Implements JWT-based authentication for the API.</ralph-body>
+</ralph-commit>"#;
 
 /// Validate XML content against the XSD schema.
 ///
@@ -48,227 +57,194 @@ pub(crate) fn validate_xml_against_xsd(
     xml_content: &str,
 ) -> Result<CommitMessageElements, XsdValidationError> {
     let content = xml_content.trim();
+    let mut reader = create_reader(content);
+    let mut buf = Vec::new();
 
-    // Check for XML declaration (optional, so we skip it if present)
-    let content = if content.starts_with("<?xml") {
-        if let Some(end) = content.find("?>") {
-            &content[end + 2..]
-        } else {
-            return Err(XsdValidationError {
-                error_type: XsdErrorType::MalformedXml,
-                element_path: "xml".to_string(),
-                expected: "valid XML declaration ending with ?>".to_string(),
-                found: "unclosed XML declaration".to_string(),
-                suggestion: "Ensure XML declaration is properly closed with ?>".to_string(),
-            });
-        }
-    } else {
-        content
-    };
-
-    let content = content.trim();
-
-    // Check for <ralph-commit> root element
-    if !content.starts_with("<ralph-commit>") {
-        return Err(XsdValidationError {
-            error_type: XsdErrorType::MissingRequiredElement,
-            element_path: "ralph-commit".to_string(),
-            expected: "<ralph-commit> as root element".to_string(),
-            found: if content.is_empty() {
-                "empty content".to_string()
-            } else if content.len() < 50 {
-                content.to_string()
-            } else {
-                format!("{}...", &content[..50])
-            },
-            suggestion: "Wrap your commit message in <ralph-commit> tags".to_string(),
-        });
-    }
-
-    if !content.ends_with("</ralph-commit>") {
-        return Err(XsdValidationError {
-            error_type: XsdErrorType::MissingRequiredElement,
-            element_path: "ralph-commit".to_string(),
-            expected: "closing </ralph-commit> tag".to_string(),
-            found: "missing closing tag".to_string(),
-            suggestion: "Add </ralph-commit> at the end of your commit message".to_string(),
-        });
-    }
-
-    // Extract content between root tags
-    let root_start = "<ralph-commit>".len();
-    let root_end = content.len() - "</ralph-commit>".len();
-    let commit_content = &content[root_start..root_end];
-
-    // Parse required and optional elements
-    let mut subject = None;
-    let mut body = None;
-    let mut body_summary = None;
-    let mut body_details = None;
-    let mut body_footer = None;
-
-    // Parse elements in order
-    let mut remaining = commit_content.trim();
-
-    while !remaining.is_empty() {
-        // Try to parse each element type
-        if let Some(tag_content) = extract_tag_content(remaining, "ralph-subject") {
-            if subject.is_some() {
+    // Find the root element
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) if e.name().as_ref() == b"ralph-commit" => break,
+            Ok(Event::Start(e)) => {
+                let name_bytes = e.name();
+                let tag_name = String::from_utf8_lossy(name_bytes.as_ref());
                 return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-subject".to_string(),
-                    expected: "only one <ralph-subject> element".to_string(),
-                    found: "duplicate <ralph-subject> element".to_string(),
-                    suggestion: "Include only one <ralph-subject> element in your commit message"
+                    error_type: XsdErrorType::MissingRequiredElement,
+                    element_path: "ralph-commit".to_string(),
+                    expected: "<ralph-commit> as root element".to_string(),
+                    found: format!("<{}> (wrong root element)", tag_name),
+                    suggestion: "Use <ralph-commit> as the root element.".to_string(),
+                    example: Some(EXAMPLE_COMMIT_XML.into()),
+                });
+            }
+            Ok(Event::Text(_)) => {
+                // Text before root element - continue to find root or reach EOF
+                // EOF will give a more informative "missing root element" error
+            }
+            Ok(Event::Eof) => {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::MissingRequiredElement,
+                    element_path: "ralph-commit".to_string(),
+                    expected: "<ralph-commit> as root element".to_string(),
+                    found: if content.is_empty() {
+                        "empty content".to_string()
+                    } else if content.len() <= 60 {
+                        content.to_string()
+                    } else {
+                        format!("{}...", &content[..60])
+                    },
+                    suggestion:
+                        "Wrap your commit message in <ralph-commit>...</ralph-commit> tags."
+                            .to_string(),
+                    example: Some(EXAMPLE_COMMIT_XML.into()),
+                });
+            }
+            Ok(_) => {} // Skip XML declaration, comments, etc.
+            Err(e) => return Err(malformed_xml_error(e)),
+        }
+        buf.clear();
+    }
+
+    // Parse child elements
+    let mut subject: Option<String> = None;
+    let mut body: Option<String> = None;
+    let mut body_summary: Option<String> = None;
+    let mut body_details: Option<String> = None;
+    let mut body_footer: Option<String> = None;
+
+    const VALID_TAGS: [&str; 5] = [
+        "ralph-subject",
+        "ralph-body",
+        "ralph-body-summary",
+        "ralph-body-details",
+        "ralph-body-footer",
+    ];
+
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => {
+                match e.name().as_ref() {
+                    b"ralph-subject" => {
+                        if subject.is_some() {
+                            return Err(duplicate_element_error("ralph-subject", "ralph-commit"));
+                        }
+                        subject = Some(read_text_until_end(&mut reader, b"ralph-subject")?);
+                    }
+                    b"ralph-body" => {
+                        // Check for mixed body types
+                        if body_summary.is_some() || body_details.is_some() || body_footer.is_some()
+                        {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-body".to_string(),
+                                expected:
+                                    "either <ralph-body> OR detailed tags, not both".to_string(),
+                                found: "mixed simple and detailed body elements".to_string(),
+                                suggestion: "Use <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format.".to_string(),
+                                example: Some(EXAMPLE_COMMIT_XML.into()),
+                            });
+                        }
+                        if body.is_some() {
+                            return Err(duplicate_element_error("ralph-body", "ralph-commit"));
+                        }
+                        body = Some(read_text_until_end(&mut reader, b"ralph-body")?);
+                    }
+                    b"ralph-body-summary" => {
+                        if body.is_some() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-body-summary".to_string(),
+                                expected:
+                                    "either <ralph-body> OR detailed tags, not both".to_string(),
+                                found: "mixed simple and detailed body elements".to_string(),
+                                suggestion: "Use <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format.".to_string(),
+                                example: Some(EXAMPLE_COMMIT_XML.into()),
+                            });
+                        }
+                        if body_summary.is_some() {
+                            return Err(duplicate_element_error(
+                                "ralph-body-summary",
+                                "ralph-commit",
+                            ));
+                        }
+                        body_summary =
+                            Some(read_text_until_end(&mut reader, b"ralph-body-summary")?);
+                    }
+                    b"ralph-body-details" => {
+                        if body.is_some() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-body-details".to_string(),
+                                expected:
+                                    "either <ralph-body> OR detailed tags, not both".to_string(),
+                                found: "mixed simple and detailed body elements".to_string(),
+                                suggestion: "Use <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format.".to_string(),
+                                example: Some(EXAMPLE_COMMIT_XML.into()),
+                            });
+                        }
+                        if body_details.is_some() {
+                            return Err(duplicate_element_error(
+                                "ralph-body-details",
+                                "ralph-commit",
+                            ));
+                        }
+                        body_details =
+                            Some(read_text_until_end(&mut reader, b"ralph-body-details")?);
+                    }
+                    b"ralph-body-footer" => {
+                        if body.is_some() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-commit/ralph-body-footer".to_string(),
+                                expected:
+                                    "either <ralph-body> OR detailed tags, not both".to_string(),
+                                found: "mixed simple and detailed body elements".to_string(),
+                                suggestion: "Use <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format.".to_string(),
+                                example: Some(EXAMPLE_COMMIT_XML.into()),
+                            });
+                        }
+                        if body_footer.is_some() {
+                            return Err(duplicate_element_error(
+                                "ralph-body-footer",
+                                "ralph-commit",
+                            ));
+                        }
+                        body_footer = Some(read_text_until_end(&mut reader, b"ralph-body-footer")?);
+                    }
+                    other => {
+                        // Skip unknown element but report error
+                        let _ = skip_to_end(&mut reader, other);
+                        return Err(unexpected_element_error(other, &VALID_TAGS, "ralph-commit"));
+                    }
+                }
+            }
+            Ok(Event::Text(e)) => {
+                let text = e.unescape().unwrap_or_default();
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    return Err(text_outside_tags_error(trimmed, "ralph-commit"));
+                }
+            }
+            Ok(Event::End(e)) if e.name().as_ref() == b"ralph-commit" => break,
+            Ok(Event::Eof) => {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::MalformedXml,
+                    element_path: "ralph-commit".to_string(),
+                    expected: "closing </ralph-commit> tag".to_string(),
+                    found: "end of content without closing tag".to_string(),
+                    suggestion: "Add </ralph-commit> at the end of your commit message."
                         .to_string(),
+                    example: Some(EXAMPLE_COMMIT_XML.into()),
                 });
             }
-            subject = Some(tag_content);
-            remaining = advance_past_tag(remaining, "ralph-subject");
-            continue;
+            Ok(_) => {} // Skip comments, etc.
+            Err(e) => return Err(malformed_xml_error(e)),
         }
-
-        if let Some(tag_content) = extract_tag_content(remaining, "ralph-body") {
-            // Check if detailed elements already exist
-            if body_summary.is_some() || body_details.is_some() || body_footer.is_some() {
-                return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-body".to_string(),
-                    expected: "use either <ralph-body> OR detailed tags, not both".to_string(),
-                    found: "mixed simple and detailed body elements".to_string(),
-                    suggestion: "Use either <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format, not both".to_string(),
-                });
-            }
-            if body.is_some() {
-                return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-body".to_string(),
-                    expected: "only one <ralph-body> element".to_string(),
-                    found: "duplicate <ralph-body> element".to_string(),
-                    suggestion: "Include only one <ralph-body> element".to_string(),
-                });
-            }
-            body = Some(tag_content);
-            remaining = advance_past_tag(remaining, "ralph-body");
-            continue;
-        }
-
-        if let Some(tag_content) = extract_tag_content(remaining, "ralph-body-summary") {
-            // Check if simple body already exists
-            if body.is_some() {
-                return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-body-summary".to_string(),
-                    expected: "use either <ralph-body> OR detailed tags, not both".to_string(),
-                    found: "mixed simple and detailed body elements".to_string(),
-                    suggestion: "Use either <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format, not both".to_string(),
-                });
-            }
-            if body_summary.is_some() {
-                return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-body-summary".to_string(),
-                    expected: "only one <ralph-body-summary> element".to_string(),
-                    found: "duplicate <ralph-body-summary> element".to_string(),
-                    suggestion: "Include only one <ralph-body-summary> element".to_string(),
-                });
-            }
-            body_summary = Some(tag_content);
-            remaining = advance_past_tag(remaining, "ralph-body-summary");
-            continue;
-        }
-
-        if let Some(tag_content) = extract_tag_content(remaining, "ralph-body-details") {
-            // Check if simple body already exists
-            if body.is_some() {
-                return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-body-details".to_string(),
-                    expected: "use either <ralph-body> OR detailed tags, not both".to_string(),
-                    found: "mixed simple and detailed body elements".to_string(),
-                    suggestion: "Use either <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format, not both".to_string(),
-                });
-            }
-            if body_details.is_some() {
-                return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-body-details".to_string(),
-                    expected: "only one <ralph-body-details> element".to_string(),
-                    found: "duplicate <ralph-body-details> element".to_string(),
-                    suggestion: "Include only one <ralph-body-details> element".to_string(),
-                });
-            }
-            body_details = Some(tag_content);
-            remaining = advance_past_tag(remaining, "ralph-body-details");
-            continue;
-        }
-
-        if let Some(tag_content) = extract_tag_content(remaining, "ralph-body-footer") {
-            // Check if simple body already exists
-            if body.is_some() {
-                return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-body-footer".to_string(),
-                    expected: "use either <ralph-body> OR detailed tags, not both".to_string(),
-                    found: "mixed simple and detailed body elements".to_string(),
-                    suggestion: "Use either <ralph-body> for simple body OR <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer> for detailed format, not both".to_string(),
-                });
-            }
-            if body_footer.is_some() {
-                return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-body-footer".to_string(),
-                    expected: "only one <ralph-body-footer> element".to_string(),
-                    found: "duplicate <ralph-body-footer> element".to_string(),
-                    suggestion: "Include only one <ralph-body-footer> element".to_string(),
-                });
-            }
-            body_footer = Some(tag_content);
-            remaining = advance_past_tag(remaining, "ralph-body-footer");
-            continue;
-        }
-
-        // If we get here, there's unexpected content
-        let first_fifty = if remaining.len() > 50 {
-            format!("{}...", &remaining[..50])
-        } else {
-            remaining.to_string()
-        };
-
-        // Try to identify what the unexpected content is
-        if remaining.starts_with('<') {
-            if let Some(tag_end) = remaining.find('>') {
-                let potential_tag = &remaining[..tag_end + 1];
-                return Err(XsdValidationError {
-                    error_type: XsdErrorType::UnexpectedElement,
-                    element_path: potential_tag.to_string(),
-                    expected: "only valid commit message tags".to_string(),
-                    found: format!("unexpected tag: {potential_tag}"),
-                    suggestion: format!("Remove the {potential_tag} tag. Valid tags are: <ralph-subject>, <ralph-body>, <ralph-body-summary>, <ralph-body-details>, <ralph-body-footer>"),
-                });
-            }
-        }
-
-        return Err(XsdValidationError {
-            error_type: XsdErrorType::InvalidContent,
-            element_path: "content".to_string(),
-            expected: "only XML tags".to_string(),
-            found: first_fifty,
-            suggestion:
-                "Remove any text outside of XML tags. All content must be within appropriate tags."
-                    .to_string(),
-        });
     }
 
-    // Validate required element
-    let subject = subject.ok_or_else(|| XsdValidationError {
-        error_type: XsdErrorType::MissingRequiredElement,
-        element_path: "ralph-subject".to_string(),
-        expected: "<ralph-subject> element (required)".to_string(),
-        found: "no <ralph-subject> found".to_string(),
-        suggestion:
-            "Add <ralph-subject>type(scope): description</ralph-subject> with your commit subject"
-                .to_string(),
+    // Validate required element: subject
+    let subject = subject.ok_or_else(|| {
+        missing_required_error("ralph-subject", "ralph-commit", Some(EXAMPLE_COMMIT_XML))
     })?;
 
     // Validate subject content
@@ -279,7 +255,10 @@ pub(crate) fn validate_xml_against_xsd(
             element_path: "ralph-subject".to_string(),
             expected: "non-empty subject line".to_string(),
             found: "empty subject".to_string(),
-            suggestion: "The <ralph-subject> tag must contain a non-empty commit subject like 'feat: add feature'".to_string(),
+            suggestion:
+                "The <ralph-subject> must contain a non-empty commit subject like 'feat: add feature'."
+                    .to_string(),
+            example: Some(EXAMPLE_COMMIT_XML.into()),
         });
     }
 
@@ -288,65 +267,23 @@ pub(crate) fn validate_xml_against_xsd(
         return Err(XsdValidationError {
             error_type: XsdErrorType::InvalidContent,
             element_path: "ralph-subject".to_string(),
-            expected: "conventional commit format (type: description or type(scope): description)".to_string(),
+            expected: "conventional commit format (type: description or type(scope): description)"
+                .to_string(),
             found: subject.to_string(),
-            suggestion: "Use conventional commit format: feat|fix|docs|style|refactor|perf|test|build|ci|chore: description. Example: <ralph-subject>feat(api): add user authentication</ralph-subject>".to_string(),
+            suggestion:
+                "Use conventional commit format: type(scope): description. Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore."
+                    .to_string(),
+            example: Some(EXAMPLE_COMMIT_XML.into()),
         });
     }
 
     Ok(CommitMessageElements {
         subject: subject.to_string(),
-        body: body.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
-        body_summary: body_summary
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
-        body_details: body_details
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
-        body_footer: body_footer
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
+        body: body.filter(|s| !s.is_empty()),
+        body_summary: body_summary.filter(|s| !s.is_empty()),
+        body_details: body_details.filter(|s| !s.is_empty()),
+        body_footer: body_footer.filter(|s| !s.is_empty()),
     })
-}
-
-/// Extract content from an XML-style tag.
-///
-/// Returns `Some(content)` if the tag is found, `None` otherwise.
-fn extract_tag_content(content: &str, tag_name: &str) -> Option<String> {
-    let open_tag = format!("<{tag_name}>");
-    let close_tag = format!("</{tag_name}>");
-
-    // Find opening tag (must be at start or after whitespace)
-    let content_trimmed = content.trim_start();
-    if !content_trimmed.starts_with(&open_tag) {
-        return None;
-    }
-
-    // Adjust for any leading whitespace
-    let open_pos = content.len() - content_trimmed.len();
-    let content_after_open = &content[open_pos + open_tag.len()..];
-
-    // Find closing tag
-    let close_pos = content_after_open.find(&close_tag)?;
-
-    let inner = &content_after_open[..close_pos];
-    Some(inner.to_string())
-}
-
-/// Advance the content pointer past the specified tag.
-fn advance_past_tag<'a>(content: &'a str, tag_name: &str) -> &'a str {
-    let close_tag = format!("</{tag_name}>");
-
-    // Trim leading whitespace first
-    let trimmed = content.trim_start();
-
-    if let Some(pos) = trimmed.find(&close_tag) {
-        let after_close = &trimmed[pos + close_tag.len()..];
-        after_close.trim_start()
-    } else {
-        // Return empty string slice with same lifetime as content
-        &content[content.len()..]
-    }
 }
 
 /// Parsed commit message elements from valid XML.
@@ -419,19 +356,28 @@ pub struct XsdValidationError {
     pub found: String,
     /// Suggestion for fixing the error
     pub suggestion: String,
+    /// Optional concrete example of valid XML (boxed to reduce struct size)
+    pub example: Option<Box<str>>,
 }
 
 impl XsdValidationError {
     /// Format this error for display in logs or retry prompts.
     pub fn format_for_display(&self) -> String {
+        let example_section = self
+            .example
+            .as_ref()
+            .map(|ex| format!("\n  Example:\n{}", ex))
+            .unwrap_or_default();
+
         format!(
-            "XSD Validation Error [{}]: {}\n  Element: {}\n  Expected: {}\n  Found: {}\n  Suggestion: {}",
+            "XSD Validation Error [{}]: {}\n  Element: {}\n  Expected: {}\n  Found: {}\n  Suggestion: {}{}",
             self.error_type,
             self.error_type.description(),
             self.element_path,
             self.expected,
             self.found,
-            self.suggestion
+            self.suggestion,
+            example_section
         )
     }
 
@@ -440,14 +386,20 @@ impl XsdValidationError {
     /// This provides an actionable, human-readable error message that guides
     /// the AI agent toward producing valid XML output.
     pub fn format_for_ai_retry(&self) -> String {
+        let example_section = self
+            .example
+            .as_ref()
+            .map(|ex| format!("\n\nExample of correct format:\n{}", ex))
+            .unwrap_or_default();
+
         match self.error_type {
             XsdErrorType::MissingRequiredElement => {
                 format!(
                     "MISSING REQUIRED ELEMENT: '{}' is required but was not found.\n\n\
                      What was expected: {}\n\
                      What was found: {}\n\n\
-                     How to fix: {}",
-                    self.element_path, self.expected, self.found, self.suggestion
+                     How to fix: {}{}",
+                    self.element_path, self.expected, self.found, self.suggestion, example_section
                 )
             }
             XsdErrorType::UnexpectedElement => {
@@ -455,8 +407,8 @@ impl XsdValidationError {
                     "UNEXPECTED ELEMENT: Found '{}' which is not allowed.\n\n\
                      What was expected: {}\n\
                      What was found: {}\n\n\
-                     How to fix: {}",
-                    self.element_path, self.expected, self.found, self.suggestion
+                     How to fix: {}{}",
+                    self.element_path, self.expected, self.found, self.suggestion, example_section
                 )
             }
             XsdErrorType::InvalidContent => {
@@ -464,8 +416,8 @@ impl XsdValidationError {
                     "INVALID CONTENT: The content of '{}' does not meet requirements.\n\n\
                      What was expected: {}\n\
                      What was found: {}\n\n\
-                     How to fix: {}",
-                    self.element_path, self.expected, self.found, self.suggestion
+                     How to fix: {}{}",
+                    self.element_path, self.expected, self.found, self.suggestion, example_section
                 )
             }
             XsdErrorType::MalformedXml => {
@@ -473,8 +425,8 @@ impl XsdValidationError {
                     "MALFORMED XML: The XML structure is invalid.\n\n\
                      What was expected: {}\n\
                      What was found: {}\n\n\
-                     How to fix: {}",
-                    self.expected, self.found, self.suggestion
+                     How to fix: {}{}",
+                    self.expected, self.found, self.suggestion, example_section
                 )
             }
         }
@@ -539,12 +491,31 @@ mod tests {
             expected: "<ralph-subject> element (required)".to_string(),
             found: "no <ralph-subject> found".to_string(),
             suggestion: "Add <ralph-subject>type(scope): description</ralph-subject>".to_string(),
+            example: None,
         };
 
         let formatted = error.format_for_ai_retry();
         assert!(formatted.contains("MISSING REQUIRED ELEMENT"));
         assert!(formatted.contains("'ralph-subject' is required"));
         assert!(formatted.contains("Add <ralph-subject>"));
+    }
+
+    #[test]
+    fn test_format_for_ai_retry_with_example() {
+        let error = XsdValidationError {
+            error_type: XsdErrorType::MissingRequiredElement,
+            element_path: "ralph-subject".to_string(),
+            expected: "<ralph-subject> element (required)".to_string(),
+            found: "no <ralph-subject> found".to_string(),
+            suggestion: "Add the required element".to_string(),
+            example: Some(
+                "<ralph-commit><ralph-subject>feat: example</ralph-subject></ralph-commit>".into(),
+            ),
+        };
+
+        let formatted = error.format_for_ai_retry();
+        assert!(formatted.contains("Example of correct format:"));
+        assert!(formatted.contains("feat: example"));
     }
 
     #[test]
@@ -555,6 +526,7 @@ mod tests {
             expected: "only valid commit message tags".to_string(),
             found: "unexpected tag: <unknown-tag>".to_string(),
             suggestion: "Remove the <unknown-tag> tag".to_string(),
+            example: None,
         };
 
         let formatted = error.format_for_ai_retry();
@@ -571,6 +543,7 @@ mod tests {
             expected: "conventional commit format".to_string(),
             found: "bad subject".to_string(),
             suggestion: "Use conventional commit format".to_string(),
+            example: None,
         };
 
         let formatted = error.format_for_ai_retry();
@@ -587,6 +560,7 @@ mod tests {
             expected: "valid XML declaration ending with ?>".to_string(),
             found: "unclosed XML declaration".to_string(),
             suggestion: "Ensure XML declaration is properly closed".to_string(),
+            example: None,
         };
 
         let formatted = error.format_for_ai_retry();
@@ -687,10 +661,7 @@ mod tests {
         let result = validate_xml_against_xsd(xml);
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(matches!(
-            error.error_type,
-            XsdErrorType::MissingRequiredElement
-        ));
+        assert!(matches!(error.error_type, XsdErrorType::MalformedXml));
     }
 
     #[test]
@@ -706,7 +677,7 @@ mod tests {
             error.error_type,
             XsdErrorType::MissingRequiredElement
         ));
-        assert_eq!(error.element_path, "ralph-subject");
+        assert!(error.element_path.contains("ralph-subject"));
     }
 
     #[test]
@@ -761,9 +732,7 @@ mod tests {
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert!(matches!(error.error_type, XsdErrorType::UnexpectedElement));
-        assert!(error
-            .suggestion
-            .contains("<ralph-body> for simple body OR <ralph-body-summary>"));
+        assert!(error.suggestion.contains("<ralph-body>"));
     }
 
     #[test]
@@ -789,6 +758,16 @@ mod tests {
             .as_ref()
             .unwrap()
             .contains("Body with whitespace"));
+    }
+
+    #[test]
+    fn test_validate_with_escaped_newlines_in_content() {
+        // This tests that quick_xml properly handles whitespace between elements
+        // which was the original issue with literal \n characters
+        let xml = "<ralph-commit>\n<ralph-subject>feat: test</ralph-subject>\n</ralph-commit>";
+
+        let result = validate_xml_against_xsd(xml);
+        assert!(result.is_ok());
     }
 
     // ============================================================================
@@ -856,5 +835,56 @@ mod tests {
             "Invalid content"
         );
         assert_eq!(XsdErrorType::MalformedXml.description(), "Malformed XML");
+    }
+
+    // ============================================================================
+    // Tests for <code> element support
+    // ============================================================================
+
+    #[test]
+    fn test_validate_subject_with_code_element() {
+        // XSD allows <code> elements for escaping special characters
+        let xml = r#"<ralph-commit>
+<ralph-subject>fix: handle <code>a &lt; b</code> comparison</ralph-subject>
+</ralph-commit>"#;
+
+        let result = validate_xml_against_xsd(xml);
+        assert!(result.is_ok());
+        let elements = result.unwrap();
+        // Text from both outside and inside <code> should be collected
+        assert!(elements.subject.contains("fix: handle"));
+        assert!(elements.subject.contains("a < b"));
+        assert!(elements.subject.contains("comparison"));
+    }
+
+    #[test]
+    fn test_validate_body_with_code_element() {
+        let xml = r#"<ralph-commit>
+<ralph-subject>feat: add generic support</ralph-subject>
+<ralph-body>Added <code>HashMap&lt;K, V&gt;</code> support to the parser.</ralph-body>
+</ralph-commit>"#;
+
+        let result = validate_xml_against_xsd(xml);
+        assert!(result.is_ok());
+        let elements = result.unwrap();
+        let body = elements.body.unwrap();
+        assert!(body.contains("HashMap<K, V>"));
+    }
+
+    #[test]
+    fn test_validate_detailed_body_with_code_elements() {
+        let xml = r#"<ralph-commit>
+<ralph-subject>refactor: improve type handling</ralph-subject>
+<ralph-body-summary>Refactored <code>Option&lt;T&gt;</code> handling</ralph-body-summary>
+<ralph-body-details>Changed <code>if a &lt; b</code> to <code>if a &gt; b</code></ralph-body-details>
+</ralph-commit>"#;
+
+        let result = validate_xml_against_xsd(xml);
+        assert!(result.is_ok());
+        let elements = result.unwrap();
+        assert!(elements.body_summary.unwrap().contains("Option<T>"));
+        let details = elements.body_details.unwrap();
+        assert!(details.contains("if a < b"));
+        assert!(details.contains("if a > b"));
     }
 }

@@ -144,10 +144,11 @@ fn test_review_xml_empty_issues_list_produces_error() {
         assert!(result.is_err(), "Empty issues list should fail validation");
 
         let error = result.unwrap_err();
-        // Should indicate that content is missing or invalid
+        // Should indicate that either issues or no-issues-found is expected
         assert!(
-            error.expected.contains("expected"),
-            "Error should indicate what's expected"
+            error.expected.contains("ralph-issue") || error.expected.contains("at least"),
+            "Error should indicate what's expected, got: {}",
+            error.expected
         );
     });
 }
@@ -328,7 +329,7 @@ fn test_review_xml_duplicate_no_issues_found_produces_error() {
 
         let error = result.unwrap_err();
         assert_eq!(
-            error.element_path, "ralph-no-issues-found",
+            error.element_path, "ralph-issues/ralph-no-issues-found",
             "Error should identify the duplicated element"
         );
         assert!(

@@ -2,8 +2,24 @@
 //!
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format for fix results.
+//!
+//! Uses quick_xml for robust XML parsing with proper whitespace handling.
 
-use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
+use crate::files::llm_output_extraction::xml_helpers::{
+    create_reader, duplicate_element_error, malformed_xml_error, missing_required_error,
+    read_text_until_end, skip_to_end, text_outside_tags_error, unexpected_element_error,
+};
+use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValidationError};
+use quick_xml::events::Event;
+
+/// Example of a valid fix result XML for error messages.
+const EXAMPLE_FIX_RESULT_XML: &str = r#"<ralph-fix-result>
+<ralph-status>all_issues_addressed</ralph-status>
+<ralph-summary>Fixed all 3 issues found during review</ralph-summary>
+</ralph-fix-result>"#;
+
+/// Valid status values for fix results.
+const VALID_STATUSES: [&str; 3] = ["all_issues_addressed", "issues_remain", "no_issues_found"];
 
 /// Validate fix result XML content against the XSD schema.
 ///
@@ -27,202 +43,151 @@ use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
 pub fn validate_fix_result_xml(xml_content: &str) -> Result<FixResultElements, XsdValidationError> {
     let content = xml_content.trim();
+    let mut reader = create_reader(content);
+    let mut buf = Vec::new();
 
-    // Check for XML declaration (optional, so we skip it if present)
-    let content = if content.starts_with("<?xml") {
-        if let Some(end) = content.find("?>") {
-            &content[end + 2..]
-        } else {
-            return Err(XsdValidationError {
-                error_type:
-                    crate::files::llm_output_extraction::xsd_validation::XsdErrorType::MalformedXml,
-                element_path: "xml".to_string(),
-                expected: "valid XML declaration ending with ?>".to_string(),
-                found: "unclosed XML declaration".to_string(),
-                suggestion: "Ensure XML declaration is properly closed with ?>".to_string(),
-            });
+    // Find the root element
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) if e.name().as_ref() == b"ralph-fix-result" => break,
+            Ok(Event::Start(e)) => {
+                let name_bytes = e.name();
+                let tag_name = String::from_utf8_lossy(name_bytes.as_ref());
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::MissingRequiredElement,
+                    element_path: "ralph-fix-result".to_string(),
+                    expected: "<ralph-fix-result> as root element".to_string(),
+                    found: format!("<{}> (wrong root element)", tag_name),
+                    suggestion: "Use <ralph-fix-result> as the root element.".to_string(),
+                    example: Some(EXAMPLE_FIX_RESULT_XML.into()),
+                });
+            }
+            Ok(Event::Text(_)) => {
+                // Text before root element - continue to find root or reach EOF
+                // EOF will give a more informative "missing root element" error
+            }
+            Ok(Event::Eof) => {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::MissingRequiredElement,
+                    element_path: "ralph-fix-result".to_string(),
+                    expected: "<ralph-fix-result> as root element".to_string(),
+                    found: if content.is_empty() {
+                        "empty content".to_string()
+                    } else if content.len() <= 60 {
+                        content.to_string()
+                    } else {
+                        format!("{}...", &content[..60])
+                    },
+                    suggestion:
+                        "Wrap your result in <ralph-fix-result>...</ralph-fix-result> tags."
+                            .to_string(),
+                    example: Some(EXAMPLE_FIX_RESULT_XML.into()),
+                });
+            }
+            Ok(_) => {} // Skip XML declaration, comments, etc.
+            Err(e) => return Err(malformed_xml_error(e)),
         }
-    } else {
-        content
-    };
+        buf.clear();
+    }
 
-    let content = content.trim();
+    // Parse child elements
+    let mut status: Option<String> = None;
+    let mut summary: Option<String> = None;
 
-    // Check for <ralph-fix-result> root element
-    if !content.starts_with("<ralph-fix-result>") {
-        return Err(XsdValidationError {
-            error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::MissingRequiredElement,
-            element_path: "ralph-fix-result".to_string(),
-            expected: "<ralph-fix-result> as root element".to_string(),
-            found: if content.is_empty() {
-                "empty content".to_string()
-            } else if content.len() < 50 {
-                content.to_string()
-            } else {
-                format!("{}...", &content[..50])
+    const VALID_TAGS: [&str; 2] = ["ralph-status", "ralph-summary"];
+
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => match e.name().as_ref() {
+                b"ralph-status" => {
+                    if status.is_some() {
+                        return Err(duplicate_element_error("ralph-status", "ralph-fix-result"));
+                    }
+                    status = Some(read_text_until_end(&mut reader, b"ralph-status")?);
+                }
+                b"ralph-summary" => {
+                    if summary.is_some() {
+                        return Err(duplicate_element_error("ralph-summary", "ralph-fix-result"));
+                    }
+                    summary = Some(read_text_until_end(&mut reader, b"ralph-summary")?);
+                }
+                other => {
+                    let _ = skip_to_end(&mut reader, other);
+                    return Err(unexpected_element_error(
+                        other,
+                        &VALID_TAGS,
+                        "ralph-fix-result",
+                    ));
+                }
             },
-            suggestion: "Wrap your fix result in <ralph-fix-result> tags".to_string(),
-        });
-    }
-
-    if !content.ends_with("</ralph-fix-result>") {
-        return Err(XsdValidationError {
-            error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::MissingRequiredElement,
-            element_path: "ralph-fix-result".to_string(),
-            expected: "closing </ralph-fix-result> tag".to_string(),
-            found: "missing closing tag".to_string(),
-            suggestion: "Add </ralph-fix-result> at the end of your fix result".to_string(),
-        });
-    }
-
-    // Extract content between root tags
-    let root_start = "<ralph-fix-result>".len();
-    let root_end = content.len() - "</ralph-fix-result>".len();
-    let fix_result_content = &content[root_start..root_end];
-
-    // Parse required and optional elements
-    let mut status = None;
-    let mut summary = None;
-
-    // Parse elements in order
-    let mut remaining = fix_result_content.trim();
-
-    while !remaining.is_empty() {
-        // Try to parse ralph-status element
-        if let Some(tag_content) = extract_tag_content(remaining, "ralph-status") {
-            if status.is_some() {
+            Ok(Event::Text(e)) => {
+                let text = e.unescape().unwrap_or_default();
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    return Err(text_outside_tags_error(trimmed, "ralph-fix-result"));
+                }
+            }
+            Ok(Event::End(e)) if e.name().as_ref() == b"ralph-fix-result" => break,
+            Ok(Event::Eof) => {
                 return Err(XsdValidationError {
-                    error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-status".to_string(),
-                    expected: "only one <ralph-status> element".to_string(),
-                    found: "duplicate <ralph-status> element".to_string(),
-                    suggestion: "Include only one <ralph-status> element in your fix result".to_string(),
+                    error_type: XsdErrorType::MalformedXml,
+                    element_path: "ralph-fix-result".to_string(),
+                    expected: "closing </ralph-fix-result> tag".to_string(),
+                    found: "end of content without closing tag".to_string(),
+                    suggestion: "Add </ralph-fix-result> at the end.".to_string(),
+                    example: Some(EXAMPLE_FIX_RESULT_XML.into()),
                 });
             }
-            status = Some(tag_content);
-            remaining = advance_past_tag(remaining, "ralph-status");
-            continue;
+            Ok(_) => {} // Skip comments, etc.
+            Err(e) => return Err(malformed_xml_error(e)),
         }
-
-        // Try to parse ralph-summary element
-        if let Some(tag_content) = extract_tag_content(remaining, "ralph-summary") {
-            if summary.is_some() {
-                return Err(XsdValidationError {
-                    error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-summary".to_string(),
-                    expected: "only one <ralph-summary> element".to_string(),
-                    found: "duplicate <ralph-summary> element".to_string(),
-                    suggestion: "Include only one <ralph-summary> element".to_string(),
-                });
-            }
-            summary = Some(tag_content);
-            remaining = advance_past_tag(remaining, "ralph-summary");
-            continue;
-        }
-
-        // If we get here, there's unexpected content
-        let first_fifty = if remaining.len() > 50 {
-            format!("{}...", &remaining[..50])
-        } else {
-            remaining.to_string()
-        };
-
-        // Try to identify what the unexpected content is
-        if remaining.starts_with('<') {
-            if let Some(tag_end) = remaining.find('>') {
-                let potential_tag = &remaining[..tag_end + 1];
-                return Err(XsdValidationError {
-                    error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::UnexpectedElement,
-                    element_path: potential_tag.to_string(),
-                    expected: "only valid fix result tags".to_string(),
-                    found: format!("unexpected tag: {potential_tag}"),
-                    suggestion: "Remove the unexpected tag. Valid tags are: <ralph-status>, <ralph-summary>".to_string(),
-                });
-            }
-        }
-
-        return Err(XsdValidationError {
-            error_type:
-                crate::files::llm_output_extraction::xsd_validation::XsdErrorType::InvalidContent,
-            element_path: "content".to_string(),
-            expected: "only XML tags".to_string(),
-            found: first_fifty,
-            suggestion:
-                "Remove any text outside of XML tags. All content must be within appropriate tags."
-                    .to_string(),
-        });
     }
 
-    // Validate required element
-    let status = status.ok_or_else(|| XsdValidationError {
-        error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::MissingRequiredElement,
-        element_path: "ralph-status".to_string(),
-        expected: "<ralph-status> element (required)".to_string(),
-        found: "no <ralph-status> found".to_string(),
-        suggestion: "Add <ralph-status> with one of: all_issues_addressed, issues_remain, no_issues_found".to_string(),
+    // Validate required element: status
+    let status = status.ok_or_else(|| {
+        missing_required_error(
+            "ralph-status",
+            "ralph-fix-result",
+            Some(EXAMPLE_FIX_RESULT_XML),
+        )
     })?;
 
-    // Validate status content is not empty
-    let status = status.trim();
+    // Validate status content
     if status.is_empty() {
         return Err(XsdValidationError {
-            error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::InvalidContent,
+            error_type: XsdErrorType::InvalidContent,
             element_path: "ralph-status".to_string(),
-            expected: "non-empty status".to_string(),
+            expected: "non-empty status value".to_string(),
             found: "empty status".to_string(),
-            suggestion: "The <ralph-status> tag must contain one of: all_issues_addressed, issues_remain, no_issues_found".to_string(),
+            suggestion: format!(
+                "The <ralph-status> must contain one of: {}",
+                VALID_STATUSES.join(", ")
+            ),
+            example: Some(EXAMPLE_FIX_RESULT_XML.into()),
         });
     }
 
     // Validate status is one of the allowed values
-    let valid_statuses = ["all_issues_addressed", "issues_remain", "no_issues_found"];
-    if !valid_statuses.contains(&status) {
+    if !VALID_STATUSES.contains(&status.as_str()) {
         return Err(XsdValidationError {
-            error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::InvalidContent,
+            error_type: XsdErrorType::InvalidContent,
             element_path: "ralph-status".to_string(),
-            expected: "one of: all_issues_addressed, issues_remain, no_issues_found".to_string(),
-            found: status.to_string(),
-            suggestion: "The <ralph-status> tag must contain exactly one of: all_issues_addressed, issues_remain, no_issues_found".to_string(),
+            expected: format!("one of: {}", VALID_STATUSES.join(", ")),
+            found: status.clone(),
+            suggestion: format!(
+                "Change <ralph-status>{}</ralph-status> to use a valid value: {}",
+                status,
+                VALID_STATUSES.join(", ")
+            ),
+            example: Some(EXAMPLE_FIX_RESULT_XML.into()),
         });
     }
 
     Ok(FixResultElements {
-        status: status.to_string(),
-        summary: summary
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
+        status,
+        summary: summary.filter(|s| !s.is_empty()),
     })
-}
-
-/// Extract content from an XML-style tag.
-fn extract_tag_content(content: &str, tag_name: &str) -> Option<String> {
-    let open_tag = format!("<{tag_name}>");
-    let close_tag = format!("</{tag_name}>");
-
-    let content_trimmed = content.trim_start();
-    if !content_trimmed.starts_with(&open_tag) {
-        return None;
-    }
-
-    let open_pos = content.len() - content_trimmed.len();
-    let content_after_open = &content[open_pos + open_tag.len()..];
-
-    let close_pos = content_after_open.find(&close_tag)?;
-    let inner = &content_after_open[..close_pos];
-    Some(inner.to_string())
-}
-
-/// Advance the content pointer past the specified tag.
-fn advance_past_tag<'a>(content: &'a str, tag_name: &str) -> &'a str {
-    let close_tag = format!("</{tag_name}>");
-    let trimmed = content.trim_start();
-
-    if let Some(pos) = trimmed.find(&close_tag) {
-        let after_close = &trimmed[pos + close_tag.len()..];
-        after_close.trim_start()
-    } else {
-        &content[content.len()..]
-    }
 }
 
 /// Parsed fix result elements from valid XML.
@@ -333,7 +298,7 @@ mod tests {
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert_eq!(error.element_path, "ralph-status");
+        assert!(error.element_path.contains("ralph-status"));
     }
 
     #[test]
@@ -367,5 +332,25 @@ mod tests {
 
         let result = validate_fix_result_xml(xml);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_whitespace_handling() {
+        // This is the key test - quick_xml should handle whitespace between elements
+        let xml = "  <ralph-fix-result>  \n  <ralph-status>all_issues_addressed</ralph-status>  \n  </ralph-fix-result>  ";
+
+        let result = validate_fix_result_xml(xml);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_with_xml_declaration() {
+        let xml = r#"<?xml version="1.0"?>
+<ralph-fix-result>
+<ralph-status>all_issues_addressed</ralph-status>
+</ralph-fix-result>"#;
+
+        let result = validate_fix_result_xml(xml);
+        assert!(result.is_ok());
     }
 }

@@ -51,5 +51,6 @@ CRITICAL RULES
 9. <primary-files> MUST have at least one <file path="..." action="..."/>
 10. Each <risk-pair> MUST have both <risk> and <mitigation>
 11. Each <verification> MUST have both <method> and <expected-outcome>
+12. If you need <, >, or & characters, wrap them in <code> or <code-block> elements
 
 Fix the validation error and resend your plan with the correct XML format.

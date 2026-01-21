@@ -194,9 +194,10 @@ fn test_fix_xml_invalid_status_provides_valid_options() {
         assert!(result.is_err(), "Invalid status should fail validation");
 
         let error = result.unwrap_err();
-        assert_eq!(
-            error.element_path, "ralph-status",
-            "Error should identify status element"
+        assert!(
+            error.element_path.contains("ralph-status"),
+            "Error should identify status element, got: {}",
+            error.element_path
         );
         assert!(
             error.expected.contains("all_issues_addressed")
@@ -230,9 +231,10 @@ fn test_fix_xml_empty_status_produces_error() {
         assert!(result.is_err(), "Empty status should fail validation");
 
         let error = result.unwrap_err();
-        assert_eq!(
-            error.element_path, "ralph-status",
-            "Error should identify status element"
+        assert!(
+            error.element_path.contains("ralph-status"),
+            "Error should identify status element, got: {}",
+            error.element_path
         );
         assert!(
             error.expected.contains("non-empty"),
@@ -351,9 +353,10 @@ fn test_fix_xml_duplicate_status_produces_specific_error() {
         assert!(result.is_err(), "Duplicate status should fail validation");
 
         let error = result.unwrap_err();
-        assert_eq!(
-            error.element_path, "ralph-status",
-            "Error should identify duplicated element"
+        assert!(
+            error.element_path.contains("ralph-status"),
+            "Error should identify duplicated element, got: {}",
+            error.element_path
         );
         assert!(
             error.expected.contains("only one"),

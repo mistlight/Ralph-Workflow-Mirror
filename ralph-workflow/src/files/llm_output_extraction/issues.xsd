@@ -1,13 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Issues XSD Schema
+  
+  Allows <code> elements within text content for escaping special characters
+  like <, >, and & (e.g., comparisons, generics, logical operators).
+-->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  
+  <!-- Text with optional inline code elements -->
+  <xs:complexType name="TextWithCodeType" mixed="true">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="code" type="xs:string"/>
+    </xs:choice>
+  </xs:complexType>
+  
   <xs:element name="ralph-issues">
     <xs:complexType>
       <xs:sequence>
         <xs:choice>
           <xs:sequence>
-            <xs:element name="ralph-issue" type="xs:string" maxOccurs="unbounded"/>
+            <xs:element name="ralph-issue" type="TextWithCodeType" maxOccurs="unbounded"/>
           </xs:sequence>
-          <xs:element name="ralph-no-issues-found" type="xs:string"/>
+          <xs:element name="ralph-no-issues-found" type="TextWithCodeType"/>
         </xs:choice>
       </xs:sequence>
     </xs:complexType>

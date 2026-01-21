@@ -5,6 +5,7 @@
 //! struct implementing the `XmlExtractionStrategy` trait.
 
 use crate::files::llm_output_extraction::cleaning::unescape_json_strings_aggressive;
+use crate::files::llm_output_extraction::xml_helpers::sanitize_xml_content;
 
 /// Strategy trait for XML extraction.
 ///
@@ -27,7 +28,14 @@ fn extract_plan_tags(content: &str) -> Option<String> {
     }
 
     let xml_end = end + "</ralph-plan>".len();
-    Some(content[start..xml_end].to_string())
+    let extracted = &content[start..xml_end];
+
+    // Step 1: Unescape JSON string escape sequences (e.g., \n -> newline)
+    let unescaped = unescape_json_strings_aggressive(extracted);
+
+    // Step 2: Sanitize XML content - escape unescaped <, >, & in text elements
+    // This handles cases where LLMs produce code-blocks with unescaped special chars
+    Some(sanitize_xml_content(&unescaped))
 }
 
 /// Strategy for direct XML extraction when content starts with `<ralph-plan>`.

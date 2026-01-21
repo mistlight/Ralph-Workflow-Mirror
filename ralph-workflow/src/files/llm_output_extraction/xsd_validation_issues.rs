@@ -2,8 +2,26 @@
 //!
 //! This module provides validation of XML output against the XSD schema
 //! to ensure AI agent output conforms to the expected format for review issues.
+//!
+//! Uses quick_xml for robust XML parsing with proper whitespace handling.
 
-use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
+use crate::files::llm_output_extraction::xml_helpers::{
+    create_reader, duplicate_element_error, malformed_xml_error, read_text_until_end, skip_to_end,
+    text_outside_tags_error, unexpected_element_error,
+};
+use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValidationError};
+use quick_xml::events::Event;
+
+/// Example of valid issues XML with issues.
+const EXAMPLE_ISSUES_XML: &str = r#"<ralph-issues>
+<ralph-issue>Missing error handling in API endpoint</ralph-issue>
+<ralph-issue>Variable shadowing in loop construct</ralph-issue>
+</ralph-issues>"#;
+
+/// Example of valid issues XML with no issues.
+const EXAMPLE_NO_ISSUES_XML: &str = r#"<ralph-issues>
+<ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
+</ralph-issues>"#;
 
 /// Validate issues XML content against the XSD schema.
 ///
@@ -36,161 +54,142 @@ use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
 pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValidationError> {
     let content = xml_content.trim();
+    let mut reader = create_reader(content);
+    let mut buf = Vec::new();
 
-    // Check for XML declaration (optional, so we skip it if present)
-    let content = if content.starts_with("<?xml") {
-        if let Some(end) = content.find("?>") {
-            &content[end + 2..]
-        } else {
-            return Err(XsdValidationError {
-                error_type:
-                    crate::files::llm_output_extraction::xsd_validation::XsdErrorType::MalformedXml,
-                element_path: "xml".to_string(),
-                expected: "valid XML declaration ending with ?>".to_string(),
-                found: "unclosed XML declaration".to_string(),
-                suggestion: "Ensure XML declaration is properly closed with ?>".to_string(),
-            });
+    // Find the root element
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) if e.name().as_ref() == b"ralph-issues" => break,
+            Ok(Event::Start(e)) => {
+                let name_bytes = e.name();
+                let tag_name = String::from_utf8_lossy(name_bytes.as_ref());
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::MissingRequiredElement,
+                    element_path: "ralph-issues".to_string(),
+                    expected: "<ralph-issues> as root element".to_string(),
+                    found: format!("<{}> (wrong root element)", tag_name),
+                    suggestion: "Use <ralph-issues> as the root element.".to_string(),
+                    example: Some(EXAMPLE_ISSUES_XML.into()),
+                });
+            }
+            Ok(Event::Text(_)) => {
+                // Text before root element - continue to EOF error which is more informative
+            }
+            Ok(Event::Eof) => {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::MissingRequiredElement,
+                    element_path: "ralph-issues".to_string(),
+                    expected: "<ralph-issues> as root element".to_string(),
+                    found: if content.is_empty() {
+                        "empty content".to_string()
+                    } else if content.len() <= 60 {
+                        content.to_string()
+                    } else {
+                        format!("{}...", &content[..60])
+                    },
+                    suggestion: "Wrap your issues in <ralph-issues>...</ralph-issues> tags."
+                        .to_string(),
+                    example: Some(EXAMPLE_ISSUES_XML.into()),
+                });
+            }
+            Ok(_) => {} // Skip XML declaration, comments, etc.
+            Err(e) => return Err(malformed_xml_error(e)),
         }
-    } else {
-        content
-    };
-
-    let content = content.trim();
-
-    // Check for <ralph-issues> root element
-    if !content.starts_with("<ralph-issues>") {
-        return Err(XsdValidationError {
-            error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::MissingRequiredElement,
-            element_path: "ralph-issues".to_string(),
-            expected: "<ralph-issues> as root element".to_string(),
-            found: if content.is_empty() {
-                "empty content".to_string()
-            } else if content.len() < 50 {
-                content.to_string()
-            } else {
-                format!("{}...", &content[..50])
-            },
-            suggestion: "Wrap your issues in <ralph-issues> tags".to_string(),
-        });
+        buf.clear();
     }
 
-    if !content.ends_with("</ralph-issues>") {
-        return Err(XsdValidationError {
-            error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::MissingRequiredElement,
-            element_path: "ralph-issues".to_string(),
-            expected: "closing </ralph-issues> tag".to_string(),
-            found: "missing closing tag".to_string(),
-            suggestion: "Add </ralph-issues> at the end of your issues".to_string(),
-        });
+    // Parse child elements
+    let mut issues: Vec<String> = Vec::new();
+    let mut no_issues_found: Option<String> = None;
+
+    const VALID_TAGS: [&str; 2] = ["ralph-issue", "ralph-no-issues-found"];
+
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => {
+                match e.name().as_ref() {
+                    b"ralph-issue" => {
+                        // Cannot mix issues and no-issues-found
+                        if no_issues_found.is_some() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-issues/ralph-issue".to_string(),
+                                expected: "either <ralph-issue> elements OR <ralph-no-issues-found>, not both".to_string(),
+                                found: "mixed issues and no-issues-found".to_string(),
+                                suggestion: "Use <ralph-issue> when issues exist, or <ralph-no-issues-found> when no issues exist.".to_string(),
+                                example: Some(EXAMPLE_ISSUES_XML.into()),
+                            });
+                        }
+                        let issue_text = read_text_until_end(&mut reader, b"ralph-issue")?;
+                        issues.push(issue_text);
+                    }
+                    b"ralph-no-issues-found" => {
+                        // Cannot mix issues and no-issues-found
+                        if !issues.is_empty() {
+                            return Err(XsdValidationError {
+                                error_type: XsdErrorType::UnexpectedElement,
+                                element_path: "ralph-issues/ralph-no-issues-found".to_string(),
+                                expected: "either <ralph-issue> elements OR <ralph-no-issues-found>, not both".to_string(),
+                                found: "mixed issues and no-issues-found".to_string(),
+                                suggestion: "Use <ralph-issue> when issues exist, or <ralph-no-issues-found> when no issues exist.".to_string(),
+                                example: Some(EXAMPLE_NO_ISSUES_XML.into()),
+                            });
+                        }
+                        if no_issues_found.is_some() {
+                            return Err(duplicate_element_error(
+                                "ralph-no-issues-found",
+                                "ralph-issues",
+                            ));
+                        }
+                        no_issues_found =
+                            Some(read_text_until_end(&mut reader, b"ralph-no-issues-found")?);
+                    }
+                    other => {
+                        let _ = skip_to_end(&mut reader, other);
+                        return Err(unexpected_element_error(other, &VALID_TAGS, "ralph-issues"));
+                    }
+                }
+            }
+            Ok(Event::Text(e)) => {
+                let text = e.unescape().unwrap_or_default();
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    return Err(text_outside_tags_error(trimmed, "ralph-issues"));
+                }
+            }
+            Ok(Event::End(e)) if e.name().as_ref() == b"ralph-issues" => break,
+            Ok(Event::Eof) => {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::MalformedXml,
+                    element_path: "ralph-issues".to_string(),
+                    expected: "closing </ralph-issues> tag".to_string(),
+                    found: "end of content without closing tag".to_string(),
+                    suggestion: "Add </ralph-issues> at the end.".to_string(),
+                    example: Some(EXAMPLE_ISSUES_XML.into()),
+                });
+            }
+            Ok(_) => {} // Skip comments, etc.
+            Err(e) => return Err(malformed_xml_error(e)),
+        }
     }
 
-    // Extract content between root tags
-    let root_start = "<ralph-issues>".len();
-    let root_end = content.len() - "</ralph-issues>".len();
-    let issues_content = &content[root_start..root_end];
-
-    // Parse elements
-    let mut issues = Vec::new();
-    let mut no_issues_found = None;
-
-    // Parse elements in order
-    let mut remaining = issues_content.trim();
-
-    while !remaining.is_empty() {
-        // Try to parse ralph-issue elements
-        if let Some(tag_content) = extract_tag_content(remaining, "ralph-issue") {
-            // Cannot mix issues and no-issues-found
-            if no_issues_found.is_some() {
-                return Err(XsdValidationError {
-                    error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-issue".to_string(),
-                    expected: "either <ralph-issue> elements OR <ralph-no-issues-found>, not both".to_string(),
-                    found: "mixed issues and no-issues-found".to_string(),
-                    suggestion: "Use either <ralph-issue> elements when issues exist, or <ralph-no-issues-found> when no issues exist, not both".to_string(),
-                });
-            }
-            issues.push(tag_content);
-            remaining = advance_past_tag(remaining, "ralph-issue");
-            continue;
-        }
-
-        // Try to parse ralph-no-issues-found element
-        if let Some(tag_content) = extract_tag_content(remaining, "ralph-no-issues-found") {
-            // Cannot mix issues and no-issues-found
-            if !issues.is_empty() {
-                return Err(XsdValidationError {
-                    error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-no-issues-found".to_string(),
-                    expected: "either <ralph-issue> elements OR <ralph-no-issues-found>, not both".to_string(),
-                    found: "mixed issues and no-issues-found".to_string(),
-                    suggestion: "Use either <ralph-issue> elements when issues exist, or <ralph-no-issues-found> when no issues exist, not both".to_string(),
-                });
-            }
-            if no_issues_found.is_some() {
-                return Err(XsdValidationError {
-                    error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::UnexpectedElement,
-                    element_path: "ralph-no-issues-found".to_string(),
-                    expected: "only one <ralph-no-issues-found> element".to_string(),
-                    found: "duplicate <ralph-no-issues-found> element".to_string(),
-                    suggestion: "Include only one <ralph-no-issues-found> element".to_string(),
-                });
-            }
-            no_issues_found = Some(tag_content);
-            remaining = advance_past_tag(remaining, "ralph-no-issues-found");
-            continue;
-        }
-
-        // If we get here, there's unexpected content
-        let first_fifty = if remaining.len() > 50 {
-            format!("{}...", &remaining[..50])
-        } else {
-            remaining.to_string()
-        };
-
-        // Try to identify what the unexpected content is
-        if remaining.starts_with('<') {
-            if let Some(tag_end) = remaining.find('>') {
-                let potential_tag = &remaining[..tag_end + 1];
-                return Err(XsdValidationError {
-                    error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::UnexpectedElement,
-                    element_path: potential_tag.to_string(),
-                    expected: "only valid issues tags".to_string(),
-                    found: format!("unexpected tag: {potential_tag}"),
-                    suggestion: "Remove the unexpected tag. Valid tags are: <ralph-issue>, <ralph-no-issues-found>".to_string(),
-                });
-            }
-        }
-
-        return Err(XsdValidationError {
-            error_type:
-                crate::files::llm_output_extraction::xsd_validation::XsdErrorType::InvalidContent,
-            element_path: "content".to_string(),
-            expected: "only XML tags".to_string(),
-            found: first_fifty,
-            suggestion:
-                "Remove any text outside of XML tags. All content must be within appropriate tags."
-                    .to_string(),
-        });
-    }
+    // Filter out empty issues
+    let filtered_issues: Vec<String> = issues.into_iter().filter(|s| !s.is_empty()).collect();
+    let filtered_no_issues = no_issues_found.filter(|s| !s.is_empty());
 
     // Must have either issues or no-issues-found
-    // Note: We check after filtering because whitespace-only issues should be treated as empty
-    let filtered_issues: Vec<String> = issues
-        .into_iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    let filtered_no_issues = no_issues_found
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
     if filtered_issues.is_empty() && filtered_no_issues.is_none() {
         return Err(XsdValidationError {
-            error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::MissingRequiredElement,
+            error_type: XsdErrorType::MissingRequiredElement,
             element_path: "ralph-issues".to_string(),
-            expected: "expected at least one <ralph-issue> element OR <ralph-no-issues-found>".to_string(),
-            found: "no issues or no-issues-found element".to_string(),
-            suggestion: "Add either <ralph-issue> elements for issues found, or <ralph-no-issues-found> if no issues exist".to_string(),
+            expected: "at least one <ralph-issue> element OR <ralph-no-issues-found>".to_string(),
+            found: "empty <ralph-issues> element".to_string(),
+            suggestion:
+                "Add <ralph-issue> elements for issues found, or <ralph-no-issues-found> if no issues exist."
+                    .to_string(),
+            example: Some(EXAMPLE_ISSUES_XML.into()),
         });
     }
 
@@ -198,37 +197,6 @@ pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValid
         issues: filtered_issues,
         no_issues_found: filtered_no_issues,
     })
-}
-
-/// Extract content from an XML-style tag.
-fn extract_tag_content(content: &str, tag_name: &str) -> Option<String> {
-    let open_tag = format!("<{tag_name}>");
-    let close_tag = format!("</{tag_name}>");
-
-    let content_trimmed = content.trim_start();
-    if !content_trimmed.starts_with(&open_tag) {
-        return None;
-    }
-
-    let open_pos = content.len() - content_trimmed.len();
-    let content_after_open = &content[open_pos + open_tag.len()..];
-
-    let close_pos = content_after_open.find(&close_tag)?;
-    let inner = &content_after_open[..close_pos];
-    Some(inner.to_string())
-}
-
-/// Advance the content pointer past the specified tag.
-fn advance_past_tag<'a>(content: &'a str, tag_name: &str) -> &'a str {
-    let close_tag = format!("</{tag_name}>");
-    let trimmed = content.trim_start();
-
-    if let Some(pos) = trimmed.find(&close_tag) {
-        let after_close = &trimmed[pos + close_tag.len()..];
-        after_close.trim_start()
-    } else {
-        &content[content.len()..]
-    }
 }
 
 /// Parsed issues elements from valid XML.
@@ -332,7 +300,7 @@ mod tests {
         let result = validate_issues_xml(xml);
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(error.suggestion.contains("not both"));
+        assert!(error.suggestion.contains("not both") || error.expected.contains("not both"));
     }
 
     #[test]
@@ -344,5 +312,57 @@ mod tests {
 
         let result = validate_issues_xml(xml);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_whitespace_handling() {
+        // This is the key test - quick_xml should handle whitespace between elements
+        let xml =
+            "  <ralph-issues>  \n  <ralph-issue>Issue text</ralph-issue>  \n  </ralph-issues>  ";
+
+        let result = validate_issues_xml(xml);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_with_xml_declaration() {
+        let xml = r#"<?xml version="1.0"?>
+<ralph-issues>
+<ralph-issue>Issue text</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_issue_with_code_element() {
+        // XSD now allows <code> elements for escaping special characters
+        let xml = r#"<ralph-issues>
+<ralph-issue>Check if <code>a &lt; b</code> is valid</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(result.is_ok());
+        let elements = result.unwrap();
+        assert_eq!(elements.issues.len(), 1);
+        // The text from both outside and inside <code> should be collected
+        assert!(elements.issues[0].contains("Check if"));
+        assert!(elements.issues[0].contains("a < b"));
+        assert!(elements.issues[0].contains("is valid"));
+    }
+
+    #[test]
+    fn test_validate_no_issues_with_code_element() {
+        let xml = r#"<ralph-issues>
+<ralph-no-issues-found>All <code>Record&lt;string, T&gt;</code> types are correct</ralph-no-issues-found>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(result.is_ok());
+        let elements = result.unwrap();
+        assert!(elements.no_issues_found.is_some());
+        let msg = elements.no_issues_found.unwrap();
+        assert!(msg.contains("Record<string, T>"));
     }
 }

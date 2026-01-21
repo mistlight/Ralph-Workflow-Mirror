@@ -143,6 +143,10 @@ Fixes #42
 Output as XML. Start IMMEDIATELY with <ralph-commit> - no text before or after.
 No markdown fences. No analysis or thinking outside the XML.
 
+IMPORTANT: If you need to include <, >, or & characters (e.g., comparisons, generics,
+logical operators), wrap them in <code>...</code> tags.
+Example: Use <code>a < b</code> instead of writing "a < b" directly in text.
+
 <ralph-commit>
 <ralph-subject>type(scope): description</ralph-subject>
 <ralph-body>Optional body explaining the change.
