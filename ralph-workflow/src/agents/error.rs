@@ -26,6 +26,24 @@ pub fn is_glm_like_agent(s: &str) -> bool {
         || s_lower.contains("deepseek")
 }
 
+/// Check if a string indicates an OpenCode agent.
+///
+/// OpenCode agents use their own non-interactive mechanism (`--auto-approve`)
+/// rather than the Claude/CCS `-p` flag. This is used to skip `-p` flag
+/// validation for OpenCode agents.
+///
+/// # Arguments
+///
+/// * `s` - The agent name or command string to check
+///
+/// # Returns
+///
+/// `true` if the string indicates an OpenCode agent, `false` otherwise
+pub fn is_opencode_agent(s: &str) -> bool {
+    let s_lower = s.to_lowercase();
+    s_lower.starts_with("opencode")
+}
+
 /// Error classification for agent failures.
 ///
 /// Used to determine appropriate recovery strategy when an agent fails:
@@ -497,6 +515,24 @@ mod tests {
 
     fn classify(exit_code: i32, stderr: &str) -> AgentErrorKind {
         AgentErrorKind::classify_with_agent(exit_code, stderr, None, None)
+    }
+
+    #[test]
+    fn test_is_opencode_agent() {
+        // OpenCode agent patterns
+        assert!(is_opencode_agent("opencode"));
+        assert!(is_opencode_agent("opencode/opencode/glm-4.7-free"));
+        assert!(is_opencode_agent("opencode/anthropic/claude-sonnet-4-5"));
+        assert!(is_opencode_agent("opencode/zai/glm-4.7"));
+        assert!(is_opencode_agent("opencode run"));
+        assert!(is_opencode_agent("OPENCODE")); // case insensitive
+
+        // Non-OpenCode patterns
+        assert!(!is_opencode_agent("claude"));
+        assert!(!is_opencode_agent("ccs/glm"));
+        assert!(!is_opencode_agent("codex"));
+        assert!(!is_opencode_agent("glm-4.7-free")); // model name alone
+        assert!(!is_opencode_agent("zai/glm-4.7")); // without opencode prefix
     }
 
     #[test]

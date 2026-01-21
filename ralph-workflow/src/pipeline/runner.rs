@@ -122,6 +122,10 @@ fn build_command_for_model(ctx: &TryModelContext<'_>, runtime: &PipelineRuntime<
 }
 
 /// GLM-specific validation for print flag.
+///
+/// This validation only applies to CCS/Claude-based GLM agents that use the `-p` flag
+/// for non-interactive mode. OpenCode agents are excluded because they use
+/// `--auto-approve` for non-interactive mode instead.
 fn validate_glm_print_flag(
     agent_name: &str,
     agent_config: &AgentConfig,
@@ -131,11 +135,17 @@ fn validate_glm_print_flag(
     model_index: usize,
     runtime: &PipelineRuntime<'_>,
 ) {
+    // Skip validation for non-GLM agents
     if !crate::agents::is_glm_like_agent(agent_name)
         || agent_index != 0
         || cycle != 0
         || model_index != 0
     {
+        return;
+    }
+
+    // Skip validation for OpenCode agents - they use --auto-approve, not -p
+    if crate::agents::is_opencode_agent(agent_name) || crate::agents::is_opencode_agent(cmd_str) {
         return;
     }
 
