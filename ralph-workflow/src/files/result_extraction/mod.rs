@@ -36,7 +36,6 @@ pub use file_extraction::extract_file_paths_from_issues;
 pub use json_extraction::extract_last_result;
 pub use types::ExtractionResult;
 pub use validation::validate_issues_content;
-pub use validation::validate_plan_content;
 
 use std::io;
 use std::path::Path;
@@ -53,7 +52,7 @@ use std::path::Path;
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like a valid plan)
 /// - Warning message (if validation failed)
-#[allow(dead_code)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(log_dir)?;
 
@@ -61,7 +60,8 @@ pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
         || Ok(ExtractionResult::empty()),
         |content| {
             let content_clean = content.trim().to_string();
-            let (is_valid, warning) = validate_plan_content(&content_clean);
+            let (is_valid, warning) =
+                crate::files::result_extraction::validation::validate_plan_content(&content_clean);
             Ok(if is_valid {
                 ExtractionResult::valid(content_clean)
             } else {

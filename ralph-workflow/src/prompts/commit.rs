@@ -40,7 +40,7 @@ use crate::files::result_extraction::extract_file_paths_from_issues;
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
 #[cfg(test)]
 pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str) -> String {
-    let template_content = include_str!("templates/fix_mode.txt");
+    let template_content = include_str!("templates/fix_mode_xml.txt");
 
     // Extract file paths from ISSUES content to provide explicit list
     let files_to_modify = extract_file_paths_from_issues(issues_content);
@@ -55,9 +55,9 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
     Template::new(template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
-            // Embedded fallback template (removed separate file - fallbacks now in code)
+            // Embedded fallback template (XML format)
             format!(
-                "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n"
+                "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n\nOutput format: <ralph-fix-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-fix-result>\n"
             )
         })
 }
@@ -82,8 +82,8 @@ pub fn prompt_fix_with_context(
 ) -> String {
     let template_content = context
         .registry()
-        .get_template("fix_mode")
-        .unwrap_or_else(|_| include_str!("templates/fix_mode.txt").to_string());
+        .get_template("fix_mode_xml")
+        .unwrap_or_else(|_| include_str!("templates/fix_mode_xml.txt").to_string());
 
     // Extract file paths from ISSUES content to provide explicit list
     let files_to_modify = extract_file_paths_from_issues(issues_content);
@@ -98,9 +98,9 @@ pub fn prompt_fix_with_context(
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
-            // Embedded fallback template (removed separate file - fallbacks now in code)
+            // Embedded fallback template (XML format)
             format!(
-                "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n"
+                "FIX MODE\n\nRead .agent/ISSUES.md and fix the issues found.\n\nContext:\nPROMPT:\n{prompt_content}\n\nPLAN:\n{plan_content}\n\nOutput format: <ralph-fix-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-fix-result>\n"
             )
         })
 }
@@ -330,14 +330,16 @@ mod tests {
         );
         assert!(result.contains("test issues content"));
         // Agent should NOT modify the ISSUES content - it is provided for reference only
-        assert!(result.contains("DO NOT modify the ISSUES content"));
+        assert!(result.contains("MUST NOT modify the ISSUES content"));
         assert!(result.contains("provided for reference only"));
         // Agent SHOULD modify source code files to fix issues
-        assert!(result.contains("SHOULD modify source code files"));
+        assert!(result.contains("MAY modify"));
         assert!(result.contains("FIX MODE"));
-        // Agent should return status as structured output
-        assert!(result.contains("All issues addressed"));
-        assert!(result.contains("Issues remain"));
+        // Agent should return status as XML output
+        assert!(result.contains("<ralph-fix-result>"));
+        assert!(result.contains("<ralph-status>"));
+        assert!(result.contains("all_issues_addressed"));
+        assert!(result.contains("issues_remain"));
         // Should include PROMPT and PLAN context
         assert!(result.contains("test prompt content"));
         assert!(result.contains("test plan content"));
@@ -385,10 +387,10 @@ mod tests {
         // Verify that fix prompt explicitly forbids repository exploration
         let fix_prompt = prompt_fix("", "", "");
         assert!(
-            fix_prompt.contains("MUST NOT read any other files")
-                || fix_prompt.contains("MUST NOT run git commands")
-                || fix_prompt.contains("DO NOT run any commands"),
-            "Fix prompt should explicitly forbid exploration or running commands"
+            fix_prompt.contains("MUST NOT modify the ISSUES content")
+                || fix_prompt.contains("LIMITEDLY")
+                || fix_prompt.contains("stop exploring"),
+            "Fix prompt should explicitly forbid unbounded exploration or limit it"
         );
     }
 
@@ -499,16 +501,19 @@ mod tests {
     fn test_fix_prompt_still_prohibits_exploration() {
         // Verify that fix prompt still prohibits exploration commands
         let fix_prompt = prompt_fix("", "", "");
+        // The XML template allows LIMITED exploration for vague issue descriptions
+        // but emphasizes stopping once relevant code is found
         assert!(
-            fix_prompt.contains("MUST NOT read any other files")
-                || fix_prompt.contains("MUST NOT explore"),
-            "Fix prompt should still prohibit reading unlisted files"
+            fix_prompt.contains("stop exploring")
+                || fix_prompt.contains("LIMITEDLY")
+                || fix_prompt.contains("MUST stop exploring"),
+            "Fix prompt should emphasize limited exploration"
         );
         assert!(
             fix_prompt.contains("git grep")
-                || fix_prompt.contains("ls")
-                || fix_prompt.contains("find"),
-            "Fix prompt should explicitly prohibit discovery commands"
+                || fix_prompt.contains("ripgrep")
+                || fix_prompt.contains("locate"),
+            "Fix prompt should explicitly allow discovery tools for finding relevant code"
         );
     }
 
@@ -562,7 +567,8 @@ mod tests {
     fn test_fix_prompt_explicitly_states_content_is_embedded() {
         let fix_prompt = prompt_fix("", "", "");
         assert!(
-            fix_prompt.contains("embedded above") || fix_prompt.contains("EMBEDDED"),
+            fix_prompt.contains("ISSUES FROM REVIEW")
+                || fix_prompt.contains("provided for reference only"),
             "Fix prompt should explicitly state ISSUES content is embedded in the prompt"
         );
     }
@@ -597,12 +603,14 @@ mod tests {
             "test issues content",
         );
         assert!(result.contains("test issues content"));
-        assert!(result.contains("DO NOT modify the ISSUES content"));
+        assert!(result.contains("MUST NOT modify the ISSUES content"));
         assert!(result.contains("provided for reference only"));
-        assert!(result.contains("SHOULD modify source code files"));
+        assert!(result.contains("MAY modify"));
         assert!(result.contains("FIX MODE"));
-        assert!(result.contains("All issues addressed"));
-        assert!(result.contains("Issues remain"));
+        assert!(result.contains("<ralph-fix-result>"));
+        assert!(result.contains("<ralph-status>"));
+        assert!(result.contains("all_issues_addressed"));
+        assert!(result.contains("issues_remain"));
         assert!(result.contains("test prompt content"));
         assert!(result.contains("test plan content"));
     }

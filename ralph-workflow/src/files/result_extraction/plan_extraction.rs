@@ -19,8 +19,8 @@ use super::text_extraction::extract_plan_from_text;
 /// This scans all log files matching the prefix and looks for markdown plan structure.
 /// Also checks subdirectories matching the prefix pattern (for legacy logs where agent
 /// names with "/" created nested directories).
-#[allow(dead_code)]
-pub fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>> {
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>> {
     // Helper to extract from a list of files by finding the best plan across all files
     fn extract_from_files(files: &[std::path::PathBuf]) -> Option<String> {
         let mut best_plan: Option<String> = None;

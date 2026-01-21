@@ -546,9 +546,9 @@ mod tests {
             &template_context,
             PromptConfig::new().with_prompt_md("test requirements".to_string()),
         );
-        // Plan is now returned as structured output, not written to file
+        // Plan is now returned as XML structured output
         assert!(result.contains("PLANNING MODE"));
-        assert!(result.contains("Implementation Steps"));
+        assert!(result.contains("<ralph-implementation-steps>"));
     }
 
     #[test]
@@ -556,8 +556,9 @@ mod tests {
         // All prompts should be free of agent-specific references
         // to ensure they work with any AI coding assistant
         let agent_specific_terms = [
-            "claude", "codex", "opencode", "gemini", "aider", "goose", "cline", "continue",
-            "amazon-q", "gpt", "copilot",
+            "claude", "codex", "opencode", "gemini", "aider", "goose", "cline", "amazon-q", "gpt",
+            "copilot",
+            // Note: "continue" is excluded as it's also a common English verb
         ];
 
         let prompts_to_check: Vec<String> = vec![
@@ -719,7 +720,7 @@ mod tests {
             "such as",
         ];
 
-        // Special case: "Use git" is allowed in fix_mode.txt for fault tolerance
+        // Special case: "Use git" is allowed in fix_mode_xml.txt for fault tolerance
         // when issue descriptions lack file context - the fixer needs to find the relevant code
         // This is part of the recovery mechanism for vague issues
 
@@ -738,7 +739,7 @@ mod tests {
                 "",
                 "",
             ),
-            // Note: fix_mode.txt is intentionally excluded from "Use git" check
+            // Note: fix_mode_xml.txt is intentionally excluded from "Use git" check
             // because it contains "Use git grep/rg ONLY when issue descriptions lack file context"
             // which is part of the fault tolerance design
             prompt_fix("", "", ""),

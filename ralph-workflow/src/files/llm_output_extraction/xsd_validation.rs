@@ -444,9 +444,10 @@ impl XsdValidationError {
             XsdErrorType::MissingRequiredElement => {
                 format!(
                     "MISSING REQUIRED ELEMENT: '{}' is required but was not found.\n\n\
-                     What was expected: {}\n\n\
+                     What was expected: {}\n\
+                     What was found: {}\n\n\
                      How to fix: {}",
-                    self.element_path, self.expected, self.suggestion
+                    self.element_path, self.expected, self.found, self.suggestion
                 )
             }
             XsdErrorType::UnexpectedElement => {

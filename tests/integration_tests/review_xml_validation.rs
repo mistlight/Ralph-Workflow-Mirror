@@ -199,10 +199,7 @@ fn test_review_xml_extraction_from_json_string() {
         let extracted = ralph_workflow::extract_issues_xml(content);
 
         // Assert: Verify XML is extracted and validates
-        assert!(
-            extracted.is_some(),
-            "Should extract XML from JSON string"
-        );
+        assert!(extracted.is_some(), "Should extract XML from JSON string");
 
         let xml = extracted.unwrap();
         let result = ralph_workflow::validate_issues_xml(&xml);
@@ -294,7 +291,10 @@ fn test_review_xml_issues_and_no_issues_found_cannot_coexist() {
         let result = ralph_workflow::validate_issues_xml(xml);
 
         // Assert: Verify validation fails
-        assert!(result.is_err(), "Should not allow both issues and no_issues_found");
+        assert!(
+            result.is_err(),
+            "Should not allow both issues and no_issues_found"
+        );
 
         let error = result.unwrap_err();
         assert!(
@@ -354,10 +354,7 @@ fn test_review_xml_unexpected_element_provides_valid_options() {
         let result = ralph_workflow::validate_issues_xml(xml);
 
         // Assert: Verify validation fails with specific error about valid tags
-        assert!(
-            result.is_err(),
-            "Unexpected element should fail validation"
-        );
+        assert!(result.is_err(), "Unexpected element should fail validation");
 
         let error = result.unwrap_err();
         assert!(
@@ -476,11 +473,17 @@ fn test_review_xml_whitespace_only_issues_are_filtered() {
         let result = ralph_workflow::validate_issues_xml(xml);
 
         // Assert: Verify validation passes and whitespace issues are filtered
-        assert!(result.is_ok(), "Whitespace filtering should still pass validation");
+        assert!(
+            result.is_ok(),
+            "Whitespace filtering should still pass validation"
+        );
 
         let elements = result.unwrap();
         assert_eq!(elements.issues.len(), 1, "Should only have non-empty issue");
-        assert_eq!(elements.issues[0], "Actual issue", "Should keep actual issue");
+        assert_eq!(
+            elements.issues[0], "Actual issue",
+            "Should keep actual issue"
+        );
     });
 }
 
@@ -501,6 +504,9 @@ fn test_review_xml_whitespace_only_no_issues_found_is_filtered() {
         let result = ralph_workflow::validate_issues_xml(xml);
 
         // Assert: Verify validation fails (whitespace is filtered to None, leaving empty issues)
-        assert!(result.is_err(), "Whitespace-only no_issues_found should be filtered and fail validation");
+        assert!(
+            result.is_err(),
+            "Whitespace-only no_issues_found should be filtered and fail validation"
+        );
     });
 }

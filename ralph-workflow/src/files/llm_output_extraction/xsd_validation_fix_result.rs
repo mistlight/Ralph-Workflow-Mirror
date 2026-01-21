@@ -236,9 +236,9 @@ pub struct FixResultElements {
 }
 
 impl FixResultElements {
-    /// Returns true if all issues have been addressed.
+    /// Returns true if all issues have been addressed or no issues were found.
     pub fn is_complete(&self) -> bool {
-        self.status == "all_issues_addressed"
+        self.status == "all_issues_addressed" || self.status == "no_issues_found"
     }
 
     /// Returns true if issues remain.

@@ -9,8 +9,8 @@
 /// - Contains markdown headers (lines starting with #)
 /// - Has reasonable length (> 50 chars)
 /// - Contains plan-like structure indicators
-#[allow(dead_code)]
-pub fn validate_plan_content(content: &str) -> (bool, Option<String>) {
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn validate_plan_content(content: &str) -> (bool, Option<String>) {
     let content_clean = content.trim();
 
     let has_header = content_clean

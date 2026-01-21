@@ -174,25 +174,29 @@ pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValid
     }
 
     // Must have either issues or no-issues-found
-    if issues.is_empty() && no_issues_found.is_none() {
+    // Note: We check after filtering because whitespace-only issues should be treated as empty
+    let filtered_issues: Vec<String> = issues
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let filtered_no_issues = no_issues_found
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    if filtered_issues.is_empty() && filtered_no_issues.is_none() {
         return Err(XsdValidationError {
             error_type: crate::files::llm_output_extraction::xsd_validation::XsdErrorType::MissingRequiredElement,
             element_path: "ralph-issues".to_string(),
-            expected: "at least one <ralph-issue> element OR <ralph-no-issues-found>".to_string(),
+            expected: "expected at least one <ralph-issue> element OR <ralph-no-issues-found>".to_string(),
             found: "no issues or no-issues-found element".to_string(),
             suggestion: "Add either <ralph-issue> elements for issues found, or <ralph-no-issues-found> if no issues exist".to_string(),
         });
     }
 
     Ok(IssuesElements {
-        issues: issues
-            .into_iter()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
-        no_issues_found: no_issues_found
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
+        issues: filtered_issues,
+        no_issues_found: filtered_no_issues,
     })
 }
 

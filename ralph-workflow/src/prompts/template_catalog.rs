@@ -125,16 +125,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         // ============================================================================
 
         m.insert(
-            "developer_iteration",
-            EmbeddedTemplate {
-                name: "developer_iteration",
-                content: include_str!("templates/developer_iteration.txt"),
-                description: "[TEST-ONLY LEGACY] Developer agent implementation mode prompt (non-XML). Use developer_iteration_xml for production.",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
             "developer_iteration_xml",
             EmbeddedTemplate {
                 name: "developer_iteration_xml",
@@ -170,16 +160,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "planning_xsd_retry",
                 content: include_str!("templates/planning_xsd_retry.txt"),
                 description: "XSD validation retry prompt for planning phase",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "planning",
-            EmbeddedTemplate {
-                name: "planning",
-                content: include_str!("templates/planning.txt"),
-                description: "[TEST-ONLY LEGACY] Planning phase prompt for implementation plans (non-XML). Use planning_xml for production.",
                 deprecated: false,
             },
         );
@@ -228,16 +208,6 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
                 name: "fix_mode_xsd_retry",
                 content: include_str!("templates/fix_mode_xsd_retry.txt"),
                 description: "XSD validation retry prompt for fix mode",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "fix_mode",
-            EmbeddedTemplate {
-                name: "fix_mode",
-                content: include_str!("templates/fix_mode.txt"),
-                description: "[TEST-ONLY LEGACY] Fix mode prompt for addressing review issues (non-XML). Use fix_mode_xml for production.",
                 deprecated: false,
             },
         );
@@ -452,7 +422,7 @@ mod tests {
 
     #[test]
     fn test_get_embedded_template_existing() {
-        let result = get_embedded_template("developer_iteration");
+        let result = get_embedded_template("developer_iteration_xml");
         assert!(result.is_some());
         let content = result.unwrap();
         assert!(!content.is_empty());
@@ -490,10 +460,10 @@ mod tests {
     fn test_get_templates_map() {
         let map = get_templates_map();
         assert!(!map.is_empty());
-        assert!(map.contains_key("developer_iteration"));
+        assert!(map.contains_key("developer_iteration_xml"));
         assert!(map.contains_key("commit_message_xml"));
 
-        let (content, description) = map.get("developer_iteration").unwrap();
+        let (content, description) = map.get("developer_iteration_xml").unwrap();
         assert!(!content.is_empty());
         assert!(!description.is_empty());
     }
@@ -529,6 +499,15 @@ mod tests {
         assert!(get_embedded_template("planning_fallback").is_none());
         assert!(get_embedded_template("fix_mode_fallback").is_none());
         // Note: Fallbacks are now embedded in code as inline strings, not separate .txt files
+    }
+
+    #[test]
+    fn test_legacy_non_xml_templates_removed() {
+        // Verify legacy non-XML templates have been removed
+        assert!(get_embedded_template("developer_iteration").is_none());
+        assert!(get_embedded_template("planning").is_none());
+        assert!(get_embedded_template("fix_mode").is_none());
+        // Note: Use *_xml variants instead
     }
 
     #[test]
