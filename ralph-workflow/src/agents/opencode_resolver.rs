@@ -83,8 +83,13 @@ impl OpenCodeResolver {
 
         // Set OPENCODE_PERMISSION to allow all tool actions without prompting
         // This is required for non-interactive/headless execution
+        // The value must be a JSON object where keys are permission types and values are actions
+        // Using {"*": "allow"} grants all permissions for all patterns
         let mut env_vars = std::collections::HashMap::new();
-        env_vars.insert("OPENCODE_PERMISSION".to_string(), r#""allow""#.to_string());
+        env_vars.insert(
+            "OPENCODE_PERMISSION".to_string(),
+            r#"{"*": "allow"}"#.to_string(),
+        );
 
         AgentConfig {
             cmd: "opencode run".to_string(),
@@ -374,9 +379,10 @@ mod tests {
         assert_eq!(config.json_parser, JsonParserType::OpenCode);
         assert!(config.can_commit);
         // Verify OPENCODE_PERMISSION is set for non-interactive mode
+        // The value is a JSON object that grants all permissions
         assert_eq!(
             config.env_vars.get("OPENCODE_PERMISSION"),
-            Some(&r#""allow""#.to_string())
+            Some(&r#"{"*": "allow"}"#.to_string())
         );
     }
 

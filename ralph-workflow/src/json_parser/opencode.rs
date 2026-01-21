@@ -1120,6 +1120,28 @@ impl OpenCodeParser {
             }
         }
 
+        // Handle any remaining buffered data when the stream ends.
+        // Only process if it's valid JSON - incomplete buffered data should be skipped.
+        if let Some(remaining) = incremental_parser.finish() {
+            let trimmed = remaining.trim();
+            if !trimmed.is_empty()
+                && trimmed.starts_with('{')
+                && serde_json::from_str::<OpenCodeEvent>(&remaining).is_ok()
+            {
+                // Process the remaining event
+                if let Some(output) = self.parse_event(&remaining) {
+                    monitor.record_parsed();
+                    let mut printer = self.printer.borrow_mut();
+                    write!(printer, "{output}")?;
+                    printer.flush()?;
+                }
+                // Write to log file
+                if let Some(ref mut file) = log_writer {
+                    writeln!(file, "{remaining}")?;
+                }
+            }
+        }
+
         if let Some(ref mut file) = log_writer {
             file.flush()?;
             // Ensure data is written to disk before continuing
