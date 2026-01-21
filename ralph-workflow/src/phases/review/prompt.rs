@@ -26,8 +26,6 @@ use crate::prompts::{
 
 #[cfg(test)]
 use crate::prompts::reviewer::prompt_reviewer_review_with_guidelines_and_diff;
-#[cfg(test)]
-use crate::prompts::TemplateContext;
 
 use super::super::context::PhaseContext;
 
@@ -448,6 +446,7 @@ fn short_oid(oid: &str) -> String {
 mod tests {
     use super::*;
     use crate::guidelines::ReviewGuidelines;
+    use crate::prompts::TemplateContext;
 
     /// Test that all prompt builder functions explicitly include the diff content.
     #[test]

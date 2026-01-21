@@ -282,14 +282,14 @@ Medium:
         let content = r"
 # Issues
 - [ ] [ralph-workflow/src/files/result_extraction/mod.rs:42] Missing export
-- [ ] [ralph-workflow/src/prompts/templates/fix_mode.txt:10] Template issue
+- [ ] [ralph-workflow/src/prompts/templates/fix_mode_xml.txt:10] Template issue
 ";
         let files = extract_file_paths_from_issues(content);
         assert_eq!(
             files,
             vec![
                 "ralph-workflow/src/files/result_extraction/mod.rs",
-                "ralph-workflow/src/prompts/templates/fix_mode.txt"
+                "ralph-workflow/src/prompts/templates/fix_mode_xml.txt"
             ]
         );
     }

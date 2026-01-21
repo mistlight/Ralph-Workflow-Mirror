@@ -1,0 +1,113 @@
+{# ============================================================================ #}
+{# Template: review_xml.txt                                                     #}
+{# Version: 1.0                                                                 #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Prompt for review phase to identify issues in the codebase.                #}
+{#   Uses XML output format for reliable parsing.                              #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   {{PROMPT}} - Original user requirements (required)                         #}
+{#   {{PLAN}} - Implementation plan (required)                                  #}
+{#   {{CHANGES}} - Description of changes made (required)                       #}
+{#                                                                             #}
+{# OUTPUT FORMAT:                                                              #}
+{#   <ralph-issues>                                                             #}
+{#     <ralph-issue>Issue description</ralph-issue> (one or more)               #}
+{#     OR                                                                       #}
+##     <ralph-no-issues-found>No issues found</ralph-no-issues-found>          #}
+{#   </ralph-issues>                                                            #}
+{#                                                                             #}
+{# EXTRACTION:                                                                 #}
+{#   Parsed by extract_issues_xml() in xml_extraction_issues.rs                #}
+{#   Validated by validate_issues_xml() in xsd_validation_issues.rs            #}
+{# ============================================================================ #}
+
+You are in REVIEW MODE. Identify issues in the implementation.
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXT
+═══════════════════════════════════════════════════════════════════════════════
+
+ORIGINAL USER REQUIREMENTS:
+{{PROMPT}}
+
+IMPLEMENTATION PLAN:
+{{PLAN}}
+
+CHANGES MADE:
+{{CHANGES}}
+
+═══════════════════════════════════════════════════════════════════════════════
+REVIEW INSTRUCTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+Review the implementation against the requirements and plan. Look for:
+1. **Correctness issues**: Bugs, logic errors, incorrect behavior
+2. **Code quality issues**: Violates project style guide, poor practices
+3. **Missing functionality**: Requirements not implemented
+4. **Edge cases**: Unhandled error conditions, boundary cases
+5. **Security issues**: Potential vulnerabilities
+6. **Testing gaps**: Missing or inadequate tests
+
+For each issue found, provide:
+- File and line reference (e.g., `src/file.rs:42`)
+- Severity level (Critical, High, Medium, Low)
+- Description of the problem
+- Suggested fix
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT - XML (CRITICAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+You MUST output your review using ONLY these XML tags:
+
+If issues are found:
+<ralph-issues>
+<ralph-issue>[Critical] src/file.rs:42 - Null pointer dereference possible here.
+The function doesn't check if `config` is None before accessing `config.value`.
+Fix: Add a check: `if let Some(config) = &config { ... }`</ralph-issue>
+<ralph-issue>[Medium] src/api.rs:123 - Error handling is incomplete.
+The function returns an empty string on error instead of propagating the error.
+Consider returning `Result<T, E>` to allow callers to handle errors properly.</ralph-issue>
+</ralph-issues>
+
+If no issues are found:
+<ralph-issues>
+<ralph-no-issues-found>No issues found. The implementation satisfies all requirements
+and follows the project's code quality standards.</ralph-no-issues-found>
+</ralph-issues>
+
+### CRITICAL OUTPUT INSTRUCTIONS:
+
+1. Start your response IMMEDIATELY with <ralph-issues>
+2. NO text before <ralph-issues>
+3. NO text after </ralph-issues>
+4. Use either <ralph-issue> elements OR <ralph-no-issues-found>, not both
+5. Include as many <ralph-issue> elements as needed
+6. NO markdown code fences around the XML
+7. Each issue should have: severity, file:line reference, description, fix suggestion
+
+### CORRECT OUTPUT EXAMPLE (ISSUES FOUND):
+
+<ralph-issues>
+<ralph-issue>[Critical] src/auth.rs:56 - SQL injection vulnerability.
+User input is directly interpolated into the query string.
+Fix: Use parameterized queries: `db.query("SELECT * FROM users WHERE id = ?", &user_id)`</ralph-issue>
+<ralph-issue>[High] src/auth.rs:78 - Password stored in plain text.
+Passwords should be hashed before storing.
+Fix: Use bcrypt or argon2: `let hash = bcrypt::hash(password, DEFAULT_COST)?`</ralph-issue>
+<ralph-issue>[Medium] tests/auth_test.rs:12 - Test doesn't verify error conditions.
+The test only checks success cases.
+Fix: Add tests for invalid passwords, non-existent users, database errors</ralph-issue>
+</ralph-issues>
+
+### CORRECT OUTPUT EXAMPLE (NO ISSUES):
+
+<ralph-issues>
+<ralph-no-issues-found>No issues found. The implementation correctly handles all requirements,
+includes proper error handling, and has comprehensive test coverage.</ralph-no-issues-found>
+</ralph-issues>
+
+Review the implementation now and output your findings in the required XML format.

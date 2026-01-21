@@ -1,4 +1,7 @@
 //! Content validation for extracted plan and issues.
+//!
+//! Note: Some functions in this module are currently unused in production
+//! (XML extraction is used instead). Kept for potential future use and test compatibility.
 
 /// Validate plan content.
 ///
@@ -6,7 +9,8 @@
 /// - Contains markdown headers (lines starting with #)
 /// - Has reasonable length (> 50 chars)
 /// - Contains plan-like structure indicators
-pub fn validate_plan_content(content: &str) -> (bool, Option<String>) {
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn validate_plan_content(content: &str) -> (bool, Option<String>) {
     let content_clean = content.trim();
 
     let has_header = content_clean

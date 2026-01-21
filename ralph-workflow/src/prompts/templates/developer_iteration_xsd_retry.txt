@@ -1,0 +1,63 @@
+{# ============================================================================ #}
+{# Template: developer_iteration_xsd_retry.txt                                   #}
+{# Version: 1.0                                                                 #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Retry prompt when XML validation fails during development iteration.      #}
+{#   Provides specific XSD error feedback to guide the AI agent.               #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   {{PROMPT}} - Original user request from PROMPT.md (required)              #}
+{#   {{PLAN}} - Implementation plan from .agent/PLAN.md (required)             #}
+{#   {{XSD_ERROR}} - XSD validation error message (required)                   #}
+{#   {{LAST_OUTPUT}} - The invalid XML output (required)                       #}
+{#                                                                             #}
+{# OUTPUT FORMAT:                                                               #}
+{#   Same as developer_iteration_xml.txt - valid <ralph-development-result> XML #}
+{# ============================================================================ #}
+
+Your previous development status output failed XSD validation.
+
+═══════════════════════════════════════════════════════════════════════════════
+XSD VALIDATION ERROR
+═══════════════════════════════════════════════════════════════════════════════
+
+{{XSD_ERROR}}
+
+═══════════════════════════════════════════════════════════════════════════════
+YOUR LAST OUTPUT (INVALID)
+═══════════════════════════════════════════════════════════════════════════════
+
+{{LAST_OUTPUT}}
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEND WITH PROPER XML FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+You should have already completed your work. Now you need to report your completion
+status using the correct XML format.
+
+<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Brief summary of what was done.</ralph-summary>
+<ralph-files-changed>Optional list of files modified</ralph-files-changed>
+<ralph-next-steps>Optional next steps</ralph-next-steps>
+</ralph-development-result>
+
+Valid status values:
+- `completed` - You completed all the work you intended to do
+- `partial` - You made progress but more work remains
+- `failed` - You could not complete the work
+
+REQUIREMENTS:
+- Start IMMEDIATELY with <ralph-development-result> (no text before)
+- End with </ralph-development-result> (no text after)
+- <ralph-status> is REQUIRED and must be one of the valid values
+- <ralph-summary> is REQUIRED
+- <ralph-files-changed> is optional
+- <ralph-next-steps> is optional
+- NO markdown code fences
+- NO commentary outside the XML
+
+Resend your completion status now with the correct XML format.

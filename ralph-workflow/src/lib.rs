@@ -24,3 +24,12 @@ pub mod platform;
 pub mod prompts;
 pub mod review_metrics;
 pub mod templates;
+
+// Re-export XML extraction and validation functions for use in integration tests
+pub use files::llm_output_extraction::extract_development_result_xml;
+pub use files::llm_output_extraction::extract_fix_result_xml;
+pub use files::llm_output_extraction::extract_issues_xml;
+pub use files::llm_output_extraction::format_xml_for_display;
+pub use files::llm_output_extraction::validate_development_result_xml;
+pub use files::llm_output_extraction::validate_fix_result_xml;
+pub use files::llm_output_extraction::validate_issues_xml;

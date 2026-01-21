@@ -1,4 +1,7 @@
 //! Text-based extraction for fallback when JSON result events are not available.
+//!
+//! Note: Currently unused in production (XML extraction is used instead).
+//! Kept for potential future use and test compatibility.
 
 use super::scoring::score_text_plan;
 
@@ -9,7 +12,8 @@ use super::scoring::score_text_plan;
 /// If multiple plan candidates are found, it returns the highest-scoring one.
 /// If no markers are found, it falls back to extracting substantial text content
 /// that contains plan-like keywords.
-pub fn extract_plan_from_text(content: &str) -> Option<String> {
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn extract_plan_from_text(content: &str) -> Option<String> {
     // Look for plan start markers - these indicate where a plan begins
     let start_markers = [
         "## Summary",
@@ -69,7 +73,8 @@ pub fn extract_plan_from_text(content: &str) -> Option<String> {
 ///
 /// This is a final fallback for plaintext mode logs where the agent may have
 /// output a valid plan but without the expected markdown structure.
-pub fn extract_plan_from_text_permissive(content: &str) -> Option<String> {
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn extract_plan_from_text_permissive(content: &str) -> Option<String> {
     // Minimum content length (increased from 50 to 200 for permissive mode)
     const MIN_PERMISSIVE_LENGTH: usize = 200;
 

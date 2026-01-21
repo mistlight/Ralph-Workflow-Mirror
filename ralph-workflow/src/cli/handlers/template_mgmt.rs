@@ -628,14 +628,14 @@ mod tests {
     fn test_get_all_templates_not_empty() {
         let templates = get_all_templates();
         assert!(!templates.is_empty());
-        assert!(templates.contains_key("developer_iteration"));
+        assert!(templates.contains_key("developer_iteration_xml"));
         assert!(templates.contains_key("commit_message_xml"));
     }
 
     #[test]
     fn test_template_show_valid() {
         let colors = Colors::new();
-        let result = handle_template_show("developer_iteration", colors);
+        let result = handle_template_show("developer_iteration_xml", colors);
         assert!(result.is_ok());
     }
 
@@ -649,7 +649,7 @@ mod tests {
     #[test]
     fn test_template_variables() {
         let colors = Colors::new();
-        let result = handle_template_variables("developer_iteration", colors);
+        let result = handle_template_variables("developer_iteration_xml", colors);
         assert!(result.is_ok());
     }
 }
