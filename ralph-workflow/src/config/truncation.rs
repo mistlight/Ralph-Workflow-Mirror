@@ -33,18 +33,19 @@ pub mod quiet {
 /// Normal mode provides balanced output with moderate truncation
 /// for better usability while still keeping output manageable.
 ///
-/// NOTE: `TOOL_INPUT` is unlimited in Normal mode because tool input
-/// provides crucial context for understanding agent behavior. Truncating
-/// it makes it hard to understand what the agent is doing.
+/// NOTE: `TOOL_INPUT` and `TOOL_RESULT` are generous in Normal mode
+/// because tool outputs provide crucial context for understanding
+/// agent behavior. Users need to see what files contain and what
+/// commands return to follow along with the agent's work.
 pub mod normal {
-    pub const TEXT: usize = 400;
-    pub const TOOL_RESULT: usize = 300;
+    pub const TEXT: usize = 1000;
+    pub const TOOL_RESULT: usize = 2000;
     pub const TOOL_INPUT: usize = 999_999; // Unlimited - don't truncate tool input
     pub const USER: usize = 200;
-    pub const RESULT: usize = 1500;
-    pub const COMMAND: usize = 200;
-    pub const AGENT_MSG: usize = 400;
-    pub const DEFAULT: usize = 300;
+    pub const RESULT: usize = 3000;
+    pub const COMMAND: usize = 400;
+    pub const AGENT_MSG: usize = 1000;
+    pub const DEFAULT: usize = 500;
 }
 
 /// Truncation limits for Verbose verbosity mode.
@@ -52,17 +53,18 @@ pub mod normal {
 /// Verbose is the default mode, providing generous limits to help
 /// users understand agent behavior without being overwhelming.
 ///
-/// NOTE: `TOOL_INPUT` is unlimited in Verbose mode because this mode
-/// is specifically for understanding agent behavior in detail.
+/// NOTE: `TOOL_INPUT` and `TOOL_RESULT` are unlimited in Verbose mode
+/// to match interactive CLI behavior where users expect to see full
+/// tool outputs including file contents and command results.
 pub mod verbose {
-    pub const TEXT: usize = 800;
-    pub const TOOL_RESULT: usize = 600;
+    pub const TEXT: usize = 2000;
+    pub const TOOL_RESULT: usize = 999_999; // Unlimited - show full tool outputs
     pub const TOOL_INPUT: usize = 999_999; // Unlimited - don't truncate tool input
     pub const USER: usize = 400;
-    pub const RESULT: usize = 3000;
+    pub const RESULT: usize = 5000;
     pub const COMMAND: usize = 400;
-    pub const AGENT_MSG: usize = 800;
-    pub const DEFAULT: usize = 600;
+    pub const AGENT_MSG: usize = 2000;
+    pub const DEFAULT: usize = 1000;
 }
 
 /// Effectively unlimited output for Full/Debug modes.

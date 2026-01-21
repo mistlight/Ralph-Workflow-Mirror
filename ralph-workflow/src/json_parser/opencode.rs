@@ -431,6 +431,12 @@ impl OpenCodeParser {
     }
 
     /// Format a `tool_use` event
+    ///
+    /// OpenCode's interactive mode shows rich tool information including:
+    /// - Tool name and status
+    /// - Title/description when available
+    /// - Full input parameters
+    /// - Tool output/results (shown at Normal+ verbosity for better visibility)
     fn format_tool_use_event(&self, event: &OpenCodeEvent) -> String {
         let c = &self.colors;
         let prefix = &self.display_name;
@@ -502,32 +508,31 @@ impl OpenCodeParser {
                 }
             }
 
-            // Show tool output in verbose mode if completed
-            if self.verbosity.is_verbose() && is_completed {
+            // Show tool output at Normal+ verbosity when completed
+            // (Changed from verbose-only to match OpenCode's interactive mode behavior)
+            if self.verbosity.show_tool_input() && is_completed {
                 if let Some(ref state) = part.state {
                     if let Some(ref output_val) = state.output {
                         let output_str = match output_val {
-                            serde_json::Value::String(s) => s.as_str(),
-                            _ => "",
+                            serde_json::Value::String(s) => s.clone(),
+                            other => other.to_string(),
                         };
-                        let output_str = if output_str.is_empty() {
-                            output_val.to_string()
-                        } else {
-                            output_str.to_string()
-                        };
-                        let limit = self.verbosity.truncate_limit("tool_result");
-                        let preview = truncate_text(&output_str, limit);
-                        if !preview.is_empty() {
-                            let _ = writeln!(
-                                out,
-                                "{}[{}]{} {}  └─ Output: {}{}",
-                                c.dim(),
-                                prefix,
-                                c.reset(),
-                                c.dim(),
-                                preview,
-                                c.reset()
-                            );
+                        if !output_str.is_empty() {
+                            let limit = self.verbosity.truncate_limit("tool_result");
+                            let preview = truncate_text(&output_str, limit);
+                            if !preview.is_empty() {
+                                let _ = writeln!(
+                                    out,
+                                    "{}[{}]{} {}  └─ {}Output:{} {}",
+                                    c.dim(),
+                                    prefix,
+                                    c.reset(),
+                                    c.cyan(),
+                                    c.reset(),
+                                    c.reset(),
+                                    preview
+                                );
+                            }
                         }
                     }
                 }
