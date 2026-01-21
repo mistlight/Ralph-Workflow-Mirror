@@ -81,17 +81,24 @@ impl OpenCodeResolver {
         // The model_flag is the "-m provider/model" part
         let model_flag = format!("-m {}/{}", provider, model);
 
+        // Set OPENCODE_PERMISSION to allow all tool actions without prompting
+        // This is required for non-interactive/headless execution
+        let mut env_vars = std::collections::HashMap::new();
+        env_vars.insert("OPENCODE_PERMISSION".to_string(), r#""allow""#.to_string());
+
         AgentConfig {
             cmd: "opencode run".to_string(),
             output_flag: "--format json".to_string(),
-            yolo_flag: "--auto-approve".to_string(),
+            // OpenCode doesn't have an auto-approve flag - permissions are controlled
+            // via OPENCODE_PERMISSION environment variable (set above)
+            yolo_flag: String::new(),
             verbose_flag: "--log-level DEBUG --print-logs".to_string(),
             can_commit: true,
             json_parser: JsonParserType::OpenCode,
             model_flag: Some(model_flag),
             print_flag: String::new(),
             streaming_flag: String::new(),
-            env_vars: std::collections::HashMap::new(),
+            env_vars,
             display_name: Some(format!("OpenCode ({})", provider)),
         }
     }
@@ -362,9 +369,15 @@ mod tests {
             Some("-m anthropic/claude-sonnet-4-5".to_string())
         );
         assert_eq!(config.output_flag, "--format json");
-        assert_eq!(config.yolo_flag, "--auto-approve");
+        // OpenCode's `run` command is non-interactive by default, no yolo flag needed
+        assert_eq!(config.yolo_flag, "");
         assert_eq!(config.json_parser, JsonParserType::OpenCode);
         assert!(config.can_commit);
+        // Verify OPENCODE_PERMISSION is set for non-interactive mode
+        assert_eq!(
+            config.env_vars.get("OPENCODE_PERMISSION"),
+            Some(&r#""allow""#.to_string())
+        );
     }
 
     #[test]

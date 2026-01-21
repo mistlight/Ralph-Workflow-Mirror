@@ -140,15 +140,21 @@ display_name = "OpenAI Codex CLI"
 # https://github.com/opencode-ai/opencode
 # Uses 'run' command for non-interactive, --format json for raw JSON events output
 # Supports multiple providers via -m flag (e.g., -m opencode/glm-4.7-free)
+# Note: Permissions are controlled via OPENCODE_PERMISSION env var (set to "allow" for headless mode)
 [agents.opencode]
 cmd = "opencode run"
 output_flag = "--format json"
-yolo_flag = "--auto-approve"
+yolo_flag = ""
 verbose_flag = "--log-level DEBUG --print-logs"
 can_commit = true
 json_parser = "opencode"
 display_name = "OpenCode"
 # model_flag = "-m opencode/glm-4.7-free"  # Uncomment to set default model
+
+# Environment variables for OpenCode non-interactive mode
+# OPENCODE_PERMISSION="allow" auto-approves all tool actions
+[agents.opencode.env_vars]
+OPENCODE_PERMISSION = "\"allow\""
 
 # Aider - AI pair programming in your terminal
 # https://github.com/paul-gauthier/aider
