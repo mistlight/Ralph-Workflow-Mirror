@@ -20,15 +20,41 @@ use crate::common::ralph_cmd;
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
 
-fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
+/// Helper function to set up base environment for tests.
+///
+/// This function sets up config isolation using XDG_CONFIG_HOME to prevent
+/// the tests from loading the user's actual config which may contain
+/// opencode/* references that would trigger network calls.
+fn base_env<'a>(
+    cmd: &'a mut assert_cmd::Command,
+    config_home: &std::path::Path,
+) -> &'a mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
+        // Isolate config to prevent loading user's actual config with opencode/* refs
+        .env("XDG_CONFIG_HOME", config_home)
         // Ensure git identity isn't a factor if a commit happens in the test.
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
         .env("GIT_COMMITTER_NAME", "Test")
         .env("GIT_COMMITTER_EMAIL", "test@example.com")
+}
+
+/// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
+fn create_isolated_config(dir: &TempDir) -> std::path::PathBuf {
+    let config_home = dir.path().join(".config");
+    fs::create_dir_all(&config_home).unwrap();
+    // Create minimal config without opencode/* references
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["claude"]
+reviewer = ["codex"]
+"#,
+    )
+    .unwrap();
+    config_home
 }
 
 // ============================================================================
@@ -43,6 +69,7 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 fn ralph_init_creates_config_file() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let dir_path = dir.path();
 
         // Initialize git repo but don't create agents.toml
@@ -54,6 +81,7 @@ fn ralph_init_creates_config_file() {
         // Run ralph --init-legacy
         let output = ralph_cmd()
             .current_dir(dir_path)
+            .env("XDG_CONFIG_HOME", &config_home)
             .arg("--init-legacy")
             .assert()
             .success();
@@ -83,6 +111,7 @@ fn ralph_init_creates_config_file() {
 fn ralph_init_reports_existing_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let dir_path = dir.path();
 
         // Initialize git repo
@@ -99,6 +128,7 @@ reviewer = ["codex"]
         // Run ralph --init-legacy
         let output = ralph_cmd()
             .current_dir(dir_path)
+            .env("XDG_CONFIG_HOME", &config_home)
             .arg("--init-legacy")
             .assert()
             .success();
@@ -167,29 +197,28 @@ fn ralph_uses_agent_chain_first_entries_as_defaults() {
         let _ = init_git_repo(&dir);
 
         // Ensure no explicit agent selection via env is in play.
-        // base_env doesn't set RALPH_DEVELOPER_AGENT / RALPH_REVIEWER_AGENT.
+        // Use non-opencode agents to avoid network calls for API catalog.
         let config_home = dir.path().join(".config");
         fs::create_dir_all(&config_home).unwrap();
         fs::write(
             config_home.join("ralph-workflow.toml"),
             r#"[agent_chain]
-developer = ["opencode", "claude"]
+developer = ["claude", "codex"]
 reviewer = ["aider", "codex"]
 "#,
         )
         .unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
-            .env("XDG_CONFIG_HOME", &config_home)
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");
         // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
         cmd.assert()
             .success()
-            .stdout(predicate::str::contains("OpenCode"))
+            .stdout(predicate::str::contains("Claude"))
             .stdout(predicate::str::contains("Aider"));
     });
 }
@@ -207,6 +236,7 @@ fn ralph_quick_mode_sets_minimal_iterations() {
     with_default_timeout(|| {
         // Quick mode should set developer_iters=1 and reviewer_reviews=1
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
@@ -215,6 +245,7 @@ fn ralph_quick_mode_sets_minimal_iterations() {
             .arg("--developer-iters")
             .arg("0") // Override with 0 to skip agent execution
             .env("RALPH_INTERACTIVE", "0")
+            .env("XDG_CONFIG_HOME", &config_home)
             .env("GIT_AUTHOR_NAME", "Test")
             .env("GIT_AUTHOR_EMAIL", "test@example.com")
             .env("GIT_COMMITTER_NAME", "Test")
@@ -234,6 +265,7 @@ fn ralph_quick_mode_short_flag_works() {
     with_default_timeout(|| {
         // -Q should work the same as --quick
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let _counter_path = dir.path().join(".agent/plan_counter");
@@ -244,6 +276,7 @@ fn ralph_quick_mode_short_flag_works() {
             .arg("--developer-iters")
             .arg("0") // Override with 0 to skip agent execution
             .env("RALPH_INTERACTIVE", "0")
+            .env("XDG_CONFIG_HOME", &config_home)
             .env("GIT_AUTHOR_NAME", "Test")
             .env("GIT_AUTHOR_EMAIL", "test@example.com")
             .env("GIT_COMMITTER_NAME", "Test")
@@ -263,6 +296,7 @@ fn ralph_quick_mode_explicit_iters_override() {
     with_default_timeout(|| {
         // Explicit --developer-iters should override quick mode
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let _counter_path = dir.path().join(".agent/plan_counter");
@@ -273,6 +307,7 @@ fn ralph_quick_mode_explicit_iters_override() {
             .arg("--developer-iters")
             .arg("0") // Override with 0 to skip agent execution
             .env("RALPH_INTERACTIVE", "0")
+            .env("XDG_CONFIG_HOME", &config_home)
             .env("GIT_AUTHOR_NAME", "Test")
             .env("GIT_AUTHOR_EMAIL", "test@example.com")
             .env("GIT_COMMITTER_NAME", "Test")
@@ -292,6 +327,7 @@ fn ralph_rapid_mode_sets_two_iterations() {
     with_default_timeout(|| {
         // Rapid mode should set developer_iters=2 and reviewer_reviews=1
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let _counter_path = dir.path().join(".agent/plan_counter");
@@ -302,6 +338,7 @@ fn ralph_rapid_mode_sets_two_iterations() {
             .arg("--developer-iters")
             .arg("0") // Override with 0 to skip agent execution
             .env("RALPH_INTERACTIVE", "0")
+            .env("XDG_CONFIG_HOME", &config_home)
             .env("GIT_AUTHOR_NAME", "Test")
             .env("GIT_AUTHOR_EMAIL", "test@example.com")
             .env("GIT_COMMITTER_NAME", "Test")
@@ -321,6 +358,7 @@ fn ralph_rapid_mode_short_flag_works() {
     with_default_timeout(|| {
         // -U should work the same as --rapid
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let _counter_path = dir.path().join(".agent/plan_counter");
@@ -331,6 +369,7 @@ fn ralph_rapid_mode_short_flag_works() {
             .arg("--developer-iters")
             .arg("0") // Override with 0 to skip agent execution
             .env("RALPH_INTERACTIVE", "0")
+            .env("XDG_CONFIG_HOME", &config_home)
             .env("GIT_AUTHOR_NAME", "Test")
             .env("GIT_AUTHOR_EMAIL", "test@example.com")
             .env("GIT_COMMITTER_NAME", "Test")
@@ -354,6 +393,7 @@ fn ralph_stack_detection_rust_project() {
     with_default_timeout(|| {
         // Test that stack detection works in an integration context
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Create a Rust project structure
@@ -376,7 +416,7 @@ tokio = "1.0"
 
         // Run ralph with verbose output to see stack detection
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -398,6 +438,7 @@ fn ralph_stack_detection_javascript_project() {
     with_default_timeout(|| {
         // Test stack detection for a JavaScript/React project
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Create a JavaScript/React project structure
@@ -422,7 +463,7 @@ fn ralph_stack_detection_javascript_project() {
         .unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -442,6 +483,7 @@ fn ralph_stack_detection_disabled() {
     with_default_timeout(|| {
         // Test that stack detection can be disabled
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Create a project structure
@@ -456,7 +498,7 @@ name = "test"
         fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -476,6 +518,7 @@ fn ralph_mixed_language_project() {
     with_default_timeout(|| {
         // Test stack detection with multiple languages
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Create a mixed-language project (Rust backend + Python scripts)
@@ -494,7 +537,7 @@ version = "0.1.0"
         fs::write(dir.path().join("scripts/deploy.py"), "print('deploy')").unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -518,10 +561,11 @@ fn ralph_review_depth_standard() {
     with_default_timeout(|| {
         // Test standard review depth
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -541,10 +585,11 @@ fn ralph_review_depth_comprehensive() {
     with_default_timeout(|| {
         // Test comprehensive review depth
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -564,10 +609,11 @@ fn ralph_review_depth_security() {
     with_default_timeout(|| {
         // Test security-focused review depth
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -587,10 +633,11 @@ fn ralph_review_depth_incremental() {
     with_default_timeout(|| {
         // Test incremental review depth (focuses on git diff)
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")

@@ -26,15 +26,41 @@ use crate::common::ralph_cmd;
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
 
-fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
+/// Helper function to set up base environment for tests.
+///
+/// This function sets up config isolation using XDG_CONFIG_HOME to prevent
+/// the tests from loading the user's actual config which may contain
+/// opencode/* references that would trigger network calls.
+fn base_env<'a>(
+    cmd: &'a mut assert_cmd::Command,
+    config_home: &std::path::Path,
+) -> &'a mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
+        // Isolate config to prevent loading user's actual config with opencode/* refs
+        .env("XDG_CONFIG_HOME", config_home)
         // Ensure git identity isn't a factor if a commit happens in the test.
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
         .env("GIT_COMMITTER_NAME", "Test")
         .env("GIT_COMMITTER_EMAIL", "test@example.com")
+}
+
+/// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
+fn create_isolated_config(dir: &TempDir) -> std::path::PathBuf {
+    let config_home = dir.path().join(".config");
+    fs::create_dir_all(&config_home).unwrap();
+    // Create minimal config without opencode/* references
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["claude"]
+reviewer = ["codex"]
+"#,
+    )
+    .unwrap();
+    config_home
 }
 
 // ============================================================================
@@ -57,13 +83,14 @@ fn ralph_skips_plan_phase_when_zero_developer_iters() {
         // When developer_iters=0, planning phase should be skipped entirely
         // and the workflow should complete successfully with just a commit
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Create a file to have something to commit
         fs::write(dir.path().join("test.txt"), "content").unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");
@@ -88,6 +115,7 @@ fn ralph_commit_without_plan_succeeds() {
         // Test that a commit can be made without any plan when developer_iters=0
         // This tests the "skip to commit" behavior
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let repo = init_git_repo(&dir);
 
         // Create an initial commit to establish HEAD
@@ -98,7 +126,7 @@ fn ralph_commit_without_plan_succeeds() {
         fs::write(dir.path().join("test.txt"), "content").unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");

@@ -2,15 +2,35 @@
 //!
 //! This module defines the types for parsing and representing the OpenCode
 //! model catalog from https://models.dev/api.json.
+//!
+//! The actual API format is:
+//! ```json
+//! {
+//!   "provider_id": {
+//!     "id": "provider_id",
+//!     "name": "Provider Name",
+//!     "models": {
+//!       "model_id": { "id": "model_id", "name": "Model Name", ... }
+//!     }
+//!   }
+//! }
+//! ```
+//!
+//! The cache format (used for local storage) is:
+//! ```json
+//! {
+//!   "providers": { "provider_id": { "id": "...", "name": "...", "description": "..." } },
+//!   "models": { "provider_id": [{ "id": "...", "name": "...", ... }] }
+//! }
+//! ```
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
 use crate::agents::opencode_api::DEFAULT_CACHE_TTL_SECONDS;
 
 /// OpenCode API catalog containing all available providers and models.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(from = "ApiCatalogRaw")]
+#[derive(Debug, Clone)]
 pub struct ApiCatalog {
     /// All providers supported by OpenCode.
     pub providers: HashMap<String, Provider>,
@@ -22,20 +42,107 @@ pub struct ApiCatalog {
     pub ttl_seconds: u64,
 }
 
-/// Raw representation for deserializing from JSON.
+impl<'de> Deserialize<'de> for ApiCatalog {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // First, deserialize to a generic JSON value
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Check if this is the cache format (has "providers" and "models" keys)
+        if value.get("providers").is_some() && value.get("models").is_some() {
+            // Cache format
+            let cache_format: CacheFormat =
+                serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+            Ok(ApiCatalog {
+                providers: cache_format.providers,
+                models: cache_format.models,
+                cached_at: None,
+                ttl_seconds: DEFAULT_CACHE_TTL_SECONDS,
+            })
+        } else {
+            // API format - parse as provider entries
+            let api_format: HashMap<String, RawProviderEntry> =
+                serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+            Ok(ApiCatalog::from(api_format))
+        }
+    }
+}
+
+/// Cache format for local storage.
 #[derive(Debug, Clone, Deserialize)]
-struct ApiCatalogRaw {
-    #[serde(default)]
+struct CacheFormat {
     providers: HashMap<String, Provider>,
-    #[serde(default)]
     models: HashMap<String, Vec<Model>>,
 }
 
-impl From<ApiCatalogRaw> for ApiCatalog {
-    fn from(raw: ApiCatalogRaw) -> Self {
+/// Raw provider entry as returned by the API.
+/// Each provider has an embedded `models` object with model IDs as keys.
+#[derive(Debug, Clone, Deserialize)]
+struct RawProviderEntry {
+    id: String,
+    name: String,
+    #[serde(default)]
+    doc: Option<String>,
+    #[serde(default)]
+    models: HashMap<String, RawModel>,
+}
+
+/// Raw model entry as returned by the API.
+#[derive(Debug, Clone, Deserialize)]
+struct RawModel {
+    id: String,
+    name: String,
+    #[serde(default)]
+    family: Option<String>,
+    #[serde(default)]
+    limit: Option<RawModelLimit>,
+}
+
+/// Raw model limit structure from API.
+#[derive(Debug, Clone, Deserialize)]
+struct RawModelLimit {
+    #[serde(default)]
+    context: Option<usize>,
+}
+
+impl From<HashMap<String, RawProviderEntry>> for ApiCatalog {
+    fn from(raw: HashMap<String, RawProviderEntry>) -> Self {
+        let mut providers = HashMap::new();
+        let mut models = HashMap::new();
+
+        for (provider_id, entry) in raw {
+            // Create provider entry
+            providers.insert(
+                provider_id.clone(),
+                Provider {
+                    id: entry.id.clone(),
+                    name: entry.name.clone(),
+                    description: entry.doc.unwrap_or_default(),
+                },
+            );
+
+            // Convert models from HashMap to Vec
+            let model_list: Vec<Model> = entry
+                .models
+                .into_values()
+                .map(|m| Model {
+                    id: m.id,
+                    name: m.name,
+                    description: m.family.unwrap_or_default(),
+                    context_length: m.limit.and_then(|l| l.context),
+                })
+                .collect();
+
+            if !model_list.is_empty() {
+                models.insert(provider_id, model_list);
+            }
+        }
+
         Self {
-            providers: raw.providers,
-            models: raw.models,
+            providers,
+            models,
             cached_at: None,
             ttl_seconds: DEFAULT_CACHE_TTL_SECONDS,
         }
@@ -296,5 +403,105 @@ mod tests {
 
         let results = catalog.find_models_by_prefix("nonexistent", "any");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_deserialize_real_api_format() {
+        // This is a simplified version of the actual models.dev/api.json format
+        let json = r#"{
+            "opencode": {
+                "id": "opencode",
+                "name": "OpenCode Zen",
+                "doc": "https://opencode.ai/docs/zen",
+                "models": {
+                    "glm-4.7-free": {
+                        "id": "glm-4.7-free",
+                        "name": "GLM-4.7",
+                        "family": "glm-free",
+                        "limit": {
+                            "context": 204800,
+                            "output": 131072
+                        }
+                    },
+                    "claude-sonnet-4-5": {
+                        "id": "claude-sonnet-4-5",
+                        "name": "Claude Sonnet 4.5",
+                        "family": "claude-sonnet",
+                        "limit": {
+                            "context": 1000000,
+                            "output": 64000
+                        }
+                    }
+                }
+            },
+            "anthropic": {
+                "id": "anthropic",
+                "name": "Anthropic",
+                "doc": "https://docs.anthropic.com",
+                "models": {
+                    "claude-opus-4": {
+                        "id": "claude-opus-4",
+                        "name": "Claude Opus 4",
+                        "family": "claude-opus",
+                        "limit": {
+                            "context": 200000,
+                            "output": 32000
+                        }
+                    }
+                }
+            }
+        }"#;
+
+        let catalog: ApiCatalog = serde_json::from_str(json).expect("Failed to parse API format");
+
+        // Check providers were parsed correctly
+        assert!(catalog.has_provider("opencode"));
+        assert!(catalog.has_provider("anthropic"));
+        assert_eq!(catalog.providers.len(), 2);
+
+        // Check opencode provider details
+        let opencode = catalog.providers.get("opencode").unwrap();
+        assert_eq!(opencode.id, "opencode");
+        assert_eq!(opencode.name, "OpenCode Zen");
+
+        // Check models were parsed correctly
+        assert!(catalog.has_model("opencode", "glm-4.7-free"));
+        assert!(catalog.has_model("opencode", "claude-sonnet-4-5"));
+        assert!(catalog.has_model("anthropic", "claude-opus-4"));
+
+        // Check model details
+        let opencode_models = catalog.get_model_ids("opencode");
+        assert_eq!(opencode_models.len(), 2);
+        assert!(opencode_models.contains(&"glm-4.7-free".to_string()));
+        assert!(opencode_models.contains(&"claude-sonnet-4-5".to_string()));
+    }
+
+    #[test]
+    fn test_deserialize_cache_format() {
+        // This is the format used for local caching
+        let json = r#"{
+            "providers": {
+                "opencode": {
+                    "id": "opencode",
+                    "name": "OpenCode Zen",
+                    "description": "OpenCode API"
+                }
+            },
+            "models": {
+                "opencode": [
+                    {
+                        "id": "glm-4.7-free",
+                        "name": "GLM-4.7",
+                        "description": "Free GLM model",
+                        "context_length": 204800
+                    }
+                ]
+            }
+        }"#;
+
+        let catalog: ApiCatalog = serde_json::from_str(json).expect("Failed to parse cache format");
+
+        assert!(catalog.has_provider("opencode"));
+        assert!(catalog.has_model("opencode", "glm-4.7-free"));
     }
 }

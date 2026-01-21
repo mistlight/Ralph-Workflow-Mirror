@@ -109,13 +109,13 @@ fn test_ralph_init_with_template_exits_cleanly() {
         // Remove the PROMPT.md that init_git_repo creates, so we can test --init creating it
         fs::remove_file(dir_path.join("PROMPT.md")).unwrap();
 
-        // Set up config dir with existing config
+        // Set up config dir with existing config (using non-opencode agents to avoid network calls)
         let config_home = dir_path.join(".config");
         fs::create_dir_all(&config_home).unwrap();
         fs::write(
             config_home.join("ralph-workflow.toml"),
             r#"[agent_chain]
-developer = ["opencode"]
+developer = ["claude"]
 reviewer = ["codex"]
 "#,
         )
@@ -163,13 +163,13 @@ fn test_ralph_init_when_setup_complete_exits_cleanly() {
         // Initialize git repo
         let _ = init_git_repo(&dir);
 
-        // Set up config dir with existing config
+        // Set up config dir with existing config (using non-opencode agents to avoid network calls)
         let config_home = dir_path.join(".config");
         fs::create_dir_all(&config_home).unwrap();
         fs::write(
             config_home.join("ralph-workflow.toml"),
             r#"[agent_chain]
-developer = ["opencode"]
+developer = ["claude"]
 reviewer = ["codex"]
 "#,
         )
@@ -220,13 +220,13 @@ fn test_ralph_init_with_invalid_template_exits_cleanly() {
         // Initialize git repo
         let _ = init_git_repo(&dir);
 
-        // Set up config dir with existing config
+        // Set up config dir with existing config (using non-opencode agents to avoid network calls)
         let config_home = dir_path.join(".config");
         fs::create_dir_all(&config_home).unwrap();
         fs::write(
             config_home.join("ralph-workflow.toml"),
             r#"[agent_chain]
-developer = ["opencode"]
+developer = ["claude"]
 reviewer = ["codex"]
 "#,
         )
@@ -275,13 +275,13 @@ fn test_ralph_init_with_commit_message_exits_cleanly() {
         // Initialize git repo
         let _ = init_git_repo(&dir);
 
-        // Set up config dir with existing config
+        // Set up config dir with existing config (using non-opencode agents to avoid network calls)
         let config_home = dir_path.join(".config");
         fs::create_dir_all(&config_home).unwrap();
         fs::write(
             config_home.join("ralph-workflow.toml"),
             r#"[agent_chain]
-developer = ["opencode"]
+developer = ["claude"]
 reviewer = ["codex"]
 "#,
         )

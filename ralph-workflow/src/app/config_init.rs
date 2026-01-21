@@ -7,7 +7,7 @@
 //! - Loading agent registry data from unified config
 //! - Fetching and caching OpenCode API catalog for dynamic provider/model resolution
 
-use crate::agents::opencode_api::load_api_catalog;
+use crate::agents::opencode_api::{CatalogLoader, RealCatalogLoader};
 use crate::agents::{
     global_agents_config_path, validation as agent_validation, AgentRegistry, AgentRole,
     ConfigSource,
@@ -58,6 +58,19 @@ pub fn initialize_config(
     args: &Args,
     colors: Colors,
     logger: &Logger,
+) -> anyhow::Result<Option<ConfigInitResult>> {
+    initialize_config_with_loader(args, colors, logger, &RealCatalogLoader)
+}
+
+/// Initializes configuration and agent registry with a custom catalog loader.
+///
+/// This is the same as [`initialize_config`] but accepts a custom [`CatalogLoader`]
+/// for dependency injection. This is primarily useful for testing.
+pub fn initialize_config_with_loader<L: CatalogLoader>(
+    args: &Args,
+    colors: Colors,
+    logger: &Logger,
+    catalog_loader: &L,
 ) -> anyhow::Result<Option<ConfigInitResult>> {
     // Load configuration from unified config file (with env overrides)
     let (mut config, unified, warnings) = args
@@ -148,7 +161,8 @@ pub fn initialize_config(
     }
 
     // Initialize agent registry with built-in defaults + unified config.
-    let (registry, config_sources) = load_agent_registry(unified.as_ref(), config_path.as_path())?;
+    let (registry, config_sources) =
+        load_agent_registry(unified.as_ref(), config_path.as_path(), catalog_loader)?;
 
     // Apply default agents from fallback chains
     apply_default_agents(&mut config, &registry);
@@ -161,9 +175,10 @@ pub fn initialize_config(
     }))
 }
 
-fn load_agent_registry(
+fn load_agent_registry<L: CatalogLoader>(
     unified: Option<&UnifiedConfig>,
     config_path: &std::path::Path,
+    catalog_loader: &L,
 ) -> anyhow::Result<(AgentRegistry, Vec<ConfigSource>)> {
     let mut registry = AgentRegistry::new().map_err(|e| {
         anyhow::anyhow!("Failed to load built-in default agents config (examples/agents.toml): {e}")
@@ -221,7 +236,7 @@ fn load_agent_registry(
     }
 
     // Load OpenCode API catalog if there are any opencode/* references
-    setup_opencode_catalog(&mut registry, unified)?;
+    setup_opencode_catalog(&mut registry, unified, catalog_loader)?;
 
     Ok((registry, sources))
 }
@@ -233,9 +248,10 @@ fn load_agent_registry(
 /// 2. If yes, fetches/loads the cached OpenCode API catalog
 /// 3. Sets the catalog on the registry for dynamic agent resolution
 /// 4. Validates all opencode/* references and reports errors with suggestions
-fn setup_opencode_catalog(
+fn setup_opencode_catalog<L: CatalogLoader>(
     registry: &mut AgentRegistry,
     unified: Option<&UnifiedConfig>,
+    catalog_loader: &L,
 ) -> anyhow::Result<()> {
     // Collect fallback config from unified config or registry defaults
     let fallback = unified
@@ -250,8 +266,8 @@ fn setup_opencode_catalog(
         return Ok(());
     }
 
-    // Load the API catalog (fetches from API or uses cache)
-    let catalog = load_api_catalog().map_err(|e| {
+    // Load the API catalog using the injected loader
+    let catalog = catalog_loader.load().map_err(|e| {
         anyhow::anyhow!(
             "Failed to load OpenCode API catalog. \
             This is required for the following agent references: {opencode_refs:?}. \

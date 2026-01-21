@@ -21,22 +21,48 @@
 //! - Tests are deterministic and black-box (test commit as a user would experience it)
 
 use predicates::prelude::*;
+use std::fs;
 use tempfile::TempDir;
 
 use crate::common::ralph_cmd;
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
-/// Helper function to set up base environment for tests
-fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
+/// Helper function to set up base environment for tests.
+///
+/// This function sets up config isolation using XDG_CONFIG_HOME to prevent
+/// the tests from loading the user's actual config which may contain
+/// opencode/* references that would trigger network calls.
+fn base_env<'a>(
+    cmd: &'a mut assert_cmd::Command,
+    config_home: &std::path::Path,
+) -> &'a mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
+        // Isolate config to prevent loading user's actual config with opencode/* refs
+        .env("XDG_CONFIG_HOME", config_home)
         // Ensure git identity is set
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
         .env("GIT_COMMITTER_NAME", "Test")
         .env("GIT_COMMITTER_EMAIL", "test@example.com")
+}
+
+/// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
+fn create_isolated_config(dir: &TempDir) -> std::path::PathBuf {
+    let config_home = dir.path().join(".config");
+    fs::create_dir_all(&config_home).unwrap();
+    // Create minimal config without opencode/* references
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["claude"]
+reviewer = ["codex"]
+"#,
+    )
+    .unwrap();
+    config_home
 }
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
@@ -63,6 +89,7 @@ fn test_commit_message_generated_with_simple_diff() {
     with_default_timeout(|| {
         // Test that commit message is generated with a simple change
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let repo = init_repo_with_initial_commit(&dir);
 
         // Make a simple change
@@ -70,7 +97,7 @@ fn test_commit_message_generated_with_simple_diff() {
 
         // Run ralph with developer_iters=0 (skip to commit)
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");
@@ -98,6 +125,7 @@ fn test_commit_message_generated_with_multiple_files() {
     with_default_timeout(|| {
         // Test commit message generation with multiple file changes
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let repo = init_repo_with_initial_commit(&dir);
 
         // Make changes to multiple files
@@ -106,7 +134,7 @@ fn test_commit_message_generated_with_multiple_files() {
         write_file(dir.path().join("file3.rs"), "fn main() {}");
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");
@@ -130,6 +158,7 @@ fn test_commit_created_with_diff_content() {
     with_default_timeout(|| {
         // Test that commit captures the diff content
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let repo = init_repo_with_initial_commit(&dir);
 
         // Create a file with many lines and modify a line deep in the file
@@ -154,7 +183,7 @@ fn test_commit_created_with_diff_content() {
         write_file(dir.path().join("large_file.txt"), &content);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");
@@ -179,13 +208,14 @@ fn test_commit_succeeds_without_developer_or_review() {
     with_default_timeout(|| {
         // Test that commits work when both development and review are skipped
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_repo_with_initial_commit(&dir);
 
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");

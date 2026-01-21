@@ -20,15 +20,41 @@ use crate::common::ralph_cmd;
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
-fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
+/// Helper function to set up base environment for tests.
+///
+/// This function sets up config isolation using XDG_CONFIG_HOME to prevent
+/// the tests from loading the user's actual config which may contain
+/// opencode/* references that would trigger network calls.
+fn base_env<'a>(
+    cmd: &'a mut assert_cmd::Command,
+    config_home: &std::path::Path,
+) -> &'a mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "0")
+        // Isolate config to prevent loading user's actual config with opencode/* refs
+        .env("XDG_CONFIG_HOME", config_home)
         // Ensure git identity isn't a factor if a commit happens in the test.
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
         .env("GIT_COMMITTER_NAME", "Test")
         .env("GIT_COMMITTER_EMAIL", "test@example.com")
+}
+
+/// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
+fn create_isolated_config(dir: &TempDir) -> std::path::PathBuf {
+    let config_home = dir.path().join(".config");
+    fs::create_dir_all(&config_home).unwrap();
+    // Create minimal config without opencode/* references
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["claude"]
+reviewer = ["codex"]
+"#,
+    )
+    .unwrap();
+    config_home
 }
 
 // ============================================================================
@@ -43,6 +69,7 @@ fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
 fn ralph_cleans_up_on_early_error() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let repo = init_git_repo(&dir);
 
         // Create an initial commit so we can verify no new commits were made
@@ -50,7 +77,7 @@ fn ralph_cleans_up_on_early_error() {
         let initial_oid = commit_all(&repo, "initial commit").to_string();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             // agent commands not needed when developer_iters=0 (phase is skipped)
             .env("FULL_CHECK_CMD", "false");
@@ -90,6 +117,7 @@ fn ralph_cleanup_on_interrupt_simulation() {
         // Note: With the new implementation, developer errors are non-fatal
         // The pipeline logs a warning and continues to completion
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let repo = init_git_repo(&dir);
 
         // Create an initial commit so we can verify no unexpected commits were made
@@ -97,7 +125,7 @@ fn ralph_cleanup_on_interrupt_simulation() {
         let _ = commit_all(&repo, "initial commit");
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        base_env(&mut cmd, &config_home).current_dir(dir.path());
         // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
         // Pipeline now succeeds even with developer errors (non-fatal)
@@ -131,10 +159,11 @@ fn ralph_handles_agent_timeout_gracefully() {
         // rather than actual agent execution which requires subprocess spawning.
         // Agent execution behavior should be tested at the unit level with mocked executors.
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        base_env(&mut cmd, &config_home).current_dir(dir.path());
         // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
         // This tests that the pipeline handles phase-skipping correctly
 
@@ -154,6 +183,7 @@ fn ralph_handles_invalid_json_in_config() {
         // Note: The config loader is lenient and uses defaults when config fails to load
         // The pipeline should succeed with a warning, not fail
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let dir_path = dir.path();
 
         // Initialize git repo
@@ -173,7 +203,8 @@ fn ralph_handles_invalid_json_in_config() {
         cmd.current_dir(dir_path)
             .env("RALPH_INTERACTIVE", "0")
             .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+            .env("RALPH_REVIEWER_REVIEWS", "0")
+            .env("XDG_CONFIG_HOME", &config_home);
 
         // Pipeline should succeed using defaults (config loader is lenient)
         cmd.assert().success();
@@ -193,10 +224,11 @@ fn ralph_isolation_mode_does_not_create_status_notes_issues() {
     with_default_timeout(|| {
         // Isolation mode (default) should NOT create STATUS.md, NOTES.md or ISSUES.md
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");
@@ -229,6 +261,7 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
     with_default_timeout(|| {
         // Isolation mode should DELETE existing STATUS.md, NOTES.md and ISSUES.md
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Pre-create STATUS.md, NOTES.md and ISSUES.md
@@ -237,7 +270,7 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
         fs::write(dir.path().join(".agent/ISSUES.md"), "old issues").unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");
@@ -270,10 +303,11 @@ fn ralph_no_isolation_creates_status_notes_issues() {
     with_default_timeout(|| {
         // --no-isolation flag should create STATUS.md, NOTES.md and ISSUES.md
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--no-isolation")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -307,10 +341,11 @@ fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
     with_default_timeout(|| {
         // RALPH_ISOLATION_MODE=0 should create STATUS.md, NOTES.md and ISSUES.md
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_ISOLATION_MODE", "0")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -345,6 +380,7 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
         // --no-isolation should overwrite/truncate STATUS.md, NOTES.md and ISSUES.md
         // to a single vague sentence, to prevent detailed context from persisting.
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Pre-create STATUS.md, NOTES.md and ISSUES.md with detailed multi-line content.
@@ -365,7 +401,7 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
         .unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--no-isolation")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -412,10 +448,11 @@ fn ralph_resume_continues_from_checkpoint_phase() {
         // Agent execution behavior should be tested at the unit level with mocked executors.
         // This test verifies the pipeline completes successfully when phases are skipped.
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        base_env(&mut cmd, &config_home).current_dir(dir.path());
         // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
 
         // Should complete successfully without agent execution
@@ -438,10 +475,11 @@ fn ralph_developer_iteration_creates_changes_for_commit() {
         // Note: Full commit testing requires a real LLM agent for commit message generation.
         // This test verifies the changes are created correctly.
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0") // Use 0 to avoid timeout from commit generation
             .env("RALPH_REVIEWER_REVIEWS", "0");

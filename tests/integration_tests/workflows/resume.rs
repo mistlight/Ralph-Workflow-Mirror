@@ -11,13 +11,39 @@ use crate::common::ralph_cmd;
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{init_git_repo, write_file};
 
-fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
+/// Helper function to set up base environment for tests.
+///
+/// This function sets up config isolation using XDG_CONFIG_HOME to prevent
+/// the tests from loading the user's actual config which may contain
+/// opencode/* references that would trigger network calls.
+fn base_env<'a>(
+    cmd: &'a mut assert_cmd::Command,
+    config_home: &std::path::Path,
+) -> &'a mut assert_cmd::Command {
     cmd.env("RALPH_INTERACTIVE", "0")
+        // Isolate config to prevent loading user's actual config with opencode/* refs
+        .env("XDG_CONFIG_HOME", config_home)
         // Ensure git identity isn't a factor if a commit happens in the test.
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")
         .env("GIT_COMMITTER_NAME", "Test")
         .env("GIT_COMMITTER_EMAIL", "test@example.com")
+}
+
+/// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
+fn create_isolated_config(dir: &TempDir) -> std::path::PathBuf {
+    let config_home = dir.path().join(".config");
+    fs::create_dir_all(&config_home).unwrap();
+    // Create minimal config without opencode/* references
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["claude"]
+reviewer = ["codex"]
+"#,
+    )
+    .unwrap();
+    config_home
 }
 
 /// Get the canonical working directory path.
@@ -39,6 +65,7 @@ fn canonical_working_dir(dir: &TempDir) -> String {
 fn ralph_creates_checkpoint_during_development() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Pre-create required files to skip agent phases
@@ -52,7 +79,7 @@ fn ralph_creates_checkpoint_during_development() {
 
         // Run with 0 iterations - checkpoint creation is tested elsewhere
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");
@@ -68,11 +95,12 @@ fn ralph_creates_checkpoint_during_development() {
 fn ralph_creates_checkpoint_during_review() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Run with 1 review iteration
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
         .current_dir(dir.path())
         .env("RALPH_DEVELOPER_ITERS", "0")
         .env("RALPH_REVIEWER_REVIEWS", "1")
@@ -94,11 +122,12 @@ fn ralph_creates_checkpoint_during_review() {
 fn ralph_checkpoint_contains_iteration_info() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a failing developer command that leaves a checkpoint
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "3") // 3 iterations
             .env("RALPH_REVIEWER_REVIEWS", "2") // 2 reviews
@@ -142,11 +171,12 @@ fn ralph_checkpoint_contains_iteration_info() {
 fn ralph_checkpoint_contains_cli_args_snapshot() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a failing run with specific config
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "5")
             .env("RALPH_REVIEWER_REVIEWS", "3")
@@ -181,11 +211,12 @@ fn ralph_checkpoint_contains_cli_args_snapshot() {
 fn ralph_checkpoint_contains_agent_config_snapshot() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a failing run
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "1")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -220,6 +251,7 @@ fn ralph_checkpoint_contains_agent_config_snapshot() {
 fn ralph_resume_flag_reads_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint file manually
@@ -268,7 +300,7 @@ fn ralph_resume_flag_reads_checkpoint() {
 
         // Run with --resume flag - should detect the checkpoint
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -289,11 +321,12 @@ fn ralph_resume_flag_reads_checkpoint() {
 fn ralph_resume_without_checkpoint_starts_fresh() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // No checkpoint exists, but we pass --resume
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -315,6 +348,7 @@ fn ralph_resume_without_checkpoint_starts_fresh() {
 fn ralph_resume_validates_working_directory() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint with a different working directory
@@ -393,7 +427,7 @@ fn ralph_resume_validates_working_directory() {
 
         // Run with --resume - should detect working directory mismatch
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -417,6 +451,7 @@ fn ralph_resume_validates_working_directory() {
 fn ralph_checkpoint_records_prompt_md_checksum() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md with known content
@@ -427,7 +462,7 @@ fn ralph_checkpoint_records_prompt_md_checksum() {
 
         // Create a failing run to leave a checkpoint
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "1")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -458,6 +493,7 @@ fn ralph_checkpoint_records_prompt_md_checksum() {
 fn ralph_resume_shows_checkpoint_summary() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a v3 checkpoint at review phase (Complete phase - no further execution needed)
@@ -530,7 +566,7 @@ fn ralph_resume_shows_checkpoint_summary() {
 
         // Run with --resume - should just show summary and exit since Complete phase
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -550,6 +586,7 @@ fn ralph_resume_shows_checkpoint_summary() {
 fn ralph_clears_checkpoint_on_success() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Pre-create a checkpoint
@@ -602,7 +639,7 @@ fn ralph_clears_checkpoint_on_success() {
 
         // Run successfully without --resume
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -705,6 +742,7 @@ fn make_checkpoint_json(params: CheckpointTestParams<'_>) -> String {
 fn ralph_resume_preserves_developer_iterations_from_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint with specific iteration counts
@@ -729,7 +767,7 @@ fn ralph_resume_preserves_developer_iterations_from_checkpoint() {
         // Run with --resume but pass DIFFERENT env config (1 dev iter, 0 reviews)
         // The resume should use checkpoint values (5 dev iters), not env values
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1") // Different from checkpoint's 5
@@ -755,6 +793,7 @@ fn ralph_resume_preserves_developer_iterations_from_checkpoint() {
 fn ralph_resume_preserves_reviewer_passes_from_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at Complete phase with specific reviewer pass count
@@ -828,7 +867,7 @@ fn ralph_resume_preserves_reviewer_passes_from_checkpoint() {
 
         // Run with --resume - should just show checkpoint info and exit
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -851,6 +890,7 @@ fn ralph_resume_preserves_reviewer_passes_from_checkpoint() {
 fn ralph_resume_from_planning_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at development phase (iteration 1 of 0, so loop won't run)
@@ -877,7 +917,7 @@ fn ralph_resume_from_planning_phase() {
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -894,6 +934,7 @@ fn ralph_resume_from_planning_phase() {
 fn ralph_resume_from_development_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at development phase, iteration 2 of 3
@@ -915,7 +956,7 @@ fn ralph_resume_from_development_phase() {
         .unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
@@ -941,6 +982,7 @@ fn ralph_resume_from_development_phase() {
 fn ralph_resume_from_review_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at Complete phase to test resume behavior
@@ -1026,7 +1068,7 @@ fn ralph_resume_from_review_phase() {
         fs::write(dir.path().join(".agent/ISSUES.md"), "No issues\n").unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .arg("--recovery-strategy=force")
@@ -1048,6 +1090,7 @@ fn ralph_resume_from_review_phase() {
 fn ralph_resume_from_complete_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at Complete phase
@@ -1069,7 +1112,7 @@ fn ralph_resume_from_complete_phase() {
         .unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
@@ -1090,6 +1133,7 @@ fn ralph_resume_from_complete_phase() {
 fn ralph_resume_is_idempotent_same_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at development phase
@@ -1113,7 +1157,7 @@ fn ralph_resume_is_idempotent_same_checkpoint() {
 
         // First resume run
         let mut cmd1 = ralph_cmd();
-        base_env(&mut cmd1)
+        base_env(&mut cmd1, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -1147,6 +1191,7 @@ fn ralph_resume_is_idempotent_same_checkpoint() {
 fn ralph_checkpoint_preserves_git_identity() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint with git identity
@@ -1207,7 +1252,7 @@ fn ralph_checkpoint_preserves_git_identity() {
 
         // Run with --resume
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -1231,6 +1276,7 @@ fn ralph_checkpoint_preserves_git_identity() {
 fn ralph_checkpoint_preserves_model_overrides() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint with model overrides
@@ -1291,7 +1337,7 @@ fn ralph_checkpoint_preserves_model_overrides() {
 
         // Run with --resume - should show model overrides being restored
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -1319,6 +1365,7 @@ fn ralph_checkpoint_preserves_model_overrides() {
 fn ralph_resume_warns_on_prompt_md_change() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Write initial PROMPT.md
@@ -1398,7 +1445,7 @@ fn ralph_resume_warns_on_prompt_md_change() {
 
         // Run with --resume - should warn about PROMPT.md change
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -1425,6 +1472,7 @@ fn ralph_resume_warns_on_prompt_md_change() {
 fn ralph_checkpoint_records_rebase_state() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint with rebase state
@@ -1485,7 +1533,7 @@ fn ralph_checkpoint_records_rebase_state() {
 
         // Run with --resume - should detect rebase phase checkpoint
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -1602,6 +1650,7 @@ fn make_rebase_checkpoint_json(
 fn ralph_resume_from_prerebase_phase_preserves_full_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at PreRebase phase with full agent config
@@ -1632,7 +1681,7 @@ fn ralph_resume_from_prerebase_phase_preserves_full_config() {
 
         // Run with --resume - should use checkpoint config
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1") // Different from checkpoint
@@ -1659,6 +1708,7 @@ fn ralph_resume_from_prerebase_phase_preserves_full_config() {
 fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at PreRebaseConflict phase with conflict state
@@ -1689,7 +1739,7 @@ fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
 
         // Run with --resume
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "2")
@@ -1716,6 +1766,7 @@ fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
 fn ralph_resume_from_postrebase_phase_preserves_full_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at PostRebase phase with full config
@@ -1746,7 +1797,7 @@ fn ralph_resume_from_postrebase_phase_preserves_full_config() {
 
         // Run with --resume
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
@@ -1767,6 +1818,7 @@ fn ralph_resume_from_postrebase_phase_preserves_full_config() {
 fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at PostRebaseConflict phase
@@ -1797,7 +1849,7 @@ fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
 
         // Run with --resume
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "2")
@@ -1823,6 +1875,7 @@ fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
 fn ralph_resume_passes_context_to_developer_agent() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at development phase
@@ -1852,7 +1905,7 @@ fn ralph_resume_passes_context_to_developer_agent() {
     );
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -1881,6 +1934,7 @@ fn ralph_resume_passes_context_to_developer_agent() {
 fn ralph_resume_passes_context_to_reviewer_agent() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Pre-create required files
@@ -1978,7 +2032,7 @@ fn ralph_resume_passes_context_to_reviewer_agent() {
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -2010,6 +2064,7 @@ fn ralph_resume_passes_context_to_reviewer_agent() {
 fn ralph_resume_is_idempotent_from_prerebase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a checkpoint at PreRebase phase
@@ -2041,7 +2096,7 @@ fn ralph_resume_is_idempotent_from_prerebase() {
 
         // First resume run
         let mut cmd1 = ralph_cmd();
-        base_env(&mut cmd1)
+        base_env(&mut cmd1, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -2074,6 +2129,7 @@ fn ralph_resume_is_idempotent_from_prerebase() {
 fn ralph_checkpoint_tracks_prompt_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Pre-create required files to skip agent phases
@@ -2083,7 +2139,7 @@ fn ralph_checkpoint_tracks_prompt_history() {
 
         // Run pipeline with 0 iterations
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0");
@@ -2100,6 +2156,7 @@ fn ralph_checkpoint_tracks_prompt_history() {
 fn ralph_resume_shows_prompt_replay_info() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a v3 checkpoint with prompt history
@@ -2181,7 +2238,7 @@ fn ralph_resume_shows_prompt_replay_info() {
 
         // Resume and capture output
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
@@ -2208,6 +2265,7 @@ fn ralph_resume_shows_prompt_replay_info() {
 fn ralph_v3_checkpoint_contains_execution_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Pre-create PROMPT.md to skip planning phase agent execution
@@ -2304,7 +2362,7 @@ fn ralph_v3_checkpoint_contains_execution_history() {
 
         // Resume should load checkpoint with execution history
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -2330,6 +2388,7 @@ fn ralph_v3_checkpoint_contains_execution_history() {
 fn ralph_v3_restores_execution_history_on_resume() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a v3 checkpoint with execution history
@@ -2434,7 +2493,7 @@ fn ralph_v3_restores_execution_history_on_resume() {
 
         // Resume and verify it succeeds
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
@@ -2460,6 +2519,7 @@ fn ralph_v3_restores_execution_history_on_resume() {
 fn ralph_v3_file_system_state_validates_on_resume() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Write PROMPT.md with known content
@@ -2563,7 +2623,7 @@ fn ralph_v3_file_system_state_validates_on_resume() {
 
         // Resume - should validate file system state successfully
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -2582,6 +2642,7 @@ fn ralph_v3_file_system_state_validates_on_resume() {
 fn ralph_v3_file_system_state_detects_changes() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Write initial PROMPT.md
@@ -2704,7 +2765,7 @@ fn ralph_v3_file_system_state_detects_changes() {
         // With strategy=fail, the resume is aborted and the program continues with a fresh run
         // Since developer_iters=0 in the command line, the program completes immediately
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .arg("--recovery-strategy")
@@ -2730,6 +2791,7 @@ fn ralph_v3_file_system_state_detects_changes() {
 fn ralph_v3_file_system_state_auto_recovery() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Write small PLAN.md content
@@ -2834,7 +2896,7 @@ fn ralph_v3_file_system_state_auto_recovery() {
 
         // Resume with --recovery-strategy=auto should restore the file
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .arg("--recovery-strategy")
@@ -2868,6 +2930,7 @@ fn ralph_v3_file_system_state_auto_recovery() {
 fn ralph_v3_prompt_replay_is_deterministic() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a v3 checkpoint with prompt history
@@ -2957,7 +3020,7 @@ fn ralph_v3_prompt_replay_is_deterministic() {
     );
 
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
@@ -2985,6 +3048,7 @@ fn ralph_v3_prompt_replay_is_deterministic() {
 fn ralph_v3_prompt_replay_across_multiple_iterations() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a v3 checkpoint with prompts for multiple iterations
@@ -3070,7 +3134,7 @@ fn ralph_v3_prompt_replay_across_multiple_iterations() {
 
         // Resume - should replay prompts for iterations 2 and 3 (1 is already done)
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
@@ -3096,6 +3160,7 @@ fn ralph_v3_prompt_replay_across_multiple_iterations() {
 fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Pre-create PROMPT.md to avoid validation issues
@@ -3183,7 +3248,7 @@ fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
         // Run without --resume flag - should offer to resume interactively
         // But since we're not in a TTY, it should skip the offer and start fresh
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_INTERACTIVE", "0") // Not in TTY
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -3203,6 +3268,7 @@ fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
 fn ralph_v3_shows_user_friendly_checkpoint_summary() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a v3 checkpoint with resume_count > 0
@@ -3273,7 +3339,7 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
 
         // Run with --resume - should show user-friendly summary
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "5")
@@ -3304,6 +3370,7 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
 fn ralph_v3_comprehensive_resume_from_review_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md and PLAN.md
@@ -3510,7 +3577,7 @@ fn ralph_v3_comprehensive_resume_from_review_phase() {
 
         // Resume from Complete phase
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -3538,6 +3605,7 @@ fn ralph_v3_comprehensive_resume_from_review_phase() {
 fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a v3 checkpoint at PreRebaseConflict phase with execution history
@@ -3646,7 +3714,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
 
         // Load checkpoint and verify execution history is preserved
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -3670,6 +3738,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
 fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a v3 checkpoint at PostRebaseConflict phase with prompt history
@@ -3749,7 +3818,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
 
         // Resume and verify prompt history is preserved
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -3781,6 +3850,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
 fn ralph_no_resume_flag_skips_interactive_prompt() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md to satisfy validation
@@ -3806,7 +3876,7 @@ fn ralph_no_resume_flag_skips_interactive_prompt() {
 
         // Run with --no-resume - should skip interactive prompt and start fresh
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--no-resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -3825,6 +3895,7 @@ fn ralph_no_resume_flag_skips_interactive_prompt() {
 fn ralph_no_resume_env_var_skips_interactive_prompt() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md to satisfy validation
@@ -3850,7 +3921,7 @@ fn ralph_no_resume_env_var_skips_interactive_prompt() {
 
         // Run with RALPH_NO_RESUME_PROMPT env var - should skip interactive prompt
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_NO_RESUME_PROMPT", "1")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -3869,6 +3940,7 @@ fn ralph_no_resume_env_var_skips_interactive_prompt() {
 fn ralph_resume_flag_takes_precedence_over_no_resume() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md to satisfy validation
@@ -3894,7 +3966,7 @@ fn ralph_resume_flag_takes_precedence_over_no_resume() {
 
         // Run with both --resume and --no-resume - --resume should take precedence
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .arg("--no-resume")
@@ -3926,6 +3998,7 @@ fn ralph_resume_flag_takes_precedence_over_no_resume() {
 fn ralph_resume_replays_prompts_deterministically() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md and PLAN.md to satisfy validation
@@ -4023,7 +4096,7 @@ fn ralph_resume_replays_prompts_deterministically() {
 
         // Resume and verify the checkpoint with prompt history is loaded
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -4053,6 +4126,7 @@ fn ralph_resume_replays_prompts_deterministically() {
 fn ralph_v3_checkpoint_contains_file_system_state() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md and PLAN.md to test file system state capture
@@ -4063,7 +4137,7 @@ fn ralph_v3_checkpoint_contains_file_system_state() {
 
         // Create a failing run to leave a v3 checkpoint
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "1")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -4096,12 +4170,13 @@ fn ralph_v3_checkpoint_contains_file_system_state() {
 fn ralph_v3_checkpoint_contains_execution_history_after_failure() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create a failing run to leave a v3 checkpoint.
         // The agent creates whitespace-only PLAN.md which fails validation.
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .env("RALPH_DEVELOPER_ITERS", "1")
             .env("RALPH_REVIEWER_REVIEWS", "0")
@@ -4144,6 +4219,7 @@ fn ralph_v3_checkpoint_contains_execution_history_after_failure() {
 fn ralph_resume_with_force_strategy_ignores_file_changes() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         let working_dir = canonical_working_dir(&dir);
@@ -4236,7 +4312,7 @@ fn ralph_resume_with_force_strategy_ignores_file_changes() {
 
         // Run with --resume --recovery-strategy=force
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .arg("--recovery-strategy=force")
@@ -4259,6 +4335,7 @@ fn ralph_resume_with_force_strategy_ignores_file_changes() {
 fn ralph_resume_auto_strategy_attempts_recovery() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         let working_dir = canonical_working_dir(&dir);
@@ -4353,7 +4430,7 @@ fn ralph_resume_auto_strategy_attempts_recovery() {
 
         // Run with --resume --recovery-strategy=auto
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .arg("--recovery-strategy=auto")
@@ -4373,6 +4450,7 @@ fn ralph_resume_auto_strategy_attempts_recovery() {
 fn ralph_checkpoint_saved_after_rebase_completion() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md to satisfy validation
@@ -4381,7 +4459,7 @@ fn ralph_checkpoint_saved_after_rebase_completion() {
         // Run pipeline with rebase enabled - should complete successfully
         // We use 0 iterations to skip actual development work
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--with-rebase")
             .env("RALPH_DEVELOPER_ITERS", "0")
@@ -4408,6 +4486,7 @@ fn ralph_checkpoint_saved_after_rebase_completion() {
 fn ralph_checkpoint_saved_at_pipeline_start() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
@@ -4486,7 +4565,7 @@ fn ralph_checkpoint_saved_at_pipeline_start() {
 
         // Verify checkpoint can be loaded
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
@@ -4507,6 +4586,7 @@ fn ralph_checkpoint_saved_at_pipeline_start() {
 fn ralph_v3_execution_step_contains_git_commit_oid() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
@@ -4630,7 +4710,7 @@ fn ralph_v3_execution_step_contains_git_commit_oid() {
 
         // Verify checkpoint can be loaded with the new fields
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
@@ -4646,6 +4726,7 @@ fn ralph_v3_execution_step_contains_git_commit_oid() {
 fn ralph_v3_execution_step_serialization_with_new_fields() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
@@ -4753,7 +4834,7 @@ fn ralph_v3_execution_step_serialization_with_new_fields() {
 
         // Verify checkpoint can be loaded
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "2")
@@ -4769,6 +4850,7 @@ fn ralph_v3_execution_step_serialization_with_new_fields() {
 fn ralph_v3_backward_compatible_missing_new_fields() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
@@ -4866,7 +4948,7 @@ fn ralph_v3_backward_compatible_missing_new_fields() {
 
         // Verify checkpoint can still be loaded (backward compatibility)
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
@@ -4882,6 +4964,7 @@ fn ralph_v3_backward_compatible_missing_new_fields() {
 fn ralph_v3_resume_note_contains_execution_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
@@ -5011,7 +5094,7 @@ fn ralph_v3_resume_note_contains_execution_history() {
 
         // Verify checkpoint can be loaded
         let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
+        base_env(&mut cmd, &config_home)
             .current_dir(dir.path())
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "3")
