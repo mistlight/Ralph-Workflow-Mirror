@@ -6,13 +6,13 @@
 //! - Provider-level fallback (try different models within same agent)
 //! - Exponential backoff with cycling
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Agent role (developer, reviewer, or commit).
 ///
 /// Each role can have its own chain of fallback agents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentRole {
     /// Developer agent: implements features based on PROMPT.md.
     Developer,
