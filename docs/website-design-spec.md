@@ -178,15 +178,33 @@ ralph.dev/
    ```bash
    # Install Ralph
    cargo install ralph-workflow
-   
-   # Initialize in your project
+
+   # Initialize in your project (smart init - infers what you need)
    ralph --init
-   
+
    # Write your specification
    vim PROMPT.md
-   
-   # Run unattended
+
+   # Run unattended (commit message is optional - defaults to "chore: apply PROMPT loop + review/fix/review")
+   ralph
+   # OR with custom commit message:
    ralph "feat: implement user authentication"
+
+   # Go to sleep. Wake up to finished code.
+   ```
+
+   **Recommended: Git Worktree Workflow**
+
+   Ralph is designed for unattended, long-running tasks. Using Git worktrees lets you run multiple Ralph sessions in parallel without blocking your main development workflow:
+
+   ```bash
+   # Create worktrees for parallel features
+   git worktree add ../feature-auth feature/auth
+   git worktree add ../feature-api feature/api
+
+   # Run Ralph in each worktree simultaneously
+   cd ../feature-auth && ralph "implement user auth"
+   cd ../feature-api && ralph "implement REST API"
    ```
 
 ---
@@ -479,6 +497,37 @@ export async function GET() {
    | `RALPH_CCS_DEBUG` | Enable CCS debug logging |
    | `RALPH_REVIEWER_UNIVERSAL_PROMPT` | Force simplified review prompt |
 
+4. **YOLO Mode (Unattended Operation)**:
+
+   Ralph is designed for **unattended automation**. YOLO ("You Only Live Once") mode enables agents to run autonomously without user confirmation.
+
+   **How YOLO Mode Works**:
+   - No prompts for file operations
+   - No confirmation for tool calls
+   - Fully autonomous code changes
+   - Permission is given upfront when you run `ralph`
+
+   **Agent-Specific YOLO Flags**:
+   | Agent | YOLO Flag | Configuration |
+   |-------|-----------|---------------|
+   | Claude Code | `--dangerously-skip-permissions` | `yolo_flag = "--dangerously-skip-permissions"` |
+   | CCS Profiles | `--dangerously-skip-permissions` | `yolo_flag = "--dangerously-skip-permissions"` |
+   | Codex CLI | `--full-auto` | `yolo_flag = "--full-auto"` |
+   | OpenCode | `--yes` | `yolo_flag = "--yes"` |
+   | Aider | `--yes-always` | `yolo_flag = "--yes-always"` |
+
+   **Disabling YOLO Mode**:
+   If you prefer interactive mode (not recommended for unattended operation), set `yolo_flag = ""` in your agent configuration:
+
+   ```toml
+   [agents.claude]
+   cmd = "claude"
+   output_flag = "--output-format=stream-json"
+   yolo_flag = ""  # Disable YOLO mode for interactive prompts
+   ```
+
+   **Note**: YOLO mode is enabled by default because Ralph is designed for unattended operation. The system trusts your upfront decision to run Ralph and won't ask for confirmation during execution.
+
 ---
 
 ### 4.6 Config Builder (`/config-builder`)
@@ -616,25 +665,186 @@ reviewer = ["codex", "claude"]
    - Reference existing code patterns
    - Specify test requirements
 
-5. **Worktree Strategy** for parallel features:
+5. **Overnight/Long-Running Operation**:
+
+   Ralph is designed to run unattended for extended periods. Here's how to get started easily with a small prompt that can run overnight:
+
+   **Quick Start for Overnight Runs**:
+   ```bash
+   # 1. Initialize config (if not already done)
+   ralph --init
+
+   # 2. Create a simple PROMPT.md for overnight work
+   cat > PROMPT.md << 'EOF'
+   # Task: Add User Authentication
+
+   Implement JWT-based authentication:
+   - Login endpoint with email/password
+   - JWT token generation and validation
+   - Protected routes middleware
+   - Password hashing with bcrypt
+   - Unit tests for auth functions
+
+   Use existing project patterns in src/auth/.
+   EOF
+
+   # 3. Run with higher iteration count for overnight processing
+   ralph -D 10 -R 5
+   # -D 10: 10 developer iterations (more thorough)
+   # -R 5:  5 review cycles (comprehensive review)
+   # Commit message is optional - uses default if omitted
+   ```
+
+   **Estimated Run Times** (varies by task complexity and model speed):
+   | Configuration | Estimated Time | Best For |
+   |--------------|----------------|----------|
+   | `ralph -Q` (quick: 1+1) | 10-30 minutes | Small fixes, typos |
+   | `ralph -U` (rapid: 2+1) | 20-60 minutes | Minor features |
+   | `ralph` (default: 5+2) | 1-3 hours | Standard features |
+   | `ralph -D 10 -R 5` | 3-8 hours | Complex features (overnight) |
+   | `ralph -L` (long: 15+10) | 8-12 hours | Critical features (full night) |
+
+   **Session Continuation**:
+   - If Ralph is interrupted, run `ralph --resume` to continue
+   - Ralph will show progress and ask if you want to continue
+   - Use `ralph --no-resume` in scripts to skip the prompt
+
+   **Using Worktrees for Parallel Overnight Runs**:
+   ```bash
+   # Set up multiple worktrees before leaving
+   git worktree add ../feature-auth feature/auth
+   git worktree add ../feature-api feature/api
+
+   # Start Ralph in each worktree
+   cd ../feature-auth && ralph -D 10 "implement auth"
+   cd ../feature-api && ralph -D 10 "implement API"
+
+   # Check progress in the morning
+   ```
+
+6. **Worktree Strategy** (RECOMMENDED for parallel features):
    ```bash
    # Create worktrees for parallel development
    git worktree add ../feature-auth feature/auth
    git worktree add ../feature-api feature/api
-   
+
    # Run Ralph in each worktree
-   cd ../feature-auth && ralph "implement user auth"
-   cd ../feature-api && ralph "implement REST API"
+   cd ../feature-auth && ralph
+   cd ../feature-api && ralph
    ```
 
-6. **Checkpoint/Resume**:
-   - Checkpoints stored in `.agent/checkpoint/`
+   **Why Worktrees?**
+   - Ralph is designed for unattended, long-running tasks (hours to overnight)
+   - Running Ralph on main blocks you from working on other features
+   - Worktrees let you run multiple Ralph sessions in parallel
+   - Each worktree has its own git state, so commits don't interfere
+
+7. **Checkpoint/Resume**:
+   - Checkpoints stored in `.agent/checkpoint.json`
+   - Interactive resume prompt when checkpoint exists
    - Resume with `ralph --resume`
-   - Inspect state with `ralph --checkpoint-status`
+   - Skip prompt with `ralph --no-resume` (for CI/CD)
+   - Recovery strategies: `--recovery-strategy fail|auto|force`
+   - Validate with `ralph --dry-run`
+
+   **Interactive Resume Behavior**:
+   When Ralph detects a checkpoint from a previous interrupted run, it displays:
+   ```
+   Resuming from checkpoint:
+   - Phase: Development (3/10 iterations)
+   - Elapsed: 2h 15m
+   - Next: Developer iteration 4
+
+   Continue from checkpoint? [Y/n]:
+   ```
 
 ---
 
-### 4.8 Workflow Phases Documentation (`/docs/workflow/*`)
+### 4.8 Git Worktree Workflow (`/docs/workflow/worktrees`)
+
+**Source Reference**: README.md lines 64-66 (author's recommended workflow)
+
+**Why Use Worktrees with Ralph?**
+
+Ralph Workflow is designed for **unattended, long-running tasks**. A single Ralph run can take anywhere from 30 minutes to overnight depending on:
+- Number of developer iterations (default: 5, but you can use `-D 10` for longer runs)
+- Number of review cycles (default: 2, but can be increased with `-R 5`)
+- Complexity of the task
+- AI agent response times
+
+**The Problem**: Running Ralph directly on your main branch blocks you from:
+- Working on other features simultaneously
+- Making quick fixes while Ralph is running
+- Reviewing Ralph's output until it completes
+
+**The Solution: Git Worktrees**
+
+Git worktrees allow you to have multiple working directories for the same repository, each checked out to a different branch. This is the **recommended workflow** for Ralph.
+
+#### Creating Worktrees
+
+```bash
+# From your main repository
+cd /path/to/your/repo
+
+# Create worktrees for different features
+git worktree add ../feature-auth feature/auth
+git worktree add ../feature-api feature/api
+git worktree add ../bugfix-login bugfix/login
+
+# List all worktrees
+git worktree list
+```
+
+#### Running Ralph in Worktrees
+
+```bash
+# Run Ralph in each worktree simultaneously
+cd ../feature-auth
+ralph "implement user authentication"
+
+# In another terminal
+cd ../feature-api
+ralph "implement REST API"
+
+# In a third terminal (work on something else yourself)
+cd ../your-main-repo
+# Continue your own work while Ralph runs in parallel
+```
+
+#### Overnight Workflow Example
+
+```bash
+# Before leaving work, set up multiple Ralph sessions:
+cd ../feature-auth && ralph -D 10 "implement JWT auth"
+cd ../feature-api && ralph -D 10 "implement REST endpoints"
+cd ../bugfix-login && ralph -Q "fix login timeout"
+
+# Go home. Wake up to 3 completed features.
+```
+
+#### Worktree Management
+
+```bash
+# Remove a worktree after merging
+git worktree remove ../feature-auth
+
+# Or prune after merging the branch
+git worktree prune
+```
+
+#### Benefits Summary
+
+| Benefit | Description |
+|---------|-------------|
+| **Parallel Development** | Run multiple Ralph sessions simultaneously |
+| **Unblocked Main Branch** | Keep working while Ralph processes in background |
+| **Isolation** | Each worktree has independent git state |
+| **Easy Cleanup** | Remove worktrees after merging PRs |
+
+---
+
+### 4.9 Workflow Phases Documentation (`/docs/workflow/*`)
 
 **Source Reference**: `ralph-workflow/src/phases/`
 
@@ -660,7 +870,7 @@ reviewer = ["codex", "claude"]
 
 ---
 
-### 4.9 PROMPT.md Template Gallery (`/prompt-templates`)
+### 4.10 PROMPT.md Template Gallery (`/prompt-templates`)
 
 **Source Reference**: `ralph-workflow/src/prompts/template_catalog.rs`
 
@@ -1176,10 +1386,26 @@ ralph --init
 # Create PROMPT.md with your specification
 vim PROMPT.md
 
-# Run unattended
+# Run unattended (commit message is optional - uses default if omitted)
+ralph
+# OR with custom commit message:
 ralph "feat: implement user authentication"
 
 # Go to sleep. Wake up to finished code.
+```
+
+**Tip: Use Git Worktrees for Parallel Development**
+
+Ralph is designed for long-running unattended tasks. Using Git worktrees lets you run multiple Ralph sessions simultaneously:
+
+```bash
+# Create worktrees for different features
+git worktree add ../feature-auth feature/auth
+git worktree add ../feature-api feature/api
+
+# Run Ralph in each worktree overnight
+cd ../feature-auth && ralph "implement user auth"
+cd ../feature-api && ralph "implement REST API"
 ```
 
 ---
