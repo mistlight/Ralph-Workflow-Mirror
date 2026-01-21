@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn test_get_template_embedded() {
         let registry = TemplateRegistry::new(None);
-        let result = registry.get_template("developer_iteration");
+        let result = registry.get_template("developer_iteration_xml");
         assert!(result.is_ok());
         let content = result.unwrap();
         assert!(!content.is_empty());
@@ -245,14 +245,14 @@ mod tests {
         let names = TemplateRegistry::all_template_names();
         assert!(!names.is_empty());
         assert!(names.len() >= 20); // At least 20 templates
-        assert!(names.contains(&"developer_iteration".to_string()));
+        assert!(names.contains(&"developer_iteration_xml".to_string()));
         assert!(names.contains(&"commit_message_xml".to_string()));
     }
 
     #[test]
     fn test_template_exists_embedded() {
         let registry = TemplateRegistry::new(None);
-        assert!(registry.template_exists("developer_iteration"));
+        assert!(registry.template_exists("developer_iteration_xml"));
         assert!(registry.template_exists("commit_message_xml"));
     }
 
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn test_get_fix_mode_template() {
         let registry = TemplateRegistry::new(None);
-        let result = registry.get_template("fix_mode");
+        let result = registry.get_template("fix_mode_xml");
         assert!(result.is_ok());
         let content = result.unwrap();
         assert!(!content.is_empty());

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use super::template_context::TemplateContext;
 use super::template_engine::Template;
+#[cfg(any(test, feature = "test-utils"))]
 use super::types::ContextLevel;
 
 /// Generate developer iteration prompt.
@@ -37,7 +38,7 @@ pub fn prompt_developer_iteration(
     // but are intentionally not exposed to the agent to prevent context pollution.
     let _ = (iteration, total, context);
 
-    let template_content = include_str!("templates/developer_iteration.txt");
+    let template_content = include_str!("templates/developer_iteration_xml.txt");
     let template = Template::new(template_content);
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
@@ -45,17 +46,10 @@ pub fn prompt_developer_iteration(
     ]);
 
     template.render(&variables).unwrap_or_else(|_| {
-        // Use fallback template if main template fails
-        let fallback_content = include_str!("templates/developer_iteration_fallback.txt");
-        let fallback_template = Template::new(fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n"
-                )
-            })
+        // Embedded fallback template (XML format)
+        format!(
+            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n\nOutput format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n"
+        )
     })
 }
 
@@ -82,23 +76,16 @@ pub fn prompt_developer_iteration(
 ///   which prevents accidental deletion.
 #[cfg(test)]
 pub fn prompt_plan(prompt_content: Option<&str>) -> String {
-    let template_content = include_str!("templates/planning.txt");
+    let template_content = include_str!("templates/planning_xml.txt");
     let template = Template::new(template_content);
     let prompt_md = prompt_content.unwrap_or("No requirements provided");
     let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
 
     template.render(&variables).unwrap_or_else(|_| {
-        // Use fallback template if main template fails
-        let fallback_content = include_str!("templates/planning_fallback.txt");
-        let fallback_template = Template::new(fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n"
-                )
-            })
+        // Embedded fallback template (XML format)
+        format!(
+            "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n\nOutput format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n"
+        )
     })
 }
 
@@ -115,6 +102,7 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
 /// * `ctx_level` - The context level (minimal or normal) (accepted for API compatibility, not used in template)
 /// * `prompt_content` - The original user request (PROMPT.md content)
 /// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_developer_iteration_with_context(
     context: &TemplateContext,
     iteration: u32,
@@ -129,10 +117,10 @@ pub fn prompt_developer_iteration_with_context(
 
     let template_content = context
         .registry()
-        .get_template("developer_iteration")
+        .get_template("developer_iteration_xml")
         .unwrap_or_else(|_| {
             // Fallback to embedded template if registry fails
-            include_str!("templates/developer_iteration.txt").to_string()
+            include_str!("templates/developer_iteration_xml.txt").to_string()
         });
     let template = Template::new(&template_content);
     let variables = HashMap::from([
@@ -141,23 +129,10 @@ pub fn prompt_developer_iteration_with_context(
     ]);
 
     template.render(&variables).unwrap_or_else(|_| {
-        // Use fallback template if main template fails
-        let fallback_content = context
-            .registry()
-            .get_template("developer_iteration_fallback")
-            .unwrap_or_else(|_| {
-                // Fallback to embedded template if registry fails
-                include_str!("templates/developer_iteration_fallback.txt").to_string()
-            });
-        let fallback_template = Template::new(&fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n"
-                )
-            })
+        // Embedded fallback template (XML format)
+        format!(
+            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n\nOutput format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n"
+        )
     })
 }
 
@@ -172,37 +147,169 @@ pub fn prompt_developer_iteration_with_context(
 /// * `prompt_content` - Optional PROMPT.md content to include directly in the prompt.
 ///   When provided, the agent doesn't need to discover PROMPT.md through file exploration,
 ///   which prevents accidental deletion.
+#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Option<&str>) -> String {
     let template_content = context
         .registry()
-        .get_template("planning")
+        .get_template("planning_xml")
         .unwrap_or_else(|_| {
             // Fallback to embedded template if registry fails
-            include_str!("templates/planning.txt").to_string()
+            include_str!("templates/planning_xml.txt").to_string()
         });
     let template = Template::new(&template_content);
     let prompt_md = prompt_content.unwrap_or("No requirements provided");
     let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
 
     template.render(&variables).unwrap_or_else(|_| {
-        // Use fallback template if main template fails
-        let fallback_content = context
-            .registry()
-            .get_template("planning_fallback")
-            .unwrap_or_else(|_| {
-                // Fallback to embedded template if registry fails
-                include_str!("templates/planning_fallback.txt").to_string()
-            });
-        let fallback_template = Template::new(&fallback_content);
-        fallback_template
-            .render(&variables)
-            .unwrap_or_else(|_| {
-                // Last resort emergency fallback
-                format!(
-                    "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n"
-                )
-            })
+        // Embedded fallback template (XML format)
+        format!(
+            "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n\nOutput format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n"
+        )
     })
+}
+
+/// Generate XML-based planning prompt using template registry.
+///
+/// This version uses XML output format with XSD validation for reliable parsing.
+/// It's the recommended format for planning going forward.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - Optional PROMPT.md content to include directly in the prompt.
+pub fn prompt_planning_xml_with_context(
+    context: &TemplateContext,
+    prompt_content: Option<&str>,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("planning_xml")
+        .unwrap_or_else(|_| include_str!("templates/planning_xml.txt").to_string());
+    let template = Template::new(&template_content);
+    let prompt_md = prompt_content.unwrap_or("No requirements provided");
+    let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
+
+    template.render(&variables).unwrap_or_else(|_| {
+        format!(
+            "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\n\
+             Output format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n"
+        )
+    })
+}
+
+/// Generate XSD validation retry prompt for planning with error feedback.
+///
+/// This prompt is used when an AI agent produces plan XML that fails XSD validation.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - Original user requirements
+/// * `xsd_error` - The XSD validation error message to include in the prompt
+/// * `last_output` - The invalid XML output that failed validation
+pub fn prompt_planning_xsd_retry_with_context(
+    context: &TemplateContext,
+    prompt_content: &str,
+    xsd_error: &str,
+    last_output: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("planning_xsd_retry")
+        .unwrap_or_else(|_| include_str!("templates/planning_xsd_retry.txt").to_string());
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("XSD_ERROR", xsd_error.to_string()),
+        ("LAST_OUTPUT", last_output.to_string()),
+    ]);
+    Template::new(&template_content)
+        .render(&variables)
+        .unwrap_or_else(|_| {
+            format!(
+                "Your previous plan failed XSD validation.\n\nError: {}\n\n\
+                 Last output:\n{}\n\n\
+                 Please resend your plan in valid XML format:\n\
+                 <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n",
+                xsd_error, last_output
+            )
+        })
+}
+
+/// Generate XML-based developer iteration prompt using template registry.
+///
+/// This version uses XML output format with XSD validation for reliable parsing.
+/// It's the recommended format for development iteration going forward.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+pub fn prompt_developer_iteration_xml_with_context(
+    context: &TemplateContext,
+    prompt_content: &str,
+    plan_content: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration_xml")
+        .unwrap_or_else(|_| include_str!("templates/developer_iteration_xml.txt").to_string());
+    let template = Template::new(&template_content);
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+    ]);
+
+    template.render(&variables).unwrap_or_else(|_| {
+        format!(
+            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\n\
+             IMPLEMENTATION PLAN:\n{plan_content}\n\n\
+             Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n"
+        )
+    })
+}
+
+/// Generate XSD validation retry prompt for developer iteration with error feedback.
+///
+/// This prompt is used when an AI agent produces development result XML that fails XSD validation.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_content` - The original user request (PROMPT.md content)
+/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
+/// * `xsd_error` - The XSD validation error message to include in the prompt
+/// * `last_output` - The invalid XML output that failed validation
+pub fn prompt_developer_iteration_xsd_retry_with_context(
+    context: &TemplateContext,
+    prompt_content: &str,
+    plan_content: &str,
+    xsd_error: &str,
+    last_output: &str,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration_xsd_retry")
+        .unwrap_or_else(|_| {
+            include_str!("templates/developer_iteration_xsd_retry.txt").to_string()
+        });
+    let variables = HashMap::from([
+        ("PROMPT", prompt_content.to_string()),
+        ("PLAN", plan_content.to_string()),
+        ("XSD_ERROR", xsd_error.to_string()),
+        ("LAST_OUTPUT", last_output.to_string()),
+    ]);
+    Template::new(&template_content)
+        .render(&variables)
+        .unwrap_or_else(|_| {
+            format!(
+                "Your previous development status failed XSD validation.\n\nError: {}\n\n\
+                 Last output:\n{}\n\n\
+                 Please resend your status in valid XML format:\n\
+                 <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
+                xsd_error, last_output
+            )
+        })
 }
 
 #[cfg(test)]
@@ -246,11 +353,11 @@ mod tests {
         // Agents receive content directly without knowing the source file
         assert!(!result.contains("PROMPT.md"));
         assert!(!result.contains("NEVER read, write, or delete this file"));
-        // Plan is now returned as structured output, not written to file
+        // Plan is now returned as XML output format
         assert!(result.contains("PLANNING MODE"));
-        assert!(result.contains("Implementation Steps"));
-        assert!(result.contains("Critical Files"));
-        assert!(result.contains("Verification Strategy"));
+        assert!(result.contains("<ralph-implementation-steps>"));
+        assert!(result.contains("<ralph-critical-files>"));
+        assert!(result.contains("<ralph-verification-strategy>"));
 
         // Ensure strict read-only constraints are present (Claude Code alignment)
         assert!(result.contains("READ-ONLY"));
@@ -262,6 +369,10 @@ mod tests {
         assert!(result.contains("PHASE 3: DESIGN"));
         assert!(result.contains("PHASE 4: REVIEW"));
         assert!(result.contains("PHASE 5: WRITE PLAN"));
+
+        // Ensure XML output format is specified
+        assert!(result.contains("<ralph-plan>"));
+        assert!(result.contains("<ralph-summary>"));
     }
 
     #[test]
@@ -276,6 +387,8 @@ mod tests {
         // Should still have the planning structure
         assert!(result.contains("PLANNING MODE"));
         assert!(result.contains("PHASE 1: UNDERSTANDING"));
+        // Should have XML output format
+        assert!(result.contains("<ralph-plan>"));
     }
 
     #[test]
@@ -350,9 +463,9 @@ mod tests {
         let context = TemplateContext::default();
         let result = prompt_plan_with_context(&context, None);
         assert!(result.contains("PLANNING MODE"));
-        assert!(result.contains("Implementation Steps"));
-        assert!(result.contains("Critical Files"));
-        assert!(result.contains("Verification Strategy"));
+        assert!(result.contains("<ralph-implementation-steps>"));
+        assert!(result.contains("<ralph-critical-files>"));
+        assert!(result.contains("<ralph-verification-strategy>"));
         assert!(result.contains("READ-ONLY"));
         assert!(result.contains("STRICTLY PROHIBITED"));
         assert!(result.contains("PHASE 1: UNDERSTANDING"));
@@ -360,6 +473,7 @@ mod tests {
         assert!(result.contains("PHASE 3: DESIGN"));
         assert!(result.contains("PHASE 4: REVIEW"));
         assert!(result.contains("PHASE 5: WRITE PLAN"));
+        assert!(result.contains("<ralph-plan>"));
     }
 
     #[test]

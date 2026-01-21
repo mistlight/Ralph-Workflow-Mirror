@@ -853,19 +853,19 @@ fn ralph_resume_from_planning_phase() {
         let dir = TempDir::new().unwrap();
         let _repo = init_git_repo(&dir);
 
-        // Create a checkpoint at planning phase
+        // Create a checkpoint at development phase (iteration 1 of 0, so loop won't run)
         fs::create_dir_all(dir.path().join(".agent")).unwrap();
         let working_dir = canonical_working_dir(&dir);
         fs::write(
             dir.path().join(".agent/checkpoint.json"),
             make_checkpoint_json(CheckpointTestParams {
                 working_dir: &working_dir,
-                phase: "Planning",
+                phase: "Development",
                 iteration: 1,
-                total_iterations: 2,
+                total_iterations: 0,
                 reviewer_pass: 0,
                 total_reviewer_passes: 1,
-                developer_iters: 2,
+                developer_iters: 0,
                 reviewer_reviews: 1,
             }),
         )
@@ -882,14 +882,10 @@ fn ralph_resume_from_planning_phase() {
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "0")
             .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env(
-                "RALPH_DEVELOPER_CMD",
-                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
-            )
             .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
         cmd.assert().success().stdout(
-            predicate::str::contains("Planning").or(predicate::str::contains("checkpoint")),
+            predicate::str::contains("Development").or(predicate::str::contains("checkpoint")),
         );
     });
 }
@@ -4424,8 +4420,8 @@ fn ralph_checkpoint_saved_at_pipeline_start() {
         let checkpoint_content = format!(
             r#"{{
             "version": 3,
-            "phase": "Planning",
-            "iteration": 0,
+            "phase": "Review",
+            "iteration": 1,
             "total_iterations": 1,
             "reviewer_pass": 0,
             "total_reviewer_passes": 0,
@@ -4472,7 +4468,7 @@ fn ralph_checkpoint_saved_at_pipeline_start() {
             "run_id": "test-initial-checkpoint",
             "parent_run_id": null,
             "resume_count": 0,
-            "actual_developer_runs": 0,
+            "actual_developer_runs": 1,
             "actual_reviewer_runs": 0,
             "execution_history": {{ "steps": [] }},
             "file_system_state": null,
@@ -4495,10 +4491,6 @@ fn ralph_checkpoint_saved_at_pipeline_start() {
             .arg("--resume")
             .env("RALPH_DEVELOPER_ITERS", "1")
             .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env(
-                "RALPH_DEVELOPER_CMD",
-                "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md'",
-            )
             .env("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
 
         cmd.assert().success().stdout(

@@ -5,10 +5,19 @@
 pub struct ExtractionResult {
     /// The raw content extracted from the log (if any)
     pub raw_content: Option<String>,
-    /// Whether the content passed validation
+    /// Whether the content passed validation (test-only field)
+    #[cfg_attr(not(any(test, feature = "test-utils")), allow(dead_code))]
+    #[cfg(any(test, feature = "test-utils"))]
     pub is_valid: bool,
-    /// Validation warning message (if validation failed but content exists)
+    #[cfg(not(any(test, feature = "test-utils")))]
+    #[cfg_attr(not(any(test, feature = "test-utils")), allow(dead_code))]
+    is_valid: bool,
+    /// Validation warning message (test-only field)
+    #[cfg(any(test, feature = "test-utils"))]
     pub validation_warning: Option<String>,
+    #[cfg(not(any(test, feature = "test-utils")))]
+    #[cfg_attr(not(any(test, feature = "test-utils")), allow(dead_code))]
+    validation_warning: Option<String>,
 }
 
 impl ExtractionResult {

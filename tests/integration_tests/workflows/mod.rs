@@ -10,6 +10,7 @@
 //! - PLAN workflow tests (plan.rs)
 //! - Review workflow tests (review.rs)
 //! - Resume/checkpoint tests (resume.rs)
+//! - Development XML tests (development_xml.rs)
 //!
 //! # Integration Test Style Guide
 //!
@@ -27,6 +28,7 @@ pub mod cleanup;
 pub mod commit_tests;
 pub mod config;
 pub mod config_test;
+pub mod development_xml;
 pub mod fallback;
 pub mod plan;
 pub mod resume;

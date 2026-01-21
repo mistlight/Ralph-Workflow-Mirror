@@ -18,6 +18,7 @@ mod commit;
 mod developer;
 pub mod partials;
 mod rebase;
+pub mod review;
 pub mod reviewer;
 pub mod template_catalog;
 pub mod template_context;
@@ -31,13 +32,25 @@ mod types;
 pub use crate::checkpoint::restore::ResumeContext;
 
 // Re-export all public items for backward compatibility
+#[cfg(any(test, feature = "test-utils"))]
+pub use commit::prompt_fix_with_context;
 pub use commit::{
-    prompt_fix_with_context, prompt_generate_commit_message_with_diff_with_context,
-    prompt_simplified_commit_with_context, prompt_xsd_retry_with_context,
+    prompt_generate_commit_message_with_diff_with_context, prompt_simplified_commit_with_context,
+    prompt_xsd_retry_with_context,
 };
+
+#[cfg(any(test, feature = "test-utils"))]
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
+pub use developer::{
+    prompt_developer_iteration_xml_with_context, prompt_developer_iteration_xsd_retry_with_context,
+    prompt_planning_xml_with_context, prompt_planning_xsd_retry_with_context,
+};
 pub use rebase::{
     build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict,
+};
+pub use review::{
+    prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context, prompt_review_xml_with_context,
+    prompt_review_xsd_retry_with_context,
 };
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -66,11 +79,14 @@ pub use template_validator::{
     extract_metadata, extract_partials, extract_variables, validate_template, ValidationError,
     ValidationWarning,
 };
-pub use types::{Action, ContextLevel, Role};
+pub use types::ContextLevel;
+#[cfg(any(test, feature = "test-utils"))]
+pub use types::{Action, Role};
 
 /// Configuration for prompt generation.
 ///
 /// Groups related parameters to reduce function argument count.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[must_use]
 pub struct PromptConfig {
@@ -90,6 +106,7 @@ pub struct PromptConfig {
     pub resume_context: Option<ResumeContext>,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl PromptConfig {
     /// Create a new prompt configuration with default values.
     #[must_use = "configuration is required for prompt generation"]
@@ -378,6 +395,7 @@ impl BriefDescription for crate::checkpoint::execution_history::StepOutcome {
 /// * `context` - The context level (minimal or normal)
 /// * `template_context` - Template context for user template overrides
 /// * `config` - Prompt configuration with content variables
+#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_for_agent(
     role: Role,
     action: Action,
@@ -528,9 +546,9 @@ mod tests {
             &template_context,
             PromptConfig::new().with_prompt_md("test requirements".to_string()),
         );
-        // Plan is now returned as structured output, not written to file
+        // Plan is now returned as XML structured output
         assert!(result.contains("PLANNING MODE"));
-        assert!(result.contains("Implementation Steps"));
+        assert!(result.contains("<ralph-implementation-steps>"));
     }
 
     #[test]
@@ -538,8 +556,9 @@ mod tests {
         // All prompts should be free of agent-specific references
         // to ensure they work with any AI coding assistant
         let agent_specific_terms = [
-            "claude", "codex", "opencode", "gemini", "aider", "goose", "cline", "continue",
-            "amazon-q", "gpt", "copilot",
+            "claude", "codex", "opencode", "gemini", "aider", "goose", "cline", "amazon-q", "gpt",
+            "copilot",
+            // Note: "continue" is excluded as it's also a common English verb
         ];
 
         let prompts_to_check: Vec<String> = vec![
@@ -701,7 +720,7 @@ mod tests {
             "such as",
         ];
 
-        // Special case: "Use git" is allowed in fix_mode.txt for fault tolerance
+        // Special case: "Use git" is allowed in fix_mode_xml.txt for fault tolerance
         // when issue descriptions lack file context - the fixer needs to find the relevant code
         // This is part of the recovery mechanism for vague issues
 
@@ -720,7 +739,7 @@ mod tests {
                 "",
                 "",
             ),
-            // Note: fix_mode.txt is intentionally excluded from "Use git" check
+            // Note: fix_mode_xml.txt is intentionally excluded from "Use git" check
             // because it contains "Use git grep/rg ONLY when issue descriptions lack file context"
             // which is part of the fault tolerance design
             prompt_fix("", "", ""),

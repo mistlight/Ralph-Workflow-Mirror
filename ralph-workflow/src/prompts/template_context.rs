@@ -17,7 +17,7 @@ use std::path::PathBuf;
 ///
 /// ```ignore
 /// let context = TemplateContext::from_user_templates_dir(Some(PathBuf::from("~/.config/ralph/templates")));
-/// let prompt = prompt_developer_iteration_with_context(
+/// let prompt = prompt_developer_iteration_xml_with_context(
 ///     &context,
 ///     1, 5, ContextLevel::Normal, "prompt", "plan"
 /// );
@@ -65,14 +65,18 @@ mod tests {
     fn test_template_context_creation() {
         let context = TemplateContext::new(TemplateRegistry::new(None));
         // Should not have user templates since we passed None
-        assert!(!context.registry().has_user_template("developer_iteration"));
+        assert!(!context
+            .registry()
+            .has_user_template("developer_iteration_xml"));
     }
 
     #[test]
     fn test_template_context_default() {
         let context = TemplateContext::default();
         // Default should work and access templates
-        assert!(context.registry().template_exists("developer_iteration"));
+        assert!(context
+            .registry()
+            .template_exists("developer_iteration_xml"));
     }
 
     #[test]
@@ -80,14 +84,18 @@ mod tests {
         let custom_dir = PathBuf::from("/custom/templates");
         let context = TemplateContext::from_user_templates_dir(Some(custom_dir));
         // Context should be created successfully
-        assert!(!context.registry().has_user_template("developer_iteration"));
+        assert!(!context
+            .registry()
+            .has_user_template("developer_iteration_xml"));
     }
 
     #[test]
     fn test_template_context_from_user_templates_dir_none() {
         let context = TemplateContext::from_user_templates_dir(None);
         // Should not have user templates
-        assert!(!context.registry().has_user_template("developer_iteration"));
+        assert!(!context
+            .registry()
+            .has_user_template("developer_iteration_xml"));
     }
 
     #[test]
@@ -103,14 +111,16 @@ mod tests {
         let context = TemplateContext::default();
         let _cloned = context.clone();
         // Verify clone compiles and original still works
-        assert!(context.registry().template_exists("developer_iteration"));
+        assert!(context
+            .registry()
+            .template_exists("developer_iteration_xml"));
     }
 
     #[test]
     fn test_template_context_get_template() {
         let context = TemplateContext::default();
         // Should be able to get templates
-        let result = context.registry().get_template("developer_iteration");
+        let result = context.registry().get_template("developer_iteration_xml");
         assert!(result.is_ok());
     }
 
@@ -119,7 +129,9 @@ mod tests {
         let context = TemplateContext::default();
         // Should report embedded source for templates that don't have user overrides
         assert_eq!(
-            context.registry().template_source("developer_iteration"),
+            context
+                .registry()
+                .template_source("developer_iteration_xml"),
             "embedded"
         );
     }
@@ -130,7 +142,7 @@ mod tests {
         // Should be able to list all templates
         let names = TemplateRegistry::all_template_names();
         assert!(names.len() > 10);
-        assert!(names.contains(&"developer_iteration".to_string()));
+        assert!(names.contains(&"developer_iteration_xml".to_string()));
     }
 
     #[test]

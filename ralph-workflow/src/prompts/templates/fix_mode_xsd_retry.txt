@@ -1,0 +1,59 @@
+{# ============================================================================ #}
+{# Template: fix_mode_xsd_retry.txt                                              #}
+{# Version: 1.0                                                                 #}
+{# ============================================================================ #}
+{#                                                                             #}
+{# PURPOSE:                                                                    #}
+{#   Retry prompt when XML validation fails during fix mode.                    #}
+{#   Provides specific XSD error feedback to guide the AI agent.                #}
+{#                                                                             #}
+{# VARIABLES:                                                                  #}
+{#   {{ISSUES}} - Issues from review (required)                                 #}
+{#   {{FILES_TO_MODIFY}} - Files that may be modified (required)                #}
+{#   {{XSD_ERROR}} - XSD validation error message (required)                    #}
+{#   {{LAST_OUTPUT}} - The invalid XML output (required)                        #}
+{#                                                                             #}
+{# OUTPUT FORMAT:                                                               #}
+{#   Same as fix_mode_xml.txt - valid <ralph-fix-result> XML                   #}
+{# ============================================================================ #}
+
+Your previous fix result output failed XSD validation.
+
+═══════════════════════════════════════════════════════════════════════════════
+XSD VALIDATION ERROR
+═══════════════════════════════════════════════════════════════════════════════
+
+{{XSD_ERROR}}
+
+═══════════════════════════════════════════════════════════════════════════════
+YOUR LAST OUTPUT (INVALID)
+═══════════════════════════════════════════════════════════════════════════════
+
+{{LAST_OUTPUT}}
+
+═══════════════════════════════════════════════════════════════════════════════
+RESEND WITH PROPER XML FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+You should have already completed your fixes. Now you need to report your completion
+status using the correct XML format.
+
+<ralph-fix-result>
+<ralph-status>all_issues_addressed</ralph-status>
+<ralph-summary>Optional summary of what was fixed.</ralph-summary>
+</ralph-fix-result>
+
+Valid status values:
+- `all_issues_addressed` - All issues have been fixed
+- `issues_remain` - Some issues couldn't be fixed
+- `no_issues_found` - There were no issues to fix
+
+REQUIREMENTS:
+- Start IMMEDIATELY with <ralph-fix-result> (no text before)
+- End with </ralph-fix-result> (no text after)
+- <ralph-status> is REQUIRED and must be one of the valid values
+- <ralph-summary> is optional
+- NO markdown code fences
+- NO commentary outside the XML
+
+Resend your completion status now with the correct XML format.

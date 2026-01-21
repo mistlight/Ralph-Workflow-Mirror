@@ -1,0 +1,475 @@
+//! Integration tests for development agent XML validation.
+//!
+//! This module tests the XML extraction and XSD validation behavior for
+//! the development agent's output.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All integration tests MUST follow the style guide defined in
+//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
+//!
+//! Before writing, modifying, or debugging any integration test, you MUST read
+//! that document. Key principles:
+//!
+//! - Test **observable behavior**, not implementation details
+//! - Mock only at **architectural boundaries** (filesystem, network, external APIs)
+//! - Use `with_default_timeout()` wrapper for all tests
+//! - NEVER use `cfg!(test)` branches in production code
+
+use crate::test_timeout::with_default_timeout;
+
+/// Test that valid completed status development XML passes validation.
+///
+/// This verifies that when the development agent produces valid XML with
+/// status="completed", the validation succeeds and extracts the expected elements.
+#[test]
+fn test_development_xml_valid_completed_status() {
+    with_default_timeout(|| {
+        // Setup: Create valid XML with completed status
+        let xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Implemented the feature successfully</ralph-summary>
+</ralph-development-result>"#;
+
+        // Execute: Validate the XML through the public API
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify OBSERVABLE behavior (validation passes)
+        assert!(result.is_ok(), "Valid XML should pass validation");
+
+        let elements = result.unwrap();
+        assert_eq!(
+            elements.status, "completed",
+            "Should extract completed status"
+        );
+        assert_eq!(
+            elements.summary, "Implemented the feature successfully",
+            "Should extract summary"
+        );
+        assert!(elements.is_completed(), "Should identify as completed");
+        assert!(!elements.is_partial(), "Should not be partial");
+        assert!(!elements.is_failed(), "Should not be failed");
+    });
+}
+
+/// Test that valid partial status development XML passes validation.
+///
+/// This verifies that when the development agent produces valid XML with
+/// status="partial", the validation succeeds and identifies the partial status.
+#[test]
+fn test_development_xml_valid_partial_status() {
+    with_default_timeout(|| {
+        // Setup: Create valid XML with partial status
+        let xml = r#"<ralph-development-result>
+<ralph-status>partial</ralph-status>
+<ralph-summary>Started implementation, more work needed</ralph-summary>
+<ralph-files-changed>- src/main.rs
+- src/utils.rs</ralph-files-changed>
+</ralph-development-result>"#;
+
+        // Execute: Validate the XML
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify validation passes and partial status is detected
+        assert!(result.is_ok(), "Valid partial XML should pass validation");
+
+        let elements = result.unwrap();
+        assert_eq!(elements.status, "partial", "Should extract partial status");
+        assert!(elements.is_partial(), "Should identify as partial");
+        assert!(!elements.is_completed(), "Should not be completed");
+        assert_eq!(
+            elements.files_changed,
+            Some("- src/main.rs\n- src/utils.rs".to_string()),
+            "Should extract optional files changed"
+        );
+    });
+}
+
+/// Test that valid failed status development XML passes validation.
+///
+/// This verifies that when the development agent produces valid XML with
+/// status="failed", the validation succeeds and identifies the failed status.
+#[test]
+fn test_development_xml_valid_failed_status() {
+    with_default_timeout(|| {
+        // Setup: Create valid XML with failed status
+        let xml = r#"<ralph-development-result>
+<ralph-status>failed</ralph-status>
+<ralph-summary>Could not complete the task due to errors</ralph-summary>
+<ralph-next-steps>Review error logs and retry</ralph-next-steps>
+</ralph-development-result>"#;
+
+        // Execute: Validate the XML
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify validation passes and failed status is detected
+        assert!(result.is_ok(), "Valid failed XML should pass validation");
+
+        let elements = result.unwrap();
+        assert_eq!(elements.status, "failed", "Should extract failed status");
+        assert!(elements.is_failed(), "Should identify as failed");
+        assert!(!elements.is_completed(), "Should not be completed");
+        assert_eq!(
+            elements.next_steps,
+            Some("Review error logs and retry".to_string()),
+            "Should extract optional next steps"
+        );
+    });
+}
+
+/// Test that invalid XML format produces specific XSD validation error.
+///
+/// This verifies that when the development agent produces XML that fails
+/// XSD validation, a specific error message is produced that can be fed
+/// back to the agent for retry.
+#[test]
+fn test_development_xml_invalid_format_provides_specific_error() {
+    with_default_timeout(|| {
+        // Setup: Create XML with missing required element (no summary)
+        let xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+</ralph-development-result>"#;
+
+        // Execute: Try to validate the XML
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify validation fails with specific error
+        assert!(result.is_err(), "Missing summary should fail validation");
+
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.element_path, "ralph-summary",
+            "Error should identify missing element"
+        );
+        assert!(
+            error.expected.contains("required"),
+            "Error should indicate element is required"
+        );
+        assert!(
+            error.suggestion.contains("ralph-summary"),
+            "Error should provide actionable suggestion"
+        );
+
+        // Verify the error can be formatted for AI retry
+        let formatted_for_ai = error.format_for_ai_retry();
+        assert!(
+            formatted_for_ai.contains("ralph-summary"),
+            "Formatted error should include element name"
+        );
+        assert!(
+            formatted_for_ai.contains("expected"),
+            "Formatted error should include what was expected"
+        );
+        assert!(
+            formatted_for_ai.contains("found"),
+            "Formatted error should include what was found"
+        );
+    });
+}
+
+/// Test that invalid status value produces specific XSD validation error.
+///
+/// This verifies that when the development agent uses an invalid status value,
+/// a specific error message identifies the valid options.
+#[test]
+fn test_development_xml_invalid_status_provides_valid_options() {
+    with_default_timeout(|| {
+        // Setup: Create XML with invalid status value
+        let xml = r#"<ralph-development-result>
+<ralph-status>invalid_status</ralph-status>
+<ralph-summary>Some summary</ralph-summary>
+</ralph-development-result>"#;
+
+        // Execute: Try to validate the XML
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify validation fails with specific error about valid values
+        assert!(result.is_err(), "Invalid status should fail validation");
+
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.element_path, "ralph-status",
+            "Error should identify status element"
+        );
+        assert!(
+            error.expected.contains("completed")
+                && error.expected.contains("partial")
+                && error.expected.contains("failed"),
+            "Error should list all valid status values"
+        );
+        assert_eq!(
+            error.found, "invalid_status",
+            "Error should show what was provided"
+        );
+    });
+}
+
+/// Test that XML extraction works from markdown code fence wrapped content.
+///
+/// This verifies that development XML can be extracted even when wrapped
+/// in markdown code fences, which is a common AI output pattern.
+#[test]
+fn test_development_xml_extraction_from_markdown_fence() {
+    with_default_timeout(|| {
+        // Setup: Create content with XML wrapped in markdown fence
+        let content = r#"Here's my status:
+
+```xml
+<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Done</ralph-summary>
+</ralph-development-result>
+```
+
+That's all."#;
+
+        // Execute: Extract XML from the content
+        let extracted = ralph_workflow::extract_development_result_xml(content);
+
+        // Assert: Verify XML is extracted and validates
+        assert!(
+            extracted.is_some(),
+            "Should extract XML from markdown fence"
+        );
+
+        let xml = extracted.unwrap();
+        let result = ralph_workflow::validate_development_result_xml(&xml);
+        assert!(result.is_ok(), "Extracted XML should validate");
+    });
+}
+
+/// Test that XML extraction works from JSON string escaped content.
+///
+/// This verifies that development XML can be extracted even when
+/// JSON-escaped as a string, which can happen in some output formats.
+#[test]
+fn test_development_xml_extraction_from_json_string() {
+    with_default_timeout(|| {
+        // Setup: Create JSON with escaped XML string
+        let content = r#"{"type":"result","result":"<ralph-development-result>\n<ralph-status>completed</ralph-status>\n<ralph-summary>Done<\/ralph-summary>\n<\/ralph-development-result>"}"#;
+
+        // Execute: Extract XML from the JSON content
+        let extracted = ralph_workflow::extract_development_result_xml(content);
+
+        // Assert: Verify XML is extracted and validates
+        assert!(extracted.is_some(), "Should extract XML from JSON string");
+
+        let xml = extracted.unwrap();
+        let result = ralph_workflow::validate_development_result_xml(&xml);
+        assert!(result.is_ok(), "Extracted XML should validate");
+    });
+}
+
+/// Test that XML is formatted nicely for display.
+///
+/// This verifies that valid XML is formatted in a user-friendly way
+/// rather than displayed as raw XML.
+#[test]
+fn test_development_xml_formatted_for_display() {
+    with_default_timeout(|| {
+        // Setup: Create valid XML
+        let xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Implemented feature X</ralph-summary>
+<ralph-files-changed>- src/main.rs
+- src/utils.rs</ralph-files-changed>
+<ralph-next-steps>Continue with testing</ralph-next-steps>
+</ralph-development-result>"#;
+
+        // Execute: Format the XML for display
+        let formatted = ralph_workflow::format_xml_for_display(xml);
+
+        // Assert: Verify output is formatted nicely (pretty-printed XML)
+        assert!(
+            formatted.contains("Implemented feature X"),
+            "Should include summary"
+        );
+        assert!(formatted.contains("completed"), "Should include status");
+        // format_xml_for_display returns pretty-printed XML (with indentation)
+        // The content should still have the XML tags
+        assert!(
+            formatted.contains("<ralph-"),
+            "Should include XML tags (pretty-printed format)"
+        );
+    });
+}
+
+/// Test that all optional fields can be omitted.
+///
+/// This verifies that the development XML schema correctly handles
+/// optional fields (files-changed, next-steps).
+#[test]
+fn test_development_xml_optional_fields_can_be_omitted() {
+    with_default_timeout(|| {
+        // Setup: Create minimal valid XML (only required fields)
+        let xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Done</ralph-summary>
+</ralph-development-result>"#;
+
+        // Execute: Validate the XML
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify validation passes and optional fields are None
+        assert!(result.is_ok(), "Minimal valid XML should pass validation");
+
+        let elements = result.unwrap();
+        assert!(
+            elements.files_changed.is_none(),
+            "Optional files-changed should be None"
+        );
+        assert!(
+            elements.next_steps.is_none(),
+            "Optional next-steps should be None"
+        );
+    });
+}
+
+/// Test that duplicate elements produce specific error.
+///
+/// This verifies that when the development agent includes duplicate elements,
+/// a specific error identifies the problem.
+#[test]
+fn test_development_xml_duplicate_elements_produce_specific_error() {
+    with_default_timeout(|| {
+        // Setup: Create XML with duplicate status element
+        let xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-status>partial</ralph-status>
+<ralph-summary>Some summary</ralph-summary>
+</ralph-development-result>"#;
+
+        // Execute: Try to validate the XML
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify validation fails with duplicate element error
+        assert!(result.is_err(), "Duplicate status should fail validation");
+
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.element_path, "ralph-status",
+            "Error should identify duplicated element"
+        );
+        assert!(
+            error.expected.contains("only one"),
+            "Error should indicate only one element is allowed"
+        );
+        assert!(
+            error.found.contains("duplicate"),
+            "Error should indicate this is a duplicate"
+        );
+    });
+}
+
+/// Test that unexpected elements produce specific error.
+///
+/// This verifies that when the development agent includes unknown elements,
+/// a specific error identifies the problem and lists valid options.
+#[test]
+fn test_development_xml_unexpected_element_provides_valid_options() {
+    with_default_timeout(|| {
+        // Setup: Create XML with unexpected element
+        let xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Some summary</ralph-summary>
+<ralph-unknown-element>Some value</ralph-unknown-element>
+</ralph-development-result>"#;
+
+        // Execute: Try to validate the XML
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify validation fails with specific error about valid tags
+        assert!(result.is_err(), "Unexpected element should fail validation");
+
+        let error = result.unwrap_err();
+        assert!(
+            error.element_path.contains("ralph-unknown-element"),
+            "Error should identify the unexpected element"
+        );
+        assert!(
+            error.suggestion.contains("ralph-status") && error.suggestion.contains("ralph-summary"),
+            "Error should list valid element names"
+        );
+    });
+}
+
+/// Test that text outside tags produces specific error.
+///
+/// This verifies that when the development agent includes text outside
+/// of XML tags, a specific error identifies the problem.
+#[test]
+fn test_development_xml_text_outside_tags_produces_error() {
+    with_default_timeout(|| {
+        // Setup: Create XML with text before the root element
+        let xml = r#"Some text here
+<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Some summary</ralph-summary>
+</ralph-development-result>"#;
+
+        // Execute: Try to validate the XML
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify validation fails
+        assert!(result.is_err(), "Text outside tags should fail validation");
+
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.element_path, "ralph-development-result",
+            "Error should identify missing root"
+        );
+    });
+}
+
+/// Test XSD validation error messages include all required information.
+///
+/// This verifies that XSD validation errors contain the information needed
+/// to provide useful feedback to the AI agent for retry.
+#[test]
+fn test_development_xsd_error_contains_all_required_information() {
+    with_default_timeout(|| {
+        // Setup: Create invalid XML (missing root element)
+        let xml = r#"Random text without proper XML"#;
+
+        // Execute: Try to validate the XML
+        let result = ralph_workflow::validate_development_result_xml(xml);
+
+        // Assert: Verify error contains all required fields
+        assert!(result.is_err(), "Invalid XML should fail validation");
+
+        let error = result.unwrap_err();
+
+        // Verify error has element_path (identifies where the error is)
+        assert!(
+            !error.element_path.is_empty(),
+            "Error should have element_path"
+        );
+
+        // Verify error has expected (what was expected)
+        assert!(
+            !error.expected.is_empty(),
+            "Error should have expected field"
+        );
+
+        // Verify error has found (what was actually found)
+        assert!(!error.found.is_empty(), "Error should have found field");
+
+        // Verify error has suggestion (how to fix it)
+        assert!(!error.suggestion.is_empty(), "Error should have suggestion");
+
+        // Verify format_for_ai_retry produces a complete message
+        let formatted = error.format_for_ai_retry();
+        assert!(
+            formatted.contains(&error.element_path),
+            "Formatted error should include element_path"
+        );
+        assert!(
+            formatted.contains(&error.expected),
+            "Formatted error should include expected"
+        );
+        assert!(
+            formatted.contains(&error.found),
+            "Formatted error should include found"
+        );
+    });
+}
