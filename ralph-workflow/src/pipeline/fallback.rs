@@ -100,6 +100,11 @@ fn log_glm_diagnostics(
     }
 }
 
+/// Check if an agent is an OpenCode agent.
+fn is_opencode_agent(agent_name: &str) -> bool {
+    agent_name.to_lowercase().starts_with("opencode")
+}
+
 /// Handle agent error classification, logging, and user guidance.
 ///
 /// Returns the `AgentErrorKind` for downstream decision logic.
@@ -122,7 +127,19 @@ fn handle_agent_error(
         error_kind.description()
     ));
 
-    // GLM-specific diagnostics
+    // Log stderr content for debugging (truncated for readability)
+    if !stderr.is_empty() {
+        let stderr_preview = if stderr.len() > 500 {
+            format!("{}... ({} bytes total)", &stderr[..500], stderr.len())
+        } else {
+            stderr.to_string()
+        };
+        runtime
+            .logger
+            .info(&format!("Agent stderr: {stderr_preview}"));
+    }
+
+    // GLM-specific diagnostics (CCS/Claude-based GLM only)
     if is_glm_agent
         && matches!(
             error_kind,
@@ -149,6 +166,43 @@ fn handle_agent_error(
         runtime
             .logger
             .info("See docs/agent-compatibility.md for details.");
+    }
+
+    // OpenCode-specific diagnostics
+    if is_opencode_agent(agent_name) {
+        runtime.logger.info("OpenCode debugging tips:");
+        runtime
+            .logger
+            .info("  - Check authentication: opencode auth login");
+        runtime
+            .logger
+            .info("  - Verify provider/model: opencode models list");
+        runtime
+            .logger
+            .info("  - Check logs: Look for errors in ~/.opencode/logs/");
+
+        // Parse stderr for common OpenCode error patterns
+        let stderr_lower = stderr.to_lowercase();
+        if stderr_lower.contains("api key") || stderr_lower.contains("apikey") {
+            runtime
+                .logger
+                .warn("Possible API key issue detected. Run: opencode auth login");
+        }
+        if stderr_lower.contains("model not found") || stderr_lower.contains("invalid model") {
+            runtime
+                .logger
+                .warn("Model may not be available. Run: opencode models list");
+        }
+        if stderr_lower.contains("quota") || stderr_lower.contains("billing") {
+            runtime
+                .logger
+                .warn("Possible quota/billing issue. Check your provider account.");
+        }
+        if stderr_lower.contains("timeout") || stderr_lower.contains("timed out") {
+            runtime
+                .logger
+                .warn("Request timed out. The model may be overloaded - try again later.");
+        }
     }
 
     // Provide provider-specific auth advice for auth failures
