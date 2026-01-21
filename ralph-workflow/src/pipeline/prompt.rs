@@ -46,6 +46,98 @@ struct StreamingLineReader<R: Read> {
 /// - Adjusting this constant and rebuilding
 const MAX_BUFFER_SIZE: usize = 1024 * 1024; // 1 MiB
 
+/// Maximum safe prompt size in bytes for command-line arguments.
+///
+/// The OS has a limit on total argument size (ARG_MAX), typically:
+/// - Linux: 2MB (but often limited to 128KB per argument)
+/// - macOS: ~1MB
+/// - Windows: 32KB
+///
+/// We use a conservative limit of 200KB to:
+/// - Leave room for other arguments and environment variables
+/// - Work safely across all platforms
+/// - Avoid E2BIG (Argument list too long) errors at spawn time
+const MAX_PROMPT_SIZE: usize = 200 * 1024; // 200KB
+
+/// Truncate a prompt that exceeds the safe size limit.
+///
+/// This function intelligently truncates prompts by:
+/// 1. Looking for `{{LAST_OUTPUT}}` marker sections (from XSD retry templates)
+/// 2. Truncating from the beginning of LAST_OUTPUT content (keeping the end)
+/// 3. If no marker found, truncating from the middle to preserve start/end context
+///
+/// Returns the original prompt if within limits, or a truncated version with a marker.
+fn truncate_prompt_if_needed(prompt: &str, logger: &Logger) -> String {
+    if prompt.len() <= MAX_PROMPT_SIZE {
+        return prompt.to_string();
+    }
+
+    let excess = prompt.len() - MAX_PROMPT_SIZE;
+    logger.warn(&format!(
+        "Prompt exceeds safe limit ({} bytes > {} bytes), truncating {} bytes",
+        prompt.len(),
+        MAX_PROMPT_SIZE,
+        excess
+    ));
+
+    // Strategy: Find the largest contiguous block of content that looks like
+    // log output or previous agent output, and truncate from its beginning.
+    // This preserves the task instructions at the start and the most recent
+    // output at the end (which is most relevant for XSD retry errors).
+
+    // Look for common markers that indicate the start of embedded output
+    let truncation_markers = [
+        "\n---\n",            // Common section separator
+        "\n```\n",            // Code block start
+        "\n<last-output>",    // Explicit marker
+        "\nPrevious output:", // Text marker
+    ];
+
+    for marker in truncation_markers {
+        if let Some(marker_pos) = prompt.find(marker) {
+            // Found a marker - truncate content after it
+            let content_start = marker_pos + marker.len();
+            if content_start < prompt.len() {
+                let before_marker = &prompt[..content_start];
+                let after_marker = &prompt[content_start..];
+
+                if after_marker.len() > excess + 100 {
+                    // Truncate from the beginning of the content section
+                    let keep_from = excess + 100; // Keep extra for clean line boundary
+                    let truncated_content = &after_marker[keep_from..];
+
+                    // Find next newline for clean truncation
+                    let clean_start = truncated_content.find('\n').map(|i| i + 1).unwrap_or(0);
+
+                    return format!(
+                        "{}\n[... {} bytes truncated to fit CLI argument limit ...]\n{}",
+                        before_marker,
+                        keep_from + clean_start,
+                        &truncated_content[clean_start..]
+                    );
+                }
+            }
+        }
+    }
+
+    // Fallback: truncate from the middle, preserving start and end
+    let keep_start = MAX_PROMPT_SIZE / 3;
+    let keep_end = MAX_PROMPT_SIZE / 3;
+    let start_part = &prompt[..keep_start];
+    let end_part = &prompt[prompt.len() - keep_end..];
+
+    // Find clean line boundaries
+    let start_end = start_part.rfind('\n').map(|i| i + 1).unwrap_or(keep_start);
+    let end_start = end_part.find('\n').map(|i| i + 1).unwrap_or(0);
+
+    format!(
+        "{}\n\n[... {} bytes truncated to fit CLI argument limit ...]\n\n{}",
+        &prompt[..start_end],
+        prompt.len() - start_end - (keep_end - end_start),
+        &end_part[end_start..]
+    )
+}
+
 impl<R: Read> StreamingLineReader<R> {
     /// Create a new streaming line reader with a small buffer for low latency.
     fn new(inner: R) -> Self {
@@ -281,7 +373,10 @@ fn build_agent_command(
 
     let mut command = Command::new(&argv[0]);
     command.args(&argv[1..]);
-    command.arg(config.prompt);
+
+    // Truncate prompt if it exceeds safe CLI argument limits to prevent E2BIG errors
+    let prompt = truncate_prompt_if_needed(config.prompt, logger);
+    command.arg(&prompt);
 
     // Inject environment variables from agent config
     if !config.env_vars.is_empty() {
@@ -788,4 +883,68 @@ fn run_with_agent_executor(
         exit_code: result.exit_code,
         stderr: result.stderr,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_logger() -> Logger {
+        Logger::new(Colors::new())
+    }
+
+    #[test]
+    fn test_truncate_prompt_small_content() {
+        let logger = test_logger();
+        let content = "This is a small prompt that fits within limits.";
+        let result = truncate_prompt_if_needed(content, &logger);
+        assert_eq!(result, content);
+    }
+
+    #[test]
+    fn test_truncate_prompt_large_content_with_marker() {
+        let logger = test_logger();
+        // Create content larger than MAX_PROMPT_SIZE with a section separator
+        let prefix = "Task: Do something\n\n---\n";
+        let large_content = "x".repeat(MAX_PROMPT_SIZE + 50000);
+        let content = format!("{}{}", prefix, large_content);
+
+        let result = truncate_prompt_if_needed(&content, &logger);
+
+        // Should be truncated
+        assert!(result.len() < content.len());
+        // Should have truncation marker
+        assert!(result.contains("truncated"));
+        // Should preserve the prefix
+        assert!(result.starts_with("Task:"));
+    }
+
+    #[test]
+    fn test_truncate_prompt_large_content_fallback() {
+        let logger = test_logger();
+        // Create content larger than MAX_PROMPT_SIZE without any markers
+        let content = "a".repeat(MAX_PROMPT_SIZE + 50000);
+
+        let result = truncate_prompt_if_needed(&content, &logger);
+
+        // Should be truncated
+        assert!(result.len() < content.len());
+        // Should have truncation marker
+        assert!(result.contains("truncated"));
+    }
+
+    #[test]
+    fn test_truncate_prompt_preserves_end() {
+        let logger = test_logger();
+        // Content with marker and important end content
+        let prefix = "Instructions\n\n---\n";
+        let middle = "m".repeat(MAX_PROMPT_SIZE);
+        let suffix = "\nIMPORTANT_END_MARKER";
+        let content = format!("{}{}{}", prefix, middle, suffix);
+
+        let result = truncate_prompt_if_needed(&content, &logger);
+
+        // Should preserve the end content (most relevant for XSD errors)
+        assert!(result.contains("IMPORTANT_END_MARKER"));
+    }
 }

@@ -947,96 +947,13 @@ fn extract_and_validate_review_output_xml(
     }
 }
 
-/// Maximum size for LAST_OUTPUT in XSD retry prompts.
-///
-/// This limit prevents "Argument list too long" (E2BIG) errors when passing
-/// prompts as command-line arguments. The OS limit is typically ~256KB-1MB,
-/// but we use a conservative limit to leave room for the rest of the prompt.
-///
-/// The truncated output should still contain enough context for the agent
-/// to understand what went wrong and fix the XML format.
-const MAX_LAST_OUTPUT_SIZE: usize = 64 * 1024; // 64KB
-
-/// Truncate last output to prevent E2BIG errors in XSD retry prompts.
-///
-/// Keeps the last portion of the output (most relevant for XSD errors)
-/// since the end typically contains the malformed XML that needs fixing.
-fn truncate_last_output(content: &str) -> String {
-    if content.len() <= MAX_LAST_OUTPUT_SIZE {
-        return content.to_string();
-    }
-
-    // Keep the last MAX_LAST_OUTPUT_SIZE bytes, starting at a line boundary
-    let truncate_point = content.len() - MAX_LAST_OUTPUT_SIZE;
-
-    // Find the next newline after the truncate point to avoid cutting mid-line
-    let start = content[truncate_point..]
-        .find('\n')
-        .map(|i| truncate_point + i + 1)
-        .unwrap_or(truncate_point);
-
-    format!(
-        "[... truncated {} bytes to fit command-line limit ...]\n{}",
-        start,
-        &content[start..]
-    )
-}
-
 /// Read the last review output from logs.
 ///
 /// The `log_prefix` is a path prefix (not a directory) like `.agent/logs/reviewer_1`.
 /// Actual log files are named `{prefix}_{agent}_{model}.log`, e.g.:
 /// `.agent/logs/reviewer_1_ccs-glm_0.log`
-///
-/// Returns truncated output to prevent E2BIG errors when used in XSD retry prompts.
 fn read_last_review_output(log_prefix: &Path) -> String {
-    // The log_prefix is a prefix like ".agent/logs/reviewer_1"
-    // Actual files are "{prefix}_{agent}_{model}.log"
-    // We need to find files that match this prefix pattern in the parent directory
-
-    let parent = log_prefix.parent().unwrap_or(Path::new("."));
-    let prefix_str = log_prefix
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-
-    // Find all log files matching the prefix pattern and get the most recently modified one
-    let mut best_file: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
-
-    if let Ok(entries) = fs::read_dir(parent) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                // Match files that start with our prefix and end with .log
-                if filename.starts_with(prefix_str)
-                    && filename.len() > prefix_str.len()
-                    && filename.ends_with(".log")
-                {
-                    // Get modification time for this file
-                    if let Ok(metadata) = fs::metadata(&path) {
-                        if let Ok(modified) = metadata.modified() {
-                            match &best_file {
-                                None => best_file = Some((path.clone(), modified)),
-                                Some((_, best_time)) if modified > *best_time => {
-                                    best_file = Some((path.clone(), modified));
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Read the most recently modified matching log file
-    if let Some((path, _)) = best_file {
-        if let Ok(content) = fs::read_to_string(&path) {
-            return truncate_last_output(&content);
-        }
-    }
-
-    String::new()
+    read_last_output_from_prefix(log_prefix)
 }
 
 /// Get the last XSD error from the log directory for retry feedback.
@@ -1106,13 +1023,15 @@ fn handle_postflight_validation(ctx: &PhaseContext<'_>, j: u32) {
 /// The `log_prefix` is a path prefix (not a directory) like `.agent/logs/fix_1_1`.
 /// Actual log files are named `{prefix}_{agent}_{model}.log`, e.g.:
 /// `.agent/logs/fix_1_1_ccs-glm_0.log`
-///
-/// Returns truncated output to prevent E2BIG errors when used in XSD retry prompts.
 fn read_last_fix_output(log_prefix: &Path) -> String {
-    // The log_prefix is a prefix like ".agent/logs/fix_1_1"
-    // Actual files are "{prefix}_{agent}_{model}.log"
-    // We need to find files that match this prefix pattern in the parent directory
+    read_last_output_from_prefix(log_prefix)
+}
 
+/// Read the most recent log file matching a prefix pattern.
+///
+/// This is a shared helper for reading log output. Truncation of large prompts
+/// is handled centrally in `build_agent_command` to prevent E2BIG errors.
+fn read_last_output_from_prefix(log_prefix: &Path) -> String {
     let parent = log_prefix.parent().unwrap_or(Path::new("."));
     let prefix_str = log_prefix
         .file_name()
@@ -1151,7 +1070,7 @@ fn read_last_fix_output(log_prefix: &Path) -> String {
     // Read the most recently modified matching log file
     if let Some((path, _)) = best_file {
         if let Ok(content) = fs::read_to_string(&path) {
-            return truncate_last_output(&content);
+            return content;
         }
     }
 
