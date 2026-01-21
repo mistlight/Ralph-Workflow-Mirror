@@ -90,6 +90,9 @@ ureq = { version = "3.0", features = ["json"] }
 # Levenshtein distance for fuzzy suggestions
 strsim = "0.11"
 
+# XML parsing for plan validation
+quick-xml = "0.37"
+
 [dev-dependencies]
 # Testing utilities
 tempfile = "3.10"

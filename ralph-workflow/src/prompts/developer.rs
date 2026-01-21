@@ -368,7 +368,7 @@ mod tests {
         assert!(result.contains("PHASE 2: EXPLORATION"));
         assert!(result.contains("PHASE 3: DESIGN"));
         assert!(result.contains("PHASE 4: REVIEW"));
-        assert!(result.contains("PHASE 5: WRITE PLAN"));
+        assert!(result.contains("PHASE 5: WRITE STRUCTURED PLAN"));
 
         // Ensure XML output format is specified
         assert!(result.contains("<ralph-plan>"));
@@ -472,7 +472,7 @@ mod tests {
         assert!(result.contains("PHASE 2: EXPLORATION"));
         assert!(result.contains("PHASE 3: DESIGN"));
         assert!(result.contains("PHASE 4: REVIEW"));
-        assert!(result.contains("PHASE 5: WRITE PLAN"));
+        assert!(result.contains("PHASE 5: WRITE STRUCTURED PLAN"));
         assert!(result.contains("<ralph-plan>"));
     }
 

@@ -1,30 +1,51 @@
 {# ============================================================================ #}
 {# Template: planning_xml.txt                                                  #}
-{# Version: 1.0                                                                 #}
+{# Version: 2.0 - Structured XML with rich content elements                    #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
-{#   Prompt for planning phase to create detailed implementation plans.         #}
-{#   Uses XML output format for reliable parsing.                              #}
+{#   Prompt for planning phase to create detailed implementation plans.        #}
+{#   Uses structured XML with rich content elements for comprehensive plans.   #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
-{#   {{PROMPT}} - User requirements from PROMPT.md (required)                   #}
+{#   {{PROMPT}} - User requirements from PROMPT.md (required)                  #}
 {#                                                                             #}
 {# OUTPUT FORMAT:                                                              #}
 {#   <ralph-plan>                                                              #}
-{#     <ralph-summary>One paragraph explanation</ralph-summary>                 #}
-{#     <ralph-implementation-steps>Numbered, actionable steps</ralph-implementation-steps> #}
-{#     <ralph-critical-files>List of key files (optional)</ralph-critical-files> #}
-{#     <ralph-risks-mitigations>Risks and mitigations (optional)</ralph-risks-mitigations> #}
-{#     <ralph-verification-strategy>How to verify (optional)</ralph-verification-strategy> #}
-{#   </ralph-plan>                                                              #}
-{#                                                                             #}
-{# EXTRACTION:                                                                 #}
-{#   Parsed by extract_plan_xml() in xml_extraction_plan.rs                    #}
-{#   Validated by validate_plan_xml() in xsd_validation_plan.rs                #}
+{#     <ralph-summary>                                                         #}
+{#       <context>What is being done and why</context>                         #}
+{#       <scope-items>                                                         #}
+{#         <scope-item count="N" category="X">Description</scope-item> (min 3) #}
+{#       </scope-items>                                                        #}
+{#     </ralph-summary>                                                        #}
+{#     <ralph-implementation-steps>                                            #}
+{#       <step number="1" type="file-change" priority="high">                  #}
+{#         <title>Step title</title>                                           #}
+{#         <target-files><file path="..." action="modify"/></target-files>     #}
+{#         <location>Where in file</location>                                  #}
+{#         <content>Rich content with tables, code-blocks, lists</content>     #}
+{#       </step>                                                               #}
+{#     </ralph-implementation-steps>                                           #}
+{#     <ralph-critical-files>                                                  #}
+{#       <primary-files><file path="..." action="modify"/></primary-files>     #}
+{#       <reference-files><file path="..." purpose="..."/></reference-files>   #}
+{#     </ralph-critical-files>                                                 #}
+{#     <ralph-risks-mitigations>                                               #}
+{#       <risk-pair severity="medium">                                         #}
+{#         <risk>Risk description</risk>                                       #}
+{#         <mitigation>How to mitigate</mitigation>                            #}
+{#       </risk-pair>                                                          #}
+{#     </ralph-risks-mitigations>                                              #}
+{#     <ralph-verification-strategy>                                           #}
+{#       <verification>                                                        #}
+{#         <method>How to verify</method>                                      #}
+{#         <expected-outcome>What success looks like</expected-outcome>        #}
+{#       </verification>                                                       #}
+{#     </ralph-verification-strategy>                                          #}
+{#   </ralph-plan>                                                             #}
 {# ============================================================================ #}
 
-You are in PLANNING MODE. Create a detailed implementation plan.
+You are in PLANNING MODE. Create a detailed, structured implementation plan.
 
 CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
 - Creating, modifying, or deleting any files
@@ -71,12 +92,6 @@ Explore to understand:
 IMPORTANT: Never assume a library or framework is available. Check package.json,
 Cargo.toml, or equivalent to verify dependencies before planning to use them.
 
-When you find code conventions, mimic them. Look at neighboring files to understand:
-- Framework choices and library usage
-- Naming conventions and typing patterns
-- Error handling approaches
-- Documentation style
-
 ═══════════════════════════════════════════════════════════════════════════════
 PHASE 3: DESIGN
 ═══════════════════════════════════════════════════════════════════════════════
@@ -117,22 +132,139 @@ Before finalizing, validate your plan against the requirements:
 If you discover gaps, return to earlier phases to address them.
 
 ═══════════════════════════════════════════════════════════════════════════════
-PHASE 5: WRITE PLAN
+PHASE 5: WRITE STRUCTURED PLAN
 ═══════════════════════════════════════════════════════════════════════════════
 
-Output your plan as XML. Start IMMEDIATELY with <ralph-plan> - no text before or after.
-No markdown fences around the XML.
+Output your plan as structured XML. Start IMMEDIATELY with <ralph-plan>.
+No markdown fences around the XML. No text before or after the XML.
+
+ALL SECTIONS ARE REQUIRED:
+- ralph-summary (with context and at least 3 scope-items)
+- ralph-implementation-steps (with numbered steps)
+- ralph-critical-files (with primary-files)
+- ralph-risks-mitigations (with at least 1 risk-pair)
+- ralph-verification-strategy (with at least 1 verification)
+
+───────────────────────────────────────────────────────────────────────────────
+XML STRUCTURE REFERENCE
+───────────────────────────────────────────────────────────────────────────────
+
+RICH CONTENT ELEMENTS (use inside <content>):
+- <paragraph>Text with optional <emphasis>bold</emphasis> and <code>inline</code></paragraph>
+- <code-block language="rust" filename="file.rs">code here</code-block>
+- <heading level="3">Section Title</heading>
+- <list type="ordered|unordered"><item>Item text</item></list>
+- <table>
+    <caption>Table title</caption>
+    <columns><column>Col1</column><column>Col2</column></columns>
+    <row><cell>Value1</cell><cell>Value2</cell></row>
+  </table>
+
+STEP TYPES:
+- type="file-change" (default): Modifies files. Requires <target-files> and <location>.
+- type="action": Setup/config tasks (e.g., "Set up test environment"). No file required.
+- type="research": Investigation tasks (e.g., "Research API requirements"). No file required.
+
+STEP PRIORITIES: critical, high, medium, low
+
+FILE ACTIONS: create, modify, delete
+
+───────────────────────────────────────────────────────────────────────────────
+EXAMPLE PLAN
+───────────────────────────────────────────────────────────────────────────────
 
 <ralph-plan>
-<ralph-summary>Explanation of what will be done and why.</ralph-summary>
-<ralph-implementation-steps>Numbered, actionable steps with details about:
-- What each step accomplishes
-- Which files are affected
-- Dependencies between steps</ralph-implementation-steps>
-<ralph-critical-files>Key files that will be created or modified with justification.</ralph-critical-files>
-<ralph-risks-mitigations>Challenges identified and how to handle them.</ralph-risks-mitigations>
-<ralph-verification-strategy>How to verify the implementation is correct.</ralph-verification-strategy>
+<ralph-summary>
+<context>
+Enhance the user authentication system by adding OAuth2 support for Google and GitHub
+providers, enabling users to sign in with their existing accounts.
+</context>
+<scope-items>
+<scope-item count="3" category="auth">OAuth2 provider integrations</scope-item>
+<scope-item count="5" category="api">new API endpoints for OAuth flow</scope-item>
+<scope-item count="2" category="ui">login button components</scope-item>
+<scope-item count="8" category="tests">integration and unit tests</scope-item>
+</scope-items>
+</ralph-summary>
+
+<ralph-implementation-steps>
+<step number="1" type="file-change" priority="high">
+<title>Add OAuth2 configuration types</title>
+<target-files>
+<file path="src/config/oauth.rs" action="create"/>
+<file path="src/config/mod.rs" action="modify"/>
+</target-files>
+<location>Create new file; add mod declaration to mod.rs</location>
+<rationale>Configuration must be in place before implementing providers</rationale>
+<content>
+<paragraph>Create OAuth2 configuration structures:</paragraph>
+<code-block language="rust" filename="src/config/oauth.rs">
+#[derive(Debug, Clone, Deserialize)]
+pub struct OAuth2Config {
+    pub google: Option&lt;ProviderConfig&gt;,
+    pub github: Option&lt;ProviderConfig&gt;,
+}
+</code-block>
+</content>
+</step>
+
+<step number="2" type="research" priority="medium">
+<title>Research OAuth2 library options</title>
+<content>
+<paragraph>Evaluate available OAuth2 libraries for Rust:</paragraph>
+<table>
+<caption>OAuth2 Library Comparison</caption>
+<columns>
+<column>Library</column>
+<column>Pros</column>
+<column>Cons</column>
+</columns>
+<row>
+<cell>oauth2</cell>
+<cell>Official, well-maintained</cell>
+<cell>Verbose API</cell>
+</row>
+</table>
+</content>
+<depends-on step="1"/>
+</step>
+
+<step number="3" type="action" priority="high">
+<title>Configure test environment</title>
+<content>
+<paragraph>Set up test OAuth credentials:</paragraph>
+<list type="ordered">
+<item>Create Google Cloud project and OAuth credentials</item>
+<item>Create GitHub OAuth App in developer settings</item>
+<item>Add credentials to <code>.env.test</code></item>
+</list>
+</content>
+</step>
+</ralph-implementation-steps>
+
+<ralph-critical-files>
+<primary-files>
+<file path="src/config/oauth.rs" action="create" estimated-changes="~50 lines"/>
+<file path="src/auth/oauth2.rs" action="create" estimated-changes="~200 lines"/>
+</primary-files>
+<reference-files>
+<file path="src/auth/mod.rs" purpose="Existing auth patterns"/>
+</reference-files>
+</ralph-critical-files>
+
+<ralph-risks-mitigations>
+<risk-pair severity="high">
+<risk>OAuth tokens could be intercepted if not handled securely</risk>
+<mitigation>Use HTTPS only, store tokens encrypted, implement PKCE flow</mitigation>
+</risk-pair>
+</ralph-risks-mitigations>
+
+<ralph-verification-strategy>
+<verification>
+<method>Run integration tests against test OAuth credentials</method>
+<expected-outcome>All OAuth flows complete successfully with valid tokens</expected-outcome>
+</verification>
+</ralph-verification-strategy>
 </ralph-plan>
 
-Only <ralph-summary> and <ralph-implementation-steps> are required.
 Be as detailed as the task requires - complex tasks need comprehensive plans.
