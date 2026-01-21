@@ -2,6 +2,166 @@
 //!
 //! This module handles parsing and displaying `OpenCode` NDJSON event streams.
 //!
+//! # Source Code Reference
+//!
+//! This parser is based on analysis of the OpenCode source code from:
+//! - **Repository**: <https://github.com/anomalyco/opencode>
+//! - **Key source files**:
+//!   - `/packages/opencode/src/cli/cmd/run.ts` - NDJSON output generation
+//!   - `/packages/opencode/src/session/message-v2.ts` - Message part type definitions
+//!
+//! # NDJSON Event Format
+//!
+//! OpenCode outputs NDJSON (newline-delimited JSON) events via `--format json`.
+//! Each event has the structure:
+//!
+//! ```json
+//! {
+//!   "type": "step_start" | "step_finish" | "tool_use" | "text" | "error",
+//!   "timestamp": 1768191337567,
+//!   "sessionID": "ses_44f9562d4ffe",
+//!   ...event-specific data (usually in "part" field)
+//! }
+//! ```
+//!
+//! From `run.ts` lines 146-201, the event types are generated as:
+//! ```typescript
+//! outputJsonEvent("tool_use", { part })    // Tool invocations
+//! outputJsonEvent("step_start", { part })  // Step initialization
+//! outputJsonEvent("step_finish", { part }) // Step completion
+//! outputJsonEvent("text", { part })        // Streaming text content
+//! outputJsonEvent("error", { error })      // Error events
+//! ```
+//!
+//! # Part Type Definitions
+//!
+//! ## StepStartPart (`message-v2.ts` lines 194-200)
+//!
+//! ```typescript
+//! {
+//!   id: string,
+//!   sessionID: string,
+//!   messageID: string,
+//!   type: "step-start",
+//!   snapshot: string | undefined  // Git commit hash for state snapshot
+//! }
+//! ```
+//!
+//! ## StepFinishPart (`message-v2.ts` lines 202-219)
+//!
+//! ```typescript
+//! {
+//!   id: string,
+//!   sessionID: string,
+//!   messageID: string,
+//!   type: "step-finish",
+//!   reason: string,               // "tool-calls", "end_turn", etc.
+//!   snapshot: string | undefined,
+//!   cost: number,                 // Cost in USD
+//!   tokens: {
+//!     input: number,
+//!     output: number,
+//!     reasoning: number,
+//!     cache: { read: number, write: number }
+//!   }
+//! }
+//! ```
+//!
+//! ## TextPart (`message-v2.ts` lines 62-77)
+//!
+//! ```typescript
+//! {
+//!   id: string,
+//!   sessionID: string,
+//!   messageID: string,
+//!   type: "text",
+//!   text: string,
+//!   synthetic?: boolean,
+//!   ignored?: boolean,
+//!   time?: { start: number, end?: number },
+//!   metadata?: Record<string, any>
+//! }
+//! ```
+//!
+//! ## ToolPart (`message-v2.ts` lines 289-298)
+//!
+//! ```typescript
+//! {
+//!   id: string,
+//!   sessionID: string,
+//!   messageID: string,
+//!   type: "tool",
+//!   callID: string,
+//!   tool: string,  // Tool name: "read", "bash", "write", "edit", "glob", "grep", etc.
+//!   state: ToolState,
+//!   metadata?: Record<string, any>
+//! }
+//! ```
+//!
+//! ## ToolState Variants (`message-v2.ts` lines 221-287)
+//!
+//! The `state` field is a discriminated union based on `status`:
+//!
+//! ### Pending (`status: "pending"`)
+//! ```typescript
+//! { status: "pending", input: Record<string, any>, raw: string }
+//! ```
+//!
+//! ### Running (`status: "running"`)
+//! ```typescript
+//! {
+//!   status: "running",
+//!   input: Record<string, any>,
+//!   title?: string,
+//!   metadata?: Record<string, any>,
+//!   time: { start: number }
+//! }
+//! ```
+//!
+//! ### Completed (`status: "completed"`)
+//! ```typescript
+//! {
+//!   status: "completed",
+//!   input: Record<string, any>,
+//!   output: string,
+//!   title: string,
+//!   metadata: Record<string, any>,
+//!   time: { start: number, end: number, compacted?: number },
+//!   attachments?: FilePart[]
+//! }
+//! ```
+//!
+//! ### Error (`status: "error"`)
+//! ```typescript
+//! {
+//!   status: "error",
+//!   input: Record<string, any>,
+//!   error: string,
+//!   metadata?: Record<string, any>,
+//!   time: { start: number, end: number }
+//! }
+//! ```
+//!
+//! ## Tool Input Parameters
+//!
+//! The `state.input` object contains tool-specific parameters:
+//!
+//! | Tool    | Input Fields                                         |
+//! |---------|-----------------------------------------------------|
+//! | `read`  | `{ filePath: string, offset?: number, limit?: number }` |
+//! | `bash`  | `{ command: string, timeout?: number }`              |
+//! | `write` | `{ filePath: string, content: string }`              |
+//! | `edit`  | `{ filePath: string, ... }`                          |
+//! | `glob`  | `{ pattern: string, path?: string }`                 |
+//! | `grep`  | `{ pattern: string, path?: string, include?: string }` |
+//! | `fetch` | `{ url: string, format?: string, timeout?: number }` |
+//!
+//! From `run.ts` line 168, the title fallback is:
+//! ```typescript
+//! const title = part.state.title ||
+//!   (Object.keys(part.state.input).length > 0 ? JSON.stringify(part.state.input) : "Unknown")
+//! ```
+//!
 //! # Streaming Output Behavior
 //!
 //! This parser implements real-time streaming output for text deltas. When content
@@ -50,13 +210,15 @@ use super::types::{format_tool_input, format_unknown_json_event, ContentType};
 
 /// `OpenCode` event types
 ///
-/// Based on `OpenCode`'s actual NDJSON output format, events include:
+/// Based on `OpenCode`'s actual NDJSON output format (`run.ts` lines 146-201), events include:
 /// - `step_start`: Step initialization with snapshot info
 /// - `step_finish`: Step completion with reason, cost, tokens
 /// - `tool_use`: Tool invocation with tool name, callID, and state (status, input, output)
 /// - `text`: Streaming text content
+/// - `error`: Session/API error events (from `session.error` in run.ts)
 ///
 /// The top-level structure is: `{ "type": "...", "timestamp": ..., "sessionID": "...", "part": {...} }`
+/// For error events: `{ "type": "error", "timestamp": ..., "sessionID": "...", "error": {...} }`
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OpenCodeEvent {
     #[serde(rename = "type")]
@@ -65,6 +227,23 @@ pub struct OpenCodeEvent {
     #[serde(rename = "sessionID")]
     pub(crate) session_id: Option<String>,
     pub(crate) part: Option<OpenCodePart>,
+    /// Error information for error events (from `session.error` in run.ts line 201)
+    pub(crate) error: Option<OpenCodeError>,
+}
+
+/// Error information from error events
+///
+/// From `run.ts` lines 192-202, error events contain:
+/// - `name`: Error type name
+/// - `data`: Optional additional error data (may contain `message` field)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OpenCodeError {
+    /// Error type name
+    pub(crate) name: Option<String>,
+    /// Error message (direct or extracted from data.message)
+    pub(crate) message: Option<String>,
+    /// Additional error data (may contain `message` field)
+    pub(crate) data: Option<serde_json::Value>,
 }
 
 /// Nested part object containing the actual event data
@@ -95,14 +274,28 @@ pub struct OpenCodePart {
 }
 
 /// Tool state containing status, input, and output
+///
+/// From `message-v2.ts` lines 221-287, the state is a discriminated union based on `status`:
+/// - `pending`: Tool call received, waiting to execute (`input`, `raw`)
+/// - `running`: Tool is executing (`input`, `title?`, `metadata?`, `time.start`)
+/// - `completed`: Tool finished successfully (`input`, `output`, `title`, `metadata`, `time`)
+/// - `error`: Tool failed (`input`, `error`, `metadata?`, `time`)
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OpenCodeToolState {
+    /// Status: "pending", "running", "completed", or "error"
     pub(crate) status: Option<String>,
+    /// Tool input parameters (tool-specific, e.g., `filePath` for read, `command` for bash)
     pub(crate) input: Option<serde_json::Value>,
+    /// Tool output (only present when status is "completed")
     pub(crate) output: Option<serde_json::Value>,
+    /// Human-readable title/description (e.g., filename for read operations)
     pub(crate) title: Option<String>,
+    /// Additional metadata from tool execution
     pub(crate) metadata: Option<serde_json::Value>,
+    /// Timing information
     pub(crate) time: Option<OpenCodeTime>,
+    /// Error message (only present when status is "error")
+    pub(crate) error: Option<String>,
 }
 
 /// Token statistics from `step_finish` events
@@ -265,11 +458,12 @@ impl OpenCodeParser {
 
     /// Parse and display a single `OpenCode` JSON event
     ///
-    /// The `OpenCode` NDJSON format uses events with:
+    /// From OpenCode source (`run.ts` lines 146-201), the NDJSON format uses events with:
     /// - `step_start`: Step initialization with snapshot info
     /// - `step_finish`: Step completion with reason, cost, tokens
     /// - `tool_use`: Tool invocation with tool name, callID, and state (status, input, output)
     /// - `text`: Streaming text content
+    /// - `error`: Session/API error events
     pub(crate) fn parse_event(&self, line: &str) -> Option<String> {
         let event: OpenCodeEvent = if let Ok(e) = serde_json::from_str(line) {
             e
@@ -288,6 +482,7 @@ impl OpenCodeParser {
             "step_finish" => self.format_step_finish_event(&event),
             "tool_use" => self.format_tool_use_event(&event),
             "text" => self.format_text_event(&event),
+            "error" => self.format_error_event(&event, line),
             _ => {
                 // Unknown event type - use the generic formatter in verbose mode
                 format_unknown_json_event(line, prefix, *c, self.verbosity.is_verbose())
@@ -432,11 +627,13 @@ impl OpenCodeParser {
 
     /// Format a `tool_use` event
     ///
-    /// OpenCode's interactive mode shows rich tool information including:
-    /// - Tool name and status
-    /// - Title/description when available
-    /// - Full input parameters
-    /// - Tool output/results (shown at Normal+ verbosity for better visibility)
+    /// Based on OpenCode source (`run.ts` lines 163-174, `message-v2.ts` lines 221-287):
+    /// - Shows tool name with status-specific icon and color
+    /// - Status handling: pending (…), running (►), completed (✓), error (✗)
+    /// - Title/description when available (from `state.title`)
+    /// - Tool-specific input formatting based on tool type
+    /// - Tool output/results shown at Normal+ verbosity
+    /// - Error messages shown in red when status is "error"
     fn format_tool_use_event(&self, event: &OpenCodeEvent) -> String {
         let c = &self.colors;
         let prefix = &self.display_name;
@@ -450,9 +647,14 @@ impl OpenCodeParser {
                 .unwrap_or("pending");
             let title = part.state.as_ref().and_then(|s| s.title.as_deref());
 
-            let is_completed = status == "completed";
-            let icon = if is_completed { CHECK } else { '…' };
-            let color = if is_completed { c.green() } else { c.yellow() };
+            // Status-specific icon and color based on ToolState variants from message-v2.ts
+            // Statuses: "pending", "running", "completed", "error"
+            let (icon, color) = match status {
+                "completed" => (CHECK, c.green()),
+                "error" => (CROSS, c.red()),
+                "running" => ('►', c.cyan()),
+                _ => ('…', c.yellow()), // "pending" or unknown
+            };
 
             let mut out = format!(
                 "{}[{}]{} {}Tool{}: {}{}{} {}{}{}\n",
@@ -469,7 +671,7 @@ impl OpenCodeParser {
                 c.reset()
             );
 
-            // Show title if available
+            // Show title if available (from state.title)
             if let Some(t) = title {
                 let limit = self.verbosity.truncate_limit("text");
                 let preview = truncate_text(t, limit);
@@ -485,11 +687,11 @@ impl OpenCodeParser {
                 );
             }
 
-            // Show tool input at Normal+ verbosity
+            // Show tool input at Normal+ verbosity with tool-specific formatting
             if self.verbosity.show_tool_input() {
                 if let Some(ref state) = part.state {
                     if let Some(ref input_val) = state.input {
-                        let input_str = format_tool_input(input_val);
+                        let input_str = Self::format_tool_specific_input(tool_name, input_val);
                         let limit = self.verbosity.truncate_limit("tool_input");
                         let preview = truncate_text(&input_str, limit);
                         if !preview.is_empty() {
@@ -508,9 +710,32 @@ impl OpenCodeParser {
                 }
             }
 
+            // Show error message when status is "error"
+            if status == "error" {
+                if let Some(ref state) = part.state {
+                    if let Some(ref error_msg) = state.error {
+                        let limit = self.verbosity.truncate_limit("tool_result");
+                        let preview = truncate_text(error_msg, limit);
+                        let _ = writeln!(
+                            out,
+                            "{}[{}]{} {}  └─ {}Error:{} {}{}{}",
+                            c.dim(),
+                            prefix,
+                            c.reset(),
+                            c.red(),
+                            c.bold(),
+                            c.reset(),
+                            c.red(),
+                            preview,
+                            c.reset()
+                        );
+                    }
+                }
+            }
+
             // Show tool output at Normal+ verbosity when completed
             // (Changed from verbose-only to match OpenCode's interactive mode behavior)
-            if self.verbosity.show_tool_input() && is_completed {
+            if self.verbosity.show_tool_input() && status == "completed" {
                 if let Some(ref state) = part.state {
                     if let Some(ref output_val) = state.output {
                         let output_str = match output_val {
@@ -595,6 +820,110 @@ impl OpenCodeParser {
         }
     }
 
+    /// Format tool input based on tool type
+    ///
+    /// From OpenCode source, each tool has specific input fields:
+    /// - `read`: `filePath`, `offset?`, `limit?`
+    /// - `bash`: `command`, `timeout?`
+    /// - `write`: `filePath`, `content`
+    /// - `edit`: `filePath`, ...
+    /// - `glob`: `pattern`, `path?`
+    /// - `grep`: `pattern`, `path?`, `include?`
+    /// - `fetch`: `url`, `format?`, `timeout?`
+    fn format_tool_specific_input(tool_name: &str, input: &serde_json::Value) -> String {
+        let obj = match input.as_object() {
+            Some(o) => o,
+            None => return format_tool_input(input),
+        };
+
+        match tool_name {
+            "read" | "view" => {
+                // Primary: filePath, optional: offset, limit
+                let file_path = obj.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
+                let mut result = file_path.to_string();
+                if let Some(offset) = obj.get("offset").and_then(|v| v.as_u64()) {
+                    result.push_str(&format!(" (offset: {offset})"));
+                }
+                if let Some(limit) = obj.get("limit").and_then(|v| v.as_u64()) {
+                    result.push_str(&format!(" (limit: {limit})"));
+                }
+                result
+            }
+            "bash" => {
+                // Primary: command
+                obj.get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            }
+            "write" => {
+                // Primary: filePath (don't show content in summary)
+                let file_path = obj.get("filePath").and_then(|v| v.as_str()).unwrap_or("");
+                let content_len = obj
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.len())
+                    .unwrap_or(0);
+                if content_len > 0 {
+                    format!("{file_path} ({content_len} bytes)")
+                } else {
+                    file_path.to_string()
+                }
+            }
+            "edit" => {
+                // Primary: filePath
+                obj.get("filePath")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            }
+            "glob" => {
+                // Primary: pattern, optional: path
+                let pattern = obj.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+                let path = obj.get("path").and_then(|v| v.as_str());
+                if let Some(p) = path {
+                    format!("{pattern} in {p}")
+                } else {
+                    pattern.to_string()
+                }
+            }
+            "grep" => {
+                // Primary: pattern, optional: path, include
+                let pattern = obj.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+                let mut result = format!("/{pattern}/");
+                if let Some(path) = obj.get("path").and_then(|v| v.as_str()) {
+                    result.push_str(&format!(" in {path}"));
+                }
+                if let Some(include) = obj.get("include").and_then(|v| v.as_str()) {
+                    result.push_str(&format!(" ({include})"));
+                }
+                result
+            }
+            "fetch" | "webfetch" => {
+                // Primary: url, optional: format
+                let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                let format = obj.get("format").and_then(|v| v.as_str());
+                if let Some(f) = format {
+                    format!("{url} ({f})")
+                } else {
+                    url.to_string()
+                }
+            }
+            "todowrite" | "todoread" => {
+                // Show count of todos if available
+                if let Some(todos) = obj.get("todos").and_then(|v| v.as_array()) {
+                    format!("{} items", todos.len())
+                } else {
+                    format_tool_input(input)
+                }
+            }
+            _ => {
+                // Fallback to generic formatting
+                format_tool_input(input)
+            }
+        }
+    }
+
     /// Format a `text` event
     fn format_text_event(&self, event: &OpenCodeEvent) -> String {
         let c = &self.colors;
@@ -639,6 +968,80 @@ impl OpenCodeParser {
             }
         }
         String::new()
+    }
+
+    /// Format an `error` event
+    ///
+    /// From OpenCode source (`run.ts` lines 192-202), error events are emitted for session errors:
+    /// ```typescript
+    /// if (event.type === "session.error") {
+    ///   let err = String(props.error.name)
+    ///   if ("data" in props.error && props.error.data && "message" in props.error.data) {
+    ///     err = String(props.error.data.message)
+    ///   }
+    ///   outputJsonEvent("error", { error: props.error })
+    /// }
+    /// ```
+    fn format_error_event(&self, event: &OpenCodeEvent, raw_line: &str) -> String {
+        let c = &self.colors;
+        let prefix = &self.display_name;
+
+        // Try to extract error message from the event
+        let error_msg = event.error.as_ref().map_or_else(
+            || {
+                // Fallback: try to extract from raw JSON
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(raw_line) {
+                    json.get("error")
+                        .and_then(|e| {
+                            // Try data.message first (as in run.ts)
+                            e.get("data")
+                                .and_then(|d| d.get("message"))
+                                .and_then(|m| m.as_str())
+                                .map(String::from)
+                                // Then try direct message
+                                .or_else(|| {
+                                    e.get("message").and_then(|m| m.as_str()).map(String::from)
+                                })
+                                // Then try name
+                                .or_else(|| {
+                                    e.get("name").and_then(|n| n.as_str()).map(String::from)
+                                })
+                        })
+                        .unwrap_or_else(|| "Unknown error".to_string())
+                } else {
+                    "Unknown error".to_string()
+                }
+            },
+            |err| {
+                // Try data.message first (as in run.ts)
+                err.data
+                    .as_ref()
+                    .and_then(|d| d.get("message"))
+                    .and_then(|m| m.as_str())
+                    .map(String::from)
+                    // Then try direct message
+                    .or_else(|| err.message.clone())
+                    // Then try name
+                    .or_else(|| err.name.clone())
+                    .unwrap_or_else(|| "Unknown error".to_string())
+            },
+        );
+
+        let limit = self.verbosity.truncate_limit("text");
+        let preview = truncate_text(&error_msg, limit);
+
+        format!(
+            "{}[{}]{} {}{} Error:{} {}{}{}\n",
+            c.dim(),
+            prefix,
+            c.reset(),
+            c.red(),
+            CROSS,
+            c.reset(),
+            c.red(),
+            preview,
+            c.reset()
+        )
     }
 
     /// Check if an `OpenCode` event is a control event (state management with no user output)
@@ -771,6 +1174,28 @@ impl OpenCodeParser {
             }
         }
 
+        // Handle any remaining buffered data when the stream ends.
+        // Only process if it's valid JSON - incomplete buffered data should be skipped.
+        if let Some(remaining) = incremental_parser.finish() {
+            let trimmed = remaining.trim();
+            if !trimmed.is_empty()
+                && trimmed.starts_with('{')
+                && serde_json::from_str::<OpenCodeEvent>(&remaining).is_ok()
+            {
+                // Process the remaining event
+                if let Some(output) = self.parse_event(&remaining) {
+                    monitor.record_parsed();
+                    let mut printer = self.printer.borrow_mut();
+                    write!(printer, "{output}")?;
+                    printer.flush()?;
+                }
+                // Write to log file
+                if let Some(ref mut file) = log_writer {
+                    writeln!(file, "{remaining}")?;
+                }
+            }
+        }
+
         if let Some(ref mut file) = log_writer {
             file.flush()?;
             // Ensure data is written to disk before continuing
@@ -848,7 +1273,7 @@ mod tests {
         let out = output.unwrap();
         assert!(out.contains("Tool"));
         assert!(out.contains("read"));
-        assert!(out.contains("filePath=/Users/test/file.rs"));
+        assert!(out.contains("/Users/test/file.rs"));
     }
 
     #[test]
@@ -908,5 +1333,115 @@ mod tests {
         assert!(out.contains("read"));
         assert!(out.contains("Output"));
         assert!(out.contains("fn main"));
+    }
+
+    #[test]
+    fn test_opencode_tool_running_status() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"bash","state":{"status":"running","input":{"command":"npm test"},"time":{"start":1768191346712}}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Tool"));
+        assert!(out.contains("bash"));
+        assert!(out.contains("►")); // running icon
+    }
+
+    #[test]
+    fn test_opencode_tool_error_status() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06ac80c001","type":"tool","tool":"bash","state":{"status":"error","input":{"command":"invalid_cmd"},"error":"Command not found: invalid_cmd","time":{"start":1768191346712,"end":1768191346800}}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Tool"));
+        assert!(out.contains("bash"));
+        assert!(out.contains("✗")); // error icon
+        assert!(out.contains("Error"));
+        assert!(out.contains("Command not found"));
+    }
+
+    #[test]
+    fn test_opencode_error_event() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"error","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","error":{"name":"APIError","message":"Rate limit exceeded"}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Error"));
+        assert!(out.contains("Rate limit exceeded"));
+    }
+
+    #[test]
+    fn test_opencode_error_event_with_data_message() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        // Error with data.message (as in run.ts lines 197-199)
+        let json = r#"{"type":"error","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","error":{"name":"ProviderError","data":{"message":"Invalid API key"}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("Error"));
+        assert!(out.contains("Invalid API key"));
+    }
+
+    #[test]
+    fn test_opencode_tool_bash_formatting() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"git status"},"output":"On branch main","title":"git status"}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("bash"));
+        assert!(out.contains("git status"));
+    }
+
+    #[test]
+    fn test_opencode_tool_glob_formatting() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"type":"tool","tool":"glob","state":{"status":"completed","input":{"pattern":"**/*.rs","path":"src"},"output":"found 10 files","title":"**/*.rs"}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("glob"));
+        assert!(out.contains("**/*.rs"));
+        assert!(out.contains("in src"));
+    }
+
+    #[test]
+    fn test_opencode_tool_grep_formatting() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"type":"tool","tool":"grep","state":{"status":"completed","input":{"pattern":"TODO","path":"src","include":"*.rs"},"output":"3 matches","title":"TODO"}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("grep"));
+        assert!(out.contains("/TODO/"));
+        assert!(out.contains("in src"));
+        assert!(out.contains("(*.rs)"));
+    }
+
+    #[test]
+    fn test_opencode_tool_write_formatting() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"type":"tool","tool":"write","state":{"status":"completed","input":{"filePath":"test.txt","content":"Hello World"},"output":"wrote 11 bytes","title":"test.txt"}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("write"));
+        assert!(out.contains("test.txt"));
+        assert!(out.contains("11 bytes"));
+    }
+
+    #[test]
+    fn test_opencode_tool_read_with_offset_limit() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"tool_use","timestamp":1768191346712,"sessionID":"ses_44f9562d4ffe","part":{"type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"large.txt","offset":100,"limit":50},"output":"content...","title":"large.txt"}}}"#;
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+        let out = output.unwrap();
+        assert!(out.contains("read"));
+        assert!(out.contains("large.txt"));
+        assert!(out.contains("offset: 100"));
+        assert!(out.contains("limit: 50"));
     }
 }

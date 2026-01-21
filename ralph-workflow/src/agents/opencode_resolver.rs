@@ -43,11 +43,17 @@ impl OpenCodeResolver {
     /// Try to resolve an agent name to an `AgentConfig`.
     ///
     /// Supports the following patterns:
+    /// - `opencode` - Plain OpenCode agent (uses OpenCode's default model)
     /// - `opencode/provider/model` - Dynamic provider/model from API catalog
     ///
     /// Returns `None` if the name doesn't match the OpenCode pattern or if
     /// the provider/model combination is not found in the catalog.
     pub fn try_resolve(&self, name: &str) -> Option<AgentConfig> {
+        // Handle plain "opencode" - use default (no model flag)
+        if name == "opencode" {
+            return Some(self.build_default_config());
+        }
+
         // Check if it starts with "opencode/"
         if !name.starts_with("opencode/") {
             return None;
@@ -83,8 +89,13 @@ impl OpenCodeResolver {
 
         // Set OPENCODE_PERMISSION to allow all tool actions without prompting
         // This is required for non-interactive/headless execution
+        // The value must be a JSON object where keys are permission types and values are actions
+        // Using {"*": "allow"} grants all permissions for all patterns
         let mut env_vars = std::collections::HashMap::new();
-        env_vars.insert("OPENCODE_PERMISSION".to_string(), r#""allow""#.to_string());
+        env_vars.insert(
+            "OPENCODE_PERMISSION".to_string(),
+            r#"{"*": "allow"}"#.to_string(),
+        );
 
         AgentConfig {
             cmd: "opencode run".to_string(),
@@ -100,6 +111,30 @@ impl OpenCodeResolver {
             streaming_flag: String::new(),
             env_vars,
             display_name: Some(format!("OpenCode ({})", provider)),
+        }
+    }
+
+    /// Build an `AgentConfig` for plain "opencode" (no provider/model specified).
+    /// OpenCode will use its default model configuration.
+    fn build_default_config(&self) -> AgentConfig {
+        let mut env_vars = std::collections::HashMap::new();
+        env_vars.insert(
+            "OPENCODE_PERMISSION".to_string(),
+            r#"{"*": "allow"}"#.to_string(),
+        );
+
+        AgentConfig {
+            cmd: "opencode run".to_string(),
+            output_flag: "--format json".to_string(),
+            yolo_flag: String::new(),
+            verbose_flag: "--log-level DEBUG --print-logs".to_string(),
+            can_commit: true,
+            json_parser: JsonParserType::OpenCode,
+            model_flag: None,
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            env_vars,
+            display_name: Some("OpenCode".to_string()),
         }
     }
 
@@ -296,6 +331,25 @@ mod tests {
     }
 
     #[test]
+    fn test_try_resolve_plain_opencode() {
+        let catalog = mock_api_catalog();
+        let resolver = OpenCodeResolver::new(catalog);
+
+        let config = resolver.try_resolve("opencode");
+        assert!(config.is_some());
+
+        let config = config.unwrap();
+        assert_eq!(config.cmd, "opencode run");
+        assert_eq!(config.model_flag, None); // No model flag for default
+        assert_eq!(config.json_parser, JsonParserType::OpenCode);
+        assert_eq!(
+            config.env_vars.get("OPENCODE_PERMISSION"),
+            Some(&r#"{"*": "allow"}"#.to_string())
+        );
+        assert_eq!(config.display_name, Some("OpenCode".to_string()));
+    }
+
+    #[test]
     fn test_try_resolve_invalid_pattern() {
         let catalog = mock_api_catalog();
         let resolver = OpenCodeResolver::new(catalog);
@@ -304,8 +358,7 @@ mod tests {
         assert!(resolver.try_resolve("claude").is_none());
         assert!(resolver.try_resolve("ccs/glm").is_none());
 
-        // Malformed opencode pattern
-        assert!(resolver.try_resolve("opencode").is_none());
+        // Malformed opencode pattern (missing model)
         assert!(resolver.try_resolve("opencode/anthropic").is_none());
 
         // Unknown provider
@@ -374,9 +427,10 @@ mod tests {
         assert_eq!(config.json_parser, JsonParserType::OpenCode);
         assert!(config.can_commit);
         // Verify OPENCODE_PERMISSION is set for non-interactive mode
+        // The value is a JSON object that grants all permissions
         assert_eq!(
             config.env_vars.get("OPENCODE_PERMISSION"),
-            Some(&r#""allow""#.to_string())
+            Some(&r#"{"*": "allow"}"#.to_string())
         );
     }
 
