@@ -365,4 +365,191 @@ mod tests {
         let msg = elements.no_issues_found.unwrap();
         assert!(msg.contains("Record<string, T>"));
     }
+
+    // =========================================================================
+    // REALISTIC LLM OUTPUT TESTS
+    // These test actual patterns that LLMs produce when following the prompts
+    // =========================================================================
+
+    #[test]
+    fn test_llm_realistic_issue_with_generic_type_escaped() {
+        // LLM correctly escapes generic types per prompt instructions
+        let xml = r#"<ralph-issues>
+<ralph-issue>[High] src/parser.rs:42 - The function <code>parse&lt;T&gt;</code> does not handle empty input.
+Suggested fix: Add a check for empty input before parsing.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(result.is_ok(), "Should parse escaped generic: {:?}", result);
+        let elements = result.unwrap();
+        assert!(elements.issues[0].contains("parse<T>"));
+    }
+
+    #[test]
+    fn test_llm_realistic_issue_with_comparison_escaped() {
+        // LLM correctly escapes comparison operators
+        let xml = r#"<ralph-issues>
+<ralph-issue>[Medium] src/validate.rs:15 - The condition <code>count &lt; 0</code> should be <code>count &lt;= 0</code>.
+Suggested fix: Change the comparison operator.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(
+            result.is_ok(),
+            "Should parse escaped comparisons: {:?}",
+            result
+        );
+        let elements = result.unwrap();
+        assert!(elements.issues[0].contains("count < 0"));
+        assert!(elements.issues[0].contains("count <= 0"));
+    }
+
+    #[test]
+    fn test_llm_realistic_issue_with_logical_operators_escaped() {
+        // LLM escapes && and || operators
+        let xml = r#"<ralph-issues>
+<ralph-issue>[Low] src/filter.rs:88 - The expression <code>a &amp;&amp; b || c</code> has ambiguous precedence.
+Suggested fix: Add explicit parentheses.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(
+            result.is_ok(),
+            "Should parse escaped logical operators: {:?}",
+            result
+        );
+        let elements = result.unwrap();
+        assert!(elements.issues[0].contains("a && b || c"));
+    }
+
+    #[test]
+    fn test_llm_realistic_issue_with_rust_lifetime() {
+        // LLM references Rust lifetime syntax
+        let xml = r#"<ralph-issues>
+<ralph-issue>[High] src/buffer.rs:23 - The lifetime <code>&amp;'a str</code> should match the struct lifetime.
+Suggested fix: Ensure lifetime annotations are consistent.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(result.is_ok(), "Should parse lifetime syntax: {:?}", result);
+        let elements = result.unwrap();
+        assert!(elements.issues[0].contains("&'a str"));
+    }
+
+    #[test]
+    fn test_llm_realistic_issue_with_html_in_description() {
+        // LLM describes HTML-related code
+        let xml = r#"<ralph-issues>
+<ralph-issue>[Medium] src/template.rs:56 - The HTML template uses <code>&lt;div class="container"&gt;</code> but should use semantic tags.
+Suggested fix: Replace with appropriate semantic HTML elements.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(result.is_ok(), "Should parse HTML in code: {:?}", result);
+        let elements = result.unwrap();
+        assert!(elements.issues[0].contains("<div class=\"container\">"));
+    }
+
+    #[test]
+    fn test_llm_realistic_no_issues_with_detailed_explanation() {
+        // LLM provides detailed explanation when no issues found
+        let xml = r#"<ralph-issues>
+<ralph-no-issues-found>The implementation correctly handles all edge cases:
+- Input validation properly rejects values where <code>x &lt; 0</code>
+- The generic <code>Result&lt;T, E&gt;</code> type is used consistently
+- Error handling follows the project's established patterns
+No issues require attention.</ralph-no-issues-found>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(
+            result.is_ok(),
+            "Should parse detailed no-issues: {:?}",
+            result
+        );
+        let elements = result.unwrap();
+        let msg = elements.no_issues_found.unwrap();
+        assert!(msg.contains("x < 0"));
+        assert!(msg.contains("Result<T, E>"));
+    }
+
+    #[test]
+    fn test_llm_realistic_multiple_issues_with_mixed_content() {
+        // LLM reports multiple issues with various escaped content
+        let xml = r#"<ralph-issues>
+<ralph-issue>[Critical] src/auth.rs:12 - SQL injection vulnerability: user input in <code>query &amp;&amp; filter</code> is not sanitized.</ralph-issue>
+<ralph-issue>[High] src/api.rs:45 - Missing null check: <code>response.data</code> may be undefined when <code>status &lt; 200</code>.</ralph-issue>
+<ralph-issue>[Medium] src/utils.rs:78 - The type <code>Option&lt;Vec&lt;T&gt;&gt;</code> could be simplified to <code>Vec&lt;T&gt;</code> with empty default.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(
+            result.is_ok(),
+            "Should parse multiple issues with mixed content: {:?}",
+            result
+        );
+        let elements = result.unwrap();
+        assert_eq!(elements.issues.len(), 3);
+        assert!(elements.issues[0].contains("query && filter"));
+        assert!(elements.issues[1].contains("status < 200"));
+        assert!(elements.issues[2].contains("Option<Vec<T>>"));
+    }
+
+    #[test]
+    fn test_llm_mistake_unescaped_less_than_fails() {
+        // LLM forgets to escape < - this SHOULD fail
+        let xml = r#"<ralph-issues>
+<ralph-issue>[High] src/compare.rs:10 - The condition a < b is wrong.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(
+            result.is_err(),
+            "Unescaped < should fail XML parsing: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_llm_mistake_unescaped_generic_fails() {
+        // LLM forgets to escape generic type - this SHOULD fail
+        let xml = r#"<ralph-issues>
+<ralph-issue>[High] src/types.rs:5 - The type Vec<String> is incorrect.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(
+            result.is_err(),
+            "Unescaped generic should fail XML parsing: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_llm_mistake_unescaped_ampersand_fails() {
+        // LLM forgets to escape & - this SHOULD fail
+        let xml = r#"<ralph-issues>
+<ralph-issue>[High] src/logic.rs:20 - The expression a && b is wrong.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(
+            result.is_err(),
+            "Unescaped && should fail XML parsing: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_llm_uses_cdata_for_code_content() {
+        // LLM uses CDATA instead of escaping (valid alternative)
+        let xml = r#"<ralph-issues>
+<ralph-issue>[High] src/cmp.rs:10 - The condition <code><![CDATA[a < b && c > d]]></code> has issues.</ralph-issue>
+</ralph-issues>"#;
+
+        let result = validate_issues_xml(xml);
+        assert!(result.is_ok(), "CDATA should be valid: {:?}", result);
+        let elements = result.unwrap();
+        assert!(elements.issues[0].contains("a < b && c > d"));
+    }
 }

@@ -89,9 +89,11 @@ OUTPUT FORMAT
 Output as XML. Start IMMEDIATELY with <ralph-issues> - no text before or after.
 No markdown fences.
 
-IMPORTANT: If you need to include <, >, or & characters (e.g., comparisons, generics,
-logical operators), wrap them in <code>...</code> tags.
-Example: Use <code>a < b</code> instead of writing "a < b" directly in text.
+CRITICAL XML ESCAPING: If you need to include <, >, or & characters (e.g., comparisons,
+generics, logical operators), you MUST escape them:
+- For inline: <code>a &lt; b</code>
+- Or wrap in CDATA: <code><![CDATA[a < b]]></code>
+CDATA preserves content exactly - no escaping needed inside.
 
 If issues found:
 <ralph-issues>

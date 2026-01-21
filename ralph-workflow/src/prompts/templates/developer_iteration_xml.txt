@@ -100,9 +100,10 @@ OUTPUT FORMAT
 After completing your work, output your status as XML. Start IMMEDIATELY with
 <ralph-development-result> - no text before or after. No markdown fences.
 
-IMPORTANT: If you need to include <, >, or & characters (e.g., comparisons, generics,
-logical operators), wrap them in <code>...</code> tags.
-Example: Use <code>a < b</code> instead of writing "a < b" directly in text.
+CRITICAL XML ESCAPING: For special characters (<, >, &):
+- Inline: <code>a &lt; b</code>
+- Or use CDATA: <code><![CDATA[a < b]]></code>
+CDATA preserves content exactly - no escaping needed inside.
 
 <ralph-development-result>
 <ralph-status>completed|partial|failed</ralph-status>

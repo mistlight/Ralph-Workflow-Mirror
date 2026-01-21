@@ -14,7 +14,6 @@
 //! 4. XML embedded in text (search for tags anywhere)
 
 use crate::files::llm_output_extraction::cleaning::unescape_json_strings_aggressive;
-use crate::files::llm_output_extraction::xml_helpers::sanitize_xml_content;
 
 /// Extract XML commit message from AI output using multiple strategies.
 ///
@@ -227,11 +226,10 @@ fn extract_ralph_commit_from_content(content: &str) -> Option<String> {
     let xml_end = end + "</ralph-commit>".len();
     let extracted = &content[start..xml_end];
 
-    // Step 1: Unescape JSON string escape sequences (e.g., \n -> newline)
+    // Unescape JSON string escape sequences (e.g., \n -> newline)
     let unescaped = unescape_json_strings_aggressive(extracted);
 
-    // Step 2: Sanitize XML content - escape unescaped <, >, & in text elements
-    Some(sanitize_xml_content(&unescaped))
+    Some(unescaped)
 }
 
 #[cfg(test)]

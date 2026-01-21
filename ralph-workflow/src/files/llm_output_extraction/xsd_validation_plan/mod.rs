@@ -326,6 +326,10 @@ fn read_text_until_end(
             Ok(Event::Text(e)) => {
                 text.push_str(&e.unescape().unwrap_or_default());
             }
+            Ok(Event::CData(e)) => {
+                // CDATA content is preserved exactly as-is
+                text.push_str(&String::from_utf8_lossy(&e));
+            }
             Ok(Event::End(e)) if e.name().as_ref() == end_tag => {
                 break;
             }
@@ -453,10 +457,14 @@ fn read_inner_xml(
                 content.push_str("/>");
             }
             Ok(Event::Text(e)) => {
-                content.push_str(&e.unescape().unwrap_or_default());
+                // Keep escaped entities as-is for re-parsing (don't unescape)
+                content.push_str(&String::from_utf8_lossy(e.as_ref()));
             }
             Ok(Event::CData(e)) => {
+                // Preserve CDATA sections so they can be re-parsed correctly
+                content.push_str("<![CDATA[");
                 content.push_str(&String::from_utf8_lossy(e.as_ref()));
+                content.push_str("]]>");
             }
             Ok(Event::Eof) => {
                 return Err(XsdValidationError {

@@ -47,6 +47,8 @@ CRITICAL RULES
 6. <ralph-next-steps> is optional
 7. NO markdown code fences around the XML
 8. NO commentary outside the XML
-9. If you need <, >, or & characters, wrap them in <code>...</code> tags
+9. For special characters (<, >, &):
+   - Inline: <code>a &lt; b</code>
+   - Or use CDATA: <code><![CDATA[a < b]]></code>
 
 Fix the validation error and resend your completion status with the correct XML format.

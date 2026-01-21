@@ -51,6 +51,9 @@ CRITICAL RULES
 9. <primary-files> MUST have at least one <file path="..." action="..."/>
 10. Each <risk-pair> MUST have both <risk> and <mitigation>
 11. Each <verification> MUST have both <method> and <expected-outcome>
-12. If you need <, >, or & characters, wrap them in <code> or <code-block> elements
+12. For inline code: <code>a &lt; b</code>
+13. For code blocks, ALWAYS use CDATA:
+    <code-block language="rust"><![CDATA[if a < b { ... }]]></code-block>
+    CDATA preserves content exactly - no escaping needed inside.
 
 Fix the validation error and resend your plan with the correct XML format.

@@ -138,9 +138,16 @@ PHASE 5: WRITE STRUCTURED PLAN
 Output your plan as structured XML. Start IMMEDIATELY with <ralph-plan>.
 No markdown fences around the XML. No text before or after the XML.
 
-IMPORTANT: If you need to include <, >, or & characters (e.g., comparisons, generics,
-logical operators), wrap them in <code>...</code> or <code-block>...</code-block> elements.
-Example: Use <code>a < b</code> instead of writing "a < b" directly in text.
+CRITICAL XML ESCAPING RULES:
+1. For inline code with special characters (<, >, &), use: <code>a &lt; b</code>
+2. For code blocks, ALWAYS use CDATA to avoid escaping issues:
+   <code-block language="rust"><![CDATA[
+   if a < b && c > d {
+       vec.push(item);
+   }
+   ]]></code-block>
+3. CDATA sections preserve content exactly - no escaping needed inside them.
+4. If you see XML parsing errors about code-block, you forgot to use CDATA.
 
 ALL SECTIONS ARE REQUIRED:
 - ralph-summary (with context and at least 3 scope-items)
@@ -202,13 +209,13 @@ providers, enabling users to sign in with their existing accounts.
 <rationale>Configuration must be in place before implementing providers</rationale>
 <content>
 <paragraph>Create OAuth2 configuration structures:</paragraph>
-<code-block language="rust" filename="src/config/oauth.rs">
+<code-block language="rust" filename="src/config/oauth.rs"><![CDATA[
 #[derive(Debug, Clone, Deserialize)]
 pub struct OAuth2Config {
-    pub google: Option&lt;ProviderConfig&gt;,
-    pub github: Option&lt;ProviderConfig&gt;,
+    pub google: Option<ProviderConfig>,
+    pub github: Option<ProviderConfig>,
 }
-</code-block>
+]]></code-block>
 </content>
 </step>
 

@@ -45,6 +45,11 @@ CRITICAL RULES
 4. <ralph-summary> is optional
 5. NO markdown code fences around the XML
 6. NO commentary outside the XML
-7. If you need <, >, or & characters, wrap them in <code>...</code> tags
+7. For inline code with special characters (<, >, &), use: <code>a &lt; b</code>
+8. For code blocks, ALWAYS use CDATA to avoid escaping issues:
+   <code-block language="rust"><![CDATA[
+   if a < b && c > d { ... }
+   ]]></code-block>
+9. CDATA sections preserve content exactly - no escaping needed inside them
 
 Fix the validation error and resend your completion status with the correct XML format.

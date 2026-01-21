@@ -45,6 +45,8 @@ CRITICAL RULES
 4. Each <ralph-issue> should contain severity, location, description, fix suggestion
 5. NO markdown code fences around the XML
 6. NO analysis or commentary outside the XML
-7. If you need <, >, or & characters, wrap them in <code>...</code> tags
+7. For special characters (<, >, &):
+   - Inline: <code>a &lt; b</code>
+   - Or use CDATA: <code><![CDATA[a < b]]></code>
 
 Fix the validation error and resend your review with the correct XML format.
