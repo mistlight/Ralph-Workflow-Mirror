@@ -1,6 +1,6 @@
 {# ============================================================================ #}
 {# Template: planning_xsd_retry.txt                                             #}
-{# Version: 3.0 - File-based context to avoid prompt bloat                      #}
+{# Version: 4.0 - Mandatory XSD reading with file-based context                 #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
@@ -27,16 +27,26 @@ XSD VALIDATION ERROR
 {{XSD_ERROR}}
 
 ═══════════════════════════════════════════════════════════════════════════════
-CONTEXT FILES (READ THESE)
+MANDATORY: READ THE XSD SCHEMA FIRST
 ═══════════════════════════════════════════════════════════════════════════════
 
-1. Read `.agent/tmp/plan.xsd` - This is the XSD schema your output MUST conform to.
-2. Read `.agent/tmp/last_output.xml` - This is your previous invalid output.
+You MUST read the following files BEFORE attempting to fix your output:
 
-Study both files carefully to understand what went wrong and how to fix it.
+1. **READ FIRST**: `.agent/tmp/plan.xsd`
+   - This is the authoritative XSD schema defining the exact XML structure
+   - The schema specifies all required elements, attributes, and constraints
+   - Your output MUST conform to this schema exactly
+
+2. **THEN READ**: `.agent/tmp/last_output.xml`
+   - This is your previous invalid output
+   - Compare it against the XSD schema to identify what's wrong
+
+DO NOT attempt to fix the error from memory or guessing. The XSD schema is the
+single source of truth. Read it carefully and understand the structure before
+producing your corrected output.
 
 ═══════════════════════════════════════════════════════════════════════════════
-CRITICAL RULES
+COMMON MISTAKES TO AVOID
 ═══════════════════════════════════════════════════════════════════════════════
 
 1. Start IMMEDIATELY with <ralph-plan> - NO text before it
@@ -56,4 +66,4 @@ CRITICAL RULES
     <code-block language="rust"><![CDATA[if a < b { ... }]]></code-block>
     CDATA preserves content exactly - no escaping needed inside.
 
-Fix the validation error and resend your plan with the correct XML format.
+After reading the XSD schema, fix the validation error and resend your plan.

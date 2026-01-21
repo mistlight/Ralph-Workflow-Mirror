@@ -598,7 +598,7 @@ fn log_extraction_diagnostics(logger: &Logger, log_dir: &str) {
 ///
 /// This function implements a nested loop structure similar to fix:
 /// - **Outer loop (continuation)**: Not used for review (single pass)
-/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 10)
+/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 100)
 fn run_review_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
@@ -606,7 +606,7 @@ fn run_review_pass(
     _review_prompt: &str, // Unused - we build XML prompt internally
 ) -> anyhow::Result<ReviewPassResult> {
     let issues_path = Path::new(".agent/ISSUES.md");
-    let max_xsd_retries = 10;
+    let max_xsd_retries = 100;
 
     // Read PROMPT.md, PLAN.md for context
     let prompt_content = fs::read_to_string("PROMPT.md").unwrap_or_default();
@@ -1067,7 +1067,7 @@ fn format_xsd_error_for_fix(error: &XsdValidationError) -> String {
 ///
 /// This function implements a nested loop structure similar to development:
 /// - **Outer loop (continuation)**: Continue while status != "all_issues_addressed" (max 100)
-/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 10)
+/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 100)
 fn run_fix_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
@@ -1085,7 +1085,7 @@ fn run_fix_pass(
 
     let log_dir = format!(".agent/logs/reviewer_fix_{j}");
 
-    let max_xsd_retries = 10;
+    let max_xsd_retries = 100;
     let max_continuations = 100; // Safety limit to prevent infinite loops
     let mut _had_any_error = false; // Tracked for potential future use
 

@@ -185,6 +185,9 @@ pub fn prompt_planning_xml_with_context(
     context: &TemplateContext,
     prompt_content: Option<&str>,
 ) -> String {
+    // Write the XSD schema file so it's available for the agent to reference
+    write_planning_xsd_schema_file();
+
     let template_content = context
         .registry()
         .get_template("planning_xml")
@@ -207,10 +210,24 @@ const PLAN_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/plan.
 /// Directory for XSD retry context files
 const XSD_RETRY_TMP_DIR: &str = ".agent/tmp";
 
+/// Write just the XSD schema file to `.agent/tmp/` directory.
+///
+/// This is called before the initial planning prompt so the agent can reference
+/// the schema if needed. The schema provides the authoritative definition of
+/// valid XML structure.
+fn write_planning_xsd_schema_file() {
+    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
+    if std::fs::create_dir_all(tmp_dir).is_err() {
+        return;
+    }
+
+    let _ = std::fs::write(tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA);
+}
+
 /// Write XSD retry context files to `.agent/tmp/` directory.
 ///
 /// This writes the XSD schema and last output to files so they don't bloat the prompt.
-/// The agent should read these files to understand what went wrong.
+/// The agent MUST read these files to understand what went wrong and fix it.
 fn write_planning_xsd_retry_files(last_output: &str) {
     let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
     if std::fs::create_dir_all(tmp_dir).is_err() {

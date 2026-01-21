@@ -246,7 +246,7 @@ struct DevIterationResult {
 ///
 /// This function implements a nested loop structure:
 /// - **Outer loop (continuation)**: Continue while status != "completed" (max 100)
-/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 10)
+/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 100)
 ///
 /// The continuation logic ignores non-XSD errors and only looks for valid XML.
 /// If XML passes XSD validation with status="completed", we're done for this iteration.
@@ -267,7 +267,7 @@ fn run_development_iteration_with_xml_retry(
     let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
     let log_dir = format!(".agent/logs/developer_{iteration}");
 
-    let max_xsd_retries = 10;
+    let max_xsd_retries = 100;
     let max_continuations = 100; // Safety limit to prevent infinite loops
     let mut final_summary: Option<String> = None;
     let mut final_files_changed: Option<Vec<String>> = None;
@@ -607,7 +607,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
 
     // In-session retry loop with XSD validation feedback
     // Session continuation allows the AI to retain memory between XSD retries
-    let max_retries = 10;
+    let max_retries = 100;
     let mut xsd_error: Option<String> = None;
     let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
 
