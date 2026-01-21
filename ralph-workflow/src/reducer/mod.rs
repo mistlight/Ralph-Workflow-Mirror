@@ -43,12 +43,14 @@ pub mod handler;
 pub mod migration;
 pub mod orchestration;
 pub mod state;
+pub mod state_reduction;
 
 pub use effect::{Effect, EffectHandler};
 pub use event::{AgentErrorKind, ConflictStrategy, PipelineEvent, RebasePhase};
 pub use handler::MainEffectHandler;
 pub use orchestration::determine_next_effect;
 pub use state::{AgentChainState, CommitState, PipelineState, RebaseState};
+pub use state_reduction::reduce;
 
 // Re-export CheckpointTrigger for external use
 pub use event::CheckpointTrigger;

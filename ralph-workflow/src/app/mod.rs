@@ -19,6 +19,7 @@
 pub mod config_init;
 pub mod context;
 pub mod detection;
+pub mod event_loop;
 pub mod finalization;
 pub mod plumbing;
 pub mod resume;
@@ -458,8 +459,11 @@ fn setup_git_and_prompt_file(
     Ok(Some(()))
 }
 
-/// Runs the full development/review/commit pipeline.
+/// Runs the full development/review/commit pipeline using reducer-based event loop.
 fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
+    use crate::app::event_loop::{run_event_loop, EventLoopConfig};
+    use crate::reducer::PipelineState;
+
     // First, offer interactive resume if checkpoint exists without --resume flag
     let resume_result = offer_resume_if_checkpoint_exists(
         &ctx.args,
@@ -638,45 +642,85 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         );
     }
 
-    // Run pipeline phases
-    run_development(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
-    // Update interrupt context after development
-    update_interrupt_context_from_phase(
-        &phase_ctx,
-        PipelinePhase::Development,
-        config.developer_iters,
-        config.reviewer_reviews,
-        &run_context,
-    );
-    check_prompt_restoration(ctx, &mut prompt_monitor, "development");
-    update_status("In progress.", config.isolation_mode)?;
+    // ============================================
+    // RUN PIPELINE PHASES VIA REDUCER EVENT LOOP
+    // ============================================
 
-    run_review_and_fix(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
-    // Update interrupt context after review
-    update_interrupt_context_from_phase(
-        &phase_ctx,
-        PipelinePhase::Review,
-        config.developer_iters,
-        config.reviewer_reviews,
-        &run_context,
-    );
-    check_prompt_restoration(ctx, &mut prompt_monitor, "review");
+    // Initialize pipeline state
+    let initial_state = if let Some(ref checkpoint) = resume_checkpoint {
+        // Migrate from old checkpoint format to new reducer state
+        PipelineState::from(checkpoint.clone())
+    } else {
+        // Create new initial state
+        PipelineState::initial(config.developer_iters, config.reviewer_reviews)
+    };
 
-    // Run post-review rebase (only if explicitly requested via --with-rebase)
-    if should_run_rebase {
-        run_post_review_rebase(ctx, &mut phase_ctx, &run_context)?;
-        // Update interrupt context after post-review rebase
-        update_interrupt_context_from_phase(
-            &phase_ctx,
-            PipelinePhase::PostRebase,
-            config.developer_iters,
-            config.reviewer_reviews,
-            &run_context,
-        );
+    // Configure event loop
+    let event_loop_config = EventLoopConfig {
+        max_iterations: 1000,
+        enable_checkpointing: config.features.checkpoint_enabled,
+    };
+
+    // Run the event loop
+    let loop_result = run_event_loop(&mut phase_ctx, Some(initial_state), event_loop_config);
+
+    // Handle event loop result
+    match loop_result {
+        Ok(ref result) => {
+            if result.completed {
+                ctx.logger
+                    .success("Pipeline completed successfully via reducer event loop");
+                ctx.logger.info(&format!(
+                    "Total events processed: {}",
+                    result.events_processed
+                ));
+            } else {
+                ctx.logger.warn("Pipeline exited without completion marker");
+            }
+        }
+        Err(e) => {
+            ctx.logger.error(&format!("Event loop error: {e}"));
+            return Err(e);
+        }
     }
 
+    // Post-pipeline operations
+    check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
     update_status("In progress.", config.isolation_mode)?;
 
+    // Run post-review rebase (only if explicitly requested via --with-rebase)
+    // Note: Rebase handling remains outside event loop for safety
+    if should_run_rebase {
+        let final_phase = loop_result.ok().and_then(|r| {
+            // Check if we're actually at post-review stage
+            let phase = r.final_state.phase;
+            let should_run_post_rebase = matches!(
+                phase,
+                crate::reducer::event::PipelinePhase::CommitMessage
+                    | crate::reducer::event::PipelinePhase::FinalValidation
+                    | crate::reducer::event::PipelinePhase::Complete
+            );
+            if should_run_post_rebase {
+                Some(phase)
+            } else {
+                None
+            }
+        });
+
+        if final_phase.is_some() {
+            run_post_review_rebase(ctx, &mut phase_ctx, &run_context)?;
+            // Update interrupt context after post-review rebase
+            update_interrupt_context_from_phase(
+                &phase_ctx,
+                PipelinePhase::PostRebase,
+                config.developer_iters,
+                config.reviewer_reviews,
+                &run_context,
+            );
+        }
+    }
+
+    // Run final validation if configured
     run_final_validation(&phase_ctx, resume_checkpoint.as_ref())?;
 
     // Save Complete checkpoint before clearing (for idempotent resume)

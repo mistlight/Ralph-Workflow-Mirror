@@ -2,8 +2,8 @@
 //!
 //! Implements pure state reduction - no side effects, exhaustive pattern matching.
 
-use super::event::{AgentErrorKind, PipelineEvent, RebasePhase};
-use super::state::{AgentChainState, CommitState, PipelineState, RebaseState};
+use super::event::PipelineEvent;
+use super::state::{CommitState, PipelineState, RebaseState};
 
 /// Pure reducer - no side effects, exhaustive match.
 ///
@@ -122,7 +122,7 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             ..state
         },
 
-        PipelineEvent::AgentFallbackTriggered { to_agent: _ } => PipelineState {
+        PipelineEvent::AgentFallbackTriggered { to_agent: _, .. } => PipelineState {
             agent_chain: state.agent_chain.switch_to_next_agent(),
             ..state
         },
@@ -216,29 +216,41 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::AgentRole;
+    use crate::reducer::event::AgentErrorKind;
+    use crate::reducer::event::PipelinePhase;
+    use crate::reducer::event::RebasePhase;
+    use crate::reducer::AgentChainState;
 
     fn create_test_state() -> PipelineState {
-        PipelineState::initial(5, 2)
+        PipelineState {
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec!["model1".to_string(), "model2".to_string()]],
+                AgentRole::Developer,
+            ),
+            ..PipelineState::initial(5, 2)
+        }
     }
 
     #[test]
     fn test_reduce_pipeline_started() {
         let state = create_test_state();
         let new_state = reduce(state, PipelineEvent::PipelineStarted);
-        assert_eq!(new_state.phase, super::event::PipelinePhase::Planning);
+        assert_eq!(new_state.phase, PipelinePhase::Planning);
     }
 
     #[test]
     fn test_reduce_pipeline_completed() {
         let state = create_test_state();
         let new_state = reduce(state, PipelineEvent::PipelineCompleted);
-        assert_eq!(new_state.phase, super::event::PipelinePhase::Complete);
+        assert_eq!(new_state.phase, PipelinePhase::Complete);
     }
 
     #[test]
     fn test_reduce_development_iteration_completed() {
         let state = PipelineState {
-            phase: super::event::PipelinePhase::Development,
+            phase: PipelinePhase::Development,
             iteration: 2,
             total_iterations: 5,
             ..create_test_state()
@@ -251,13 +263,13 @@ mod tests {
             },
         );
         assert_eq!(new_state.iteration, 3);
-        assert_eq!(new_state.phase, super::event::PipelinePhase::Development);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
     }
 
     #[test]
     fn test_reduce_development_iteration_complete_moves_to_review() {
         let state = PipelineState {
-            phase: super::event::PipelinePhase::Development,
+            phase: PipelinePhase::Development,
             iteration: 5,
             total_iterations: 5,
             ..create_test_state()
@@ -270,13 +282,14 @@ mod tests {
             },
         );
         assert_eq!(new_state.iteration, 6);
-        assert_eq!(new_state.phase, super::event::PipelinePhase::Review);
+        assert_eq!(new_state.phase, PipelinePhase::Review);
     }
 
     #[test]
     fn test_reduce_agent_fallback_to_next_model() {
         let state = create_test_state();
         let initial_agent = state.agent_chain.current_agent().unwrap().clone();
+        let initial_model_index = state.agent_chain.current_model_index;
 
         let new_state = reduce(
             state,
@@ -290,8 +303,8 @@ mod tests {
         );
 
         assert_ne!(
-            new_state.agent_chain.current_model_index(),
-            state.agent_chain.current_model_index()
+            new_state.agent_chain.current_model_index,
+            initial_model_index
         );
     }
 
@@ -343,9 +356,6 @@ mod tests {
         );
 
         assert!(matches!(new_state.commit, CommitState::Committed { .. }));
-        assert_eq!(
-            new_state.phase,
-            super::event::PipelinePhase::FinalValidation
-        );
+        assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
     }
 }

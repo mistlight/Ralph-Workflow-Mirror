@@ -14,7 +14,7 @@ use super::event::PipelinePhase;
 ///
 /// Contains all information needed to resume pipeline execution at any point.
 /// The reducer updates this state by returning new immutable copies on each event.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PipelineState {
     pub phase: PipelinePhase,
     pub iteration: u32,
@@ -62,7 +62,7 @@ impl PipelineState {
 /// - Agent level (primary → fallback1 → fallback2)
 /// - Model level (within each agent, try different models)
 /// - Retry cycle (exhaust all agents, start over with exponential backoff)
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct AgentChainState {
     pub agents: Vec<String>,
     pub current_agent_index: usize,
@@ -173,7 +173,7 @@ impl AgentChainState {
 ///
 /// Tracks rebase progress through the state machine:
 /// NotStarted → InProgress → Conflicted → Completed/Skipped
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum RebaseState {
     NotStarted,
     InProgress {
@@ -216,7 +216,7 @@ impl RebaseState {
 ///
 /// Tracks commit message generation progress through retries:
 /// NotStarted → Generating → Generated → Committed/Skipped
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum CommitState {
     NotStarted,
     Generating { attempt: u32, max_attempts: u32 },
