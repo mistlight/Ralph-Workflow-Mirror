@@ -1316,10 +1316,12 @@ exit 0
     assert_eq!(exit, 0, "First agent run should succeed");
 
     // Extract session info from the log file (this is what happens in production)
+    // We pass the known agent name to avoid ambiguity from sanitized log file names
     let agent_config = registry.resolve_config("ccs/e2e-agent").unwrap();
     let session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
         &log_prefix,
         agent_config.json_parser,
+        Some("ccs/e2e-agent"),
     );
 
     // Verify session was extracted
@@ -1332,10 +1334,10 @@ exit 0
         session_info.session_id, "ses_extracted_abc123",
         "Session ID should match what the agent output"
     );
-    // The agent name should be the sanitized form (as extracted from log filename)
+    // The agent name should be the original registry name (passed directly)
     assert_eq!(
-        session_info.agent_name, "ccs-e2e-agent",
-        "Agent name should be sanitized form from log filename"
+        session_info.agent_name, "ccs/e2e-agent",
+        "Agent name should be original registry name when passed directly"
     );
 
     // Now update the agent to the second script that captures the session ID

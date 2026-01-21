@@ -225,13 +225,18 @@ pub struct SessionInfo {
 
 /// Find the most recent log file matching a prefix pattern and extract session info.
 ///
-/// This function finds the log file, extracts the agent name from the filename,
-/// and extracts the session ID from the content based on the JSON parser type.
+/// This function finds the log file and extracts the session ID from the content
+/// based on the JSON parser type. The agent name can be provided directly (preferred)
+/// or extracted from the log file name (fallback for backwards compatibility).
 ///
 /// # Arguments
 ///
 /// * `log_prefix` - The log file prefix (e.g., `.agent/logs/planning_1`)
 /// * `parser_type` - The JSON parser type to determine session ID format
+/// * `known_agent_name` - Optional agent registry name (e.g., "opencode/zai-coding-plan/glm-4.7").
+///   If provided, this is used directly instead of extracting from the log file name.
+///   This is preferred because log file names use sanitized names (slashes → hyphens)
+///   which can be ambiguous for agents with hyphenated provider names.
 ///
 /// # Returns
 ///
@@ -240,14 +245,20 @@ pub struct SessionInfo {
 pub fn extract_session_info_from_log_prefix(
     log_prefix: &Path,
     parser_type: crate::agents::JsonParserType,
+    known_agent_name: Option<&str>,
 ) -> Option<SessionInfo> {
     use crate::agents::JsonParserType;
 
     // Find the most recent log file matching the prefix
     let log_file = super::logfile::find_most_recent_logfile(log_prefix)?;
 
-    // Extract agent name from log file name using unified logfile module
-    let agent_name = super::logfile::extract_agent_name_from_logfile(&log_file, log_prefix)?;
+    // Use the known agent name if provided, otherwise extract from log file name
+    let agent_name = if let Some(name) = known_agent_name {
+        name.to_string()
+    } else {
+        // Fallback: extract from log file name (may be sanitized/ambiguous)
+        super::logfile::extract_agent_name_from_logfile(&log_file, log_prefix)?
+    };
 
     // Extract session ID based on parser type
     let session_id = match parser_type {

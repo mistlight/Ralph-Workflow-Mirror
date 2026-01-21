@@ -209,14 +209,16 @@ impl AgentRegistry {
         }
 
         // OpenCode pattern: "opencode-provider-model" → "opencode/provider/model"
-        // Note: This is tricky because model names can contain hyphens
-        // We rely on the fact that OpenCode providers don't contain hyphens
+        // Note: This is a best-effort heuristic for backwards compatibility.
+        // Provider names may contain hyphens (e.g., "zai-coding-plan"), making it
+        // impossible to reliably split "opencode-zai-coding-plan-glm-4.7".
+        // The preferred approach is to pass the original agent name through
+        // SessionInfo rather than relying on log file name parsing.
         if let Some(rest) = logfile_name.strip_prefix("opencode-") {
             if let Some(first_hyphen) = rest.find('-') {
                 let provider = &rest[..first_hyphen];
                 let model = &rest[first_hyphen + 1..];
                 let registry_name = format!("opencode/{}/{}", provider, model);
-                // OpenCode agents can be resolved dynamically
                 return Some(registry_name);
             }
         }

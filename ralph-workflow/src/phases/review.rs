@@ -746,6 +746,7 @@ fn run_review_pass(
                 session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                     log_dir_path,
                     agent_config.json_parser,
+                    Some(ctx.reviewer_agent),
                 );
             }
         }
@@ -1254,6 +1255,7 @@ fn run_fix_pass(
                     session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                         log_dir_path,
                         agent_config.json_parser,
+                        Some(ctx.reviewer_agent),
                     );
                 }
             }

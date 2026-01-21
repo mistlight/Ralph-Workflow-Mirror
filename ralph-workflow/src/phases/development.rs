@@ -428,6 +428,7 @@ fn run_development_iteration_with_xml_retry(
                     session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                         log_dir_path,
                         agent_config.json_parser,
+                        Some(ctx.developer_agent),
                     );
                     if let Some(ref info) = session_info {
                         ctx.logger.info(&format!(
@@ -674,6 +675,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
                 session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                     log_dir_path,
                     agent_config.json_parser,
+                    Some(ctx.developer_agent),
                 );
             }
         }

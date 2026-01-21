@@ -641,10 +641,10 @@ fn try_session_continuation(
     config: &mut XsdRetryConfig<'_, '_>,
     session_info: &crate::pipeline::session::SessionInfo,
 ) -> SessionContinuationResult {
-    // The agent name from session_info is extracted from log file names, which use
-    // sanitized names (e.g., "ccs-glm", "opencode-anthropic-claude-sonnet-4") instead
-    // of registry names (e.g., "ccs/glm", "opencode/anthropic/claude-sonnet-4").
-    // We need to resolve the sanitized name back to the registry name.
+    // The agent name from session_info should already be the registry name
+    // (e.g., "ccs/glm", "opencode/anthropic/claude-sonnet-4") when passed from
+    // the calling code. For backwards compatibility and robustness, we still try
+    // to resolve it in case it's a sanitized name from an old log file.
     let registry_name = config
         .registry
         .resolve_from_logfile_name(&session_info.agent_name)
@@ -675,9 +675,11 @@ fn try_session_continuation(
     );
 
     // Build log file path - use a unique name to avoid overwriting previous logs
+    // Sanitize the agent name to avoid creating subdirectories from slashes
+    let sanitized_agent = super::logfile::sanitize_agent_name(&session_info.agent_name);
     let logfile = format!(
         "{}_{}_session_{}.log",
-        config.logfile_prefix, session_info.agent_name, config.retry_num
+        config.logfile_prefix, sanitized_agent, config.retry_num
     );
 
     // Log the attempt (debug level since this is an optimization)
