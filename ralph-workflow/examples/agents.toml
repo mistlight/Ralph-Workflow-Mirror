@@ -90,6 +90,9 @@ verbose_flag = "--verbose"
 can_commit = true
 json_parser = "claude"
 display_name = "Claude Code"
+# Session continuation: --resume <session_id> (from `claude --help`)
+# Allows XSD retries to continue the same conversation so AI retains memory
+session_flag = "--resume {}"
 
 # CCS (Claude Code Switch) - Universal AI profile manager
 # https://github.com/kaitranntt/ccs
@@ -106,6 +109,8 @@ can_commit = true
 json_parser = "ccs"
 display_name = "CCS (Claude Code Switch)"
 print_flag = "-p"  # Required for non-interactive mode (Claude CLI requirement)
+# Session continuation: --resume <session_id> (passed through to Claude CLI)
+session_flag = "--resume {}"
 
 # GLM-Direct - GLM via Claude CLI with CCS environment variables
 # This agent bypasses the CCS wrapper to get proper stream-json output.
@@ -123,6 +128,8 @@ can_commit = true
 json_parser = "claude"
 print_flag = "-p"  # Required for non-interactive mode
 display_name = "GLM (Direct via Claude)"
+# Session continuation: --resume <session_id> (from `claude --help`)
+session_flag = "--resume {}"
 
 # OpenAI Codex CLI
 # https://github.com/openai/codex

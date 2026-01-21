@@ -21,7 +21,7 @@ use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
-use crate::pipeline::{run_with_fallback, PipelineRuntime};
+use crate::pipeline::{run_xsd_retry_with_session, PipelineRuntime, XsdRetryConfig};
 use crate::prompts::{
     get_stored_or_generate_prompt, prompt_developer_iteration_xml_with_context,
     prompt_developer_iteration_xsd_retry_with_context, prompt_planning_xml_with_context,
@@ -284,8 +284,10 @@ fn run_development_iteration_with_xml_retry(
         }
 
         let mut xsd_error: Option<String> = None;
+        let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
 
         // Inner loop: XSD validation retry with error feedback
+        // Session continuation allows the AI to retain memory between XSD retries
         for retry_num in 0..max_xsd_retries {
             let is_retry = retry_num > 0;
             let total_attempts = continuation_num * max_xsd_retries + retry_num + 1;
@@ -370,7 +372,9 @@ fn run_development_iteration_with_xml_retry(
                 )
             };
 
-            // Run the agent
+            // Run the agent with session continuation for XSD retries
+            // This is completely fault-tolerant - if session continuation fails for any reason
+            // (including agent crash, segfault, invalid session), it falls back to normal behavior
             let exit_code = {
                 let mut runtime = PipelineRuntime {
                     timer: ctx.timer,
@@ -380,23 +384,28 @@ fn run_development_iteration_with_xml_retry(
                     #[cfg(any(test, feature = "test-utils"))]
                     agent_executor: None,
                 };
-                run_with_fallback(
-                    AgentRole::Developer,
-                    &format!(
-                        "run #{}{}",
-                        iteration,
-                        if is_continuation {
-                            format!(" (continuation {})", continuation_num)
-                        } else {
-                            String::new()
-                        }
-                    ),
-                    &dev_prompt,
-                    &log_dir,
-                    &mut runtime,
-                    ctx.registry,
-                    ctx.developer_agent,
-                )?
+                let base_label = format!(
+                    "run #{}{}",
+                    iteration,
+                    if is_continuation {
+                        format!(" (continuation {})", continuation_num)
+                    } else {
+                        String::new()
+                    }
+                );
+                let mut xsd_retry_config = XsdRetryConfig {
+                    role: AgentRole::Developer,
+                    base_label: &base_label,
+                    prompt: &dev_prompt,
+                    logfile_prefix: &log_dir,
+                    runtime: &mut runtime,
+                    registry: ctx.registry,
+                    primary_agent: ctx.developer_agent,
+                    session_info: session_info.as_ref(),
+                    retry_num,
+                    output_validator: None,
+                };
+                run_xsd_retry_with_session(&mut xsd_retry_config)?
             };
 
             // Track if any agent run had an error (for final result)
@@ -407,6 +416,17 @@ fn run_development_iteration_with_xml_retry(
             // Extract and validate the development result XML
             let log_dir_path = Path::new(&log_dir);
             let dev_content = read_last_development_output(log_dir_path);
+
+            // Extract session info for potential retry (only if we don't have it yet)
+            // This is best-effort - if extraction fails, we just won't use session continuation
+            if session_info.is_none() {
+                if let Some(agent_config) = ctx.registry.resolve_config(ctx.developer_agent) {
+                    session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
+                        log_dir_path,
+                        agent_config.json_parser,
+                    );
+                }
+            }
 
             // Try to extract XML - if extraction fails, assume entire output is XML
             // and validate it to get specific XSD errors for retry
@@ -571,8 +591,10 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
     }
 
     // In-session retry loop with XSD validation feedback
+    // Session continuation allows the AI to retain memory between XSD retries
     let max_retries = 10;
     let mut xsd_error: Option<String> = None;
+    let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
 
     for retry_num in 0..max_retries {
         // For initial attempt, use XML prompt
@@ -589,7 +611,7 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
                 ctx.logger.info(&format!("  XSD error: {}", error));
             }
 
-            // Read the last output for retry context
+            // Read the last output for retry context (used as fallback if session continuation fails)
             let last_output = read_last_planning_output(Path::new(&log_dir));
 
             prompt_planning_xsd_retry_with_context(
@@ -609,19 +631,39 @@ fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Resu
             agent_executor: None,
         };
 
-        let _exit_code = run_with_fallback(
-            AgentRole::Developer,
-            &format!("planning #{}", iteration),
-            &plan_prompt,
-            &log_dir,
-            &mut runtime,
-            ctx.registry,
-            ctx.developer_agent,
-        )?;
+        // Use session continuation for XSD retries (retry_num > 0)
+        // This is completely fault-tolerant - if session continuation fails for any reason
+        // (including agent crash, segfault, invalid session), it falls back to normal behavior
+        let mut xsd_retry_config = XsdRetryConfig {
+            role: AgentRole::Developer,
+            base_label: &format!("planning #{}", iteration),
+            prompt: &plan_prompt,
+            logfile_prefix: &log_dir,
+            runtime: &mut runtime,
+            registry: ctx.registry,
+            primary_agent: ctx.developer_agent,
+            session_info: session_info.as_ref(),
+            retry_num,
+            output_validator: None,
+        };
+
+        let _exit_code = run_xsd_retry_with_session(&mut xsd_retry_config)?;
 
         // Extract and validate the plan XML
         let log_dir_path = Path::new(&log_dir);
         let plan_content = read_last_planning_output(log_dir_path);
+
+        // Extract session info for potential retry (only if we don't have it yet)
+        // This is best-effort - if extraction fails, we just won't use session continuation
+        if session_info.is_none() {
+            // Determine the parser type from the primary agent config
+            if let Some(agent_config) = ctx.registry.resolve_config(ctx.developer_agent) {
+                session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
+                    log_dir_path,
+                    agent_config.json_parser,
+                );
+            }
+        }
 
         // Try to extract XML - if extraction fails, assume entire output is XML
         // and validate it to get specific XSD errors for retry

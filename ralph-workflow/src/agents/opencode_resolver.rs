@@ -109,6 +109,9 @@ impl OpenCodeResolver {
             model_flag: Some(model_flag),
             print_flag: String::new(),
             streaming_flag: String::new(),
+            // Session continuation: -s <session_id> (from `opencode run --help`)
+            // Allows XSD retries to continue the same conversation so AI retains memory
+            session_flag: "-s {}".to_string(),
             env_vars,
             display_name: Some(format!("OpenCode ({})", provider)),
         }
@@ -133,6 +136,9 @@ impl OpenCodeResolver {
             model_flag: None,
             print_flag: String::new(),
             streaming_flag: String::new(),
+            // Session continuation: -s <session_id> (from `opencode run --help`)
+            // Allows XSD retries to continue the same conversation so AI retains memory
+            session_flag: "-s {}".to_string(),
             env_vars,
             display_name: Some("OpenCode".to_string()),
         }

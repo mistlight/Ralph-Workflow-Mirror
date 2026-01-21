@@ -27,7 +27,7 @@ use crate::git_helpers::{
 use crate::logger::{print_progress, Logger};
 use crate::phases::commit::commit_with_generated_message;
 use crate::phases::get_primary_commit_agent;
-use crate::pipeline::{run_with_fallback_and_validator, FallbackConfig, PipelineRuntime};
+use crate::pipeline::{run_xsd_retry_with_session, PipelineRuntime, XsdRetryConfig};
 use crate::prompts::{
     get_stored_or_generate_prompt, prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context,
     prompt_review_xml_with_context, prompt_review_xsd_retry_with_context, ContextLevel,
@@ -622,6 +622,9 @@ fn run_review_pass(
         }
     };
 
+    // Session info for potential session continuation on XSD retries
+    let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
+
     // Inner loop: XSD validation retry with error feedback
     for retry_num in 0..max_xsd_retries {
         let is_retry = retry_num > 0;
@@ -689,6 +692,7 @@ fn run_review_pass(
 
         let attempt_start = Instant::now();
 
+        // Run the agent with session continuation for XSD retries
         let _ = {
             let mut runtime = PipelineRuntime {
                 timer: ctx.timer,
@@ -710,26 +714,41 @@ fn run_review_pass(
                     }
                 };
 
-            let mut fallback_config = FallbackConfig {
+            let base_label = format!(
+                "{review_label} #{j}{}",
+                if is_retry {
+                    format!(" (retry {retry_num})")
+                } else {
+                    String::new()
+                }
+            );
+
+            let mut xsd_retry_config = XsdRetryConfig {
                 role: AgentRole::Reviewer,
-                base_label: &format!(
-                    "{review_label} #{j}{}",
-                    if is_retry {
-                        format!(" (retry {retry_num})")
-                    } else {
-                        String::new()
-                    }
-                ),
+                base_label: &base_label,
                 prompt: &review_prompt_xml,
                 logfile_prefix: &log_dir,
                 runtime: &mut runtime,
                 registry: ctx.registry,
                 primary_agent: ctx.reviewer_agent,
+                session_info: session_info.as_ref(),
+                retry_num,
                 output_validator: Some(validate_output),
             };
-            run_with_fallback_and_validator(&mut fallback_config)
+            run_xsd_retry_with_session(&mut xsd_retry_config)
         };
         ctx.stats.reviewer_runs_completed += 1;
+
+        // Extract session info for potential retry (only if we don't have it yet)
+        let log_dir_path = Path::new(&log_dir);
+        if session_info.is_none() {
+            if let Some(agent_config) = ctx.registry.resolve_config(ctx.reviewer_agent) {
+                session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
+                    log_dir_path,
+                    agent_config.json_parser,
+                );
+            }
+        }
 
         let attempt_duration = attempt_start.elapsed().as_secs();
 
@@ -1111,6 +1130,9 @@ fn run_fix_pass(
     let max_continuations = 100; // Safety limit to prevent infinite loops
     let mut _had_any_error = false; // Tracked for potential future use
 
+    // Session info for potential session continuation on XSD retries
+    let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
+
     // Outer loop: Continue until agent returns status="all_issues_addressed" or "no_issues_found"
     'continuation: for continuation_num in 0..max_continuations {
         let is_continuation = continuation_num > 0;
@@ -1216,7 +1238,7 @@ fn run_fix_pass(
                 ));
             }
 
-            // Run the agent
+            // Run the agent with session continuation for XSD retries
             let exit_code = {
                 let mut runtime = PipelineRuntime {
                     timer: ctx.timer,
@@ -1240,36 +1262,48 @@ fn run_fix_pass(
                         }
                     };
 
-                let mut fallback_config = FallbackConfig {
+                let base_label = format!(
+                    "fix #{}{}",
+                    j,
+                    if is_continuation {
+                        format!(" (continuation {})", continuation_num)
+                    } else {
+                        String::new()
+                    }
+                );
+
+                let mut xsd_retry_config = XsdRetryConfig {
                     role: AgentRole::Reviewer,
-                    base_label: &format!(
-                        "fix #{}{}",
-                        j,
-                        if is_continuation {
-                            format!(" (continuation {})", continuation_num)
-                        } else {
-                            String::new()
-                        }
-                    ),
+                    base_label: &base_label,
                     prompt: &fix_prompt,
                     logfile_prefix: &log_dir,
                     runtime: &mut runtime,
                     registry: ctx.registry,
                     primary_agent: ctx.reviewer_agent,
+                    session_info: session_info.as_ref(),
+                    retry_num,
                     output_validator: Some(validate_output),
                 };
-                run_with_fallback_and_validator(&mut fallback_config)
+                run_xsd_retry_with_session(&mut xsd_retry_config)
             };
 
             ctx.stats.reviewer_runs_completed += 1;
+
+            // Extract session info for potential retry (only if we don't have it yet)
+            let log_dir_path = Path::new(&log_dir);
+            if session_info.is_none() {
+                if let Some(agent_config) = ctx.registry.resolve_config(ctx.reviewer_agent) {
+                    session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
+                        log_dir_path,
+                        agent_config.json_parser,
+                    );
+                }
+            }
 
             // Track if any agent run had an error
             if exit_code.is_err() || exit_code.ok() != Some(0) {
                 _had_any_error = true;
             }
-
-            // Extract and validate the fix result XML
-            let log_dir_path = Path::new(&log_dir);
             let fix_content = read_last_fix_output(log_dir_path);
 
             // Try to extract XML - if extraction fails, assume entire output is XML

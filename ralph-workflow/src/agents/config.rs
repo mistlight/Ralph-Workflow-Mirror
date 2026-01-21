@@ -44,6 +44,10 @@ pub struct AgentConfig {
     /// Include partial messages flag for streaming with -p (e.g., "--include-partial-messages").
     /// Required for Claude/CCS to stream JSON output when using -p mode.
     pub streaming_flag: String,
+    /// Session continuation flag template (e.g., "--session {}" for OpenCode).
+    /// The `{}` placeholder is replaced with the session ID at runtime.
+    /// If empty, session continuation is not supported for this agent.
+    pub session_flag: String,
     /// Environment variables to set when running this agent.
     /// Used for providers that need env vars (e.g., loaded from CCS settings).
     pub env_vars: std::collections::HashMap<String, String>,
@@ -109,6 +113,49 @@ impl AgentConfig {
         parts.join(" ")
     }
 
+    /// Build full command string with session continuation.
+    ///
+    /// This is used for XSD retries where we want to continue an existing session
+    /// so the AI retains memory of its previous reasoning.
+    ///
+    /// # Arguments
+    ///
+    /// * `output` - Enable JSON output format
+    /// * `yolo` - Enable autonomous mode
+    /// * `verbose` - Enable verbose output
+    /// * `model_override` - Optional model override
+    /// * `session_id` - Session ID to continue (if supported by this agent)
+    ///
+    /// # Returns
+    ///
+    /// The command string with session continuation flag if supported
+    pub fn build_cmd_with_session(
+        &self,
+        output: bool,
+        yolo: bool,
+        verbose: bool,
+        model_override: Option<&str>,
+        session_id: Option<&str>,
+    ) -> String {
+        let mut cmd = self.build_cmd_with_model(output, yolo, verbose, model_override);
+
+        // Add session continuation flag if we have a session ID and the agent supports it
+        if let Some(sid) = session_id {
+            if !self.session_flag.is_empty() {
+                let session_arg = self.session_flag.replace("{}", sid);
+                cmd.push(' ');
+                cmd.push_str(&session_arg);
+            }
+        }
+
+        cmd
+    }
+
+    /// Check if this agent supports session continuation.
+    pub fn supports_session_continuation(&self) -> bool {
+        !self.session_flag.is_empty()
+    }
+
     /// Check if this agent requires --verbose when JSON output is enabled.
     fn requires_verbose_for_json(&self, json_enabled: bool) -> bool {
         if !json_enabled || !self.output_flag.contains("stream-json") {
@@ -156,6 +203,11 @@ pub struct AgentConfigToml {
     /// Include partial messages flag for streaming with -p (optional, defaults to "--include-partial-messages").
     #[serde(default = "default_streaming_flag")]
     pub streaming_flag: String,
+    /// Session continuation flag template (optional, e.g., "--session {}" for OpenCode).
+    /// The `{}` placeholder is replaced with the session ID at runtime.
+    /// If empty, session continuation is not supported for this agent.
+    #[serde(default)]
+    pub session_flag: String,
     /// CCS profile to load env vars from (e.g., "glm").
     ///
     /// Ralph resolves the CCS profile to a settings file using CCS config mappings
@@ -217,6 +269,7 @@ impl From<AgentConfigToml> for AgentConfig {
             model_flag: toml.model_flag,
             print_flag: toml.print_flag,
             streaming_flag: toml.streaming_flag,
+            session_flag: toml.session_flag,
             env_vars: merged_env_vars,
             display_name: toml.display_name,
         }
@@ -320,6 +373,7 @@ mod tests {
             model_flag: None,
             print_flag: String::new(),
             streaming_flag: String::new(),
+            session_flag: String::new(),
             env_vars: std::collections::HashMap::new(),
             display_name: None,
         };
@@ -343,6 +397,7 @@ mod tests {
             model_flag: Some("-m provider/model".to_string()),
             print_flag: String::new(),
             streaming_flag: String::new(),
+            session_flag: "--session {}".to_string(),
             ccs_profile: None,
             env_vars: std::collections::HashMap::new(),
             display_name: Some("My Custom Agent".to_string()),
@@ -354,6 +409,7 @@ mod tests {
         assert_eq!(config.json_parser, JsonParserType::Claude);
         assert_eq!(config.model_flag, Some("-m provider/model".to_string()));
         assert_eq!(config.display_name, Some("My Custom Agent".to_string()));
+        assert_eq!(config.session_flag, "--session {}");
     }
 
     #[test]
@@ -378,6 +434,7 @@ mod tests {
             model_flag: None,
             print_flag: "-p".to_string(),
             streaming_flag: "--include-partial-messages".to_string(),
+            session_flag: String::new(),
             env_vars: std::collections::HashMap::new(),
             display_name: None,
         };
@@ -400,5 +457,113 @@ mod tests {
         if let Some(path) = global_agents_config_path() {
             assert!(path.ends_with("agents.toml"));
         }
+    }
+
+    #[test]
+    fn test_build_cmd_with_session() {
+        // Test with OpenCode agent (uses -s flag per `opencode run --help`)
+        let agent = AgentConfig {
+            cmd: "opencode run".to_string(),
+            output_flag: "--json".to_string(),
+            yolo_flag: "--yes".to_string(),
+            verbose_flag: "--verbose".to_string(),
+            can_commit: true,
+            json_parser: JsonParserType::OpenCode,
+            model_flag: None,
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            session_flag: "-s {}".to_string(), // From `opencode run --help`
+            env_vars: std::collections::HashMap::new(),
+            display_name: None,
+        };
+
+        // Without session ID
+        let cmd = agent.build_cmd_with_session(true, true, true, None, None);
+        assert!(!cmd.contains("-s "));
+
+        // With session ID
+        let cmd = agent.build_cmd_with_session(true, true, true, None, Some("ses_abc123"));
+        assert!(cmd.contains("-s ses_abc123"));
+    }
+
+    #[test]
+    fn test_build_cmd_with_session_claude() {
+        // Test with Claude agent (uses --resume flag per `claude --help`)
+        let agent = AgentConfig {
+            cmd: "claude -p".to_string(),
+            output_flag: "--output-format=stream-json".to_string(),
+            yolo_flag: "--dangerously-skip-permissions".to_string(),
+            verbose_flag: "--verbose".to_string(),
+            can_commit: true,
+            json_parser: JsonParserType::Claude,
+            model_flag: None,
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            session_flag: "--resume {}".to_string(), // From `claude --help`
+            env_vars: std::collections::HashMap::new(),
+            display_name: None,
+        };
+
+        // With session ID
+        let cmd = agent.build_cmd_with_session(true, true, true, None, Some("abc123"));
+        assert!(cmd.contains("--resume abc123"));
+    }
+
+    #[test]
+    fn test_build_cmd_with_session_no_support() {
+        let agent = AgentConfig {
+            cmd: "generic-agent".to_string(),
+            output_flag: String::new(),
+            yolo_flag: String::new(),
+            verbose_flag: String::new(),
+            can_commit: true,
+            json_parser: JsonParserType::Generic,
+            model_flag: None,
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            session_flag: String::new(), // No session support
+            env_vars: std::collections::HashMap::new(),
+            display_name: None,
+        };
+
+        // Session ID should be ignored when agent doesn't support it
+        let cmd = agent.build_cmd_with_session(false, false, false, None, Some("ses_abc123"));
+        assert!(!cmd.contains("ses_abc123"));
+        assert!(!agent.supports_session_continuation());
+    }
+
+    #[test]
+    fn test_supports_session_continuation() {
+        let with_support = AgentConfig {
+            cmd: "opencode run".to_string(),
+            output_flag: String::new(),
+            yolo_flag: String::new(),
+            verbose_flag: String::new(),
+            can_commit: true,
+            json_parser: JsonParserType::OpenCode,
+            model_flag: None,
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            session_flag: "--session {}".to_string(),
+            env_vars: std::collections::HashMap::new(),
+            display_name: None,
+        };
+        assert!(with_support.supports_session_continuation());
+
+        let without_support = AgentConfig {
+            cmd: "generic-agent".to_string(),
+            output_flag: String::new(),
+            yolo_flag: String::new(),
+            verbose_flag: String::new(),
+            can_commit: true,
+            json_parser: JsonParserType::Generic,
+            model_flag: None,
+            print_flag: String::new(),
+            streaming_flag: String::new(),
+            session_flag: String::new(),
+            env_vars: std::collections::HashMap::new(),
+            display_name: None,
+        };
+        assert!(!without_support.supports_session_continuation());
     }
 }

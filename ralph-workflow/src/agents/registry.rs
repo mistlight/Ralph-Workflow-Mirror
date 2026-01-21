@@ -385,6 +385,20 @@ impl AgentRegistry {
                     String::new()
                 }
             }),
+            session_flag: overrides.session_flag.clone().unwrap_or_else(|| {
+                // Default session continuation flags for known agents
+                // These flags are verified from CLI --help output:
+                // - Claude: --resume <session_id> (from `claude --help`)
+                // - OpenCode: -s <session_id> (from `opencode run --help`)
+                // - Codex: Uses `codex exec resume <id>` subcommand, not a flag - not supported
+                if cmd.starts_with("claude") || cmd.starts_with("ccs") {
+                    "--resume {}".to_string()
+                } else if cmd.starts_with("opencode") {
+                    "-s {}".to_string()
+                } else {
+                    String::new()
+                }
+            }),
             env_vars: std::collections::HashMap::new(),
             display_name: overrides
                 .display_name
@@ -429,6 +443,10 @@ impl AgentRegistry {
                 .streaming_flag
                 .clone()
                 .unwrap_or(existing.streaming_flag),
+            session_flag: overrides
+                .session_flag
+                .clone()
+                .unwrap_or(existing.session_flag),
             // Do NOT inherit env_vars from the existing agent to prevent
             // CCS env vars from one agent from leaking into another.
             // The unified config (unified::AgentConfigToml) doesn't support
@@ -601,6 +619,7 @@ mod tests {
                 model_flag: None,
                 print_flag: String::new(),
                 streaming_flag: String::new(),
+                session_flag: String::new(),
                 env_vars: std::collections::HashMap::new(),
                 display_name: None,
             },
@@ -626,6 +645,7 @@ mod tests {
                 model_flag: None,
                 print_flag: String::new(),
                 streaming_flag: "--include-partial-messages".to_string(),
+                session_flag: "--resume {}".to_string(),
                 env_vars: std::collections::HashMap::new(),
                 display_name: None,
             },
@@ -633,19 +653,20 @@ mod tests {
 
         // Agent with custom display name uses that
         registry.register(
-            "ccs/glm",
+            "claude",
             AgentConfig {
-                cmd: "ccs glm".to_string(),
+                cmd: "claude -p".to_string(),
                 output_flag: "--output-format=stream-json".to_string(),
                 yolo_flag: "--dangerously-skip-permissions".to_string(),
                 verbose_flag: "--verbose".to_string(),
                 can_commit: true,
                 json_parser: JsonParserType::Claude,
                 model_flag: None,
-                print_flag: "-p".to_string(),
+                print_flag: String::new(),
                 streaming_flag: "--include-partial-messages".to_string(),
+                session_flag: "--resume {}".to_string(),
                 env_vars: std::collections::HashMap::new(),
-                display_name: Some("ccs-glm".to_string()),
+                display_name: None,
             },
         );
 
@@ -1007,6 +1028,7 @@ mod tests {
                 model_flag: None,
                 print_flag: String::new(),
                 streaming_flag: "--include-partial-messages".to_string(),
+                session_flag: "--resume {}".to_string(),
                 // Simulate CCS env vars from a previous load
                 env_vars: {
                     let mut vars = std::collections::HashMap::new();
@@ -1092,6 +1114,7 @@ mod tests {
                 model_flag: None,
                 print_flag: "-p".to_string(),
                 streaming_flag: "--include-partial-messages".to_string(),
+                session_flag: "--resume {}".to_string(),
                 env_vars: {
                     let mut vars = std::collections::HashMap::new();
                     vars.insert(
@@ -1122,6 +1145,7 @@ mod tests {
                 model_flag: None,
                 print_flag: String::new(),
                 streaming_flag: "--include-partial-messages".to_string(),
+                session_flag: "--resume {}".to_string(),
                 env_vars: std::collections::HashMap::new(),
                 display_name: None,
             },

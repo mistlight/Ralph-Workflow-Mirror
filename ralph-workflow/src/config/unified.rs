@@ -238,6 +238,9 @@ pub struct CcsAliasConfig {
     pub can_commit: Option<bool>,
     /// Optional model flag appended to the command.
     pub model_flag: Option<String>,
+    /// Optional session continuation flag (e.g., "--resume {}" for Claude CLI).
+    /// The "{}" placeholder is replaced with the session ID.
+    pub session_flag: Option<String>,
 }
 
 /// CCS alias entry supports both shorthand string and table form.
@@ -290,6 +293,14 @@ pub struct AgentConfigToml {
     ///
     /// Omitted means "keep built-in default". Empty string explicitly disables streaming flag.
     pub streaming_flag: Option<String>,
+    /// Session continuation flag template (e.g., "-s {}" for OpenCode, "--resume {}" for Claude).
+    /// The `{}` placeholder is replaced with the session ID at runtime.
+    ///
+    /// Omitted means "keep built-in default". Empty string explicitly disables session continuation.
+    /// See agent documentation for correct flag format:
+    /// - Claude: --resume <session_id> (from `claude --help`)
+    /// - OpenCode: -s <session_id> (from `opencode run --help`)
+    pub session_flag: Option<String>,
     /// Whether the agent can run git commit.
     ///
     /// Omitted means "keep built-in default". For new agents, this defaults to true when omitted.

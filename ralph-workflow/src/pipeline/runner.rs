@@ -378,6 +378,7 @@ pub struct FallbackConfig<'a, 'b> {
 }
 
 /// Run a command with automatic fallback to alternative agents on failure.
+#[cfg_attr(not(test), allow(dead_code))] // Used by tests
 pub fn run_with_fallback(
     role: AgentRole,
     base_label: &str,
@@ -481,6 +482,225 @@ fn run_with_fallback_internal(config: &mut FallbackConfig<'_, '_>) -> std::io::R
         fallback_config.max_cycles
     ));
     Ok(1)
+}
+
+// ============================================================================
+// Session Continuation for XSD Retries
+// ============================================================================
+//
+// Session continuation allows XSD validation retries to continue the same
+// agent session, so the AI retains memory of its previous reasoning.
+//
+// DESIGN PRINCIPLE: Session continuation is an OPTIMIZATION, not a requirement.
+// It must be completely fault-tolerant:
+//
+// 1. If session continuation produces output (regardless of exit code) -> use it
+// 2. If it fails for ANY reason (segfault, crash, invalid session, I/O error,
+//    timeout, or any other failure) -> silently fall back to normal behavior
+//
+// The fallback chain must NEVER be affected by session continuation failures.
+// Even a segfaulting agent during session continuation must not break anything.
+//
+// IMPORTANT: Some AI agents have quirky behavior where they return non-zero exit
+// codes but still produce valid XML. For example, an agent might output valid XML
+// with status="partial" and then exit with code 1. We should still use that XML.
+// The caller is responsible for checking if valid XML exists in the log file.
+
+/// Result of attempting session continuation.
+#[derive(Debug)]
+pub enum SessionContinuationResult {
+    /// Session continuation ran (agent was invoked).
+    /// Contains the log file path for output extraction.
+    /// NOTE: This does NOT mean the agent succeeded - the caller must check
+    /// the log file for valid output. Some agents produce valid XML even
+    /// when returning non-zero exit codes.
+    #[allow(dead_code)] // logfile is kept for debugging/future use
+    Ran { logfile: String, exit_code: i32 },
+    /// Session continuation failed to run or was not attempted.
+    /// The caller should fall back to normal `run_with_fallback`.
+    Fallback,
+}
+
+/// Configuration for XSD retry with optional session continuation.
+pub struct XsdRetryConfig<'a, 'b> {
+    /// Agent role for the retry.
+    pub role: AgentRole,
+    /// Label for logging (e.g., "planning #1").
+    pub base_label: &'a str,
+    /// The prompt to send.
+    pub prompt: &'a str,
+    /// Log file prefix (e.g., ".agent/logs/planning_1").
+    pub logfile_prefix: &'a str,
+    /// Pipeline runtime for logging and timing.
+    pub runtime: &'a mut PipelineRuntime<'b>,
+    /// Agent registry for resolving agent configs.
+    pub registry: &'a AgentRegistry,
+    /// Primary agent name.
+    pub primary_agent: &'a str,
+    /// Optional session info from previous run.
+    /// If provided and valid, session continuation will be attempted first.
+    pub session_info: Option<&'a crate::pipeline::session::SessionInfo>,
+    /// Retry number (0 = first attempt, 1+ = XSD retries).
+    pub retry_num: usize,
+    /// Optional output validator to check if agent produced valid output.
+    /// Used by review phase to validate JSON output extraction.
+    pub output_validator: Option<crate::pipeline::fallback::OutputValidator>,
+}
+
+/// Run an XSD retry with optional session continuation.
+///
+/// This function attempts session continuation first (if session info is available),
+/// and falls back to normal `run_with_fallback` if:
+/// - No session info is available
+/// - The agent doesn't support session continuation
+/// - Session continuation fails to even start (I/O error, panic, etc.)
+///
+/// # Important: Quirky Agent Behavior
+///
+/// Some AI agents return non-zero exit codes but still produce valid XML output.
+/// For example, an agent might output valid XML with status="partial" and then
+/// exit with code 1. This function does NOT treat non-zero exit codes as failures
+/// for session continuation - it returns the exit code and lets the caller check
+/// if valid XML was produced.
+///
+/// # Fault Tolerance
+///
+/// This function is designed to be completely fault-tolerant. Even if the agent
+/// segfaults during session continuation, this function will catch the error and
+/// fall back to normal behavior. The fallback chain is NEVER affected.
+///
+/// # Arguments
+///
+/// * `config` - XSD retry configuration
+///
+/// # Returns
+///
+/// * `Ok(exit_code)` - The agent's exit code (may be non-zero even with valid output)
+/// * `Err(_)` - I/O error (only from the fallback path, never from session continuation)
+pub fn run_xsd_retry_with_session(config: &mut XsdRetryConfig<'_, '_>) -> std::io::Result<i32> {
+    // Try session continuation first (if we have session info and it's a retry)
+    if config.retry_num > 0 {
+        if let Some(session_info) = config.session_info {
+            match try_session_continuation(config, session_info) {
+                SessionContinuationResult::Ran {
+                    logfile: _,
+                    exit_code,
+                } => {
+                    // Session continuation ran - agent was invoked and produced a log file
+                    // Return the exit code; the caller will check for valid XML
+                    // Even if exit_code != 0, there might be valid XML in the log
+                    return Ok(exit_code);
+                }
+                SessionContinuationResult::Fallback => {
+                    // Session continuation failed to start - fall through to normal behavior
+                    // This is silent and expected - no special logging needed
+                }
+            }
+        }
+    }
+
+    // Normal fallback path (first attempt or session continuation failed to start)
+    let mut fallback_config = FallbackConfig {
+        role: config.role,
+        base_label: config.base_label,
+        prompt: config.prompt,
+        logfile_prefix: config.logfile_prefix,
+        runtime: config.runtime,
+        registry: config.registry,
+        primary_agent: config.primary_agent,
+        output_validator: config.output_validator,
+    };
+    run_with_fallback_and_validator(&mut fallback_config)
+}
+
+/// Attempt session continuation with full fault tolerance.
+///
+/// This function catches ALL errors and returns `Fallback` instead of propagating them.
+/// Even segfaults are handled gracefully (they appear as non-zero exit codes or I/O errors).
+///
+/// # Returns
+///
+/// - `Ran { logfile, exit_code }` if the agent was successfully invoked (even if it crashed)
+/// - `Fallback` if session continuation couldn't even start
+fn try_session_continuation(
+    config: &mut XsdRetryConfig<'_, '_>,
+    session_info: &crate::pipeline::session::SessionInfo,
+) -> SessionContinuationResult {
+    // Check if the agent supports session continuation
+    let agent_config = match config.registry.resolve_config(&session_info.agent_name) {
+        Some(cfg) => cfg,
+        None => {
+            // Agent not found - fall back silently
+            return SessionContinuationResult::Fallback;
+        }
+    };
+
+    if !agent_config.supports_session_continuation() {
+        // Agent doesn't support session continuation - fall back silently
+        return SessionContinuationResult::Fallback;
+    }
+
+    // Build the command with session continuation flag
+    let yolo = matches!(config.role, AgentRole::Developer);
+    let cmd_str = agent_config.build_cmd_with_session(
+        true, // output (JSON)
+        yolo, // yolo mode
+        true, // verbose
+        None, // model override
+        Some(&session_info.session_id),
+    );
+
+    // Build log file path - use a unique name to avoid overwriting previous logs
+    let logfile = format!(
+        "{}_{}_session_{}.log",
+        config.logfile_prefix, session_info.agent_name, config.retry_num
+    );
+
+    // Log the attempt (debug level since this is an optimization)
+    if config.runtime.config.verbosity.is_debug() {
+        config.runtime.logger.info(&format!(
+            "  Attempting session continuation with {} (session: {})",
+            session_info.agent_name, session_info.session_id
+        ));
+    }
+
+    // Create the prompt command
+    let cmd = crate::pipeline::PromptCommand {
+        cmd_str: &cmd_str,
+        prompt: config.prompt,
+        label: &format!("{} (session)", config.base_label),
+        display_name: &session_info.agent_name,
+        logfile: &logfile,
+        parser_type: agent_config.json_parser,
+        env_vars: &agent_config.env_vars,
+    };
+
+    // Execute with full error handling - catch EVERYTHING
+    // Use catch_unwind to handle panics, and Result to handle I/O errors
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::pipeline::run_with_prompt(&cmd, config.runtime)
+    }));
+
+    match result {
+        Ok(Ok(cmd_result)) => {
+            // Agent ran (even if it returned non-zero exit code)
+            // The caller will check if valid XML was produced
+            SessionContinuationResult::Ran {
+                logfile,
+                exit_code: cmd_result.exit_code,
+            }
+        }
+        Ok(Err(_io_error)) => {
+            // I/O error during execution (e.g., couldn't spawn process)
+            // Fall back to normal behavior
+            SessionContinuationResult::Fallback
+        }
+        Err(_panic) => {
+            // Panic during execution (shouldn't happen, but handle it)
+            // Fall back to normal behavior
+            SessionContinuationResult::Fallback
+        }
+    }
 }
 
 #[cfg(test)]

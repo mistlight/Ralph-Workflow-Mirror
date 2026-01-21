@@ -473,6 +473,14 @@ fn build_ccs_config_from_flags(
         .clone()
         .unwrap_or_else(|| defaults.streaming_flag.clone());
 
+    // Session continuation flag: use alias-specific override if provided,
+    // otherwise default to "--resume {}" for Claude CLI compatibility.
+    // Verified from `claude --help`: "-r, --resume [value] Resume a conversation by session ID"
+    let session_flag = alias_config
+        .session_flag
+        .clone()
+        .unwrap_or_else(|| "--resume {}".to_string());
+
     AgentConfig {
         cmd, // Uses `claude` directly if found, otherwise falls back to original command
         output_flag,
@@ -483,6 +491,7 @@ fn build_ccs_config_from_flags(
         model_flag: alias_config.model_flag.clone(),
         print_flag, // CCS requires -p for non-interactive mode (from defaults or alias override)
         streaming_flag, // Required for JSON streaming when using -p
+        session_flag, // Session continuation flag for XSD retries
         env_vars,   // Loaded from CCS settings for the resolved profile, if available
         display_name: Some(display_name),
     }
