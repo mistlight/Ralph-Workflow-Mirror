@@ -685,6 +685,45 @@ mod tests {
     }
 
     #[test]
+    fn test_opencode_error_classification_not_treated_as_glm() {
+        // OpenCode agents should NOT be treated as GLM-like for error classification
+        // They should get normal error classification, not RetryableAgentQuirk
+
+        // OpenCode with exit code 1 and generic error - should be Transient, not RetryableAgentQuirk
+        assert_eq!(
+            AgentErrorKind::classify_with_agent(
+                1,
+                "some error occurred",
+                Some("opencode/opencode/glm-4.7-free"),
+                None
+            ),
+            AgentErrorKind::Transient
+        );
+
+        // OpenCode with exit code 1 and no error in stderr - should be Permanent
+        assert_eq!(
+            AgentErrorKind::classify_with_agent(
+                1,
+                "something happened",
+                Some("opencode/opencode/glm-4.7-free"),
+                None
+            ),
+            AgentErrorKind::Permanent
+        );
+
+        // OpenCode with rate limit - should be RateLimited
+        assert_eq!(
+            AgentErrorKind::classify_with_agent(
+                1,
+                "rate limit exceeded",
+                Some("opencode/zai/glm-4.7"),
+                None
+            ),
+            AgentErrorKind::RateLimited
+        );
+    }
+
+    #[test]
     fn test_agent_error_kind_description_and_advice() {
         let error = AgentErrorKind::RateLimited;
         assert!(!error.description().is_empty());
