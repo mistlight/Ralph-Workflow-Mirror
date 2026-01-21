@@ -51,8 +51,8 @@ YOUR TASK
 
 Execute the next steps from the IMPLEMENTATION PLAN above that haven't been completed yet.
 
-GUIDELINES:
-- Make meaningful progress in each iteration
+You Must:
+- You **MUST** complete every task mentioned in the implementation plan to completeness, there is no time limit. The next agent may or may not know where you end up at.
 - Write clean, idiomatic code following project patterns
 - Add tests where appropriate
 - Follow the acceptance criteria from the ORIGINAL REQUEST
