@@ -161,6 +161,118 @@ fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
     assert_eq!(ok_invocations, 1, "fallback agent should run once");
 }
 
+/// Test that spawn errors (like command not found) trigger fallback.
+///
+/// This verifies that when the primary agent command doesn't exist (exit code 127),
+/// the fallback chain is used instead of crashing the pipeline.
+#[cfg(unix)]
+#[test]
+fn run_with_fallback_handles_command_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+
+    // Create a script that succeeds for the fallback agent
+    let ok_script = dir.path().join("ok.sh");
+    let ok_count = dir.path().join("ok_count.txt");
+    std::fs::write(
+        &ok_script,
+        format!(
+            r#"#!/bin/sh
+echo x >> "{}"
+exit 0
+"#,
+            ok_count.display()
+        ),
+    )
+    .unwrap();
+
+    // Set up registry with a nonexistent primary command and a working fallback
+    let mut registry = AgentRegistry::new().unwrap();
+    let defaults = crate::config::CcsConfig {
+        output_flag: String::new(),
+        yolo_flag: String::new(),
+        verbose_flag: String::new(),
+        print_flag: String::new(),
+        streaming_flag: String::new(),
+        json_parser: "generic".to_string(),
+        can_commit: true,
+    };
+
+    let mut aliases = HashMap::new();
+    // Primary agent uses a nonexistent command - will fail with exit code 127
+    aliases.insert(
+        "nonexistent".to_string(),
+        crate::config::CcsAliasConfig {
+            cmd: "/nonexistent/command/that/does/not/exist".to_string(),
+            ..Default::default()
+        },
+    );
+    aliases.insert(
+        "ok".to_string(),
+        crate::config::CcsAliasConfig {
+            cmd: format!("sh {}", ok_script.display()),
+            ..Default::default()
+        },
+    );
+    registry.set_ccs_aliases(&aliases, defaults);
+
+    let toml_str = r#"
+        [agent_chain]
+        reviewer = ["ccs/nonexistent", "ccs/ok"]
+        max_retries = 1
+        max_cycles = 1
+    "#;
+    let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
+    registry.apply_unified_config(&unified);
+
+    // Set up runtime components
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let config = Config {
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
+        verbosity: Verbosity::Quiet,
+        prompt_path: dir.path().join("prompt.txt"),
+        ..Config::default()
+    };
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        #[cfg(any(test, feature = "test-utils"))]
+        agent_executor: None,
+    };
+
+    let exit = run_with_fallback(
+        crate::agents::AgentRole::Reviewer,
+        "test",
+        "hello",
+        &dir.path().join("logs").display().to_string(),
+        &mut runtime,
+        &registry,
+        "ccs/nonexistent",
+    )
+    .unwrap();
+
+    // The fallback should have succeeded
+    assert_eq!(
+        exit, 0,
+        "fallback agent should succeed after primary command not found"
+    );
+
+    // Verify fallback was invoked
+    let ok_invocations = std::fs::read_to_string(&ok_count).unwrap().lines().count();
+    assert_eq!(
+        ok_invocations, 1,
+        "fallback agent should have been invoked once"
+    );
+}
+
 #[test]
 fn contract_qwen_stream_json_parses_with_claude_parser() {
     let registry = AgentRegistry::new().unwrap();

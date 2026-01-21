@@ -947,4 +947,34 @@ mod tests {
         // Should preserve the end content (most relevant for XSD errors)
         assert!(result.contains("IMPORTANT_END_MARKER"));
     }
+
+    #[test]
+    fn test_spawn_agent_process_command_not_found() {
+        // Try to spawn a command that doesn't exist
+        let command = Command::new("/nonexistent/command/that/does/not/exist");
+        let argv = vec!["/nonexistent/command/that/does/not/exist".to_string()];
+
+        let result = spawn_agent_process(command, &argv);
+
+        // Should return Err(CommandResult) with exit code 127, not panic
+        assert!(result.is_err());
+        let cmd_result = result.unwrap_err();
+        assert_eq!(cmd_result.exit_code, 127);
+        assert!(cmd_result.stderr.contains("command not found"));
+    }
+
+    #[test]
+    fn test_spawn_agent_process_converts_all_errors_to_command_result() {
+        // Verify that spawn errors don't propagate as io::Error
+        // This test ensures fallback can handle the error
+        let command = Command::new(""); // Empty command should fail
+        let argv = vec!["".to_string()];
+
+        let result = spawn_agent_process(command, &argv);
+
+        // Should be Err(CommandResult), not a panic or io::Error propagation
+        assert!(result.is_err());
+        // The CommandResult should have a non-zero exit code
+        assert_ne!(result.unwrap_err().exit_code, 0);
+    }
 }
