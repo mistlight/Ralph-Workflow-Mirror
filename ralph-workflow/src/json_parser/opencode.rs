@@ -519,26 +519,80 @@ impl OpenCodeParser {
                         };
                         if !output_str.is_empty() {
                             let limit = self.verbosity.truncate_limit("tool_result");
-                            let preview = truncate_text(&output_str, limit);
-                            if !preview.is_empty() {
-                                let _ = writeln!(
-                                    out,
-                                    "{}[{}]{} {}  └─ {}Output:{} {}",
-                                    c.dim(),
-                                    prefix,
-                                    c.reset(),
-                                    c.cyan(),
-                                    c.reset(),
-                                    c.reset(),
-                                    preview
-                                );
-                            }
+                            // Format multi-line output with proper indentation
+                            self.format_tool_output(&mut out, &output_str, limit, prefix, *c);
                         }
                     }
                 }
             }
             out
         })
+    }
+
+    /// Format tool output with proper multi-line handling
+    ///
+    /// For single-line outputs, shows inline. For multi-line outputs (like file contents),
+    /// preserves line structure with proper indentation for readability.
+    fn format_tool_output(
+        &self,
+        out: &mut String,
+        output: &str,
+        limit: usize,
+        prefix: &str,
+        c: Colors,
+    ) {
+        let lines: Vec<&str> = output.lines().collect();
+        let is_multiline = lines.len() > 1;
+
+        if is_multiline {
+            // Multi-line output: show header then indented content
+            let _ = writeln!(
+                out,
+                "{}[{}]{} {}  └─ Output:{}",
+                c.dim(),
+                prefix,
+                c.reset(),
+                c.cyan(),
+                c.reset()
+            );
+
+            // Calculate how many lines we can show within the limit
+            let mut chars_used = 0;
+            let mut lines_shown = 0;
+            let indent = format!("{}[{}]{}     ", c.dim(), prefix, c.reset());
+
+            for line in &lines {
+                if chars_used + line.len() > limit {
+                    // Show truncation indicator
+                    let _ = writeln!(
+                        out,
+                        "{}{}...({} more lines)",
+                        indent,
+                        c.dim(),
+                        lines.len() - lines_shown
+                    );
+                    break;
+                }
+                let _ = writeln!(out, "{}{}{}{}", indent, c.dim(), line, c.reset());
+                chars_used += line.len() + 1; // +1 for newline
+                lines_shown += 1;
+            }
+        } else {
+            // Single-line output: show inline
+            let preview = truncate_text(output, limit);
+            if !preview.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "{}[{}]{} {}  └─ Output:{} {}",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.cyan(),
+                    c.reset(),
+                    preview
+                );
+            }
+        }
     }
 
     /// Format a `text` event

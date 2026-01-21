@@ -59,52 +59,66 @@ Before opening a PR (or marking work “done”), run:
 
 ```bash
 # THIS IS VERY IMPORTANT!!!! THIS COMMANDS MUST NOT PRODUCE ANY OUTPUT!!! NOTHING AT ALL SHOULD DISPLAY WITH THIS COMMAND
-rg -n -U --pcre2 '(?x)
-  \#\s*!?\[\s*
-  (?!cfg(?:_attr)?\b)     # <-- cfg is fine, we only care about allow and expect()
+rg -n -U --pcre2 '
+(?x)
+\#\s*!?\[\s*
+(?:
   (allow|expect)
-  \s*\(
-    [^()\]]*
-    (?:\([^()\]]*\)[^()\]]*)*
-  \)
-  \s*\]
-' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
-# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE, 
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+|
+  cfg_attr\s*\(
+    [^()]*? , \s*
+    (allow|expect)
+)
+\s*\(
+  [^()\]]*
+  (?:\([^()\]]*\)[^()\]]*)*
+\)
+\s*\]' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
+
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
+
+# Check integration test compliance (timeout wrappers, doc comments, etc.)
+./tests/integration_tests/compliance_check.sh
+# DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 
 # Check for forbidden test flags in production code (cfg!(test), test_mode params, etc.)
 # DO NOT MODIFY THIS SCRIPT. If it fails, FIX THE PRODUCTION CODE, not the script.
 ./tests/integration_tests/no_test_flags_check.sh
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 
+# DO NOT CHANGE ANY OF THE COMMANDS BELOW
 cargo fmt --all --check
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 
-# Lint the main crate (lib only) with all its features
+# Lint the main crate (lib only) with all its features - THIS MUST BE RAN WITH THE EXACT FLAG DO NOT CHANGE
 cargo clippy -p ralph-workflow --lib --all-features -- -D warnings
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 
-# Lint the separate integration test package
-# (test-utils feature is enabled via the integration test crate's Cargo.toml dependency on ralph-workflow)
+# Lint the separate integration test package (test-utils is enabled via its ralph-workflow dependency)
 cargo clippy -p ralph-workflow-tests --all-targets -- -D warnings
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
 
-# Run the main crate's unit tests with all features
+# Run the main crate's unit tests with all features DO NOT CHANGE
 cargo test -p ralph-workflow --lib --all-features
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
+# THERE CAN BE NO IGNORED TESTS
 
 # Run the integration tests package
-# (dependency features for ralph-workflow should be enabled via the integration test crate's Cargo.toml)
+# (dependency features for ralph-workflow should be enabled via ralph-workflow-tests/Cargo.toml) DO NOT CHANGE
 cargo test -p ralph-workflow-tests
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
+# THERE CAN BE NO IGNORED TESTS
 
 # Build release artifacts (default-members only)
 cargo build --release
 # DO NOT CONTINUE IF THE ABOVE COMMANDS PRODUCE ANYTHING AND FIX THE ISSUE,
-# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT
+# IT DOES NOT MATTER WHAT IT IS, IT DOES NOT MATTER IF YOU INTRODUCED OR NOT, YOU SEE IT YOU FIX IT YOU HAVE UNLIMITED TIME
+```
