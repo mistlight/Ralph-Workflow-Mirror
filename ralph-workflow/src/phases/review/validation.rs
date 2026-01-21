@@ -4,7 +4,7 @@
 //! These checks verify that the environment is suitable for running the review agent
 //! and help diagnose issues early.
 
-use crate::agents::is_glm_like_agent;
+use crate::agents::{contains_glm_model, is_glm_like_agent};
 use crate::review_metrics::ReviewMetrics;
 use std::fs;
 use std::path::Path;
@@ -242,5 +242,5 @@ pub fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> P
 /// Certain AI agents have known compatibility issues with complex structured prompts.
 /// This function detects those agents for which alternative handling may be needed.
 fn is_problematic_prompt_target(agent: &str, model_flag: Option<&str>) -> bool {
-    is_glm_like_agent(agent) || model_flag.is_some_and(is_glm_like_agent)
+    contains_glm_model(agent) || model_flag.is_some_and(contains_glm_model)
 }

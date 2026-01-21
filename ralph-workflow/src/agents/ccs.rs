@@ -1184,8 +1184,8 @@ mod tests {
         let error = AgentErrorKind::classify_with_agent(1, "", Some("ccs/glm"), None);
         assert_eq!(error, AgentErrorKind::RetryableAgentQuirk);
 
-        // Generic error message - unknown pattern, should retry
-        let error = AgentErrorKind::classify_with_agent(1, "some error", Some("glm"), None);
+        // Generic error message with CCS GLM agent - unknown pattern, should retry
+        let error = AgentErrorKind::classify_with_agent(1, "some error", Some("ccs/glm"), None);
         assert_eq!(error, AgentErrorKind::RetryableAgentQuirk);
 
         // GLM mentioned in stderr - known issue, should fallback

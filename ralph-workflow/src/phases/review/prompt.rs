@@ -7,7 +7,7 @@
 
 use std::fs;
 
-use crate::agents::is_glm_like_agent;
+use crate::agents::contains_glm_model;
 use crate::checkpoint::restore::ResumeContext;
 use crate::config::ReviewDepth;
 use crate::git_helpers::{
@@ -303,7 +303,7 @@ fn build_standard_prompt(
 /// Certain AI agents have known compatibility issues with complex structured prompts.
 /// This function detects those agents for which alternative handling may be needed.
 fn is_problematic_prompt_target(agent: &str, model_flag: Option<&str>) -> bool {
-    is_glm_like_agent(agent) || model_flag.is_some_and(is_glm_like_agent)
+    contains_glm_model(agent) || model_flag.is_some_and(contains_glm_model)
 }
 
 /// Log debug information about the prompt being sent to the reviewer agent.

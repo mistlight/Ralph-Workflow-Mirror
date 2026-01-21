@@ -1,6 +1,6 @@
 //! Prompt-based command execution.
 
-use crate::agents::{is_glm_like_agent, is_opencode_agent, JsonParserType};
+use crate::agents::{is_glm_like_agent, JsonParserType};
 use crate::common::{format_argv_for_log, split_command, truncate_text};
 use crate::config::Config;
 use crate::logger::Colors;
@@ -260,10 +260,9 @@ fn build_agent_command(
         colors.reset()
     ));
 
-    // GLM-specific debug logging (only for CCS/Claude-based GLM, not OpenCode)
+    // GLM-specific debug logging (only for CCS/Claude-based GLM)
     let is_glm_cmd = is_glm_like_agent(config.cmd_str);
-    let is_opencode_cmd = is_opencode_agent(config.cmd_str);
-    if is_glm_cmd && !is_opencode_cmd {
+    if is_glm_cmd {
         logger.info(&format!("GLM command details: {display_cmd}"));
         if argv.iter().any(|arg| arg == "-p") {
             logger.info("GLM command includes '-p' flag (correct)");

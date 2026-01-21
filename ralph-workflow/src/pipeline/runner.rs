@@ -135,17 +135,13 @@ fn validate_glm_print_flag(
     model_index: usize,
     runtime: &PipelineRuntime<'_>,
 ) {
-    // Skip validation for non-GLM agents
+    // Skip validation for non-CCS/Claude GLM agents
+    // is_glm_like_agent only matches CCS/Claude-based GLM agents, not OpenCode
     if !crate::agents::is_glm_like_agent(agent_name)
         || agent_index != 0
         || cycle != 0
         || model_index != 0
     {
-        return;
-    }
-
-    // Skip validation for OpenCode agents - they use --auto-approve, not -p
-    if crate::agents::is_opencode_agent(agent_name) || crate::agents::is_opencode_agent(cmd_str) {
         return;
     }
 

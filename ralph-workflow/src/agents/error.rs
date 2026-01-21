@@ -4,20 +4,13 @@
 //! recovery strategies when agents fail. Different error types warrant
 //! different responses: retry, fallback to another agent, or abort.
 
-/// Check if an agent name or command string indicates a GLM-like agent.
+/// Check if a string contains a GLM-like model name.
 ///
-/// GLM-like agents include GLM, `ZhipuAI`, ZAI, Qwen, and `DeepSeek`.
-/// These agents have known compatibility issues with review tasks and may
-/// require special handling or fallback logic.
-///
-/// # Arguments
-///
-/// * `s` - The agent name or command string to check
-///
-/// # Returns
-///
-/// `true` if the string indicates a GLM-like agent, `false` otherwise
-pub fn is_glm_like_agent(s: &str) -> bool {
+/// GLM-like models include GLM, ZhipuAI, ZAI, Qwen, and DeepSeek.
+/// Use this for detecting GLM models in any context (e.g., prompt selection).
+/// For detecting CCS/Claude-based GLM agents specifically (error handling),
+/// use `is_glm_like_agent` instead.
+pub fn contains_glm_model(s: &str) -> bool {
     let s_lower = s.to_lowercase();
     s_lower.contains("glm")
         || s_lower.contains("zhipuai")
@@ -26,11 +19,15 @@ pub fn is_glm_like_agent(s: &str) -> bool {
         || s_lower.contains("deepseek")
 }
 
-/// Check if a string indicates an OpenCode agent.
+/// Check if an agent is a CCS/Claude-based agent using a GLM-like model.
 ///
-/// OpenCode agents use their own non-interactive mechanism (`--auto-approve`)
-/// rather than the Claude/CCS `-p` flag. This is used to skip `-p` flag
-/// validation for OpenCode agents.
+/// These agents have known compatibility issues because they use Claude CLI
+/// with GLM models via CCS (Claude Code Switch). They require:
+/// - The `-p` flag for non-interactive mode
+/// - Special error handling for GLM-specific quirks
+///
+/// This does NOT match OpenCode agents using GLM models, as OpenCode has
+/// its own mechanism (`--auto-approve`) and JSON format.
 ///
 /// # Arguments
 ///
@@ -38,10 +35,22 @@ pub fn is_glm_like_agent(s: &str) -> bool {
 ///
 /// # Returns
 ///
-/// `true` if the string indicates an OpenCode agent, `false` otherwise
-pub fn is_opencode_agent(s: &str) -> bool {
+/// `true` if this is a CCS/Claude agent using a GLM-like model, `false` otherwise
+pub fn is_glm_like_agent(s: &str) -> bool {
     let s_lower = s.to_lowercase();
-    s_lower.starts_with("opencode")
+
+    // Must contain a GLM-like model name
+    if !contains_glm_model(&s_lower) {
+        return false;
+    }
+
+    // Exclude OpenCode agents - they have their own mechanism
+    if s_lower.starts_with("opencode") {
+        return false;
+    }
+
+    // Match CCS agents (ccs/glm, ccs/zai, etc.) or claude-based commands
+    s_lower.starts_with("ccs") || s_lower.contains("claude")
 }
 
 /// Error classification for agent failures.
@@ -518,21 +527,32 @@ mod tests {
     }
 
     #[test]
-    fn test_is_opencode_agent() {
-        // OpenCode agent patterns
-        assert!(is_opencode_agent("opencode"));
-        assert!(is_opencode_agent("opencode/opencode/glm-4.7-free"));
-        assert!(is_opencode_agent("opencode/anthropic/claude-sonnet-4-5"));
-        assert!(is_opencode_agent("opencode/zai/glm-4.7"));
-        assert!(is_opencode_agent("opencode run"));
-        assert!(is_opencode_agent("OPENCODE")); // case insensitive
+    fn test_is_glm_like_agent() {
+        // CCS GLM agents - should match
+        assert!(is_glm_like_agent("ccs/glm"));
+        assert!(is_glm_like_agent("ccs/zai"));
+        assert!(is_glm_like_agent("ccs/zhipuai"));
+        assert!(is_glm_like_agent("ccs/qwen"));
+        assert!(is_glm_like_agent("ccs/deepseek"));
+        assert!(is_glm_like_agent("CCS/GLM")); // case insensitive
 
-        // Non-OpenCode patterns
-        assert!(!is_opencode_agent("claude"));
-        assert!(!is_opencode_agent("ccs/glm"));
-        assert!(!is_opencode_agent("codex"));
-        assert!(!is_opencode_agent("glm-4.7-free")); // model name alone
-        assert!(!is_opencode_agent("zai/glm-4.7")); // without opencode prefix
+        // Claude with GLM model flag - should match
+        assert!(is_glm_like_agent("claude -m glm-4"));
+
+        // OpenCode agents with GLM - should NOT match (OpenCode has own mechanism)
+        assert!(!is_glm_like_agent("opencode/opencode/glm-4.7-free"));
+        assert!(!is_glm_like_agent("opencode/zai/glm-4.7"));
+        assert!(!is_glm_like_agent("opencode run -m glm"));
+
+        // Non-GLM agents - should NOT match
+        assert!(!is_glm_like_agent("claude"));
+        assert!(!is_glm_like_agent("codex"));
+        assert!(!is_glm_like_agent("ccs/work"));
+        assert!(!is_glm_like_agent("ccs/personal"));
+
+        // Model name alone without ccs/claude - should NOT match
+        assert!(!is_glm_like_agent("glm-4.7-free"));
+        assert!(!is_glm_like_agent("zai/glm-4.7"));
     }
 
     #[test]
