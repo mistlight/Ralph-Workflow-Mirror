@@ -901,6 +901,96 @@ git worktree prune
 └──────────────────────────────────────────────────┘
 ```
 
+**IMPORTANT: Work Guides vs Agent Prompts**
+
+Ralph has **two different types of templates** - understanding the difference is crucial:
+
+| Type | Purpose | For | Example |
+|------|---------|-----|---------|
+| **Work Guides** | Describe YOUR work to the AI | PROMPT.md (user fills in) | `bug-fix`, `feature-spec`, `refactor` |
+| **Agent Prompts** | Configure HOW the AI behaves | Internal system prompts | `developer_iteration_xml`, `standard_review` |
+
+**Work Guides** (for creating PROMPT.md):
+- Templates for describing YOUR task requirements
+- You edit these to describe what you want done
+- Use `ralph --init <work-guide>` to create PROMPT.md
+- Use `ralph --list-work-guides` to see all available
+
+**Agent Prompts** (backend AI behavior):
+- Internal system prompts that control AI behavior
+- You typically don't need to modify these
+- Used by Ralph's pipeline to instruct agents
+- Listed in the template gallery above
+
+---
+
+### 4.11 Work Guide Reference (`/docs/work-guides`)
+
+**Source Reference**: `ralph-workflow/src/cli/init.rs`
+
+**What are Work Guides?**
+
+Work Guides are templates for creating `PROMPT.md` files. They help you describe your work to the AI agents in a structured way. Each Work Guide is designed for a specific type of task.
+
+**Available Work Guides**:
+
+| Work Guide | Description | Use For |
+|------------|-------------|---------|
+| **quick** | Quick/small changes | Typos, minor fixes |
+| **bug-fix** | Bug fix with investigation | Debugging and fixing bugs |
+| **feature-spec** | Product specification | New features with full details |
+| **refactor** | Code refactoring | Restructuring code while preserving behavior |
+| **test** | Test writing | Adding tests with edge case considerations |
+| **docs** | Documentation update | Updating docs with completeness checklist |
+| **code-review** | Structured code review | Pull request reviews |
+| **cli-tool** | CLI tool development | Command-line tools with argument parsing |
+| **web-api** | REST/HTTP API | API endpoints with error handling |
+| **ui-component** | UI component | Frontend components with accessibility |
+| **onboarding** | Learning a codebase | Understanding a new project |
+| **performance-optimization** | Performance improvements | Benchmarking and optimization |
+| **security-audit** | Security review | OWASP Top 10 coverage |
+| **api-integration** | API integration | External APIs with retry logic |
+| **database-migration** | Database changes | Zero-downtime migrations |
+| **dependency-update** | Updating dependencies | Breaking change handling |
+| **data-pipeline** | Data pipeline | ETL and monitoring |
+| **debug-triage** | Issue investigation | Systematic debugging |
+| **tech-debt** | Technical debt cleanup | Prioritized refactoring |
+| **release** | Release preparation | Versioning and changelog |
+
+**Using Work Guides**:
+
+```bash
+# List all available Work Guides
+ralph --list-work-guides
+
+# Create PROMPT.md from a Work Guide
+ralph --init bug-fix
+
+# Smart init (infers what you need)
+ralph --init
+
+# Overwrite existing PROMPT.md
+ralph --init feature-spec --force-overwrite
+```
+
+**Smart Init Behavior**:
+
+The `--init` flag without a value uses smart inference:
+- No config? Creates `~/.config/ralph-workflow.toml`
+- Config exists, no PROMPT.md? Prompts for Work Guide (interactive) or creates minimal PROMPT.md (non-interactive)
+- Both exist? Shows setup complete message
+
+**Example: Creating a Bug Fix Work Guide**:
+
+```bash
+ralph --init bug-fix
+# Creates PROMPT.md with:
+# - Bug description template
+# - Investigation steps
+# - Expected behavior
+# - Test requirements
+```
+
 ---
 
 ## 5. API Design
