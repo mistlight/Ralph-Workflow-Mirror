@@ -948,22 +948,54 @@ fn extract_and_validate_review_output_xml(
 }
 
 /// Read the last review output from logs.
-fn read_last_review_output(log_dir: &Path) -> String {
-    // Try to read from the latest log file
-    let log_path = log_dir.join("latest.log");
-    if let Ok(content) = fs::read_to_string(&log_path) {
-        return content;
-    }
+///
+/// The `log_prefix` is a path prefix (not a directory) like `.agent/logs/reviewer_1`.
+/// Actual log files are named `{prefix}_{agent}_{model}.log`, e.g.:
+/// `.agent/logs/reviewer_1_ccs-glm_0.log`
+fn read_last_review_output(log_prefix: &Path) -> String {
+    // The log_prefix is a prefix like ".agent/logs/reviewer_1"
+    // Actual files are "{prefix}_{agent}_{model}.log"
+    // We need to find files that match this prefix pattern in the parent directory
 
-    // Fallback to reading all .log files in the directory
-    if let Ok(entries) = fs::read_dir(log_dir) {
+    let parent = log_prefix.parent().unwrap_or(Path::new("."));
+    let prefix_str = log_prefix
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+
+    // Find all log files matching the prefix pattern and get the most recently modified one
+    let mut best_file: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
+
+    if let Ok(entries) = fs::read_dir(parent) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("log") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    return content;
+            if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
+                // Match files that start with our prefix and end with .log
+                if filename.starts_with(prefix_str)
+                    && filename.len() > prefix_str.len()
+                    && filename.ends_with(".log")
+                {
+                    // Get modification time for this file
+                    if let Ok(metadata) = fs::metadata(&path) {
+                        if let Ok(modified) = metadata.modified() {
+                            match &best_file {
+                                None => best_file = Some((path.clone(), modified)),
+                                Some((_, best_time)) if modified > *best_time => {
+                                    best_file = Some((path.clone(), modified));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    // Read the most recently modified matching log file
+    if let Some((path, _)) = best_file {
+        if let Ok(content) = fs::read_to_string(&path) {
+            return content;
         }
     }
 
@@ -1033,22 +1065,54 @@ fn handle_postflight_validation(ctx: &PhaseContext<'_>, j: u32) {
 }
 
 /// Read the last fix output from logs.
-fn read_last_fix_output(log_dir: &Path) -> String {
-    // Try to read from the latest log file
-    let log_path = log_dir.join("latest.log");
-    if let Ok(content) = fs::read_to_string(&log_path) {
-        return content;
-    }
+///
+/// The `log_prefix` is a path prefix (not a directory) like `.agent/logs/fix_1_1`.
+/// Actual log files are named `{prefix}_{agent}_{model}.log`, e.g.:
+/// `.agent/logs/fix_1_1_ccs-glm_0.log`
+fn read_last_fix_output(log_prefix: &Path) -> String {
+    // The log_prefix is a prefix like ".agent/logs/fix_1_1"
+    // Actual files are "{prefix}_{agent}_{model}.log"
+    // We need to find files that match this prefix pattern in the parent directory
 
-    // Fallback to reading all .log files in the directory
-    if let Ok(entries) = fs::read_dir(log_dir) {
+    let parent = log_prefix.parent().unwrap_or(Path::new("."));
+    let prefix_str = log_prefix
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+
+    // Find all log files matching the prefix pattern and get the most recently modified one
+    let mut best_file: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
+
+    if let Ok(entries) = fs::read_dir(parent) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("log") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    return content;
+            if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
+                // Match files that start with our prefix and end with .log
+                if filename.starts_with(prefix_str)
+                    && filename.len() > prefix_str.len()
+                    && filename.ends_with(".log")
+                {
+                    // Get modification time for this file
+                    if let Ok(metadata) = fs::metadata(&path) {
+                        if let Ok(modified) = metadata.modified() {
+                            match &best_file {
+                                None => best_file = Some((path.clone(), modified)),
+                                Some((_, best_time)) if modified > *best_time => {
+                                    best_file = Some((path.clone(), modified));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    // Read the most recently modified matching log file
+    if let Some((path, _)) = best_file {
+        if let Ok(content) = fs::read_to_string(&path) {
+            return content;
         }
     }
 
