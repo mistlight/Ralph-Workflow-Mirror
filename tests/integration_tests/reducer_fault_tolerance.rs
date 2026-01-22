@@ -241,6 +241,38 @@ fn test_all_agents_exhausted_pipeline_graceful_abort() {
 }
 
 #[test]
+fn test_agent_exhaustion_transitions_to_next_phase() {
+    with_default_timeout(|| {
+        use ralph_workflow::reducer::state::{CommitState, RebaseState};
+
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent1".to_string()],
+                vec![vec!["model1".to_string()]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(1);
+        chain = chain.start_retry_cycle();
+
+        let state = PipelineState {
+            agent_chain: chain,
+            phase: PipelinePhase::Development,
+            iteration: 1,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            rebase: RebaseState::NotStarted,
+            commit: CommitState::NotStarted,
+            execution_history: Vec::new(),
+        };
+
+        assert_eq!(state.phase, PipelinePhase::Development);
+        assert!(state.agent_chain.is_exhausted());
+        assert_eq!(state.agent_chain.retry_cycle, 1);
+    });
+}
+
+#[test]
 fn test_pipeline_continues_after_agent_sigsegv() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain_in_development();

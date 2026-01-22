@@ -27,9 +27,14 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         }
 
         PipelinePhase::Development => {
-            if state.agent_chain.is_exhausted() || state.agent_chain.agents.is_empty() {
+            if state.agent_chain.agents.is_empty() {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Developer,
+                };
+            }
+            if state.agent_chain.is_exhausted() {
+                return Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::PhaseTransition,
                 };
             }
             if state.iteration <= state.total_iterations {
@@ -44,9 +49,14 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         }
 
         PipelinePhase::Review => {
-            if state.agent_chain.is_exhausted() || state.agent_chain.agents.is_empty() {
+            if state.agent_chain.agents.is_empty() {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Reviewer,
+                };
+            }
+            if state.agent_chain.is_exhausted() {
+                return Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::PhaseTransition,
                 };
             }
             if state.reviewer_pass < state.total_reviewer_passes {
@@ -154,12 +164,7 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(
-            effect,
-            Effect::InitializeAgentChain {
-                role: AgentRole::Developer
-            }
-        ));
+        assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
     }
 
     #[test]
@@ -235,12 +240,7 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(
-            effect,
-            Effect::InitializeAgentChain {
-                role: AgentRole::Reviewer
-            }
-        ));
+        assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
     }
 
     #[test]

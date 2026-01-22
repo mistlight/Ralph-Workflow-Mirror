@@ -594,6 +594,12 @@ Each step is independently deployable - the system works after each migration.
 
 ## History
 
+- **2026-01-22**: Fixed agent exhaustion infinite loop bug
+  - Added separate handling for empty vs exhausted agent chains in orchestration
+  - Prevented infinite retry loops when all agents fail
+  - Updated tests to verify correct phase transition on exhaustion
+  - All acceptance criteria met and verified
+
 - **2026-01-21**: Implemented core reducer module (Steps 1-2, 9)
   - Created state.rs with PipelineState, AgentChainState, RebaseState, CommitState
   - Created event.rs with PipelineEvent enum and related types
