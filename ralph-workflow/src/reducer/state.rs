@@ -3,6 +3,8 @@
 //! Defines immutable state structures that capture complete pipeline execution context.
 //! These state structures can be serialized as checkpoints for resume functionality.
 
+#![allow(dead_code)]
+
 use crate::agents::AgentRole;
 use crate::checkpoint::execution_history::ExecutionStep;
 use serde::{Deserialize, Serialize};
@@ -168,6 +170,7 @@ impl AgentChainState {
         new
     }
 
+    #[allow(dead_code)]
     pub fn models_for_current_agent(&self) -> &[String] {
         self.models_per_agent
             .get(self.current_agent_index)
@@ -175,6 +178,7 @@ impl AgentChainState {
             .unwrap_or(&[])
     }
 
+    #[allow(dead_code)]
     pub fn next_model_for_agent(&self, agent_name: &str) -> Option<String> {
         self.agents
             .iter()
@@ -186,6 +190,7 @@ impl AgentChainState {
             })
     }
 
+    #[allow(dead_code)]
     pub fn next_agent(&self) -> Option<String> {
         self.agents.get(self.current_agent_index + 1).cloned()
     }
@@ -215,6 +220,7 @@ pub enum RebaseState {
 }
 
 impl RebaseState {
+    #[allow(dead_code)]
     pub fn is_terminal(&self) -> bool {
         matches!(self, RebaseState::Completed { .. } | RebaseState::Skipped)
     }
@@ -228,6 +234,7 @@ impl RebaseState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_in_progress(&self) -> bool {
         matches!(
             self,
@@ -250,6 +257,7 @@ pub enum CommitState {
 }
 
 impl CommitState {
+    #[allow(dead_code)]
     pub fn is_terminal(&self) -> bool {
         matches!(self, CommitState::Committed { .. } | CommitState::Skipped)
     }

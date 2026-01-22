@@ -364,7 +364,7 @@ impl MainEffectHandler {
 
     fn generate_commit_message(&mut self, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
         let attempt = match &self.state.commit {
-            crate::reducer::state::CommitState::Generating { attempt, .. } => attempt.clone(),
+            crate::reducer::state::CommitState::Generating { attempt, .. } => *attempt,
             _ => 1,
         };
 
@@ -405,7 +405,7 @@ impl MainEffectHandler {
 
     fn create_commit(
         &mut self,
-        ctx: &mut PhaseContext<'_>,
+        _ctx: &mut PhaseContext<'_>,
         message: String,
     ) -> Result<PipelineEvent> {
         use crate::git_helpers::{git_add_all, git_commit};

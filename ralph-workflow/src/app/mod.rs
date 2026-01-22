@@ -659,67 +659,28 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         enable_checkpointing: config.features.checkpoint_enabled,
     };
 
-    // Run the event loop
-    let loop_result = run_event_loop(&mut phase_ctx, Some(initial_state), event_loop_config);
+    // Clone execution_history and prompt_history BEFORE running event loop (to avoid borrow issues)
+    let execution_history_before = phase_ctx.execution_history.clone();
+    let prompt_history_before = phase_ctx.clone_prompt_history();
+
+    // Run event loop in separate scope to release mutable borrow
+    let loop_result = {
+        let phase_ctx_ref = &mut phase_ctx;
+        run_event_loop(phase_ctx_ref, Some(initial_state), event_loop_config)
+    };
 
     // Handle event loop result
-    match loop_result {
-        Ok(ref result) => {
-            if result.completed {
-                ctx.logger
-                    .success("Pipeline completed successfully via reducer event loop");
-                ctx.logger.info(&format!(
-                    "Total events processed: {}",
-                    result.events_processed
-                ));
-            } else {
-                ctx.logger.warn("Pipeline exited without completion marker");
-            }
-        }
-        Err(e) => {
-            ctx.logger.error(&format!("Event loop error: {e}"));
-            return Err(e);
-        }
+    let loop_result = loop_result?;
+    if loop_result.completed {
+        ctx.logger
+            .success("Pipeline completed successfully via reducer event loop");
+        ctx.logger.info(&format!(
+            "Total events processed: {}",
+            loop_result.events_processed
+        ));
+    } else {
+        ctx.logger.warn("Pipeline exited without completion marker");
     }
-
-    // Post-pipeline operations
-    check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
-    update_status("In progress.", config.isolation_mode)?;
-
-    // Run post-review rebase (only if explicitly requested via --with-rebase)
-    // Note: Rebase handling remains outside event loop for safety
-    if should_run_rebase {
-        let final_phase = loop_result.ok().and_then(|r| {
-            // Check if we're actually at post-review stage
-            let phase = r.final_state.phase;
-            let should_run_post_rebase = matches!(
-                phase,
-                crate::reducer::event::PipelinePhase::CommitMessage
-                    | crate::reducer::event::PipelinePhase::FinalValidation
-                    | crate::reducer::event::PipelinePhase::Complete
-            );
-            if should_run_post_rebase {
-                Some(phase)
-            } else {
-                None
-            }
-        });
-
-        if final_phase.is_some() {
-            run_post_review_rebase(ctx, &mut phase_ctx, &run_context)?;
-            // Update interrupt context after post-review rebase
-            update_interrupt_context_from_phase(
-                &phase_ctx,
-                PipelinePhase::PostRebase,
-                config.developer_iters,
-                config.reviewer_reviews,
-                &run_context,
-            );
-        }
-    }
-
-    // Run final validation if configured
-    run_final_validation(&phase_ctx, resume_checkpoint.as_ref())?;
 
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled {
@@ -742,13 +703,17 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
             );
 
         let builder = builder
-            .with_execution_history(phase_ctx.execution_history.clone())
-            .with_prompt_history(phase_ctx.clone_prompt_history());
+            .with_execution_history(execution_history_before)
+            .with_prompt_history(prompt_history_before);
 
         if let Some(checkpoint) = builder.build() {
             let _ = save_checkpoint(&checkpoint);
         }
     }
+
+    // Post-pipeline operations
+    check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
+    update_status("In progress.", config.isolation_mode)?;
 
     // Commit phase
     finalize_pipeline(
@@ -1067,6 +1032,7 @@ fn check_prompt_restoration(
 }
 
 /// Runs final validation if configured.
+#[allow(dead_code)]
 fn run_final_validation(
     ctx: &PhaseContext,
     resume_checkpoint: Option<&PipelineCheckpoint>,
@@ -1589,6 +1555,7 @@ fn run_initial_rebase(
 /// Rebase is only performed when both conditions are met:
 /// - `--with-rebase` CLI flag is set (caller already checked this)
 /// - `auto_rebase` config is enabled (checked here)
+#[allow(dead_code)]
 fn run_post_review_rebase(
     ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext,

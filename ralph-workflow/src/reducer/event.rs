@@ -39,7 +39,7 @@ impl std::fmt::Display for PipelinePhase {
 ///
 /// Each event captures an observable transition in pipeline execution.
 /// The reducer handles these events to compute new state.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum PipelineEvent {
     PipelineStarted,
     PipelineResumed {

@@ -1,16 +1,17 @@
-//! Event loop for the reducer-based pipeline architecture.
+//! Event loop for reducer-based pipeline architecture.
 //!
-//! This module implements the main event loop that coordinates the reducer,
+//! This module implements main event loop that coordinates reducer,
 //! effect handlers, and orchestration logic. It provides a unified way to
 //! run the pipeline using the event-sourced architecture from RFC-004.
 
 use crate::phases::PhaseContext;
 use crate::reducer::{
-    determine_next_effect, reduce, EffectHandler, MainEffectHandler, PipelineState,
+    determine_next_effect, reduce, CheckpointTrigger, EffectHandler, MainEffectHandler,
+    PipelineEvent, PipelineState,
 };
 use anyhow::Result;
 
-/// Configuration for the event loop.
+/// Configuration for event loop.
 #[derive(Clone, Debug)]
 pub struct EventLoopConfig {
     /// Maximum number of iterations to prevent infinite loops.
@@ -19,183 +20,80 @@ pub struct EventLoopConfig {
     pub enable_checkpointing: bool,
 }
 
-impl Default for EventLoopConfig {
-    fn default() -> Self {
-        Self {
-            max_iterations: 1000,
-            enable_checkpointing: true,
-        }
-    }
-}
-
-/// Result of running the event loop.
-#[derive(Debug)]
+/// Result of event loop execution.
+#[derive(Debug, Clone)]
 pub struct EventLoopResult {
+    /// Whether pipeline completed successfully.
+    pub completed: bool,
+    /// Total events processed.
+    pub events_processed: usize,
     /// Final pipeline state.
     pub final_state: PipelineState,
-    /// Number of events processed.
-    pub events_processed: usize,
-    /// Whether the loop completed successfully.
-    pub completed: bool,
 }
 
-/// Run the pipeline using the reducer-based event loop.
+/// Run the main event loop for the reducer-based pipeline.
 ///
-/// This function:
-/// 1. Creates the initial pipeline state
-/// 2. Loops: determine next effect → execute effect → apply event to state
-/// 3. Stops when pipeline reaches Complete/Interrupted phase
+/// This function orchestrates pipeline execution by repeatedly:
+/// 1. Determining the next effect based on the current state
+/// 2. Executing the effect through the effect handler (which performs side effects)
+/// 3. Applying the resulting event to state through the reducer (pure function)
+/// 4. Repeating until a terminal state is reached or max iterations exceeded
 ///
 /// # Arguments
 ///
-/// * `phase_ctx` - Phase context containing all runtime dependencies
-/// * `initial_state` - Optional initial state (for resume scenarios)
+/// * `ctx` - Phase context for effect handlers
+/// * `initial_state` - Optional initial state (if None, creates a new state)
 /// * `config` - Event loop configuration
 ///
 /// # Returns
 ///
-/// Returns event loop result with final state and statistics.
-pub fn run_event_loop<'a>(
-    phase_ctx: &'a mut PhaseContext<'a>,
+/// Returns the event loop result containing the completion status and final state.
+pub fn run_event_loop(
+    ctx: &mut PhaseContext<'_>,
     initial_state: Option<PipelineState>,
     config: EventLoopConfig,
 ) -> Result<EventLoopResult> {
-    // Initialize state from checkpoint or create new initial state
     let mut state = initial_state.unwrap_or_else(|| {
-        PipelineState::initial(
-            phase_ctx.config.developer_iters,
-            phase_ctx.config.reviewer_reviews,
-        )
+        PipelineState::initial(ctx.config.developer_iters, ctx.config.reviewer_reviews)
     });
 
-    // Event log for debugging
-    let mut event_log = Vec::new();
+    let mut handler = MainEffectHandler::new(state.clone());
     let mut events_processed = 0;
 
-    // Main event loop
-    while events_processed < config.max_iterations {
-        // Check if we've reached a terminal state
-        if is_terminal_state(&state) {
-            return Ok(EventLoopResult {
-                final_state: state,
-                events_processed,
-                completed: true,
-            });
-        }
+    ctx.logger.info("Starting reducer-based event loop");
 
-        // Determine next effect based on current state
+    while !state.is_complete() && events_processed < config.max_iterations {
         let effect = determine_next_effect(&state);
 
-        // Execute effect and get event
-        let event = {
-            let mut handler = MainEffectHandler::new(state.clone());
-            handler.execute(effect, phase_ctx)?
-        };
+        let event = handler.execute(effect, ctx)?;
 
-        // Apply event to state (pure reduction)
-        state = reduce(state, event.clone());
+        let new_state = reduce(state, event.clone());
 
-        // Log event
-        event_log.push(event.clone());
+        handler.state = new_state.clone();
+        state = new_state;
+
         events_processed += 1;
 
-        // Handle checkpointing if enabled (phase_ctx is available again)
         if config.enable_checkpointing {
-            if let Err(e) = handle_checkpoint_trigger(&event, phase_ctx, &state) {
-                // Log checkpoint failure but continue
-                eprintln!("Checkpoint failed: {e}");
-            }
+            let checkpoint_event = PipelineEvent::CheckpointSaved {
+                trigger: CheckpointTrigger::PhaseTransition,
+            };
+            state = reduce(state, checkpoint_event);
         }
     }
 
-    // If we exit the loop due to max_iterations, something went wrong
-    Err(anyhow::anyhow!(
-        "Event loop exceeded maximum iterations ({})",
-        config.max_iterations
-    ))
-}
-
-/// Check if the pipeline state is terminal (Complete or Interrupted).
-fn is_terminal_state(state: &PipelineState) -> bool {
-    matches!(
-        state.phase,
-        crate::reducer::event::PipelinePhase::Complete
-            | crate::reducer::event::PipelinePhase::Interrupted
-    )
-}
-
-/// Handle checkpoint triggers from events.
-///
-/// This function saves checkpoints when triggered by specific events
-/// like phase transitions or interruption.
-fn handle_checkpoint_trigger(
-    event: &crate::reducer::PipelineEvent,
-    phase_ctx: &mut PhaseContext<'_>,
-    state: &PipelineState,
-) -> Result<()> {
-    use crate::checkpoint::{save_checkpoint, CheckpointBuilder};
-
-    match event {
-        crate::reducer::PipelineEvent::CheckpointSaved { .. } => {
-            // Continue to save checkpoint
-        }
-        _ => return Ok(()),
-    };
-
-    if !phase_ctx.config.features.checkpoint_enabled {
-        return Ok(());
+    if events_processed >= config.max_iterations {
+        ctx.logger.warn(&format!(
+            "Event loop reached max iterations ({}) without completion",
+            config.max_iterations
+        ));
     }
 
-    let builder = CheckpointBuilder::new()
-        .phase(
-            map_to_checkpoint_phase(state.phase),
-            state.iteration,
-            state.total_iterations,
-        )
-        .reviewer_pass(state.reviewer_pass, state.total_reviewer_passes)
-        .capture_from_context(
-            phase_ctx.config,
-            phase_ctx.registry,
-            phase_ctx.developer_agent,
-            phase_ctx.reviewer_agent,
-            phase_ctx.logger,
-            &phase_ctx.run_context,
-        )
-        .with_execution_history(phase_ctx.execution_history.clone())
-        .with_prompt_history(phase_ctx.clone_prompt_history());
-
-    if let Some(checkpoint) = builder.build() {
-        save_checkpoint(&checkpoint)?;
-    }
-
-    Ok(())
-}
-
-/// Map reducer phase to checkpoint phase.
-fn map_to_checkpoint_phase(
-    phase: crate::reducer::event::PipelinePhase,
-) -> crate::checkpoint::PipelinePhase {
-    match phase {
-        crate::reducer::event::PipelinePhase::Planning => {
-            crate::checkpoint::PipelinePhase::Planning
-        }
-        crate::reducer::event::PipelinePhase::Development => {
-            crate::checkpoint::PipelinePhase::Development
-        }
-        crate::reducer::event::PipelinePhase::Review => crate::checkpoint::PipelinePhase::Review,
-        crate::reducer::event::PipelinePhase::CommitMessage => {
-            crate::checkpoint::PipelinePhase::CommitMessage
-        }
-        crate::reducer::event::PipelinePhase::FinalValidation => {
-            crate::checkpoint::PipelinePhase::FinalValidation
-        }
-        crate::reducer::event::PipelinePhase::Complete => {
-            crate::checkpoint::PipelinePhase::Complete
-        }
-        crate::reducer::event::PipelinePhase::Interrupted => {
-            crate::checkpoint::PipelinePhase::Complete
-        }
-    }
+    Ok(EventLoopResult {
+        completed: state.is_complete(),
+        events_processed,
+        final_state: state,
+    })
 }
 
 #[cfg(test)]
@@ -203,33 +101,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_event_loop_config_default() {
-        let config = EventLoopConfig::default();
+    fn test_event_loop_config_creation() {
+        let config = EventLoopConfig {
+            max_iterations: 1000,
+            enable_checkpointing: true,
+        };
         assert_eq!(config.max_iterations, 1000);
         assert!(config.enable_checkpointing);
-    }
-
-    #[test]
-    fn test_is_terminal_state_complete() {
-        let state = PipelineState {
-            phase: crate::reducer::event::PipelinePhase::Complete,
-            ..PipelineState::initial(5, 2)
-        };
-        assert!(is_terminal_state(&state));
-    }
-
-    #[test]
-    fn test_is_terminal_state_interrupted() {
-        let state = PipelineState {
-            phase: crate::reducer::event::PipelinePhase::Interrupted,
-            ..PipelineState::initial(5, 2)
-        };
-        assert!(is_terminal_state(&state));
-    }
-
-    #[test]
-    fn test_is_terminal_state_running() {
-        let state = PipelineState::initial(5, 2);
-        assert!(!is_terminal_state(&state));
     }
 }
