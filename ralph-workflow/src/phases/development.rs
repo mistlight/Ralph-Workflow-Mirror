@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Development phase execution.
 //!
 //! This module handles the development phase of the Ralph pipeline, which consists
@@ -127,6 +128,7 @@ pub fn run_development_phase(
             developer_context,
             resuming_into_development,
             resume_context,
+            None,
         )?;
 
         if dev_result.had_error {
@@ -233,13 +235,14 @@ pub fn run_development_phase(
 }
 
 /// Result of a single development iteration.
-struct DevIterationResult {
-    /// Whether an error occurred during the iteration.
-    had_error: bool,
+#[derive(Debug)]
+pub struct DevIterationResult {
+    /// Whether an error occurred during iteration.
+    pub had_error: bool,
     /// Optional summary of what was done.
-    summary: Option<String>,
+    pub summary: Option<String>,
     /// Optional list of files changed.
-    files_changed: Option<Vec<String>>,
+    pub files_changed: Option<Vec<String>>,
 }
 
 /// Run a single development iteration with XML extraction and XSD validation retry loop.
@@ -256,12 +259,13 @@ struct DevIterationResult {
 /// The development iteration produces side effects (file changes) as its primary output.
 /// The XML status is secondary - we use it for logging/tracking but don't fail the
 /// entire iteration if XML is missing or invalid.
-fn run_development_iteration_with_xml_retry(
+pub fn run_development_iteration_with_xml_retry(
     ctx: &mut PhaseContext<'_>,
     iteration: u32,
     _developer_context: ContextLevel,
     _resuming_into_development: bool,
     _resume_context: Option<&ResumeContext>,
+    _agent: Option<&str>,
 ) -> anyhow::Result<DevIterationResult> {
     let prompt_md = fs::read_to_string("PROMPT.md").unwrap_or_default();
     let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
@@ -400,7 +404,7 @@ fn run_development_iteration_with_xml_retry(
                     logfile_prefix: &log_dir,
                     runtime: &mut runtime,
                     registry: ctx.registry,
-                    primary_agent: ctx.developer_agent,
+                    primary_agent: _agent.unwrap_or(ctx.developer_agent),
                     session_info: session_info.as_ref(),
                     retry_num,
                     output_validator: None,
@@ -541,7 +545,7 @@ fn run_development_iteration_with_xml_retry(
 ///
 /// The orchestrator ALWAYS extracts and writes PLAN.md from agent XML output.
 /// Uses XSD validation with retry loop to ensure valid XML format.
-fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
+pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
     let start_time = Instant::now();
     // Save checkpoint at start of planning phase (if enabled)
     if ctx.config.features.checkpoint_enabled {

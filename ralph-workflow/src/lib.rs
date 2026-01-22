@@ -22,6 +22,7 @@ pub mod phases;
 pub mod pipeline;
 pub mod platform;
 pub mod prompts;
+pub mod reducer;
 pub mod review_metrics;
 pub mod templates;
 

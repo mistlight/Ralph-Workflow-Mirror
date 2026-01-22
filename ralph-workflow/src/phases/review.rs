@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Review phase execution.
 //!
 //! This module handles the review and fix phase of the Ralph pipeline. It runs
@@ -36,7 +37,6 @@ use std::fs;
 use std::path::Path;
 
 mod prompt;
-pub use prompt::{build_review_prompt, should_use_universal_prompt};
 
 mod validation;
 pub use validation::{
@@ -196,33 +196,13 @@ pub fn run_review_phase(
         // REVIEW PASS
         update_status("Reviewing code", ctx.config.isolation_mode)?;
 
-        // First, get the review label (for logging and error messages)
-        let (review_label, _) = build_review_prompt(
-            ctx,
-            reviewer_context,
-            ctx.review_guidelines,
-            if resuming_into_review {
-                resume_context
-            } else {
-                None
-            },
-        );
+        let review_label = "review";
 
         // Use prompt replay if available, otherwise build new review prompt
         let review_prompt_key = format!("review_{}", j);
         let (review_prompt, was_replayed) =
             get_stored_or_generate_prompt(&review_prompt_key, &ctx.prompt_history, || {
-                let (_, prompt) = build_review_prompt(
-                    ctx,
-                    reviewer_context,
-                    ctx.review_guidelines,
-                    if resuming_into_review {
-                        resume_context
-                    } else {
-                        None
-                    },
-                );
-                prompt
+                String::new()
             });
 
         // Capture the review prompt for checkpoint/resume (only if newly generated)
@@ -262,7 +242,7 @@ pub fn run_review_phase(
         }
 
         // Run review pass
-        let review_result = run_review_pass(ctx, j, &review_label, &review_prompt)?;
+        let review_result = run_review_pass(ctx, j, review_label, &review_prompt, None)?;
 
         // Check for early exit (no issues found)
         if review_result.early_exit {
@@ -281,6 +261,7 @@ pub fn run_review_phase(
             } else {
                 None
             },
+            None,
         )?;
 
         // UPDATE REVIEW BASELINE: Move baseline forward after fixes
@@ -429,9 +410,10 @@ fn handle_skipped_cycle(
 }
 
 /// Result of running a review pass.
-struct ReviewPassResult {
+#[derive(Debug)]
+pub struct ReviewPassResult {
     /// Whether the review found no issues and should exit early.
-    early_exit: bool,
+    pub early_exit: bool,
 }
 
 /// Result of parsing review output.
@@ -599,11 +581,12 @@ fn log_extraction_diagnostics(logger: &Logger, log_dir: &str) {
 /// This function implements a nested loop structure similar to fix:
 /// - **Outer loop (continuation)**: Not used for review (single pass)
 /// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 100)
-fn run_review_pass(
+pub fn run_review_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
     review_label: &str,
     _review_prompt: &str, // Unused - we build XML prompt internally
+    _agent: Option<&str>,
 ) -> anyhow::Result<ReviewPassResult> {
     let issues_path = Path::new(".agent/ISSUES.md");
     let max_xsd_retries = 100;
@@ -730,7 +713,7 @@ fn run_review_pass(
                 logfile_prefix: &log_dir,
                 runtime: &mut runtime,
                 registry: ctx.registry,
-                primary_agent: ctx.reviewer_agent,
+                primary_agent: _agent.unwrap_or(ctx.reviewer_agent),
                 session_info: session_info.as_ref(),
                 retry_num,
                 output_validator: Some(validate_output),
@@ -1004,24 +987,6 @@ fn handle_postflight_validation(ctx: &PhaseContext<'_>, j: u32) {
             ctx.logger.warn(&format!(
                 "Post-flight check: {msg}. Proceeding with fix pass anyway."
             ));
-            // If using a problematic agent, suggest alternatives
-            if should_use_universal_prompt(
-                ctx.reviewer_agent,
-                ctx.config.reviewer_model.as_deref(),
-                ctx.config.features.force_universal_prompt,
-            ) {
-                ctx.logger.info(&format!(
-                    "{}Tip:{} Review with this agent may be unreliable. Consider:",
-                    ctx.colors.bold(),
-                    ctx.colors.reset()
-                ));
-                ctx.logger
-                    .info("  1. Use Claude/Codex as reviewer: ralph --reviewer-agent codex");
-                ctx.logger
-                    .info("  2. Try generic parser: ralph --reviewer-json-parser generic");
-                ctx.logger
-                    .info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
-            }
         }
         PostflightResult::Malformed(msg) => {
             ctx.logger.warn(&format!(
@@ -1068,11 +1033,12 @@ fn format_xsd_error_for_fix(error: &XsdValidationError) -> String {
 /// This function implements a nested loop structure similar to development:
 /// - **Outer loop (continuation)**: Continue while status != "all_issues_addressed" (max 100)
 /// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 100)
-fn run_fix_pass(
+pub fn run_fix_pass(
     ctx: &mut PhaseContext<'_>,
     j: u32,
     _reviewer_context: ContextLevel,
     _resume_context: Option<&ResumeContext>,
+    _agent: Option<&str>,
 ) -> anyhow::Result<()> {
     let fix_start_time = Instant::now();
 
@@ -1238,7 +1204,7 @@ fn run_fix_pass(
                     logfile_prefix: &log_dir,
                     runtime: &mut runtime,
                     registry: ctx.registry,
-                    primary_agent: ctx.reviewer_agent,
+                    primary_agent: _agent.unwrap_or(ctx.reviewer_agent),
                     session_info: session_info.as_ref(),
                     retry_num,
                     output_validator: Some(validate_output),

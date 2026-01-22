@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 //! Git Helper Functions
 //!
 //! Provides git hooks management, a git wrapper for blocking commits during the
@@ -79,11 +80,11 @@ pub use rebase_checkpoint::RebasePhase;
 pub use rebase_state_machine::{RebaseLock, RebaseStateMachine};
 pub use repo::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
-    truncate_diff_for_review, CommitResultFallback, DiffReviewContent, DiffTruncationLevel,
+    CommitResultFallback, DiffReviewContent, DiffTruncationLevel,
 };
 pub use review_baseline::{
-    get_baseline_summary, get_git_diff_from_review_baseline, get_review_baseline_info,
-    load_review_baseline, update_review_baseline, ReviewBaseline,
+    get_baseline_summary, get_review_baseline_info, load_review_baseline, update_review_baseline,
+    ReviewBaseline,
 };
 pub use start_commit::{
     get_current_head_oid, get_start_commit_summary, load_start_point, reset_start_commit,

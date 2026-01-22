@@ -19,6 +19,7 @@
 pub mod config_init;
 pub mod context;
 pub mod detection;
+pub mod event_loop;
 pub mod finalization;
 pub mod plumbing;
 pub mod resume;
@@ -26,12 +27,9 @@ pub mod validation;
 
 use crate::agents::AgentRegistry;
 use crate::app::finalization::finalize_pipeline;
-use crate::app::resume::should_run_from;
 use crate::banner::print_welcome_banner;
 use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
-use crate::checkpoint::restore::{
-    calculate_start_iteration, calculate_start_reviewer_pass, should_skip_phase,
-};
+
 use crate::checkpoint::{
     save_checkpoint, CheckpointBuilder, PipelineCheckpoint, PipelinePhase, RebaseState,
 };
@@ -40,7 +38,6 @@ use crate::cli::{
     handle_list_available_agents, handle_list_providers, handle_show_baseline,
     handle_template_commands, prompt_template_selection, Args,
 };
-use crate::common::utils;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::files::{
     create_prompt_backup, ensure_files, make_prompt_read_only, reset_context_for_isolation,
@@ -54,11 +51,10 @@ use crate::git_helpers::{
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
-use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
+use crate::phases::PhaseContext;
 use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
 use crate::prompts::{get_stored_or_generate_prompt, template_context::TemplateContext};
 use std::env;
-use std::process::Command;
 
 use config_init::initialize_config;
 use context::PipelineContext;
@@ -458,8 +454,11 @@ fn setup_git_and_prompt_file(
     Ok(Some(()))
 }
 
-/// Runs the full development/review/commit pipeline.
+/// Runs the full development/review/commit pipeline using reducer-based event loop.
 fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
+    use crate::app::event_loop::{run_event_loop, EventLoopConfig};
+    use crate::reducer::PipelineState;
+
     // First, offer interactive resume if checkpoint exists without --resume flag
     let resume_result = offer_resume_if_checkpoint_exists(
         &ctx.args,
@@ -638,46 +637,47 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
         );
     }
 
-    // Run pipeline phases
-    run_development(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
-    // Update interrupt context after development
-    update_interrupt_context_from_phase(
-        &phase_ctx,
-        PipelinePhase::Development,
-        config.developer_iters,
-        config.reviewer_reviews,
-        &run_context,
-    );
-    check_prompt_restoration(ctx, &mut prompt_monitor, "development");
-    update_status("In progress.", config.isolation_mode)?;
+    // ============================================
+    // RUN PIPELINE PHASES VIA REDUCER EVENT LOOP
+    // ============================================
 
-    run_review_and_fix(&mut phase_ctx, &ctx.args, resume_checkpoint.as_ref())?;
-    // Update interrupt context after review
-    update_interrupt_context_from_phase(
-        &phase_ctx,
-        PipelinePhase::Review,
-        config.developer_iters,
-        config.reviewer_reviews,
-        &run_context,
-    );
-    check_prompt_restoration(ctx, &mut prompt_monitor, "review");
+    // Initialize pipeline state
+    let initial_state = if let Some(ref checkpoint) = resume_checkpoint {
+        // Migrate from old checkpoint format to new reducer state
+        PipelineState::from(checkpoint.clone())
+    } else {
+        // Create new initial state
+        PipelineState::initial(config.developer_iters, config.reviewer_reviews)
+    };
 
-    // Run post-review rebase (only if explicitly requested via --with-rebase)
-    if should_run_rebase {
-        run_post_review_rebase(ctx, &mut phase_ctx, &run_context)?;
-        // Update interrupt context after post-review rebase
-        update_interrupt_context_from_phase(
-            &phase_ctx,
-            PipelinePhase::PostRebase,
-            config.developer_iters,
-            config.reviewer_reviews,
-            &run_context,
-        );
+    // Configure event loop
+    let event_loop_config = EventLoopConfig {
+        max_iterations: 1000,
+        enable_checkpointing: config.features.checkpoint_enabled,
+    };
+
+    // Clone execution_history and prompt_history BEFORE running event loop (to avoid borrow issues)
+    let execution_history_before = phase_ctx.execution_history.clone();
+    let prompt_history_before = phase_ctx.clone_prompt_history();
+
+    // Run event loop in separate scope to release mutable borrow
+    let loop_result = {
+        let phase_ctx_ref = &mut phase_ctx;
+        run_event_loop(phase_ctx_ref, Some(initial_state), event_loop_config)
+    };
+
+    // Handle event loop result
+    let loop_result = loop_result?;
+    if loop_result.completed {
+        ctx.logger
+            .success("Pipeline completed successfully via reducer event loop");
+        ctx.logger.info(&format!(
+            "Total events processed: {}",
+            loop_result.events_processed
+        ));
+    } else {
+        ctx.logger.warn("Pipeline exited without completion marker");
     }
-
-    update_status("In progress.", config.isolation_mode)?;
-
-    run_final_validation(&phase_ctx, resume_checkpoint.as_ref())?;
 
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled {
@@ -700,13 +700,17 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
             );
 
         let builder = builder
-            .with_execution_history(phase_ctx.execution_history.clone())
-            .with_prompt_history(phase_ctx.clone_prompt_history());
+            .with_execution_history(execution_history_before)
+            .with_prompt_history(prompt_history_before);
 
         if let Some(checkpoint) = builder.build() {
             let _ = save_checkpoint(&checkpoint);
         }
     }
+
+    // Post-pipeline operations
+    check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
+    update_status("In progress.", config.isolation_mode)?;
 
     // Commit phase
     finalize_pipeline(
@@ -1022,187 +1026,6 @@ fn check_prompt_restoration(
             ));
         }
     }
-}
-
-/// Runs the development phase.
-fn run_development(
-    ctx: &mut PhaseContext,
-    args: &Args,
-    resume_checkpoint: Option<&PipelineCheckpoint>,
-) -> anyhow::Result<()> {
-    ctx.logger
-        .header("PHASE 1: Development", crate::logger::Colors::blue);
-
-    // Check if we should skip this phase based on checkpoint
-    if let Some(checkpoint) = resume_checkpoint {
-        if should_skip_phase(PipelinePhase::Development, checkpoint) {
-            ctx.logger
-                .info("Skipping development phase (checkpoint indicates it already completed)");
-            return Ok(());
-        }
-    }
-
-    if !should_run_from(PipelinePhase::Planning, resume_checkpoint) {
-        ctx.logger
-            .info("Skipping development phase (resuming from a later checkpoint phase)");
-        return Ok(());
-    }
-
-    let start_iter = match resume_checkpoint {
-        Some(checkpoint) => calculate_start_iteration(checkpoint, ctx.config.developer_iters),
-        None => 1,
-    };
-
-    let resume_context = if args.recovery.resume {
-        resume_checkpoint.map(|c| c.resume_context())
-    } else {
-        None
-    };
-    let development_result = run_development_phase(ctx, start_iter, resume_context.as_ref())?;
-
-    if development_result.had_errors {
-        ctx.logger
-            .warn("Development phase completed with non-fatal errors");
-    }
-
-    Ok(())
-}
-
-/// Runs the review and fix phase.
-fn run_review_and_fix(
-    ctx: &mut PhaseContext,
-    args: &Args,
-    resume_checkpoint: Option<&PipelineCheckpoint>,
-) -> anyhow::Result<()> {
-    ctx.logger
-        .header("PHASE 2: Review & Fix", crate::logger::Colors::magenta);
-
-    // Check if we should run any reviewer phase
-    let run_any_reviewer_phase = should_run_from(PipelinePhase::Review, resume_checkpoint)
-        || should_run_from(PipelinePhase::Fix, resume_checkpoint)
-        || should_run_from(PipelinePhase::ReviewAgain, resume_checkpoint)
-        || should_run_from(PipelinePhase::CommitMessage, resume_checkpoint);
-
-    let should_run_review_phase = should_run_from(PipelinePhase::Review, resume_checkpoint)
-        || resume_checkpoint
-            .is_some_and(|c| matches!(c.phase, PipelinePhase::Fix | PipelinePhase::ReviewAgain));
-
-    if should_run_review_phase && ctx.config.reviewer_reviews > 0 {
-        let start_pass = match resume_checkpoint {
-            Some(checkpoint) => {
-                calculate_start_reviewer_pass(checkpoint, ctx.config.reviewer_reviews)
-            }
-            None => 1,
-        };
-
-        let resume_context = if args.recovery.resume {
-            resume_checkpoint
-                .filter(|c| {
-                    matches!(
-                        c.phase,
-                        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain
-                    )
-                })
-                .map(|c| c.resume_context())
-        } else {
-            None
-        };
-
-        let review_result = run_review_phase(ctx, start_pass, resume_context.as_ref())?;
-        if review_result.completed_early {
-            ctx.logger
-                .success("Review phase completed early (no issues found)");
-        }
-    } else if run_any_reviewer_phase && ctx.config.reviewer_reviews == 0 {
-        ctx.logger
-            .info("Skipping review phase (reviewer_reviews=0)");
-    } else if run_any_reviewer_phase {
-        ctx.logger
-            .info("Skipping review-fix cycles (resuming from a later checkpoint phase)");
-    }
-
-    // Note: The old dedicated commit phase has been removed.
-    // Commits now happen automatically per-iteration during development and per-cycle during review.
-
-    Ok(())
-}
-
-/// Runs final validation if configured.
-fn run_final_validation(
-    ctx: &PhaseContext,
-    resume_checkpoint: Option<&PipelineCheckpoint>,
-) -> anyhow::Result<()> {
-    let Some(ref full_cmd) = ctx.config.full_check_cmd else {
-        return Ok(());
-    };
-
-    if !should_run_from(PipelinePhase::FinalValidation, resume_checkpoint) {
-        ctx.logger
-            .header("PHASE 3: Final Validation", crate::logger::Colors::yellow);
-        ctx.logger
-            .info("Skipping final validation (resuming from a later checkpoint phase)");
-        return Ok(());
-    }
-
-    let argv = utils::split_command(full_cmd)
-        .map_err(|e| anyhow::anyhow!("FULL_CHECK_CMD parse error: {e}"))?;
-    if argv.is_empty() {
-        ctx.logger
-            .warn("FULL_CHECK_CMD is empty; skipping final validation");
-        return Ok(());
-    }
-
-    if ctx.config.features.checkpoint_enabled {
-        let builder = CheckpointBuilder::new()
-            .phase(
-                PipelinePhase::FinalValidation,
-                ctx.config.developer_iters,
-                ctx.config.developer_iters,
-            )
-            .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
-            .capture_from_context(
-                ctx.config,
-                ctx.registry,
-                ctx.developer_agent,
-                ctx.reviewer_agent,
-                ctx.logger,
-                &ctx.run_context,
-            );
-
-        let builder = builder
-            .with_execution_history(ctx.execution_history.clone())
-            .with_prompt_history(ctx.prompt_history.clone());
-
-        if let Some(checkpoint) = builder.build() {
-            let _ = save_checkpoint(&checkpoint);
-        }
-    }
-
-    ctx.logger
-        .header("PHASE 3: Final Validation", crate::logger::Colors::yellow);
-    let display_cmd = utils::format_argv_for_log(&argv);
-    ctx.logger.info(&format!(
-        "Running full check: {}{}{}",
-        ctx.colors.dim(),
-        display_cmd,
-        ctx.colors.reset()
-    ));
-
-    let Some((program, arguments)) = argv.split_first() else {
-        ctx.logger
-            .error("FULL_CHECK_CMD is empty after parsing; skipping final validation");
-        return Ok(());
-    };
-    let status = Command::new(program).args(arguments).status()?;
-
-    if status.success() {
-        ctx.logger.success("Full check passed");
-    } else {
-        ctx.logger.error("Full check failed");
-        anyhow::bail!("Full check failed");
-    }
-
-    Ok(())
 }
 
 /// Handle --rebase-only flag.
@@ -1629,339 +1452,6 @@ fn run_initial_rebase(
                 "PreRebase",
                 0,
                 "pre_rebase_error",
-                StepOutcome::failure(format!("Rebase error: {e}"), true),
-            );
-            phase_ctx.execution_history.add_step(step);
-            Ok(())
-        }
-    }
-}
-
-/// Run post-review rebase after review phase.
-///
-/// This function is called after the review phase completes to ensure
-/// the feature branch is still up-to-date with the default branch.
-///
-/// Uses a state machine for fault tolerance and automatic recovery from
-/// interruptions or failures.
-///
-/// # Rebase Control
-///
-/// Rebase is only performed when both conditions are met:
-/// - `--with-rebase` CLI flag is set (caller already checked this)
-/// - `auto_rebase` config is enabled (checked here)
-fn run_post_review_rebase(
-    ctx: &PipelineContext,
-    phase_ctx: &mut PhaseContext,
-    run_context: &crate::checkpoint::RunContext,
-) -> anyhow::Result<()> {
-    ctx.logger.header("Post-review rebase", Colors::cyan);
-
-    // Record execution step: post-rebase started
-    let step = ExecutionStep::new(
-        "PostRebase",
-        ctx.config.developer_iters,
-        "post_rebase_start",
-        StepOutcome::success(None, vec![]),
-    );
-    phase_ctx.execution_history.add_step(step);
-
-    // Save checkpoint at start of post-rebase phase
-    if ctx.config.features.checkpoint_enabled {
-        let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
-        let mut builder = CheckpointBuilder::new()
-            .phase(
-                PipelinePhase::PostRebase,
-                ctx.config.developer_iters,
-                ctx.config.developer_iters,
-            )
-            .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
-            .capture_from_context(
-                &ctx.config,
-                &ctx.registry,
-                &ctx.developer_agent,
-                &ctx.reviewer_agent,
-                &ctx.logger,
-                run_context,
-            );
-
-        // Include prompt history and execution history for hardened resume
-        builder = builder
-            .with_execution_history(phase_ctx.execution_history.clone())
-            .with_prompt_history(phase_ctx.clone_prompt_history());
-
-        if let Some(mut checkpoint) = builder.build() {
-            checkpoint.rebase_state = RebaseState::PostRebaseInProgress {
-                upstream_branch: default_branch,
-            };
-            let _ = save_checkpoint(&checkpoint);
-        }
-    }
-
-    match run_rebase_to_default(&ctx.logger, ctx.colors) {
-        Ok(RebaseResult::Success) => {
-            ctx.logger.success("Rebase completed successfully");
-            // Record execution step: post-rebase completed successfully
-            let step = ExecutionStep::new(
-                "PostRebase",
-                ctx.config.developer_iters,
-                "post_rebase_complete",
-                StepOutcome::success(None, vec![]),
-            );
-            phase_ctx.execution_history.add_step(step);
-
-            // Save checkpoint after post-review rebase completes successfully
-            if ctx.config.features.checkpoint_enabled {
-                let builder = CheckpointBuilder::new()
-                    .phase(
-                        PipelinePhase::CommitMessage,
-                        ctx.config.developer_iters,
-                        ctx.config.developer_iters,
-                    )
-                    .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
-                    .skip_rebase(true) // Post-rebase is done
-                    .capture_from_context(
-                        &ctx.config,
-                        &ctx.registry,
-                        &ctx.developer_agent,
-                        &ctx.reviewer_agent,
-                        &ctx.logger,
-                        run_context,
-                    )
-                    .with_execution_history(phase_ctx.execution_history.clone())
-                    .with_prompt_history(phase_ctx.clone_prompt_history());
-
-                if let Some(checkpoint) = builder.build() {
-                    let _ = save_checkpoint(&checkpoint);
-                }
-            }
-
-            Ok(())
-        }
-        Ok(RebaseResult::NoOp { reason }) => {
-            ctx.logger.info(&format!("No rebase needed: {reason}"));
-            // Record execution step: post-rebase skipped
-            let step = ExecutionStep::new(
-                "PostRebase",
-                ctx.config.developer_iters,
-                "post_rebase_skipped",
-                StepOutcome::skipped(reason.clone()),
-            );
-            phase_ctx.execution_history.add_step(step);
-
-            // Save checkpoint after post-review rebase no-op
-            if ctx.config.features.checkpoint_enabled {
-                let builder = CheckpointBuilder::new()
-                    .phase(
-                        PipelinePhase::CommitMessage,
-                        ctx.config.developer_iters,
-                        ctx.config.developer_iters,
-                    )
-                    .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
-                    .skip_rebase(true) // Post-rebase is done
-                    .capture_from_context(
-                        &ctx.config,
-                        &ctx.registry,
-                        &ctx.developer_agent,
-                        &ctx.reviewer_agent,
-                        &ctx.logger,
-                        run_context,
-                    )
-                    .with_execution_history(phase_ctx.execution_history.clone())
-                    .with_prompt_history(phase_ctx.clone_prompt_history());
-
-                if let Some(checkpoint) = builder.build() {
-                    let _ = save_checkpoint(&checkpoint);
-                }
-            }
-
-            Ok(())
-        }
-        Ok(RebaseResult::Conflicts(_conflicts)) => {
-            // Get the actual conflicted files
-            let conflicted_files = get_conflicted_files()?;
-            if conflicted_files.is_empty() {
-                ctx.logger
-                    .warn("Rebase reported conflicts but no conflicted files found");
-                let _ = abort_rebase();
-                return Ok(());
-            }
-
-            // Record execution step: post-rebase conflicts detected
-            let step = ExecutionStep::new(
-                "PostRebase",
-                ctx.config.developer_iters,
-                "post_rebase_conflict",
-                StepOutcome::partial(
-                    "Rebase started".to_string(),
-                    format!("{} conflicts detected", conflicted_files.len()),
-                ),
-            );
-            phase_ctx.execution_history.add_step(step);
-
-            // Save checkpoint for conflict state
-            if ctx.config.features.checkpoint_enabled {
-                let mut builder = CheckpointBuilder::new()
-                    .phase(
-                        PipelinePhase::PostRebaseConflict,
-                        ctx.config.developer_iters,
-                        ctx.config.developer_iters,
-                    )
-                    .reviewer_pass(ctx.config.reviewer_reviews, ctx.config.reviewer_reviews)
-                    .capture_from_context(
-                        &ctx.config,
-                        &ctx.registry,
-                        &ctx.developer_agent,
-                        &ctx.reviewer_agent,
-                        &ctx.logger,
-                        run_context,
-                    );
-
-                // Include prompt history and execution history for hardened resume
-                builder = builder
-                    .with_execution_history(phase_ctx.execution_history.clone())
-                    .with_prompt_history(phase_ctx.clone_prompt_history());
-
-                if let Some(mut checkpoint) = builder.build() {
-                    checkpoint.rebase_state = RebaseState::HasConflicts {
-                        files: conflicted_files.clone(),
-                    };
-                    let _ = save_checkpoint(&checkpoint);
-                }
-            }
-
-            ctx.logger.warn(&format!(
-                "Rebase resulted in {} conflict(s), attempting AI resolution",
-                conflicted_files.len()
-            ));
-
-            // Attempt to resolve conflicts with AI
-            match try_resolve_conflicts_with_fallback(
-                &conflicted_files,
-                &ctx.config,
-                &ctx.template_context,
-                &ctx.logger,
-                ctx.colors,
-                phase_ctx,
-                "PostRebase",
-            ) {
-                Ok(true) => {
-                    // Conflicts resolved, continue the rebase
-                    ctx.logger
-                        .info("Continuing rebase after conflict resolution");
-                    match continue_rebase() {
-                        Ok(()) => {
-                            ctx.logger
-                                .success("Rebase completed successfully after AI resolution");
-                            // Record execution step: conflicts resolved successfully
-                            let step = ExecutionStep::new(
-                                "PostRebase",
-                                ctx.config.developer_iters,
-                                "post_rebase_resolution",
-                                StepOutcome::success(None, vec![]),
-                            );
-                            phase_ctx.execution_history.add_step(step);
-
-                            // Save checkpoint after post-review rebase conflict resolution completes
-                            if ctx.config.features.checkpoint_enabled {
-                                let builder = CheckpointBuilder::new()
-                                    .phase(
-                                        PipelinePhase::CommitMessage,
-                                        ctx.config.developer_iters,
-                                        ctx.config.developer_iters,
-                                    )
-                                    .reviewer_pass(
-                                        ctx.config.reviewer_reviews,
-                                        ctx.config.reviewer_reviews,
-                                    )
-                                    .skip_rebase(true) // Post-rebase is done
-                                    .capture_from_context(
-                                        &ctx.config,
-                                        &ctx.registry,
-                                        &ctx.developer_agent,
-                                        &ctx.reviewer_agent,
-                                        &ctx.logger,
-                                        run_context,
-                                    )
-                                    .with_execution_history(phase_ctx.execution_history.clone())
-                                    .with_prompt_history(phase_ctx.clone_prompt_history());
-
-                                if let Some(checkpoint) = builder.build() {
-                                    let _ = save_checkpoint(&checkpoint);
-                                }
-                            }
-
-                            Ok(())
-                        }
-                        Err(e) => {
-                            ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
-                            let _ = abort_rebase();
-                            // Record execution step: resolution succeeded but continue failed
-                            let step = ExecutionStep::new(
-                                "PostRebase",
-                                ctx.config.developer_iters,
-                                "post_rebase_resolution",
-                                StepOutcome::partial(
-                                    "Conflicts resolved by AI".to_string(),
-                                    format!("Failed to continue rebase: {e}"),
-                                ),
-                            );
-                            phase_ctx.execution_history.add_step(step);
-                            Ok(()) // Continue anyway - conflicts were resolved
-                        }
-                    }
-                }
-                Ok(false) => {
-                    // AI resolution failed
-                    ctx.logger
-                        .warn("AI conflict resolution failed, aborting rebase");
-                    let _ = abort_rebase();
-                    // Record execution step: resolution failed
-                    let step = ExecutionStep::new(
-                        "PostRebase",
-                        ctx.config.developer_iters,
-                        "post_rebase_resolution",
-                        StepOutcome::failure("AI conflict resolution failed".to_string(), true),
-                    );
-                    phase_ctx.execution_history.add_step(step);
-                    Ok(()) // Continue pipeline - don't block on rebase failure
-                }
-                Err(e) => {
-                    ctx.logger.error(&format!("Conflict resolution error: {e}"));
-                    let _ = abort_rebase();
-                    // Record execution step: resolution error
-                    let step = ExecutionStep::new(
-                        "PostRebase",
-                        ctx.config.developer_iters,
-                        "post_rebase_resolution",
-                        StepOutcome::failure(format!("Conflict resolution error: {e}"), true),
-                    );
-                    phase_ctx.execution_history.add_step(step);
-                    Ok(()) // Continue pipeline
-                }
-            }
-        }
-        Ok(RebaseResult::Failed(err)) => {
-            ctx.logger.error(&format!("Rebase failed: {err}"));
-            let _ = abort_rebase();
-            // Record execution step: rebase failed
-            let step = ExecutionStep::new(
-                "PostRebase",
-                ctx.config.developer_iters,
-                "post_rebase_failed",
-                StepOutcome::failure(format!("Rebase failed: {err}"), true),
-            );
-            phase_ctx.execution_history.add_step(step);
-            Ok(()) // Continue pipeline despite failure
-        }
-        Err(e) => {
-            ctx.logger
-                .warn(&format!("Rebase failed, continuing without rebase: {e}"));
-            // Record execution step: rebase error
-            let step = ExecutionStep::new(
-                "PostRebase",
-                ctx.config.developer_iters,
-                "post_rebase_error",
                 StepOutcome::failure(format!("Rebase error: {e}"), true),
             );
             phase_ctx.execution_history.add_step(step);

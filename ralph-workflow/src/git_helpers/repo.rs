@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Basic git repository operations.
 //!
 //! Provides fundamental git operations used throughout the application:

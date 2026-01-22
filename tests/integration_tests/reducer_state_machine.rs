@@ -1,0 +1,528 @@
+//! Reducer state machine integration tests.
+//!
+//! These tests verify that reducer state machine handles all transitions correctly
+//! in real pipeline execution. Tests verify actual state changes through event
+//! emission and reduce() function, not just unit tests of individual transitions.
+//!
+//! # Integration Test Style Guide
+//!
+//! **CRITICAL:** All tests in this module MUST follow integration test style guide
+//! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//!
+//! Key principles applied in this module:
+//! - Tests verify **observable behavior** (state machine transitions)
+//! - Tests are deterministic and isolated
+//! - Tests verify that reducer produces correct state for each event
+
+use ralph_workflow::agents::AgentRole;
+use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};
+use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
+
+use crate::test_timeout::with_default_timeout;
+
+fn create_initial_state() -> PipelineState {
+    PipelineState::initial(5, 2)
+}
+
+fn create_state_with_agent_chain() -> PipelineState {
+    PipelineState {
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec!["model1".to_string(), "model2".to_string()]],
+            AgentRole::Developer,
+        ),
+        ..PipelineState::initial(5, 2)
+    }
+}
+
+fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
+    ralph_workflow::reducer::state_reduction::reduce(state, event)
+}
+
+#[test]
+fn test_planning_to_development_transition() {
+    with_default_timeout(|| {
+        let state = create_initial_state();
+        let new_state = reduce(state, PipelineEvent::PlanningPhaseCompleted);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+#[test]
+fn test_development_phase_starts() {
+    with_default_timeout(|| {
+        let state = create_initial_state();
+        let new_state = reduce(state, PipelineEvent::DevelopmentPhaseStarted);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+#[test]
+fn test_development_to_review_transition() {
+    with_default_timeout(|| {
+        let state = create_initial_state();
+        let new_state = reduce(state, PipelineEvent::DevelopmentPhaseCompleted);
+        assert_eq!(new_state.phase, PipelinePhase::Review);
+    });
+}
+
+#[test]
+fn test_review_phase_starts() {
+    with_default_timeout(|| {
+        let state = create_initial_state();
+        let new_state = reduce(state, PipelineEvent::ReviewPhaseStarted);
+        assert_eq!(new_state.phase, PipelinePhase::Review);
+        assert_eq!(new_state.reviewer_pass, 0);
+    });
+}
+
+#[test]
+fn test_review_to_commit_message_transition() {
+    with_default_timeout(|| {
+        let state = create_initial_state();
+        let new_state = reduce(
+            state,
+            PipelineEvent::ReviewPhaseCompleted { early_exit: false },
+        );
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    });
+}
+
+#[test]
+fn test_commit_message_to_final_validation_on_commit() {
+    with_default_timeout(|| {
+        let state = create_initial_state();
+        let new_state = reduce(
+            state,
+            PipelineEvent::CommitCreated {
+                hash: "abc123".to_string(),
+                message: "test commit".to_string(),
+            },
+        );
+        assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
+    });
+}
+
+#[test]
+fn test_commit_message_to_final_validation_on_skip() {
+    with_default_timeout(|| {
+        let state = create_initial_state();
+        let new_state = reduce(
+            state,
+            PipelineEvent::CommitSkipped {
+                reason: "no changes".to_string(),
+            },
+        );
+        assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
+    });
+}
+
+#[test]
+fn test_pipeline_complete_transition() {
+    with_default_timeout(|| {
+        let state = create_initial_state();
+        let new_state = reduce(state, PipelineEvent::PipelineCompleted);
+        assert_eq!(new_state.phase, PipelinePhase::Complete);
+    });
+}
+
+#[test]
+fn test_development_iteration_increments() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 2,
+            total_iterations: 5,
+            ..create_initial_state()
+        };
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationCompleted {
+                iteration: 2,
+                output_valid: true,
+            },
+        );
+        assert_eq!(new_state.iteration, 3);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+#[test]
+fn test_development_iteration_complete_moves_to_review() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 5,
+            total_iterations: 5,
+            ..create_initial_state()
+        };
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationCompleted {
+                iteration: 5,
+                output_valid: true,
+            },
+        );
+        assert_eq!(new_state.iteration, 6);
+        assert_eq!(new_state.phase, PipelinePhase::Review);
+    });
+}
+
+#[test]
+fn test_development_iteration_started_resets_agent_chain() {
+    with_default_timeout(|| {
+        let mut state = create_state_with_agent_chain();
+        state = reduce(
+            state,
+            PipelineEvent::AgentFallbackTriggered {
+                role: AgentRole::Developer,
+                from_agent: "agent1".to_string(),
+                to_agent: "agent2".to_string(),
+            },
+        );
+        assert_eq!(state.agent_chain.current_agent().unwrap(), "agent2");
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
+        );
+        assert_eq!(new_state.iteration, 2);
+        assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent1");
+    });
+}
+
+#[test]
+fn test_review_pass_increments() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 1,
+            total_reviewer_passes: 2,
+            ..create_initial_state()
+        };
+        let new_state = reduce(
+            state,
+            PipelineEvent::FixAttemptCompleted {
+                pass: 1,
+                changes_made: true,
+            },
+        );
+        assert_eq!(new_state.reviewer_pass, 2);
+    });
+}
+
+#[test]
+fn test_review_pass_complete_moves_to_commit_message() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 2,
+            total_reviewer_passes: 2,
+            ..create_initial_state()
+        };
+        let new_state = reduce(
+            state,
+            PipelineEvent::FixAttemptCompleted {
+                pass: 2,
+                changes_made: true,
+            },
+        );
+        assert_eq!(new_state.reviewer_pass, 3);
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    });
+}
+
+#[test]
+fn test_agent_chain_resets_on_new_iteration() {
+    with_default_timeout(|| {
+        let mut state = create_state_with_agent_chain();
+        state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::Network,
+                retriable: true,
+            },
+        );
+        assert_eq!(state.agent_chain.current_model_index, 1);
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
+        );
+        assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent1");
+        assert_eq!(new_state.agent_chain.current_model_index, 0);
+    });
+}
+
+#[test]
+fn test_agent_chain_advances_on_model_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain();
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::Network,
+                retriable: true,
+            },
+        );
+        assert!(new_state.agent_chain.current_model_index > 0);
+    });
+}
+
+#[test]
+fn test_agent_fallback_on_auth_error() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        // Simulate non-retriable error (auth) - should switch to next agent
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::Authentication,
+                retriable: false,
+            },
+        );
+
+        // Should switch to next agent
+        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+        assert_eq!(new_state.agent_chain.current_model_index, 0);
+    });
+}
+
+#[test]
+fn test_agent_chain_exhausted_triggers_retry_cycle() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            agent_chain: AgentChainState::initial()
+                .with_agents(
+                    vec!["agent1".to_string()],
+                    vec![vec!["model1".to_string()]],
+                    AgentRole::Developer,
+                )
+                .with_max_cycles(3),
+            ..create_initial_state()
+        };
+
+        // Simulate chain exhausted event
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentChainExhausted {
+                role: AgentRole::Developer,
+            },
+        );
+
+        // Should start retry cycle
+        assert_eq!(new_state.agent_chain.current_agent_index, 0);
+        assert_eq!(new_state.agent_chain.current_model_index, 0);
+        assert_eq!(new_state.agent_chain.retry_cycle, 1);
+    });
+}
+
+#[test]
+fn test_sigsegv_causes_agent_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        // Simulate SIGSEGV (exit code 139, non-retriable)
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 139,
+                error_kind: AgentErrorKind::InternalError,
+                retriable: false,
+            },
+        );
+
+        // Should switch to next agent, not crash pipeline
+        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+    });
+}
+
+#[test]
+fn test_pipeline_continues_after_agent_failure() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec!["model1".to_string()]],
+                AgentRole::Developer,
+            ),
+            ..create_initial_state()
+        };
+        let initial_agent = state.agent_chain.current_agent_index;
+
+        // Agent fails with retriable error
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::Network,
+                retriable: true,
+            },
+        );
+
+        // Pipeline should continue with same agent, different model
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+        assert_eq!(new_state.agent_chain.current_agent_index, initial_agent);
+    });
+}
+
+#[test]
+fn test_network_error_triggers_model_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain();
+
+        // Simulate network error (retriable) - should trigger model fallback event
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::Network,
+                retriable: true,
+            },
+        );
+
+        // Should advance to next model, not agent
+        assert_eq!(new_state.agent_chain.current_agent_index, 0);
+        assert!(new_state.agent_chain.current_model_index > 0);
+    });
+}
+
+#[test]
+fn test_filesystem_error_triggers_agent_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        // Simulate filesystem error (non-retriable) - should trigger agent fallback
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::FileSystem,
+                retriable: false,
+            },
+        );
+
+        // Should switch to next agent
+        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+    });
+}
+
+#[test]
+fn test_rate_limit_error_triggers_model_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain();
+
+        // Simulate rate limit error (retriable) - should trigger model fallback
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::RateLimit,
+                retriable: true,
+            },
+        );
+
+        // Should advance to next model
+        assert_eq!(new_state.agent_chain.current_agent_index, 0);
+        assert!(new_state.agent_chain.current_model_index > 0);
+    });
+}
+
+#[test]
+fn test_authentication_error_triggers_agent_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        // Simulate auth error (non-retriable) - should trigger agent fallback
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::Authentication,
+                retriable: false,
+            },
+        );
+
+        // Should switch to next agent
+        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+    });
+}
+
+#[test]
+fn test_internal_error_triggers_agent_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        // Simulate internal error (non-retriable) - should trigger agent fallback
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::InternalError,
+                retriable: false,
+            },
+        );
+
+        // Should switch to next agent
+        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+    });
+}
+
+#[test]
+fn test_event_replay_reproduces_final_state() {
+    with_default_timeout(|| {
+        let initial_state = create_initial_state();
+
+        let events = vec![
+            PipelineEvent::DevelopmentPhaseStarted,
+            PipelineEvent::DevelopmentIterationStarted { iteration: 1 },
+            PipelineEvent::DevelopmentIterationCompleted {
+                iteration: 1,
+                output_valid: true,
+            },
+            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
+            PipelineEvent::DevelopmentIterationCompleted {
+                iteration: 2,
+                output_valid: true,
+            },
+            PipelineEvent::DevelopmentIterationCompleted {
+                iteration: 3,
+                output_valid: true,
+            },
+            PipelineEvent::PipelineCompleted,
+        ];
+
+        let final_state = events.into_iter().fold(initial_state, reduce);
+
+        assert_eq!(final_state.phase, PipelinePhase::Complete);
+        assert_eq!(final_state.iteration, 4);
+    });
+}

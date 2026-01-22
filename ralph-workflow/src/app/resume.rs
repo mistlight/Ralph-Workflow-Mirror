@@ -962,39 +962,6 @@ fn display_checkpoint_summary(checkpoint: &PipelineCheckpoint, logger: &Logger) 
 }
 
 /// Helper to get phase rank for resume logic.
-///
-/// Lower ranks = earlier in pipeline. Used to determine which phases
-/// should run when resuming from a checkpoint.
-pub const fn phase_rank(p: PipelinePhase) -> u8 {
-    match p {
-        PipelinePhase::Rebase => 0, // Backward compatibility with old checkpoints
-        PipelinePhase::Planning => 1,
-        PipelinePhase::PreRebase => 2,
-        PipelinePhase::PreRebaseConflict => 3,
-        PipelinePhase::Development => 4,
-        PipelinePhase::Review => 5,
-        PipelinePhase::Fix => 6,
-        PipelinePhase::ReviewAgain => 7,
-        PipelinePhase::PostRebase => 8,
-        PipelinePhase::PostRebaseConflict => 9,
-        PipelinePhase::CommitMessage => 10,
-        PipelinePhase::FinalValidation => 11,
-        PipelinePhase::Complete => 12,
-        PipelinePhase::Interrupted => 13, // Highest rank, run everything
-    }
-}
-
-/// Determines if a phase should run based on resume checkpoint.
-pub const fn should_run_from(
-    phase: PipelinePhase,
-    resume_checkpoint: Option<&PipelineCheckpoint>,
-) -> bool {
-    match resume_checkpoint {
-        None => true,
-        Some(checkpoint) => phase_rank(phase) >= phase_rank(checkpoint.phase),
-    }
-}
-
 /// Create a visual progress bar for checkpoint summary display.
 fn create_progress_bar(current: u32, total: u32) -> String {
     if total == 0 {

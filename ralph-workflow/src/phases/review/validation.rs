@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Review phase validation checks.
 //!
 //! This module contains pre-flight and post-flight validation logic for the review phase.

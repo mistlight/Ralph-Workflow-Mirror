@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Phase execution context.
 //!
 //! This module defines the shared context that is passed to each phase

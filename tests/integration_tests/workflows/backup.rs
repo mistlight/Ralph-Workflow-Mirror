@@ -169,44 +169,40 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn backup_not_deleted_during_cleanup() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
+    use crate::test_timeout::with_default_timeout;
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _ = init_git_repo(&dir);
 
-            let backup_path = dir.path().join(".agent/PROMPT.md.backup");
+        let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
-            // Create a minimal PROMPT.md
-            create_prompt_file(&dir, "# Test\n");
+        // Create a minimal PROMPT.md
+        create_prompt_file(&dir, "# Test\n");
 
-            // Run Ralph to create backup
-            create_plan_file(&dir);
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run Ralph to create backup
+        create_plan_file(&dir);
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert()
-                .success()
-                .stdout(predicate::str::contains("Pipeline Complete"));
+        cmd.assert()
+            .success()
+            .stdout(predicate::str::contains("Pipeline Complete"));
 
-            // Verify backup exists
-            assert!(backup_path.exists());
+        // Verify backup exists
+        assert!(backup_path.exists());
 
-            // Run Ralph again - cleanup shouldn't delete backup
-            create_plan_file(&dir);
-            let mut cmd2 = ralph_cmd();
-            base_env(&mut cmd2).current_dir(dir.path());
+        // Run Ralph again - cleanup shouldn't delete backup
+        create_plan_file(&dir);
+        let mut cmd2 = ralph_cmd();
+        base_env(&mut cmd2).current_dir(dir.path());
 
-            cmd2.assert()
-                .success()
-                .stdout(predicate::str::contains("Pipeline Complete"));
+        cmd2.assert()
+            .success()
+            .stdout(predicate::str::contains("Pipeline Complete"));
 
-            // Verify backup still exists (wasn't cleaned up)
-            assert!(backup_path.exists());
-        },
-        Duration::from_secs(30),
-    );
+        // Verify backup still exists (wasn't cleaned up)
+        assert!(backup_path.exists());
+    });
 }
 
 /// Test that the backup file has read-only permissions.
@@ -274,57 +270,52 @@ fn backup_has_readonly_permissions() {
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn periodic_restoration_works_during_pipeline() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // This test verifies that backup is created and persists across runs.
-            //
-            // Note: The actual "periodic restoration during execution" requires
-            // agent execution to trigger the integrity monitor during runtime.
-            // This test verifies the backup creation and persistence functionality.
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
+    with_default_timeout(|| {
+        // This test verifies that backup is created and persists across runs.
+        //
+        // Note: The actual "periodic restoration during execution" requires
+        // agent execution to trigger the integrity monitor during runtime.
+        // This test verifies the backup creation and persistence functionality.
+        let dir = TempDir::new().unwrap();
+        let _ = init_git_repo(&dir);
 
-            let original_content = "# Test Requirements\nTest task";
-            let prompt_path = dir.path().join("PROMPT.md");
-            let backup_path = dir.path().join(".agent/PROMPT.md.backup");
+        let original_content = "# Test Requirements\nTest task";
+        let prompt_path = dir.path().join("PROMPT.md");
+        let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
-            // Create initial PROMPT.md
-            create_prompt_file(&dir, original_content);
+        // Create initial PROMPT.md
+        create_prompt_file(&dir, original_content);
 
-            // Initial run to create backup
-            create_plan_file(&dir);
-            let mut cmd1 = ralph_cmd();
-            base_env(&mut cmd1).current_dir(dir.path());
+        // Initial run to create backup
+        create_plan_file(&dir);
+        let mut cmd1 = ralph_cmd();
+        base_env(&mut cmd1).current_dir(dir.path());
 
-            cmd1.assert()
-                .success()
-                .stdout(predicate::str::contains("Pipeline Complete"));
+        cmd1.assert()
+            .success()
+            .stdout(predicate::str::contains("Pipeline Complete"));
 
-            // Verify backup was created
-            assert!(backup_path.exists());
+        // Verify backup was created
+        assert!(backup_path.exists());
 
-            // Run again - backup should persist
-            create_plan_file(&dir);
-            let mut cmd2 = ralph_cmd();
-            base_env(&mut cmd2).current_dir(dir.path());
+        // Run again - backup should persist
+        create_plan_file(&dir);
+        let mut cmd2 = ralph_cmd();
+        base_env(&mut cmd2).current_dir(dir.path());
 
-            cmd2.assert()
-                .success()
-                .stdout(predicate::str::contains("Pipeline Complete"));
+        cmd2.assert()
+            .success()
+            .stdout(predicate::str::contains("Pipeline Complete"));
 
-            // Verify backup still exists and has correct content
-            assert!(prompt_path.exists());
-            assert!(backup_path.exists());
-            let backup_content = fs::read_to_string(&backup_path).unwrap();
-            assert_eq!(backup_content, original_content);
+        // Verify backup still exists and has correct content
+        assert!(prompt_path.exists());
+        assert!(backup_path.exists());
+        let backup_content = fs::read_to_string(&backup_path).unwrap();
+        assert_eq!(backup_content, original_content);
 
-            // Note: Runtime periodic restoration is tested via unit tests
-            // with mock file operations handlers.
-        },
-        Duration::from_secs(30),
-    );
+        // Note: Runtime periodic restoration is tested via unit tests
+        // with mock file operations handlers.
+    });
 }
 
 /// Test that backup rotation maintains multiple backup versions.
@@ -337,53 +328,48 @@ fn periodic_restoration_works_during_pipeline() {
 /// which may exceed the default 10-second timeout on slower systems.
 #[test]
 fn backup_rotation_maintains_multiple_backups() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _ = init_git_repo(&dir);
 
-            let backup_base = dir.path().join(".agent/PROMPT.md.backup");
-            let backup_1 = dir.path().join(".agent/PROMPT.md.backup.1");
-            let backup_2 = dir.path().join(".agent/PROMPT.md.backup.2");
+        let backup_base = dir.path().join(".agent/PROMPT.md.backup");
+        let backup_1 = dir.path().join(".agent/PROMPT.md.backup.1");
+        let backup_2 = dir.path().join(".agent/PROMPT.md.backup.2");
 
-            // Create initial PROMPT.md
-            create_prompt_file(&dir, "# Test\n");
+        // Create initial PROMPT.md
+        create_prompt_file(&dir, "# Test\n");
 
-            // Run Ralph multiple times to create multiple backups
-            for _ in 0..3 {
-                create_plan_file(&dir);
-                let mut cmd = ralph_cmd();
-                base_env(&mut cmd).current_dir(dir.path());
+        // Run Ralph multiple times to create multiple backups
+        for _ in 0..3 {
+            create_plan_file(&dir);
+            let mut cmd = ralph_cmd();
+            base_env(&mut cmd).current_dir(dir.path());
 
-                cmd.assert()
-                    .success()
-                    .stdout(predicate::str::contains("Pipeline Complete"));
+            cmd.assert()
+                .success()
+                .stdout(predicate::str::contains("Pipeline Complete"));
+        }
+
+        // Verify all 3 backup levels exist
+        assert!(backup_base.exists());
+        assert!(backup_1.exists());
+        assert!(backup_2.exists());
+
+        // On Unix systems, check that all backups are read-only
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for backup_path in &[&backup_base, &backup_1, &backup_2] {
+                let metadata = fs::metadata(backup_path).unwrap();
+                let permissions = metadata.permissions();
+                let mode = permissions.mode();
+                assert!(
+                    mode & 0o222 == 0,
+                    "Backup file should not have write permissions"
+                );
             }
-
-            // Verify all 3 backup levels exist
-            assert!(backup_base.exists());
-            assert!(backup_1.exists());
-            assert!(backup_2.exists());
-
-            // On Unix systems, check that all backups are read-only
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                for backup_path in &[&backup_base, &backup_1, &backup_2] {
-                    let metadata = fs::metadata(backup_path).unwrap();
-                    let permissions = metadata.permissions();
-                    let mode = permissions.mode();
-                    assert!(
-                        mode & 0o222 == 0,
-                        "Backup file should not have write permissions"
-                    );
-                }
-            }
-        },
-        Duration::from_secs(30),
-    );
+        }
+    });
 }
 
 /// Test that the oldest backup is deleted when exceeding the rotation limit.
@@ -395,35 +381,30 @@ fn backup_rotation_maintains_multiple_backups() {
 /// which may exceed the default 10-second timeout on slower systems.
 #[test]
 fn backup_oldest_deleted_when_exceeding_limit() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _ = init_git_repo(&dir);
 
-            let backup_2 = dir.path().join(".agent/PROMPT.md.backup.2");
-            let backup_3 = dir.path().join(".agent/PROMPT.md.backup.3");
+        let backup_2 = dir.path().join(".agent/PROMPT.md.backup.2");
+        let backup_3 = dir.path().join(".agent/PROMPT.md.backup.3");
 
-            // Run Ralph 4 times - should only keep 3 backups
-            for _ in 0..4 {
-                create_plan_file(&dir);
-                let mut cmd = ralph_cmd();
-                base_env(&mut cmd).current_dir(dir.path());
+        // Run Ralph 4 times - should only keep 3 backups
+        for _ in 0..4 {
+            create_plan_file(&dir);
+            let mut cmd = ralph_cmd();
+            base_env(&mut cmd).current_dir(dir.path());
 
-                cmd.assert()
-                    .success()
-                    .stdout(predicate::str::contains("Pipeline Complete"));
-            }
+            cmd.assert()
+                .success()
+                .stdout(predicate::str::contains("Pipeline Complete"));
+        }
 
-            // Verify .backup.3 doesn't exist (oldest was deleted)
-            assert!(!backup_3.exists());
+        // Verify .backup.3 doesn't exist (oldest was deleted)
+        assert!(!backup_3.exists());
 
-            // Verify .backup.2 exists (this is the oldest kept backup)
-            assert!(backup_2.exists());
-        },
-        Duration::from_secs(30),
-    );
+        // Verify .backup.2 exists (this is the oldest kept backup)
+        assert!(backup_2.exists());
+    });
 }
 
 /// Test that restoration falls back to backup files when primary is corrupted.
@@ -435,53 +416,19 @@ fn backup_oldest_deleted_when_exceeding_limit() {
 /// which may exceed the default 10-second timeout on slower systems.
 #[test]
 fn restore_from_fallback_backup_when_primary_corrupted() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // This test verifies that when the primary backup is corrupted or missing,
-            // the system can still restore PROMPT.md from a fallback backup if available.
-            // This is an important edge case for backup integrity and recovery.
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
+    with_default_timeout(|| {
+        // This test verifies that when the primary backup is corrupted or missing,
+        // the system can still restore PROMPT.md from a fallback backup if available.
+        // This is an important edge case for backup integrity and recovery.
+        let dir = TempDir::new().unwrap();
+        let _ = init_git_repo(&dir);
 
-            let prompt_path = dir.path().join("PROMPT.md");
-            let backup_base = dir.path().join(".agent/PROMPT.md.backup");
-            let backup_1 = dir.path().join(".agent/PROMPT.md.backup.1");
+        let prompt_path = dir.path().join("PROMPT.md");
+        let backup_base = dir.path().join(".agent/PROMPT.md.backup");
+        let backup_1 = dir.path().join(".agent/PROMPT.md.backup.1");
 
-            // Run Ralph twice to create multiple backups
-            for _ in 0..2 {
-                create_plan_file(&dir);
-                let mut cmd = ralph_cmd();
-                base_env(&mut cmd).current_dir(dir.path());
-
-                cmd.assert()
-                    .success()
-                    .stdout(predicate::str::contains("Pipeline Complete"));
-            }
-
-            // Verify both backups exist
-            assert!(backup_base.exists(), "Primary backup should exist");
-            assert!(backup_1.exists(), "First rotated backup should exist");
-
-            // Read the original content from backup_1 (the fallback)
-            // First make it writable since backups are read-only by design
-            make_writable(&backup_1);
-            let fallback_content = fs::read_to_string(&backup_1).unwrap();
-
-            // Corrupt the primary backup (simulate corruption)
-            // First make the backup writable since it's read-only by design
-            make_writable(&backup_base);
-            fs::write(&backup_base, "CORRUPTED CONTENT").unwrap();
-
-            // Simulate the scenario where PROMPT.md was lost (e.g., system crash) and needs to be
-            // restored from a fallback backup. Restore PROMPT.md from the fallback backup manually
-            // to simulate what would happen after a crash, then verify Ralph runs successfully.
-            // First make sure PROMPT.md is writable (it might be read-only from previous runs)
-            make_writable(&prompt_path);
-            fs::write(&prompt_path, &fallback_content).unwrap();
-
-            // Run Ralph again - it should successfully run with the restored PROMPT.md
+        // Run Ralph twice to create multiple backups
+        for _ in 0..2 {
             create_plan_file(&dir);
             let mut cmd = ralph_cmd();
             base_env(&mut cmd).current_dir(dir.path());
@@ -489,23 +436,52 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
             cmd.assert()
                 .success()
                 .stdout(predicate::str::contains("Pipeline Complete"));
+        }
 
-            // Verify PROMPT.md exists and has valid content
-            assert!(prompt_path.exists(), "PROMPT.md should exist");
+        // Verify both backups exist
+        assert!(backup_base.exists(), "Primary backup should exist");
+        assert!(backup_1.exists(), "First rotated backup should exist");
 
-            // The content should match the fallback backup (not the corrupted primary)
-            let final_content = fs::read_to_string(&prompt_path).unwrap();
-            assert_eq!(
-                final_content, fallback_content,
-                "PROMPT.md should have the content from the fallback backup"
-            );
-            assert!(
-                !final_content.contains("CORRUPTED"),
-                "PROMPT.md should not have the corrupted content from the primary backup"
-            );
-        },
-        Duration::from_secs(30),
-    );
+        // Read the original content from backup_1 (the fallback)
+        // First make it writable since backups are read-only by design
+        make_writable(&backup_1);
+        let fallback_content = fs::read_to_string(&backup_1).unwrap();
+
+        // Corrupt the primary backup (simulate corruption)
+        // First make the backup writable since it's read-only by design
+        make_writable(&backup_base);
+        fs::write(&backup_base, "CORRUPTED CONTENT").unwrap();
+
+        // Simulate the scenario where PROMPT.md was lost (e.g., system crash) and needs to be
+        // restored from a fallback backup. Restore PROMPT.md from the fallback backup manually
+        // to simulate what would happen after a crash, then verify Ralph runs successfully.
+        // First make sure PROMPT.md is writable (it might be read-only from previous runs)
+        make_writable(&prompt_path);
+        fs::write(&prompt_path, &fallback_content).unwrap();
+
+        // Run Ralph again - it should successfully run with the restored PROMPT.md
+        create_plan_file(&dir);
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
+
+        cmd.assert()
+            .success()
+            .stdout(predicate::str::contains("Pipeline Complete"));
+
+        // Verify PROMPT.md exists and has valid content
+        assert!(prompt_path.exists(), "PROMPT.md should exist");
+
+        // The content should match the fallback backup (not the corrupted primary)
+        let final_content = fs::read_to_string(&prompt_path).unwrap();
+        assert_eq!(
+            final_content, fallback_content,
+            "PROMPT.md should have the content from the fallback backup"
+        );
+        assert!(
+            !final_content.contains("CORRUPTED"),
+            "PROMPT.md should not have corrupted content from primary backup"
+        );
+    });
 }
 
 /// Test that backup creation works when PROMPT.md exists.

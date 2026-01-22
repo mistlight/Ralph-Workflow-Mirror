@@ -13,42 +13,17 @@
 //! - **Incremental review**: DEPRECATED - now uses standard_review template
 //! - **Universal review**: Simplified prompt for maximum agent compatibility
 
-use super::super::partials::get_shared_partials;
+#[cfg(test)]
 use super::super::types::ContextLevel;
+#[cfg(test)]
 use super::super::Template;
-use crate::git_helpers::{DiffReviewContent, DiffTruncationLevel};
-use crate::prompts::template_context::TemplateContext;
-use std::collections::HashMap;
-
-/// Load and render a template from a string with the given variables.
-///
-/// Templates are embedded at compile time via `include_str!`, so any failure
-/// indicates a programming error (missing template file or malformed template).
-/// Returns a minimal fallback prompt on failure to ensure the review phase can proceed.
-///
-/// This version supports partials via the `{{> partial_name}}` syntax.
-fn load_template_str(template_content: &str, variables: &HashMap<&str, String>) -> String {
-    let template = Template::new(template_content);
-    let partials = get_shared_partials();
-    template
-        .render_with_partials(variables, &partials)
-        .unwrap_or_else(|_e| {
-            // Fallback to minimal prompt that still includes the diff
-            // This ensures the review phase can proceed even if template rendering fails
-            let diff = variables.get("DIFF").map_or("", String::as_str);
-            format!(
-                "Review the following changes:\n\n{diff}\n\n\
-             Provide feedback on any issues found."
-            )
-        })
-}
 
 /// Generate detailed reviewer review prompt without language-specific guidelines,
-/// including the diff directly in the prompt.
+/// including diff directly in prompt.
 ///
-/// This version receives the diff as a parameter instead of telling the agent
+/// This version receives diff as a parameter instead of telling the agent
 /// to run git commands. This keeps agents isolated from git operations and
-/// ensures they only review the changes made since the pipeline started.
+/// ensures they only review changes made since the pipeline started.
 ///
 /// The reviewer returns structured issues data (captured by JSON parser)
 /// and the orchestrator writes it to .agent/ISSUES.md.
@@ -66,6 +41,9 @@ pub fn prompt_detailed_review_without_guidelines_with_diff(
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
+    use crate::prompts::template_context::TemplateContext;
+    use std::collections::HashMap;
+
     // NOTE: ContextLevel is now ignored - we use the consolidated standard_review template
     // The "detailed_review" template has been deprecated as it relied on non-existent partials
     let template_content = include_str!("templates/standard_review.txt");
@@ -78,183 +56,17 @@ pub fn prompt_detailed_review_without_guidelines_with_diff(
         ("EXPLORATION_REQUIRED", String::new()),
         ("EXPLORATION_MODE", String::new()),
     ]);
-    load_template_str(template_content, &variables)
-}
-
-/// Generate detailed reviewer review prompt without language-specific guidelines,
-/// including the diff directly in the prompt, using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-///
-/// # Arguments
-///
-/// * `template_context` - Template context containing the template registry
-/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
-/// * `diff_content` - The diff content with truncation metadata
-/// * `prompt_content` - The original user request (PROMPT.md content)
-/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
-pub fn prompt_detailed_review_without_guidelines_with_diff_with_context(
-    template_context: &TemplateContext,
-    _context: ContextLevel,
-    diff_content: &DiffReviewContent,
-    prompt_content: &str,
-    plan_content: &str,
-) -> String {
-    // NOTE: ContextLevel is now ignored - we use the consolidated standard_review template
-    // The "detailed_review" template has been deprecated as it relied on non-existent partials
-    let template_name = "standard_review";
-
-    let tmpl_content = template_context
-        .registry()
-        .get_template(template_name)
-        .unwrap_or_else(|_| include_str!("templates/standard_review.txt").to_string());
-
-    // Build exploration instruction text
-    let exploration_instruction = build_exploration_instruction(diff_content);
-
-    // Build diff context header
-    let diff_context = diff_content.format_context_header();
-
-    let variables = HashMap::from([
-        ("PROMPT", prompt_content.to_string()),
-        ("PLAN", plan_content.to_string()),
-        ("DIFF", diff_content.content.clone()),
-        ("DIFF_CONTEXT", diff_context),
-        ("GUIDELINES", "".to_string()), // No guidelines for unguided review
-        ("EXPLORATION_REQUIRED", exploration_instruction),
-        (
-            "EXPLORATION_MODE",
-            if diff_content.truncation_level != DiffTruncationLevel::Full {
-                "true".to_string()
-            } else {
-                String::new()
-            },
-        ),
-    ]);
-    load_template_str(&tmpl_content, &variables)
-}
-
-/// Generate incremental review prompt with diff included directly, using template registry.
-///
-/// DEPRECATED: Incremental review now uses the standard_review template.
-/// The incremental concept was redundant with the existing baseline tracking.
-///
-/// # Arguments
-///
-/// * `template_context` - Template context containing the template registry
-/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
-/// * `diff_content` - The diff content with truncation metadata
-/// * `prompt_content` - The original user request (PROMPT.md content)
-/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
-pub fn prompt_incremental_review_with_diff_with_context(
-    template_context: &TemplateContext,
-    _context: ContextLevel,
-    diff_content: &DiffReviewContent,
-    prompt_content: &str,
-    plan_content: &str,
-) -> String {
-    // NOTE: ContextLevel is now ignored - we use the consolidated standard_review template
-    // The "incremental_review" template has been deprecated - baseline tracking provides this functionality
-    let template_name = "standard_review";
-
-    let tmpl_content = template_context
-        .registry()
-        .get_template(template_name)
-        .unwrap_or_else(|_| include_str!("templates/standard_review.txt").to_string());
-
-    // Build exploration instruction text
-    let exploration_instruction = build_exploration_instruction(diff_content);
-
-    // Build diff context header
-    let diff_context = diff_content.format_context_header();
-
-    let variables = HashMap::from([
-        ("PROMPT", prompt_content.to_string()),
-        ("PLAN", plan_content.to_string()),
-        ("DIFF", diff_content.content.clone()),
-        ("DIFF_CONTEXT", diff_context),
-        ("GUIDELINES", "".to_string()), // No guidelines for incremental review
-        ("EXPLORATION_REQUIRED", exploration_instruction),
-        (
-            "EXPLORATION_MODE",
-            if diff_content.truncation_level != DiffTruncationLevel::Full {
-                "true".to_string()
-            } else {
-                String::new()
-            },
-        ),
-    ]);
-    load_template_str(&tmpl_content, &variables)
-}
-
-/// Generate a universal/simplified review prompt for maximum agent compatibility,
-/// including the diff directly in the prompt, using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-///
-/// # Arguments
-///
-/// * `template_context` - Template context containing the template registry
-/// * `context` - The context level (minimal or normal) - NOTE: Now treated as normal
-/// * `diff_content` - The diff content with truncation metadata
-/// * `prompt_content` - The original user request (PROMPT.md content)
-/// * `plan_content` - The implementation plan (.agent/PLAN.md content)
-pub fn prompt_universal_review_with_diff_with_context(
-    template_context: &TemplateContext,
-    _context: ContextLevel,
-    diff_content: &DiffReviewContent,
-    prompt_content: &str,
-    plan_content: &str,
-) -> String {
-    // NOTE: ContextLevel is now ignored - we use the consolidated universal_review template
-    let template_name = "universal_review";
-
-    let tmpl_content = template_context
-        .registry()
-        .get_template(template_name)
-        .unwrap_or_else(|_| include_str!("templates/universal_review.txt").to_string());
-
-    // Build exploration instruction text
-    let exploration_instruction = build_exploration_instruction(diff_content);
-
-    // Build diff context header
-    let diff_context = diff_content.format_context_header();
-
-    let variables = HashMap::from([
-        ("PROMPT", prompt_content.to_string()),
-        ("PLAN", plan_content.to_string()),
-        ("DIFF", diff_content.content.clone()),
-        ("DIFF_CONTEXT", diff_context),
-        ("EXPLORATION_REQUIRED", exploration_instruction),
-        (
-            "EXPLORATION_MODE",
-            if diff_content.truncation_level != DiffTruncationLevel::Full {
-                "true".to_string()
-            } else {
-                String::new()
-            },
-        ),
-    ]);
-    load_template_str(&tmpl_content, &variables)
-}
-
-/// Build exploration instruction text based on truncation level.
-fn build_exploration_instruction(diff_content: &DiffReviewContent) -> String {
-    match diff_content.truncation_level {
-        DiffTruncationLevel::Full => String::new(),
-        DiffTruncationLevel::Abbreviated => format!(
-            "[DIFF ABBREVIATED: {}/{} files shown. You MUST explore the full diff using 'git diff HEAD' to review properly.]",
-            diff_content.shown_file_count.unwrap_or(0),
-            diff_content.total_file_count
-        ),
-        DiffTruncationLevel::FileList => format!(
-            "[FILE LIST ONLY: {} files changed. You MUST explore each file's diff using 'git diff HEAD -- <file>' to review properly.]",
-            diff_content.total_file_count
-        ),
-        DiffTruncationLevel::FileListAbbreviated => format!(
-            "[FILE LIST ABBREVIATED: {}/{} files shown. You MUST run 'git status' to find all files and explore their diffs.]",
-            diff_content.shown_file_count.unwrap_or(0),
-            diff_content.total_file_count
-        ),
-    }
+    // Load template with provided variables
+    let template = Template::new(template_content);
+    let partials = super::super::partials::get_shared_partials();
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_e| {
+            // Fallback to minimal prompt that still includes the diff
+            // This ensures that the review phase can proceed even if template rendering fails
+            format!(
+                "Review the following changes:\n\n{diff}\n\n\
+             Provide feedback on any issues found."
+            )
+        })
 }

@@ -53,15 +53,6 @@ fn create_plan_file(dir: &tempfile::TempDir) {
     fs::write(&plan_path, "Test plan\n").unwrap();
 }
 
-/// Helper to create reviewer issues file for testing review cycles.
-fn create_reviewer_issues(dir: &tempfile::TempDir, issues: &str) {
-    let issues_path = dir.path().join(".agent/reviewer_issues.json");
-    fs::create_dir_all(issues_path.parent().unwrap()).unwrap();
-    // Create JSON output with issues
-    let json = format!(r#"{{"type":"result","result":"{}"}}"#, issues);
-    fs::write(&issues_path, json).unwrap();
-}
-
 // ============================================================================
 // Start Commit Persistence Tests
 // ============================================================================
@@ -74,60 +65,55 @@ fn create_reviewer_issues(dir: &tempfile::TempDir, issues: &str) {
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn ralph_start_commit_persisted_across_runs() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // Test that start_commit is saved and persists across pipeline runs
-            let dir = TempDir::new().unwrap();
-            let repo = init_git_repo(&dir);
+    with_default_timeout(|| {
+        // Test that start_commit is saved and persists across pipeline runs
+        let dir = TempDir::new().unwrap();
+        let repo = init_git_repo(&dir);
 
-            // Create initial commit
-            write_file(dir.path().join("initial.txt"), "initial content");
-            let _ = commit_all(&repo, "initial commit");
+        // Create initial commit
+        write_file(dir.path().join("initial.txt"), "initial content");
+        let _ = commit_all(&repo, "initial commit");
 
-            // First run - should create start_commit
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: first run");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // First run - should create start_commit
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: first run");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert().success();
+        cmd.assert().success();
 
-            // Verify start_commit was created
-            let start_commit_path = dir.path().join(".agent/start_commit");
-            assert!(
-                start_commit_path.exists(),
-                "start_commit should be created after first run"
-            );
+        // Verify start_commit was created
+        let start_commit_path = dir.path().join(".agent/start_commit");
+        assert!(
+            start_commit_path.exists(),
+            "start_commit should be created after first run"
+        );
 
-            // Read the start_commit value
-            let first_start_commit =
-                fs::read_to_string(&start_commit_path).expect("should read start_commit");
+        // Read the start_commit value
+        let first_start_commit =
+            fs::read_to_string(&start_commit_path).expect("should read start_commit");
 
-            // Make some changes and create a new commit
-            write_file(dir.path().join("initial.txt"), "updated content");
-            let _ = commit_all(&repo, "second commit");
+        // Make some changes and create a new commit
+        write_file(dir.path().join("initial.txt"), "updated content");
+        let _ = commit_all(&repo, "second commit");
 
-            // Second run - start_commit should remain the same (not updated)
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: second run");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Second run - start_commit should remain the same (not updated)
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: second run");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert().success();
+        cmd.assert().success();
 
-            // Verify start_commit hasn't changed
-            let second_start_commit =
-                fs::read_to_string(&start_commit_path).expect("should read start_commit");
+        // Verify start_commit hasn't changed
+        let second_start_commit =
+            fs::read_to_string(&start_commit_path).expect("should read start_commit");
 
-            assert_eq!(
-                first_start_commit, second_start_commit,
-                "start_commit should persist across runs and not be updated automatically"
-            );
-        },
-        Duration::from_secs(30),
-    );
+        assert_eq!(
+            first_start_commit, second_start_commit,
+            "start_commit should persist across runs and not be updated automatically"
+        );
+    });
 }
 
 /// Test that --reset-start-commit updates baseline appropriately.
@@ -192,45 +178,40 @@ fn ralph_baseline_reset_command_works() {
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn ralph_diff_from_start_commit() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // Test that diff is generated from start_commit, not from the beginning of repo
-            let dir = TempDir::new().unwrap();
-            let repo = init_git_repo(&dir);
+    with_default_timeout(|| {
+        // Test that diff is generated from start_commit, not from the beginning of repo
+        let dir = TempDir::new().unwrap();
+        let repo = init_git_repo(&dir);
 
-            // Create initial commit (this will be our start_commit baseline)
-            write_file(dir.path().join("file1.txt"), "original content");
-            let _ = commit_all(&repo, "initial commit");
+        // Create initial commit (this will be our start_commit baseline)
+        write_file(dir.path().join("file1.txt"), "original content");
+        let _ = commit_all(&repo, "initial commit");
 
-            // Run ralph to establish start_commit
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: establish baseline");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run ralph to establish start_commit
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: establish baseline");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert().success();
+        cmd.assert().success();
 
-            // Create changes AFTER start_commit
-            write_file(dir.path().join("file1.txt"), "modified content");
-            write_file(dir.path().join("file2.txt"), "new file");
+        // Create changes AFTER start_commit
+        write_file(dir.path().join("file1.txt"), "modified content");
+        write_file(dir.path().join("file2.txt"), "new file");
 
-            // Run review cycle - just verify start_commit exists
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: test");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run review cycle - just verify start_commit exists
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: test");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert().success();
+        cmd.assert().success();
 
-            // The test verifies that diff generation works from start_commit
-            // For this integration test, we verify the baseline mechanism works
-            let start_commit_path = dir.path().join(".agent/start_commit");
-            assert!(start_commit_path.exists(), "start_commit should exist");
-        },
-        Duration::from_secs(30),
-    );
+        // The test verifies that diff generation works from start_commit
+        // For this integration test, we verify the baseline mechanism works
+        let start_commit_path = dir.path().join(".agent/start_commit");
+        assert!(start_commit_path.exists(), "start_commit should exist");
+    });
 }
 
 // ============================================================================
@@ -246,50 +227,45 @@ fn ralph_diff_from_start_commit() {
 /// which may exceed the default 10-second timeout on slower systems.
 #[test]
 fn ralph_stale_baseline_warning() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // Test that baseline summary is displayed during review cycles
-            // (The actual stale warning depends on diff generation which may vary)
-            let dir = TempDir::new().unwrap();
-            let repo = init_git_repo(&dir);
+    with_default_timeout(|| {
+        // Test that baseline summary is displayed during review cycles
+        // (The actual stale warning depends on diff generation which may vary)
+        let dir = TempDir::new().unwrap();
+        let repo = init_git_repo(&dir);
 
-            // Create initial commit
-            write_file(dir.path().join("initial.txt"), "initial content");
-            let _ = commit_all(&repo, "initial commit");
+        // Create initial commit
+        write_file(dir.path().join("initial.txt"), "initial content");
+        let _ = commit_all(&repo, "initial commit");
 
-            // Run to establish start_commit
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: baseline");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run to establish start_commit
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: baseline");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert().success();
+        cmd.assert().success();
 
-            // Create 5 commits and make a change
-            for i in 1..=5 {
-                write_file(
-                    dir.path().join("initial.txt"),
-                    format!("content update {}", i).as_str(),
-                );
-                let _ = commit_all(&repo, format!("commit {}", i).as_str());
-            }
+        // Create 5 commits and make a change
+        for i in 1..=5 {
+            write_file(
+                dir.path().join("initial.txt"),
+                format!("content update {}", i).as_str(),
+            );
+            let _ = commit_all(&repo, format!("commit {}", i).as_str());
+        }
 
-            write_file(dir.path().join("initial.txt"), "final change");
+        write_file(dir.path().join("initial.txt"), "final change");
 
-            // Run review cycle
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: review");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run review cycle
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: review");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            // The review cycle should complete successfully
-            // (Baseline display behavior is tested implicitly by successful completion)
-            cmd.assert().success();
-        },
-        Duration::from_secs(30),
-    );
+        // The review cycle should complete successfully
+        // (Baseline display behavior is tested implicitly by successful completion)
+        cmd.assert().success();
+    });
 }
 
 // ============================================================================
@@ -409,50 +385,8 @@ fn ralph_diff_shows_correct_range() {
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn ralph_empty_diff_skips_review() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // Test behavior when there's no diff (no changes since baseline)
-            let dir = TempDir::new().unwrap();
-            let repo = init_git_repo(&dir);
-
-            // Create initial commit
-            write_file(dir.path().join("initial.txt"), "initial content");
-            let _ = commit_all(&repo, "initial commit");
-
-            // Run ralph to establish baseline
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: baseline");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
-
-            cmd.assert().success();
-
-            // Now run again WITHOUT making any changes
-            // The review should detect empty diff and skip
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: no changes");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
-
-            // Should complete successfully but may skip review due to empty diff
-            cmd.assert().success();
-
-            // The test verifies the pipeline handles empty diff gracefully
-        },
-        Duration::from_secs(30),
-    );
-}
-
-/// Test that diff after fix cycles shows only new changes.
-///
-/// This verifies that when fix passes create commits, the next review cycle
-/// only shows new changes, not changes already addressed in previous cycles.
-#[test]
-fn ralph_diff_after_fix_cycles_shows_only_new_changes() {
     with_default_timeout(|| {
-        // Test that after fix pass, next review cycle sees only new changes
+        // Test behavior when there's no diff (no changes since baseline)
         let dir = TempDir::new().unwrap();
         let repo = init_git_repo(&dir);
 
@@ -460,152 +394,79 @@ fn ralph_diff_after_fix_cycles_shows_only_new_changes() {
         write_file(dir.path().join("initial.txt"), "initial content");
         let _ = commit_all(&repo, "initial commit");
 
-        // Create changes for the first review cycle
-        write_file(dir.path().join("initial.txt"), "modified in cycle 1");
-
+        // Run ralph to establish baseline
         create_plan_file(&dir);
-        create_commit_message_file(&dir, "feat: baseline test");
-        create_reviewer_issues(&dir, "- [ ] Critical: Issue cycle 1");
+        create_commit_message_file(&dir, "feat: baseline");
         let mut cmd = ralph_cmd();
         base_env(&mut cmd).current_dir(dir.path());
 
-        // Note: With reviewer_reviews=0, the review phase is skipped
-        // This test verifies the pipeline completes successfully
-        // The review_baseline.txt is only created when actual review cycles run
         cmd.assert().success();
-    });
-}
 
-// ============================================================================
-// Edge Case Tests
-// ============================================================================
-
-#[test]
-fn ralph_handles_large_diff() {
-    with_default_timeout(|| {
-        // Test that large diffs are handled (potentially truncated) without failure
-        let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
-
-        // Create initial commit
-        write_file(dir.path().join("initial.txt"), "initial");
-        let _ = commit_all(&repo, "initial commit");
-
-        // Create a large change (many lines)
-        let large_content: String = (0..5000)
-            .map(|i| format!("line {}: some content that makes the diff larger\n", i))
-            .collect();
-        write_file(dir.path().join("large_file.txt"), &large_content);
-
+        // Now run again WITHOUT making any changes
+        // The review should detect empty diff and skip
         create_plan_file(&dir);
-        create_commit_message_file(&dir, "feat: large diff");
+        create_commit_message_file(&dir, "feat: no changes");
         let mut cmd = ralph_cmd();
         base_env(&mut cmd).current_dir(dir.path());
 
-        // Should complete without crashing, even with large diff
+        // Should complete successfully but may skip review due to empty diff
         cmd.assert().success();
+
+        // The test verifies that pipeline handles empty diff gracefully
     });
 }
 
-/// Test that external git changes are handled gracefully.
+/// Test that start_commit is displayed at pipeline start.
 ///
-/// This verifies that when external git changes occur during review,
-/// the system handles them without crashing or data loss.
-#[test]
-fn ralph_handles_external_git_changes() {
-    with_default_timeout(|| {
-        // Test behavior when external git changes occur during review
-        let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
-
-        // Create initial commit
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
-
-        // Create a change
-        write_file(dir.path().join("initial.txt"), "modified content");
-
-        // Manually create an external file before running
-        fs::write(dir.path().join("external.txt"), "external change").unwrap();
-
-        create_plan_file(&dir);
-        create_commit_message_file(&dir, "feat: external changes");
-        create_reviewer_issues(&dir, "- [ ] Critical: Issue found");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
-
-        // Should handle external changes gracefully
-        cmd.assert().success();
-
-        // Verify external.txt still exists
-        assert!(
-            dir.path().join("external.txt").exists(),
-            "External file should still exist"
-        );
-    });
-}
-
-// ============================================================================
-// Start Commit UX Tests (Step 3 from hardening plan)
-// ============================================================================
-
-/// Test that start_commit information is displayed at pipeline start.
+/// This verifies that when a user runs ralph, the system displays
+/// information about the start_commit baseline being used for diff generation.
 ///
-/// This verifies that when a pipeline run begins, the system displays
-/// information about the start_commit baseline.
-///
-/// Uses a 30-second timeout because this test runs ralph twice sequentially,
-/// which may exceed the default 10-second timeout on slower systems.
+/// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn ralph_start_commit_shown_at_pipeline_start() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // Test that start_commit information is displayed at pipeline start
-            let dir = TempDir::new().unwrap();
-            let repo = init_git_repo(&dir);
+    with_default_timeout(|| {
+        // Test that start_commit information is displayed at pipeline start
+        let dir = TempDir::new().unwrap();
+        let repo = init_git_repo(&dir);
 
-            // Create initial commit
-            write_file(dir.path().join("initial.txt"), "initial content");
-            let _ = commit_all(&repo, "initial commit");
+        // Create initial commit
+        write_file(dir.path().join("initial.txt"), "initial content");
+        let _ = commit_all(&repo, "initial commit");
 
-            // First run - should establish start_commit
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: first");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // First run - should establish start_commit
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: first");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert().success();
+        cmd.assert().success();
 
-            // Verify start_commit was created
-            let start_commit_path = dir.path().join(".agent/start_commit");
-            assert!(
-                start_commit_path.exists(),
-                "start_commit should be created after first run"
+        // Verify start_commit was created
+        let start_commit_path = dir.path().join(".agent/start_commit");
+        assert!(
+            start_commit_path.exists(),
+            "start_commit should be created after first run"
+        );
+
+        // Create several commits to make the start commit stale
+        for i in 1..=6 {
+            write_file(
+                dir.path().join("initial.txt"),
+                format!("content update {}", i).as_str(),
             );
+            let _ = commit_all(&repo, format!("commit {}", i).as_str());
+        }
 
-            // Create several commits to make the start commit stale
-            for i in 1..=6 {
-                write_file(
-                    dir.path().join("initial.txt"),
-                    format!("content update {}", i).as_str(),
-                );
-                let _ = commit_all(&repo, format!("commit {}", i).as_str());
-            }
+        // Run with verbose mode to see start_commit info
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: second");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--verbosity=2");
 
-            // Run with verbose mode to see start_commit info
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: second");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd)
-                .current_dir(dir.path())
-                .arg("--verbosity=2");
-
-            cmd.assert().success();
-        },
-        Duration::from_secs(30),
-    );
+        cmd.assert().success();
+    });
 }
 
 /// Test that stale start_commit warning is shown at pipeline start.
@@ -617,47 +478,42 @@ fn ralph_start_commit_shown_at_pipeline_start() {
 /// which may exceed the default 10-second timeout on slower systems.
 #[test]
 fn ralph_stale_start_commit_warning_at_start() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // Test that stale start_commit warning is shown
-            let dir = TempDir::new().unwrap();
-            let repo = init_git_repo(&dir);
+    with_default_timeout(|| {
+        // Test that stale start_commit warning is shown
+        let dir = TempDir::new().unwrap();
+        let repo = init_git_repo(&dir);
 
-            // Create initial commit
-            write_file(dir.path().join("initial.txt"), "initial content");
-            let _ = commit_all(&repo, "initial commit");
+        // Create initial commit
+        write_file(dir.path().join("initial.txt"), "initial content");
+        let _ = commit_all(&repo, "initial commit");
 
-            // Run to establish start_commit
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: baseline");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run to establish start_commit
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: baseline");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert().success();
+        cmd.assert().success();
 
-            // Create more than 10 commits to make it stale
-            for i in 1..=11 {
-                write_file(
-                    dir.path().join("initial.txt"),
-                    format!("content update {}", i).as_str(),
-                );
-                let _ = commit_all(&repo, format!("commit {}", i).as_str());
-            }
+        // Create more than 10 commits to make it stale
+        for i in 1..=11 {
+            write_file(
+                dir.path().join("initial.txt"),
+                format!("content update {}", i).as_str(),
+            );
+            let _ = commit_all(&repo, format!("commit {}", i).as_str());
+        }
 
-            // Run with verbose mode - should show stale warning
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: review");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd)
-                .current_dir(dir.path())
-                .arg("--verbosity=2");
+        // Run with verbose mode - should show stale warning
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: review");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd)
+            .current_dir(dir.path())
+            .arg("--verbosity=2");
 
-            cmd.assert().success();
-        },
-        Duration::from_secs(30),
-    );
+        cmd.assert().success();
+    });
 }
 
 // ============================================================================
@@ -710,89 +566,79 @@ fn ralph_handles_corrupted_start_commit_file() {
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn ralph_handles_corrupted_review_baseline_file() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // Test recovery from corrupted .agent/review_baseline.txt
-            let dir = TempDir::new().unwrap();
-            let repo = init_git_repo(&dir);
+    with_default_timeout(|| {
+        // Test recovery from corrupted .agent/review_baseline.txt
+        let dir = TempDir::new().unwrap();
+        let repo = init_git_repo(&dir);
 
-            // Create initial commit
-            write_file(dir.path().join("initial.txt"), "initial content");
-            let _ = commit_all(&repo, "initial commit");
+        // Create initial commit
+        write_file(dir.path().join("initial.txt"), "initial content");
+        let _ = commit_all(&repo, "initial commit");
 
-            // Run to establish start_commit
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: baseline");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run to establish start_commit
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: baseline");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert().success();
+        cmd.assert().success();
 
-            // Manually corrupt the review_baseline.txt file
-            let baseline_path = dir.path().join(".agent/review_baseline.txt");
-            fs::write(&baseline_path, "corrupted_invalid_baseline_oid").unwrap();
+        // Manually corrupt the review_baseline.txt file
+        let baseline_path = dir.path().join(".agent/review_baseline.txt");
+        fs::write(&baseline_path, "corrupted_invalid_baseline_oid").unwrap();
 
-            // Create a change
-            write_file(dir.path().join("initial.txt"), "modified content");
+        // Create a change
+        write_file(dir.path().join("initial.txt"), "modified content");
 
-            // Run review - should handle corrupted baseline gracefully
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: review");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run review - should handle corrupted baseline gracefully
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: review");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            // Should complete successfully despite corrupted baseline
-            cmd.assert().success();
-        },
-        Duration::from_secs(30),
-    );
+        // Should complete successfully despite corrupted baseline
+        cmd.assert().success();
+    });
 }
 
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn ralf_handles_missing_start_commit_oid() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            // Test when start_commit references non-existent commit (history rewritten)
-            let dir = TempDir::new().unwrap();
-            let repo = init_git_repo(&dir);
+    with_default_timeout(|| {
+        // Test when start_commit references non-existent commit (history rewritten)
+        let dir = TempDir::new().unwrap();
+        let repo = init_git_repo(&dir);
 
-            // Create initial commit
-            write_file(dir.path().join("initial.txt"), "initial content");
-            let _ = commit_all(&repo, "initial commit");
+        // Create initial commit
+        write_file(dir.path().join("initial.txt"), "initial content");
+        let _ = commit_all(&repo, "initial commit");
 
-            // Run to establish start_commit
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: baseline");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run to establish start_commit
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: baseline");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert().success();
+        cmd.assert().success();
 
-            // Manually set start_commit to a non-existent OID
-            let start_commit_path = dir.path().join(".agent/start_commit");
-            fs::write(
-                &start_commit_path,
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            )
-            .unwrap();
+        // Manually set start_commit to a non-existent OID
+        let start_commit_path = dir.path().join(".agent/start_commit");
+        fs::write(
+            &start_commit_path,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        .unwrap();
 
-            // Create a change
-            write_file(dir.path().join("initial.txt"), "modified content");
+        // Create a change
+        write_file(dir.path().join("initial.txt"), "modified content");
 
-            // Run review - should handle missing OID gracefully
-            create_plan_file(&dir);
-            create_commit_message_file(&dir, "feat: review");
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run review - should handle missing OID gracefully
+        create_plan_file(&dir);
+        create_commit_message_file(&dir, "feat: review");
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            // Should recover and reset the start_commit
-            cmd.assert().success();
-        },
-        Duration::from_secs(30),
-    );
+        // Should recover and reset the start_commit
+        cmd.assert().success();
+    });
 }

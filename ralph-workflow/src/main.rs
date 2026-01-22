@@ -34,6 +34,7 @@ mod phases;
 mod pipeline;
 mod platform;
 mod prompts;
+mod reducer;
 mod review_metrics;
 mod templates;
 
