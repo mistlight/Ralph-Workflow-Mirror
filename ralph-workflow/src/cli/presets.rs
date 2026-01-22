@@ -18,92 +18,21 @@ pub enum Preset {
 
 /// Apply CLI arguments to the configuration.
 ///
-/// This function merges CLI arguments into the existing config, handling:
-/// - Verbosity flags (--quiet, --full, --debug, -v LEVEL)
-/// - Preset configurations (--preset)
-/// - Quick mode (--quick)
-/// - Agent and model overrides
-/// - Isolation mode
+/// This function uses the reducer architecture to process CLI arguments:
+/// 1. Parse Args into a sequence of CliEvents
+/// 2. Run events through the reducer to build CliState
+/// 3. Apply CliState to Config
+///
+/// This approach ensures:
+/// - All CLI arguments are handled (fixes missing -L, -S, -T flags)
+/// - Event processing is testable and maintainable
+/// - Consistent with the existing pipeline reducer pattern
 pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Colors) {
-    // Handle verbosity shorthand flags (--quiet, --full, --debug take precedence)
-    let base_verbosity = config.verbosity;
-    config.verbosity = if args.verbosity_shorthand.quiet {
-        crate::config::Verbosity::Quiet
-    } else if args.debug_verbosity.debug {
-        crate::config::Verbosity::Debug
-    } else if args.verbosity_shorthand.full {
-        crate::config::Verbosity::Full
-    } else if let Some(v) = args.verbosity {
-        v.into()
-    } else {
-        base_verbosity
-    };
+    use crate::cli::reducer::{apply_cli_state_to_config, args_to_events, reduce, CliState};
 
-    // Apply preset (CLI/env preset overrides env-selected agents, but can be overridden by
-    // explicit --developer-agent/--reviewer-agent flags below).
-    if let Some(preset) = args.preset.clone() {
-        match preset {
-            Preset::Default => {
-                // No override; use agent_chain defaults from the unified config / built-ins
-            }
-            Preset::Opencode => {
-                config.developer_agent = Some("opencode".to_string());
-                config.reviewer_agent = Some("opencode".to_string());
-            }
-        }
-    }
-
-    // Quick mode: 1 developer iteration, 1 review pass (explicit flags override)
-    if args.quick_presets.quick {
-        if args.developer_iters.is_none() {
-            config.developer_iters = 1;
-        }
-        if args.reviewer_reviews.is_none() {
-            config.reviewer_reviews = 1;
-        }
-    }
-
-    // Rapid mode: 2 developer iterations, 1 review pass (explicit flags override)
-    if args.quick_presets.rapid {
-        if args.developer_iters.is_none() {
-            config.developer_iters = 2;
-        }
-        if args.reviewer_reviews.is_none() {
-            config.reviewer_reviews = 1;
-        }
-    }
-
-    if let Some(iters) = args.developer_iters {
-        config.developer_iters = iters;
-    }
-    if let Some(reviews) = args.reviewer_reviews {
-        config.reviewer_reviews = reviews;
-    }
-    if let Some(agent) = args.developer_agent.clone() {
-        config.developer_agent = Some(agent);
-    }
-    if let Some(agent) = args.reviewer_agent.clone() {
-        config.reviewer_agent = Some(agent);
-    }
-    if let Some(model) = args.developer_model.clone() {
-        config.developer_model = Some(model);
-    }
-    if let Some(model) = args.reviewer_model.clone() {
-        config.reviewer_model = Some(model);
-    }
-    if let Some(provider) = args.developer_provider.clone() {
-        config.developer_provider = Some(provider);
-    }
-    if let Some(provider) = args.reviewer_provider.clone() {
-        config.reviewer_provider = Some(provider);
-    }
-    if let Some(parser) = args.reviewer_json_parser.clone() {
-        config.reviewer_json_parser = Some(parser);
-    }
-    if let Some(depth) = args.review_depth.clone() {
-        if let Some(parsed) = ReviewDepth::from_str(&depth) {
-            config.review_depth = parsed;
-        } else {
+    // Validate review depth before processing (for user warning)
+    if let Some(ref depth) = args.review_depth {
+        if ReviewDepth::from_str(depth).is_none() {
             eprintln!(
                 "{}{}Warning:{} Unknown review depth '{}'. Using default (standard).",
                 colors.bold(),
@@ -115,27 +44,15 @@ pub fn apply_args_to_config(args: &super::Args, config: &mut Config, colors: Col
         }
     }
 
-    // Handle --no-isolation flag (CLI overrides env var)
-    if args.no_isolation {
-        config.isolation_mode = false;
+    // Parse args into events
+    let events = args_to_events(args);
+
+    // Run events through reducer to build state
+    let mut state = CliState::initial();
+    for event in events {
+        state = reduce(state, event);
     }
 
-    // Git user identity (CLI args have highest priority)
-    if let Some(name) = args.git_user_name.clone() {
-        let name = name.trim();
-        if !name.is_empty() {
-            config.git_user_name = Some(name.to_string());
-        }
-    }
-    if let Some(email) = args.git_user_email.clone() {
-        let email = email.trim();
-        if !email.is_empty() {
-            config.git_user_email = Some(email.to_string());
-        }
-    }
-
-    // Streaming metrics display flag
-    if args.show_streaming_metrics {
-        config.show_streaming_metrics = true;
-    }
+    // Apply final state to config
+    apply_cli_state_to_config(&state, config);
 }

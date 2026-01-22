@@ -21,6 +21,7 @@ mod handlers;
 mod init;
 pub mod presets;
 mod providers;
+pub mod reducer;
 
 // Re-export all public items for backward compatibility
 pub use args::Args;
