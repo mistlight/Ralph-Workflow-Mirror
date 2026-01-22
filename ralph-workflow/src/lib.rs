@@ -3,6 +3,8 @@
 //! This library exposes the core functionality used by the ralph binary,
 //! including commit message extraction from LLM output.
 
+#![allow(unused_imports)]
+
 pub mod agents;
 pub mod app;
 pub mod banner;

@@ -167,6 +167,28 @@ impl AgentChainState {
         new.retry_cycle += 1;
         new
     }
+
+    pub fn models_for_current_agent(&self) -> &[String] {
+        self.models_per_agent
+            .get(self.current_agent_index)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+
+    pub fn next_model_for_agent(&self, agent_name: &str) -> Option<String> {
+        self.agents
+            .iter()
+            .position(|a| a == agent_name)
+            .and_then(|idx| {
+                self.models_per_agent
+                    .get(idx)
+                    .and_then(|models| models.get(self.current_model_index + 1).cloned())
+            })
+    }
+
+    pub fn next_agent(&self) -> Option<String> {
+        self.agents.get(self.current_agent_index + 1).cloned()
+    }
 }
 
 /// Rebase operation state.
