@@ -203,6 +203,8 @@ pub enum RebaseState {
         target_branch: String,
     },
     Conflicted {
+        original_head: String,
+        target_branch: String,
         files: Vec<PathBuf>,
         resolution_attempts: u32,
     },

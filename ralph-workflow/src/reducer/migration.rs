@@ -77,6 +77,8 @@ fn migrate_rebase_state(rebase_state: &CheckpointRebaseState) -> RebaseState {
             new_head: commit_oid.clone(),
         },
         CheckpointRebaseState::HasConflicts { files } => RebaseState::Conflicted {
+            original_head: "HEAD".to_string(),
+            target_branch: "main".to_string(),
             files: files
                 .iter()
                 .map(|s| std::path::PathBuf::from(s.clone()))

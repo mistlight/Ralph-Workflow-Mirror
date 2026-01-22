@@ -37,6 +37,36 @@
 //! └──────────────────────────────────────────────────┘
 //! ```
 //!
+//! # Quick Start
+//!
+//! Run pipeline with reducer:
+//!
+//! ```ignore
+//! use ralph_workflow::reducer::{run_event_loop, PipelineState};
+//!
+//! let state = PipelineState::initial(developer_iters, reviewer_reviews);
+//! let result = run_event_loop(&mut phase_ctx, Some(state), Default::default())?;
+//! ```
+//!
+//! # State Inspection
+//!
+//! Inspect pipeline state at any point:
+//!
+//! ```ignore
+//! println!("Current phase: {}", state.phase);
+//! println!("Iteration: {}/{}", state.iteration, state.total_iterations);
+//! println!("Current agent: {:?}", state.agent_chain.current_agent());
+//! ```
+//!
+//! # Event Replay
+//!
+//! Replay events from log:
+//!
+//! ```ignore
+//! let final_state = events.into_iter()
+//!     .fold(initial_state, |s, e| reduce(s, e));
+//! ```
+//!
 //! # Testing Strategy
 //!
 //! The reducer architecture is designed for extensive testability:
@@ -52,6 +82,20 @@
 //!
 //! - **State machine**: Real pipeline execution verifies correct phase transitions
 //! - **Event replay**: Event logs can reproduce final state deterministically
+//!
+//! # Testing Reducer Purity
+//!
+//! Reducer is easy to test - pure function with no side effects:
+//!
+//! ```ignore
+//! #[test]
+//! fn test_agent_fallback() {
+//!     let state = create_test_state();
+//!     let event = PipelineEvent::AgentInvocationFailed { ... };
+//!     let new_state = reduce(state, event);
+//!     assert_eq!(new_state.agent_chain.current_agent_index, 1);
+//! }
+//! ```
 //!
 //! # Running Tests
 //!

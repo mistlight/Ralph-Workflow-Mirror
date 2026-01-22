@@ -144,18 +144,30 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         },
 
         PipelineEvent::RebaseConflictDetected { files } => PipelineState {
-            rebase: RebaseState::Conflicted {
-                files,
-                resolution_attempts: 0,
+            rebase: match &state.rebase {
+                RebaseState::InProgress {
+                    original_head,
+                    target_branch,
+                } => RebaseState::Conflicted {
+                    original_head: original_head.clone(),
+                    target_branch: target_branch.clone(),
+                    files,
+                    resolution_attempts: 0,
+                },
+                _ => state.rebase.clone(),
             },
             ..state
         },
 
         PipelineEvent::RebaseConflictResolved { files: _ } => PipelineState {
             rebase: match &state.rebase {
-                RebaseState::Conflicted { files, .. } => RebaseState::Conflicted {
-                    files: files.clone(),
-                    resolution_attempts: 0,
+                RebaseState::Conflicted {
+                    original_head,
+                    target_branch,
+                    ..
+                } => RebaseState::InProgress {
+                    original_head: original_head.clone(),
+                    target_branch: target_branch.clone(),
                 },
                 _ => state.rebase.clone(),
             },
@@ -371,5 +383,200 @@ mod tests {
 
         assert!(matches!(new_state.commit, CommitState::Committed { .. }));
         assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
+    }
+
+    #[test]
+    fn test_reduce_all_agent_failure_scenarios() {
+        let state = create_test_state();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+        let initial_model_index = state.agent_chain.current_model_index;
+        let agent_name = state.agent_chain.current_agent().unwrap().clone();
+
+        let network_error_state = reduce(
+            state.clone(),
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: agent_name.clone(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::Network,
+                retriable: true,
+            },
+        );
+        assert_eq!(
+            network_error_state.agent_chain.current_agent_index,
+            initial_agent_index
+        );
+        assert!(network_error_state.agent_chain.current_model_index > initial_model_index);
+
+        let auth_error_state = reduce(
+            state.clone(),
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: agent_name.clone(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::Authentication,
+                retriable: false,
+            },
+        );
+        assert!(auth_error_state.agent_chain.current_agent_index > initial_agent_index);
+        assert_eq!(
+            auth_error_state.agent_chain.current_model_index,
+            initial_model_index
+        );
+
+        let internal_error_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: agent_name,
+                exit_code: 139,
+                error_kind: AgentErrorKind::InternalError,
+                retriable: false,
+            },
+        );
+        assert!(internal_error_state.agent_chain.current_agent_index > initial_agent_index);
+    }
+
+    #[test]
+    fn test_reduce_rebase_full_state_machine() {
+        let mut state = create_test_state();
+
+        state = reduce(
+            state,
+            PipelineEvent::RebaseStarted {
+                phase: RebasePhase::Initial,
+                target_branch: "main".to_string(),
+            },
+        );
+        assert!(matches!(state.rebase, RebaseState::InProgress { .. }));
+
+        state = reduce(
+            state,
+            PipelineEvent::RebaseConflictDetected {
+                files: vec![std::path::PathBuf::from("file1.txt")],
+            },
+        );
+        assert!(matches!(state.rebase, RebaseState::Conflicted { .. }));
+
+        state = reduce(
+            state,
+            PipelineEvent::RebaseConflictResolved {
+                files: vec![std::path::PathBuf::from("file1.txt")],
+            },
+        );
+        assert!(matches!(state.rebase, RebaseState::InProgress { .. }));
+
+        state = reduce(
+            state,
+            PipelineEvent::RebaseSucceeded {
+                phase: RebasePhase::Initial,
+                new_head: "def456".to_string(),
+            },
+        );
+        assert!(matches!(state.rebase, RebaseState::Completed { .. }));
+    }
+
+    #[test]
+    fn test_reduce_commit_full_state_machine() {
+        let mut state = create_test_state();
+
+        state = reduce(state, PipelineEvent::CommitGenerationStarted);
+        assert!(matches!(state.commit, CommitState::Generating { .. }));
+
+        state = reduce(
+            state,
+            PipelineEvent::CommitCreated {
+                hash: "abc123".to_string(),
+                message: "test commit".to_string(),
+            },
+        );
+        assert!(matches!(state.commit, CommitState::Committed { .. }));
+    }
+
+    #[test]
+    fn test_reduce_phase_transitions() {
+        let mut state = create_test_state();
+
+        state = reduce(state, PipelineEvent::PlanningPhaseCompleted);
+        assert_eq!(state.phase, PipelinePhase::Development);
+
+        state = reduce(state, PipelineEvent::DevelopmentPhaseStarted);
+        assert_eq!(state.phase, PipelinePhase::Development);
+
+        state = reduce(state, PipelineEvent::DevelopmentPhaseCompleted);
+        assert_eq!(state.phase, PipelinePhase::Review);
+
+        state = reduce(state, PipelineEvent::ReviewPhaseStarted);
+        assert_eq!(state.phase, PipelinePhase::Review);
+
+        state = reduce(
+            state,
+            PipelineEvent::ReviewPhaseCompleted { early_exit: false },
+        );
+        assert_eq!(state.phase, PipelinePhase::CommitMessage);
+    }
+
+    #[test]
+    fn test_reduce_agent_chain_exhaustion() {
+        let state = PipelineState {
+            agent_chain: AgentChainState::initial()
+                .with_agents(
+                    vec!["agent1".to_string()],
+                    vec![vec!["model1".to_string()]],
+                    AgentRole::Developer,
+                )
+                .with_max_cycles(3),
+            ..create_test_state()
+        };
+
+        let exhausted_state = reduce(
+            state,
+            PipelineEvent::AgentChainExhausted {
+                role: AgentRole::Developer,
+            },
+        );
+
+        assert_eq!(exhausted_state.agent_chain.current_agent_index, 0);
+        assert_eq!(exhausted_state.agent_chain.current_model_index, 0);
+        assert_eq!(exhausted_state.agent_chain.retry_cycle, 1);
+    }
+
+    #[test]
+    fn test_reduce_agent_fallback_triggers_fallback_event() {
+        let state = create_test_state();
+        let agent = state.agent_chain.current_agent().unwrap().clone();
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: agent.clone(),
+                exit_code: 1,
+                error_kind: AgentErrorKind::Authentication,
+                retriable: false,
+            },
+        );
+
+        assert!(new_state.agent_chain.current_agent_index > 0);
+    }
+
+    #[test]
+    fn test_reduce_model_fallback_triggers_fallback_event() {
+        let state = create_test_state();
+        let initial_model_index = state.agent_chain.current_model_index;
+        let agent_name = state.agent_chain.current_agent().unwrap().clone();
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationFailed {
+                role: AgentRole::Developer,
+                agent: agent_name,
+                exit_code: 1,
+                error_kind: AgentErrorKind::RateLimit,
+                retriable: true,
+            },
+        );
+
+        assert!(new_state.agent_chain.current_model_index > initial_model_index);
     }
 }

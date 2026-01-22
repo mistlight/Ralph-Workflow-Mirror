@@ -5,10 +5,9 @@
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::reducer::event::{
-    CheckpointTrigger, ConflictStrategy, PipelineEvent, PipelinePhase, RebasePhase,
+    CheckpointTrigger, PipelineEvent, PipelinePhase, RebasePhase,
 };
 use ralph_workflow::reducer::state::{PipelineState, RebaseState};
-use std::path::Path;
 
 fn create_initial_state() -> PipelineState {
     PipelineState::initial(5, 2)
@@ -91,6 +90,8 @@ fn test_rebase_conflict_resolved_returns_to_in_progress() {
     with_default_timeout(|| {
         let state = PipelineState {
             rebase: RebaseState::Conflicted {
+                original_head: "HEAD".to_string(),
+                target_branch: "main".to_string(),
                 files: vec!["file1.txt".into()],
                 resolution_attempts: 0,
             },
@@ -105,36 +106,6 @@ fn test_rebase_conflict_resolved_returns_to_in_progress() {
         );
 
         assert!(matches!(new_state.rebase, RebaseState::InProgress { .. }));
-    });
-}
-
-#[test]
-fn test_rebase_conflict_resolved_increments_resolution_attempts() {
-    with_default_timeout(|| {
-        let state = PipelineState {
-            rebase: RebaseState::Conflicted {
-                files: vec!["file1.txt".into()],
-                resolution_attempts: 1,
-            },
-            ..create_initial_state()
-        };
-
-        let new_state = reduce(
-            state,
-            PipelineEvent::RebaseConflictResolved {
-                files: vec!["file1.txt".into()],
-            },
-        );
-
-        if let RebaseState::Conflicted {
-            resolution_attempts,
-            ..
-        } = new_state.rebase
-        {
-            assert_eq!(resolution_attempts, 2);
-        } else {
-            panic!("Expected Conflicted state");
-        }
     });
 }
 
@@ -256,6 +227,8 @@ fn test_rebase_in_conflicted_state_continues_handling() {
     with_default_timeout(|| {
         let state = PipelineState {
             rebase: RebaseState::Conflicted {
+                original_head: "HEAD".to_string(),
+                target_branch: "main".to_string(),
                 files: vec!["file1.txt".into()],
                 resolution_attempts: 0,
             },

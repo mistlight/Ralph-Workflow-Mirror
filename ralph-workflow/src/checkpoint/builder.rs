@@ -99,7 +99,6 @@ impl CheckpointBuilder {
     }
 
     /// Set the agent names.
-    #[cfg(test)]
     pub fn agents(mut self, developer: &str, reviewer: &str) -> Self {
         self.developer_agent = Some(developer.to_string());
         self.reviewer_agent = Some(reviewer.to_string());
@@ -107,42 +106,36 @@ impl CheckpointBuilder {
     }
 
     /// Set the CLI arguments snapshot.
-    #[cfg(test)]
     pub fn cli_args(mut self, args: CliArgsSnapshot) -> Self {
         self.cli_args = Some(args);
         self
     }
 
     /// Set the developer agent configuration snapshot.
-    #[cfg(test)]
     pub fn developer_config(mut self, config: AgentConfigSnapshot) -> Self {
         self.developer_agent_config = Some(config);
         self
     }
 
     /// Set the reviewer agent configuration snapshot.
-    #[cfg(test)]
     pub fn reviewer_config(mut self, config: AgentConfigSnapshot) -> Self {
         self.reviewer_agent_config = Some(config);
         self
     }
 
     /// Set the rebase state.
-    #[cfg(test)]
     pub fn rebase_state(mut self, state: RebaseState) -> Self {
         self.rebase_state = state;
         self
     }
 
     /// Set the config path.
-    #[cfg(test)]
     pub fn config_path(mut self, path: Option<std::path::PathBuf>) -> Self {
         self.config_path = path;
         self
     }
 
     /// Set the git user name and email.
-    #[cfg(test)]
     pub fn git_identity(mut self, name: Option<&str>, email: Option<&str>) -> Self {
         self.git_user_name = name.map(String::from);
         self.git_user_email = email.map(String::from);
@@ -344,7 +337,11 @@ fn review_depth_to_string(depth: ReviewDepth) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::review_depth_to_string;
+    use crate::checkpoint::state::{AgentConfigSnapshot, CliArgsSnapshot};
+    use crate::checkpoint::CheckpointBuilder;
+    use crate::checkpoint::PipelinePhase;
+    use crate::config::ReviewDepth;
 
     #[test]
     fn test_builder_basic() {

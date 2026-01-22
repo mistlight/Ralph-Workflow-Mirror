@@ -169,44 +169,40 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn backup_not_deleted_during_cleanup() {
-    use crate::test_timeout::with_timeout;
-    use std::time::Duration;
-    with_timeout(
-        || {
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
+    use crate::test_timeout::with_default_timeout;
+    with_default_timeout(|| {
+        let dir = TempDir::new().unwrap();
+        let _ = init_git_repo(&dir);
 
-            let backup_path = dir.path().join(".agent/PROMPT.md.backup");
+        let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
-            // Create a minimal PROMPT.md
-            create_prompt_file(&dir, "# Test\n");
+        // Create a minimal PROMPT.md
+        create_prompt_file(&dir, "# Test\n");
 
-            // Run Ralph to create backup
-            create_plan_file(&dir);
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+        // Run Ralph to create backup
+        create_plan_file(&dir);
+        let mut cmd = ralph_cmd();
+        base_env(&mut cmd).current_dir(dir.path());
 
-            cmd.assert()
-                .success()
-                .stdout(predicate::str::contains("Pipeline Complete"));
+        cmd.assert()
+            .success()
+            .stdout(predicate::str::contains("Pipeline Complete"));
 
-            // Verify backup exists
-            assert!(backup_path.exists());
+        // Verify backup exists
+        assert!(backup_path.exists());
 
-            // Run Ralph again - cleanup shouldn't delete backup
-            create_plan_file(&dir);
-            let mut cmd2 = ralph_cmd();
-            base_env(&mut cmd2).current_dir(dir.path());
+        // Run Ralph again - cleanup shouldn't delete backup
+        create_plan_file(&dir);
+        let mut cmd2 = ralph_cmd();
+        base_env(&mut cmd2).current_dir(dir.path());
 
-            cmd2.assert()
-                .success()
-                .stdout(predicate::str::contains("Pipeline Complete"));
+        cmd2.assert()
+            .success()
+            .stdout(predicate::str::contains("Pipeline Complete"));
 
-            // Verify backup still exists (wasn't cleaned up)
-            assert!(backup_path.exists());
-        },
-        Duration::from_secs(30),
-    );
+        // Verify backup still exists (wasn't cleaned up)
+        assert!(backup_path.exists());
+    });
 }
 
 /// Test that the backup file has read-only permissions.

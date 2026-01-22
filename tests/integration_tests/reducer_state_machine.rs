@@ -15,10 +15,8 @@
 //! - Tests verify that reducer produces correct state for each event
 
 use ralph_workflow::agents::AgentRole;
-use ralph_workflow::reducer::event::{
-    AgentErrorKind, CheckpointTrigger, PipelineEvent, PipelinePhase, RebasePhase,
-};
-use ralph_workflow::reducer::state::{AgentChainState, CommitState, PipelineState, RebaseState};
+use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};
+use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 
 use crate::test_timeout::with_default_timeout;
 
@@ -495,5 +493,36 @@ fn test_internal_error_triggers_agent_fallback() {
 
         // Should switch to next agent
         assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+    });
+}
+
+#[test]
+fn test_event_replay_reproduces_final_state() {
+    with_default_timeout(|| {
+        let initial_state = create_initial_state();
+
+        let events = vec![
+            PipelineEvent::DevelopmentPhaseStarted,
+            PipelineEvent::DevelopmentIterationStarted { iteration: 1 },
+            PipelineEvent::DevelopmentIterationCompleted {
+                iteration: 1,
+                output_valid: true,
+            },
+            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
+            PipelineEvent::DevelopmentIterationCompleted {
+                iteration: 2,
+                output_valid: true,
+            },
+            PipelineEvent::DevelopmentIterationCompleted {
+                iteration: 3,
+                output_valid: true,
+            },
+            PipelineEvent::PipelineCompleted,
+        ];
+
+        let final_state = events.into_iter().fold(initial_state, reduce);
+
+        assert_eq!(final_state.phase, PipelinePhase::Complete);
+        assert_eq!(final_state.iteration, 4);
     });
 }
