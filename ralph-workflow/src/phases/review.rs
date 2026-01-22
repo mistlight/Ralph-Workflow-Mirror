@@ -262,7 +262,7 @@ pub fn run_review_phase(
         }
 
         // Run review pass
-        let review_result = run_review_pass(ctx, j, &review_label, &review_prompt)?;
+        let review_result = run_review_pass(ctx, j, &review_label, &review_prompt, None)?;
 
         // Check for early exit (no issues found)
         if review_result.early_exit {
@@ -281,6 +281,7 @@ pub fn run_review_phase(
             } else {
                 None
             },
+            None,
         )?;
 
         // UPDATE REVIEW BASELINE: Move baseline forward after fixes
@@ -605,6 +606,7 @@ pub fn run_review_pass(
     j: u32,
     review_label: &str,
     _review_prompt: &str, // Unused - we build XML prompt internally
+    _agent: Option<&str>,
 ) -> anyhow::Result<ReviewPassResult> {
     let issues_path = Path::new(".agent/ISSUES.md");
     let max_xsd_retries = 100;
@@ -731,7 +733,7 @@ pub fn run_review_pass(
                 logfile_prefix: &log_dir,
                 runtime: &mut runtime,
                 registry: ctx.registry,
-                primary_agent: ctx.reviewer_agent,
+                primary_agent: _agent.unwrap_or(ctx.reviewer_agent),
                 session_info: session_info.as_ref(),
                 retry_num,
                 output_validator: Some(validate_output),
@@ -1074,6 +1076,7 @@ pub fn run_fix_pass(
     j: u32,
     _reviewer_context: ContextLevel,
     _resume_context: Option<&ResumeContext>,
+    _agent: Option<&str>,
 ) -> anyhow::Result<()> {
     let fix_start_time = Instant::now();
 
@@ -1239,7 +1242,7 @@ pub fn run_fix_pass(
                     logfile_prefix: &log_dir,
                     runtime: &mut runtime,
                     registry: ctx.registry,
-                    primary_agent: ctx.reviewer_agent,
+                    primary_agent: _agent.unwrap_or(ctx.reviewer_agent),
                     session_info: session_info.as_ref(),
                     retry_num,
                     output_validator: Some(validate_output),

@@ -127,6 +127,7 @@ pub fn run_development_phase(
             developer_context,
             resuming_into_development,
             resume_context,
+            None,
         )?;
 
         if dev_result.had_error {
@@ -263,6 +264,7 @@ pub fn run_development_iteration_with_xml_retry(
     _developer_context: ContextLevel,
     _resuming_into_development: bool,
     _resume_context: Option<&ResumeContext>,
+    _agent: Option<&str>,
 ) -> anyhow::Result<DevIterationResult> {
     let prompt_md = fs::read_to_string("PROMPT.md").unwrap_or_default();
     let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
@@ -401,7 +403,7 @@ pub fn run_development_iteration_with_xml_retry(
                     logfile_prefix: &log_dir,
                     runtime: &mut runtime,
                     registry: ctx.registry,
-                    primary_agent: ctx.developer_agent,
+                    primary_agent: _agent.unwrap_or(ctx.developer_agent),
                     session_info: session_info.as_ref(),
                     retry_num,
                     output_validator: None,

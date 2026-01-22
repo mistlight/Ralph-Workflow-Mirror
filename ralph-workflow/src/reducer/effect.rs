@@ -1,9 +1,10 @@
 //! Effect types and handlers for side effects.
 //!
 //! Effects represent side-effect operations that the reducer triggers.
-//! The pure reducer computes effects, and effect handlers execute them.
+//! Effect handlers execute effects and emit events.
 
 use crate::agents::AgentRole;
+use crate::phases::PhaseContext;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -67,38 +68,8 @@ pub enum Effect {
 /// Trait for executing effects.
 ///
 /// This trait allows mocking in tests by providing alternative implementations.
-pub trait EffectHandler {
-    fn execute(&mut self, effect: Effect) -> Result<PipelineEvent>;
-
-    fn invoke_agent(
-        &mut self,
-        role: AgentRole,
-        agent: String,
-        model: Option<String>,
-        prompt: String,
-    ) -> Result<PipelineEvent>;
-
-    fn generate_plan(&mut self, iteration: u32) -> Result<PipelineEvent>;
-
-    fn run_development_iteration(&mut self, iteration: u32) -> Result<PipelineEvent>;
-
-    fn run_review_pass(&mut self, pass: u32) -> Result<PipelineEvent>;
-
-    fn run_fix_attempt(&mut self, pass: u32) -> Result<PipelineEvent>;
-
-    fn run_rebase(&mut self, phase: RebasePhase, target_branch: String) -> Result<PipelineEvent>;
-
-    fn resolve_rebase_conflicts(&mut self, strategy: ConflictStrategy) -> Result<PipelineEvent>;
-
-    fn generate_commit_message(&mut self) -> Result<PipelineEvent>;
-
-    fn create_commit(&mut self, message: String) -> Result<PipelineEvent>;
-
-    fn skip_commit(&mut self, reason: String) -> Result<PipelineEvent>;
-
-    fn validate_final_state(&mut self) -> Result<PipelineEvent>;
-
-    fn save_checkpoint(&mut self, trigger: CheckpointTrigger) -> Result<PipelineEvent>;
+pub trait EffectHandler<'ctx> {
+    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent>;
 }
 
 #[cfg(test)]
@@ -126,7 +97,7 @@ mod tests {
             } => {
                 assert_eq!(role, AgentRole::Developer);
                 assert_eq!(agent, "claude");
-                assert!(model.is_none());
+                assert_eq!(model.is_none()); ;
                 assert_eq!(prompt, "test");
             }
             _ => panic!("Expected AgentInvocation effect"),

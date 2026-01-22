@@ -21,87 +21,105 @@ use std::path::Path;
 ///
 /// This handler executes effects by calling existing pipeline functions,
 /// maintaining compatibility while migrating to reducer architecture.
-pub struct MainEffectHandler<'ctx> {
-    /// Phase context containing all runtime dependencies
-    pub phase_ctx: &'ctx mut PhaseContext<'ctx>,
+pub struct MainEffectHandler {
     /// Current pipeline state
     pub state: PipelineState,
     /// Event log for replay/debugging
     pub event_log: Vec<PipelineEvent>,
 }
 
-impl<'ctx> MainEffectHandler<'ctx> {
+impl MainEffectHandler {
     /// Create a new effect handler.
-    pub fn new(phase_ctx: &'ctx mut PhaseContext<'ctx>, state: PipelineState) -> Self {
+    pub fn new(state: PipelineState) -> Self {
         Self {
-            phase_ctx,
             state,
             event_log: Vec::new(),
         }
     }
 }
 
-impl<'a> EffectHandler for MainEffectHandler<'a> {
-    fn execute(&mut self, effect: Effect) -> Result<PipelineEvent> {
+impl<'ctx> EffectHandler<'ctx> for MainEffectHandler {
+    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+        let event = self.execute_effect(effect, ctx)?;
+        self.event_log.push(event.clone());
+        Ok(event)
+    }
+}
+
+impl MainEffectHandler {
+    fn execute_effect(
+        &mut self,
+        effect: Effect,
+        ctx: &mut PhaseContext<'_>,
+    ) -> Result<PipelineEvent> {
         match effect {
             Effect::AgentInvocation {
                 role,
                 agent,
                 model,
                 prompt,
-            } => self.invoke_agent(role, agent, model, prompt),
+            } => self.invoke_agent(ctx, role, agent, model, prompt),
 
-            Effect::GeneratePlan { iteration } => self.generate_plan(iteration),
+            Effect::GeneratePlan { iteration } => self.generate_plan(ctx, iteration),
 
             Effect::RunDevelopmentIteration { iteration } => {
-                self.run_development_iteration(iteration)
+                self.run_development_iteration(ctx, iteration)
             }
 
-            Effect::RunReviewPass { pass } => self.run_review_pass(pass),
+            Effect::RunReviewPass { pass } => self.run_review_pass(ctx, pass),
 
-            Effect::RunFixAttempt { pass } => self.run_fix_attempt(pass),
+            Effect::RunFixAttempt { pass } => self.run_fix_attempt(ctx, pass),
 
             Effect::RunRebase {
                 phase,
                 target_branch,
-            } => self.run_rebase(phase, target_branch),
+            } => self.run_rebase(ctx, phase, target_branch),
 
-            Effect::ResolveRebaseConflicts { strategy } => self.resolve_rebase_conflicts(strategy),
+            Effect::ResolveRebaseConflicts { strategy } => {
+                self.resolve_rebase_conflicts(ctx, strategy)
+            }
 
-            Effect::GenerateCommitMessage => self.generate_commit_message(),
+            Effect::GenerateCommitMessage => self.generate_commit_message(ctx),
 
-            Effect::CreateCommit { message } => self.create_commit(message),
+            Effect::CreateCommit { message } => self.create_commit(ctx, message),
 
-            Effect::SkipCommit { reason } => self.skip_commit(reason),
+            Effect::SkipCommit { reason } => self.skip_commit(ctx, reason),
 
-            Effect::ValidateFinalState => self.validate_final_state(),
+            Effect::ValidateFinalState => self.validate_final_state(ctx),
 
-            Effect::SaveCheckpoint { trigger } => self.save_checkpoint(trigger),
+            Effect::SaveCheckpoint { trigger } => self.save_checkpoint(ctx, trigger),
         }
     }
 
     fn invoke_agent(
         &mut self,
+        ctx: &mut PhaseContext<'_>,
         role: AgentRole,
         agent: String,
         _model: Option<String>,
         prompt: String,
     ) -> Result<PipelineEvent> {
-        let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
+        // Use agent from state.agent_chain if available
+        let effective_agent = self
+            .state
+            .agent_chain
+            .current_agent()
+            .unwrap_or(&agent)
+            .clone();
 
         // Get agent configuration from registry
         let agent_config = ctx
             .registry
-            .resolve_config(&agent)
-            .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", agent))?;
+            .resolve_config(&effective_agent)
+            .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", effective_agent))?;
 
         // Determine log file path
-        let logfile = format!(".agent/logs/{}.log", agent.to_lowercase());
+        let logfile = format!(".agent/logs/{}.log", effective_agent.to_lowercase());
 
         // Build prompt command
         let prompt_cmd = PromptCommand {
-            label: &agent,
-            display_name: &agent,
+            label: &effective_agent,
+            display_name: &effective_agent,
             cmd_str: &agent_config.cmd,
             prompt: &prompt,
             logfile: &logfile,
@@ -123,7 +141,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         match run_with_prompt(&prompt_cmd, &mut runtime) {
             Ok(result) if result.exit_code == 0 => Ok(PipelineEvent::AgentInvocationSucceeded {
                 role,
-                agent: agent.clone(),
+                agent: effective_agent.clone(),
             }),
             Ok(result) => {
                 let exit_code = result.exit_code;
@@ -132,7 +150,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
 
                 Ok(PipelineEvent::AgentInvocationFailed {
                     role,
-                    agent,
+                    agent: effective_agent,
                     exit_code,
                     error_kind,
                     retriable,
@@ -140,7 +158,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
             }
             Err(_) => Ok(PipelineEvent::AgentInvocationFailed {
                 role,
-                agent,
+                agent: effective_agent,
                 exit_code: 1,
                 error_kind: AgentErrorKind::InternalError,
                 retriable: true,
@@ -148,9 +166,11 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn generate_plan(&mut self, iteration: u32) -> Result<PipelineEvent> {
-        let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
-
+    fn generate_plan(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<PipelineEvent> {
         match development::run_planning_step(ctx, iteration) {
             Ok(_) => {
                 // Validate plan was created
@@ -176,11 +196,16 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn run_development_iteration(&mut self, iteration: u32) -> Result<PipelineEvent> {
+    fn run_development_iteration(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<PipelineEvent> {
         use crate::checkpoint::restore::ResumeContext;
-
-        let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
         let developer_context = ContextLevel::from(ctx.config.developer_context);
+
+        // Get current agent from agent chain
+        let dev_agent = self.state.agent_chain.current_agent().cloned();
 
         // Run development iteration
         let result = development::run_development_iteration_with_xml_retry(
@@ -189,6 +214,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
             developer_context,
             false,
             None::<&ResumeContext>,
+            dev_agent.as_deref(),
         );
 
         match result {
@@ -203,11 +229,13 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn run_review_pass(&mut self, pass: u32) -> Result<PipelineEvent> {
-        let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
+    fn run_review_pass(&mut self, ctx: &mut PhaseContext<'_>, pass: u32) -> Result<PipelineEvent> {
         let review_label = format!("review_{}", pass);
 
-        match review::run_review_pass(ctx, pass, &review_label, "") {
+        // Get current reviewer agent from agent chain
+        let review_agent = self.state.agent_chain.current_agent().cloned();
+
+        match review::run_review_pass(ctx, pass, &review_label, "", review_agent.as_deref()) {
             Ok(result) => Ok(PipelineEvent::ReviewCompleted {
                 pass,
                 issues_found: !result.early_exit,
@@ -219,13 +247,20 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn run_fix_attempt(&mut self, pass: u32) -> Result<PipelineEvent> {
+    fn run_fix_attempt(&mut self, ctx: &mut PhaseContext<'_>, pass: u32) -> Result<PipelineEvent> {
         use crate::checkpoint::restore::ResumeContext;
-
-        let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
         let reviewer_context = ContextLevel::from(ctx.config.reviewer_context);
 
-        match review::run_fix_pass(ctx, pass, reviewer_context, None::<&ResumeContext>) {
+        // Get current reviewer agent from agent chain
+        let fix_agent = self.state.agent_chain.current_agent().cloned();
+
+        match review::run_fix_pass(
+            ctx,
+            pass,
+            reviewer_context,
+            None::<&ResumeContext>,
+            fix_agent.as_deref(),
+        ) {
             Ok(_) => Ok(PipelineEvent::FixAttemptCompleted {
                 pass,
                 changes_made: true,
@@ -237,7 +272,12 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn run_rebase(&mut self, phase: RebasePhase, target_branch: String) -> Result<PipelineEvent> {
+    fn run_rebase(
+        &mut self,
+        _ctx: &mut PhaseContext<'_>,
+        phase: RebasePhase,
+        target_branch: String,
+    ) -> Result<PipelineEvent> {
         use crate::git_helpers::{get_conflicted_files, rebase_onto};
 
         match rebase_onto(&target_branch) {
@@ -271,7 +311,11 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn resolve_rebase_conflicts(&mut self, strategy: ConflictStrategy) -> Result<PipelineEvent> {
+    fn resolve_rebase_conflicts(
+        &mut self,
+        _ctx: &mut PhaseContext<'_>,
+        strategy: ConflictStrategy,
+    ) -> Result<PipelineEvent> {
         use crate::git_helpers::{abort_rebase, continue_rebase, get_conflicted_files};
 
         match strategy {
@@ -318,11 +362,9 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn generate_commit_message(&mut self) -> Result<PipelineEvent> {
-        let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
-
+    fn generate_commit_message(&mut self, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
         let attempt = match &self.state.commit {
-            crate::reducer::state::CommitState::Generating { attempt, .. } => *attempt,
+            crate::reducer::state::CommitState::Generating { attempt, .. } => attempt.clone(),
             _ => 1,
         };
 
@@ -361,7 +403,11 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn create_commit(&mut self, message: String) -> Result<PipelineEvent> {
+    fn create_commit(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        message: String,
+    ) -> Result<PipelineEvent> {
         use crate::git_helpers::{git_add_all, git_commit};
 
         // Stage all changes
@@ -382,17 +428,23 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn skip_commit(&mut self, reason: String) -> Result<PipelineEvent> {
+    fn skip_commit(
+        &mut self,
+        _ctx: &mut PhaseContext<'_>,
+        reason: String,
+    ) -> Result<PipelineEvent> {
         Ok(PipelineEvent::CommitSkipped { reason })
     }
 
-    fn validate_final_state(&mut self) -> Result<PipelineEvent> {
+    fn validate_final_state(&mut self, _ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
         Ok(PipelineEvent::PipelineCompleted)
     }
 
-    fn save_checkpoint(&mut self, trigger: CheckpointTrigger) -> Result<PipelineEvent> {
-        let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
-
+    fn save_checkpoint(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        trigger: CheckpointTrigger,
+    ) -> Result<PipelineEvent> {
         if ctx.config.features.checkpoint_enabled {
             let _ = save_checkpoint_from_state(&self.state, ctx);
         }

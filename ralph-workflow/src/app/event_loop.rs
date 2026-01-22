@@ -54,9 +54,9 @@ pub struct EventLoopResult {
 ///
 /// # Returns
 ///
-/// Returns the event loop result with final state and statistics.
-pub fn run_event_loop(
-    phase_ctx: &mut PhaseContext<'_>,
+/// Returns event loop result with final state and statistics.
+pub fn run_event_loop<'a>(
+    phase_ctx: &'a mut PhaseContext<'a>,
     initial_state: Option<PipelineState>,
     config: EventLoopConfig,
 ) -> Result<EventLoopResult> {
@@ -86,19 +86,11 @@ pub fn run_event_loop(
         // Determine next effect based on current state
         let effect = determine_next_effect(&state);
 
-        // Create effect handler for this iteration
-        // SAFETY: We create a scoped borrow that lives only for this iteration.
-        // The handler is dropped before the next iteration, so the borrow ends.
-        let ctx_ptr = phase_ctx as *mut PhaseContext<'_> as *const PhaseContext<'_>;
+        // Execute effect and get event
         let event = {
-            // Reconstruct mutable reference for this scope only
-            let ctx_ref = unsafe { &mut *(ctx_ptr as *mut PhaseContext<'_>) };
-            let mut handler = MainEffectHandler::new(ctx_ref, state.clone());
-
-            // Execute effect to get event
-            handler.execute(effect)?
+            let mut handler = MainEffectHandler::new(state.clone());
+            handler.execute(effect, phase_ctx)?
         };
-        // Handler is dropped here, ending the borrow
 
         // Apply event to state (pure reduction)
         state = reduce(state, event.clone());
@@ -107,7 +99,7 @@ pub fn run_event_loop(
         event_log.push(event.clone());
         events_processed += 1;
 
-        // Handle checkpointing if enabled (now safe to use phase_ctx)
+        // Handle checkpointing if enabled (phase_ctx is available again)
         if config.enable_checkpointing {
             if let Err(e) = handle_checkpoint_trigger(&event, phase_ctx, &state) {
                 // Log checkpoint failure but continue
