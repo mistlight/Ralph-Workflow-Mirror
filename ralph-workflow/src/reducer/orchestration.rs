@@ -126,6 +126,39 @@ mod tests {
     }
 
     #[test]
+    fn test_initial_state_skips_planning_when_zero_developer_iters() {
+        // When developer_iters=0, the initial state should skip Planning phase entirely
+        let state = PipelineState::initial(0, 2);
+        assert_eq!(
+            state.phase,
+            PipelinePhase::Review,
+            "Initial phase should be Review when developer_iters=0 and reviewer_reviews>0"
+        );
+    }
+
+    #[test]
+    fn test_initial_state_skips_to_commit_when_zero_iters_and_reviews() {
+        // When both developer_iters=0 and reviewer_reviews=0, skip to CommitMessage
+        let state = PipelineState::initial(0, 0);
+        assert_eq!(
+            state.phase,
+            PipelinePhase::CommitMessage,
+            "Initial phase should be CommitMessage when developer_iters=0 and reviewer_reviews=0"
+        );
+    }
+
+    #[test]
+    fn test_initial_state_starts_planning_when_developer_iters_nonzero() {
+        // When developer_iters>0, start in Planning phase as normal
+        let state = PipelineState::initial(1, 0);
+        assert_eq!(
+            state.phase,
+            PipelinePhase::Planning,
+            "Initial phase should be Planning when developer_iters>0"
+        );
+    }
+
+    #[test]
     fn test_determine_effect_development_phase_empty_chain() {
         let state = PipelineState {
             phase: PipelinePhase::Development,

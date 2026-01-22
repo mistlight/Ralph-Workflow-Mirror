@@ -29,8 +29,21 @@ pub struct PipelineState {
 
 impl PipelineState {
     pub fn initial(developer_iters: u32, reviewer_reviews: u32) -> Self {
+        // Determine initial phase based on what work needs to be done
+        let initial_phase = if developer_iters == 0 {
+            // No development iterations → skip Planning and Development
+            if reviewer_reviews == 0 {
+                // No review passes either → go straight to commit
+                PipelinePhase::CommitMessage
+            } else {
+                PipelinePhase::Review
+            }
+        } else {
+            PipelinePhase::Planning
+        };
+
         Self {
-            phase: PipelinePhase::Planning,
+            phase: initial_phase,
             iteration: 0,
             total_iterations: developer_iters,
             reviewer_pass: 0,
