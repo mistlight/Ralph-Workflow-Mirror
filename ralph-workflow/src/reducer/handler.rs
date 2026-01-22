@@ -7,11 +7,12 @@
 use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase as CheckpointPhase};
 use crate::phases::{commit, development, get_primary_commit_agent, review, PhaseContext};
-use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
+use crate::pipeline::PipelineRuntime;
 use crate::prompts::ContextLevel;
 use crate::reducer::effect::{Effect, EffectHandler};
-use crate::reducer::event::{
-    AgentErrorKind, CheckpointTrigger, ConflictStrategy, PipelineEvent, RebasePhase,
+use crate::reducer::event::{CheckpointTrigger, ConflictStrategy, PipelineEvent, RebasePhase};
+use crate::reducer::fault_tolerant_executor::{
+    execute_agent_fault_tolerantly, AgentExecutionConfig,
 };
 use crate::reducer::state::PipelineState;
 use anyhow::Result;
@@ -118,17 +119,6 @@ impl MainEffectHandler {
         // Determine log file path
         let logfile = format!(".agent/logs/{}.log", effective_agent.to_lowercase());
 
-        // Build prompt command
-        let prompt_cmd = PromptCommand {
-            label: &effective_agent,
-            display_name: &effective_agent,
-            cmd_str: &agent_config.cmd,
-            prompt: &prompt,
-            logfile: &logfile,
-            parser_type: agent_config.json_parser,
-            env_vars: &agent_config.env_vars,
-        };
-
         // Build pipeline runtime
         let mut runtime = PipelineRuntime {
             timer: ctx.timer,
@@ -139,33 +129,19 @@ impl MainEffectHandler {
             agent_executor: None,
         };
 
-        // Execute agent with fallback chain
-        match run_with_prompt(&prompt_cmd, &mut runtime) {
-            Ok(result) if result.exit_code == 0 => Ok(PipelineEvent::AgentInvocationSucceeded {
-                role,
-                agent: effective_agent.clone(),
-            }),
-            Ok(result) => {
-                let exit_code = result.exit_code;
-                let error_kind = classify_agent_error(exit_code, &result.stderr);
-                let retriable = is_retriable_agent_error(&error_kind);
+        // Execute agent with fault-tolerant wrapper
+        let config = AgentExecutionConfig {
+            role,
+            agent_name: &effective_agent,
+            cmd_str: &agent_config.cmd,
+            parser_type: agent_config.json_parser,
+            env_vars: &agent_config.env_vars,
+            prompt: &prompt,
+            display_name: &effective_agent,
+            logfile: &logfile,
+        };
 
-                Ok(PipelineEvent::AgentInvocationFailed {
-                    role,
-                    agent: effective_agent,
-                    exit_code,
-                    error_kind,
-                    retriable,
-                })
-            }
-            Err(_) => Ok(PipelineEvent::AgentInvocationFailed {
-                role,
-                agent: effective_agent,
-                exit_code: 1,
-                error_kind: AgentErrorKind::InternalError,
-                retriable: true,
-            }),
-        }
+        execute_agent_fault_tolerantly(config, &mut runtime)
     }
 
     fn generate_plan(
@@ -475,55 +451,6 @@ impl MainEffectHandler {
 
         Ok(PipelineEvent::AgentChainInitialized { role, agents })
     }
-}
-
-/// Classify agent error from exit code and stderr.
-fn classify_agent_error(_exit_code: i32, stderr: &str) -> AgentErrorKind {
-    let stderr_lower = stderr.to_lowercase();
-
-    if stderr_lower.contains("network")
-        || stderr_lower.contains("connection")
-        || stderr_lower.contains("timeout")
-    {
-        AgentErrorKind::Network
-    } else if stderr_lower.contains("auth")
-        || stderr_lower.contains("api key")
-        || stderr_lower.contains("unauthorized")
-    {
-        AgentErrorKind::Authentication
-    } else if stderr_lower.contains("rate limit")
-        || stderr_lower.contains("quota")
-        || stderr_lower.contains("too many requests")
-    {
-        AgentErrorKind::RateLimit
-    } else if stderr_lower.contains("model")
-        && (stderr_lower.contains("not found") || stderr_lower.contains("unavailable"))
-    {
-        AgentErrorKind::ModelUnavailable
-    } else if stderr_lower.contains("parse")
-        || stderr_lower.contains("invalid")
-        || stderr_lower.contains("malformed")
-    {
-        AgentErrorKind::ParsingError
-    } else if stderr_lower.contains("permission")
-        || stderr_lower.contains("access denied")
-        || stderr_lower.contains("file")
-    {
-        AgentErrorKind::FileSystem
-    } else {
-        AgentErrorKind::InternalError
-    }
-}
-
-/// Determine if agent error is retriable.
-fn is_retriable_agent_error(error_kind: &AgentErrorKind) -> bool {
-    matches!(
-        error_kind,
-        AgentErrorKind::Network
-            | AgentErrorKind::RateLimit
-            | AgentErrorKind::Timeout
-            | AgentErrorKind::ModelUnavailable
-    )
 }
 
 /// Save checkpoint from current pipeline state.

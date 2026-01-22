@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Fault-tolerant agent executor.
 //!
 //! This module provides bulletproof agent execution wrapper that:
@@ -90,6 +89,7 @@ pub fn execute_agent_fault_tolerantly(
 /// This function does the actual agent execution and returns
 /// either success or failure events. It's wrapped by
 /// `execute_agent_fault_tolerantly` which handles panics.
+#[allow(dead_code)]
 fn try_agent_execution(
     config: AgentExecutionConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,
@@ -142,6 +142,7 @@ fn try_agent_execution(
 }
 
 /// Classify agent error from exit code and stderr.
+#[allow(dead_code)]
 fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
     const SIGSEGV: i32 = 139;
     const SIGABRT: i32 = 134;
@@ -190,6 +191,7 @@ fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
 }
 
 /// Classify I/O error during agent execution.
+#[allow(dead_code)]
 fn classify_io_error(error: &io::Error) -> AgentErrorKind {
     let error_msg = error.to_string().to_lowercase();
 
@@ -212,6 +214,7 @@ fn classify_io_error(error: &io::Error) -> AgentErrorKind {
 ///
 /// Retriable errors should trigger model fallback (same agent, different model).
 /// Non-retriable errors should trigger agent fallback (different agent).
+#[allow(dead_code)]
 fn is_retriable_agent_error(error_kind: &AgentErrorKind) -> bool {
     matches!(
         error_kind,

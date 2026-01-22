@@ -78,8 +78,6 @@ pub trait EffectHandler<'ctx> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // #[test]
     // fn test_effect_serialization() {
     //     let effect = Effect::AgentInvocation {

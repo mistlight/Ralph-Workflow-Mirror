@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Event loop for reducer-based pipeline architecture.
 //!
 //! This module implements main event loop that coordinates reducer,
@@ -22,6 +21,7 @@ pub struct EventLoopConfig {
 }
 
 /// Result of event loop execution.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct EventLoopResult {
     /// Whether pipeline completed successfully.

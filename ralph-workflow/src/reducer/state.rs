@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Pipeline state types for reducer architecture.
 //!
 //! Defines immutable state structures that capture complete pipeline execution context.
@@ -99,6 +98,7 @@ impl AgentChainState {
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_max_cycles(mut self, max_cycles: u32) -> Self {
         self.max_cycles = max_cycles;
         self
@@ -108,6 +108,7 @@ impl AgentChainState {
         self.agents.get(self.current_agent_index)
     }
 
+    #[allow(dead_code)]
     pub fn current_model(&self) -> Option<&String> {
         self.models_per_agent
             .get(self.current_agent_index)
