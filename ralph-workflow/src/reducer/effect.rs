@@ -68,37 +68,37 @@ pub enum Effect {
 ///
 /// This trait allows mocking in tests by providing alternative implementations.
 pub trait EffectHandler {
-    fn execute(&self, effect: Effect) -> Result<PipelineEvent>;
+    fn execute(&mut self, effect: Effect) -> Result<PipelineEvent>;
 
     fn invoke_agent(
-        &self,
+        &mut self,
         role: AgentRole,
         agent: String,
         model: Option<String>,
         prompt: String,
     ) -> Result<PipelineEvent>;
 
-    fn generate_plan(&self, iteration: u32) -> Result<PipelineEvent>;
+    fn generate_plan(&mut self, iteration: u32) -> Result<PipelineEvent>;
 
-    fn run_development_iteration(&self, iteration: u32) -> Result<PipelineEvent>;
+    fn run_development_iteration(&mut self, iteration: u32) -> Result<PipelineEvent>;
 
-    fn run_review_pass(&self, pass: u32) -> Result<PipelineEvent>;
+    fn run_review_pass(&mut self, pass: u32) -> Result<PipelineEvent>;
 
-    fn run_fix_attempt(&self, pass: u32) -> Result<PipelineEvent>;
+    fn run_fix_attempt(&mut self, pass: u32) -> Result<PipelineEvent>;
 
-    fn run_rebase(&self, phase: RebasePhase, target_branch: String) -> Result<PipelineEvent>;
+    fn run_rebase(&mut self, phase: RebasePhase, target_branch: String) -> Result<PipelineEvent>;
 
-    fn resolve_rebase_conflicts(&self, strategy: ConflictStrategy) -> Result<PipelineEvent>;
+    fn resolve_rebase_conflicts(&mut self, strategy: ConflictStrategy) -> Result<PipelineEvent>;
 
-    fn generate_commit_message(&self) -> Result<PipelineEvent>;
+    fn generate_commit_message(&mut self) -> Result<PipelineEvent>;
 
-    fn create_commit(&self, message: String) -> Result<PipelineEvent>;
+    fn create_commit(&mut self, message: String) -> Result<PipelineEvent>;
 
-    fn skip_commit(&self, reason: String) -> Result<PipelineEvent>;
+    fn skip_commit(&mut self, reason: String) -> Result<PipelineEvent>;
 
-    fn validate_final_state(&self) -> Result<PipelineEvent>;
+    fn validate_final_state(&mut self) -> Result<PipelineEvent>;
 
-    fn save_checkpoint(&self, trigger: CheckpointTrigger) -> Result<PipelineEvent>;
+    fn save_checkpoint(&mut self, trigger: CheckpointTrigger) -> Result<PipelineEvent>;
 }
 
 #[cfg(test)]

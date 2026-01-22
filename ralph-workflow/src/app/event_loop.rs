@@ -93,7 +93,7 @@ pub fn run_event_loop(
         let event = {
             // Reconstruct mutable reference for this scope only
             let ctx_ref = unsafe { &mut *(ctx_ptr as *mut PhaseContext<'_>) };
-            let handler = MainEffectHandler::new(ctx_ref, state.clone());
+            let mut handler = MainEffectHandler::new(ctx_ref, state.clone());
 
             // Execute effect to get event
             handler.execute(effect)?

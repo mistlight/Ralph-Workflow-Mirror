@@ -39,6 +39,7 @@
 
 pub mod effect;
 pub mod event;
+pub mod fault_tolerant_executor;
 pub mod handler;
 pub mod migration;
 pub mod orchestration;
@@ -47,6 +48,7 @@ pub mod state_reduction;
 
 pub use effect::{Effect, EffectHandler};
 pub use event::{AgentErrorKind, ConflictStrategy, PipelineEvent, RebasePhase};
+pub use fault_tolerant_executor::{execute_agent_fault_tolerantly, AgentExecutionConfig};
 pub use handler::MainEffectHandler;
 pub use orchestration::determine_next_effect;
 pub use state::{AgentChainState, CommitState, PipelineState, RebaseState};

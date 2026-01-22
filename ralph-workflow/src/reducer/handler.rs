@@ -42,7 +42,7 @@ impl<'ctx> MainEffectHandler<'ctx> {
 }
 
 impl<'a> EffectHandler for MainEffectHandler<'a> {
-    fn execute(&self, effect: Effect) -> Result<PipelineEvent> {
+    fn execute(&mut self, effect: Effect) -> Result<PipelineEvent> {
         match effect {
             Effect::AgentInvocation {
                 role,
@@ -81,7 +81,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
     }
 
     fn invoke_agent(
-        &self,
+        &mut self,
         role: AgentRole,
         agent: String,
         _model: Option<String>,
@@ -148,7 +148,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn generate_plan(&self, iteration: u32) -> Result<PipelineEvent> {
+    fn generate_plan(&mut self, iteration: u32) -> Result<PipelineEvent> {
         let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
 
         match development::run_planning_step(ctx, iteration) {
@@ -176,7 +176,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn run_development_iteration(&self, iteration: u32) -> Result<PipelineEvent> {
+    fn run_development_iteration(&mut self, iteration: u32) -> Result<PipelineEvent> {
         use crate::checkpoint::restore::ResumeContext;
 
         let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
@@ -203,7 +203,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn run_review_pass(&self, pass: u32) -> Result<PipelineEvent> {
+    fn run_review_pass(&mut self, pass: u32) -> Result<PipelineEvent> {
         let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
         let review_label = format!("review_{}", pass);
 
@@ -219,7 +219,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn run_fix_attempt(&self, pass: u32) -> Result<PipelineEvent> {
+    fn run_fix_attempt(&mut self, pass: u32) -> Result<PipelineEvent> {
         use crate::checkpoint::restore::ResumeContext;
 
         let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
@@ -237,7 +237,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn run_rebase(&self, phase: RebasePhase, target_branch: String) -> Result<PipelineEvent> {
+    fn run_rebase(&mut self, phase: RebasePhase, target_branch: String) -> Result<PipelineEvent> {
         use crate::git_helpers::{get_conflicted_files, rebase_onto};
 
         match rebase_onto(&target_branch) {
@@ -271,7 +271,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn resolve_rebase_conflicts(&self, strategy: ConflictStrategy) -> Result<PipelineEvent> {
+    fn resolve_rebase_conflicts(&mut self, strategy: ConflictStrategy) -> Result<PipelineEvent> {
         use crate::git_helpers::{abort_rebase, continue_rebase, get_conflicted_files};
 
         match strategy {
@@ -318,7 +318,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn generate_commit_message(&self) -> Result<PipelineEvent> {
+    fn generate_commit_message(&mut self) -> Result<PipelineEvent> {
         let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
 
         let attempt = match &self.state.commit {
@@ -361,7 +361,7 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn create_commit(&self, message: String) -> Result<PipelineEvent> {
+    fn create_commit(&mut self, message: String) -> Result<PipelineEvent> {
         use crate::git_helpers::{git_add_all, git_commit};
 
         // Stage all changes
@@ -382,15 +382,15 @@ impl<'a> EffectHandler for MainEffectHandler<'a> {
         }
     }
 
-    fn skip_commit(&self, reason: String) -> Result<PipelineEvent> {
+    fn skip_commit(&mut self, reason: String) -> Result<PipelineEvent> {
         Ok(PipelineEvent::CommitSkipped { reason })
     }
 
-    fn validate_final_state(&self) -> Result<PipelineEvent> {
+    fn validate_final_state(&mut self) -> Result<PipelineEvent> {
         Ok(PipelineEvent::PipelineCompleted)
     }
 
-    fn save_checkpoint(&self, trigger: CheckpointTrigger) -> Result<PipelineEvent> {
+    fn save_checkpoint(&mut self, trigger: CheckpointTrigger) -> Result<PipelineEvent> {
         let ctx = unsafe { &mut *(self.phase_ctx as *const PhaseContext as *mut PhaseContext) };
 
         if ctx.config.features.checkpoint_enabled {
