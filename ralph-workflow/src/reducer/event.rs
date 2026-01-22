@@ -123,6 +123,10 @@ pub enum PipelineEvent {
     AgentChainExhausted {
         role: AgentRole,
     },
+    AgentChainInitialized {
+        role: AgentRole,
+        agents: Vec<String>,
+    },
 
     RebaseStarted {
         phase: RebasePhase,

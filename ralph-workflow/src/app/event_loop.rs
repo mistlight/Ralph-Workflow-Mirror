@@ -39,6 +39,9 @@ pub struct EventLoopResult {
 /// 3. Applying the resulting event to state through the reducer (pure function)
 /// 4. Repeating until a terminal state is reached or max iterations exceeded
 ///
+/// The entire event loop is wrapped in panic recovery to ensure the pipeline
+/// never crashes due to agent failures (including segmentation faults).
+///
 /// # Arguments
 ///
 /// * `ctx` - Phase context for effect handlers
@@ -49,6 +52,32 @@ pub struct EventLoopResult {
 ///
 /// Returns the event loop result containing the completion status and final state.
 pub fn run_event_loop(
+    ctx: &mut PhaseContext<'_>,
+    initial_state: Option<PipelineState>,
+    config: EventLoopConfig,
+) -> Result<EventLoopResult> {
+    let loop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_event_loop_internal(ctx, initial_state.clone(), config)
+    }));
+
+    match loop_result {
+        Ok(result) => result,
+        Err(_) => {
+            ctx.logger.error("Event loop recovered from panic");
+            let fallback_state = initial_state.unwrap_or_else(|| {
+                PipelineState::initial(ctx.config.developer_iters, ctx.config.reviewer_reviews)
+            });
+
+            Ok(EventLoopResult {
+                completed: false,
+                events_processed: 0,
+                final_state: fallback_state,
+            })
+        }
+    }
+}
+
+fn run_event_loop_internal(
     ctx: &mut PhaseContext<'_>,
     initial_state: Option<PipelineState>,
     config: EventLoopConfig,

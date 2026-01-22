@@ -234,6 +234,17 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             ..state
         },
         PipelineEvent::AgentRetryCycleStarted { .. } => state,
+        PipelineEvent::AgentChainInitialized { role, agents } => {
+            let models_per_agent = agents.iter().map(|_| vec![]).collect();
+
+            PipelineState {
+                agent_chain: state
+                    .agent_chain
+                    .with_agents(agents, models_per_agent, role)
+                    .reset_for_role(role),
+                ..state
+            }
+        }
         PipelineEvent::RebaseAborted { .. } => state,
         PipelineEvent::CommitMessageValidationFailed { .. } => state,
     }

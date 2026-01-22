@@ -6,7 +6,7 @@
 
 use crate::agents::AgentRole;
 use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase as CheckpointPhase};
-use crate::phases::{commit, development, review, PhaseContext};
+use crate::phases::{commit, development, get_primary_commit_agent, review, PhaseContext};
 use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
 use crate::prompts::ContextLevel;
 use crate::reducer::effect::{Effect, EffectHandler};
@@ -59,6 +59,8 @@ impl MainEffectHandler {
                 model,
                 prompt,
             } => self.invoke_agent(ctx, role, agent, model, prompt),
+
+            Effect::InitializeAgentChain { role } => self.initialize_agent_chain(ctx, role),
 
             Effect::GeneratePlan { iteration } => self.generate_plan(ctx, iteration),
 
@@ -450,6 +452,28 @@ impl MainEffectHandler {
         }
 
         Ok(PipelineEvent::CheckpointSaved { trigger })
+    }
+
+    fn initialize_agent_chain(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        role: AgentRole,
+    ) -> Result<PipelineEvent> {
+        let agents = match role {
+            AgentRole::Developer => vec![ctx.developer_agent.to_string()],
+            AgentRole::Reviewer => vec![ctx.reviewer_agent.to_string()],
+            AgentRole::Commit => {
+                if let Some(commit_agent) = get_primary_commit_agent(ctx) {
+                    vec![commit_agent]
+                } else {
+                    vec![]
+                }
+            }
+        };
+
+        let _models_per_agent: Vec<Vec<String>> = agents.iter().map(|_| vec![]).collect();
+
+        Ok(PipelineEvent::AgentChainInitialized { role, agents })
     }
 }
 

@@ -23,6 +23,10 @@ pub enum Effect {
         prompt: String,
     },
 
+    InitializeAgentChain {
+        role: AgentRole,
+    },
+
     GeneratePlan {
         iteration: u32,
     },

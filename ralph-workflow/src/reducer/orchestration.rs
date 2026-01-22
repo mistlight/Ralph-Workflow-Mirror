@@ -6,6 +6,7 @@
 use super::event::{CheckpointTrigger, PipelinePhase};
 use super::state::{CommitState, PipelineState};
 
+use crate::agents::AgentRole;
 use crate::reducer::effect::Effect;
 
 /// Determine the next effect to execute based on current state.
@@ -14,11 +15,23 @@ use crate::reducer::effect::Effect;
 /// The actual execution happens in the effect handler.
 pub fn determine_next_effect(state: &PipelineState) -> Effect {
     match state.phase {
-        PipelinePhase::Planning => Effect::GeneratePlan {
-            iteration: state.iteration,
-        },
+        PipelinePhase::Planning => {
+            if state.agent_chain.agents.is_empty() {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Developer,
+                };
+            }
+            Effect::GeneratePlan {
+                iteration: state.iteration,
+            }
+        }
 
         PipelinePhase::Development => {
+            if state.agent_chain.is_exhausted() || state.agent_chain.agents.is_empty() {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Developer,
+                };
+            }
             if state.iteration <= state.total_iterations {
                 Effect::RunDevelopmentIteration {
                     iteration: state.iteration,
@@ -31,7 +44,12 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         }
 
         PipelinePhase::Review => {
-            if state.reviewer_pass <= state.total_reviewer_passes {
+            if state.agent_chain.is_exhausted() || state.agent_chain.agents.is_empty() {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Reviewer,
+                };
+            }
+            if state.reviewer_pass < state.total_reviewer_passes {
                 Effect::RunReviewPass {
                     pass: state.reviewer_pass,
                 }
@@ -42,15 +60,15 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             }
         }
 
-        PipelinePhase::CommitMessage => match &state.commit {
+        PipelinePhase::CommitMessage => match state.commit {
             CommitState::NotStarted => Effect::GenerateCommitMessage,
-            CommitState::Generating { .. } => Effect::GenerateCommitMessage,
-            CommitState::Generated { message } => Effect::CreateCommit {
-                message: message.clone(),
+            CommitState::Generated { .. } => Effect::SaveCheckpoint {
+                trigger: CheckpointTrigger::PhaseTransition,
             },
             CommitState::Committed { .. } | CommitState::Skipped => Effect::SaveCheckpoint {
                 trigger: CheckpointTrigger::PhaseTransition,
             },
+            CommitState::Generating { .. } => Effect::GenerateCommitMessage,
         },
 
         PipelinePhase::FinalValidation => Effect::ValidateFinalState,
@@ -64,6 +82,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reducer::state::AgentChainState;
 
     fn create_test_state() -> PipelineState {
         PipelineState::initial(5, 2)
@@ -73,15 +92,87 @@ mod tests {
     fn test_determine_effect_planning_phase() {
         let state = create_test_state();
         let effect = determine_next_effect(&state);
+        assert!(matches!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Developer
+            }
+        ));
+    }
+
+    #[test]
+    fn test_determine_effect_planning_with_agents() {
+        let state = PipelineState {
+            phase: PipelinePhase::Planning,
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
         assert!(matches!(effect, Effect::GeneratePlan { .. }));
     }
 
     #[test]
-    fn test_determine_effect_development_phase() {
+    fn test_determine_effect_development_phase_empty_chain() {
         let state = PipelineState {
             phase: PipelinePhase::Development,
             iteration: 2,
             total_iterations: 5,
+            agent_chain: AgentChainState::initial(),
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Developer
+            }
+        ));
+    }
+
+    #[test]
+    fn test_determine_effect_development_phase_exhausted_chain() {
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(3);
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 2,
+            total_iterations: 5,
+            agent_chain: chain,
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Developer
+            }
+        ));
+    }
+
+    #[test]
+    fn test_determine_effect_development_phase_with_chain() {
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 2,
+            total_iterations: 5,
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
@@ -94,6 +185,11 @@ mod tests {
             phase: PipelinePhase::Development,
             iteration: 6,
             total_iterations: 5,
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
@@ -101,15 +197,84 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_effect_review_phase() {
+    fn test_determine_effect_review_phase_empty_chain() {
         let state = PipelineState {
             phase: PipelinePhase::Review,
             reviewer_pass: 1,
             total_reviewer_passes: 2,
+            agent_chain: AgentChainState::initial(),
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Reviewer
+            }
+        ));
+    }
+
+    #[test]
+    fn test_determine_effect_review_phase_exhausted_chain() {
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Reviewer,
+            )
+            .with_max_cycles(3);
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 1,
+            total_reviewer_passes: 2,
+            agent_chain: chain,
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Reviewer
+            }
+        ));
+    }
+
+    #[test]
+    fn test_determine_effect_review_phase_with_chain() {
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 1,
+            total_reviewer_passes: 2,
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Reviewer,
+            ),
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
         assert!(matches!(effect, Effect::RunReviewPass { .. }));
+    }
+
+    #[test]
+    fn test_determine_effect_review_complete() {
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 2,
+            total_reviewer_passes: 2,
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Reviewer,
+            ),
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
     }
 
     #[test]
@@ -133,7 +298,7 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::CreateCommit { .. }));
+        assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
     }
 
     #[test]
