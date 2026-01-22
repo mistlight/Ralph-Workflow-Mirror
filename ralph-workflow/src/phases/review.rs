@@ -731,8 +731,11 @@ pub fn run_review_pass(
         ctx.stats.reviewer_runs_completed += 1;
 
         // Extract session info for potential retry (only if we don't have it yet)
-        let log_dir_path = Path::new(&log_dir);
+        // IMPORTANT: Always extract from attempt 0's log directory, as that's where the
+        // initial session was created. Subsequent retries use continuation with the same session.
         if session_info.is_none() {
+            let first_attempt_log_dir = format!(".agent/logs/reviewer_review_{j}_attempt_0");
+            let log_dir_path = Path::new(&first_attempt_log_dir);
             if let Some(agent_config) = ctx.registry.resolve_config(ctx.reviewer_agent) {
                 session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                     log_dir_path,
