@@ -32,7 +32,7 @@
 //! ensuring that session continuation is only attempted with the same agent.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Tracks session state for agent continuation.
 ///
@@ -249,30 +249,74 @@ pub fn extract_session_info_from_log_prefix(
 ) -> Option<SessionInfo> {
     use crate::agents::JsonParserType;
 
-    // Find the most recent log file matching the prefix
-    let log_file = super::logfile::find_most_recent_logfile(log_prefix)?;
+    // Get all log files matching the prefix, sorted by modification time (oldest first)
+    // This handles the case where continuation logs (without session IDs) exist
+    // alongside the initial log (with session ID).
+    let parent = log_prefix.parent().unwrap_or(Path::new("."));
+    let prefix_str = log_prefix.file_name().and_then(|s| s.to_str())?;
 
-    // Use the known agent name if provided, otherwise extract from log file name
+    let mut log_files: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(parent) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
+                // Match files that start with our prefix, have more content, and end with .log
+                if filename.starts_with(prefix_str)
+                    && filename.len() > prefix_str.len()
+                    && filename.ends_with(".log")
+                {
+                    if let Ok(metadata) = fs::metadata(&path) {
+                        if let Ok(modified) = metadata.modified() {
+                            log_files.push((path, modified));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if log_files.is_empty() {
+        return None;
+    }
+
+    // Sort by modification time (oldest first)
+    // This ensures we check the initial log (with session ID) before continuation logs
+    log_files.sort_by_key(|(_, time)| *time);
+
+    // Use the known agent name if provided
     let agent_name = if let Some(name) = known_agent_name {
         name.to_string()
     } else {
-        // Fallback: extract from log file name (may be sanitized/ambiguous)
-        super::logfile::extract_agent_name_from_logfile(&log_file, log_prefix)?
+        // If no known agent name, try to extract from the first log file
+        if let Some((first_log, _)) = log_files.first() {
+            super::logfile::extract_agent_name_from_logfile(first_log, log_prefix)?
+        } else {
+            return None;
+        }
     };
 
-    // Extract session ID based on parser type
-    let session_id = match parser_type {
-        JsonParserType::OpenCode => extract_opencode_session_id(&log_file),
-        JsonParserType::Claude => extract_claude_session_id(&log_file),
-        // Other parsers don't support session continuation
-        JsonParserType::Codex | JsonParserType::Gemini | JsonParserType::Generic => None,
-    }?;
+    // Try to extract session ID from each log file (oldest first)
+    // The first file with a valid session ID wins
+    for (log_file, _) in &log_files {
+        let session_id = match parser_type {
+            JsonParserType::OpenCode => extract_opencode_session_id(log_file),
+            JsonParserType::Claude => extract_claude_session_id(log_file),
+            // Other parsers don't support session continuation
+            JsonParserType::Codex | JsonParserType::Gemini | JsonParserType::Generic => None,
+        };
 
-    Some(SessionInfo {
-        session_id,
-        agent_name,
-        log_file,
-    })
+        if let Some(session_id) = session_id {
+            return Some(SessionInfo {
+                session_id,
+                agent_name: agent_name.clone(),
+                log_file: log_file.to_path_buf(),
+            });
+        }
+    }
+
+    // No log file contained a valid session ID
+    None
 }
 
 #[cfg(test)]
