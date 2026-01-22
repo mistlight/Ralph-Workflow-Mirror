@@ -30,9 +30,7 @@ use crate::app::finalization::finalize_pipeline;
 use crate::app::resume::should_run_from;
 use crate::banner::print_welcome_banner;
 use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
-use crate::checkpoint::restore::{
-    calculate_start_iteration, calculate_start_reviewer_pass, should_skip_phase,
-};
+
 use crate::checkpoint::{
     save_checkpoint, CheckpointBuilder, PipelineCheckpoint, PipelinePhase, RebaseState,
 };
@@ -55,7 +53,7 @@ use crate::git_helpers::{
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
-use crate::phases::{run_development_phase, run_review_phase, PhaseContext};
+use crate::phases::PhaseContext;
 use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
 use crate::prompts::{get_stored_or_generate_prompt, template_context::TemplateContext};
 use std::env;
@@ -1066,109 +1064,6 @@ fn check_prompt_restoration(
             ));
         }
     }
-}
-
-/// Runs the development phase.
-fn run_development(
-    ctx: &mut PhaseContext,
-    args: &Args,
-    resume_checkpoint: Option<&PipelineCheckpoint>,
-) -> anyhow::Result<()> {
-    ctx.logger
-        .header("PHASE 1: Development", crate::logger::Colors::blue);
-
-    // Check if we should skip this phase based on checkpoint
-    if let Some(checkpoint) = resume_checkpoint {
-        if should_skip_phase(PipelinePhase::Development, checkpoint) {
-            ctx.logger
-                .info("Skipping development phase (checkpoint indicates it already completed)");
-            return Ok(());
-        }
-    }
-
-    if !should_run_from(PipelinePhase::Planning, resume_checkpoint) {
-        ctx.logger
-            .info("Skipping development phase (resuming from a later checkpoint phase)");
-        return Ok(());
-    }
-
-    let start_iter = match resume_checkpoint {
-        Some(checkpoint) => calculate_start_iteration(checkpoint, ctx.config.developer_iters),
-        None => 1,
-    };
-
-    let resume_context = if args.recovery.resume {
-        resume_checkpoint.map(|c| c.resume_context())
-    } else {
-        None
-    };
-    let development_result = run_development_phase(ctx, start_iter, resume_context.as_ref())?;
-
-    if development_result.had_errors {
-        ctx.logger
-            .warn("Development phase completed with non-fatal errors");
-    }
-
-    Ok(())
-}
-
-/// Runs the review and fix phase.
-fn run_review_and_fix(
-    ctx: &mut PhaseContext,
-    args: &Args,
-    resume_checkpoint: Option<&PipelineCheckpoint>,
-) -> anyhow::Result<()> {
-    ctx.logger
-        .header("PHASE 2: Review & Fix", crate::logger::Colors::magenta);
-
-    // Check if we should run any reviewer phase
-    let run_any_reviewer_phase = should_run_from(PipelinePhase::Review, resume_checkpoint)
-        || should_run_from(PipelinePhase::Fix, resume_checkpoint)
-        || should_run_from(PipelinePhase::ReviewAgain, resume_checkpoint)
-        || should_run_from(PipelinePhase::CommitMessage, resume_checkpoint);
-
-    let should_run_review_phase = should_run_from(PipelinePhase::Review, resume_checkpoint)
-        || resume_checkpoint
-            .is_some_and(|c| matches!(c.phase, PipelinePhase::Fix | PipelinePhase::ReviewAgain));
-
-    if should_run_review_phase && ctx.config.reviewer_reviews > 0 {
-        let start_pass = match resume_checkpoint {
-            Some(checkpoint) => {
-                calculate_start_reviewer_pass(checkpoint, ctx.config.reviewer_reviews)
-            }
-            None => 1,
-        };
-
-        let resume_context = if args.recovery.resume {
-            resume_checkpoint
-                .filter(|c| {
-                    matches!(
-                        c.phase,
-                        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain
-                    )
-                })
-                .map(|c| c.resume_context())
-        } else {
-            None
-        };
-
-        let review_result = run_review_phase(ctx, start_pass, resume_context.as_ref())?;
-        if review_result.completed_early {
-            ctx.logger
-                .success("Review phase completed early (no issues found)");
-        }
-    } else if run_any_reviewer_phase && ctx.config.reviewer_reviews == 0 {
-        ctx.logger
-            .info("Skipping review phase (reviewer_reviews=0)");
-    } else if run_any_reviewer_phase {
-        ctx.logger
-            .info("Skipping review-fix cycles (resuming from a later checkpoint phase)");
-    }
-
-    // Note: The old dedicated commit phase has been removed.
-    // Commits now happen automatically per-iteration during development and per-cycle during review.
-
-    Ok(())
 }
 
 /// Runs final validation if configured.

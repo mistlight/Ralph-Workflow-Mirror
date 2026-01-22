@@ -209,7 +209,21 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
 
         PipelineEvent::CheckpointSaved { .. } => state,
 
-        _ => state,
+        PipelineEvent::AgentInvocationStarted { .. } => state,
+        PipelineEvent::AgentInvocationSucceeded { .. } => state,
+        PipelineEvent::AgentInvocationFailed {
+            retriable: false, ..
+        } => PipelineState {
+            agent_chain: state.agent_chain.switch_to_next_agent(),
+            ..state
+        },
+        PipelineEvent::AgentModelFallbackTriggered { .. } => PipelineState {
+            agent_chain: state.agent_chain.advance_to_next_model(),
+            ..state
+        },
+        PipelineEvent::AgentRetryCycleStarted { .. } => state,
+        PipelineEvent::RebaseAborted { .. } => state,
+        PipelineEvent::CommitMessageValidationFailed { .. } => state,
     }
 }
 

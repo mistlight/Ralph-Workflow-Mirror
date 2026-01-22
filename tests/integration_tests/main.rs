@@ -35,6 +35,7 @@ mod git;
 mod logger;
 mod opencode_parser_tests;
 mod rebase;
+mod reducer_state_machine;
 mod review_xml_validation;
 mod test_timeout;
 mod test_traits;

@@ -10,31 +10,60 @@
 //! # Architecture
 //!
 //! ```
-//! ┌──────────────────────────────────────────────────────────┐
+//! ┌──────────────────────────────────────────────────┐
 //! │                     Pipeline State                        │
 //! │  (immutable: phase, iteration, agent_chain, history)     │
-//! └──────────────────────────────────────────────────────────┘
+//! └──────────────────────────────────────────────────┘
 //!                           │
 //!                           ▼
-//! ┌──────────────────────────────────────────────────────────┐
+//! ┌──────────────────────────────────────────────────┐
 //! │                        Reducer                            │
 //! │       fn reduce(state: State, event: Event) -> State     │
 //! │                   [Pure, no side effects]                │
-//! └──────────────────────────────────────────────────────────┘
+//! └──────────────────────────────────────────────────┘
 //!                           ▲
 //!                           │
-//! ┌──────────────────────────────────────────────────────────┐
+//! ┌──────────────────────────────────────────────────┐
 //! │                        Events                             │
 //! │  DevelopmentIterationCompleted | AgentFailed |           │
 //! │  ReviewPassCompleted | RebaseSucceeded | ...             │
-//! └──────────────────────────────────────────────────────────┘
+//! └──────────────────────────────────────────────────┘
 //!                           ▲
 //!                           │
-//! ┌──────────────────────────────────────────────────────────┐
+//! ┌──────────────────────────────────────────────────┐
 //! │                   Effect Handlers                         │
 //! │  (Agent execution, file I/O, git operations)             │
 //! │       [Side effects isolated here]                       │
-//! └──────────────────────────────────────────────────────────┘
+//! └──────────────────────────────────────────────────┘
+//! ```
+//!
+//! # Testing Strategy
+//!
+//! The reducer architecture is designed for extensive testability:
+//!
+//! ## Unit Tests
+//!
+//! - **Pure reducer**: `reduce()` function has no side effects, 100% testable
+//! - **State transitions**: Each event → state transition tested in state_reduction.rs tests
+//! - **Agent chain**: Fallback logic tested via AgentChainState methods
+//! - **Error classification**: All error kinds tested in fault_tolerant_executor.rs
+//!
+//! ## Integration Tests
+//!
+//! - **State machine**: Real pipeline execution verifies correct phase transitions
+//! - **Event replay**: Event logs can reproduce final state deterministically
+//!
+//! # Running Tests
+//!
+//! ```bash
+//! # Unit tests only
+//! cargo test -p ralph-workflow --lib --all-features
+//!
+//! # Integration tests
+//! cargo test -p ralph-workflow-tests --all-targets
+//!
+//! # With coverage
+//! cargo test -p ralph-workflow --lib --all-features -- --nocapture
 //! ```
 
 pub mod effect;

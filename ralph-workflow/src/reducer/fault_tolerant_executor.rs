@@ -146,47 +146,44 @@ fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
     const SIGABRT: i32 = 134;
     const SIGTERM: i32 = 143;
 
-    #[allow(clippy::if_same_then_else)]
-    if exit_code == SIGSEGV {
-        AgentErrorKind::InternalError
-    } else if exit_code == SIGABRT {
-        AgentErrorKind::InternalError
-    } else if exit_code == SIGTERM {
-        AgentErrorKind::Timeout
-    } else {
-        let stderr_lower = stderr.to_lowercase();
+    match exit_code {
+        SIGSEGV | SIGABRT => AgentErrorKind::InternalError,
+        SIGTERM => AgentErrorKind::Timeout,
+        _ => {
+            let stderr_lower = stderr.to_lowercase();
 
-        if stderr_lower.contains("network")
-            || stderr_lower.contains("connection")
-            || stderr_lower.contains("timeout")
-        {
-            AgentErrorKind::Network
-        } else if stderr_lower.contains("auth")
-            || stderr_lower.contains("api key")
-            || stderr_lower.contains("unauthorized")
-        {
-            AgentErrorKind::Authentication
-        } else if stderr_lower.contains("rate limit")
-            || stderr_lower.contains("quota")
-            || stderr_lower.contains("too many requests")
-        {
-            AgentErrorKind::RateLimit
-        } else if stderr_lower.contains("model")
-            && (stderr_lower.contains("not found") || stderr_lower.contains("unavailable"))
-        {
-            AgentErrorKind::ModelUnavailable
-        } else if stderr_lower.contains("parse")
-            || stderr_lower.contains("invalid")
-            || stderr_lower.contains("malformed")
-        {
-            AgentErrorKind::ParsingError
-        } else if stderr_lower.contains("permission")
-            || stderr_lower.contains("access denied")
-            || stderr_lower.contains("file")
-        {
-            AgentErrorKind::FileSystem
-        } else {
-            AgentErrorKind::InternalError
+            if stderr_lower.contains("network")
+                || stderr_lower.contains("connection")
+                || stderr_lower.contains("timeout")
+            {
+                AgentErrorKind::Network
+            } else if stderr_lower.contains("auth")
+                || stderr_lower.contains("api key")
+                || stderr_lower.contains("unauthorized")
+            {
+                AgentErrorKind::Authentication
+            } else if stderr_lower.contains("rate limit")
+                || stderr_lower.contains("quota")
+                || stderr_lower.contains("too many requests")
+            {
+                AgentErrorKind::RateLimit
+            } else if stderr_lower.contains("model")
+                && (stderr_lower.contains("not found") || stderr_lower.contains("unavailable"))
+            {
+                AgentErrorKind::ModelUnavailable
+            } else if stderr_lower.contains("parse")
+                || stderr_lower.contains("invalid")
+                || stderr_lower.contains("malformed")
+            {
+                AgentErrorKind::ParsingError
+            } else if stderr_lower.contains("permission")
+                || stderr_lower.contains("access denied")
+                || stderr_lower.contains("file")
+            {
+                AgentErrorKind::FileSystem
+            } else {
+                AgentErrorKind::InternalError
+            }
         }
     }
 }
@@ -195,12 +192,13 @@ fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
 fn classify_io_error(error: &io::Error) -> AgentErrorKind {
     let error_msg = error.to_string().to_lowercase();
 
-    #[allow(clippy::if_same_then_else)]
     if error_msg.contains("timeout") {
         AgentErrorKind::Timeout
-    } else if error_msg.contains("permission") || error_msg.contains("access denied") {
-        AgentErrorKind::FileSystem
-    } else if error_msg.contains("no such file") || error_msg.contains("not found") {
+    } else if error_msg.contains("permission")
+        || error_msg.contains("access denied")
+        || error_msg.contains("no such file")
+        || error_msg.contains("not found")
+    {
         AgentErrorKind::FileSystem
     } else if error_msg.contains("broken pipe") || error_msg.contains("connection") {
         AgentErrorKind::Network
