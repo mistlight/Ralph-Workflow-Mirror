@@ -110,6 +110,13 @@ impl MainEffectHandler {
             .unwrap_or(&agent)
             .clone();
 
+        let model_name = self.state.agent_chain.current_model();
+
+        ctx.logger.info(&format!(
+            "Executing with agent: {}, model: {:?}",
+            effective_agent, model_name
+        ));
+
         // Get agent configuration from registry
         let agent_config = ctx
             .registry
@@ -448,6 +455,13 @@ impl MainEffectHandler {
         };
 
         let _models_per_agent: Vec<Vec<String>> = agents.iter().map(|_| vec![]).collect();
+
+        let max_cycles = self.state.agent_chain.max_cycles;
+
+        ctx.logger.info(&format!(
+            "Initializing agent chain with {} cycles",
+            max_cycles
+        ));
 
         Ok(PipelineEvent::AgentChainInitialized { role, agents })
     }
