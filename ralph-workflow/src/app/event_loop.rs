@@ -21,15 +21,12 @@ pub struct EventLoopConfig {
 }
 
 /// Result of event loop execution.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct EventLoopResult {
     /// Whether pipeline completed successfully.
     pub completed: bool,
     /// Total events processed.
     pub events_processed: usize,
-    /// Final pipeline state.
-    pub final_state: PipelineState,
 }
 
 /// Run the main event loop for the reducer-based pipeline.
@@ -65,14 +62,13 @@ pub fn run_event_loop(
         Ok(result) => result,
         Err(_) => {
             ctx.logger.error("Event loop recovered from panic");
-            let fallback_state = initial_state.unwrap_or_else(|| {
+            let _fallback_state = initial_state.unwrap_or_else(|| {
                 PipelineState::initial(ctx.config.developer_iters, ctx.config.reviewer_reviews)
             });
 
             Ok(EventLoopResult {
                 completed: false,
                 events_processed: 0,
-                final_state: fallback_state,
             })
         }
     }
@@ -122,7 +118,6 @@ fn run_event_loop_internal(
     Ok(EventLoopResult {
         completed: state.is_complete(),
         events_processed,
-        final_state: state,
     })
 }
 
