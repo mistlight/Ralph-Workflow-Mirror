@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Fault-tolerant agent executor.
 //!
 //! This module provides bulletproof agent execution wrapper that:

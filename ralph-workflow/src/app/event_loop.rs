@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Event loop for reducer-based pipeline architecture.
 //!
 //! This module implements main event loop that coordinates reducer,

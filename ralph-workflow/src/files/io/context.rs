@@ -1,9 +1,9 @@
+#![allow(dead_code)]
 //! Context file management for Ralph's agent files.
 //!
 //! This module handles operations on context files (STATUS.md, NOTES.md, ISSUES.md)
 //! in the `.agent/` directory, including cleanup for isolation mode and fresh eyes
 //! for the reviewer phase.
-
 use crate::logger::Logger;
 use std::fs;
 use std::io;

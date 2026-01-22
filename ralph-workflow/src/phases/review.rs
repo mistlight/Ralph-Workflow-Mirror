@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Review phase execution.
 //!
 //! This module handles the review and fix phase of the Ralph pipeline. It runs

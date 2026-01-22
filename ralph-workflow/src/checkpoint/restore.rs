@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! State restoration from checkpoints.
 //!
 //! This module provides functionality to restore pipeline state from a checkpoint,

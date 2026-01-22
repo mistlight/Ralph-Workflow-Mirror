@@ -1222,7 +1222,7 @@ pub fn commit_with_generated_message(
         let mut step = ExecutionStep::new("commit", 0, "commit_generation", outcome)
             .with_agent(commit_agent)
             .with_duration(start_time.elapsed().as_secs());
-        if let Some(ref oid) = oid_for_history {
+        if let Some(oid) = &oid_for_history {
             step = step.with_git_commit_oid(oid);
         }
         ctx.execution_history.add_step(step);

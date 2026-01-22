@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Pipeline state types for reducer architecture.
 //!
 //! Defines immutable state structures that capture complete pipeline execution context.
