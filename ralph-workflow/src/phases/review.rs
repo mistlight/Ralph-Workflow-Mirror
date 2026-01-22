@@ -608,6 +608,9 @@ pub fn run_review_pass(
     // Session info for potential session continuation on XSD retries
     let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
 
+    // Track previous log directory for reading errors and output on retries
+    let mut prev_log_dir: Option<String> = None;
+
     // Inner loop: XSD validation retry with error feedback
     for retry_num in 0..max_xsd_retries {
         let is_retry = retry_num > 0;
@@ -646,10 +649,15 @@ pub fn run_review_pass(
                 max_xsd_retries - 1
             ));
 
-            let last_output = read_last_review_output(Path::new(&log_dir));
+            // Read from PREVIOUS attempt's directory (the one that just failed)
+            // prev_log_dir is guaranteed to be Some because is_retry means retry_num > 0
+            let prev_dir = prev_log_dir
+                .as_ref()
+                .expect("Previous log directory should exist on retry");
+            let last_output = read_last_review_output(Path::new(prev_dir));
 
             // Get XSD error from previous iteration
-            let xsd_error = get_last_xsd_error(ctx, Path::new(&log_dir));
+            let xsd_error = get_last_xsd_error(ctx, Path::new(prev_dir));
 
             if let Some(ref error) = xsd_error {
                 ctx.logger.info(&format!("  XSD error: {}", error));
@@ -838,6 +846,10 @@ pub fn run_review_pass(
                 // Continue to next retry with XSD error feedback
             }
         }
+
+        // Update previous log directory for next iteration
+        // This allows the next retry to read from this attempt's directory
+        prev_log_dir = Some(log_dir);
     }
 
     // Should not reach here, but handle the case
