@@ -9,8 +9,6 @@
 //!
 //! Key design principle: **Agent failures should NEVER crash the pipeline**.
 
-#![allow(dead_code)]
-
 use crate::agents::{AgentRole, JsonParserType};
 use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
 use crate::reducer::event::{AgentErrorKind, PipelineEvent};

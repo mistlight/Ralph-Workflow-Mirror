@@ -53,16 +53,6 @@ fn create_plan_file(dir: &tempfile::TempDir) {
     fs::write(&plan_path, "Test plan\n").unwrap();
 }
 
-/// Helper to create reviewer issues file for testing review cycles.
-#[allow(dead_code)]
-fn create_reviewer_issues(dir: &tempfile::TempDir, issues: &str) {
-    let issues_path = dir.path().join(".agent/reviewer_issues.json");
-    fs::create_dir_all(issues_path.parent().unwrap()).unwrap();
-    // Create JSON output with issues
-    let json = format!(r#"{{"type":"result","result":"{}"}}"#, issues);
-    fs::write(&issues_path, json).unwrap();
-}
-
 // ============================================================================
 // Start Commit Persistence Tests
 // ============================================================================

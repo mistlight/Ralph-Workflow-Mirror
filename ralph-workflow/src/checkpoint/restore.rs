@@ -253,16 +253,34 @@ pub fn calculate_start_reviewer_pass(checkpoint: &PipelineCheckpoint, max_passes
 /// Determine if a phase should be skipped based on checkpoint.
 ///
 /// Returns true if the checkpoint indicates this phase has already been completed.
-///
-/// # Arguments
-///
-/// * `phase` - The phase to check
-/// * `checkpoint` - The checkpoint to compare against
 pub fn should_skip_phase(phase: PipelinePhase, checkpoint: &PipelineCheckpoint) -> bool {
-    use crate::app::resume::phase_rank;
     phase_rank(phase) < phase_rank(checkpoint.phase)
 }
 
+/// Get the rank (position) of a phase in the pipeline.
+///
+/// Lower values indicate earlier phases in the pipeline.
+fn phase_rank(phase: PipelinePhase) -> u32 {
+    match phase {
+        PipelinePhase::Planning => 0,
+        PipelinePhase::Development => 1,
+        PipelinePhase::Review => 2,
+        PipelinePhase::CommitMessage => 3,
+        PipelinePhase::FinalValidation => 4,
+        PipelinePhase::Complete => 5,
+        PipelinePhase::Interrupted => 6,
+        // Fix and other intermediate phases map to Review
+        PipelinePhase::Fix
+        | PipelinePhase::ReviewAgain
+        | PipelinePhase::PreRebase
+        | PipelinePhase::PreRebaseConflict => 2,
+        // Rebase phases map between Development and Review
+        PipelinePhase::Rebase | PipelinePhase::PostRebase | PipelinePhase::PostRebaseConflict => 2,
+    }
+}
+///
+/// # Arguments
+///
 /// Restored context from a checkpoint.
 ///
 /// Contains all the information needed to resume a pipeline from a checkpoint.

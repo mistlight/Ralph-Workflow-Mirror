@@ -61,11 +61,8 @@ pub use rebase::build_enhanced_conflict_resolution_prompt;
 pub use rebase::{collect_branch_info, BranchInfo};
 pub use reviewer::{
     prompt_comprehensive_review_with_diff_with_context,
-    prompt_detailed_review_without_guidelines_with_diff_with_context,
-    prompt_incremental_review_with_diff_with_context,
     prompt_reviewer_review_with_guidelines_and_diff_with_context,
     prompt_security_focused_review_with_diff_with_context,
-    prompt_universal_review_with_diff_with_context,
 };
 
 // Re-export non-context variants for test compatibility

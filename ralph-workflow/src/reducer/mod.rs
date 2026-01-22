@@ -119,12 +119,11 @@ pub mod orchestration;
 pub mod state;
 pub mod state_reduction;
 
-pub use effect::{Effect, EffectHandler};
-pub use event::{AgentErrorKind, ConflictStrategy, PipelineEvent, RebasePhase};
-pub use fault_tolerant_executor::{execute_agent_fault_tolerantly, AgentExecutionConfig};
+pub use effect::EffectHandler;
+pub use event::PipelineEvent;
 pub use handler::MainEffectHandler;
 pub use orchestration::determine_next_effect;
-pub use state::{AgentChainState, CommitState, PipelineState, RebaseState};
+pub use state::PipelineState;
 pub use state_reduction::reduce;
 
 // Re-export CheckpointTrigger for external use

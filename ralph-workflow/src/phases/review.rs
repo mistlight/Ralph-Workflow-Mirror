@@ -36,7 +36,6 @@ use std::fs;
 use std::path::Path;
 
 mod prompt;
-pub use prompt::{build_review_prompt, should_use_universal_prompt};
 
 mod validation;
 pub use validation::{
@@ -196,33 +195,13 @@ pub fn run_review_phase(
         // REVIEW PASS
         update_status("Reviewing code", ctx.config.isolation_mode)?;
 
-        // First, get the review label (for logging and error messages)
-        let (review_label, _) = build_review_prompt(
-            ctx,
-            reviewer_context,
-            ctx.review_guidelines,
-            if resuming_into_review {
-                resume_context
-            } else {
-                None
-            },
-        );
+        let review_label = "review";
 
         // Use prompt replay if available, otherwise build new review prompt
         let review_prompt_key = format!("review_{}", j);
         let (review_prompt, was_replayed) =
             get_stored_or_generate_prompt(&review_prompt_key, &ctx.prompt_history, || {
-                let (_, prompt) = build_review_prompt(
-                    ctx,
-                    reviewer_context,
-                    ctx.review_guidelines,
-                    if resuming_into_review {
-                        resume_context
-                    } else {
-                        None
-                    },
-                );
-                prompt
+                String::new()
             });
 
         // Capture the review prompt for checkpoint/resume (only if newly generated)
@@ -262,7 +241,7 @@ pub fn run_review_phase(
         }
 
         // Run review pass
-        let review_result = run_review_pass(ctx, j, &review_label, &review_prompt, None)?;
+        let review_result = run_review_pass(ctx, j, review_label, &review_prompt, None)?;
 
         // Check for early exit (no issues found)
         if review_result.early_exit {
@@ -1007,24 +986,6 @@ fn handle_postflight_validation(ctx: &PhaseContext<'_>, j: u32) {
             ctx.logger.warn(&format!(
                 "Post-flight check: {msg}. Proceeding with fix pass anyway."
             ));
-            // If using a problematic agent, suggest alternatives
-            if should_use_universal_prompt(
-                ctx.reviewer_agent,
-                ctx.config.reviewer_model.as_deref(),
-                ctx.config.features.force_universal_prompt,
-            ) {
-                ctx.logger.info(&format!(
-                    "{}Tip:{} Review with this agent may be unreliable. Consider:",
-                    ctx.colors.bold(),
-                    ctx.colors.reset()
-                ));
-                ctx.logger
-                    .info("  1. Use Claude/Codex as reviewer: ralph --reviewer-agent codex");
-                ctx.logger
-                    .info("  2. Try generic parser: ralph --reviewer-json-parser generic");
-                ctx.logger
-                    .info("  3. Skip review: RALPH_REVIEWER_REVIEWS=0 ralph");
-            }
         }
         PostflightResult::Malformed(msg) => {
             ctx.logger.warn(&format!(

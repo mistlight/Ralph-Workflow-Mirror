@@ -3,8 +3,6 @@
 //! Defines immutable state structures that capture complete pipeline execution context.
 //! These state structures can be serialized as checkpoints for resume functionality.
 
-#![allow(dead_code)]
-
 use crate::agents::AgentRole;
 use crate::checkpoint::execution_history::ExecutionStep;
 use serde::{Deserialize, Serialize};

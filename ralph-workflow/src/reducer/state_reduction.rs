@@ -246,7 +246,7 @@ mod tests {
     use crate::reducer::event::AgentErrorKind;
     use crate::reducer::event::PipelinePhase;
     use crate::reducer::event::RebasePhase;
-    use crate::reducer::AgentChainState;
+    use crate::reducer::state::AgentChainState;
 
     fn create_test_state() -> PipelineState {
         PipelineState {
