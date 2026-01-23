@@ -25,15 +25,79 @@ use std::{env, path::PathBuf};
 /// Get the path to the ralph binary for testing
 ///
 /// This function locates the ralph binary built by Cargo.
+///
+/// **DEPRECATED**: Process spawning is forbidden in integration tests.
+/// For new tests, use `run_ralph_cli()` which calls app::run() directly.
+#[deprecated(
+    since = "0.6.0",
+    note = "Process spawning is forbidden in integration tests. Use run_ralph_cli() instead"
+)]
 pub fn ralph_cmd() -> assert_cmd::Command {
     let bin_path = ralph_bin_path();
     assert_cmd::Command::new(bin_path)
 }
 
-/// Get the path to the ralph binary as a String
+/// Run ralph workflow directly without spawning a process.
 ///
-/// This is useful when you need to use std::process::Command instead of
-/// assert_cmd::Command.
+/// This function calls `ralph_workflow::app::run()` directly instead of
+/// spawning the ralph binary process. This eliminates process spawning
+/// violations in integration tests.
+///
+/// For output verification, tests should check:
+/// - File side effects (files created/modified)
+/// - Error conditions (via returned Result)
+/// - Log files (in .agent/logs/)
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments to pass to ralph
+///
+/// # Returns
+///
+/// Returns `Ok(())` if ralph execution succeeded, or the error if it failed.
+///
+/// # Panics
+///
+/// - Panics if args cannot be parsed
+///
+/// # Usage
+///
+/// ```ignore
+/// use crate::common::run_ralph_cli;
+///
+/// #[test]
+/// fn test_init() {
+///     with_default_timeout(|| {
+///         let dir = TempDir::new().unwrap();
+///         std::env::set_current_dir(dir.path()).unwrap();
+///
+///         run_ralph_cli(&["--init"]).unwrap();
+///
+///         // Check side effects
+///         assert!(dir.path().join("PROMPT.md").exists());
+///     });
+/// }
+/// ```
+pub fn run_ralph_cli(args: &[&str]) -> anyhow::Result<()> {
+    // Build argv: binary name + args
+    let mut argv: Vec<String> = vec!["ralph".to_string()];
+    argv.extend(args.iter().map(|s| s.to_string()));
+
+    // Parse args using clap directly (same as main.rs does)
+    let parsed_args = ralph_workflow::cli::Args::try_parse_from(&argv).expect("args should parse");
+
+    // Set environment variables for test isolation
+    std::env::set_var("RALPH_INTERACTIVE", "0");
+    std::env::set_var("RALPH_CI", "1");
+
+    // Call app::run() directly (no process spawning)
+    ralph_workflow::app::run(parsed_args)
+}
+
+/// Get the path to the ralph binary as a String (deprecated).
+///
+/// **DEPRECATED**: Process spawning is forbidden in integration tests.
+/// For new tests, call `ralph_workflow::app::run()` directly instead.
 pub fn ralph_bin_path() -> String {
     // First, try the environment variable set by Cargo when running tests
     // in the same package as the binary

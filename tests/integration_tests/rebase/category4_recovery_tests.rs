@@ -383,10 +383,9 @@ fn rebase_detects_sparse_checkout_conflicts() {
             // Create sparse checkout config
             fs::write(info_dir.join("sparse-checkout"), "*.rs\n").unwrap();
             // Enable sparse checkout (requires core.sparseCheckout config)
-            let _ = std::process::Command::new("git")
-                .args(["config", "core.sparseCheckout", "true"])
-                .current_dir(dir.path())
-                .output();
+            let mut cfg = repo.config().expect("open config");
+            cfg.set_bool("core.sparseCheckout", true)
+                .expect("set sparseCheckout config");
 
             // System should handle sparse checkout gracefully
             let result = rebase_onto(&default_branch);

@@ -20,7 +20,6 @@
 //! - Tests are deterministic and isolated
 
 use std::fs;
-use std::process::Command;
 use tempfile::TempDir;
 use test_helpers::{
     commit_all, git_commit_all, git_switch_force, init_git_repo, with_temp_cwd, write_file,
@@ -565,7 +564,6 @@ fn rebase_detects_no_conflicts_in_clean_file() {
 fn rebase_handles_autostash_with_conflicts() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::abort_rebase;
-        use std::process::Command;
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -608,11 +606,9 @@ fn rebase_handles_autostash_with_conflicts() {
 
             // The uncommitted changes are now in the working tree
 
-            // Try to rebase with autostash - the stashed changes may conflict when reapplied
-            let result = Command::new("git")
-                .args(["rebase", &default_branch, "--autostash"])
-                .current_dir(dir.path())
-                .output();
+            // Try to rebase with autostash - stashed changes may conflict when reapplied
+            use ralph_workflow::git_helpers::rebase_onto;
+            let result = rebase_onto(&default_branch);
 
             // Git may handle this various ways:
             // 1. Succeed with autostash
@@ -647,20 +643,22 @@ fn rebase_handles_rename_rename_conflicts() {
             // Create feature branch and switch to it
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
             let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-            git_switch_force(dir.path(), "feature");
+            git_switch_force(&repo, "feature");
 
-            // On feature: rename the file using git mv
-            let status = Command::new("git")
-                .args(["mv", "original.txt", "new_feature.txt"])
-                .current_dir(dir.path())
-                .status()
-                .expect("git mv should execute");
-            assert!(status.success(), "git mv should succeed");
+            // On feature: rename the file using git2 library
+            let mut index = repo.index().expect("open index");
+            index
+                .remove_path(std::path::Path::new("original.txt"))
+                .expect("remove original.txt from index");
             write_file(dir.path().join("new_feature.txt"), "feature content");
-            git_commit_all(dir.path(), "rename on feature");
+            index
+                .add_path(std::path::Path::new("new_feature.txt"))
+                .expect("add new_feature.txt to index");
+            index.write().expect("write index");
+            let _ = git_commit_all(&repo, "rename on feature");
 
             // Go back to default branch using git switch with force
-            git_switch_force(dir.path(), &default_branch);
+            git_switch_force(&repo, &default_branch);
 
             // Verify the file was restored
             assert!(
@@ -668,18 +666,20 @@ fn rebase_handles_rename_rename_conflicts() {
                 "original.txt should exist after checkout"
             );
 
-            // On default: rename the same file using git mv
-            let status = Command::new("git")
-                .args(["mv", "original.txt", "new_main.txt"])
-                .current_dir(dir.path())
-                .status()
-                .expect("git mv should execute");
-            assert!(status.success(), "git mv should succeed");
+            // On default: rename the same file using git2 library
+            let mut index = repo.index().expect("open index");
+            index
+                .remove_path(std::path::Path::new("original.txt"))
+                .expect("remove original.txt from index");
             write_file(dir.path().join("new_main.txt"), "main content");
-            git_commit_all(dir.path(), "rename on main");
+            index
+                .add_path(std::path::Path::new("new_main.txt"))
+                .expect("add new_main.txt to index");
+            index.write().expect("write index");
+            let _ = git_commit_all(&repo, "rename on main");
 
             // Go back to feature using git switch with force
-            git_switch_force(dir.path(), "feature");
+            git_switch_force(&repo, "feature");
 
             // Try to rebase - should detect rename/rename conflict
             let result = rebase_onto(&default_branch);
@@ -797,20 +797,22 @@ fn rebase_handles_rename_delete_conflicts() {
             // Create feature branch and switch to it
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
             let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-            git_switch_force(dir.path(), "feature");
+            git_switch_force(&repo, "feature");
 
-            // On feature: rename the file using git mv
-            let status = Command::new("git")
-                .args(["mv", "rename_me.txt", "renamed.txt"])
-                .current_dir(dir.path())
-                .status()
-                .expect("git mv should execute");
-            assert!(status.success(), "git mv should succeed");
+            // On feature: rename the file using git2 library
+            let mut index = repo.index().expect("open index");
+            index
+                .remove_path(std::path::Path::new("rename_me.txt"))
+                .expect("remove rename_me.txt from index");
             write_file(dir.path().join("renamed.txt"), "renamed content");
-            git_commit_all(dir.path(), "rename file");
+            index
+                .add_path(std::path::Path::new("renamed.txt"))
+                .expect("add renamed.txt to index");
+            index.write().expect("write index");
+            let _ = git_commit_all(&repo, "rename file");
 
             // Go back to default branch using git switch with force
-            git_switch_force(dir.path(), &default_branch);
+            git_switch_force(&repo, &default_branch);
 
             // Verify the file was restored
             assert!(
@@ -818,17 +820,16 @@ fn rebase_handles_rename_delete_conflicts() {
                 "rename_me.txt should exist after checkout"
             );
 
-            // On default: delete the file using git rm
-            let status = Command::new("git")
-                .args(["rm", "rename_me.txt"])
-                .current_dir(dir.path())
-                .status()
-                .expect("git rm should execute");
-            assert!(status.success(), "git rm should succeed");
-            git_commit_all(dir.path(), "delete file");
+            // On default: delete the file using git2 library
+            let mut index = repo.index().expect("open index");
+            index
+                .remove_path(std::path::Path::new("rename_me.txt"))
+                .expect("remove rename_me.txt from index");
+            index.write().expect("write index");
+            let _ = git_commit_all(&repo, "delete file");
 
             // Go back to feature using git switch with force
-            git_switch_force(dir.path(), "feature");
+            git_switch_force(&repo, "feature");
 
             // Try to rebase - should detect rename/delete conflict
             let result = rebase_onto(&default_branch);
@@ -954,10 +955,9 @@ fn rebase_handles_line_ending_conflicts() {
 
             // Configure git to not normalize line endings for this test
             // This ensures we can create true CRLF vs LF conflicts
-            let _ = std::process::Command::new("git")
-                .args(["config", "core.autocrlf", "false"])
-                .current_dir(dir.path())
-                .output();
+            let mut cfg = repo.config().expect("open config");
+            cfg.set_bool("core.autocrlf", false)
+                .expect("set core.autocrlf config");
 
             // Create a text file with LF endings
             let lf_content = "line 1\nline 2\nline 3\n";

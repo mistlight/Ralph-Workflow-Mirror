@@ -105,6 +105,122 @@ Integration tests **MUST NOT** make real calls to any external system. This incl
 | **Databases** | MUST use test instances or in-memory alternatives |
 | **External processes** | MUST be mocked or use controlled test fixtures |
 
+### Rule 1.5: NO Process Spawning in Integration Tests
+
+**FORBIDDEN**: Integration tests MUST NOT spawn ANY external processes.
+
+This is a **MAJOR VIOLATION** of the integration test style guide. Integration tests:
+
+| Prohibited Pattern | Reason |
+|-------------------|---------|
+| `std::process::Command::new("git")` | Git operations must use git2 library or MockGit |
+| `std::process::Command::new("ls")` | File operations must use TempDir or mock filesystem |
+| `std::process::Command::new("cargo")` | Build tests must avoid spawning build processes |
+| `assert_cmd::Command::new("ralph")` | CLI tests must call app::run() directly with logger injection |
+| `assert_cmd::Command::new(bin_path)` | Binary spawning is forbidden for ANY binary including ralph CLI |
+| `std::thread::spawn()` for test execution | All execution must be synchronous and mockable |
+| ANY subprocess spawning | Breaks test determinism and isolation |
+
+**Why this is forbidden:**
+- Tests must be deterministic (subprocess timing is unpredictable)
+- Tests must be fast (subprocess spawn + execution is slow)
+- Tests must be isolated (subprocess may affect system state)
+- Tests must work in CI (subprocess may not be available)
+- Tests must mock at boundaries (subprocess = unmocked external dependency)
+- Even CLI binary testing must use direct function calls, not process spawning
+
+**Enforcement:**
+
+1. **Timeout wrapper**: The `with_default_timeout()` wrapper automatically detects process spawning and fails the test
+2. **Compliance checker**: Script checks for `std::process::Command::new` AND `assert_cmd::Command::new` in test code
+3. **Code review**: Reviewers must reject tests that spawn processes
+
+**Allowed:**
+
+```rust
+// ✅ OK: Use git2 library for git operations
+use git2::Repository;
+let repo = Repository::open(path)?;
+
+// ✅ OK: Use MockGit for testing git operations
+let mock = MockGit::new();
+let result = GitOps::commit(&mock, "message", None, None)?;
+
+// ✅ OK: Use TempDir for filesystem isolation
+let dir = TempDir::new()?;
+std::fs::write(dir.path().join("test.txt"), "content")?;
+
+// ✅ OK: Use run_ralph_cli() for CLI testing (calls app::run() directly)
+use crate::common::run_ralph_cli;
+use ralph_workflow::logger::output::TestLogger;
+
+let test_logger = TestLogger::new();
+run_ralph_cli(&["--version"], &test_logger);
+assert!(test_logger.has_log("0.1.0"));
+```
+
+**Forbidden:**
+
+```rust
+// ❌ FORBIDDEN: Spawning git subprocess
+use std::process::Command;
+let output = Command::new("git")
+    .args(["status", "--porcelain"])
+    .output()?;
+
+// ❌ FORBIDDEN: Spawning ls subprocess
+let files = Command::new("ls")
+    .arg("-la")
+    .output()?;
+
+// ❌ FORBIDDEN: Spawning ralph CLI binary process (MAJOR VIOLATION)
+use assert_cmd::Command;
+let output = Command::new("ralph")
+    .arg("--version")
+    .output()?;
+
+// ❌ FORBIDDEN: Using thread::spawn for test execution
+let handle = thread::spawn(|| {
+    // test code that spawns processes
+});
+handle.join().unwrap();
+```
+
+**If you see tests spawning processes:**
+
+1. Replace git CLI calls with git2 library operations
+2. Replace Command::new() with MockGit/GitOps trait abstraction
+3. Replace `ralph_cmd()` with `run_ralph_cli()` for CLI tests (calls app::run() directly)
+4. Remove test-helpers functions that spawn processes (git_commit_all, git_switch, git_switch_force)
+5. Use dependency injection to mock the external service
+
+**Migration Examples:**
+
+```rust
+// Before (forbidden):
+use std::process::Command;
+let output = Command::new("git")
+    .args(["commit", "-m", "test"])
+    .current_dir(dir)
+    .output()?;
+assert!(output.status.success());
+
+// After (allowed - git2 library):
+use git2::{Repository, Signature};
+let repo = Repository::open(dir)?;
+let sig = Signature::now("Test User", "test@example.com")?;
+let tree_id = repo.index()?.write_tree()?;
+let tree = repo.find_tree(tree_id)?;
+let parent = repo.head()?.peel_to_commit()?;
+repo.commit(Some("HEAD"), &sig, &sig, "test", &tree, &[&parent])?;
+
+// After (allowed - MockGit for integration tests):
+use ralph_workflow::git_helpers::{GitOps, MockGit};
+let mock = MockGit::new();
+let result = GitOps::commit(&mock, "test", None, None)?;
+assert!(matches!(result, CommitResult::Success(_)));
+```
+
 **Why this matters:**
 - Tests must be deterministic and reproducible
 - Tests must not incur costs (API calls cost money)
@@ -438,7 +554,7 @@ fn test_cli_behavior() {
 
 ### Rule: All Tests MUST Have Timeouts
 
-**ALL integration tests MUST be wrapped with `with_default_timeout()` to prevent indefinite test hangs.**
+**ALL integration tests MUST be wrapped with `with_default_timeout()` (5 seconds) to prevent indefinite test hangs.**
 
 ```rust
 use crate::test_timeout::with_default_timeout;
@@ -455,7 +571,7 @@ fn test_example_behavior() {
 
 - Integration tests may involve external I/O (filesystem, subprocess execution)
 - Tests that hang block the entire test suite and CI/CD pipelines
-- A 10-second timeout prevents indefinite waits while allowing reasonable test execution time
+- A 5-second timeout prevents indefinite waits while allowing reasonable test execution time
 - Without timeouts, a single hung test can waste hours of CI resources
 
 **Enforcement:**

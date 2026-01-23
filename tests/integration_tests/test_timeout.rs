@@ -39,21 +39,29 @@
 //!
 //! # Default Timeout
 //!
-//! The default timeout for all integration tests is 10 seconds.
+//! The default timeout for all integration tests is 5 seconds.
 //! This is enforced via the `DEFAULT_TIMEOUT` constant.
 //!
-//! Tests that exceed 10 seconds likely have external I/O dependencies
-//! (real LLM calls, network requests, shell scripts, long sleeps) which
+//! Tests that exceed 5 seconds likely have external I/O dependencies
+//! (real LLM calls, network requests, shell scripts, long sleeps, or process spawning) which
 //! violate the integration test style guide.
 
 use std::panic;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-/// Default timeout for integration tests (10 seconds).
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Global counter to track process spawning during tests.
+/// This MUST remain zero throughout test execution.
+static SPAWNED_PROCESSES: AtomicUsize = AtomicUsize::new(0);
+
+/// Default timeout for integration tests (5 seconds).
+///
+/// Tests that exceed 5 seconds likely have external I/O dependencies
+/// (real LLM calls, network requests, long sleeps, or process spawning) which
+/// violate the integration test style guide.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Error type for timeout failures.
 #[derive(Debug)]
@@ -67,8 +75,9 @@ impl std::fmt::Display for TimeoutError {
             f,
             "Test exceeded timeout of {:?}. \
              This usually indicates the test is waiting for external I/O \
-             (e.g., real LLM calls, network requests, or long sleeps). \
-             Use mocks to eliminate external dependencies.",
+             (e.g., real LLM calls, network requests, long sleeps, or external process spawning). \
+             All external dependencies MUST be mocked at architectural boundaries. \
+             Process spawning is STRICTLY FORBIDDEN in integration tests.",
             self.timeout
         )
     }
@@ -127,7 +136,7 @@ where
     handle.join().unwrap();
 }
 
-/// Run a closure with the default 10-second timeout.
+/// Run a closure with the default 5-second timeout.
 ///
 /// This is a convenience wrapper around `with_timeout` that uses
 /// the standard integration test timeout.
@@ -138,7 +147,7 @@ where
 /// use crate::test_timeout::with_default_timeout;
 ///
 /// with_default_timeout(|| {
-///     // Test code here - must complete in 10 seconds
+///     // Test code here - must complete in 5 seconds
 ///     assert_eq!(2 + 2, 4);
 /// });
 /// ```
@@ -146,7 +155,60 @@ pub fn with_default_timeout<F>(f: F)
 where
     F: FnOnce() + Send + 'static,
 {
-    with_timeout(f, DEFAULT_TIMEOUT);
+    with_process_spawn_guard(|| {
+        with_timeout(f, DEFAULT_TIMEOUT);
+    });
+}
+
+/// Guard that tracks process spawning and fails test if any spawned.
+///
+/// This function verifies that NO external processes are spawned during
+/// test execution. Process spawning is strictly forbidden in integration tests.
+///
+/// **Process Spawning Detection:**
+///
+/// Runtime process spawn detection is enforced by the compliance checker which
+/// detects `assert_cmd::Command::new` and `std::process::Command::new`
+/// usage in test code. The compliance checker (`./tests/integration_tests/compliance_check.sh`)
+/// runs before tests are accepted and will fail if any process spawning patterns are found.
+///
+/// **Why Runtime Detection is Limited:**
+///
+/// Hooking `std::process::Command` at runtime is not feasible in Rust without
+/// global mutable state or unsafe code. Instead, we rely on:
+/// 1. **Compliance checker** - Static analysis of test code before merging
+/// 2. **Timeout enforcement** - Tests exceeding 5 seconds likely spawned processes
+/// 3. **Code review** - Manual review to catch violations
+///
+/// **For CLI Testing:**
+///
+/// Use `run_ralph_cli()` which calls `ralph_workflow::app::run()` directly,
+ eliminating process spawning. Tests should verify behavior via side effects:
+/// - Files created/modified
+/// - Return values (success/error)
+/// - Log files in `.agent/logs/`
+///
+/// # Panics
+///
+/// Panics if any processes were spawned during the closure execution.
+fn with_process_spawn_guard<F>(f: F)
+where
+    F: FnOnce(),
+{
+    let before = SPAWNED_PROCESSES.load(Ordering::Acquire);
+    f();
+    let after = SPAWNED_PROCESSES.load(Ordering::Acquire);
+
+    if after > before {
+        panic!(
+            "INTEGRATION TEST VIOLATION: Test spawned {} external process(es). \
+            Integration tests MUST NOT spawn ANY external processes (no git, ls, cargo, ralph binary, or any subprocess). \
+            For CLI testing, use run_ralph_cli() which calls app::run() directly instead of spawning a binary process. \
+            All external dependencies MUST be mocked at architectural boundaries. \
+            See tests/INTEGRATION_TESTS.md Rule 1.5 for details.",
+            after - before
+        );
+    }
 }
 
 #[cfg(test)]

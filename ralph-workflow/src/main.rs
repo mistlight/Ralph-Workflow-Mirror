@@ -45,5 +45,5 @@ fn main() -> anyhow::Result<()> {
     // Set up Ctrl+C handler for graceful checkpoint save on interrupt
     crate::interrupt::setup_interrupt_handler();
 
-    app::run(Args::parse())
+    app::run(Args::parse(), None)
 }

@@ -3395,13 +3395,15 @@ fn ralph_v3_comprehensive_resume_from_review_phase() {
         plan_hasher.update(plan_content.as_bytes());
         let plan_checksum = format!("{:x}", plan_hasher.finalize());
 
-        // Get git HEAD OID
-        let head_oid = std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(dir.path())
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
+        // Get git HEAD OID using git2 library
+        let head_oid = match git2::Repository::discover(dir.path()) {
+            Ok(repo) => match repo.head() {
+                Ok(head_ref) => head_ref.target().map(|oid| oid.to_string()),
+                Err(_) => None,
+            },
+            Err(_) => None,
+        }
+        .unwrap_or_default();
 
         // Create comprehensive v3 checkpoint with all hardened features at Complete phase
         let working_dir = canonical_working_dir(&dir);

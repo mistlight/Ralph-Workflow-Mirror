@@ -85,7 +85,8 @@ use validation::{
 /// Returns `Ok(())` on success or an error if any phase fails.
 pub fn run(args: Args) -> anyhow::Result<()> {
     let colors = Colors::new();
-    let logger = Logger::new(colors);
+    static LOGGER: std::sync::OnceLock<Logger> = std::sync::OnceLock::new();
+    let logger = LOGGER.get_or_init(|| Logger::new(colors));
 
     // Initialize configuration and agent registry
     let Some(init_result) = initialize_config(&args, colors, &logger)? else {

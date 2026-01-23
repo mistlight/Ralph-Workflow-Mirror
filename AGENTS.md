@@ -3,6 +3,10 @@
 This repository welcomes automated code assistants (“agents”) and human contributors.
 Follow these rules so changes stay safe, consistent, and easy to review.
 
+## Extraneous Files
+GET RID OF ALL TEMPORARY .md FILES IN THE ROOT or DOC folder, DO NOT WRITE THEM, DO NOT ATTEMPT TO WRITE THEM, ONLY USE PERMANENT DOCUMENTATIONS
+
+
 ## Scope & priorities
 
 Agents should optimize for, in order:

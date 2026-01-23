@@ -20,7 +20,7 @@
 
 use std::fs;
 use tempfile::TempDir;
-use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
+use test_helpers::{commit_all, git_switch, init_git_repo, with_temp_cwd, write_file};
 
 use crate::test_timeout::with_default_timeout;
 
@@ -173,7 +173,7 @@ fn rebase_handles_case_sensitivity_collision() {
             // Create a feature branch
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
             let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-            test_helpers::git_switch(dir.path(), "feature");
+            git_switch(&repo, "feature");
 
             // Modify the file
             write_file(dir.path().join("test.txt"), "modified content");
@@ -225,7 +225,7 @@ fn rebase_handles_long_path_names() {
             // Create a feature branch
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
             let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-            test_helpers::git_switch(dir.path(), "feature");
+            git_switch(&repo, "feature");
 
             // Modify the deep file
             write_file(&long_path_file, "modified content in deep path");
@@ -269,7 +269,7 @@ fn rebase_handles_special_characters_in_filenames() {
             // Create a feature branch
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
             let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-            test_helpers::git_switch(dir.path(), "feature");
+            git_switch(&repo, "feature");
 
             // Modify one of the special files
             write_file(dir.path().join(special_files[0]), "modified content");
@@ -359,7 +359,7 @@ fn rebase_handles_zero_length_ref_updates() {
             // Create a feature branch
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
             let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-            test_helpers::git_switch(dir.path(), "feature");
+            git_switch(&repo, "feature");
 
             // Create an empty HEAD file to simulate corruption
             let head_path = dir.path().join(".git").join("HEAD");
@@ -402,7 +402,7 @@ fn rebase_handles_unicode_in_filenames_and_content() {
             // Create a feature branch
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
             let _feature_branch = repo.branch("feature", &head_commit, false).unwrap();
-            test_helpers::git_switch(dir.path(), "feature");
+            git_switch(&repo, "feature");
 
             // Modify one of the unicode files
             write_file(dir.path().join(unicode_files[0]), "modified content");

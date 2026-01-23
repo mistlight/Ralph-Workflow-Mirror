@@ -34,6 +34,7 @@ echo
 find "$TEST_DIR" -name "*.rs" -type f \
     ! -name "_TEMPLATE.rs" \
     ! -name "compliance_check.rs" \
+    ! -name "common/mod.rs" \
     ! -path "*/target/*" | sort > "$TEMP_OUTPUT"
 
 if [ ! -s "$TEMP_OUTPUT" ]; then
@@ -114,9 +115,51 @@ if [ -s "$TEMP_VIOLATIONS" ]; then
 else
     echo -e "${GREEN}✓ All integration tests comply with timeout wrapper requirement${NC}"
     echo
-    echo "Summary:"
-    file_count=$(wc -l < "$TEMP_OUTPUT" | tr -d ' ')
-    echo "  - Checked $file_count test file(s)"
-    echo "  - All tests properly wrapped with with_default_timeout()"
-    exit 0
+fi
+
+# ============================================================================
+# Check for process spawning violations
+# ============================================================================
+
+echo "Checking for external process spawning in tests..."
+
+# Pattern: std::process::Command::new or assert_cmd::Command::new with git/ls/cargo/ralph commands
+PROCESS_SPAWN_VIOLATIONS=$(rg -n --no-heading \
+    'std::process::Command::new|assert_cmd::Command::new|Command::new\("git"|Command::new\("ls"|Command::new\("cargo"|Command::new\("ralph"|\.spawn\(\)' \
+    "$TEST_DIR" --glob '*.rs' \
+    -g '!*/test_timeout.rs' \
+    -g '!*/_TEMPLATE.rs' \
+    | grep -v '^\s*//' | grep -v '^\s*\*' || true)
+
+if [ -n "$PROCESS_SPAWN_VIOLATIONS" ]; then
+    violation_count=$(echo "$PROCESS_SPAWN_VIOLATIONS" | wc -l | tr -d ' ')
+    echo -e "${RED}Found $violation_count process spawning violation(s)${NC}"
+    echo
+    echo "Violations:"
+    echo "$PROCESS_SPAWN_VIOLATIONS" | while IFS=: read -r type file line_num rest; do
+        if [ -n "$line_num" ]; then
+            echo "  - $file:$line_num: process spawning detected ($rest)"
+        fi
+    done
+    echo
+    echo -e "${YELLOW}Process spawning is FORBIDDEN in integration tests.${NC}"
+    echo "Use git2 library or MockGit/GitOps trait instead."
+    echo "For CLI testing, use run_ralph_cli() which calls app::run() directly."
+    echo "See tests/INTEGRATION_TESTS.md 'Rule 1.5: NO Process Spawning'"
+    exit 1
+else
+    echo -e "${GREEN}No process spawning violations found${NC}"
+    echo
+fi
+
+# ============================================================================
+# Summary
+# ============================================================================
+
+echo "Summary:"
+file_count=$(wc -l < "$TEMP_OUTPUT" | tr -d ' ')
+echo "  - Checked $file_count test file(s)"
+echo "  - All tests properly wrapped with with_default_timeout()"
+echo "  - No process spawning violations detected"
+exit 0
 fi

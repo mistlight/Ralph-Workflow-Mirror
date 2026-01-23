@@ -274,88 +274,118 @@ fn detached_head(oid: Oid) -> String {
     format!("{}", oid)
 }
 
-/// Commit all staged changes using git CLI.
+/// Commit all changes using git2 library (no subprocess spawning).
 ///
-/// This function uses `git commit` to create a commit with all staged changes.
-/// It's useful when working with git CLI operations (like `git mv`, `git rm`)
-/// to ensure the index state is consistent.
+/// This function uses git2 library APIs directly to create commits without
+/// spawning external git processes. All operations are in-process and mockable.
+/// It stages all changes (including deletions) and creates a commit.
 ///
 /// # Arguments
 ///
-/// * `dir` - The repository directory
+/// * `repo` - The git repository (must be initialized)
 /// * `message` - The commit message
 ///
+/// # Returns
+///
+/// The OID of the created commit.
+///
 /// # Panics
 ///
-/// - If git commit fails
-pub fn git_commit_all(dir: &Path, message: &str) {
-    use std::process::Command;
+/// - If git operations fail (index write, commit creation, etc.)
+#[must_use]
+pub fn git_commit_all(repo: &Repository, message: &str) -> Oid {
+    // Stage all changes using git2 (same as commit_all, but for git CLI migration)
+    stage_all(repo);
 
-    let status = Command::new("git")
-        .args(["commit", "-m", message])
-        .current_dir(dir)
-        .status()
-        .expect("git commit should execute");
-    assert!(status.success(), "git commit should succeed");
+    let mut index = repo.index().expect("open index");
+    let tree_id = index.write_tree().expect("write tree");
+    let tree = repo.find_tree(tree_id).expect("find tree");
+
+    let sig = Signature::now("Test User", "test@example.com").expect("signature");
+
+    // Create commit using git2 API (no subprocess)
+    match repo.head() {
+        Ok(head) => {
+            let parent = head.peel_to_commit().expect("parent commit");
+            repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&parent])
+                .expect("commit")
+        }
+        Err(ref e) if e.code() == git2::ErrorCode::UnbornBranch => {
+            // Initial commit (no HEAD yet)
+            repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[])
+                .expect("initial commit")
+        }
+        Err(e) => panic!("unexpected head error: {e}"),
+    }
 }
 
-/// Switch to a branch using git CLI, ensuring working directory is updated.
+/// Switch to a branch using git2 library (no subprocess spawning).
 ///
-/// This function uses `git switch` to change branches, which properly updates
-/// the working directory. It's more reliable than `git checkout` for tests
-/// that mix libgit2 and git CLI operations.
+/// This function uses git2 library APIs to checkout branches directly
+/// without spawning external git processes. It updates HEAD, index, and
+/// working directory to match the target branch.
 ///
 /// # Arguments
 ///
-/// * `dir` - The repository directory
-/// * `branch_name` - The name of the branch to switch to
+/// * `repo` - The git repository
+/// * `branch_name` - The name of branch to checkout (e.g., "main", "feature")
 ///
 /// # Panics
 ///
-/// - If git switch fails
-pub fn git_switch(dir: &Path, branch_name: &str) {
-    use std::process::Command;
+/// - If branch cannot be found
+/// - If checkout operations fail
+pub fn git_switch(repo: &Repository, branch_name: &str) {
+    let branch_ref = format!("refs/heads/{}", branch_name);
+    let obj = repo
+        .revparse_single(&branch_ref)
+        .expect("find branch for checkout");
+    let commit = obj.peel_to_commit().expect("peel to commit");
 
-    let status = Command::new("git")
-        .args(["switch", branch_name])
-        .current_dir(dir)
-        .status()
-        .expect("git switch should execute");
-    assert!(status.success(), "git switch should succeed");
+    // Use git2 checkout builder (no subprocess)
+    let mut checkout_builder = CheckoutBuilder::new();
+    checkout_builder
+        .force()
+        .remove_untracked(true)
+        .remove_ignored(true);
+
+    repo.checkout_tree(commit.as_object(), Some(&mut checkout_builder))
+        .expect("checkout tree");
+
+    repo.set_head(&branch_ref).expect("set HEAD");
 }
 
-/// Switch to a branch using git CLI with force checkout of working directory.
+/// Switch to a branch using git2 library with force checkout (no subprocess spawning).
 ///
-/// This function uses low-level git commands to ensure the working directory
-/// is fully synchronized before switching branches. This is useful when the
-/// index and working directory are out of sync due to mixing libgit2 and
-/// git CLI operations.
+/// This function uses git2 library APIs to force checkout branches
+/// and update working directory without spawning external git processes.
+/// The force checkout is built into git2's checkout builder.
 ///
 /// # Arguments
 ///
-/// * `dir` - The repository directory
-/// * `branch_name` - The name of the branch to switch to
+/// * `repo` - The git repository
+/// * `branch_name` - The name of branch to switch to
 ///
 /// # Panics
 ///
-/// - If git commands fail
-pub fn git_switch_force(dir: &Path, branch_name: &str) {
-    use std::process::Command;
+/// - If git operations fail
+pub fn git_switch_force(repo: &Repository, branch_name: &str) {
+    // Use git2 checkout with force option (built-in, no separate commands)
+    let branch_ref = format!("refs/heads/{}", branch_name);
+    let obj = repo
+        .revparse_single(&branch_ref)
+        .expect("find branch for checkout");
+    let commit = obj.peel_to_commit().expect("peel to commit");
 
-    // Use checkout-index -f -a to force refresh all files from the index
-    let _ = Command::new("git")
-        .args(["checkout-index", "-f", "-a"])
-        .current_dir(dir)
-        .status()
-        .expect("git checkout-index should execute");
+    let mut checkout_builder = CheckoutBuilder::new();
+    checkout_builder
+        .force() // This handles checkout-index -f -a behavior
+        .remove_untracked(true)
+        .remove_ignored(true);
 
-    // Switch to the target branch
-    let status = Command::new("git")
-        .args(["switch", branch_name])
-        .current_dir(dir)
-        .status()
-        .expect("git switch should execute");
-    assert!(status.success(), "git switch should succeed");
+    repo.checkout_tree(commit.as_object(), Some(&mut checkout_builder))
+        .expect("checkout tree");
+
+    repo.set_head(&branch_ref).expect("set HEAD");
 }
 
 /// Global mutex for tests that modify the current working directory.

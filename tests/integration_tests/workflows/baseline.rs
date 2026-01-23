@@ -25,6 +25,7 @@ use tempfile::TempDir;
 
 use crate::common::ralph_cmd;
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::git_helpers::{GitOps, RealGit};
 use test_helpers::{commit_all, init_git_repo, write_file};
 
 fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
@@ -353,13 +354,10 @@ fn ralph_diff_shows_correct_range() {
 
         // Verify the diff from start_commit includes only the new changes
         // by running git diff directly in the test (not via the agent)
-        let output = std::process::Command::new("git")
-            .args(["diff", &start_commit])
-            .current_dir(dir.path())
-            .output()
-            .expect("Failed to run git diff");
-
-        let diff_content = String::from_utf8_lossy(&output.stdout);
+        // Use GitOps trait to get diff from start commit
+        let git = RealGit::new();
+        let diff_content =
+            GitOps::diff_from(&git, &start_commit.to_string()).expect("Failed to run git diff");
 
         // Diff should contain changes to files made after baseline
         assert!(
