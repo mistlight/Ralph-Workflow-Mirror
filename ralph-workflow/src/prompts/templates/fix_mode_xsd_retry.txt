@@ -23,3 +23,5 @@ Your XML at `.agent/tmp/fix_result.xml` failed validation.
 ERROR: {{XSD_ERROR}}
 
 Fix `.agent/tmp/fix_result.xml` based on `.agent/tmp/fix_result.xsd`.
+
+IMPORTANT: Use file editing tools to modify the XML file directly. Do NOT output the corrected XML in your response.

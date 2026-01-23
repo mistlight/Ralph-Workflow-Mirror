@@ -24,3 +24,5 @@ Your XML at `.agent/tmp/commit_message.xml` failed validation.
 ERROR: {{XSD_ERROR}}
 
 Fix `.agent/tmp/commit_message.xml` based on `.agent/tmp/commit_message.xsd`.
+
+IMPORTANT: Use file editing tools to modify the XML file directly. Do NOT output the corrected XML in your response.
