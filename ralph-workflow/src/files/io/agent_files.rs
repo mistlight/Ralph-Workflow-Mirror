@@ -12,6 +12,15 @@ use super::{
     context::VAGUE_STATUS_LINE, integrity, recovery,
 };
 
+/// XSD schemas for XML validation - included at compile time.
+/// These are written to `.agent/xsd/` at pipeline start for agent self-validation.
+const PLAN_XSD_SCHEMA: &str = include_str!("../llm_output_extraction/plan.xsd");
+const DEVELOPMENT_RESULT_XSD_SCHEMA: &str =
+    include_str!("../llm_output_extraction/development_result.xsd");
+const ISSUES_XSD_SCHEMA: &str = include_str!("../llm_output_extraction/issues.xsd");
+const FIX_RESULT_XSD_SCHEMA: &str = include_str!("../llm_output_extraction/fix_result.xsd");
+const COMMIT_MESSAGE_XSD_SCHEMA: &str = include_str!("../llm_output_extraction/commit_message.xsd");
+
 /// Files that Ralph generates during a run and should clean up.
 pub const GENERATED_FILES: &[&str] = &[
     ".no_agent_commit",
@@ -52,7 +61,8 @@ pub fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result<bool> 
 
 /// Ensure required files and directories exist.
 ///
-/// Creates the `.agent/logs` directory if it doesn't exist.
+/// Creates the `.agent/logs` and `.agent/tmp` directories if they don't exist.
+/// Also writes XSD schemas to `.agent/tmp/` for agent self-validation.
 ///
 /// When `isolation_mode` is true (the default), STATUS.md, NOTES.md and ISSUES.md
 /// are NOT created. This prevents context contamination from previous runs.
@@ -69,6 +79,10 @@ pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
 
     integrity::check_filesystem_ready(agent_dir)?;
     fs::create_dir_all(".agent/logs")?;
+    fs::create_dir_all(".agent/tmp")?;
+
+    // Write XSD schemas to .agent/tmp/ for agent self-validation
+    setup_xsd_schemas()?;
 
     // Only create STATUS.md, NOTES.md and ISSUES.md when NOT in isolation mode
     if !isolation_mode {
@@ -78,6 +92,38 @@ pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
         overwrite_one_liner(Path::new(".agent/NOTES.md"), VAGUE_NOTES_LINE)?;
         overwrite_one_liner(Path::new(".agent/ISSUES.md"), VAGUE_ISSUES_LINE)?;
     }
+
+    Ok(())
+}
+
+/// Write all XSD schemas to `.agent/xsd/` directory.
+///
+/// This is called at pipeline startup so agents can use `xmllint` for self-validation
+/// during XML generation. The schemas are the authoritative definitions of valid XML
+/// structure for each phase.
+///
+/// # Schema Files
+///
+/// - `plan.xsd` - Planning phase XML structure
+/// - `development_result.xsd` - Development iteration result structure
+/// - `issues.xsd` - Review phase issues structure
+/// - `fix_result.xsd` - Fix phase result structure
+/// - `commit_message.xsd` - Commit message structure
+pub fn setup_xsd_schemas() -> io::Result<()> {
+    let tmp_dir = Path::new(".agent/tmp");
+    fs::create_dir_all(tmp_dir)?;
+
+    fs::write(tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA)?;
+    fs::write(
+        tmp_dir.join("development_result.xsd"),
+        DEVELOPMENT_RESULT_XSD_SCHEMA,
+    )?;
+    fs::write(tmp_dir.join("issues.xsd"), ISSUES_XSD_SCHEMA)?;
+    fs::write(tmp_dir.join("fix_result.xsd"), FIX_RESULT_XSD_SCHEMA)?;
+    fs::write(
+        tmp_dir.join("commit_message.xsd"),
+        COMMIT_MESSAGE_XSD_SCHEMA,
+    )?;
 
     Ok(())
 }
@@ -238,6 +284,14 @@ mod tests {
             assert!(!Path::new(".agent/STATUS.md").exists());
             assert!(!Path::new(".agent/NOTES.md").exists());
             assert!(!Path::new(".agent/ISSUES.md").exists());
+
+            // Should create tmp directory and write XSD schemas
+            assert!(Path::new(".agent/tmp").is_dir());
+            assert!(Path::new(".agent/tmp/plan.xsd").exists());
+            assert!(Path::new(".agent/tmp/development_result.xsd").exists());
+            assert!(Path::new(".agent/tmp/issues.xsd").exists());
+            assert!(Path::new(".agent/tmp/fix_result.xsd").exists());
+            assert!(Path::new(".agent/tmp/commit_message.xsd").exists());
         });
     }
 
@@ -251,6 +305,37 @@ mod tests {
             assert!(Path::new(".agent/STATUS.md").exists());
             assert!(Path::new(".agent/NOTES.md").exists());
             assert!(Path::new(".agent/ISSUES.md").exists());
+
+            // Should create tmp directory
+            assert!(Path::new(".agent/tmp").is_dir());
+        });
+    }
+
+    #[test]
+    fn test_setup_xsd_schemas() {
+        with_temp_cwd(|_dir| {
+            setup_xsd_schemas().unwrap();
+
+            // Verify all schemas are written to .agent/tmp/
+            let plan_xsd = fs::read_to_string(".agent/tmp/plan.xsd").unwrap();
+            assert!(plan_xsd.contains("xs:schema"));
+            assert!(plan_xsd.contains("ralph-plan"));
+
+            let dev_xsd = fs::read_to_string(".agent/tmp/development_result.xsd").unwrap();
+            assert!(dev_xsd.contains("xs:schema"));
+            assert!(dev_xsd.contains("ralph-development-result"));
+
+            let issues_xsd = fs::read_to_string(".agent/tmp/issues.xsd").unwrap();
+            assert!(issues_xsd.contains("xs:schema"));
+            assert!(issues_xsd.contains("ralph-issues"));
+
+            let fix_xsd = fs::read_to_string(".agent/tmp/fix_result.xsd").unwrap();
+            assert!(fix_xsd.contains("xs:schema"));
+            assert!(fix_xsd.contains("ralph-fix-result"));
+
+            let commit_xsd = fs::read_to_string(".agent/tmp/commit_message.xsd").unwrap();
+            assert!(commit_xsd.contains("xs:schema"));
+            assert!(commit_xsd.contains("ralph-commit"));
         });
     }
 }

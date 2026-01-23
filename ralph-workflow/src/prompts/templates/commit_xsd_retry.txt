@@ -19,40 +19,8 @@
 {# ============================================================================ #}
 {{> shared/_safety_no_execute}}
 
-The commit message you provided failed XSD validation. Please fix it and try again.
+Your XML at `.agent/tmp/commit_message.xml` failed validation.
 
-═══════════════════════════════════════════════════════════════════════════════
-XSD VALIDATION ERROR
-═══════════════════════════════════════════════════════════════════════════════
+ERROR: {{XSD_ERROR}}
 
-{{XSD_ERROR}}
-
-═══════════════════════════════════════════════════════════════════════════════
-CONTEXT FILES (READ THESE)
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Read `.agent/tmp/commit_message.xsd` - This is the XSD schema your output MUST conform to.
-2. Read `.agent/tmp/diff.txt` - This is the git diff to generate a commit message for.
-
-Study these files carefully to understand what went wrong and how to fix it.
-
-═══════════════════════════════════════════════════════════════════════════════
-CRITICAL RULES
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Start IMMEDIATELY with <ralph-commit> - NO text before it
-2. End with </ralph-commit> - NO text after it
-3. <ralph-subject> is REQUIRED and must follow conventional commit format
-   (type: description or type(scope): description)
-4. Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore
-5. <ralph-body> is optional - omit entirely if not needed
-6. NO markdown code fences around the XML
-7. NO explanation or preamble - output ONLY the XML
-8. For inline code with special characters (<, >, &), use: <code>a &lt; b</code>
-9. For code blocks, ALWAYS use CDATA to avoid escaping issues:
-   <code-block language="rust"><![CDATA[
-   if a < b && c > d { ... }
-   ]]></code-block>
-10. CDATA sections preserve content exactly - no escaping needed inside them
-
-Fix the validation error and output ONLY the corrected XML.
+Fix `.agent/tmp/commit_message.xml` based on `.agent/tmp/commit_message.xsd`.

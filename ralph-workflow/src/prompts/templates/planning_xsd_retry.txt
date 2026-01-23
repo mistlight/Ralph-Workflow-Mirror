@@ -18,32 +18,11 @@
 {#   Valid <ralph-plan> XML conforming to the XSD schema                       #}
 {# ============================================================================ #}
 
-Your previous plan output failed XSD validation.
+Your XML at `.agent/tmp/plan.xml` failed validation.
 
-═══════════════════════════════════════════════════════════════════════════════
-XSD VALIDATION ERROR
-═══════════════════════════════════════════════════════════════════════════════
+ERROR: {{XSD_ERROR}}
 
-{{XSD_ERROR}}
-
-═══════════════════════════════════════════════════════════════════════════════
-MANDATORY: READ THE XSD SCHEMA FIRST
-═══════════════════════════════════════════════════════════════════════════════
-
-You MUST read the following files BEFORE attempting to fix your output:
-
-1. **READ FIRST**: `.agent/tmp/plan.xsd`
-   - This is the authoritative XSD schema defining the exact XML structure
-   - The schema specifies all required elements, attributes, and constraints
-   - Your output MUST conform to this schema exactly
-
-2. **THEN READ**: `.agent/tmp/last_output.xml`
-   - This is your previous invalid output
-   - Compare it against the XSD schema to identify what's wrong
-
-DO NOT attempt to fix the error from memory or guessing. The XSD schema is the
-single source of truth. Read it carefully and understand the structure before
-producing your corrected output.
+Fix `.agent/tmp/plan.xml` based on `.agent/tmp/plan.xsd`.
 
 ═══════════════════════════════════════════════════════════════════════════════
 COMMON MISTAKES TO AVOID

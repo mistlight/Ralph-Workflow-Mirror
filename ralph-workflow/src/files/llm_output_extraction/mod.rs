@@ -20,6 +20,7 @@
 
 pub mod cleaning;
 mod commit;
+pub mod file_based_extraction;
 #[cfg(test)]
 mod parsers;
 pub mod xml_extraction;
@@ -41,6 +42,11 @@ mod types;
 
 // Re-export public functions from cleaning module
 pub use cleaning::preprocess_raw_content;
+
+// Re-export file-based extraction utilities
+pub use file_based_extraction::{
+    archive_xml_file, extract_xml_with_file_fallback, paths as xml_paths, try_extract_from_file,
+};
 
 // Import clean_plain_text for tests
 #[cfg(test)]

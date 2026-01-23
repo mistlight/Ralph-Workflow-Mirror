@@ -18,35 +18,8 @@
 {#   Valid <ralph-issues> XML conforming to the XSD schema                     #}
 {# ============================================================================ #}
 
-Your previous review output failed XSD validation.
+Your XML at `.agent/tmp/issues.xml` failed validation.
 
-═══════════════════════════════════════════════════════════════════════════════
-XSD VALIDATION ERROR
-═══════════════════════════════════════════════════════════════════════════════
+ERROR: {{XSD_ERROR}}
 
-{{XSD_ERROR}}
-
-═══════════════════════════════════════════════════════════════════════════════
-CONTEXT FILES (READ THESE)
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Read `.agent/tmp/issues.xsd` - This is the XSD schema your output MUST conform to.
-2. Read `.agent/tmp/last_output.xml` - This is your previous invalid output.
-
-Study both files carefully to understand what went wrong and how to fix it.
-
-═══════════════════════════════════════════════════════════════════════════════
-CRITICAL RULES
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Start IMMEDIATELY with <ralph-issues> - NO text before it
-2. End with </ralph-issues> - NO text after it
-3. Use either <ralph-issue> elements OR <ralph-no-issues-found>, NOT both
-4. Each <ralph-issue> should contain severity, location, description, fix suggestion
-5. NO markdown code fences around the XML
-6. NO analysis or commentary outside the XML
-7. For special characters (<, >, &):
-   - Inline: <code>a &lt; b</code>
-   - Or use CDATA: <code><![CDATA[a < b]]></code>
-
-Fix the validation error and resend your review with the correct XML format.
+Fix `.agent/tmp/issues.xml` based on `.agent/tmp/issues.xsd`.

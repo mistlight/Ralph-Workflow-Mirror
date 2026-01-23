@@ -4,6 +4,7 @@
 //! - Shell command parsing
 //! - Text truncation for display
 //! - Secret redaction for logging
+//! - External tool detection
 
 pub mod utils;
 
