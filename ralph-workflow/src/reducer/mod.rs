@@ -119,6 +119,9 @@ pub mod orchestration;
 pub mod state;
 pub mod state_reduction;
 
+#[cfg(test)]
+mod orchestration_tests;
+
 pub use effect::EffectHandler;
 pub use event::PipelineEvent;
 pub use handler::MainEffectHandler;

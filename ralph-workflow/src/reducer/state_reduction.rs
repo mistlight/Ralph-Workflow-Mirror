@@ -48,14 +48,17 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
 
         PipelineEvent::PlanGenerationStarted { .. } => state,
 
-        PipelineEvent::PlanGenerationCompleted { .. } => state,
+        PipelineEvent::PlanGenerationCompleted { .. } => PipelineState {
+            phase: super::event::PipelinePhase::Development,
+            ..state
+        },
 
         PipelineEvent::DevelopmentIterationCompleted {
             iteration,
             output_valid: _output_valid,
         } => {
             let next_iter = iteration + 1;
-            let next_phase = if next_iter > state.total_iterations {
+            let next_phase = if next_iter >= state.total_iterations {
                 super::event::PipelinePhase::Review
             } else {
                 super::event::PipelinePhase::Development
@@ -76,19 +79,36 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         PipelineEvent::ReviewPhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Review,
             reviewer_pass: 0,
+            review_issues_found: false,
             ..state
         },
 
         PipelineEvent::ReviewPassStarted { pass } => PipelineState {
             reviewer_pass: pass,
+            review_issues_found: false, // Reset at start of new review pass
             agent_chain: state.agent_chain.reset(),
             ..state
         },
 
-        PipelineEvent::ReviewCompleted { pass, .. } => PipelineState {
-            reviewer_pass: pass,
-            ..state
-        },
+        PipelineEvent::ReviewCompleted { pass, issues_found } => {
+            // If no issues found, increment to next pass
+            // If issues found, stay on same pass for fix attempt
+            let next_pass = if issues_found { pass } else { pass + 1 };
+
+            // If this was the last review pass and no issues, transition to CommitMessage
+            let next_phase = if !issues_found && next_pass >= state.total_reviewer_passes {
+                super::event::PipelinePhase::CommitMessage
+            } else {
+                state.phase
+            };
+
+            PipelineState {
+                phase: next_phase,
+                reviewer_pass: next_pass,
+                review_issues_found: issues_found,
+                ..state
+            }
+        }
 
         PipelineEvent::FixAttemptStarted { .. } => PipelineState {
             agent_chain: state.agent_chain.reset(),
@@ -97,7 +117,7 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
 
         PipelineEvent::FixAttemptCompleted { pass, .. } => {
             let next_pass = pass + 1;
-            let next_phase = if next_pass > state.total_reviewer_passes {
+            let next_phase = if next_pass >= state.total_reviewer_passes {
                 super::event::PipelinePhase::CommitMessage
             } else {
                 super::event::PipelinePhase::Review
@@ -106,6 +126,7 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             PipelineState {
                 phase: next_phase,
                 reviewer_pass: next_pass,
+                review_issues_found: false, // Reset flag after fix attempt
                 ..state
             }
         }
