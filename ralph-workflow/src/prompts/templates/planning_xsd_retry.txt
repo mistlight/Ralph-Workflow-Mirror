@@ -24,6 +24,8 @@ ERROR: {{XSD_ERROR}}
 
 Fix `.agent/tmp/plan.xml` based on `.agent/tmp/plan.xsd`.
 
+IMPORTANT: Use file editing tools to modify the XML file directly. Do NOT output the corrected XML in your response.
+
 ═══════════════════════════════════════════════════════════════════════════════
 COMMON MISTAKES TO AVOID
 ═══════════════════════════════════════════════════════════════════════════════
