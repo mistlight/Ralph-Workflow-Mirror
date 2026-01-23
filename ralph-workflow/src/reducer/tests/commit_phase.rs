@@ -303,3 +303,58 @@ fn test_checkpoint_saved_preserves_all_state() {
     assert_eq!(new_state.reviewer_pass, state.reviewer_pass);
     assert!(matches!(new_state.commit, CommitState::Generated { .. }));
 }
+
+#[test]
+fn test_checkpoint_saved_with_different_triggers() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        iteration: 2,
+        ..create_test_state()
+    };
+
+    // Test each checkpoint trigger type
+    for trigger in [
+        CheckpointTrigger::PhaseTransition,
+        CheckpointTrigger::IterationComplete,
+        CheckpointTrigger::BeforeRebase,
+        CheckpointTrigger::Interrupt,
+    ] {
+        let new_state = reduce(state.clone(), PipelineEvent::CheckpointSaved { trigger });
+
+        assert_eq!(new_state.phase, state.phase);
+        assert_eq!(new_state.iteration, state.iteration);
+    }
+}
+
+#[test]
+fn test_commit_message_generated_increments_attempt() {
+    let state = create_test_state();
+
+    // Generate first message (attempt 1)
+    let new_state = reduce(
+        state,
+        PipelineEvent::CommitMessageGenerated {
+            message: "first".to_string(),
+            attempt: 1,
+        },
+    );
+
+    assert!(matches!(new_state.commit, CommitState::Generated { .. }));
+    if let CommitState::Generated { message } = &new_state.commit {
+        assert_eq!(message, "first");
+    }
+
+    // Generate second message (attempt 2) - overwrites previous
+    let new_state2 = reduce(
+        new_state,
+        PipelineEvent::CommitMessageGenerated {
+            message: "second".to_string(),
+            attempt: 2,
+        },
+    );
+
+    assert!(matches!(new_state2.commit, CommitState::Generated { .. }));
+    if let CommitState::Generated { message } = &new_state2.commit {
+        assert_eq!(message, "second");
+    }
+}

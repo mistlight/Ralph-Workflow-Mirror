@@ -12,6 +12,7 @@ pub use crate::reducer::state_reduction::reduce;
 mod agent_chain;
 mod commit_phase;
 mod development_phase;
+mod phase_transitions;
 mod pipeline_lifecycle;
 mod planning_phase;
 mod rebase;

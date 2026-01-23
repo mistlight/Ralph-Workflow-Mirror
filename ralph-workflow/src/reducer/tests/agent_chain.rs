@@ -311,3 +311,62 @@ fn test_agent_fallback_from_last_agent_wraps_and_increments_cycle() {
     assert_eq!(new_state.agent_chain.current_model_index, 0);
     assert_eq!(new_state.agent_chain.retry_cycle, 1);
 }
+
+#[test]
+fn test_agent_invocation_failed_non_retriable_switches_agent() {
+    let base_state = create_test_state();
+    let state = PipelineState {
+        agent_chain: base_state.agent_chain.with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec!["model1".to_string()], vec!["model2".to_string()]],
+            AgentRole::Developer,
+        ),
+        ..base_state
+    };
+
+    // Start on first agent
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::AgentInvocationFailed {
+            role: AgentRole::Developer,
+            agent: "agent1".to_string(),
+            exit_code: 1,
+            error_kind: AgentErrorKind::ParsingError,
+            retriable: false,
+        },
+    );
+
+    // Non-retriable error should switch to next agent (0 -> 1)
+    assert_eq!(new_state.agent_chain.current_agent_index, 1);
+    assert_eq!(new_state.agent_chain.current_model_index, 0);
+}
+
+#[test]
+fn test_agent_invocation_failed_retriable_on_single_model_wraps() {
+    let base_state = create_test_state();
+    let state = PipelineState {
+        agent_chain: base_state.agent_chain.with_agents(
+            vec!["agent1".to_string()],
+            vec![vec!["model1".to_string()]], // Only one model
+            AgentRole::Developer,
+        ),
+        ..base_state
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::AgentInvocationFailed {
+            role: AgentRole::Developer,
+            agent: "agent1".to_string(),
+            exit_code: 1,
+            error_kind: AgentErrorKind::Timeout,
+            retriable: true,
+        },
+    );
+
+    // With only one model, should wrap back to index 0
+    assert_eq!(new_state.agent_chain.current_agent_index, 0);
+    assert_eq!(new_state.agent_chain.current_model_index, 0);
+}
