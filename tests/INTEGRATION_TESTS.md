@@ -107,19 +107,44 @@ Integration tests **MUST NOT** make real calls to any external system. This incl
 
 ### Rule 1.5: NO Process Spawning in Integration Tests
 
-**FORBIDDEN**: Integration tests MUST NOT spawn ANY external processes.
+**ABSOLUTE PROHIBITION**: Integration tests MUST NOT spawn ANY external processes, PERIOD.
 
-This is a **MAJOR VIOLATION** of the integration test style guide. Integration tests:
+This is a **CRITICAL VIOLATION** of the integration test style guide. There are NO exceptions.
+
+**FORBIDDEN - Every single external process is prohibited:**
 
 | Prohibited Pattern | Reason |
 |-------------------|---------|
 | `std::process::Command::new("git")` | Git operations must use git2 library or MockGit |
-| `std::process::Command::new("ls")` | File operations must use TempDir or mock filesystem |
+| `std::process::Command::new("ls")` | File operations must use std::fs or TempDir |
+| `std::process::Command::new("cat")` | File reading must use std::fs::read |
+| `std::process::Command::new("curl")` | HTTP requests must use mocked HTTP client |
+| `std::process::Command::new("wget")` | HTTP requests must use mocked HTTP client |
+| `std::process::Command::new("grep")` | Text search must use Rust string methods |
+| `std::process::Command::new("find")` | File search must use walkdir or std::fs |
+| `std::process::Command::new("echo")` | Use direct string manipulation |
+| `std::process::Command::new("mkdir")` | Use std::fs::create_dir |
+| `std::process::Command::new("rm")` | Use std::fs::remove_file/remove_dir |
+| `std::process::Command::new("cp")` | Use std::fs::copy |
+| `std::process::Command::new("mv")` | Use std::fs::rename |
+| `std::process::Command::new("touch")` | Use std::fs::File::create |
+| `std::process::Command::new("chmod")` | Use std::fs::set_permissions |
+| `std::process::Command::new("ps")` | Process info must be mocked |
+| `std::process::Command::new("kill")` | Process control must be mocked |
 | `std::process::Command::new("cargo")` | Build tests must avoid spawning build processes |
-| `assert_cmd::Command::new("ralph")` | CLI tests must call app::run() directly with logger injection |
-| `assert_cmd::Command::new(bin_path)` | Binary spawning is forbidden for ANY binary including ralph CLI |
+| `std::process::Command::new("rustc")` | Compilation tests must be mocked |
+| `std::process::Command::new("npm")` | Package managers must be mocked |
+| `std::process::Command::new("yarn")` | Package managers must be mocked |
+| `std::process::Command::new("python")` | Script execution must be mocked |
+| `std::process::Command::new("node")` | Script execution must be mocked |
+| `std::process::Command::new("ralph")` | CLI tests must call app::run() directly with logger injection |
+| `std::process::Command::new(ANYTHING)` | NO PROCESS SPAWNING WHATSOEVER |
+| `assert_cmd::Command::new(ANYTHING)` | Binary spawning is forbidden for ANY binary |
+| `assert_cmd::Command::cargo_bin(ANYTHING)` | Cargo binary spawning is forbidden |
 | `std::thread::spawn()` for test execution | All execution must be synchronous and mockable |
 | ANY subprocess spawning | Breaks test determinism and isolation |
+
+**The rule is simple: If you're thinking of spawning a process, STOP. There is ALWAYS a better way.**
 
 **Why this is forbidden:**
 - Tests must be deterministic (subprocess timing is unpredictable)
@@ -132,8 +157,16 @@ This is a **MAJOR VIOLATION** of the integration test style guide. Integration t
 **Enforcement:**
 
 1. **Timeout wrapper**: The `with_default_timeout()` wrapper automatically detects process spawning and fails the test
-2. **Compliance checker**: Script checks for `std::process::Command::new` AND `assert_cmd::Command::new` in test code
-3. **Code review**: Reviewers must reject tests that spawn processes
+2. **Compliance checker**: Script checks for ALL forms of process spawning:
+   - `std::process::Command::new`
+   - `assert_cmd::Command::new`
+   - `assert_cmd::Command::cargo_bin`
+   - Any other process spawning patterns
+3. **Code review**: Reviewers MUST reject ANY test that spawns ANY process
+4. **CI enforcement**: Tests that spawn processes will fail immediately in CI
+5. **No exceptions**: There are NO valid use cases for spawning processes in integration tests
+
+**Remember: The prohibition is ABSOLUTE. No processes. No exceptions. Ever.**
 
 **Allowed:**
 
@@ -159,7 +192,7 @@ run_ralph_cli(&["--version"], &test_logger);
 assert!(test_logger.has_log("0.1.0"));
 ```
 
-**Forbidden:**
+**Forbidden (ALL of these are VIOLATIONS):**
 
 ```rust
 // ❌ FORBIDDEN: Spawning git subprocess
@@ -173,10 +206,43 @@ let files = Command::new("ls")
     .arg("-la")
     .output()?;
 
-// ❌ FORBIDDEN: Spawning ralph CLI binary process (MAJOR VIOLATION)
+// ❌ FORBIDDEN: Spawning cat subprocess
+let content = Command::new("cat")
+    .arg("file.txt")
+    .output()?;
+
+// ❌ FORBIDDEN: Spawning curl subprocess
+let response = Command::new("curl")
+    .args(["-s", "https://api.example.com"])
+    .output()?;
+
+// ❌ FORBIDDEN: Spawning grep subprocess
+let matches = Command::new("grep")
+    .args(["-r", "pattern", "."])
+    .output()?;
+
+// ❌ FORBIDDEN: Spawning echo subprocess
+Command::new("echo")
+    .arg("test")
+    .spawn()?;
+
+// ❌ FORBIDDEN: Spawning ralph CLI binary process (CRITICAL VIOLATION)
 use assert_cmd::Command;
 let output = Command::new("ralph")
     .arg("--version")
+    .output()?;
+
+// ❌ FORBIDDEN: Spawning ralph via cargo bin
+let mut cmd = Command::cargo_bin("ralph")?;
+cmd.assert().success();
+
+// ❌ FORBIDDEN: Spawning ANY process via path
+let bin_path = env!("CARGO_BIN_EXE_ralph");
+let output = Command::new(bin_path)
+    .output()?;
+
+// ❌ FORBIDDEN: Using Command::new with ANY argument
+let output = Command::new("literally_any_command")
     .output()?;
 
 // ❌ FORBIDDEN: Using thread::spawn for test execution
@@ -188,11 +254,28 @@ handle.join().unwrap();
 
 **If you see tests spawning processes:**
 
-1. Replace git CLI calls with git2 library operations
-2. Replace Command::new() with MockGit/GitOps trait abstraction
-3. Replace `ralph_cmd()` with `run_ralph_cli()` for CLI tests (calls app::run() directly)
-4. Remove test-helpers functions that spawn processes (git_commit_all, git_switch, git_switch_force)
-5. Use dependency injection to mock the external service
+1. **For git operations**: Use git2 library or MockGit trait
+2. **For file operations** (ls, cat, find, etc.): Use std::fs functions
+3. **For HTTP requests** (curl, wget): Use mocked HTTP client traits
+4. **For text processing** (grep, sed, awk): Use Rust string methods
+5. **For ralph CLI testing**: Use `run_ralph_cli()` which calls app::run() directly
+6. **For any other command**: Find the Rust library or mock the behavior
+
+**Common replacements:**
+
+| Instead of... | Use... |
+|--------------|--------|
+| `Command::new("ls")` | `std::fs::read_dir()` |
+| `Command::new("cat")` | `std::fs::read_to_string()` |
+| `Command::new("grep")` | String `.contains()`, `.lines().filter()`, regex |
+| `Command::new("find")` | `walkdir` crate or recursive `std::fs` |
+| `Command::new("curl")` | Mocked HTTP client trait |
+| `Command::new("echo")` | Direct string operations |
+| `Command::new("mkdir -p")` | `std::fs::create_dir_all()` |
+| `Command::new("rm -rf")` | `std::fs::remove_dir_all()` |
+| `Command::new("cp")` | `std::fs::copy()` |
+| `Command::new("ralph")` | `run_ralph_cli()` helper function |
+| `assert_cmd::Command` | Direct function calls with TestLogger |
 
 **Migration Examples:**
 
@@ -220,6 +303,21 @@ let mock = MockGit::new();
 let result = GitOps::commit(&mock, "test", None, None)?;
 assert!(matches!(result, CommitResult::Success(_)));
 ```
+
+**FINAL EMPHASIS ON PROCESS SPAWNING:**
+
+⚠️ **THERE ARE NO EXCEPTIONS TO THIS RULE** ⚠️
+
+- You CANNOT spawn `ls` to list files - use `std::fs::read_dir()`
+- You CANNOT spawn `cat` to read files - use `std::fs::read_to_string()`
+- You CANNOT spawn `ralph` to test the CLI - use `run_ralph_cli()`
+- You CANNOT spawn `curl` for HTTP - use mocked HTTP clients
+- You CANNOT spawn `git` for version control - use git2 library
+- You CANNOT spawn ANYTHING, EVER, FOR ANY REASON
+
+**If you think you need to spawn a process, you are wrong. There is always a better way.**
+
+**This is not a guideline. This is not a preference. This is an ABSOLUTE REQUIREMENT.**
 
 **Why this matters:**
 - Tests must be deterministic and reproducible
@@ -609,6 +707,7 @@ Before writing a new integration test, verify:
 - [ ] **Black-box**: Could this test pass with a completely different internal implementation?
 - [ ] **Mocking boundaries**: Am I only mocking external dependencies (filesystem, network)?
 - [ ] **No internal knowledge**: Does the test avoid importing internal/private modules?
+- [ ] **NO PROCESS SPAWNING**: Does this test avoid ALL use of Command::new(), assert_cmd, etc?
 - [ ] **Deterministic**: Will this test produce the same result every time?
 - [ ] **Isolated**: Does this test clean up after itself and not affect other tests?
 - [ ] **Timeout protection**: Is the test wrapped with `with_default_timeout()`?
@@ -617,6 +716,9 @@ Before writing a new integration test, verify:
 
 | Anti-Pattern | Why It's Wrong | Fix |
 |--------------|----------------|-----|
+| Spawning ANY external process | Non-deterministic, slow, breaks isolation | Use Rust libraries or mocks |
+| Using Command::new() for ANYTHING | Process spawning is FORBIDDEN | Use std::fs, git2, HTTP mocks, etc. |
+| Using assert_cmd for ralph testing | Process spawning is FORBIDDEN | Use run_ralph_cli() helper |
 | Mocking internal functions | Tests implementation, not behavior | Refactor code or use integration boundary |
 | Asserting on log messages | Logs are not part of the behavior contract | Assert on outputs/side effects instead |
 | Testing private functions | Private = implementation detail | Test through public API |
@@ -681,5 +783,7 @@ fn test_specific_scenario_expected_behavior() {
 
 1. **Test behavior, not implementation** - If it's not observable, don't test it
 2. **Mock boundaries, not internals** - Filesystem/network yes, helper functions no
-3. **Failing test = behavior mismatch** - Fix implementation, not tests
-4. **Use real code paths** - TestPrinter replaces I/O, not logic
+3. **NO PROCESS SPAWNING EVER** - Not ls, not cat, not curl, not ralph, NOTHING
+4. **Failing test = behavior mismatch** - Fix implementation, not tests
+5. **Use real code paths** - TestPrinter replaces I/O, not logic
+6. **All tests must have timeouts** - Wrap with `with_default_timeout()`
