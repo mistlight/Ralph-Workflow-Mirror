@@ -91,6 +91,8 @@ impl MainEffectHandler {
             Effect::ValidateFinalState => self.validate_final_state(ctx),
 
             Effect::SaveCheckpoint { trigger } => self.save_checkpoint(ctx, trigger),
+
+            Effect::CleanupContext => self.cleanup_context(ctx),
         }
     }
 
@@ -464,6 +466,76 @@ impl MainEffectHandler {
         ));
 
         Ok(PipelineEvent::AgentChainInitialized { role, agents })
+    }
+
+    fn cleanup_context(&mut self, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+        use crate::files::delete_plan_file;
+        use std::fs;
+        use std::path::Path;
+
+        ctx.logger
+            .info("Cleaning up context files to prevent pollution...");
+
+        let mut cleaned_count = 0;
+        let mut failed_count = 0;
+
+        // Delete PLAN.md
+        if let Err(err) = delete_plan_file() {
+            ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
+            failed_count += 1;
+        } else {
+            cleaned_count += 1;
+        }
+
+        // Delete ISSUES.md (may not exist if in isolation mode)
+        let issues_path = Path::new(".agent/ISSUES.md");
+        if issues_path.exists() {
+            if let Err(err) = fs::remove_file(issues_path) {
+                ctx.logger
+                    .warn(&format!("Failed to delete ISSUES.md: {err}"));
+                failed_count += 1;
+            } else {
+                cleaned_count += 1;
+            }
+        }
+
+        // Delete ALL .xml files in .agent/tmp/ to prevent context pollution
+        let tmp_dir = Path::new(".agent/tmp");
+        if tmp_dir.exists() {
+            if let Ok(entries) = fs::read_dir(tmp_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|s| s.to_str()) == Some("xml") {
+                        if let Err(err) = fs::remove_file(&path) {
+                            ctx.logger.warn(&format!(
+                                "Failed to delete {}: {}",
+                                path.display(),
+                                err
+                            ));
+                            failed_count += 1;
+                        } else {
+                            cleaned_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        if cleaned_count > 0 {
+            ctx.logger.success(&format!(
+                "Context cleanup complete: {} files deleted{}",
+                cleaned_count,
+                if failed_count > 0 {
+                    format!(", {} failures", failed_count)
+                } else {
+                    String::new()
+                }
+            ));
+        } else {
+            ctx.logger.info("No context files to clean up");
+        }
+
+        Ok(PipelineEvent::ContextCleaned)
     }
 }
 

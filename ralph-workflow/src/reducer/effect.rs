@@ -67,6 +67,8 @@ pub enum Effect {
     SaveCheckpoint {
         trigger: CheckpointTrigger,
     },
+
+    CleanupContext,
 }
 
 /// Trait for executing effects.

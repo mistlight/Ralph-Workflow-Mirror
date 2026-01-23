@@ -21,6 +21,13 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     role: AgentRole::Developer,
                 };
             }
+
+            // Clean up before planning to remove any leftover files from previous iterations
+            // or crashed runs (PLAN.md, ISSUES.md, .xml files)
+            if !state.context_cleaned {
+                return Effect::CleanupContext;
+            }
+
             Effect::GeneratePlan {
                 iteration: state.iteration,
             }
@@ -37,6 +44,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     trigger: CheckpointTrigger::PhaseTransition,
                 };
             }
+
             if state.iteration < state.total_iterations {
                 Effect::RunDevelopmentIteration {
                     iteration: state.iteration,

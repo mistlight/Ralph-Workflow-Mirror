@@ -57,16 +57,14 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             iteration,
             output_valid: _output_valid,
         } => {
-            let next_iter = iteration + 1;
-            let next_phase = if next_iter >= state.total_iterations {
-                super::event::PipelinePhase::Review
-            } else {
-                super::event::PipelinePhase::Development
-            };
-
+            // After dev iteration, go to CommitMessage phase to create a commit
+            // Store current phase so we can return after commit
             PipelineState {
-                iteration: next_iter,
-                phase: next_phase,
+                phase: super::event::PipelinePhase::CommitMessage,
+                previous_phase: Some(super::event::PipelinePhase::Development),
+                iteration,
+                commit: super::state::CommitState::NotStarted,
+                context_cleaned: false,
                 ..state
             }
         }
@@ -116,17 +114,14 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         },
 
         PipelineEvent::FixAttemptCompleted { pass, .. } => {
-            let next_pass = pass + 1;
-            let next_phase = if next_pass >= state.total_reviewer_passes {
-                super::event::PipelinePhase::CommitMessage
-            } else {
-                super::event::PipelinePhase::Review
-            };
-
+            // After fix attempt, go to CommitMessage phase to create a commit
+            // Store current phase so we can return after commit
             PipelineState {
-                phase: next_phase,
-                reviewer_pass: next_pass,
+                phase: super::event::PipelinePhase::CommitMessage,
+                previous_phase: Some(super::event::PipelinePhase::Review),
+                reviewer_pass: pass,
                 review_issues_found: false, // Reset flag after fix attempt
+                commit: super::state::CommitState::NotStarted,
                 ..state
             }
         }
@@ -223,11 +218,64 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             ..state
         },
 
-        PipelineEvent::CommitCreated { hash, .. } => PipelineState {
-            commit: CommitState::Committed { hash },
-            phase: super::event::PipelinePhase::FinalValidation,
-            ..state
-        },
+        PipelineEvent::CommitCreated { hash, .. } => {
+            // After commit, return to Planning (next iteration) or Review, or FinalValidation
+            let (next_phase, next_iter, next_reviewer_pass) = match state.previous_phase {
+                Some(super::event::PipelinePhase::Development) => {
+                    let next_iter = state.iteration + 1;
+                    if next_iter >= state.total_iterations {
+                        // All dev iterations done, go to Review
+                        (
+                            super::event::PipelinePhase::Review,
+                            next_iter,
+                            state.reviewer_pass,
+                        )
+                    } else {
+                        // More iterations, go back to Planning for next iteration
+                        (
+                            super::event::PipelinePhase::Planning,
+                            next_iter,
+                            state.reviewer_pass,
+                        )
+                    }
+                }
+                Some(super::event::PipelinePhase::Review) => {
+                    let next_pass = state.reviewer_pass + 1;
+                    if next_pass >= state.total_reviewer_passes {
+                        // All review passes done, go to FinalValidation
+                        (
+                            super::event::PipelinePhase::FinalValidation,
+                            state.iteration,
+                            next_pass,
+                        )
+                    } else {
+                        // More review passes, stay in Review
+                        (
+                            super::event::PipelinePhase::Review,
+                            state.iteration,
+                            next_pass,
+                        )
+                    }
+                }
+                _ => {
+                    // Final commit (no previous phase), go to FinalValidation
+                    (
+                        super::event::PipelinePhase::FinalValidation,
+                        state.iteration,
+                        state.reviewer_pass,
+                    )
+                }
+            };
+
+            PipelineState {
+                commit: CommitState::Committed { hash },
+                phase: next_phase,
+                previous_phase: None,
+                iteration: next_iter,
+                reviewer_pass: next_reviewer_pass,
+                ..state
+            }
+        }
 
         PipelineEvent::CommitGenerationFailed { .. } => PipelineState {
             commit: CommitState::NotStarted,
@@ -237,6 +285,11 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         PipelineEvent::CommitSkipped { .. } => PipelineState {
             commit: CommitState::Skipped,
             phase: super::event::PipelinePhase::FinalValidation,
+            ..state
+        },
+
+        PipelineEvent::ContextCleaned => PipelineState {
+            context_cleaned: true,
             ..state
         },
 

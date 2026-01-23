@@ -17,11 +17,13 @@ use super::event::PipelinePhase;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PipelineState {
     pub phase: PipelinePhase,
+    pub previous_phase: Option<PipelinePhase>,
     pub iteration: u32,
     pub total_iterations: u32,
     pub reviewer_pass: u32,
     pub total_reviewer_passes: u32,
     pub review_issues_found: bool,
+    pub context_cleaned: bool,
     pub agent_chain: AgentChainState,
     pub rebase: RebaseState,
     pub commit: CommitState,
@@ -45,11 +47,13 @@ impl PipelineState {
 
         Self {
             phase: initial_phase,
+            previous_phase: None,
             iteration: 0,
             total_iterations: developer_iters,
             reviewer_pass: 0,
             total_reviewer_passes: reviewer_reviews,
             review_issues_found: false,
+            context_cleaned: false,
             agent_chain: AgentChainState::initial(),
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
