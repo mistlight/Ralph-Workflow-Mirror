@@ -53,7 +53,11 @@
       "Bash(git worktree:*)",
       "Bash(/bin/bash -c 'echo hello')",
       "mcp__git__git_show",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "mcp__filesystem__read_multiple_files",
+      "Bash(wc:*)",
+      "Bash(./tests/integration_tests/compliance_check.sh:*)",
+      "Bash(./tests/integration_tests/no_test_flags_check.sh:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
