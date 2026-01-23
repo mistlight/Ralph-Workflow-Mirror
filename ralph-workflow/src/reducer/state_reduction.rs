@@ -273,6 +273,7 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
                 previous_phase: None,
                 iteration: next_iter,
                 reviewer_pass: next_reviewer_pass,
+                context_cleaned: false, // Reset so cleanup runs before next Planning/Review phase
                 ..state
             }
         }
