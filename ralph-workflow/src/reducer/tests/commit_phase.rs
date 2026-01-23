@@ -262,6 +262,25 @@ fn test_commit_skipped_transitions_to_final_validation() {
 }
 
 #[test]
+fn test_commit_generation_failed_resets_commit_to_not_started() {
+    let state = PipelineState {
+        commit: CommitState::Generating {
+            attempt: 5,
+            max_attempts: 10,
+        },
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state,
+        PipelineEvent::CommitGenerationFailed {
+            reason: "Agent failed to generate valid commit message".to_string(),
+        },
+    );
+
+    assert!(matches!(new_state.commit, CommitState::NotStarted));
+}
+
+#[test]
 fn test_checkpoint_saved_preserves_all_state() {
     let state = PipelineState {
         phase: PipelinePhase::Development,

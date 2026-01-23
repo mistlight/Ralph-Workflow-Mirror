@@ -219,3 +219,56 @@ fn test_fix_attempt_completed_on_last_pass_transitions_to_commit() {
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
     assert_eq!(new_state.reviewer_pass, 2);
 }
+
+#[test]
+fn test_review_phase_completed_transitions_to_commit_message() {
+    let state = create_state_in_phase(PipelinePhase::Review);
+    let new_state = reduce(
+        state,
+        PipelineEvent::ReviewPhaseCompleted { early_exit: false },
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+}
+
+#[test]
+fn test_review_phase_completed_with_early_exit_transitions_to_commit_message() {
+    let state = create_state_in_phase(PipelinePhase::Review);
+    let new_state = reduce(
+        state,
+        PipelineEvent::ReviewPhaseCompleted { early_exit: true },
+    );
+
+    // Even with early_exit, should still transition to CommitMessage
+    assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+}
+
+#[test]
+fn test_review_pass_started_with_large_pass_number() {
+    let state = create_test_state();
+    let new_state = reduce(state, PipelineEvent::ReviewPassStarted { pass: 999 });
+
+    assert_eq!(new_state.reviewer_pass, 999);
+}
+
+#[test]
+fn test_review_completed_increments_large_pass_number() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 999,
+        total_reviewer_passes: 1001,
+        review_issues_found: false,
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state,
+        PipelineEvent::ReviewCompleted {
+            pass: 999,
+            issues_found: false,
+        },
+    );
+
+    // Should increment to 1000
+    assert_eq!(new_state.reviewer_pass, 1000);
+    assert_eq!(new_state.phase, PipelinePhase::Review); // Not done yet (1000 < 1001)
+}

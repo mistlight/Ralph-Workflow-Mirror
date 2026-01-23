@@ -118,3 +118,37 @@ fn test_development_phase_completed_transitions_to_review() {
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
 }
+
+#[test]
+fn test_development_iteration_completed_with_large_iteration_number() {
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 999,
+        total_iterations: 1000,
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state,
+        PipelineEvent::DevelopmentIterationCompleted {
+            iteration: 999,
+            output_valid: true,
+        },
+    );
+
+    // Should increment to 1000 and transition to Review
+    assert_eq!(new_state.iteration, 1000);
+    assert_eq!(new_state.phase, PipelinePhase::Review);
+}
+
+#[test]
+fn test_development_iteration_started_with_max_u32() {
+    let state = create_test_state();
+    let new_state = reduce(
+        state,
+        PipelineEvent::DevelopmentIterationStarted {
+            iteration: u32::MAX,
+        },
+    );
+
+    assert_eq!(new_state.iteration, u32::MAX);
+}

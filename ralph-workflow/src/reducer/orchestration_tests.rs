@@ -12,7 +12,7 @@ use super::orchestration::determine_next_effect;
 use super::state_reduction::reduce;
 use crate::agents::AgentRole;
 use crate::reducer::effect::Effect;
-use crate::reducer::event::{CheckpointTrigger, PipelineEvent, PipelinePhase};
+use crate::reducer::event::{PipelineEvent, PipelinePhase};
 use crate::reducer::state::PipelineState;
 
 fn create_test_state() -> PipelineState {

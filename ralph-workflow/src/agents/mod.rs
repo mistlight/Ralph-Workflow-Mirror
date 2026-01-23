@@ -84,9 +84,6 @@ pub use providers::{
 pub use registry::AgentRegistry;
 pub use retry_timer::RetryTimerProvider;
 
-#[cfg(any(test, feature = "test-utils"))]
-pub use retry_timer::TestRetryTimer;
-
 #[cfg(test)]
 mod tests {
     use super::fallback::FallbackConfig;
