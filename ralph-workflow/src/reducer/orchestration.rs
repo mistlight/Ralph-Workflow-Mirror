@@ -22,8 +22,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 };
             }
 
-            // Clean up before planning to remove any leftover files from previous iterations
-            // or crashed runs (PLAN.md, ISSUES.md, .xml files)
+            // Clean up BEFORE planning to remove old PLAN.md from previous iteration
             if !state.context_cleaned {
                 return Effect::CleanupContext;
             }
