@@ -123,7 +123,7 @@ pub mod state_reduction;
 mod orchestration_tests;
 
 #[cfg(test)]
-mod state_reduction_tests;
+mod tests;
 
 pub use effect::EffectHandler;
 pub use event::PipelineEvent;
