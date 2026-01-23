@@ -23,15 +23,40 @@ fn test_development_iteration_started_sets_iteration() {
 
 #[test]
 fn test_development_iteration_started_resets_agent_chain() {
-    let state = create_test_state();
-    // Note: We'll test that agent_chain gets reset by checking indices
+    let base_state = create_test_state();
+    // Setup agent chain with multiple agents, models, and retry_cycle
+    let mut agent_chain = base_state.agent_chain.with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![
+            vec!["model1".to_string(), "model2".to_string()],
+            vec!["model3".to_string()],
+        ],
+        crate::agents::AgentRole::Developer,
+    );
+    agent_chain = agent_chain.switch_to_next_agent(); // Move to agent index 1
+    agent_chain.retry_cycle = 5; // Manually set retry_cycle to verify preservation
+
+    let state = PipelineState {
+        agent_chain,
+        ..base_state
+    };
+
+    // Verify we're at agent 1 with retry_cycle = 5
+    assert_eq!(state.agent_chain.current_agent_index, 1);
+    assert_eq!(state.agent_chain.retry_cycle, 5);
+
     let new_state = reduce(
         state,
         PipelineEvent::DevelopmentIterationStarted { iteration: 1 },
     );
 
+    // Iteration should be set
+    assert_eq!(new_state.iteration, 1);
+
+    // Agent chain should be reset (indices to 0, but retry_cycle preserved)
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
     assert_eq!(new_state.agent_chain.current_model_index, 0);
+    assert_eq!(new_state.agent_chain.retry_cycle, 5); // Preserved, not reset
 }
 
 #[test]

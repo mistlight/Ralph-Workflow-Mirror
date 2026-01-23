@@ -9,11 +9,21 @@ use crate::reducer::event::CheckpointTrigger;
 use crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS;
 
 #[test]
-fn test_commit_generation_started_is_noop() {
+fn test_commit_generation_started_sets_generating_state() {
     let state = create_test_state();
     let new_state = reduce(state.clone(), PipelineEvent::CommitGenerationStarted);
 
+    // Phase should be preserved
     assert_eq!(new_state.phase, state.phase);
+
+    // Commit state should transition to Generating
+    assert!(matches!(
+        new_state.commit,
+        CommitState::Generating {
+            attempt: 1,
+            max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS
+        }
+    ));
 }
 
 #[test]

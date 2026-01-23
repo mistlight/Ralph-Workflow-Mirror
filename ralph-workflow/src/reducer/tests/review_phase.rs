@@ -36,11 +36,39 @@ fn test_review_phase_started_clears_issues_flag() {
 }
 
 #[test]
-fn test_review_pass_started_sets_pass() {
-    let state = create_test_state();
+fn test_review_pass_started_sets_pass_and_resets_agent_chain() {
+    let base_state = create_test_state();
+    // Setup with non-zero agent chain state AND review_issues_found = true
+    let mut agent_chain = base_state.agent_chain.with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![vec!["model1".to_string()], vec!["model2".to_string()]],
+        crate::agents::AgentRole::Reviewer,
+    );
+    agent_chain = agent_chain.switch_to_next_agent(); // Move to agent 1
+    agent_chain.retry_cycle = 2; // Manually set retry_cycle to verify preservation
+
+    let state = PipelineState {
+        review_issues_found: true, // Should be cleared by ReviewPassStarted
+        agent_chain,
+        ..base_state
+    };
+
+    assert_eq!(state.agent_chain.current_agent_index, 1);
+    assert_eq!(state.agent_chain.retry_cycle, 2);
+    assert!(state.review_issues_found);
+
     let new_state = reduce(state, PipelineEvent::ReviewPassStarted { pass: 2 });
 
+    // Pass should be set
     assert_eq!(new_state.reviewer_pass, 2);
+
+    // CRITICAL: review_issues_found should be reset to false
+    assert!(!new_state.review_issues_found);
+
+    // Agent chain should be reset (indices to 0, but retry_cycle preserved)
+    assert_eq!(new_state.agent_chain.current_agent_index, 0);
+    assert_eq!(new_state.agent_chain.current_model_index, 0);
+    assert_eq!(new_state.agent_chain.retry_cycle, 2); // Preserved, not reset
 }
 
 #[test]
@@ -144,15 +172,40 @@ fn test_review_completed_on_last_pass_with_issues_stays_in_review() {
 }
 
 #[test]
-fn test_fix_attempt_started_is_noop() {
+fn test_fix_attempt_started_resets_agent_chain() {
+    let base_state = create_test_state();
+    // Setup with non-zero agent chain state and retry_cycle
+    let mut agent_chain = base_state.agent_chain.with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![vec!["model1".to_string()], vec!["model2".to_string()]],
+        crate::agents::AgentRole::Reviewer,
+    );
+    agent_chain = agent_chain.switch_to_next_agent(); // Move to agent 1
+    agent_chain.retry_cycle = 3; // Manually set retry_cycle to verify preservation
+
     let state = PipelineState {
         review_issues_found: true,
-        ..create_test_state()
+        agent_chain,
+        ..base_state
     };
+
+    assert_eq!(state.agent_chain.current_agent_index, 1);
+    assert_eq!(state.agent_chain.retry_cycle, 3);
+    assert!(state.review_issues_found);
+
     let new_state = reduce(state.clone(), PipelineEvent::FixAttemptStarted { pass: 0 });
 
+    // Phase and reviewer pass should be preserved
     assert_eq!(new_state.phase, state.phase);
     assert_eq!(new_state.reviewer_pass, state.reviewer_pass);
+
+    // CRITICAL: review_issues_found should be preserved (not reset)
+    assert!(new_state.review_issues_found);
+
+    // Agent chain should be reset (indices to 0, but retry_cycle preserved)
+    assert_eq!(new_state.agent_chain.current_agent_index, 0);
+    assert_eq!(new_state.agent_chain.current_model_index, 0);
+    assert_eq!(new_state.agent_chain.retry_cycle, 3); // Preserved, not reset
 }
 
 #[test]

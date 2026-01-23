@@ -209,6 +209,192 @@ fn test_rebase_skipped_transitions_to_skipped() {
     assert!(matches!(new_state.rebase, RebaseState::Skipped));
 }
 
+// ============================================================================
+// TIER 2: Defensive Tests - Invalid State Transitions
+// ============================================================================
+
+#[test]
+fn test_rebase_conflict_detected_from_not_started_preserves_state() {
+    let state = PipelineState {
+        rebase: RebaseState::NotStarted,
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state.clone(),
+        PipelineEvent::RebaseConflictDetected {
+            files: vec![PathBuf::from("file.rs")],
+        },
+    );
+
+    // Should preserve NotStarted since we're not InProgress
+    assert!(matches!(new_state.rebase, RebaseState::NotStarted));
+}
+
+#[test]
+fn test_rebase_conflict_detected_from_completed_preserves_state() {
+    let state = PipelineState {
+        rebase: RebaseState::Completed {
+            new_head: "abc123".to_string(),
+        },
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state,
+        PipelineEvent::RebaseConflictDetected {
+            files: vec![PathBuf::from("file.rs")],
+        },
+    );
+
+    // Should preserve Completed since we're not InProgress
+    if let RebaseState::Completed { new_head } = new_state.rebase {
+        assert_eq!(new_head, "abc123");
+    } else {
+        panic!("Expected RebaseState::Completed to be preserved");
+    }
+}
+
+#[test]
+fn test_rebase_conflict_detected_from_skipped_preserves_state() {
+    let state = PipelineState {
+        rebase: RebaseState::Skipped,
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state.clone(),
+        PipelineEvent::RebaseConflictDetected {
+            files: vec![PathBuf::from("file.rs")],
+        },
+    );
+
+    // Should preserve Skipped since we're not InProgress
+    assert!(matches!(new_state.rebase, RebaseState::Skipped));
+}
+
+#[test]
+fn test_rebase_conflict_resolved_from_not_started_preserves_state() {
+    let state = PipelineState {
+        rebase: RebaseState::NotStarted,
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state.clone(),
+        PipelineEvent::RebaseConflictResolved {
+            files: vec![PathBuf::from("file.rs")],
+        },
+    );
+
+    // Should preserve NotStarted since we're not Conflicted
+    assert!(matches!(new_state.rebase, RebaseState::NotStarted));
+}
+
+#[test]
+fn test_rebase_conflict_resolved_from_completed_preserves_state() {
+    let state = PipelineState {
+        rebase: RebaseState::Completed {
+            new_head: "def456".to_string(),
+        },
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state,
+        PipelineEvent::RebaseConflictResolved {
+            files: vec![PathBuf::from("file.rs")],
+        },
+    );
+
+    // Should preserve Completed since we're not Conflicted
+    if let RebaseState::Completed { new_head } = new_state.rebase {
+        assert_eq!(new_head, "def456");
+    } else {
+        panic!("Expected RebaseState::Completed to be preserved");
+    }
+}
+
+#[test]
+fn test_rebase_conflict_resolved_from_in_progress_preserves_state() {
+    let state = PipelineState {
+        rebase: RebaseState::InProgress {
+            original_head: "abc123".to_string(),
+            target_branch: "main".to_string(),
+        },
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state,
+        PipelineEvent::RebaseConflictResolved {
+            files: vec![PathBuf::from("file.rs")],
+        },
+    );
+
+    // Should preserve InProgress since there's no conflict to resolve
+    if let RebaseState::InProgress {
+        original_head,
+        target_branch,
+    } = new_state.rebase
+    {
+        assert_eq!(original_head, "abc123");
+        assert_eq!(target_branch, "main");
+    } else {
+        panic!("Expected RebaseState::InProgress to be preserved");
+    }
+}
+
+// ============================================================================
+// TIER 3: Completeness Tests - Edge Cases
+// ============================================================================
+
+#[test]
+fn test_rebase_conflict_detected_with_empty_file_list() {
+    let state = PipelineState {
+        rebase: RebaseState::InProgress {
+            original_head: "abc123".to_string(),
+            target_branch: "main".to_string(),
+        },
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state,
+        PipelineEvent::RebaseConflictDetected {
+            files: vec![], // Empty file list
+        },
+    );
+
+    // Should still transition to Conflicted even with empty file list
+    if let RebaseState::Conflicted {
+        files,
+        resolution_attempts,
+        ..
+    } = new_state.rebase
+    {
+        assert_eq!(files.len(), 0);
+        assert_eq!(resolution_attempts, 0);
+    } else {
+        panic!("Expected RebaseState::Conflicted");
+    }
+}
+
+#[test]
+fn test_rebase_conflict_resolved_with_empty_file_list() {
+    let state = PipelineState {
+        rebase: RebaseState::Conflicted {
+            original_head: "abc123".to_string(),
+            target_branch: "main".to_string(),
+            files: vec![PathBuf::from("file.rs")],
+            resolution_attempts: 0,
+        },
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state,
+        PipelineEvent::RebaseConflictResolved {
+            files: vec![], // Empty file list
+        },
+    );
+
+    // Should still transition to InProgress even with empty file list
+    assert!(matches!(new_state.rebase, RebaseState::InProgress { .. }));
+}
+
 #[test]
 fn test_rebase_conflict_detected_initializes_resolution_attempts_to_zero() {
     let state = PipelineState {

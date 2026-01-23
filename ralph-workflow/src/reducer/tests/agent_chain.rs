@@ -370,3 +370,41 @@ fn test_agent_invocation_failed_retriable_on_single_model_wraps() {
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
     assert_eq!(new_state.agent_chain.current_model_index, 0);
 }
+
+// ============================================================================
+// TIER 3: Completeness Tests - Additional Roles and Edge Cases
+// ============================================================================
+
+#[test]
+fn test_agent_chain_initialized_for_commit_role() {
+    let state = create_test_state();
+    let agents = vec!["commit-agent1".to_string()];
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::AgentChainInitialized {
+            agents: agents.clone(),
+            role: AgentRole::Commit,
+        },
+    );
+
+    assert_eq!(new_state.agent_chain.agents, agents);
+    assert_eq!(new_state.agent_chain.current_agent_index, 0);
+    assert_eq!(new_state.agent_chain.current_model_index, 0);
+}
+
+#[test]
+fn test_agent_chain_initialized_with_empty_list() {
+    let state = create_test_state();
+    let new_state = reduce(
+        state,
+        PipelineEvent::AgentChainInitialized {
+            agents: vec![],
+            role: AgentRole::Developer,
+        },
+    );
+
+    // Empty agent list should be accepted
+    assert_eq!(new_state.agent_chain.agents.len(), 0);
+    assert_eq!(new_state.agent_chain.current_agent_index, 0);
+}

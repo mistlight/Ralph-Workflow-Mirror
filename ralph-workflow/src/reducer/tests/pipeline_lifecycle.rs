@@ -15,8 +15,14 @@ fn test_pipeline_started_preserves_all_state() {
 }
 
 #[test]
-fn test_pipeline_resumed_preserves_all_state() {
-    let state = create_test_state();
+fn test_pipeline_resumed_from_checkpoint_preserves_all_state() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        iteration: 3,
+        reviewer_pass: 1,
+        review_issues_found: true,
+        ..create_test_state()
+    };
     let new_state = reduce(
         state.clone(),
         PipelineEvent::PipelineResumed {
@@ -24,6 +30,29 @@ fn test_pipeline_resumed_preserves_all_state() {
         },
     );
 
+    // All state should be preserved
+    assert_eq!(new_state.phase, state.phase);
+    assert_eq!(new_state.iteration, state.iteration);
+    assert_eq!(new_state.reviewer_pass, state.reviewer_pass);
+    assert_eq!(new_state.review_issues_found, state.review_issues_found);
+}
+
+#[test]
+fn test_pipeline_resumed_not_from_checkpoint_preserves_all_state() {
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 2,
+        reviewer_pass: 0,
+        ..create_test_state()
+    };
+    let new_state = reduce(
+        state.clone(),
+        PipelineEvent::PipelineResumed {
+            from_checkpoint: false,
+        },
+    );
+
+    // All state should be preserved (from_checkpoint parameter doesn't affect reducer)
     assert_eq!(new_state.phase, state.phase);
     assert_eq!(new_state.iteration, state.iteration);
     assert_eq!(new_state.reviewer_pass, state.reviewer_pass);
