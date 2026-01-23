@@ -391,6 +391,39 @@ fn test_agent_chain_initialized_for_commit_role() {
     assert_eq!(new_state.agent_chain.agents, agents);
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
     assert_eq!(new_state.agent_chain.current_model_index, 0);
+    assert_eq!(new_state.agent_chain.current_role, AgentRole::Commit);
+}
+
+#[test]
+fn test_agent_chain_initialized_resets_retry_cycle() {
+    let base_state = create_test_state();
+    // Setup with non-zero retry_cycle
+    let mut agent_chain = base_state.agent_chain.clone();
+    agent_chain.retry_cycle = 5; // Start with retry_cycle = 5
+
+    let state = PipelineState {
+        agent_chain,
+        ..base_state
+    };
+
+    assert_eq!(state.agent_chain.retry_cycle, 5);
+
+    let new_agents = vec!["new-agent1".to_string(), "new-agent2".to_string()];
+    let new_state = reduce(
+        state,
+        PipelineEvent::AgentChainInitialized {
+            agents: new_agents.clone(),
+            role: AgentRole::Reviewer,
+        },
+    );
+
+    // CRITICAL: AgentChainInitialized uses reset_for_role() which RESETS retry_cycle to 0
+    // This is DIFFERENT from reset() which preserves retry_cycle
+    assert_eq!(new_state.agent_chain.agents, new_agents);
+    assert_eq!(new_state.agent_chain.current_agent_index, 0);
+    assert_eq!(new_state.agent_chain.current_model_index, 0);
+    assert_eq!(new_state.agent_chain.retry_cycle, 0); // RESET to 0, not preserved
+    assert_eq!(new_state.agent_chain.current_role, AgentRole::Reviewer);
 }
 
 #[test]
