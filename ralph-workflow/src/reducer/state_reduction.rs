@@ -213,7 +213,7 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         PipelineEvent::CommitGenerationStarted => PipelineState {
             commit: CommitState::Generating {
                 attempt: 1,
-                max_attempts: 3,
+                max_attempts: super::state::MAX_VALIDATION_RETRY_ATTEMPTS,
             },
             ..state
         },
@@ -267,7 +267,54 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             }
         }
         PipelineEvent::RebaseAborted { .. } => state,
-        PipelineEvent::CommitMessageValidationFailed { .. } => state,
+
+        PipelineEvent::CommitMessageValidationFailed { attempt, .. } => {
+            // If we haven't exceeded max attempts, retry with same agent
+            let next_attempt = attempt + 1;
+            let max_attempts = super::state::MAX_VALIDATION_RETRY_ATTEMPTS;
+
+            if next_attempt <= max_attempts {
+                PipelineState {
+                    commit: CommitState::Generating {
+                        attempt: next_attempt,
+                        max_attempts,
+                    },
+                    ..state
+                }
+            } else {
+                // Exceeded max attempts with current agent - try next agent
+                let old_agent_index = state.agent_chain.current_agent_index;
+                let old_retry_cycle = state.agent_chain.retry_cycle;
+                let new_agent_chain = state.agent_chain.switch_to_next_agent();
+
+                // Check if we wrapped around (retry_cycle incremented = all agents exhausted)
+                let wrapped_around = new_agent_chain.retry_cycle > old_retry_cycle;
+
+                // Check if we're on a different agent (advanced successfully)
+                let advanced_to_next =
+                    new_agent_chain.current_agent_index != old_agent_index && !wrapped_around;
+
+                if advanced_to_next {
+                    // Reset to attempt 1 with next agent
+                    PipelineState {
+                        agent_chain: new_agent_chain,
+                        commit: CommitState::Generating {
+                            attempt: 1,
+                            max_attempts,
+                        },
+                        ..state
+                    }
+                } else {
+                    // All agents exhausted (wrapped around) - give up
+                    // Reset to NotStarted so orchestration can handle agent chain exhaustion
+                    PipelineState {
+                        agent_chain: new_agent_chain,
+                        commit: CommitState::NotStarted,
+                        ..state
+                    }
+                }
+            }
+        }
     }
 }
 

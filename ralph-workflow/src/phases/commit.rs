@@ -150,8 +150,8 @@ impl CommitRetryStrategy {
     /// Get the maximum number of in-session retries for this strategy
     const fn max_session_retries(self) -> usize {
         match self {
-            Self::Normal => 10,     // Allow 10 retries with XSD validation feedback
-            Self::Simplified => 10, // Allow 10 retries for simplified prompt
+            Self::Normal => crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize,
+            Self::Simplified => crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize,
         }
     }
 }

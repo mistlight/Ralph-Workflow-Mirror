@@ -589,7 +589,7 @@ pub fn run_review_pass(
     _agent: Option<&str>,
 ) -> anyhow::Result<ReviewPassResult> {
     let issues_path = Path::new(".agent/ISSUES.md");
-    let max_xsd_retries = 100;
+    let max_xsd_retries = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize;
 
     // Read PROMPT.md, PLAN.md for context
     let prompt_content = fs::read_to_string("PROMPT.md").unwrap_or_default();
@@ -1066,7 +1066,7 @@ pub fn run_fix_pass(
 
     let log_dir = format!(".agent/logs/reviewer_fix_{j}");
 
-    let max_xsd_retries = 100;
+    let max_xsd_retries = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize;
     let max_continuations = 100; // Safety limit to prevent infinite loops
     let mut _had_any_error = false; // Tracked for potential future use
 

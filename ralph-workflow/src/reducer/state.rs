@@ -237,6 +237,18 @@ impl RebaseState {
     }
 }
 
+/// Maximum number of retry attempts when XML/format validation fails.
+///
+/// This applies across the pipeline for:
+/// - Commit message generation validation failures
+/// - Plan generation validation failures  
+/// - Development output validation failures
+/// - Review output validation failures
+///
+/// When an agent produces output that fails XML parsing or format validation,
+/// we retry with corrective prompts up to this many times before giving up.
+pub const MAX_VALIDATION_RETRY_ATTEMPTS: u32 = 100;
+
 /// Commit generation state.
 ///
 /// Tracks commit message generation progress through retries:
