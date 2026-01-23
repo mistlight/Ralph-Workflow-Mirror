@@ -18,38 +18,8 @@
 {#   Valid <ralph-fix-result> XML conforming to the XSD schema                 #}
 {# ============================================================================ #}
 
-Your previous fix result output failed XSD validation.
+Your XML at `.agent/tmp/fix_result.xml` failed validation.
 
-═══════════════════════════════════════════════════════════════════════════════
-XSD VALIDATION ERROR
-═══════════════════════════════════════════════════════════════════════════════
+ERROR: {{XSD_ERROR}}
 
-{{XSD_ERROR}}
-
-═══════════════════════════════════════════════════════════════════════════════
-CONTEXT FILES (READ THESE)
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Read `.agent/tmp/fix_result.xsd` - This is the XSD schema your output MUST conform to.
-2. Read `.agent/tmp/last_output.xml` - This is your previous invalid output.
-
-Study both files carefully to understand what went wrong and how to fix it.
-
-═══════════════════════════════════════════════════════════════════════════════
-CRITICAL RULES
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Start IMMEDIATELY with <ralph-fix-result> - NO text before it
-2. End with </ralph-fix-result> - NO text after it
-3. <ralph-status> is REQUIRED and must be one of: all_issues_addressed, issues_remain, no_issues_found
-4. <ralph-summary> is optional
-5. NO markdown code fences around the XML
-6. NO commentary outside the XML
-7. For inline code with special characters (<, >, &), use: <code>a &lt; b</code>
-8. For code blocks, ALWAYS use CDATA to avoid escaping issues:
-   <code-block language="rust"><![CDATA[
-   if a < b && c > d { ... }
-   ]]></code-block>
-9. CDATA sections preserve content exactly - no escaping needed inside them
-
-Fix the validation error and resend your completion status with the correct XML format.
+Fix `.agent/tmp/fix_result.xml` based on `.agent/tmp/fix_result.xsd`.

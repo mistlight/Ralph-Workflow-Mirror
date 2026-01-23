@@ -140,19 +140,10 @@ Fixes #42
 
 ## OUTPUT FORMAT
 
-Output as XML. Start IMMEDIATELY with <ralph-commit> - no text before or after.
-No markdown fences. No analysis or thinking outside the XML.
+Write your XML to: `.agent/tmp/commit_message.xml`
+XSD schema at: `.agent/tmp/commit_message.xsd`
 
-CRITICAL XML ESCAPING RULES:
-1. For inline code with special characters (<, >, &), use: <code>a &lt; b</code>
-2. For code blocks, ALWAYS use CDATA to avoid escaping issues:
-   <code-block language="rust"><![CDATA[
-   if a < b && c > d {
-       vec.push(item);
-   }
-   ]]></code-block>
-3. CDATA sections preserve content exactly - no escaping needed inside them.
-4. If you see XML parsing errors about code-block, you forgot to use CDATA.
+For special characters, use CDATA: <![CDATA[a < b]]>
 
 <ralph-commit>
 <ralph-subject>type(scope): description</ralph-subject>

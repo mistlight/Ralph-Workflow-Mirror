@@ -17,7 +17,8 @@ use super::context::PhaseContext;
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
 use crate::files::llm_output_extraction::{
-    preprocess_raw_content, try_extract_xml_commit_with_trace, CommitExtractionResult,
+    archive_xml_file, preprocess_raw_content, try_extract_from_file,
+    try_extract_xml_commit_with_trace, xml_paths, CommitExtractionResult,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
 use crate::logger::Logger;
@@ -30,6 +31,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::Read;
+use std::path::Path;
 
 /// Preview a commit message for display (first line, truncated if needed).
 fn preview_commit_message(msg: &str) -> String {
@@ -1254,7 +1256,17 @@ fn try_xml_extraction_traced(
     attempt_log: &mut CommitAttemptLog,
     log_dir: &str,
 ) -> Option<CommitExtractionResult> {
-    let (xml_result, xml_detail) = try_extract_xml_commit_with_trace(content);
+    // Try file-based extraction first - allows agents to write XML to .agent/tmp/commit_message.xml
+    let xml_file_path = Path::new(xml_paths::COMMIT_MESSAGE_XML);
+    let (xml_result, xml_detail) = if let Some(file_xml) = try_extract_from_file(xml_file_path) {
+        // Found XML in file - validate it
+        let (validated, detail) = try_extract_xml_commit_with_trace(&file_xml);
+        let detail = format!("file-based: {}", detail);
+        (validated, detail)
+    } else {
+        // Fall back to log content extraction
+        try_extract_xml_commit_with_trace(content)
+    };
     logger.info(&format!("  ✓ XML extraction: {xml_detail}"));
 
     parsing_trace.add_step(
@@ -1268,13 +1280,16 @@ fn try_xml_extraction_traced(
 
     if let Some(message) = xml_result {
         // XSD validation already passed inside try_extract_xml_commit_with_trace
+        // Archive the XML file now that it's been successfully processed
+        archive_xml_file(xml_file_path);
+
         attempt_log.add_extraction_attempt(ExtractionAttempt::success("XML", xml_detail));
         parsing_trace.set_final_message(&message);
         write_parsing_trace_with_logging(parsing_trace, log_dir, logger);
         return Some(CommitExtractionResult::new(message));
     }
 
-    // XML extraction or XSD validation failed
+    // XML extraction or XSD validation failed - file stays in place for agent to edit
     attempt_log.add_extraction_attempt(ExtractionAttempt::failure("XML", xml_detail));
     logger.info("  ✗ XML extraction failed");
     None

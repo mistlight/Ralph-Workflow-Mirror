@@ -18,8 +18,9 @@ use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase};
 use crate::files::extract_issues;
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::llm_output_extraction::{
-    extract_fix_result_xml, extract_issues_xml, format_xml_for_display, validate_fix_result_xml,
-    validate_issues_xml, IssuesElements,
+    archive_xml_file, extract_fix_result_xml, extract_issues_xml, extract_xml_with_file_fallback,
+    format_xml_for_display, validate_fix_result_xml, validate_issues_xml, xml_paths,
+    IssuesElements,
 };
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::git_helpers::{
@@ -908,8 +909,12 @@ fn extract_and_validate_review_output_xml(
         }
     };
 
-    // Extract XML from the raw content
-    let xml_content = match extract_issues_xml(&raw_content) {
+    // Try file-based extraction first - allows agents to write XML to .agent/tmp/issues.xml
+    let xml_content = match extract_xml_with_file_fallback(
+        Path::new(xml_paths::ISSUES_XML),
+        &raw_content,
+        extract_issues_xml,
+    ) {
         Some(xml) => xml,
         None => {
             // No XML found - assume entire output is XML and validate to get specific error
@@ -943,6 +948,9 @@ fn extract_and_validate_review_output_xml(
         Ok(elements) => {
             // Write the validated XML to ISSUES.md
             fs::write(issues_path, &xml_content)?;
+
+            // Archive the XML file for debugging (moves to .xml.processed)
+            archive_xml_file(Path::new(xml_paths::ISSUES_XML));
 
             if elements.no_issues_found.is_some() {
                 return Ok(ParseResult::NoIssuesExplicit);
@@ -1247,21 +1255,26 @@ pub fn run_fix_pass(
             }
             let fix_content = read_last_fix_output(log_dir_path);
 
-            // Try to extract XML - if extraction fails, assume entire output is XML
-            // and validate it to get specific XSD errors for retry
-            let xml_to_validate = if let Some(xml_content) = extract_fix_result_xml(&fix_content) {
-                xml_content
-            } else {
-                // No XML tags found - assume the entire content is XML for validation
+            // Try file-based extraction first - allows agents to write XML to .agent/tmp/fix_result.xml
+            let xml_to_validate = extract_xml_with_file_fallback(
+                Path::new(xml_paths::FIX_RESULT_XML),
+                &fix_content,
+                extract_fix_result_xml,
+            )
+            .unwrap_or_else(|| {
+                // No XML found anywhere - assume entire log content is XML for validation
                 // This allows us to get specific XSD errors to send back to the agent
                 fix_content.clone()
-            };
+            });
 
             // Try to validate against XSD
             match validate_fix_result_xml(&xml_to_validate) {
                 Ok(result_elements) => {
                     // XSD validation passed - format and log the result
                     let formatted_xml = format_xml_for_display(&xml_to_validate);
+
+                    // Archive the XML file for debugging (moves to .xml.processed)
+                    archive_xml_file(Path::new(xml_paths::FIX_RESULT_XML));
 
                     if is_retry {
                         ctx.logger

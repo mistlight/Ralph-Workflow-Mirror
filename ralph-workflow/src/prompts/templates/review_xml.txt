@@ -86,14 +86,10 @@ Do NOT report:
 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════════════════════════
 
-Output as XML. Start IMMEDIATELY with <ralph-issues> - no text before or after.
-No markdown fences.
+Write your XML to: `.agent/tmp/issues.xml`
+XSD schema at: `.agent/tmp/issues.xsd`
 
-CRITICAL XML ESCAPING: If you need to include <, >, or & characters (e.g., comparisons,
-generics, logical operators), you MUST escape them:
-- For inline: <code>a &lt; b</code>
-- Or wrap in CDATA: <code><![CDATA[a < b]]></code>
-CDATA preserves content exactly - no escaping needed inside.
+For special characters, use CDATA: <![CDATA[a < b]]>
 
 If issues found:
 <ralph-issues>

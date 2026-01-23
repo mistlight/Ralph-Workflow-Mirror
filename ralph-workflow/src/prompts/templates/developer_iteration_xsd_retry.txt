@@ -18,37 +18,8 @@
 {#   Valid <ralph-development-result> XML conforming to the XSD schema         #}
 {# ============================================================================ #}
 
-Your previous development status output failed XSD validation.
+Your XML at `.agent/tmp/development_result.xml` failed validation.
 
-═══════════════════════════════════════════════════════════════════════════════
-XSD VALIDATION ERROR
-═══════════════════════════════════════════════════════════════════════════════
+ERROR: {{XSD_ERROR}}
 
-{{XSD_ERROR}}
-
-═══════════════════════════════════════════════════════════════════════════════
-CONTEXT FILES (READ THESE)
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Read `.agent/tmp/development_result.xsd` - This is the XSD schema your output MUST conform to.
-2. Read `.agent/tmp/last_output.xml` - This is your previous invalid output.
-
-Study both files carefully to understand what went wrong and how to fix it.
-
-═══════════════════════════════════════════════════════════════════════════════
-CRITICAL RULES
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Start IMMEDIATELY with <ralph-development-result> - NO text before it
-2. End with </ralph-development-result> - NO text after it
-3. <ralph-status> is REQUIRED and must be one of: completed, partial, failed
-4. <ralph-summary> is REQUIRED and must be non-empty
-5. <ralph-files-changed> is optional
-6. <ralph-next-steps> is optional
-7. NO markdown code fences around the XML
-8. NO commentary outside the XML
-9. For special characters (<, >, &):
-   - Inline: <code>a &lt; b</code>
-   - Or use CDATA: <code><![CDATA[a < b]]></code>
-
-Fix the validation error and resend your completion status with the correct XML format.
+Fix `.agent/tmp/development_result.xml` based on `.agent/tmp/development_result.xsd`.

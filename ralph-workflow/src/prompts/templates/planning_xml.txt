@@ -135,12 +135,8 @@ If you discover gaps, return to earlier phases to address them.
 PHASE 5: WRITE STRUCTURED PLAN
 ═══════════════════════════════════════════════════════════════════════════════
 
-Output your plan as structured XML. Start IMMEDIATELY with <ralph-plan>.
-No markdown fences around the XML. No text before or after the XML.
-
-XSD SCHEMA REFERENCE:
-The complete XSD schema is available at `.agent/tmp/plan.xsd` for reference.
-If you're unsure about the exact XML structure, read the schema file.
+Write your XML to: `.agent/tmp/plan.xml`
+XSD schema at: `.agent/tmp/plan.xsd`
 
 CRITICAL XML ESCAPING RULES:
 1. For inline code with special characters (<, >, &), use: <code>a &lt; b</code>

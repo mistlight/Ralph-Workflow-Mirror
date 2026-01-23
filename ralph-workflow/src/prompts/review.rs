@@ -248,10 +248,8 @@ mod tests {
             "last output",
         );
         assert!(result.contains("XSD error"));
-        // Files are written to .agent/tmp/ instead of being embedded in prompt
+        assert!(result.contains(".agent/tmp/issues.xml"));
         assert!(result.contains(".agent/tmp/issues.xsd"));
-        assert!(result.contains(".agent/tmp/last_output.xml"));
-        assert!(result.contains("<ralph-issues>"));
     }
 
     #[test]
@@ -270,9 +268,7 @@ mod tests {
         let result =
             prompt_fix_xsd_retry_with_context(&context, "test issues", "XSD error", "last output");
         assert!(result.contains("XSD error"));
-        // Files are written to .agent/tmp/ instead of being embedded in prompt
+        assert!(result.contains(".agent/tmp/fix_result.xml"));
         assert!(result.contains(".agent/tmp/fix_result.xsd"));
-        assert!(result.contains(".agent/tmp/last_output.xml"));
-        assert!(result.contains("<ralph-fix-result>"));
     }
 }

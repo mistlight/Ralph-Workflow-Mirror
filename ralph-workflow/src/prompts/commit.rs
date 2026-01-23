@@ -2,8 +2,6 @@
 //!
 //! Prompts for commit message generation and fix actions.
 
-#![cfg_attr(any(test, feature = "test-utils"), allow(dead_code))]
-
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use std::collections::HashMap;

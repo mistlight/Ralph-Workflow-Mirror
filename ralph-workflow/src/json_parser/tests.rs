@@ -1013,22 +1013,6 @@ fn test_streaming_content_block_reset() {
     );
 }
 
-/// Test streaming behavior across multiple parsers for consistency
-/// Verifies that all parsers (Claude, Codex, Gemini, `OpenCode`) handle streaming consistently
-/// NOTE: Temporarily disabled - Codex/Gemini/OpenCode parsers not yet refactored to Printable trait
-/// This test will be re-enabled after Phase 3 (Refactor Other Parsers) is complete
-#[cfg(test)]
-#[test]
-#[cfg_attr(
-    test,
-    ignore = "Codex/Gemini/OpenCode parsers not yet refactored to Printable trait"
-)]
-fn test_streaming_consistency_across_parsers() {
-    // Test disabled until Codex/Gemini/OpenCode are refactored to use Printable trait
-    // See implementation plan Phase 3 for details
-    unreachable!("This test is disabled until Phase 3 is complete");
-}
-
 // Tests for snapshot-as-delta detection
 // These tests verify that the streaming state correctly identifies when
 // snapshot-style content is being sent as deltas (a common bug pattern)
@@ -1739,35 +1723,6 @@ fn test_multiple_deltas_none_mode_produces_multiple_lines() {
         newline_count >= 2,
         "Should have at least 2 newlines in None mode. Found {newline_count}. Output: {output:?}"
     );
-}
-
-/// Test consistency across all parsers in `TerminalMode::None`
-///
-/// Verifies that all parsers (Claude, Codex, Gemini, `OpenCode`) produce
-/// clean output without escape sequences in None mode.
-/// NOTE: Temporarily disabled - Codex/Gemini/OpenCode parsers not yet refactored to Printable trait
-#[cfg(test)]
-#[test]
-#[ignore = "Codex/Gemini/OpenCode parsers not yet refactored to Printable trait"]
-fn test_all_parsers_clean_output_in_none_mode() {
-    // Test disabled until Codex/Gemini/OpenCode are refactored to use Printable trait
-    // See implementation plan Phase 3 for details
-    unreachable!("This test is disabled until Phase 3 is complete");
-}
-
-/// Test that debug output is flushed immediately in all parsers.
-///
-/// This test verifies that the `[DEBUG]` output is flushed before the actual
-/// event output, ensuring that debug output appears synchronously with streaming
-/// events and is not lost or overwritten by subsequent output.
-/// NOTE: Temporarily disabled - Codex/Gemini/OpenCode parsers not yet refactored to Printable trait
-#[cfg(test)]
-#[test]
-#[ignore = "Codex/Gemini/OpenCode parsers not yet refactored to Printable trait"]
-fn test_all_parsers_flush_debug_output_immediately() {
-    // Test disabled until Codex/Gemini/OpenCode are refactored to use Printable trait
-    // See implementation plan Phase 3 for details
-    unreachable!("This test is disabled until Phase 3 is complete");
 }
 
 // Tests for render deduplication (preventing visual repetition)
