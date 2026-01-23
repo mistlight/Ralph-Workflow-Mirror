@@ -230,6 +230,7 @@ fn test_fix_attempt_completed_clears_issues_flag() {
 
 #[test]
 fn test_fix_attempt_completed_on_mid_pass_increments_and_stays_in_review() {
+    // Fix attempt -> CommitMessage -> back to Review (more passes to do)
     let state = PipelineState {
         phase: PipelinePhase::Review,
         reviewer_pass: 0,
@@ -245,14 +246,27 @@ fn test_fix_attempt_completed_on_mid_pass_increments_and_stays_in_review() {
         },
     );
 
-    // Fix attempt increments pass and stays in Review for next review pass
+    // After fix, go to CommitMessage (don't increment yet)
+    assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    assert_eq!(new_state.reviewer_pass, 0);
+    assert!(!new_state.review_issues_found); // Flag cleared after fix
+
+    // After commit, go back to Review and increment
+    let new_state = reduce(
+        new_state,
+        PipelineEvent::CommitCreated {
+            hash: "abc".to_string(),
+            message: "fix".to_string(),
+        },
+    );
+
     assert_eq!(new_state.phase, PipelinePhase::Review);
     assert_eq!(new_state.reviewer_pass, 1);
-    assert!(!new_state.review_issues_found); // Flag cleared after fix
 }
 
 #[test]
 fn test_fix_attempt_completed_on_last_pass_transitions_to_commit() {
+    // Last fix attempt -> CommitMessage -> FinalValidation (all passes done)
     let state = PipelineState {
         phase: PipelinePhase::Review,
         reviewer_pass: 1,
@@ -268,8 +282,20 @@ fn test_fix_attempt_completed_on_last_pass_transitions_to_commit() {
         },
     );
 
-    // Last pass: 1 + 1 = 2, 2 >= 2, should transition to CommitMessage
+    // After fix, go to CommitMessage (don't increment yet)
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    assert_eq!(new_state.reviewer_pass, 1);
+
+    // After commit, all passes done -> go to FinalValidation
+    let new_state = reduce(
+        new_state,
+        PipelineEvent::CommitCreated {
+            hash: "abc".to_string(),
+            message: "fix".to_string(),
+        },
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
     assert_eq!(new_state.reviewer_pass, 2);
 }
 

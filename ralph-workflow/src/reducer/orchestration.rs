@@ -37,6 +37,12 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     trigger: CheckpointTrigger::PhaseTransition,
                 };
             }
+
+            // After development iteration completes, clean up context (PLAN.md, etc.)
+            if !state.context_cleaned && state.iteration > 0 {
+                return Effect::CleanupContext;
+            }
+
             if state.iteration < state.total_iterations {
                 Effect::RunDevelopmentIteration {
                     iteration: state.iteration,

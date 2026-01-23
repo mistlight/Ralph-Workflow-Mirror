@@ -68,6 +68,7 @@ pub enum PipelineEvent {
         iteration: u32,
         output_valid: bool,
     },
+    ContextCleaned,
     DevelopmentPhaseCompleted,
 
     ReviewPhaseStarted,

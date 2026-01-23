@@ -91,6 +91,8 @@ impl MainEffectHandler {
             Effect::ValidateFinalState => self.validate_final_state(ctx),
 
             Effect::SaveCheckpoint { trigger } => self.save_checkpoint(ctx, trigger),
+
+            Effect::CleanupContext => self.cleanup_context(ctx),
         }
     }
 
@@ -464,6 +466,21 @@ impl MainEffectHandler {
         ));
 
         Ok(PipelineEvent::AgentChainInitialized { role, agents })
+    }
+
+    fn cleanup_context(&mut self, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+        use crate::files::delete_plan_file;
+
+        ctx.logger.info("Cleaning up context files...");
+
+        // Delete PLAN.md to prevent context pollution
+        if let Err(err) = delete_plan_file() {
+            ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
+        } else {
+            ctx.logger.success("PLAN.md deleted");
+        }
+
+        Ok(PipelineEvent::ContextCleaned)
     }
 }
 

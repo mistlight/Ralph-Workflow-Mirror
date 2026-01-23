@@ -21,11 +21,13 @@ impl From<PipelineCheckpoint> for PipelineState {
 
         PipelineState {
             phase: migrate_phase(checkpoint.phase),
+            previous_phase: None, // No previous phase for migrated checkpoints
             iteration: checkpoint.iteration,
             total_iterations: checkpoint.total_iterations,
             reviewer_pass: checkpoint.reviewer_pass,
             total_reviewer_passes: checkpoint.total_reviewer_passes,
             review_issues_found: false, // Default to false for migrated checkpoints
+            context_cleaned: false,     // Default to false for migrated checkpoints
             agent_chain,
             rebase: rebase_state,
             commit: super::state::CommitState::NotStarted,
