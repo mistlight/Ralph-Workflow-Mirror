@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Context file management for Ralph's agent files.
 //!
 //! This module handles operations on context files (STATUS.md, NOTES.md, ISSUES.md)

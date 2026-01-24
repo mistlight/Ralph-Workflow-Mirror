@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Development phase execution.
 //!
 //! This module handles the development phase of the Ralph pipeline, which consists

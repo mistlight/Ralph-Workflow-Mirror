@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Guided reviewer prompts with language-specific guidelines.
 //!
 //! This module generates review prompts that incorporate [`ReviewGuidelines`]

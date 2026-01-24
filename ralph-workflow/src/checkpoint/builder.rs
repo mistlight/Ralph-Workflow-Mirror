@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Checkpoint builder for convenient checkpoint creation.
 //!
 //! This module provides a builder pattern for creating checkpoints
