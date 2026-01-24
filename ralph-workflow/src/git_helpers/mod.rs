@@ -1,4 +1,3 @@
-#![allow(dead_code, unused_imports)]
 //! Git Helper Functions
 //!
 //! Provides git hooks management, a git wrapper for blocking commits during the

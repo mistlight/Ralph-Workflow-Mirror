@@ -1,4 +1,3 @@
-#![allow(dead_code, unused_imports)]
 //! Prompt Templates Module
 //!
 //! Provides context-controlled prompts for agents.
