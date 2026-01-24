@@ -20,7 +20,10 @@
 
 use std::env;
 
-use crate::executor::{ProcessExecutor, RealProcessExecutor};
+use crate::executor::ProcessExecutor;
+
+#[cfg(test)]
+use crate::executor::RealProcessExecutor;
 
 /// Git user identity information.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,8 +112,11 @@ pub fn fallback_username(executor: Option<&dyn ProcessExecutor>) -> String {
 }
 
 /// Get the system username with a real process executor (convenience function).
-pub fn fallback_username_with_real() -> String {
-    fallback_username(Some(&RealProcessExecutor::new()))
+///
+/// This function requires an explicit executor parameter to enable proper
+/// dependency injection for testing.
+pub fn fallback_username_with_real(executor: &dyn ProcessExecutor) -> String {
+    fallback_username(Some(executor))
 }
 
 /// Get a fallback email based on the username.
@@ -127,8 +133,11 @@ pub fn fallback_email(username: &str, executor: Option<&dyn ProcessExecutor>) ->
 }
 
 /// Get a fallback email with a real process executor (convenience function).
-pub fn fallback_email_with_real(username: &str) -> String {
-    fallback_email(username, Some(&RealProcessExecutor::new()))
+///
+/// This function requires an explicit executor parameter to enable proper
+/// dependency injection for testing.
+pub fn fallback_email_with_real(username: &str, executor: &dyn ProcessExecutor) -> String {
+    fallback_email(username, Some(executor))
 }
 
 /// Get the system hostname.
@@ -217,14 +226,16 @@ mod tests {
 
     #[test]
     fn test_fallback_username_not_empty() {
-        let username = fallback_username_with_real();
+        let executor = RealProcessExecutor::new();
+        let username = fallback_username_with_real(&executor);
         assert!(!username.is_empty());
     }
 
     #[test]
     fn test_fallback_email_format() {
         let username = "testuser";
-        let email = fallback_email_with_real(username);
+        let executor = RealProcessExecutor::new();
+        let email = fallback_email_with_real(username, &executor);
         assert!(email.contains('@'));
         assert!(email.starts_with(username));
     }

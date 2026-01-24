@@ -66,6 +66,7 @@ pub trait GitOps {
     /// * `message` - The commit message
     /// * `git_user_name` - Optional git user name override
     /// * `git_user_email` - Optional git user email override
+    /// * `executor` - Optional process executor for identity fallback
     ///
     /// # Returns
     ///
@@ -82,6 +83,7 @@ pub trait GitOps {
         message: &str,
         git_user_name: Option<&str>,
         git_user_email: Option<&str>,
+        executor: Option<&dyn crate::executor::ProcessExecutor>,
     ) -> io::Result<CommitResult>;
 
     /// Get the current HEAD commit OID.
@@ -155,11 +157,13 @@ impl GitOps for RealGit {
         message: &str,
         git_user_name: Option<&str>,
         git_user_email: Option<&str>,
+        executor: Option<&dyn crate::executor::ProcessExecutor>,
     ) -> io::Result<CommitResult> {
-        super::repo::git_commit(message, git_user_name, git_user_email).map(|oid_opt| match oid_opt
-        {
-            Some(oid) => CommitResult::Success(oid.to_string()),
-            None => CommitResult::NoChanges,
+        super::repo::git_commit(message, git_user_name, git_user_email, executor).map(|oid_opt| {
+            match oid_opt {
+                Some(oid) => CommitResult::Success(oid.to_string()),
+                None => CommitResult::NoChanges,
+            }
         })
     }
 

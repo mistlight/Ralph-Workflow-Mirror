@@ -374,6 +374,7 @@ impl GitOps for MockGit {
         message: &str,
         _git_user_name: Option<&str>,
         _git_user_email: Option<&str>,
+        _executor: Option<&dyn crate::executor::ProcessExecutor>,
     ) -> io::Result<CommitResult> {
         self.commit_calls.borrow_mut().push(message.to_string());
         self.commit_result.borrow().to_io_result()
@@ -437,7 +438,7 @@ mod tests {
     #[test]
     fn test_mock_git_captures_commit_call() {
         let mock = MockGit::new().with_commit(Ok(CommitResult::Success("def456".to_string())));
-        let _ = GitOps::commit(&mock, "test message", None, None);
+        let _ = GitOps::commit(&mock, "test message", None, None, None);
         let calls = mock.commit_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0], "test message");
@@ -455,14 +456,14 @@ mod tests {
     #[test]
     fn test_commit_result_success() {
         let mock = MockGit::new().with_commit(Ok(CommitResult::Success("abc123".to_string())));
-        let result = GitOps::commit(&mock, "test", None, None).unwrap();
+        let result = GitOps::commit(&mock, "test", None, None, None).unwrap();
         assert_eq!(result, CommitResult::Success("abc123".to_string()));
     }
 
     #[test]
     fn test_commit_result_no_changes() {
         let mock = MockGit::new().with_commit(Ok(CommitResult::NoChanges));
-        let result = GitOps::commit(&mock, "test", None, None).unwrap();
+        let result = GitOps::commit(&mock, "test", None, None, None).unwrap();
         assert_eq!(result, CommitResult::NoChanges);
     }
 
@@ -493,7 +494,7 @@ mod tests {
         let mock = MockGit::new_error();
         assert!(GitOps::repo_root(&mock).is_err());
         assert!(GitOps::diff(&mock).is_err());
-        assert!(GitOps::commit(&mock, "test", None, None).is_err());
+        assert!(GitOps::commit(&mock, "test", None, None, None).is_err());
     }
 
     #[test]

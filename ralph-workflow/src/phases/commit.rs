@@ -1199,7 +1199,12 @@ pub fn commit_with_generated_message(
         ctx.logger
             .warn("Commit generation returned empty message, using hardcoded fallback...");
         let fallback_message = HARDCODED_FALLBACK_COMMIT.to_string();
-        let commit_result = match git_commit(&fallback_message, git_user_name, git_user_email) {
+        let commit_result = match git_commit(
+            &fallback_message,
+            git_user_name,
+            git_user_email,
+            Some(ctx.executor),
+        ) {
             Ok(Some(oid)) => CommitResultFallback::Success(oid),
             Ok(None) => CommitResultFallback::NoChanges,
             Err(e) => CommitResultFallback::Failed(format!("Failed to create commit: {e}")),
@@ -1223,7 +1228,12 @@ pub fn commit_with_generated_message(
         commit_result
     } else {
         // Create the commit with the generated message
-        let commit_result = match git_commit(&result.message, git_user_name, git_user_email) {
+        let commit_result = match git_commit(
+            &result.message,
+            git_user_name,
+            git_user_email,
+            Some(ctx.executor),
+        ) {
             Ok(Some(oid)) => CommitResultFallback::Success(oid),
             Ok(None) => CommitResultFallback::NoChanges,
             Err(e) => CommitResultFallback::Failed(format!("Failed to create commit: {e}")),

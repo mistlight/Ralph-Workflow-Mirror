@@ -366,6 +366,7 @@ pub fn git_add_all() -> io::Result<bool> {
 /// * `repo` - The git repository (for git config)
 /// * `provided_name` - Optional name from Ralph config or CLI
 /// * `provided_email` - Optional email from Ralph config or CLI
+/// * `executor` - Optional process executor for system username/hostname lookup
 ///
 /// # Returns
 ///
@@ -374,12 +375,9 @@ fn resolve_commit_identity(
     repo: &git2::Repository,
     provided_name: Option<&str>,
     provided_email: Option<&str>,
+    executor: Option<&dyn crate::executor::ProcessExecutor>,
 ) -> GitIdentity {
     use super::identity::{default_identity, fallback_email, fallback_username};
-
-    // Use None for executor to avoid spawning processes in this context
-    // The fallback will use environment variables instead
-    let executor = None;
 
     // Priority 1: Git config (via libgit2) - primary source
     let mut name = String::new();
@@ -484,6 +482,7 @@ fn resolve_commit_identity(
 /// * `message` - The commit message
 /// * `git_user_name` - Optional git user name (overrides git config)
 /// * `git_user_email` - Optional git user email (overrides git config)
+/// * `executor` - Optional process executor for system username/hostname lookup
 ///
 /// # Returns
 ///
@@ -493,6 +492,7 @@ pub fn git_commit(
     message: &str,
     git_user_name: Option<&str>,
     git_user_email: Option<&str>,
+    executor: Option<&dyn crate::executor::ProcessExecutor>,
 ) -> io::Result<Option<git2::Oid>> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
@@ -512,7 +512,8 @@ pub fn git_commit(
 
     // Resolve git identity using the identity resolution system.
     // This implements the full priority chain with proper fallbacks.
-    let GitIdentity { name, email } = resolve_commit_identity(&repo, git_user_name, git_user_email);
+    let GitIdentity { name, email } =
+        resolve_commit_identity(&repo, git_user_name, git_user_email, executor);
 
     // Debug logging: identity resolution source
     // Only log if RALPH_DEBUG or similar debug mode is enabled

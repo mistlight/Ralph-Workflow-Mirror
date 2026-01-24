@@ -36,8 +36,22 @@ impl FileSystemState {
     /// Capture the current state with an optional executor.
     ///
     /// If executor is None, uses RealProcessExecutor (production default).
+    ///
+    /// # Note
+    ///
+    /// This function requires an explicit executor parameter to enable proper
+    /// dependency injection for testing. For production code, pass
+    /// `Some(&RealProcessExecutor::new())`.
     pub fn capture_with_optional_executor(executor: Option<&dyn ProcessExecutor>) -> Self {
-        Self::capture_current_with_executor(executor.unwrap_or(&RealProcessExecutor::new()))
+        match executor {
+            Some(exec) => Self::capture_current_with_executor(exec),
+            None => {
+                // Create a temporary executor and capture the state
+                // This is only used in code paths where no executor is available
+                let real_executor = RealProcessExecutor::new();
+                Self::capture_current_with_executor(&real_executor)
+            }
+        }
     }
 
     /// Capture the current state of key files with a provided process executor.

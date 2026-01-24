@@ -89,8 +89,9 @@ pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()
 
     logger.info("Creating commit...");
     // Note: Plumbing commands don't have access to config, so we use None
-    // for git identity and fall back to git config (via repo.signature())
-    if let Some(oid) = git_commit(&commit_msg, None, None)? {
+    // for git identity and executor, falling back to git config (via repo.signature())
+    // and environment variables for identity fallback.
+    if let Some(oid) = git_commit(&commit_msg, None, None, None)? {
         logger.success(&format!("Commit created successfully: {oid}"));
         // Clean up the commit message file
         if let Err(err) = delete_commit_message_file() {

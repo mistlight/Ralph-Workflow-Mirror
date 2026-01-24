@@ -64,7 +64,7 @@ fn test_mock_git_implements_git_ops() {
             .with_rebase_onto(Ok(OpsRebaseResult::Success));
 
         // Test via GitOps trait
-        let commit_result = GitOps::commit(&mock, "test message", None, None).unwrap();
+        let commit_result = GitOps::commit(&mock, "test message", None, None, None).unwrap();
         assert_eq!(commit_result, CommitResult::Success("abc123".to_string()));
 
         let rebase_result = GitOps::rebase_onto(&mock, "main").unwrap();
@@ -83,8 +83,8 @@ fn test_mock_git_call_capture() {
 
         let _ = GitOps::diff(&mock);
         let _ = GitOps::diff(&mock);
-        let _ = GitOps::commit(&mock, "first", None, None);
-        let _ = GitOps::commit(&mock, "second", None, None);
+        let _ = GitOps::commit(&mock, "first", None, None, None);
+        let _ = GitOps::commit(&mock, "second", None, None, None);
 
         assert_eq!(mock.diff_count(), 2);
         assert_eq!(mock.commit_calls().len(), 2);

@@ -392,7 +392,7 @@ impl MainEffectHandler {
 
     fn create_commit(
         &mut self,
-        _ctx: &mut PhaseContext<'_>,
+        ctx: &mut PhaseContext<'_>,
         message: String,
     ) -> Result<PipelineEvent> {
         use crate::git_helpers::{git_add_all, git_commit};
@@ -401,7 +401,7 @@ impl MainEffectHandler {
         git_add_all()?;
 
         // Create commit
-        match git_commit(&message, None, None) {
+        match git_commit(&message, None, None, Some(ctx.executor)) {
             Ok(Some(hash)) => Ok(PipelineEvent::CommitCreated {
                 hash: hash.to_string(),
                 message,
