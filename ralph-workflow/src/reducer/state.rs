@@ -253,6 +253,13 @@ impl RebaseState {
 /// we retry with corrective prompts up to this many times before giving up.
 pub const MAX_VALIDATION_RETRY_ATTEMPTS: u32 = 100;
 
+/// Maximum number of developer validation retry attempts before giving up.
+///
+/// Specifically for developer iterations to reduce the development cycle time.
+/// This allows for faster iteration during development while keeping other
+/// validation retry attempts at their original values.
+pub const MAX_DEV_VALIDATION_RETRY_ATTEMPTS: u32 = 2;
+
 /// Commit generation state.
 ///
 /// Tracks commit message generation progress through retries:

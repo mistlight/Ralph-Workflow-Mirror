@@ -81,6 +81,12 @@ pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
     fs::create_dir_all(".agent/logs")?;
     fs::create_dir_all(".agent/tmp")?;
 
+    // Clean up any stale XML files from previous runs that might be locked
+    // This prevents permission errors when agents try to write to these files
+    let tmp_dir = Path::new(".agent/tmp");
+    let _ = integrity::cleanup_stale_xml_files(tmp_dir, false);
+    // Note: cleanup is best-effort, failures are not fatal
+
     // Write XSD schemas to .agent/tmp/ for agent self-validation
     setup_xsd_schemas()?;
 

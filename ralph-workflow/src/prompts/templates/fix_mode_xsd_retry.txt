@@ -18,10 +18,10 @@
 {#   Valid <ralph-fix-result> XML conforming to the XSD schema                 #}
 {# ============================================================================ #}
 
-Your XML at `.agent/tmp/fix_result.xml` failed validation.
+Your XML at `{{FIX_RESULT_XML_PATH}}` failed validation.
 
 ERROR: {{XSD_ERROR}}
 
-Fix `.agent/tmp/fix_result.xml` based on `.agent/tmp/fix_result.xsd`.
+Fix `{{FIX_RESULT_XML_PATH}}` based on `{{FIX_RESULT_XSD_PATH}}`.
 
 IMPORTANT: Use file editing tools to modify the XML file directly. Do NOT output the corrected XML in your response.

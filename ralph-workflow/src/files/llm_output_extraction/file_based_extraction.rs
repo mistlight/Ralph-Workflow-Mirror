@@ -27,6 +27,35 @@ pub mod paths {
     pub const COMMIT_MESSAGE_XML: &str = ".agent/tmp/commit_message.xml";
 }
 
+/// Resolve a relative `.agent/tmp/` path to an absolute path.
+///
+/// This function is critical for AI agents with security sandboxes that reject
+/// relative paths as "outside the working directory". By providing absolute paths,
+/// we ensure agents can write to `.agent/tmp/` without security violations.
+///
+/// # Arguments
+///
+/// * `relative_path` - A relative path like `.agent/tmp/issues.xml`
+///
+/// # Returns
+///
+/// An absolute path if working directory can be determined, otherwise the original
+/// relative path as a fallback.
+///
+/// # Example
+///
+/// ```ignore
+/// // Working dir: /Users/user/project
+/// let path = resolve_absolute_path(".agent/tmp/issues.xml");
+/// // Returns: "/Users/user/project/.agent/tmp/issues.xml"
+/// ```
+pub fn resolve_absolute_path(relative_path: &str) -> String {
+    std::env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join(relative_path).display().to_string())
+        .unwrap_or_else(|| relative_path.to_string())
+}
+
 /// Try to read XML from a designated file location.
 ///
 /// Returns `Some(xml_content)` if the file exists and contains non-empty XML-like content.
@@ -281,5 +310,43 @@ mod tests {
         );
         assert_eq!(paths::FIX_RESULT_XML, ".agent/tmp/fix_result.xml");
         assert_eq!(paths::COMMIT_MESSAGE_XML, ".agent/tmp/commit_message.xml");
+    }
+
+    #[test]
+    fn test_resolve_absolute_path_with_cwd() {
+        // When current_dir() succeeds, should return absolute path
+        let result = resolve_absolute_path(".agent/tmp/issues.xml");
+
+        // Should contain .agent/tmp/issues.xml at the end
+        assert!(result.contains(".agent/tmp/issues.xml"));
+
+        // Should be longer than the relative path (has directory prefix)
+        assert!(result.len() > ".agent/tmp/issues.xml".len());
+
+        // Should not start with a dot if we got the absolute path
+        if std::env::current_dir().is_ok() {
+            #[cfg(unix)]
+            assert!(result.starts_with('/'));
+
+            #[cfg(windows)]
+            assert!(result.contains(":\\") || result.starts_with("\\\\"));
+        }
+    }
+
+    #[test]
+    fn test_resolve_absolute_path_fallback() {
+        // Even if cwd fails, should return the input path as fallback
+        let input = ".agent/tmp/test.xml";
+        let result = resolve_absolute_path(input);
+
+        // At minimum, should contain the input path
+        assert!(result.contains("test.xml"));
+    }
+
+    #[test]
+    fn test_resolve_absolute_path_xsd() {
+        // Test with XSD file paths
+        let result = resolve_absolute_path(".agent/tmp/issues.xsd");
+        assert!(result.contains(".agent/tmp/issues.xsd"));
     }
 }

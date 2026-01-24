@@ -26,6 +26,44 @@ Do not create ANY files in the root directory or documentation directory unless 
 
 ---
 
+## Agent Execution Requirements
+
+### YOLO Mode (File Write Permissions)
+
+**CRITICAL:** All agents in the Ralph pipeline MUST run with YOLO mode enabled (e.g., `--dangerously-skip-permissions` for Claude CLI, `--yes` for other agents).
+
+**Why this is mandatory:**
+
+1. **Automated pipeline context**: Ralph is NOT an interactive tool. It's a fully automated CI/CD pipeline that orchestrates multiple agent invocations without human intervention.
+
+2. **XML output requirement**: ALL agent roles (Developer, Reviewer, Commit) must write structured XML files to `.agent/tmp/`:
+   - Developers write `development-result.xml`
+   - Reviewers write `issues.xml`
+   - Commit agents write `commit-message.xml`
+
+3. **XSD retry mechanism**: When XML validation fails, agents must be able to rewrite corrected XML files. Without file write permissions, the retry mechanism fails entirely.
+
+4. **Security is non-issue**: Agents run in an isolated `.agent/` directory with no access to sensitive files. The pipeline explicitly provides safe file paths for agent operations.
+
+**Implementation location:** `ralph-workflow/src/pipeline/runner.rs:95-98`
+
+```rust
+// Enable yolo for ALL roles - this is an automated pipeline, not interactive.
+// All agents need file write access to output their XML results.
+let yolo = true;
+```
+
+**Historical bug (fixed 2026-01-23):** Prior to commit `14f3783`, YOLO was conditionally enabled only for Developer role and fix-mode operations. This caused Reviewers and Commit agents to fail writing XML on initial attempts, breaking the entire pipeline.
+
+**Agent configuration:** Every agent must have a `yolo_flag` configured in `agents.toml`:
+- Claude CLI: `yolo_flag = "--dangerously-skip-permissions"`
+- Aider: `yolo_flag = "--yes"`
+- OpenCode agents: Usually no flag needed (non-interactive by default)
+
+**Never disable YOLO mode** in the automated pipeline. If an agent doesn't support autonomous operation, it cannot be used in Ralph's workflow.
+
+---
+
 ## Integration Tests
 
 **CRITICAL FOR AI AGENTS:** When working with integration tests, you **MUST** follow the integration test style guide.

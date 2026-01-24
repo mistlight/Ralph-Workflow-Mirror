@@ -118,6 +118,222 @@ pub fn check_filesystem_ready(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Check if a specific XML file is writable and clean up if locked.
+///
+/// This function performs a surgical check on critical XML files to detect
+/// if they are locked by stale processes. It attempts to:
+/// 1. Test writability by appending and removing a blank line
+/// 2. Detect if file is locked (permission denied during write)
+/// 3. Optionally force cleanup of the locked file
+///
+/// # Arguments
+///
+/// * `xml_path` - Path to the XML file to check
+/// * `force_cleanup` - If true, delete the file if it's locked
+///
+/// # Returns
+///
+/// - `Ok(true)` - File is writable
+/// - `Ok(false)` - File doesn't exist (not an error)
+/// - `Err(...)` - File is locked or not writable
+///
+/// # Example
+///
+/// ```ignore
+/// // Check if issues.xml is writable before agent runs
+/// match check_xml_file_writable(Path::new(".agent/tmp/issues.xml"), false) {
+///     Ok(true) => println!("File is writable"),
+///     Ok(false) => println!("File doesn't exist yet"),
+///     Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+///         // File is locked - attempt cleanup
+///         check_xml_file_writable(Path::new(".agent/tmp/issues.xml"), true)?;
+///     }
+///     Err(e) => return Err(e),
+/// }
+/// ```
+pub fn check_xml_file_writable(xml_path: &Path, force_cleanup: bool) -> io::Result<bool> {
+    // If file doesn't exist, it's writable (we can create it)
+    if !xml_path.exists() {
+        return Ok(false);
+    }
+
+    // Try to open the file in append mode to test if it's locked
+    match fs::OpenOptions::new().append(true).open(xml_path) {
+        Ok(mut file) => {
+            // File is writable - verify by writing and removing a blank line
+            use std::io::Write;
+
+            // Get current file size
+            let original_size = file.metadata()?.len();
+
+            // Try to append a blank line
+            if let Err(e) = writeln!(file) {
+                if force_cleanup {
+                    drop(file); // Close file handle before deleting
+                    fs::remove_file(xml_path)?;
+                    return Ok(false);
+                }
+                return Err(e);
+            }
+
+            // Flush to ensure write succeeded
+            file.flush()?;
+
+            // Truncate back to original size (removes the blank line we added)
+            file.set_len(original_size)?;
+
+            Ok(true)
+        }
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            // File is locked or not writable
+            if force_cleanup {
+                // Try to forcefully remove the locked file
+                // On Windows, this may still fail if another process has it open
+                fs::remove_file(xml_path)?;
+                Ok(false)
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "File {} is locked or not writable. This may indicate a stale process \
+                         is holding the file open. Consider restarting or using force_cleanup.",
+                        xml_path.display()
+                    ),
+                ))
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Check if a specific XML file is writable before agent retry.
+///
+/// This is a convenience function meant to be called before XSD retries
+/// to detect and clean up locked files from previous agent runs.
+///
+/// # Arguments
+///
+/// * `xml_path` - Path to the XML file (e.g., ".agent/tmp/issues.xml")
+/// * `logger` - Logger for diagnostic messages
+///
+/// # Returns
+///
+/// `Ok(())` if file is writable or was successfully cleaned up.
+/// `Err(...)` if cleanup failed.
+pub fn check_and_cleanup_xml_before_retry(
+    xml_path: &Path,
+    logger: &crate::logger::Logger,
+) -> io::Result<()> {
+    // Try to detect if file is locked
+    match check_xml_file_writable(xml_path, false) {
+        Ok(true) => {
+            // File exists and is writable - all good
+            Ok(())
+        }
+        Ok(false) => {
+            // File doesn't exist yet - all good
+            Ok(())
+        }
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            // File is locked - attempt cleanup
+            logger.warn(&format!(
+                "XML file {} may be locked: {}. Attempting cleanup...",
+                xml_path.display(),
+                e
+            ));
+
+            // Force cleanup
+            match check_xml_file_writable(xml_path, true) {
+                Ok(_) => {
+                    logger.info(&format!(
+                        "Successfully cleaned up locked file: {}",
+                        xml_path.display()
+                    ));
+                    Ok(())
+                }
+                Err(cleanup_err) => {
+                    logger.error(&format!(
+                        "Failed to cleanup locked file {}: {}",
+                        xml_path.display(),
+                        cleanup_err
+                    ));
+                    Err(cleanup_err)
+                }
+            }
+        }
+        Err(e) => {
+            // Other error
+            logger.warn(&format!("Error checking {}: {}", xml_path.display(), e));
+            Err(e)
+        }
+    }
+}
+
+/// Check and clean up all XML files in .agent/tmp/ directory.
+///
+/// This is useful to run before starting an agent to ensure no stale
+/// XML files from previous runs are blocking operations.
+///
+/// # Arguments
+///
+/// * `tmp_dir` - Path to .agent/tmp/ directory
+/// * `force_cleanup` - If true, delete locked files
+///
+/// # Returns
+///
+/// A summary of what was found and cleaned up.
+pub fn cleanup_stale_xml_files(tmp_dir: &Path, force_cleanup: bool) -> io::Result<String> {
+    let mut report = Vec::new();
+    let mut cleaned = 0;
+    let mut locked = 0;
+    let mut writable = 0;
+
+    if !tmp_dir.exists() {
+        return Ok("Directory doesn't exist yet - nothing to clean".to_string());
+    }
+
+    for entry in fs::read_dir(tmp_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Only check .xml files
+        if path.extension().and_then(|s| s.to_str()) != Some("xml") {
+            continue;
+        }
+
+        match check_xml_file_writable(&path, force_cleanup) {
+            Ok(true) => {
+                writable += 1;
+                report.push(format!("  ✓ {} is writable", path.display()));
+            }
+            Ok(false) => {
+                if force_cleanup {
+                    cleaned += 1;
+                    report.push(format!("  🗑 Removed locked file: {}", path.display()));
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                locked += 1;
+                report.push(format!("  ⚠ LOCKED: {} - {}", path.display(), e));
+            }
+            Err(e) => {
+                report.push(format!("  ✗ Error checking {}: {}", path.display(), e));
+            }
+        }
+    }
+
+    let summary = format!(
+        "XML file check complete: {} writable, {} locked, {} cleaned",
+        writable, locked, cleaned
+    );
+
+    if !report.is_empty() {
+        Ok(format!("{}\n{}", summary, report.join("\n")))
+    } else {
+        Ok(summary)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +376,82 @@ mod tests {
         assert!(!new_dir.exists());
         check_filesystem_ready(&new_dir).unwrap();
         assert!(new_dir.exists());
+    }
+
+    #[test]
+    fn test_check_xml_file_writable_nonexistent() {
+        let temp = TempDir::new().unwrap();
+        let xml_path = temp.path().join("nonexistent.xml");
+
+        // Non-existent file should return Ok(false)
+        let result = check_xml_file_writable(&xml_path, false).unwrap();
+        assert!(!result, "Non-existent file should return false");
+    }
+
+    #[test]
+    fn test_check_xml_file_writable_valid_file() {
+        let temp = TempDir::new().unwrap();
+        let xml_path = temp.path().join("test.xml");
+        fs::write(&xml_path, "<test>content</test>").unwrap();
+
+        // Writable file should return Ok(true)
+        let result = check_xml_file_writable(&xml_path, false).unwrap();
+        assert!(result, "Writable file should return true");
+
+        // Content should be unchanged
+        let content = fs::read_to_string(&xml_path).unwrap();
+        assert_eq!(content, "<test>content</test>");
+    }
+
+    #[test]
+    fn test_check_xml_file_writable_preserves_content() {
+        let temp = TempDir::new().unwrap();
+        let xml_path = temp.path().join("preserve.xml");
+        let original = "<ralph-plan><ralph-summary>Test</ralph-summary></ralph-plan>";
+        fs::write(&xml_path, original).unwrap();
+
+        // Check writability
+        check_xml_file_writable(&xml_path, false).unwrap();
+
+        // Content should be exactly the same (no extra newlines)
+        let after = fs::read_to_string(&xml_path).unwrap();
+        assert_eq!(after, original);
+    }
+
+    #[test]
+    fn test_cleanup_stale_xml_files_empty_dir() {
+        let temp = TempDir::new().unwrap();
+        let tmp_dir = temp.path().join("tmp");
+        fs::create_dir(&tmp_dir).unwrap();
+
+        let report = cleanup_stale_xml_files(&tmp_dir, false).unwrap();
+        assert!(report.contains("0 writable"));
+    }
+
+    #[test]
+    fn test_cleanup_stale_xml_files_with_files() {
+        let temp = TempDir::new().unwrap();
+        let tmp_dir = temp.path().join("tmp");
+        fs::create_dir(&tmp_dir).unwrap();
+
+        // Create some XML files
+        fs::write(tmp_dir.join("test1.xml"), "<test/>").unwrap();
+        fs::write(tmp_dir.join("test2.xml"), "<test/>").unwrap();
+        fs::write(tmp_dir.join("test.xsd"), "schema").unwrap(); // Should be ignored
+
+        let report = cleanup_stale_xml_files(&tmp_dir, false).unwrap();
+        assert!(
+            report.contains("2 writable"),
+            "Should find 2 writable XML files"
+        );
+    }
+
+    #[test]
+    fn test_cleanup_stale_xml_files_nonexistent_dir() {
+        let temp = TempDir::new().unwrap();
+        let tmp_dir = temp.path().join("nonexistent");
+
+        let report = cleanup_stale_xml_files(&tmp_dir, false).unwrap();
+        assert!(report.contains("doesn't exist"));
     }
 }

@@ -97,8 +97,8 @@ IMPLEMENTATION GUIDELINES:
 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════════════════════════
 
-Write your XML to: `.agent/tmp/development_result.xml`
-XSD schema at: `.agent/tmp/development_result.xsd`
+Write your XML to: `{{DEVELOPMENT_RESULT_XML_PATH}}`
+XSD schema at: `{{DEVELOPMENT_RESULT_XSD_PATH}}`
 
 For special characters, use CDATA: <![CDATA[a < b]]>
 

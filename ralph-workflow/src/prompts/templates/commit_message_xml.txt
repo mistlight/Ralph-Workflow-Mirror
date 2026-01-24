@@ -140,8 +140,8 @@ Fixes #42
 
 ## OUTPUT FORMAT
 
-Write your XML to: `.agent/tmp/commit_message.xml`
-XSD schema at: `.agent/tmp/commit_message.xsd`
+Write your XML to: `{{COMMIT_MESSAGE_XML_PATH}}`
+XSD schema at: `{{COMMIT_MESSAGE_XSD_PATH}}`
 
 For special characters, use CDATA: <![CDATA[a < b]]>
 

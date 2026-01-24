@@ -408,6 +408,8 @@ mod tests {
 
     #[test]
     fn test_reduce_development_iteration_completed() {
+        // DevelopmentIterationCompleted transitions to CommitMessage phase
+        // The iteration counter stays the same; it gets incremented by CommitCreated
         let state = PipelineState {
             phase: PipelinePhase::Development,
             iteration: 2,
@@ -421,12 +423,18 @@ mod tests {
                 output_valid: true,
             },
         );
-        assert_eq!(new_state.iteration, 3);
-        assert_eq!(new_state.phase, PipelinePhase::Development);
+        // Iteration stays at 2 (incremented by CommitCreated later)
+        assert_eq!(new_state.iteration, 2);
+        // Goes to CommitMessage phase to create a commit
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        // Previous phase stored for return after commit
+        assert_eq!(new_state.previous_phase, Some(PipelinePhase::Development));
     }
 
     #[test]
-    fn test_reduce_development_iteration_complete_moves_to_review() {
+    fn test_reduce_development_iteration_complete_goes_to_commit() {
+        // Even on last iteration, DevelopmentIterationCompleted goes to CommitMessage
+        // The transition to Review happens after CommitCreated
         let state = PipelineState {
             phase: PipelinePhase::Development,
             iteration: 5,
@@ -440,8 +448,10 @@ mod tests {
                 output_valid: true,
             },
         );
-        assert_eq!(new_state.iteration, 6);
-        assert_eq!(new_state.phase, PipelinePhase::Review);
+        // Iteration stays at 5 (incremented by CommitCreated later)
+        assert_eq!(new_state.iteration, 5);
+        // Goes to CommitMessage phase first
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
     }
 
     #[test]

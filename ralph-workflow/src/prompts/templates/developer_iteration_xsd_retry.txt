@@ -18,10 +18,10 @@
 {#   Valid <ralph-development-result> XML conforming to the XSD schema         #}
 {# ============================================================================ #}
 
-Your XML at `.agent/tmp/development_result.xml` failed validation.
+Your XML at `{{DEVELOPMENT_RESULT_XML_PATH}}` failed validation.
 
 ERROR: {{XSD_ERROR}}
 
-Fix `.agent/tmp/development_result.xml` based on `.agent/tmp/development_result.xsd`.
+Fix `{{DEVELOPMENT_RESULT_XML_PATH}}` based on `{{DEVELOPMENT_RESULT_XSD_PATH}}`.
 
 IMPORTANT: Use file editing tools to modify the XML file directly. Do NOT output the corrected XML in your response.

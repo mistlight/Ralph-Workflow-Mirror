@@ -2,6 +2,7 @@
 //!
 //! Prompts for review and fix result generation using XML format with XSD validation.
 
+use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
@@ -60,6 +61,14 @@ pub fn prompt_review_xml_with_context(
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("CHANGES", changes_content.to_string()),
+        (
+            "ISSUES_XML_PATH",
+            resolve_absolute_path(".agent/tmp/issues.xml"),
+        ),
+        (
+            "ISSUES_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/issues.xsd"),
+        ),
     ]);
     Template::new(&template_content)
         .render(&variables)
@@ -101,7 +110,21 @@ pub fn prompt_review_xsd_retry_with_context(
         .registry()
         .get_template("review_xsd_retry")
         .unwrap_or_else(|_| include_str!("templates/review_xsd_retry.txt").to_string());
-    let variables = HashMap::from([("XSD_ERROR", xsd_error.to_string())]);
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "ISSUES_XML_PATH",
+            resolve_absolute_path(".agent/tmp/issues.xml"),
+        ),
+        (
+            "ISSUES_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/issues.xsd"),
+        ),
+        (
+            "LAST_OUTPUT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/last_output.xml"),
+        ),
+    ]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
@@ -154,28 +177,33 @@ pub fn prompt_fix_xml_with_context(
     prompt_content: &str,
     plan_content: &str,
     issues_content: &str,
+    files_to_modify: &[String],
 ) -> String {
     let template_content = context
         .registry()
         .get_template("fix_mode_xml")
         .unwrap_or_else(|_| include_str!("templates/fix_mode_xml.txt").to_string());
-
-    // Extract file paths from ISSUES content to provide explicit list
-    let files_to_modify = extract_file_paths_from_issues(issues_content);
-    let files_section = format_files_section_xml(&files_to_modify);
-
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("ISSUES", issues_content.to_string()),
-        ("FILES_TO_MODIFY", files_section),
+        ("FILES_TO_MODIFY", format_files_section_xml(files_to_modify)),
+        (
+            "FIX_RESULT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/fix_result.xml"),
+        ),
+        (
+            "FIX_RESULT_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/fix_result.xsd"),
+        ),
     ]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
             format!(
-                "FIX MODE\n\nFix the issues:\n\n{}\n\nContext:\nPROMPT:\n{}\n\nPLAN:\n{}\n\n\
-                 Output format: <ralph-fix-result><ralph-status>all_issues_addressed</ralph-status></ralph-fix-result>\n",
+                "FIX MODE\n\nFix the issues:\n\n{}\n\n\
+                 Based on requirements:\n{}\n\nPlan:\n{}\n\n\
+                 Output format: <ralph-fix-result><ralph-summary>Summary</ralph-summary><ralph-fixes-applied>Changes made</ralph-fixes-applied></ralph-fix-result>\n",
                 issues_content, prompt_content, plan_content
             )
         })
@@ -206,15 +234,28 @@ pub fn prompt_fix_xsd_retry_with_context(
         .registry()
         .get_template("fix_mode_xsd_retry")
         .unwrap_or_else(|_| include_str!("templates/fix_mode_xsd_retry.txt").to_string());
-
-    let variables = HashMap::from([("XSD_ERROR", xsd_error.to_string())]);
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "FIX_RESULT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/fix_result.xml"),
+        ),
+        (
+            "FIX_RESULT_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/fix_result.xsd"),
+        ),
+        (
+            "LAST_OUTPUT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/last_output.xml"),
+        ),
+    ]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
             format!(
-                "Your completion status failed XSD validation.\n\nError: {}\n\n\
+                "Your previous fix failed XSD validation.\n\nError: {}\n\n\
                  Read .agent/tmp/fix_result.xsd for the schema and .agent/tmp/last_output.xml for your previous output.\n\
-                 Please resend your status in valid XML format conforming to the XSD schema.\n",
+                 Please resend your fix in valid XML format conforming to the XSD schema.\n",
                 xsd_error
             )
         })
@@ -256,7 +297,7 @@ mod tests {
     fn test_prompt_fix_xml_with_context() {
         let context = TemplateContext::default();
         let result =
-            prompt_fix_xml_with_context(&context, "test prompt", "test plan", "test issues");
+            prompt_fix_xml_with_context(&context, "test prompt", "test plan", "test issues", &[]);
         assert!(result.contains("test issues"));
         assert!(result.contains("FIX MODE"));
         assert!(result.contains("<ralph-fix-result>"));

@@ -8,6 +8,7 @@ use super::template_context::TemplateContext;
 use super::template_engine::Template;
 #[cfg(any(test, feature = "test-utils"))]
 use super::types::ContextLevel;
+use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 
 /// The XSD schema for development result validation - included at compile time
 const DEVELOPMENT_RESULT_XSD_SCHEMA: &str =
@@ -83,7 +84,17 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
     let template_content = include_str!("templates/planning_xml.txt");
     let template = Template::new(template_content);
     let prompt_md = prompt_content.unwrap_or("No requirements provided");
-    let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
+    let variables = HashMap::from([
+        ("PROMPT", prompt_md.to_string()),
+        (
+            "PLAN_XML_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xml"),
+        ),
+        (
+            "PLAN_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xsd"),
+        ),
+    ]);
 
     template.render(&variables).unwrap_or_else(|_| {
         // Embedded fallback template (XML format)
@@ -162,7 +173,17 @@ pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Optio
         });
     let template = Template::new(&template_content);
     let prompt_md = prompt_content.unwrap_or("No requirements provided");
-    let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
+    let variables = HashMap::from([
+        ("PROMPT", prompt_md.to_string()),
+        (
+            "PLAN_XML_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xml"),
+        ),
+        (
+            "PLAN_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xsd"),
+        ),
+    ]);
 
     template.render(&variables).unwrap_or_else(|_| {
         // Embedded fallback template (XML format)
@@ -194,7 +215,17 @@ pub fn prompt_planning_xml_with_context(
         .unwrap_or_else(|_| include_str!("templates/planning_xml.txt").to_string());
     let template = Template::new(&template_content);
     let prompt_md = prompt_content.unwrap_or("No requirements provided");
-    let variables = HashMap::from([("PROMPT", prompt_md.to_string())]);
+    let variables = HashMap::from([
+        ("PROMPT", prompt_md.to_string()),
+        (
+            "PLAN_XML_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xml"),
+        ),
+        (
+            "PLAN_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xsd"),
+        ),
+    ]);
 
     template.render(&variables).unwrap_or_else(|_| {
         format!(
@@ -277,7 +308,21 @@ pub fn prompt_planning_xsd_retry_with_context(
         .registry()
         .get_template("planning_xsd_retry")
         .unwrap_or_else(|_| include_str!("templates/planning_xsd_retry.txt").to_string());
-    let variables = HashMap::from([("XSD_ERROR", xsd_error.to_string())]);
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "PLAN_XML_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xml"),
+        ),
+        (
+            "PLAN_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xsd"),
+        ),
+        (
+            "LAST_OUTPUT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/last_output.xml"),
+        ),
+    ]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
@@ -313,6 +358,14 @@ pub fn prompt_developer_iteration_xml_with_context(
     let variables = HashMap::from([
         ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
+        (
+            "DEVELOPMENT_RESULT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/development_result.xml"),
+        ),
+        (
+            "DEVELOPMENT_RESULT_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+        ),
     ]);
 
     template.render(&variables).unwrap_or_else(|_| {
@@ -353,7 +406,21 @@ pub fn prompt_developer_iteration_xsd_retry_with_context(
         .unwrap_or_else(|_| {
             include_str!("templates/developer_iteration_xsd_retry.txt").to_string()
         });
-    let variables = HashMap::from([("XSD_ERROR", xsd_error.to_string())]);
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "DEVELOPMENT_RESULT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/development_result.xml"),
+        ),
+        (
+            "DEVELOPMENT_RESULT_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+        ),
+        (
+            "LAST_OUTPUT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/last_output.xml"),
+        ),
+    ]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {

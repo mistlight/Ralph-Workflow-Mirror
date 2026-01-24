@@ -271,8 +271,8 @@ pub fn run_development_iteration_with_xml_retry(
     let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
     let log_dir = format!(".agent/logs/developer_{iteration}");
 
-    let max_xsd_retries = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize;
-    let max_continuations = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize; // Safety limit to prevent infinite loops
+    let max_xsd_retries = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize;
+    let max_continuations = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize; // Safety limit to prevent infinite loops
     let mut final_summary: Option<String> = None;
     let mut final_files_changed: Option<Vec<String>> = None;
     let mut had_any_error = false;
@@ -295,6 +295,18 @@ pub fn run_development_iteration_with_xml_retry(
         for retry_num in 0..max_xsd_retries {
             let is_retry = retry_num > 0;
             let total_attempts = continuation_num * max_xsd_retries + retry_num + 1;
+
+            // Before each retry, check if the XML file is writable and clean up if locked
+            // This prevents "permission denied" errors from stale file handles
+            if is_retry {
+                use crate::files::io::check_and_cleanup_xml_before_retry;
+                use std::path::Path;
+
+                let xml_path = Path::new(
+                    crate::files::llm_output_extraction::xml_paths::DEVELOPMENT_RESULT_XML,
+                );
+                let _ = check_and_cleanup_xml_before_retry(xml_path, ctx.logger);
+            }
 
             // For initial attempt, use XML prompt
             // For retries, use XSD retry prompt with error feedback
@@ -621,6 +633,13 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
     let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
 
     for retry_num in 0..max_retries {
+        // Before each retry, check if the XML file is writable and clean up if locked
+        if retry_num > 0 {
+            use crate::files::io::check_and_cleanup_xml_before_retry;
+            let xml_path = Path::new(crate::files::llm_output_extraction::xml_paths::PLAN_XML);
+            let _ = check_and_cleanup_xml_before_retry(xml_path, ctx.logger);
+        }
+
         // For initial attempt, use XML prompt
         // For retries, use XSD retry prompt with error feedback
         let plan_prompt = if retry_num == 0 {

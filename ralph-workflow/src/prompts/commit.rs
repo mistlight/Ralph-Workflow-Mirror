@@ -2,6 +2,7 @@
 //!
 //! Prompts for commit message generation and fix actions.
 
+use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use std::collections::HashMap;
@@ -69,6 +70,14 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
         ("PLAN", plan_content.to_string()),
         ("ISSUES", issues_content.to_string()),
         ("FILES_TO_MODIFY", files_section),
+        (
+            "FIX_RESULT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/fix_result.xml"),
+        ),
+        (
+            "FIX_RESULT_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/fix_result.xsd"),
+        ),
     ]);
     Template::new(template_content)
         .render(&variables)
@@ -112,6 +121,14 @@ pub fn prompt_fix_with_context(
         ("PLAN", plan_content.to_string()),
         ("ISSUES", issues_content.to_string()),
         ("FILES_TO_MODIFY", files_section),
+        (
+            "FIX_RESULT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/fix_result.xml"),
+        ),
+        (
+            "FIX_RESULT_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/fix_result.xsd"),
+        ),
     ]);
     Template::new(&template_content)
         .render(&variables)
@@ -219,7 +236,17 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
 
     let template_content = include_str!("templates/commit_message_xml.txt");
     let template = Template::new(template_content);
-    let variables = HashMap::from([("DIFF", diff_content.to_string())]);
+    let variables = HashMap::from([
+        ("DIFF", diff_content.to_string()),
+        (
+            "COMMIT_MESSAGE_XML_PATH",
+            resolve_absolute_path(".agent/tmp/commit_message.xml"),
+        ),
+        (
+            "COMMIT_MESSAGE_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/commit_message.xsd"),
+        ),
+    ]);
 
     template.render(&variables).unwrap_or_else(|e| {
         eprintln!("Warning: Failed to render commit template: {e}");
@@ -259,7 +286,17 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
         .get_template("commit_message_xml")
         .unwrap_or_else(|_| include_str!("templates/commit_message_xml.txt").to_string());
     let template = Template::new(&template_content);
-    let variables = HashMap::from([("DIFF", diff_content.to_string())]);
+    let variables = HashMap::from([
+        ("DIFF", diff_content.to_string()),
+        (
+            "COMMIT_MESSAGE_XML_PATH",
+            resolve_absolute_path(".agent/tmp/commit_message.xml"),
+        ),
+        (
+            "COMMIT_MESSAGE_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/commit_message.xsd"),
+        ),
+    ]);
 
     template.render(&variables).unwrap_or_else(|e| {
         eprintln!("Warning: Failed to render commit template: {e}");
@@ -322,7 +359,21 @@ pub fn prompt_xsd_retry_with_context(
         .registry()
         .get_template("commit_xsd_retry")
         .unwrap_or_else(|_| include_str!("templates/commit_xsd_retry.txt").to_string());
-    let variables = HashMap::from([("XSD_ERROR", xsd_error.to_string())]);
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "COMMIT_MESSAGE_XML_PATH",
+            resolve_absolute_path(".agent/tmp/commit_message.xml"),
+        ),
+        (
+            "COMMIT_MESSAGE_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/commit_message.xsd"),
+        ),
+        (
+            "DIFF_TXT_PATH",
+            resolve_absolute_path(".agent/tmp/diff.txt"),
+        ),
+    ]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {

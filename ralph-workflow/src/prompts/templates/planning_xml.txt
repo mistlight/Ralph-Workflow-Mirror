@@ -135,8 +135,8 @@ If you discover gaps, return to earlier phases to address them.
 PHASE 5: WRITE STRUCTURED PLAN
 ═══════════════════════════════════════════════════════════════════════════════
 
-Write your XML to: `.agent/tmp/plan.xml`
-XSD schema at: `.agent/tmp/plan.xsd`
+Write your XML to: `{{PLAN_XML_PATH}}`
+XSD schema at: `{{PLAN_XSD_PATH}}`
 
 CRITICAL XML ESCAPING RULES:
 1. For inline code with special characters (<, >, &), use: <code>a &lt; b</code>
