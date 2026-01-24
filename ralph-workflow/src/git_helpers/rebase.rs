@@ -949,7 +949,7 @@ fn validate_state_file(path: &Path) -> io::Result<bool> {
 /// use ralph_workflow::git_helpers::rebase::{attempt_automatic_recovery, RebaseErrorKind};
 /// use ralph_workflow::git_helpers::rebase_checkpoint::RebasePhase;
 ///
-/// match attempt_automatic_recovery(&RebaseErrorKind::Unknown { details: "test".to_string() }, &RebasePhase::ConflictDetected, 2) {
+/// match attempt_automatic_recovery(&executor, &RebaseErrorKind::Unknown { details: "test".to_string() }, &RebasePhase::ConflictDetected, 2) {
 ///     Ok(true) => println!("Recovery succeeded, can continue"),
 ///     Ok(false) => println!("Recovery attempted, should abort"),
 ///     Err(e) => println!("Recovery failed: {e}"),
@@ -957,12 +957,11 @@ fn validate_state_file(path: &Path) -> io::Result<bool> {
 /// ```
 #[cfg(any(test, feature = "test-utils"))]
 pub fn attempt_automatic_recovery(
+    executor: &dyn crate::executor::ProcessExecutor,
     error_kind: &RebaseErrorKind,
     phase: &crate::git_helpers::rebase_checkpoint::RebasePhase,
     phase_error_count: u32,
 ) -> io::Result<bool> {
-    use std::process::Command;
-
     // Don't attempt recovery for fatal errors
     match error_kind {
         RebaseErrorKind::InvalidRevision { .. }
@@ -1009,8 +1008,8 @@ pub fn attempt_automatic_recovery(
 
     // Level 3: For concurrent operations, try to abort the in-progress operation
     if let RebaseErrorKind::ConcurrentOperation { .. } = error_kind {
-        // Try git rebase --abort
-        let abort_result = Command::new("git").args(["rebase", "--abort"]).output();
+        // Try git rebase --abort via executor
+        let abort_result = executor.execute("git", &["rebase", "--abort"], &[], None);
 
         if abort_result.is_ok() {
             // Check if state is now clean
@@ -1078,31 +1077,28 @@ pub fn validate_git_state() -> io::Result<()> {
 ///
 /// * `ref_name` - The reference to restore (e.g., "HEAD", "refs/heads/main")
 /// * `steps_back` - Number of steps back in the reflog to go
+/// * `executor` - Process executor for dependency injection
 ///
 /// # Returns
 ///
 /// Returns `Ok(())` if restore succeeded, or an error if it failed.
 #[cfg(any(test, feature = "test-utils"))]
-pub fn restore_from_reflog(ref_name: &str, steps_back: usize) -> io::Result<()> {
-    use std::process::Command;
-
-    // Use Git CLI to reset to the reflog entry
+pub fn restore_from_reflog(
+    ref_name: &str,
+    steps_back: usize,
+    executor: &dyn crate::executor::ProcessExecutor,
+) -> io::Result<()> {
+    // Use Git CLI to reset to the reflog entry via executor
     let refspec = format!("{ref_name}@{{{steps_back}}}");
-    let output = Command::new("git")
-        .args(["reset", "--hard", &refspec])
-        .output();
+    let output = executor.execute("git", &["reset", "--hard", &refspec], &[], None)?;
 
-    match output {
-        Ok(result) if result.status.success() => Ok(()),
-        Ok(result) => {
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            Err(io::Error::other(format!(
-                "Failed to restore from reflog: {stderr}",
-            )))
-        }
-        Err(e) => Err(io::Error::other(format!(
-            "Failed to execute git reset: {e}"
-        ))),
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "Failed to restore from reflog: {}",
+            output.stderr
+        )))
     }
 }
 
@@ -1111,23 +1107,25 @@ pub fn restore_from_reflog(ref_name: &str, steps_back: usize) -> io::Result<()> 
 /// This is a fallback function that uses Git CLI to detect dirty state
 /// when libgit2 detection may not be sufficient.
 ///
+/// # Arguments
+///
+/// * `executor` - Process executor for dependency injection
+///
 /// # Returns
 ///
 /// Returns `Ok(true)` if the working tree is dirty, `Ok(false)` otherwise.
 #[cfg(any(test, feature = "test-utils"))]
-pub fn is_dirty_tree_cli() -> io::Result<bool> {
-    use std::process::Command;
+pub fn is_dirty_tree_cli(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<bool> {
+    let output = executor.execute("git", &["status", "--porcelain"], &[], None)?;
 
-    let output = Command::new("git").args(["status", "--porcelain"]).output();
-
-    match output {
-        Ok(result) => {
-            let stdout = String::from_utf8_lossy(&result.stdout);
-            Ok(!stdout.trim().is_empty())
-        }
-        Err(e) => Err(io::Error::other(format!(
-            "Failed to check working tree status: {e}"
-        ))),
+    if output.status.success() {
+        let stdout = output.stdout.trim();
+        Ok(!stdout.is_empty())
+    } else {
+        Err(io::Error::other(format!(
+            "Failed to check working tree status: {}",
+            output.stderr
+        )))
     }
 }
 
@@ -1136,6 +1134,10 @@ pub fn is_dirty_tree_cli() -> io::Result<bool> {
 /// This function performs Category 1 (pre-start) validation checks to ensure
 /// the repository is in a valid state for rebasing. It checks for common
 /// issues that would cause a rebase to fail immediately.
+///
+/// # Arguments
+///
+/// * `executor` - Process executor for dependency injection
 ///
 /// # Returns
 ///
@@ -1158,15 +1160,13 @@ pub fn is_dirty_tree_cli() -> io::Result<bool> {
 /// ```no_run
 /// use ralph_workflow::git_helpers::rebase::validate_rebase_preconditions;
 ///
-/// match validate_rebase_preconditions() {
+/// match validate_rebase_preconditions(&executor) {
 ///     Ok(()) => println!("All preconditions met, safe to rebase"),
 ///     Err(e) => eprintln!("Cannot rebase: {e}"),
 /// }
 /// ```
 #[cfg(any(test, feature = "test-utils"))]
-pub fn validate_rebase_preconditions() -> io::Result<()> {
-    use std::process::Command;
-
+pub fn validate_rebase_preconditions(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // 1. Check repository integrity
@@ -1199,34 +1199,31 @@ pub fn validate_rebase_preconditions() -> io::Result<()> {
         ));
     }
 
-    // 4. Check for dirty working tree using Git CLI
-    let status_output = Command::new("git").args(["status", "--porcelain"]).output();
+    // 4. Check for dirty working tree using Git CLI via executor
+    let status_output = executor.execute("git", &["status", "--porcelain"], &[], None)?;
 
-    match status_output {
-        Ok(result) => {
-            let stdout = String::from_utf8_lossy(&result.stdout);
-            if !stdout.trim().is_empty() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "Working tree is not clean. Please commit or stash changes before rebasing.",
-                ));
-            }
+    if status_output.status.success() {
+        let stdout = status_output.stdout.trim();
+        if !stdout.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Working tree is not clean. Please commit or stash changes before rebasing.",
+            ));
         }
-        Err(_e) => {
-            // If git status fails, try with libgit2 as fallback
-            let statuses = repo.statuses(None).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Failed to check working tree status: {e}"),
-                )
-            })?;
+    } else {
+        // If git status fails, try with libgit2 as fallback
+        let statuses = repo.statuses(None).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to check working tree status: {e}"),
+            )
+        })?;
 
-            if !statuses.is_empty() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "Working tree is not clean. Please commit or stash changes before rebasing.",
-                ));
-            }
+        if !statuses.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Working tree is not clean. Please commit or stash changes before rebasing.",
+            ));
         }
     }
 
@@ -1996,6 +1993,7 @@ impl PostRebaseValidationResult {
 ///
 /// # Arguments
 ///
+/// * `executor` - Process executor for dependency injection
 /// * `run_build_checks` - If true, run build validation
 /// * `run_test_checks` - If true, run test validation
 /// * `run_lint_checks` - If true, run lint validation
@@ -2012,12 +2010,12 @@ impl PostRebaseValidationResult {
 /// silently skipped.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn validate_post_rebase_with_checks(
+    executor: &dyn crate::executor::ProcessExecutor,
     run_build_checks: bool,
     run_test_checks: bool,
     run_lint_checks: bool,
 ) -> io::Result<PostRebaseValidationResult> {
     use std::path::Path;
-    use std::process::Command;
 
     let git_state_valid = validate_post_rebase_state().is_ok();
     let mut result = PostRebaseValidationResult {
@@ -2046,7 +2044,7 @@ pub fn validate_post_rebase_with_checks(
         result
             .messages
             .push("Running build validation...".to_string());
-        let build_output = Command::new("cargo").args(["build", "--release"]).output();
+        let build_output = executor.execute("cargo", &["build", "--release"], &[], None);
 
         result.build_valid = Some(match build_output {
             Ok(output) => output.status.success(),
@@ -2068,9 +2066,7 @@ pub fn validate_post_rebase_with_checks(
         result
             .messages
             .push("Running test validation...".to_string());
-        let test_output = Command::new("cargo")
-            .args(["test", "--lib", "--all-features"])
-            .output();
+        let test_output = executor.execute("cargo", &["test", "--lib", "--all-features"], &[], None);
 
         result.tests_valid = Some(match test_output {
             Ok(output) => output.status.success(),
@@ -2092,9 +2088,7 @@ pub fn validate_post_rebase_with_checks(
         result
             .messages
             .push("Running lint validation...".to_string());
-        let lint_output = Command::new("cargo")
-            .args(["clippy", "--lib", "--all-features", "-D", "warnings"])
-            .output();
+        let lint_output = executor.execute("cargo", &["clippy", "--lib", "--all-features", "-D", "warnings"], &[], None);
 
         result.lint_valid = Some(match lint_output {
             Ok(output) => output.status.success(),

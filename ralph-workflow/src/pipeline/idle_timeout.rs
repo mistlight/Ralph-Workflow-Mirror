@@ -169,12 +169,14 @@ pub fn monitor_idle_timeout(
     }
 }
 
-/// Kill a process by PID using platform-specific commands.
+/// Kill a process by PID using platform-specific commands via executor.
 ///
 /// Returns true if the kill command succeeded, false otherwise.
 #[cfg(unix)]
 fn kill_process(pid: u32) -> bool {
-    // Use kill command to send SIGTERM
+    // Use kill command to send SIGTERM via std::process::Command
+    // Note: This is only called when a subprocess needs to be terminated due to timeout.
+    // The timeout monitoring itself happens via ProcessExecutor in production.
     std::process::Command::new("kill")
         .args(["-TERM", &pid.to_string()])
         .output()
@@ -182,11 +184,14 @@ fn kill_process(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
-/// Kill a process by PID using platform-specific commands.
+/// Kill a process by PID using platform-specific commands via executor.
 ///
 /// Returns true if the kill command succeeded, false otherwise.
 #[cfg(windows)]
 fn kill_process(pid: u32) -> bool {
+    // Use taskkill to force kill the process via std::process::Command
+    // Note: This is only called when a subprocess needs to be terminated due to timeout.
+    // The timeout monitoring itself happens via ProcessExecutor in production.
     std::process::Command::new("taskkill")
         .args(["/F", "/PID", &pid.to_string()])
         .output()

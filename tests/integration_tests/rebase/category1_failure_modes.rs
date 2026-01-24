@@ -94,7 +94,7 @@ fn rebase_with_dirty_working_tree_fails() {
             write_file(dir.path().join("dirty.txt"), "uncommitted content");
 
             // Verify the working tree is dirty
-            assert!(is_dirty_tree_cli().unwrap_or(false));
+            assert!(is_dirty_tree_cli(&executor).unwrap_or(false));
 
             // Try to rebase - this should fail because the working tree is dirty
             let result = rebase_onto(&default_branch, &executor);
@@ -146,7 +146,7 @@ fn rebase_with_staged_changes_fails() {
                 .unwrap();
 
             // Verify the working tree is dirty (staged counts as dirty)
-            assert!(is_dirty_tree_cli().unwrap_or(false));
+            assert!(is_dirty_tree_cli(&executor).unwrap_or(false));
 
             // Try to rebase - this should fail because there are staged changes
             let result = rebase_onto(&default_branch, &executor);
