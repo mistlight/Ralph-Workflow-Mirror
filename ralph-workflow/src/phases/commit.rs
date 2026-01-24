@@ -875,6 +875,18 @@ pub fn generate_commit_message(
     let log_file = format!("{log_dir}/final.log");
 
     fs::create_dir_all(log_dir)?;
+
+    // Check if diff is empty before proceeding
+    if diff.trim().is_empty() {
+        runtime.logger.warn("Empty diff provided to generate_commit_message, using fallback");
+        return Ok(CommitMessageResult {
+            message: HARDCODED_FALLBACK_COMMIT.to_string(),
+            success: true,
+            _log_path: log_file,
+            generated_prompts: std::collections::HashMap::new(),
+        });
+    }
+
     runtime.logger.info("Generating commit message...");
 
     // Create a logging session for this commit generation run

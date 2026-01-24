@@ -216,9 +216,10 @@ END OF FILES SECTION
 /// # Note
 ///
 /// This function includes a defensive check for empty diffs - if an empty diff
-/// is passed, it returns an error prompt that will fail validation in the caller
-/// and trigger fallback commit message generation. Callers should still check for
-/// meaningful changes before calling this function for efficiency.
+/// is passed, it returns an error prompt. Callers should check for meaningful
+/// changes before calling this function to avoid wasting LLM API calls.
+/// The `generate_commit_message` function in phases/commit.rs handles empty
+/// diffs by returning the hardcoded fallback commit message.
 #[cfg(test)]
 pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     // Check if diff is empty or whitespace-only
@@ -226,9 +227,9 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
     let has_changes = !diff_content.is_empty();
 
     if !has_changes {
-        // Return an error message instead of a placeholder
-        // This will be caught by validation in commit_with_auto_message
-        // and trigger fallback commit message generation
+        // Return an error message instead of a placeholder.
+        // Callers should check for empty diffs before calling this function.
+        // The generate_commit_message function in phases/commit.rs handles this case.
         return "ERROR: Empty diff provided. This indicates a bug in the caller - \
                 meaningful changes should be checked before requesting a commit message."
             .to_string();
