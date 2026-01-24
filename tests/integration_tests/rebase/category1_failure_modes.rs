@@ -23,6 +23,9 @@ use tempfile::TempDir;
 use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
+#[allow(unused_imports)]
+use ralph_workflow::git_helpers::rebase_in_progress_cli;
 use ralph_workflow::git_helpers::RebaseResult;
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
@@ -51,9 +54,10 @@ fn rebase_with_invalid_revision_returns_error() {
 
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Try to rebase onto a non-existent branch
-            let result = rebase_onto("nonexistent-branch-that-does-not-exist");
+            let result = rebase_onto("nonexistent-branch-that-does-not-exist", &executor);
 
             // Should return Ok with Failed result since the branch doesn't exist
             assert!(result.is_ok());
@@ -84,6 +88,7 @@ fn rebase_with_dirty_working_tree_fails() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create uncommitted changes
             write_file(dir.path().join("dirty.txt"), "uncommitted content");
@@ -92,7 +97,7 @@ fn rebase_with_dirty_working_tree_fails() {
             assert!(is_dirty_tree_cli().unwrap_or(false));
 
             // Try to rebase - this should fail because the working tree is dirty
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // The rebase should handle dirty working tree gracefully
             // Git may use autostash or fail with DirtyWorkingTree error
@@ -131,6 +136,7 @@ fn rebase_with_staged_changes_fails() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create and stage changes
             write_file(dir.path().join("staged.txt"), "staged content");
@@ -143,7 +149,7 @@ fn rebase_with_staged_changes_fails() {
             assert!(is_dirty_tree_cli().unwrap_or(false));
 
             // Try to rebase - this should fail because there are staged changes
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // The rebase should handle staged changes gracefully
             // Git may use autostash or fail with DirtyWorkingTree error
@@ -177,8 +183,6 @@ fn rebase_with_staged_changes_fails() {
 #[test]
 fn rebase_detects_existing_rebase_in_progress() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::rebase_in_progress_cli;
-
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
 
@@ -192,7 +196,9 @@ fn rebase_detects_existing_rebase_in_progress() {
             fs::write(rebase_dir.join("onto"), "def456\n").unwrap();
 
             // Check if rebase in progress is detected
-            let _in_progress = rebase_in_progress_cli().unwrap_or(false);
+            let executor = RealProcessExecutor::new();
+            let _in_progress =
+                ralph_workflow::git_helpers::rebase_in_progress_cli(&executor).unwrap_or(false);
             // Git status may or may not detect this depending on the state
             // We're just ensuring the function doesn't error
         });
@@ -211,13 +217,14 @@ fn rebase_detects_merge_in_progress() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Simulate an in-progress merge by creating .git/MERGE_HEAD
             let merge_head = dir.path().join(".git").join("MERGE_HEAD");
             fs::write(merge_head, "abc123\n").unwrap();
 
             // Try to rebase - should detect the merge in progress or fail gracefully
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // The system should detect this and handle appropriately
             // Git may actually proceed since we're rebasing onto the current branch
@@ -248,6 +255,7 @@ fn rebase_handles_missing_git_config() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // The test harness sets GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL
             // In a real scenario without these, rebase should fail gracefully
@@ -256,7 +264,7 @@ fn rebase_handles_missing_git_config() {
             //
             // Since we can't easily unset these in the test environment,
             // we just verify the rebase doesn't crash
-            let result = ralph_workflow::git_helpers::rebase_onto("main");
+            let result = ralph_workflow::git_helpers::rebase_onto("main", &executor);
             assert!(result.is_ok()); // Should not crash
         });
     });
@@ -303,13 +311,14 @@ fn rebase_detects_cherry_pick_in_progress() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Simulate an in-progress cherry-pick by creating .git/CHERRY_PICK_HEAD
             let cherry_pick_head = dir.path().join(".git").join("CHERRY_PICK_HEAD");
             fs::write(cherry_pick_head, "abc123\n").unwrap();
 
             // Try to rebase - should detect the cherry-pick in progress or handle gracefully
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // The system should handle this appropriately
             match result {
@@ -342,6 +351,7 @@ fn rebase_handles_locked_index() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a stale index.lock
             let index_lock = dir.path().join(".git").join("index.lock");
@@ -361,7 +371,7 @@ fn rebase_handles_locked_index() {
             }
 
             // Rebase should now work without lock issues
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
             assert!(result.is_ok(), "Rebase should succeed after cleanup");
         });
     });
@@ -379,13 +389,14 @@ fn rebase_detects_revert_in_progress() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Simulate an in-progress revert by creating .git/REVERT_HEAD
             let revert_head = dir.path().join(".git").join("REVERT_HEAD");
             fs::write(revert_head, "abc123\n").unwrap();
 
             // Try to rebase - should detect the revert in progress or handle gracefully
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // The system should handle this appropriately
             match result {
@@ -418,13 +429,14 @@ fn rebase_detects_bisect_in_progress() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Simulate an in-progress bisect by creating .git/BISECT_LOG
             let bisect_log = dir.path().join(".git").join("BISECT_LOG");
             fs::write(bisect_log, "git bisect start\n").unwrap();
 
             // Try to rebase - should detect the bisect in progress or handle gracefully
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // The system should handle this appropriately
             match result {

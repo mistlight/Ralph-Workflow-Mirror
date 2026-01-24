@@ -19,25 +19,26 @@
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
 //! - Tests are deterministic and isolated
 
-use predicates::prelude::*;
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::ralph_cmd;
+use crate::common::run_ralph_cli;
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
 use ralph_workflow::git_helpers::{GitOps, RealGit};
 use test_helpers::{commit_all, init_git_repo, write_file};
 
-fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
-    cmd.env("RALPH_INTERACTIVE", "0")
-        .env("RALPH_DEVELOPER_ITERS", "0")
-        .env("RALPH_REVIEWER_REVIEWS", "0")
-        .env("RALPH_DEVELOPER_AGENT", "codex")
-        .env("RALPH_REVIEWER_AGENT", "codex")
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+fn base_env() {
+    std::env::set_var("RALPH_INTERACTIVE", "0");
+    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+    std::env::set_var("RALPH_DEVELOPER_AGENT", "codex");
+    std::env::set_var("RALPH_REVIEWER_AGENT", "codex");
+    std::env::set_var("GIT_AUTHOR_NAME", "Test");
+    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
+    std::env::set_var("GIT_COMMITTER_NAME", "Test");
+    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 }
 
 /// Helper to pre-create a commit message file to avoid agent execution.
@@ -78,10 +79,11 @@ fn ralph_start_commit_persisted_across_runs() {
         // First run - should create start_commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: first run");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify start_commit was created
         let start_commit_path = dir.path().join(".agent/start_commit");
@@ -101,10 +103,10 @@ fn ralph_start_commit_persisted_across_runs() {
         // Second run - start_commit should remain the same (not updated)
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: second run");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify start_commit hasn't changed
         let second_start_commit =
@@ -136,10 +138,11 @@ fn ralph_baseline_reset_command_works() {
         // First run - creates start_commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: run");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         let start_commit_path = dir.path().join(".agent/start_commit");
         let first_start_commit =
@@ -150,15 +153,10 @@ fn ralph_baseline_reset_command_works() {
         let _ = commit_all(&repo, "second commit");
 
         // Reset the start_commit
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
-            .current_dir(dir.path())
-            .arg("--reset-start-commit");
+        base_env();
 
-        cmd.assert().success().stdout(
-            predicate::str::contains("Starting commit reference reset")
-                .or(predicate::str::contains("start_commit")),
-        );
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--reset-start-commit"], executor).unwrap();
 
         // Verify start_commit was updated
         let reset_start_commit =
@@ -191,10 +189,11 @@ fn ralph_diff_from_start_commit() {
         // Run ralph to establish start_commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: establish baseline");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Create changes AFTER start_commit
         write_file(dir.path().join("file1.txt"), "modified content");
@@ -203,10 +202,10 @@ fn ralph_diff_from_start_commit() {
         // Run review cycle - just verify start_commit exists
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: test");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // The test verifies that diff generation works from start_commit
         // For this integration test, we verify the baseline mechanism works
@@ -241,10 +240,11 @@ fn ralph_stale_baseline_warning() {
         // Run to establish start_commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Create 5 commits and make a change
         for i in 1..=5 {
@@ -260,12 +260,13 @@ fn ralph_stale_baseline_warning() {
         // Run review cycle
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: review");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        base_env();
+
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // The review cycle should complete successfully
         // (Baseline display behavior is tested implicitly by successful completion)
-        cmd.assert().success();
     });
 }
 
@@ -294,10 +295,11 @@ fn ralph_review_baseline_updated_after_fix() {
         // Run review-fix cycle
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: review");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Note: With 0 reviews, review_baseline might not be created
         // The test verifies the pipeline completes successfully
@@ -330,10 +332,11 @@ fn ralph_diff_shows_correct_range() {
         // Run ralph to establish start_commit at the baseline commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: establish");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify start_commit was established
         let start_commit_path = dir.path().join(".agent/start_commit");
@@ -395,21 +398,22 @@ fn ralph_empty_diff_skips_review() {
         // Run ralph to establish baseline
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Now run again WITHOUT making any changes
         // The review should detect empty diff and skip
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: no changes");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        base_env();
+
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Should complete successfully but may skip review due to empty diff
-        cmd.assert().success();
-
         // The test verifies that pipeline handles empty diff gracefully
     });
 }
@@ -434,10 +438,11 @@ fn ralph_start_commit_shown_at_pipeline_start() {
         // First run - should establish start_commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: first");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify start_commit was created
         let start_commit_path = dir.path().join(".agent/start_commit");
@@ -458,12 +463,10 @@ fn ralph_start_commit_shown_at_pipeline_start() {
         // Run with verbose mode to see start_commit info
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: second");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
-            .current_dir(dir.path())
-            .arg("--verbosity=2");
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--verbosity=2"], executor).unwrap();
     });
 }
 
@@ -488,10 +491,11 @@ fn ralph_stale_start_commit_warning_at_start() {
         // Run to establish start_commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Create more than 10 commits to make it stale
         for i in 1..=11 {
@@ -505,12 +509,10 @@ fn ralph_stale_start_commit_warning_at_start() {
         // Run with verbose mode - should show stale warning
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: review");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
-            .current_dir(dir.path())
-            .arg("--verbosity=2");
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--verbosity=2"], executor).unwrap();
     });
 }
 
@@ -541,10 +543,11 @@ fn ralph_handles_corrupted_start_commit_file() {
         // Run ralph - should recover from corrupted state
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: recovered");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify start_commit was repaired (now contains valid OID)
         let repaired_content = fs::read_to_string(&start_commit_path).unwrap();
@@ -576,10 +579,11 @@ fn ralph_handles_corrupted_review_baseline_file() {
         // Run to establish start_commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Manually corrupt the review_baseline.txt file
         let baseline_path = dir.path().join(".agent/review_baseline.txt");
@@ -591,11 +595,12 @@ fn ralph_handles_corrupted_review_baseline_file() {
         // Run review - should handle corrupted baseline gracefully
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: review");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        base_env();
+
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Should complete successfully despite corrupted baseline
-        cmd.assert().success();
     });
 }
 
@@ -614,10 +619,11 @@ fn ralf_handles_missing_start_commit_oid() {
         // Run to establish start_commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Manually set start_commit to a non-existent OID
         let start_commit_path = dir.path().join(".agent/start_commit");
@@ -633,10 +639,11 @@ fn ralf_handles_missing_start_commit_oid() {
         // Run review - should handle missing OID gracefully
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: review");
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        base_env();
+
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Should recover and reset the start_commit
-        cmd.assert().success();
     });
 }

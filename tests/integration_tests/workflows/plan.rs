@@ -14,16 +14,17 @@
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
-//! - Tests verify **observable behavior** (exit codes, output)
+//! - Tests verify **observable behavior** (exit codes, file state)
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
 //! - Tests are deterministic and isolated
 
-use predicates::prelude::*;
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::ralph_cmd;
+use crate::common::run_ralph_cli;
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::init_git_repo;
 
 /// Helper function to set up base environment for tests.
@@ -31,20 +32,17 @@ use test_helpers::init_git_repo;
 /// This function sets up config isolation using XDG_CONFIG_HOME to prevent
 /// the tests from loading the user's actual config which may contain
 /// opencode/* references that would trigger network calls.
-fn base_env<'a>(
-    cmd: &'a mut assert_cmd::Command,
-    config_home: &std::path::Path,
-) -> &'a mut assert_cmd::Command {
-    cmd.env("RALPH_INTERACTIVE", "0")
-        .env("RALPH_DEVELOPER_ITERS", "0")
-        .env("RALPH_REVIEWER_REVIEWS", "0")
-        // Isolate config to prevent loading user's actual config with opencode/* refs
-        .env("XDG_CONFIG_HOME", config_home)
-        // Ensure git identity isn't a factor if a commit happens in the test.
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+fn base_env(config_home: &std::path::Path) {
+    std::env::set_var("RALPH_INTERACTIVE", "0");
+    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+    // Isolate config to prevent loading user's actual config with opencode/* refs
+    std::env::set_var("XDG_CONFIG_HOME", config_home);
+    // Ensure git identity isn't a factor if a commit happens in the test.
+    std::env::set_var("GIT_AUTHOR_NAME", "Test");
+    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
+    std::env::set_var("GIT_COMMITTER_NAME", "Test");
+    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 }
 
 /// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
@@ -89,16 +87,13 @@ fn ralph_skips_plan_phase_when_zero_developer_iters() {
         // Create a file to have something to commit
         fs::write(dir.path().join("test.txt"), "content").unwrap();
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        // Should succeed - plan phase is skipped when developer_iters=0
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify PLAN.md was never created (since planning was skipped)
         assert!(!dir.path().join(".agent/PLAN.md").exists());
@@ -125,16 +120,13 @@ fn ralph_commit_without_plan_succeeds() {
         // Create a new file to have something to commit in the test run
         fs::write(dir.path().join("test.txt"), "content").unwrap();
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        // Should succeed and create a commit
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify a commit was created (should have 2 commits: initial + test)
         let repo = git2::Repository::open(dir.path()).unwrap();

@@ -18,6 +18,7 @@ use tempfile::TempDir;
 use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
 use ralph_workflow::git_helpers::RebaseErrorKind;
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
@@ -197,7 +198,8 @@ fn rebase_successful_rebase_has_no_validation_error() {
             let _ = commit_all(&repo, "add feature");
 
             // Rebase should succeed
-            let result = ralph_workflow::git_helpers::rebase_onto(&default_branch);
+            let executor = RealProcessExecutor::new();
+            let result = ralph_workflow::git_helpers::rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(ralph_workflow::git_helpers::RebaseResult::Success) => {

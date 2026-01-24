@@ -24,6 +24,7 @@ use test_helpers::{commit_all, git_switch, init_git_repo, with_temp_cwd, write_f
 
 use crate::test_timeout::with_default_timeout;
 
+use ralph_workflow::executor::RealProcessExecutor;
 use ralph_workflow::git_helpers::{rebase_onto, RebaseErrorKind, RebaseResult};
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
@@ -78,10 +79,11 @@ fn rebase_handles_unexpected_exit_code() {
         // can classify unknown errors
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Try to rebase with an invalid upstream - this should produce
             // a known error, but verifies the error classification works
-            let result = rebase_onto("definitely-not-a-real-branch-12345");
+            let result = rebase_onto("definitely-not-a-real-branch-12345", &executor);
 
             // Should return Ok with a result (Failed or NoOp), not panic
             assert!(result.is_ok(), "Should not panic on unexpected input");
@@ -115,13 +117,14 @@ fn rebase_handles_unexpected_stderr_format() {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
             let default_branch = "main";
+            let executor = RealProcessExecutor::new();
 
             // Corrupt the git index to trigger an unexpected error
             let index_path = dir.path().join(".git").join("index");
             let _ = fs::write(&index_path, "corrupt index data that is not valid");
 
             // Rebase should handle this gracefully, not crash
-            let result = rebase_onto(default_branch);
+            let result = rebase_onto(default_branch, &executor);
 
             // Should not panic - should return an error or handle it
             assert!(result.is_ok(), "Should not panic on corrupt index");
@@ -162,6 +165,7 @@ fn rebase_handles_case_sensitivity_collision() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a file
             write_file(dir.path().join("test.txt"), "content");
@@ -180,7 +184,7 @@ fn rebase_handles_case_sensitivity_collision() {
             let _ = commit_all(&repo, "modify on feature");
 
             // Try to rebase - should handle case sensitivity issues
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Should not crash
             assert!(result.is_ok());
@@ -200,6 +204,7 @@ fn rebase_handles_long_path_names() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a deeply nested directory structure
             let deep_dir = dir
@@ -232,7 +237,7 @@ fn rebase_handles_long_path_names() {
             let _ = commit_all(&repo, "modify deep file");
 
             // Rebase should handle long paths
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Should not crash or fail due to path length
             assert!(result.is_ok());
@@ -251,6 +256,7 @@ fn rebase_handles_special_characters_in_filenames() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create files with special characters (that Git allows)
             let special_files = [
@@ -276,7 +282,7 @@ fn rebase_handles_special_characters_in_filenames() {
             let _ = commit_all(&repo, "modify special file");
 
             // Rebase should handle special characters
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Should not crash
             assert!(result.is_ok());
@@ -325,13 +331,14 @@ fn rebase_handles_simultaneous_git_operations() {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
             let default_branch = "main";
+            let executor = RealProcessExecutor::new();
 
             // Create a fake concurrent operation marker
             let rebase_merge_dir = dir.path().join(".git").join("rebase-merge");
             fs::create_dir_all(&rebase_merge_dir).unwrap();
 
             // Try to rebase - should detect concurrent operation
-            let result = rebase_onto(default_branch);
+            let result = rebase_onto(default_branch, &executor);
 
             // Should handle this appropriately (either error or cleanup)
             assert!(result.is_ok(), "Should not crash on concurrent operation");
@@ -355,6 +362,7 @@ fn rebase_handles_zero_length_ref_updates() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a feature branch
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
@@ -367,7 +375,7 @@ fn rebase_handles_zero_length_ref_updates() {
 
             // Try rebase with potentially corrupted state
             // (Git will usually fix this, but we verify no crash)
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Should handle gracefully
             assert!(result.is_ok());
@@ -389,6 +397,7 @@ fn rebase_handles_unicode_in_filenames_and_content() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create files with Unicode names
             let unicode_files = ["файл.txt", "文件.txt", "datei.txt", "fichier.txt"];
@@ -409,7 +418,7 @@ fn rebase_handles_unicode_in_filenames_and_content() {
             let _ = commit_all(&repo, "modify unicode file");
 
             // Rebase should handle Unicode
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Should not crash
             assert!(result.is_ok());

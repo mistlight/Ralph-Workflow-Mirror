@@ -26,6 +26,7 @@ use test_helpers::{
 };
 
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
 use ralph_workflow::git_helpers::RebaseResult;
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
@@ -55,6 +56,7 @@ fn rebase_handles_content_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a conflicting file on the default branch
             write_file(dir.path().join("conflict.txt"), "main branch content");
@@ -83,7 +85,7 @@ fn rebase_handles_content_conflicts() {
             let _ = commit_all(&repo, "change file on feature");
 
             // Try to rebase feature onto the default branch - should create conflicts
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -99,12 +101,12 @@ fn rebase_handles_content_conflicts() {
                 }
                 _ => {
                     // Clean up and abort if something went wrong
-                    let _ = abort_rebase();
+                    let _ = abort_rebase(&executor);
                 }
             }
 
             // Always clean up by aborting any rebase
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -121,6 +123,7 @@ fn rebase_handles_patch_application_failure() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a file with multiple lines
             let content = "line 1\nline 2\nline 3\nline 4\nline 5";
@@ -166,7 +169,7 @@ fn rebase_handles_patch_application_failure() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase - may fail or have conflicts
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(_)) => {
@@ -184,7 +187,7 @@ fn rebase_handles_patch_application_failure() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -201,6 +204,7 @@ fn rebase_handles_empty_commits() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a file
             write_file(dir.path().join("file.txt"), "original content");
@@ -239,7 +243,7 @@ fn rebase_handles_empty_commits() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase - the feature commit should be empty
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::NoOp { reason }) => {
@@ -265,7 +269,7 @@ fn rebase_handles_empty_commits() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -282,6 +286,7 @@ fn rebase_handles_add_add_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create feature branch from initial commit
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
@@ -316,7 +321,7 @@ fn rebase_handles_add_add_conflicts() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase - should detect add/add conflict
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -332,7 +337,7 @@ fn rebase_handles_add_add_conflicts() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -349,6 +354,7 @@ fn rebase_handles_modify_delete_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a file
             write_file(dir.path().join("to_delete.txt"), "original content");
@@ -387,7 +393,7 @@ fn rebase_handles_modify_delete_conflicts() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase - should detect modify/delete conflict
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -404,7 +410,7 @@ fn rebase_handles_modify_delete_conflicts() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -421,6 +427,7 @@ fn rebase_handles_binary_file_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a binary file
             let binary_data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
@@ -462,7 +469,7 @@ fn rebase_handles_binary_file_conflicts() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase - should detect binary conflict
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -479,7 +486,7 @@ fn rebase_handles_binary_file_conflicts() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -568,6 +575,7 @@ fn rebase_handles_autostash_with_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a shared file
             write_file(dir.path().join("shared.txt"), "original");
@@ -608,7 +616,7 @@ fn rebase_handles_autostash_with_conflicts() {
 
             // Try to rebase with autostash - stashed changes may conflict when reapplied
             use ralph_workflow::git_helpers::rebase_onto;
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Git may handle this various ways:
             // 1. Succeed with autostash
@@ -618,7 +626,7 @@ fn rebase_handles_autostash_with_conflicts() {
             assert!(result.is_ok());
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -635,6 +643,7 @@ fn rebase_handles_rename_rename_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a file on initial commit
             write_file(dir.path().join("original.txt"), "original content");
@@ -682,7 +691,7 @@ fn rebase_handles_rename_rename_conflicts() {
             git_switch_force(&repo, "feature");
 
             // Try to rebase - should detect rename/rename conflict
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -702,7 +711,7 @@ fn rebase_handles_rename_rename_conflicts() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -719,6 +728,7 @@ fn rebase_handles_directory_file_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a file on initial commit
             write_file(dir.path().join("path.txt"), "file content");
@@ -753,7 +763,7 @@ fn rebase_handles_directory_file_conflicts() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase - should detect directory/file conflict
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -772,7 +782,7 @@ fn rebase_handles_directory_file_conflicts() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -789,6 +799,7 @@ fn rebase_handles_rename_delete_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a file on initial commit
             write_file(dir.path().join("rename_me.txt"), "original content");
@@ -832,7 +843,7 @@ fn rebase_handles_rename_delete_conflicts() {
             git_switch_force(&repo, "feature");
 
             // Try to rebase - should detect rename/delete conflict
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -852,7 +863,7 @@ fn rebase_handles_rename_delete_conflicts() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -869,6 +880,7 @@ fn rebase_handles_symlink_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a file on initial commit
             write_file(dir.path().join("target.txt"), "target content");
@@ -915,7 +927,7 @@ fn rebase_handles_symlink_conflicts() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase - should handle symlink conflicts gracefully
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -935,7 +947,7 @@ fn rebase_handles_symlink_conflicts() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -952,6 +964,7 @@ fn rebase_handles_line_ending_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Configure git to not normalize line endings for this test
             // This ensures we can create true CRLF vs LF conflicts
@@ -999,7 +1012,7 @@ fn rebase_handles_line_ending_conflicts() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase - should handle line ending conflicts
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -1020,7 +1033,7 @@ fn rebase_handles_line_ending_conflicts() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -1037,6 +1050,7 @@ fn rebase_handles_whitespace_only_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a text file
             let content = "line 1\nline 2\nline 3\n";
@@ -1078,7 +1092,7 @@ fn rebase_handles_whitespace_only_conflicts() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase - should handle whitespace conflicts
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -1099,7 +1113,7 @@ fn rebase_handles_whitespace_only_conflicts() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -1116,6 +1130,7 @@ fn rebase_detects_pre_rebase_hook_rejection() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a feature branch
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
@@ -1151,7 +1166,7 @@ fn rebase_detects_pre_rebase_hook_rejection() {
             }
 
             // Try to rebase - hook should reject
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Failed(err)) => {
@@ -1173,7 +1188,7 @@ fn rebase_detects_pre_rebase_hook_rejection() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }
@@ -1190,6 +1205,7 @@ fn rebase_detects_commit_hook_rejection_mid_rebase() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a file on default branch
             write_file(dir.path().join("base.txt"), "base content");
@@ -1247,7 +1263,7 @@ fn rebase_detects_commit_hook_rejection_mid_rebase() {
             }
 
             // Try to rebase - hook should reject during commit creation
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::Failed(err)) => {
@@ -1269,7 +1285,7 @@ fn rebase_detects_commit_hook_rejection_mid_rebase() {
             }
 
             // Clean up
-            let _ = abort_rebase();
+            let _ = abort_rebase(&executor);
         });
     });
 }

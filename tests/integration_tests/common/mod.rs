@@ -20,6 +20,7 @@
 //! - `ralph_cmd()`: Get a command to invoke the ralph binary for CLI testing
 //! - `ralph_bin_path()`: Get the path to the ralph binary for custom invocation
 
+use clap::Parser;
 use std::{env, path::PathBuf};
 
 /// Get the path to the ralph binary for testing
@@ -32,6 +33,7 @@ use std::{env, path::PathBuf};
     since = "0.6.0",
     note = "Process spawning is forbidden in integration tests. Use run_ralph_cli() instead"
 )]
+#[allow(dead_code)]
 pub fn ralph_cmd() -> assert_cmd::Command {
     let bin_path = ralph_bin_path();
     assert_cmd::Command::new(bin_path)
@@ -51,6 +53,7 @@ pub fn ralph_cmd() -> assert_cmd::Command {
 /// # Arguments
 ///
 /// * `args` - Command line arguments to pass to ralph
+/// * `executor` - Process executor for external process execution
 ///
 /// # Returns
 ///
@@ -64,6 +67,8 @@ pub fn ralph_cmd() -> assert_cmd::Command {
 ///
 /// ```ignore
 /// use crate::common::run_ralph_cli;
+/// use ralph_workflow::executor::RealProcessExecutor;
+/// use std::sync::Arc;
 ///
 /// #[test]
 /// fn test_init() {
@@ -71,14 +76,18 @@ pub fn ralph_cmd() -> assert_cmd::Command {
 ///         let dir = TempDir::new().unwrap();
 ///         std::env::set_current_dir(dir.path()).unwrap();
 ///
-///         run_ralph_cli(&["--init"]).unwrap();
+///         let executor = Arc::new(RealProcessExecutor::new());
+///         run_ralph_cli(&["--init"], executor).unwrap();
 ///
 ///         // Check side effects
 ///         assert!(dir.path().join("PROMPT.md").exists());
 ///     });
 /// }
 /// ```
-pub fn run_ralph_cli(args: &[&str]) -> anyhow::Result<()> {
+pub fn run_ralph_cli(
+    args: &[&str],
+    executor: std::sync::Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+) -> anyhow::Result<()> {
     // Build argv: binary name + args
     let mut argv: Vec<String> = vec!["ralph".to_string()];
     argv.extend(args.iter().map(|s| s.to_string()));
@@ -90,14 +99,15 @@ pub fn run_ralph_cli(args: &[&str]) -> anyhow::Result<()> {
     std::env::set_var("RALPH_INTERACTIVE", "0");
     std::env::set_var("RALPH_CI", "1");
 
-    // Call app::run() directly (no process spawning)
-    ralph_workflow::app::run(parsed_args)
+    // Call app::run() directly with executor (no process spawning)
+    ralph_workflow::app::run(parsed_args, executor)
 }
 
 /// Get the path to the ralph binary as a String (deprecated).
 ///
 /// **DEPRECATED**: Process spawning is forbidden in integration tests.
 /// For new tests, call `ralph_workflow::app::run()` directly instead.
+#[allow(dead_code)]
 pub fn ralph_bin_path() -> String {
     // First, try the environment variable set by Cargo when running tests
     // in the same package as the binary
@@ -127,6 +137,7 @@ pub fn ralph_bin_path() -> String {
 }
 
 /// Find the Cargo target directory
+#[allow(dead_code)]
 fn find_cargo_target_dir() -> PathBuf {
     // Check CARGO_TARGET_DIR environment variable first
     if let Ok(target_dir) = env::var("CARGO_TARGET_DIR") {

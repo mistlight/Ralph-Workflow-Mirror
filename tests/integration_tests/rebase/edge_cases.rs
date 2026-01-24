@@ -22,6 +22,7 @@ use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
 use crate::test_timeout::with_default_timeout;
 
+use ralph_workflow::executor::RealProcessExecutor;
 use ralph_workflow::git_helpers::{rebase_onto, RebaseResult};
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
@@ -51,6 +52,7 @@ fn rebase_on_main_branch_returns_noop() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // We're on the default branch
             let is_main_or_master = default_branch == "main" || default_branch == "master";
@@ -60,7 +62,7 @@ fn rebase_on_main_branch_returns_noop() {
                 assert!(is_main_or_master_branch().unwrap_or(false));
 
                 // The rebase should return NoOp since we're on main/master
-                let result = rebase_onto(&default_branch);
+                let result = rebase_onto(&default_branch, &executor);
 
                 match result {
                     Ok(RebaseResult::NoOp { reason }) => {
@@ -91,6 +93,7 @@ fn rebase_already_uptodate_returns_noop() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a feature branch at the current commit
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
@@ -104,7 +107,7 @@ fn rebase_already_uptodate_returns_noop() {
 
             // The feature branch is identical to main (pointing to same commit)
             // So rebasing should be a NoOp or Success (no commits to rebase)
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::NoOp { reason }) => {
@@ -134,9 +137,10 @@ fn rebase_empty_repo_returns_noop() {
         with_temp_cwd(|dir| {
             // Initialize an empty git repo (no commits)
             let _ = init_git_repo(dir);
+            let executor = RealProcessExecutor::new();
 
             // An empty repo cannot be rebased - there's nothing to rebase
-            let result = rebase_onto("main");
+            let result = rebase_onto("main", &executor);
 
             // Should return NoOp or Failed since there are no commits
             match result {
@@ -173,13 +177,14 @@ fn rebase_unborn_head_returns_noop() {
         with_temp_cwd(|dir| {
             // Initialize an empty git repo (no commits, unborn HEAD)
             let _ = init_git_repo(dir);
+            let executor = RealProcessExecutor::new();
 
             // Verify HEAD is unborn (no commits yet)
             let repo = git2::Repository::open(dir.path()).unwrap();
             assert!(repo.head().is_err(), "HEAD should be unborn in empty repo");
 
             // Rebase should return NoOp or Failed for empty repositories
-            let result = rebase_onto("main");
+            let result = rebase_onto("main", &executor);
 
             match result {
                 Ok(RebaseResult::NoOp { reason }) => {
@@ -214,6 +219,7 @@ fn rebase_with_no_changes_returns_noop() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a feature branch but don't make any commits
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
@@ -227,7 +233,7 @@ fn rebase_with_no_changes_returns_noop() {
 
             // There are no commits on feature that aren't on main
             // So rebasing should be a NoOp
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::NoOp { reason }) => {
@@ -259,6 +265,7 @@ fn rebase_skipped_when_branch_is_main() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Verify we're on main or master
             let is_main_or_master = default_branch == "main" || default_branch == "master";
@@ -267,7 +274,7 @@ fn rebase_skipped_when_branch_is_main() {
                 assert!(is_main_or_master_branch().unwrap_or(false));
 
                 // The rebase logic should detect we're on main/master and skip the rebase entirely
-                let result = rebase_onto(&default_branch);
+                let result = rebase_onto(&default_branch, &executor);
 
                 match result {
                     Ok(RebaseResult::NoOp { reason }) => {
@@ -300,9 +307,10 @@ fn rebase_with_nonexistent_upstream_fails() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Try to rebase onto a branch that doesn't exist
-            let result = rebase_onto("completely-nonexistent-branch-xyz");
+            let result = rebase_onto("completely-nonexistent-branch-xyz", &executor);
 
             match result {
                 Ok(RebaseResult::Failed(err)) => {
@@ -358,6 +366,7 @@ fn rebase_handles_detached_head() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a commit
             write_file(dir.path().join("file.txt"), "content");
@@ -375,7 +384,7 @@ fn rebase_handles_detached_head() {
             );
 
             // Try to rebase - should either work or fail gracefully
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Should handle gracefully - either succeed or fail with clear error
             match result {
@@ -404,10 +413,11 @@ fn rebase_with_ambiguous_revision_fails() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Try to rebase with a potentially ambiguous short SHA or pattern
             // In practice, this depends on the repository state
-            let result = rebase_onto("v");
+            let result = rebase_onto("v", &executor);
 
             match result {
                 Ok(RebaseResult::Failed(err)) => {
@@ -436,9 +446,10 @@ fn rebase_validates_branch_name() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Try to rebase with an invalid branch name
-            let result = rebase_onto("-invalid-branch-name");
+            let result = rebase_onto("-invalid-branch-name", &executor);
 
             match result {
                 Ok(RebaseResult::Failed(err)) => {
@@ -494,10 +505,11 @@ fn rebase_with_unrelated_branches_returns_noop() {
             // Create a branch "other" in the new repository
             let head_commit2 = repo2.head().unwrap().peel_to_commit().unwrap();
             let _other_branch = repo2.branch("other", &head_commit2, false).unwrap();
+            let executor = RealProcessExecutor::new();
 
             // Go back to feature branch (this might not exist in the new repo)
             // Let's test rebasing from the current branch to an unrelated branch
-            let result = rebase_onto("other");
+            let result = rebase_onto("other", &executor);
 
             match result {
                 Ok(RebaseResult::NoOp { reason }) => {
@@ -546,6 +558,7 @@ fn rebase_on_detached_head_returns_noop_with_clear_reason() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a commit
             write_file(dir.path().join("file.txt"), "content");
@@ -563,7 +576,7 @@ fn rebase_on_detached_head_returns_noop_with_clear_reason() {
             );
 
             // Try to rebase - should return NoOp with clear reason
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             match result {
                 Ok(RebaseResult::NoOp { reason }) => {
@@ -599,6 +612,7 @@ fn verify_rebase_completed_detects_incomplete_rebase() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
+            let executor = RealProcessExecutor::new();
 
             // Create a feature branch with a commit
             write_file(dir.path().join("file1.txt"), "content on main");
@@ -622,7 +636,7 @@ fn verify_rebase_completed_detects_incomplete_rebase() {
 
             // Now try to rebase onto main (which also has file1.txt)
             // This should succeed since feature is ahead of main
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
             match result {
                 Ok(RebaseResult::Success) => {
                     // Verify the rebase completed using LibGit2
@@ -1045,6 +1059,7 @@ fn rebase_with_line_ending_conflict_resolves() {
         // Test line ending conflicts (CRLF vs LF) during rebase
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Set up .gitattributes for line ending handling
             let gitattributes_content = "* text=auto\n*.txt text eol=lf\n";
@@ -1080,7 +1095,7 @@ fn rebase_with_line_ending_conflict_resolves() {
             repo.checkout_head(None).unwrap();
 
             // Try to rebase - should handle line ending conflicts gracefully
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Line ending conflicts should be resolved by Git's auto-handling
             // or result in a conflict that can be resolved
@@ -1118,6 +1133,7 @@ fn rebase_with_binary_file_conflict() {
         // Test binary file conflicts during rebase
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Create a binary file on main
             let binary_data_main = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
@@ -1140,7 +1156,7 @@ fn rebase_with_binary_file_conflict() {
 
             // Try to rebase - binary file conflicts should be handled
             let default_branch = get_default_branch_name(&repo);
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Binary file conflicts are valid outcomes
             match result {
@@ -1168,6 +1184,7 @@ fn rebase_with_symlink_conflict() {
         // Test symlink vs file conflicts during rebase
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Create a regular file on main
             fs::write(dir.path().join("mylink"), "regular file content").unwrap();
@@ -1197,7 +1214,7 @@ fn rebase_with_symlink_conflict() {
 
                     // Try to rebase - should detect file/symlink conflict
                     let default_branch = get_default_branch_name(&repo);
-                    let result = rebase_onto(&default_branch);
+                    let result = rebase_onto(&default_branch, &executor);
 
                     // File/symlink conflicts should be detected
                     match result {
@@ -1278,6 +1295,7 @@ fn rebase_with_case_sensitivity_collision() {
         // Test case sensitivity conflicts on case-insensitive filesystems
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Create "File.txt" on main (uppercase F)
             fs::write(dir.path().join("File.txt"), "content 1").unwrap();
@@ -1300,7 +1318,7 @@ fn rebase_with_case_sensitivity_collision() {
 
             // Try to rebase
             let default_branch = get_default_branch_name(&repo);
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Result depends on filesystem case sensitivity
             match result {
@@ -1332,6 +1350,7 @@ fn detect_concurrent_rebase_locking() {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&_repo);
+            let executor = RealProcessExecutor::new();
 
             // Skip if on main/master (can't rebase onto self)
             if is_main_or_master_branch().unwrap_or(false) {
@@ -1342,7 +1361,7 @@ fn detect_concurrent_rebase_locking() {
             let _lock = RebaseLock::new().unwrap();
 
             // Try to perform a rebase while locked
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // The lock file is in .agent/rebase.lock
             // Git itself doesn't know about our lock, so rebase may proceed
@@ -1397,6 +1416,7 @@ fn rebase_with_large_file_handling() {
         // Test that large files (>100MB) are handled during rebase
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Skip test if we don't have enough disk space
             // Creating a 100MB+ file may fail in constrained environments
@@ -1437,7 +1457,7 @@ fn rebase_with_large_file_handling() {
 
             // Try to rebase - should handle large files
             let default_branch = get_default_branch_name(&repo);
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Large files may cause issues or work fine depending on Git config
             match result {
@@ -1472,6 +1492,7 @@ fn rebase_handles_rename_rename_conflict() {
         // to different names
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Create original.txt on main
             fs::write(dir.path().join("original.txt"), "original content").unwrap();
@@ -1505,7 +1526,7 @@ fn rebase_handles_rename_rename_conflict() {
             repo.set_head("refs/heads/feature").unwrap();
             repo.checkout_head(None).unwrap();
 
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Rename/rename conflicts should be detected or handled gracefully
             match result {
@@ -1537,6 +1558,7 @@ fn rebase_handles_directory_file_conflict() {
         // the other creates a file with the same name
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Create a file on main first
             write_file(dir.path().join("base.txt"), "base");
@@ -1575,7 +1597,7 @@ fn rebase_handles_directory_file_conflict() {
             repo.set_head("refs/heads/feature").unwrap();
             repo.checkout_head(None).unwrap();
 
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Directory/file conflicts should be detected
             match result {
@@ -1606,6 +1628,7 @@ fn rebase_handles_nested_repository() {
         // Test behavior with nested directories
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
+            let executor = RealProcessExecutor::new();
 
             // Create a feature branch first
             let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
@@ -1639,7 +1662,7 @@ fn rebase_handles_nested_repository() {
             repo.set_head("refs/heads/feature").unwrap();
             repo.checkout_head(None).unwrap();
 
-            let result = rebase_onto(&default_branch);
+            let result = rebase_onto(&default_branch, &executor);
 
             // Should succeed or fail gracefully (not crash)
             match result {

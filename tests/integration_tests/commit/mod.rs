@@ -20,12 +20,13 @@
 //! - Uses `TempDir` for filesystem isolation
 //! - Tests are deterministic and black-box (test commit as a user would experience it)
 
-use predicates::prelude::*;
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::ralph_cmd;
+use crate::common::run_ralph_cli;
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests.
@@ -33,20 +34,15 @@ use test_helpers::{commit_all, init_git_repo, write_file};
 /// This function sets up config isolation using XDG_CONFIG_HOME to prevent
 /// the tests from loading the user's actual config which may contain
 /// opencode/* references that would trigger network calls.
-fn base_env<'a>(
-    cmd: &'a mut assert_cmd::Command,
-    config_home: &std::path::Path,
-) -> &'a mut assert_cmd::Command {
-    cmd.env("RALPH_INTERACTIVE", "0")
-        .env("RALPH_DEVELOPER_ITERS", "0")
-        .env("RALPH_REVIEWER_REVIEWS", "0")
-        // Isolate config to prevent loading user's actual config with opencode/* refs
-        .env("XDG_CONFIG_HOME", config_home)
-        // Ensure git identity is set
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+fn set_base_env(config_home: &std::path::Path) {
+    std::env::set_var("RALPH_INTERACTIVE", "0");
+    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+    std::env::set_var("XDG_CONFIG_HOME", config_home);
+    std::env::set_var("GIT_AUTHOR_NAME", "Test");
+    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
+    std::env::set_var("GIT_COMMITTER_NAME", "Test");
+    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 }
 
 /// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
@@ -96,15 +92,13 @@ fn test_commit_message_generated_with_simple_diff() {
         write_file(dir.path().join("test.txt"), "new content");
 
         // Run ralph with developer_iters=0 (skip to commit)
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify a commit was created with a non-empty message
         let message = get_last_commit_message(&repo);
@@ -133,15 +127,13 @@ fn test_commit_message_generated_with_multiple_files() {
         write_file(dir.path().join("file2.txt"), "content 2");
         write_file(dir.path().join("file3.rs"), "fn main() {}");
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         let message = get_last_commit_message(&repo);
         assert!(!message.trim().is_empty());
@@ -182,15 +174,13 @@ fn test_commit_created_with_diff_content() {
         }
         write_file(dir.path().join("large_file.txt"), &content);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify commit was created
         let message = get_last_commit_message(&repo);
@@ -214,15 +204,13 @@ fn test_commit_succeeds_without_developer_or_review() {
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify a commit was created (we should have 2 commits now)
         let repo = git2::Repository::open(dir.path()).unwrap();

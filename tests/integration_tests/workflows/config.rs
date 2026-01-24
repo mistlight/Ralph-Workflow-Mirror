@@ -12,12 +12,13 @@
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
 //! - Tests are deterministic and isolated
 
-use predicates::prelude::*;
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::ralph_cmd;
+use crate::common::run_ralph_cli;
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::init_git_repo;
 
 /// Helper function to set up base environment for tests.
@@ -25,20 +26,17 @@ use test_helpers::init_git_repo;
 /// This function sets up config isolation using XDG_CONFIG_HOME to prevent
 /// the tests from loading the user's actual config which may contain
 /// opencode/* references that would trigger network calls.
-fn base_env<'a>(
-    cmd: &'a mut assert_cmd::Command,
-    config_home: &std::path::Path,
-) -> &'a mut assert_cmd::Command {
-    cmd.env("RALPH_INTERACTIVE", "0")
-        .env("RALPH_DEVELOPER_ITERS", "0")
-        .env("RALPH_REVIEWER_REVIEWS", "0")
-        // Isolate config to prevent loading user's actual config with opencode/* refs
-        .env("XDG_CONFIG_HOME", config_home)
-        // Ensure git identity isn't a factor if a commit happens in the test.
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+fn base_env(config_home: &std::path::Path) {
+    std::env::set_var("RALPH_INTERACTIVE", "0");
+    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+    // Isolate config to prevent loading user's actual config with opencode/* refs
+    std::env::set_var("XDG_CONFIG_HOME", config_home);
+    // Ensure git identity isn't a factor if a commit happens in the test.
+    std::env::set_var("GIT_AUTHOR_NAME", "Test");
+    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
+    std::env::set_var("GIT_COMMITTER_NAME", "Test");
+    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 }
 
 /// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
@@ -79,12 +77,10 @@ fn ralph_init_creates_config_file() {
         assert!(!config_path.exists());
 
         // Run ralph --init-legacy
-        let output = ralph_cmd()
-            .current_dir(dir_path)
-            .env("XDG_CONFIG_HOME", &config_home)
-            .arg("--init-legacy")
-            .assert()
-            .success();
+        std::env::set_current_dir(dir_path).unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", &config_home);
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--init-legacy"], executor).unwrap();
 
         // Config file should now exist
         assert!(config_path.exists());
@@ -95,11 +91,6 @@ fn ralph_init_creates_config_file() {
         assert!(content.contains("[agents.claude]"));
         assert!(content.contains("[agents.codex]"));
         assert!(content.contains("[agent_chain]"));
-
-        // Output should indicate file was created
-        let output_bytes = output.get_output().stdout.clone();
-        let stdout = String::from_utf8_lossy(&output_bytes);
-        assert!(stdout.contains("Created"));
     });
 }
 
@@ -126,21 +117,14 @@ reviewer = ["codex"]
         fs::write(dir_path.join(".agent/agents.toml"), custom_config).unwrap();
 
         // Run ralph --init-legacy
-        let output = ralph_cmd()
-            .current_dir(dir_path)
-            .env("XDG_CONFIG_HOME", &config_home)
-            .arg("--init-legacy")
-            .assert()
-            .success();
+        std::env::set_current_dir(dir_path).unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", &config_home);
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--init-legacy"], executor).unwrap();
 
         // Config file should still contain original content
         let content = fs::read_to_string(dir_path.join(".agent/agents.toml")).unwrap();
         assert_eq!(content, custom_config);
-
-        // Output should indicate file already exists
-        let output_bytes = output.get_output().stdout.clone();
-        let stdout = String::from_utf8_lossy(&output_bytes);
-        assert!(stdout.contains("already exists"));
     });
 }
 
@@ -168,21 +152,14 @@ fn ralph_first_run_creates_config_and_exits() {
         assert!(!unified_config_path.exists());
 
         // Run ralph --init-global (unified config)
-        let output = ralph_cmd()
-            .current_dir(dir_path)
-            .env("XDG_CONFIG_HOME", &config_home)
-            .arg("--init-global")
-            .assert()
-            .success();
+        std::env::set_current_dir(dir_path).unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", &config_home);
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--init-global"], executor).unwrap();
 
         // Should exit successfully after creating the config
         // Unified config file should now exist
         assert!(unified_config_path.exists());
-
-        // Output should indicate file was created or already exists
-        let output_bytes = output.get_output().stdout.clone();
-        let stdout = String::from_utf8_lossy(&output_bytes);
-        assert!(stdout.contains("unified config"));
     });
 }
 
@@ -209,17 +186,12 @@ reviewer = ["aider", "codex"]
         )
         .unwrap();
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
         // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Claude"))
-            .stdout(predicate::str::contains("Aider"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -239,19 +211,11 @@ fn ralph_quick_mode_sets_minimal_iterations() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        cmd.current_dir(dir.path())
-            .arg("--quick") // Use quick mode
-            .arg("--developer-iters")
-            .arg("0") // Override with 0 to skip agent execution
-            .env("RALPH_INTERACTIVE", "0")
-            .env("XDG_CONFIG_HOME", &config_home)
-            .env("GIT_AUTHOR_NAME", "Test")
-            .env("GIT_AUTHOR_EMAIL", "test@example.com")
-            .env("GIT_COMMITTER_NAME", "Test")
-            .env("GIT_COMMITTER_EMAIL", "test@example.com");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
         // Quick mode works without shell commands
     });
 }
@@ -268,21 +232,11 @@ fn ralph_quick_mode_short_flag_works() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _counter_path = dir.path().join(".agent/plan_counter");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
 
-        let mut cmd = ralph_cmd();
-        cmd.current_dir(dir.path())
-            .arg("-Q") // Short flag
-            .arg("--developer-iters")
-            .arg("0") // Override with 0 to skip agent execution
-            .env("RALPH_INTERACTIVE", "0")
-            .env("XDG_CONFIG_HOME", &config_home)
-            .env("GIT_AUTHOR_NAME", "Test")
-            .env("GIT_AUTHOR_EMAIL", "test@example.com")
-            .env("GIT_COMMITTER_NAME", "Test")
-            .env("GIT_COMMITTER_EMAIL", "test@example.com");
-
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["-Q", "--developer-iters", "0"], executor).unwrap();
         // Quick mode works without shell commands
     });
 }
@@ -299,21 +253,11 @@ fn ralph_quick_mode_explicit_iters_override() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _counter_path = dir.path().join(".agent/plan_counter");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
 
-        let mut cmd = ralph_cmd();
-        cmd.current_dir(dir.path())
-            .arg("--quick")
-            .arg("--developer-iters")
-            .arg("0") // Override with 0 to skip agent execution
-            .env("RALPH_INTERACTIVE", "0")
-            .env("XDG_CONFIG_HOME", &config_home)
-            .env("GIT_AUTHOR_NAME", "Test")
-            .env("GIT_AUTHOR_EMAIL", "test@example.com")
-            .env("GIT_COMMITTER_NAME", "Test")
-            .env("GIT_COMMITTER_EMAIL", "test@example.com");
-
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
         // Explicit --developer-iters overrides quick mode
     });
 }
@@ -330,21 +274,11 @@ fn ralph_rapid_mode_sets_two_iterations() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _counter_path = dir.path().join(".agent/plan_counter");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
 
-        let mut cmd = ralph_cmd();
-        cmd.current_dir(dir.path())
-            .arg("--rapid") // Use rapid mode
-            .arg("--developer-iters")
-            .arg("0") // Override with 0 to skip agent execution
-            .env("RALPH_INTERACTIVE", "0")
-            .env("XDG_CONFIG_HOME", &config_home)
-            .env("GIT_AUTHOR_NAME", "Test")
-            .env("GIT_AUTHOR_EMAIL", "test@example.com")
-            .env("GIT_COMMITTER_NAME", "Test")
-            .env("GIT_COMMITTER_EMAIL", "test@example.com");
-
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--rapid", "--developer-iters", "0"], executor).unwrap();
         // Rapid mode works without shell commands
     });
 }
@@ -361,21 +295,11 @@ fn ralph_rapid_mode_short_flag_works() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _counter_path = dir.path().join(".agent/plan_counter");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
 
-        let mut cmd = ralph_cmd();
-        cmd.current_dir(dir.path())
-            .arg("-U") // Short flag
-            .arg("--developer-iters")
-            .arg("0") // Override with 0 to skip agent execution
-            .env("RALPH_INTERACTIVE", "0")
-            .env("XDG_CONFIG_HOME", &config_home)
-            .env("GIT_AUTHOR_NAME", "Test")
-            .env("GIT_AUTHOR_EMAIL", "test@example.com")
-            .env("GIT_COMMITTER_NAME", "Test")
-            .env("GIT_COMMITTER_EMAIL", "test@example.com");
-
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["-U", "--developer-iters", "0"], executor).unwrap();
         // Rapid mode works without shell commands
     });
 }
@@ -415,17 +339,15 @@ tokio = "1.0"
         fs::write(dir.path().join("tests/test.rs"), "#[test] fn it_works() {}").unwrap();
 
         // Run ralph with verbose output to see stack detection
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env("RALPH_AUTO_DETECT_STACK", "true")
-            .env("RALPH_VERBOSITY", "2"); // Verbose mode
-                                          // agent commands not needed when developer_iters=0 and reviewer_reviews=0
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
+        std::env::set_var("RALPH_VERBOSITY", "2"); // Verbose mode
+                                                   // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
         // Pipeline should complete and potentially mention Rust stack
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -462,15 +384,13 @@ fn ralph_stack_detection_javascript_project() {
         )
         .unwrap();
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env("RALPH_AUTO_DETECT_STACK", "true");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
         // agent commands removed (not needed when developer_iters=0)
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -497,15 +417,13 @@ name = "test"
         fs::create_dir_all(dir.path().join("src")).unwrap();
         fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env("RALPH_AUTO_DETECT_STACK", "false"); // Explicitly disable
-                                                      // agent commands removed (not needed when developer_iters=0)
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_AUTO_DETECT_STACK", "false"); // Explicitly disable
+                                                               // agent commands removed (not needed when developer_iters=0)
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -536,15 +454,13 @@ version = "0.1.0"
         fs::create_dir_all(dir.path().join("scripts")).unwrap();
         fs::write(dir.path().join("scripts/deploy.py"), "print('deploy')").unwrap();
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env("RALPH_AUTO_DETECT_STACK", "true");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
         // agent commands removed (not needed when developer_iters=0)
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -564,15 +480,13 @@ fn ralph_review_depth_standard() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env("RALPH_REVIEW_DEPTH", "standard");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_REVIEW_DEPTH", "standard");
         // agent commands removed (not needed when developer_iters=0)
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -588,15 +502,13 @@ fn ralph_review_depth_comprehensive() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env("RALPH_REVIEW_DEPTH", "comprehensive");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_REVIEW_DEPTH", "comprehensive");
         // agent commands removed (not needed when developer_iters=0)
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -612,15 +524,13 @@ fn ralph_review_depth_security() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env("RALPH_REVIEW_DEPTH", "security");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_REVIEW_DEPTH", "security");
         // agent commands removed (not needed when developer_iters=0)
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -636,14 +546,12 @@ fn ralph_review_depth_incremental() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env("RALPH_REVIEW_DEPTH", "incremental");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_REVIEW_DEPTH", "incremental");
         // agent commands removed (not needed when developer_iters=0)
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
     });
 }

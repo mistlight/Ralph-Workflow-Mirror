@@ -14,10 +14,12 @@
 //! - Tests are deterministic and isolated
 
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::ralph_cmd;
+use crate::common::run_ralph_cli;
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests.
@@ -25,20 +27,17 @@ use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 /// This function sets up config isolation using XDG_CONFIG_HOME to prevent
 /// the tests from loading the user's actual config which may contain
 /// opencode/* references that would trigger network calls.
-fn base_env<'a>(
-    cmd: &'a mut assert_cmd::Command,
-    config_home: &std::path::Path,
-) -> &'a mut assert_cmd::Command {
-    cmd.env("RALPH_INTERACTIVE", "0")
-        .env("RALPH_DEVELOPER_ITERS", "0")
-        .env("RALPH_REVIEWER_REVIEWS", "0")
-        // Isolate config to prevent loading user's actual config with opencode/* refs
-        .env("XDG_CONFIG_HOME", config_home)
-        // Ensure git identity isn't a factor if a commit happens in the test.
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+fn base_env(config_home: &std::path::Path) {
+    std::env::set_var("RALPH_INTERACTIVE", "0");
+    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+    // Isolate config to prevent loading user's actual config with opencode/* refs
+    std::env::set_var("XDG_CONFIG_HOME", config_home);
+    // Ensure git identity isn't a factor if a commit happens in the test.
+    std::env::set_var("GIT_AUTHOR_NAME", "Test");
+    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
+    std::env::set_var("GIT_COMMITTER_NAME", "Test");
+    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 }
 
 /// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
@@ -76,13 +75,16 @@ fn ralph_cleans_up_on_early_error() {
         write_file(dir.path().join("initial.txt"), "initial content");
         let initial_oid = commit_all(&repo, "initial commit").to_string();
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            // agent commands not needed when developer_iters=0 (phase is skipped)
-            .env("FULL_CHECK_CMD", "false");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        // agent commands not needed when developer_iters=0 (phase is skipped)
+        std::env::set_var("FULL_CHECK_CMD", "false");
 
-        cmd.assert().failure();
+        let executor = Arc::new(RealProcessExecutor::new());
+        let result = run_ralph_cli(&[], executor);
+
+        // Should fail because FULL_CHECK_CMD=false is invalid
+        assert!(result.is_err());
 
         // Verify no commits were made (HEAD OID unchanged)
         let final_oid = head_oid(&repo);
@@ -124,12 +126,13 @@ fn ralph_cleanup_on_interrupt_simulation() {
         write_file(dir.path().join("initial.txt"), "initial content");
         let _ = commit_all(&repo, "initial commit");
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
         // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
+        let executor = Arc::new(RealProcessExecutor::new());
         // Pipeline now succeeds even with developer errors (non-fatal)
-        cmd.assert().success();
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify no unexpected commits were made (HEAD OID unchanged or only auto-commit)
         // Note: The pipeline may create an auto-commit after the iteration, so we just
@@ -162,13 +165,14 @@ fn ralph_handles_agent_timeout_gracefully() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
         // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
         // This tests that the pipeline handles phase-skipping correctly
 
+        let executor = Arc::new(RealProcessExecutor::new());
         // Should complete successfully without agent execution
-        cmd.assert().success();
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -199,15 +203,15 @@ fn ralph_handles_invalid_json_in_config() {
         )
         .unwrap();
 
-        let mut cmd = ralph_cmd();
-        cmd.current_dir(dir_path)
-            .env("RALPH_INTERACTIVE", "0")
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0")
-            .env("XDG_CONFIG_HOME", &config_home);
+        std::env::set_current_dir(dir_path).unwrap();
+        std::env::set_var("RALPH_INTERACTIVE", "0");
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_var("XDG_CONFIG_HOME", &config_home);
 
+        let executor = Arc::new(RealProcessExecutor::new());
         // Pipeline should succeed using defaults (config loader is lenient)
-        cmd.assert().success();
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -227,14 +231,14 @@ fn ralph_isolation_mode_does_not_create_status_notes_issues() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // STATUS.md, NOTES.md and ISSUES.md should NOT exist in isolation mode (default)
         assert!(
@@ -269,14 +273,14 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
         fs::write(dir.path().join(".agent/NOTES.md"), "old notes").unwrap();
         fs::write(dir.path().join(".agent/ISSUES.md"), "old issues").unwrap();
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Files should be deleted
         assert!(
@@ -306,15 +310,14 @@ fn ralph_no_isolation_creates_status_notes_issues() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .arg("--no-isolation")
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--no-isolation"], executor).unwrap();
 
         // STATUS.md, NOTES.md and ISSUES.md should exist when not in isolation mode
         assert!(
@@ -344,15 +347,15 @@ fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_ISOLATION_MODE", "0")
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_ISOLATION_MODE", "0");
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // STATUS.md, NOTES.md and ISSUES.md should exist when isolation mode is disabled via env
         assert!(
@@ -400,15 +403,14 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
         )
         .unwrap();
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .arg("--no-isolation")
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&["--no-isolation"], executor).unwrap();
 
         // Files should exist (non-isolation mode), but should be overwritten to 1 line.
         assert_eq!(
@@ -451,12 +453,13 @@ fn ralph_resume_continues_from_checkpoint_phase() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
         // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
 
+        let executor = Arc::new(RealProcessExecutor::new());
         // Should complete successfully without agent execution
-        cmd.assert().success();
+        run_ralph_cli(&[], executor).unwrap();
     });
 }
 
@@ -478,14 +481,14 @@ fn ralph_developer_iteration_creates_changes_for_commit() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd, &config_home)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0") // Use 0 to avoid timeout from commit generation
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Use 0 to avoid timeout from commit generation
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        cmd.assert().success();
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Note: Test uses 0 iterations to avoid timeout from commit generation
         // The test verifies the infrastructure is in place without running iterations

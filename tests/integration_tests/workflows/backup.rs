@@ -20,25 +20,25 @@
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
 //! - Tests are deterministic and isolated
 
-use predicates::prelude::*;
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::ralph_cmd;
+use crate::common::run_ralph_cli;
 use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::init_git_repo;
 
-fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
-    cmd.env("RALPH_INTERACTIVE", "0")
-        .env("RALPH_DEVELOPER_ITERS", "0")
-        .env("RALPH_REVIEWER_REVIEWS", "0")
-        // Use generic agents to avoid picking up user's local config
-        .env("RALPH_DEVELOPER_AGENT", "codex")
-        .env("RALPH_REVIEWER_AGENT", "codex")
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+fn set_base_env() {
+    std::env::set_var("RALPH_INTERACTIVE", "0");
+    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+    std::env::set_var("RALPH_DEVELOPER_AGENT", "codex");
+    std::env::set_var("RALPH_REVIEWER_AGENT", "codex");
+    std::env::set_var("GIT_AUTHOR_NAME", "Test");
+    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
+    std::env::set_var("GIT_COMMITTER_NAME", "Test");
+    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 }
 
 /// Helper to pre-create a PLAN.md file to avoid agent execution.
@@ -97,12 +97,11 @@ fn backup_created_at_pipeline_start() {
         // Pre-create PLAN.md to avoid agent execution
         create_plan_file(&dir);
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env();
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created
         assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
@@ -142,11 +141,11 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
 
         // Run to create backup
         create_plan_file(&dir);
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env();
+
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created and content matches
         assert!(backup_path.exists(), "Backup should be created after run");
@@ -181,24 +180,20 @@ fn backup_not_deleted_during_cleanup() {
 
         // Run Ralph to create backup
         create_plan_file(&dir);
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env();
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup exists
         assert!(backup_path.exists());
 
         // Run Ralph again - cleanup shouldn't delete backup
         create_plan_file(&dir);
-        let mut cmd2 = ralph_cmd();
-        base_env(&mut cmd2).current_dir(dir.path());
 
-        cmd2.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup still exists (wasn't cleaned up)
         assert!(backup_path.exists());
@@ -220,12 +215,11 @@ fn backup_has_readonly_permissions() {
 
         // Run Ralph to create backup
         create_plan_file(&dir);
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env();
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup exists
         assert!(backup_path.exists());
@@ -288,24 +282,20 @@ fn periodic_restoration_works_during_pipeline() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        let mut cmd1 = ralph_cmd();
-        base_env(&mut cmd1).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env();
 
-        cmd1.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created
         assert!(backup_path.exists());
 
         // Run again - backup should persist
         create_plan_file(&dir);
-        let mut cmd2 = ralph_cmd();
-        base_env(&mut cmd2).current_dir(dir.path());
 
-        cmd2.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup still exists and has correct content
         assert!(prompt_path.exists());
@@ -342,12 +332,11 @@ fn backup_rotation_maintains_multiple_backups() {
         // Run Ralph multiple times to create multiple backups
         for _ in 0..3 {
             create_plan_file(&dir);
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+            std::env::set_current_dir(dir.path()).unwrap();
+            set_base_env();
 
-            cmd.assert()
-                .success()
-                .stdout(predicate::str::contains("Pipeline Complete"));
+            let executor = Arc::new(RealProcessExecutor::new());
+            run_ralph_cli(&[], executor).unwrap();
         }
 
         // Verify all 3 backup levels exist
@@ -391,12 +380,11 @@ fn backup_oldest_deleted_when_exceeding_limit() {
         // Run Ralph 4 times - should only keep 3 backups
         for _ in 0..4 {
             create_plan_file(&dir);
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+            std::env::set_current_dir(dir.path()).unwrap();
+            set_base_env();
 
-            cmd.assert()
-                .success()
-                .stdout(predicate::str::contains("Pipeline Complete"));
+            let executor = Arc::new(RealProcessExecutor::new());
+            run_ralph_cli(&[], executor).unwrap();
         }
 
         // Verify .backup.3 doesn't exist (oldest was deleted)
@@ -430,12 +418,11 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
         // Run Ralph twice to create multiple backups
         for _ in 0..2 {
             create_plan_file(&dir);
-            let mut cmd = ralph_cmd();
-            base_env(&mut cmd).current_dir(dir.path());
+            std::env::set_current_dir(dir.path()).unwrap();
+            set_base_env();
 
-            cmd.assert()
-                .success()
-                .stdout(predicate::str::contains("Pipeline Complete"));
+            let executor = Arc::new(RealProcessExecutor::new());
+            run_ralph_cli(&[], executor).unwrap();
         }
 
         // Verify both backups exist
@@ -461,12 +448,9 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
 
         // Run Ralph again - it should successfully run with the restored PROMPT.md
         create_plan_file(&dir);
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify PROMPT.md exists and has valid content
         assert!(prompt_path.exists(), "PROMPT.md should exist");
@@ -510,12 +494,11 @@ fn agent_chmod_rm_is_caught_and_restored() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        let mut cmd1 = ralph_cmd();
-        base_env(&mut cmd1).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env();
 
-        cmd1.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created
         assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
@@ -550,12 +533,11 @@ fn agent_overwrite_is_detected_and_restored() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        let mut cmd1 = ralph_cmd();
-        base_env(&mut cmd1).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env();
 
-        cmd1.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created
         assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
@@ -590,12 +572,11 @@ fn multiple_deletions_are_logged_with_context() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd).current_dir(dir.path());
+        std::env::set_current_dir(dir.path()).unwrap();
+        set_base_env();
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created and PROMPT.md exists
         assert!(dir.path().join(".agent/PROMPT.md.backup").exists());

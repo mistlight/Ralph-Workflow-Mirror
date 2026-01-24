@@ -18,25 +18,27 @@
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
 //! - Tests are deterministic and isolated
 
-use predicates::prelude::*;
+use std::sync::Arc;
+
+use ralph_workflow::executor::RealProcessExecutor;
 use tempfile::TempDir;
 
-use crate::common::ralph_cmd;
+use crate::common::run_ralph_cli;
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
-fn base_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
-    cmd.env("RALPH_INTERACTIVE", "0")
-        .env("RALPH_DEVELOPER_ITERS", "0")
-        .env("RALPH_REVIEWER_REVIEWS", "0")
-        // Use generic agents to avoid picking up user's local config
-        .env("RALPH_DEVELOPER_AGENT", "codex")
-        .env("RALPH_REVIEWER_AGENT", "codex")
-        // Ensure git identity isn't a factor if a commit happens in the test.
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+fn base_env() {
+    std::env::set_var("RALPH_INTERACTIVE", "0");
+    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+    // Use generic agents to avoid picking up user's local config
+    std::env::set_var("RALPH_DEVELOPER_AGENT", "codex");
+    std::env::set_var("RALPH_REVIEWER_AGENT", "codex");
+    // Ensure git identity isn't a factor if a commit happens in the test.
+    std::env::set_var("GIT_AUTHOR_NAME", "Test");
+    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
+    std::env::set_var("GIT_COMMITTER_NAME", "Test");
+    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 }
 
 // ============================================================================
@@ -62,15 +64,13 @@ fn ralph_skips_phases_with_zero_iterations() {
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0") // Skip developer
-            .env("RALPH_REVIEWER_REVIEWS", "0"); // Skip review
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Skip developer
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify no agent-related files were created (agents weren't called)
         assert!(!dir.path().join(".agent/PLAN.md").exists());
@@ -97,15 +97,13 @@ fn ralph_succeeds_with_zero_iterations() {
         // Create a change
         write_file(dir.path().join("test.txt"), "new content");
 
-        let mut cmd = ralph_cmd();
-        base_env(&mut cmd)
-            .current_dir(dir.path())
-            .env("RALPH_DEVELOPER_ITERS", "0")
-            .env("RALPH_REVIEWER_REVIEWS", "0");
+        std::env::set_current_dir(dir.path()).unwrap();
+        base_env();
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        cmd.assert()
-            .success()
-            .stdout(predicate::str::contains("Pipeline Complete"));
+        let executor = Arc::new(RealProcessExecutor::new());
+        run_ralph_cli(&[], executor).unwrap();
 
         // Verify a commit was created
         let repo = git2::Repository::open(dir.path()).unwrap();

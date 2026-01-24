@@ -28,8 +28,8 @@ use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
 use crate::test_timeout::with_default_timeout;
 
-use ralph_workflow::git_helpers::{abort_rebase, rebase_onto, RebaseErrorKind, RebaseResult, RecoveryAction};
 use ralph_workflow::executor::RealProcessExecutor;
+use ralph_workflow::git_helpers::{rebase_onto, RebaseErrorKind, RebaseResult, RecoveryAction};
 
 /// Helper to create a file with conflict markers
 fn create_conflict_file(path: &std::path::Path, content: &str) {
