@@ -272,8 +272,8 @@ pub fn run_development_iteration_with_xml_retry(
     let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
     let log_dir = format!(".agent/logs/developer_{iteration}");
 
-    let max_xsd_retries = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize;
-    let max_continuations = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize; // Safety limit to prevent infinite loops
+    let max_xsd_retries = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize;
+    let max_continuations = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize; // Safety limit to prevent infinite loops
     let mut final_summary: Option<String> = None;
     let mut final_files_changed: Option<Vec<String>> = None;
     let mut had_any_error = false;
