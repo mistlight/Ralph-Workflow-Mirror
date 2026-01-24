@@ -21,10 +21,9 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use std::process::ExitStatus;
-use std::sync::Mutex;
 
-#[cfg(unix)]
-use std::os::unix::process::ExitStatusExt;
+#[cfg(any(test, feature = "test-utils"))]
+use std::sync::Mutex;
 
 /// Output from an executed process.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -368,6 +367,7 @@ pub trait ProcessExecutor: Send + Sync + std::fmt::Debug {
 ///
 /// Since io::Error doesn't implement Clone, we store error info as strings
 /// and reconstructs the error on demand.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone)]
 enum MockResult<T: Clone> {
     Ok(T),
@@ -377,6 +377,7 @@ enum MockResult<T: Clone> {
     },
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl<T: Clone> MockResult<T> {
     fn to_io_result(&self) -> io::Result<T> {
         match self {
@@ -396,11 +397,19 @@ impl<T: Clone> MockResult<T> {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl<T: Clone + Default> Default for MockResult<T> {
+    #[expect(dead_code)]
     fn default() -> Self {
         MockResult::Ok(T::default())
     }
 }
+
+/// Type alias for captured execute calls.
+///
+/// Each call is a tuple of (command, args, env, workdir).
+#[cfg(any(test, feature = "test-utils"))]
+type ExecuteCall = (String, Vec<String>, Vec<(String, String)>, Option<String>);
 
 /// Mock process executor for testing.
 ///
@@ -410,7 +419,7 @@ impl<T: Clone + Default> Default for MockResult<T> {
 #[derive(Debug)]
 pub struct MockProcessExecutor {
     /// Captured execute calls: (command, args, env, workdir).
-    execute_calls: Mutex<Vec<(String, Vec<String>, Vec<(String, String)>, Option<String>)>>,
+    execute_calls: Mutex<Vec<ExecuteCall>>,
     /// Mock results indexed by command.
     results: Mutex<HashMap<String, MockResult<ProcessOutput>>>,
     /// Default result for commands not explicitly set.
@@ -426,11 +435,21 @@ pub struct MockProcessExecutor {
 #[cfg(any(test, feature = "test-utils"))]
 impl Default for MockProcessExecutor {
     fn default() -> Self {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+
         Self {
             execute_calls: Mutex::new(Vec::new()),
             results: Mutex::new(HashMap::new()),
+            #[cfg(unix)]
             default_result: Mutex::new(MockResult::Ok(ProcessOutput {
                 status: ExitStatus::from_raw(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            })),
+            #[cfg(not(unix))]
+            default_result: Mutex::new(MockResult::Ok(ProcessOutput {
+                status: std::process::ExitStatus::default(),
                 stdout: String::new(),
                 stderr: String::new(),
             })),
@@ -488,14 +507,22 @@ impl MockProcessExecutor {
     /// * `command` - The command name
     /// * `stdout` - The stdout to return
     pub fn with_output(self, command: &str, stdout: &str) -> Self {
-        self.with_result(
-            command,
-            Ok(ProcessOutput {
-                status: ExitStatus::from_raw(0),
-                stdout: stdout.to_string(),
-                stderr: String::new(),
-            }),
-        )
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+
+        #[cfg(unix)]
+        let result = Ok(ProcessOutput {
+            status: ExitStatus::from_raw(0),
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+        });
+        #[cfg(not(unix))]
+        let result = Ok(ProcessOutput {
+            status: std::process::ExitStatus::default(),
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+        });
+        self.with_result(command, result)
     }
 
     /// Set a default failed output for a command.
@@ -505,14 +532,22 @@ impl MockProcessExecutor {
     /// * `command` - The command name
     /// * `stderr` - The stderr to return
     pub fn with_error(self, command: &str, stderr: &str) -> Self {
-        self.with_result(
-            command,
-            Ok(ProcessOutput {
-                status: ExitStatus::from_raw(1),
-                stdout: String::new(),
-                stderr: stderr.to_string(),
-            }),
-        )
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+
+        #[cfg(unix)]
+        let result = Ok(ProcessOutput {
+            status: ExitStatus::from_raw(1),
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+        });
+        #[cfg(not(unix))]
+        let result = Ok(ProcessOutput {
+            status: std::process::ExitStatus::default(),
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+        });
+        self.with_result(command, result)
     }
 
     /// Set a mock error result for a specific command.
@@ -534,17 +569,12 @@ impl MockProcessExecutor {
     /// Get all execute calls.
     ///
     /// Each call is a tuple of (command, args, env, workdir).
-    pub fn execute_calls(
-        &self,
-    ) -> Vec<(String, Vec<String>, Vec<(String, String)>, Option<String>)> {
+    pub fn execute_calls(&self) -> Vec<ExecuteCall> {
         self.execute_calls.lock().unwrap().clone()
     }
 
     /// Get all execute calls for a specific command.
-    pub fn execute_calls_for(
-        &self,
-        command: &str,
-    ) -> Vec<(String, Vec<String>, Vec<(String, String)>, Option<String>)> {
+    pub fn execute_calls_for(&self, command: &str) -> Vec<ExecuteCall> {
         self.execute_calls
             .lock()
             .unwrap()
@@ -620,13 +650,21 @@ impl AgentChild for MockAgentChild {
     fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
         #[cfg(unix)]
         use std::os::unix::process::ExitStatusExt;
-        Ok(ExitStatus::from_raw(self.exit_code))
+
+        #[cfg(unix)]
+        return Ok(ExitStatus::from_raw(self.exit_code));
+        #[cfg(not(unix))]
+        return Ok(std::process::ExitStatus::default());
     }
 
     fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
         #[cfg(unix)]
         use std::os::unix::process::ExitStatusExt;
-        Ok(Some(ExitStatus::from_raw(self.exit_code)))
+
+        #[cfg(unix)]
+        return Ok(Some(ExitStatus::from_raw(self.exit_code)));
+        #[cfg(not(unix))]
+        return Ok(Some(std::process::ExitStatus::default()));
     }
 }
 

@@ -449,5 +449,4 @@ mod tests {
         let result = get_review_baseline_info();
         assert!(result.is_ok() || result.is_err());
     }
-
 }

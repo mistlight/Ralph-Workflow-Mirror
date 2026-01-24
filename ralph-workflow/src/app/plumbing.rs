@@ -8,6 +8,7 @@
 
 use crate::agents::AgentRegistry;
 use crate::config::Config;
+use crate::executor::ProcessExecutor;
 use crate::files::{
     delete_commit_message_file, read_commit_message_file, write_commit_message_file,
 };
@@ -120,6 +121,7 @@ pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if generation fails.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_generate_commit_msg(
     config: &Config,
     template_context: &TemplateContext,
@@ -128,7 +130,7 @@ pub fn handle_generate_commit_msg(
     colors: Colors,
     developer_agent: &str,
     _reviewer_agent: &str,
-    executor: &dyn crate::executor::ProcessExecutor,
+    executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<()> {
     logger.info("Generating commit message...");
 

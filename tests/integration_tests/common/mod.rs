@@ -21,6 +21,7 @@
 //! - `mock_executor_with_success()`: Mock executor for successful agent execution
 //! - `mock_executor_for_git_success()`: Mock executor for git command success
 
+use clap::error::ErrorKind;
 use clap::Parser;
 use std::sync::Arc;
 
@@ -44,16 +45,15 @@ use std::sync::Arc;
 ///
 /// Returns `Ok(())` if ralph execution succeeded, or the error if it failed.
 ///
-/// # Panics
+/// # Special Cases
 ///
-/// - Panics if args cannot be parsed
+/// - `--version` and `--help` flags return `Ok(())` without running the app
+///   (these are valid clap exit paths that display info and exit successfully)
 ///
 /// # Usage
 ///
 /// ```ignore
-/// use crate::common::run_ralph_cli;
-/// use ralph_workflow::executor::RealProcessExecutor;
-/// use std::sync::Arc;
+/// use crate::common::{run_ralph_cli, mock_executor_with_success};
 ///
 /// #[test]
 /// fn test_init() {
@@ -61,7 +61,7 @@ use std::sync::Arc;
 ///         let dir = TempDir::new().unwrap();
 ///         std::env::set_current_dir(dir.path()).unwrap();
 ///
-///         let executor = Arc::new(RealProcessExecutor::new());
+///         let executor = mock_executor_with_success();
 ///         run_ralph_cli(&["--init"], executor).unwrap();
 ///
 ///         // Check side effects
@@ -78,7 +78,15 @@ pub fn run_ralph_cli(
     argv.extend(args.iter().map(|s| s.to_string()));
 
     // Parse args using clap directly (same as main.rs does)
-    let parsed_args = ralph_workflow::cli::Args::try_parse_from(&argv).expect("args should parse");
+    // Handle --version and --help flags which exit successfully
+    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+        Ok(args) => args,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
+            // These are successful exits (version printed or help shown)
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     // Set environment variables for test isolation
     std::env::set_var("RALPH_INTERACTIVE", "0");
@@ -119,9 +127,26 @@ pub fn run_ralph_cli(
 /// This helper enforces the style guide rule: **NO Process Spawning in Tests**.
 /// Tests must use MockProcessExecutor instead of RealProcessExecutor to avoid
 /// spawning real agent subprocesses.
+///
+/// # Command Mocking
+///
+/// This executor mocks common external commands to prevent real subprocess spawning:
+/// - git commands (status, branch, rev-parse, etc.) - return empty success
+/// - whoami - returns "testuser"
+/// - hostname - returns "localhost"
+/// - cargo commands - return empty success
 pub fn mock_executor_with_success() -> Arc<dyn ralph_workflow::executor::ProcessExecutor> {
     Arc::new(
         ralph_workflow::executor::MockProcessExecutor::new()
+            // git commands - return empty success (clean working tree)
+            .with_output("git", "")
+            // whoami - fallback for git identity
+            .with_output("whoami", "testuser")
+            // hostname - fallback for git identity email
+            .with_output("hostname", "localhost")
+            // cargo - build/test commands in rebase validation
+            .with_output("cargo", "")
+            // Agent commands return success
             .with_agent_result(
                 "claude",
                 Ok(ralph_workflow::executor::AgentCommandResult::success()),
@@ -174,11 +199,25 @@ pub fn mock_executor_with_success() -> Arc<dyn ralph_workflow::executor::Process
 ///
 /// This helper enforces the style guide rule: **NO Process Spawning in Tests**.
 /// Git CLI commands are an external dependency that must be mocked in tests.
+///
+/// # Command Mocking
+///
+/// This executor mocks common external commands to prevent real subprocess spawning:
+/// - git commands (status, branch, rev-parse, rebase, etc.) - return empty success
+/// - whoami - returns "testuser"
+/// - hostname - returns "localhost"
+/// - cargo commands - return empty success
 pub fn mock_executor_for_git_success() -> Arc<dyn ralph_workflow::executor::ProcessExecutor> {
     Arc::new(
         ralph_workflow::executor::MockProcessExecutor::new()
             // git status --porcelain (clean working tree)
             .with_output("git", "")
+            // whoami - fallback for git identity
+            .with_output("whoami", "testuser")
+            // hostname - fallback for git identity email
+            .with_output("hostname", "localhost")
+            // cargo - build/test commands in rebase validation
+            .with_output("cargo", "")
             // Agent commands also return success
             .with_agent_result(
                 "claude",

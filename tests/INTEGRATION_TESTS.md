@@ -611,12 +611,10 @@ Used when testing the CLI as a black box without spawning processes:
 
 ```rust
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 
 #[test]
 fn test_cli_behavior() {
@@ -631,7 +629,7 @@ fn test_cli_behavior() {
         std::env::set_var("RALPH_INTERACTIVE", "0");
 
         // 4. Run CLI directly via app::run() (no process spawning)
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         let result = run_ralph_cli(&["--some-flag", "input.txt"], executor);
 
         // 5. Assert on OBSERVABLE BEHAVIOR (exit code, file side effects)

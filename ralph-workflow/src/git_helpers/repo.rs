@@ -271,7 +271,6 @@ pub fn git_diff() -> io::Result<String> {
     Ok(String::from_utf8_lossy(&result).to_string())
 }
 
-
 fn index_has_changes_to_commit(repo: &git2::Repository, index: &git2::Index) -> io::Result<bool> {
     match repo.head() {
         Ok(head) => {
@@ -734,5 +733,4 @@ mod tests {
         let result = get_git_diff_from_start();
         assert!(result.is_ok() || result.is_err());
     }
-
 }
