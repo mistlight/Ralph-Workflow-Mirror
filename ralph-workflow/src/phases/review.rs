@@ -344,54 +344,69 @@ fn handle_skipped_cycle(
                 }
             };
 
-            // Get git identity from config
-            let git_name = ctx.config.git_user_name.as_deref();
-            let git_email = ctx.config.git_user_email.as_deref();
+            // Check if diff is empty before requesting commit message generation
+            if diff.trim().is_empty() {
+                ctx.logger.info("Skipping commit (no meaningful changes in diff)");
 
-            match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
-                CommitResultFallback::Success(oid) => {
-                    ctx.logger
-                        .success(&format!("Commit created successfully: {oid}"));
-                    ctx.stats.commits_created += 1;
+                let duration = start_time.elapsed().as_secs();
+                let step = ExecutionStep::new(
+                    "Review",
+                    iteration,
+                    "commit",
+                    StepOutcome::skipped("No meaningful changes to commit".to_string()),
+                )
+                .with_duration(duration);
+                ctx.execution_history.add_step(step);
+            } else {
+                // Get git identity from config
+                let git_name = ctx.config.git_user_name.as_deref();
+                let git_email = ctx.config.git_user_email.as_deref();
 
-                    let duration = start_time.elapsed().as_secs();
-                    let step = ExecutionStep::new(
-                        "Review",
-                        iteration,
-                        "commit",
-                        StepOutcome::success(Some(oid.to_string()), vec![]),
-                    )
-                    .with_agent(&agent)
-                    .with_duration(duration);
-                    ctx.execution_history.add_step(step);
-                }
-                CommitResultFallback::NoChanges => {
-                    ctx.logger.info("No commit created (no meaningful changes)");
+                match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
+                    CommitResultFallback::Success(oid) => {
+                        ctx.logger
+                            .success(&format!("Commit created successfully: {oid}"));
+                        ctx.stats.commits_created += 1;
 
-                    let duration = start_time.elapsed().as_secs();
-                    let step = ExecutionStep::new(
-                        "Review",
-                        iteration,
-                        "commit",
-                        StepOutcome::skipped("No meaningful changes to commit".to_string()),
-                    )
-                    .with_duration(duration);
-                    ctx.execution_history.add_step(step);
-                }
-                CommitResultFallback::Failed(err) => {
-                    ctx.logger.error(&format!("Failed to create commit: {err}"));
+                        let duration = start_time.elapsed().as_secs();
+                        let step = ExecutionStep::new(
+                            "Review",
+                            iteration,
+                            "commit",
+                            StepOutcome::success(Some(oid.to_string()), vec![]),
+                        )
+                        .with_agent(&agent)
+                        .with_duration(duration);
+                        ctx.execution_history.add_step(step);
+                    }
+                    CommitResultFallback::NoChanges => {
+                        ctx.logger.info("No commit created (no meaningful changes)");
 
-                    let duration = start_time.elapsed().as_secs();
-                    let step = ExecutionStep::new(
-                        "Review",
-                        iteration,
-                        "commit",
-                        StepOutcome::failure(err.to_string(), false),
-                    )
-                    .with_duration(duration);
-                    ctx.execution_history.add_step(step);
+                        let duration = start_time.elapsed().as_secs();
+                        let step = ExecutionStep::new(
+                            "Review",
+                            iteration,
+                            "commit",
+                            StepOutcome::skipped("No meaningful changes to commit".to_string()),
+                        )
+                        .with_duration(duration);
+                        ctx.execution_history.add_step(step);
+                    }
+                    CommitResultFallback::Failed(err) => {
+                        ctx.logger.error(&format!("Failed to create commit: {err}"));
 
-                    return Err(anyhow::anyhow!(err));
+                        let duration = start_time.elapsed().as_secs();
+                        let step = ExecutionStep::new(
+                            "Review",
+                            iteration,
+                            "commit",
+                            StepOutcome::failure(err.to_string(), false),
+                        )
+                        .with_duration(duration);
+                        ctx.execution_history.add_step(step);
+
+                        return Err(anyhow::anyhow!(err));
+                    }
                 }
             }
         } else {
@@ -1408,56 +1423,71 @@ fn handle_post_fix_commit(
                 }
             };
 
-            // Get git identity from config
-            let git_name = ctx.config.git_user_name.as_deref();
-            let git_email = ctx.config.git_user_email.as_deref();
+            // Check if diff is empty before requesting commit message generation
+            if diff.trim().is_empty() {
+                ctx.logger.info("Skipping commit (no meaningful changes in diff)");
 
-            match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
-                CommitResultFallback::Success(oid) => {
-                    ctx.logger
-                        .success(&format!("Commit created successfully: {oid}"));
-                    ctx.stats.commits_created += 1;
+                let duration = start_time.elapsed().as_secs();
+                let step = ExecutionStep::new(
+                    "Review",
+                    iteration,
+                    "commit",
+                    StepOutcome::skipped("No meaningful changes to commit".to_string()),
+                )
+                .with_duration(duration);
+                ctx.execution_history.add_step(step);
+            } else {
+                // Get git identity from config
+                let git_name = ctx.config.git_user_name.as_deref();
+                let git_email = ctx.config.git_user_email.as_deref();
 
-                    let duration = start_time.elapsed().as_secs();
-                    let step = ExecutionStep::new(
-                        "Review",
-                        iteration,
-                        "commit",
-                        StepOutcome::success(Some(oid.to_string()), vec![]),
-                    )
-                    .with_agent(&agent)
-                    .with_duration(duration);
-                    ctx.execution_history.add_step(step);
-                }
-                CommitResultFallback::NoChanges => {
-                    ctx.logger.info("No commit created (no meaningful changes)");
+                match commit_with_generated_message(&diff, &agent, git_name, git_email, ctx) {
+                    CommitResultFallback::Success(oid) => {
+                        ctx.logger
+                            .success(&format!("Commit created successfully: {oid}"));
+                        ctx.stats.commits_created += 1;
 
-                    let duration = start_time.elapsed().as_secs();
-                    let step = ExecutionStep::new(
-                        "Review",
-                        iteration,
-                        "commit",
-                        StepOutcome::skipped("No meaningful changes to commit".to_string()),
-                    )
-                    .with_duration(duration);
-                    ctx.execution_history.add_step(step);
-                }
-                CommitResultFallback::Failed(err) => {
-                    ctx.logger.error(&format!(
-                        "Failed to create commit (git operation failed): {err}"
-                    ));
+                        let duration = start_time.elapsed().as_secs();
+                        let step = ExecutionStep::new(
+                            "Review",
+                            iteration,
+                            "commit",
+                            StepOutcome::success(Some(oid.to_string()), vec![]),
+                        )
+                        .with_agent(&agent)
+                        .with_duration(duration);
+                        ctx.execution_history.add_step(step);
+                    }
+                    CommitResultFallback::NoChanges => {
+                        ctx.logger.info("No commit created (no meaningful changes)");
 
-                    let duration = start_time.elapsed().as_secs();
-                    let step = ExecutionStep::new(
-                        "Review",
-                        iteration,
-                        "commit",
-                        StepOutcome::failure(err.to_string(), false),
-                    )
-                    .with_duration(duration);
-                    ctx.execution_history.add_step(step);
+                        let duration = start_time.elapsed().as_secs();
+                        let step = ExecutionStep::new(
+                            "Review",
+                            iteration,
+                            "commit",
+                            StepOutcome::skipped("No meaningful changes to commit".to_string()),
+                        )
+                        .with_duration(duration);
+                        ctx.execution_history.add_step(step);
+                    }
+                    CommitResultFallback::Failed(err) => {
+                        ctx.logger.error(&format!(
+                            "Failed to create commit (git operation failed): {err}"
+                        ));
 
-                    return Err(anyhow::anyhow!(err));
+                        let duration = start_time.elapsed().as_secs();
+                        let step = ExecutionStep::new(
+                            "Review",
+                            iteration,
+                            "commit",
+                            StepOutcome::failure(err.to_string(), false),
+                        )
+                        .with_duration(duration);
+                        ctx.execution_history.add_step(step);
+
+                        return Err(anyhow::anyhow!(err));
+                    }
                 }
             }
         } else {
