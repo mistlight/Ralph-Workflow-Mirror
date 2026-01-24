@@ -121,7 +121,6 @@ pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if generation fails.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_generate_commit_msg(
     config: &Config,
     template_context: &TemplateContext,
@@ -130,7 +129,7 @@ pub fn handle_generate_commit_msg(
     colors: Colors,
     developer_agent: &str,
     _reviewer_agent: &str,
-    executor: &dyn ProcessExecutor,
+    executor: std::sync::Arc<dyn ProcessExecutor>,
 ) -> anyhow::Result<()> {
     logger.info("Generating commit message...");
 
@@ -144,19 +143,15 @@ pub fn handle_generate_commit_msg(
     // Create a timer for the pipeline runtime
     let mut timer = Timer::new();
 
-    // Set up pipeline runtime
-    // For plumbing commands, we need an Arc-wrapped executor. Since we only have
-    // &dyn ProcessExecutor, we create a RealProcessExecutor for the Arc.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
-    let executor_arc = std::sync::Arc::new(executor_for_arc)
-        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+    // Set up pipeline runtime with the injected executor
+    let executor_ref: &dyn ProcessExecutor = &*executor;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger,
         colors: &colors,
         config,
-        executor,
-        executor_arc,
+        executor: executor_ref,
+        executor_arc: std::sync::Arc::clone(&executor),
     };
 
     // Use the standard commit message generation from phases/commit.rs

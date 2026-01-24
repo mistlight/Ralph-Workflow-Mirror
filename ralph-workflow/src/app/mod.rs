@@ -347,7 +347,7 @@ fn prepare_pipeline_or_exit(
             colors,
             &developer_agent,
             &reviewer_agent,
-            &*executor,
+            std::sync::Arc::clone(&executor),
         )?;
         return Ok(None);
     }
@@ -641,6 +641,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
                     &ctx.logger,
                     &run_context,
                 )
+                .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
                 .with_execution_history(phase_ctx.execution_history.clone())
                 .with_prompt_history(phase_ctx.clone_prompt_history());
 
@@ -718,7 +719,8 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
                 &ctx.reviewer_agent,
                 &ctx.logger,
                 &run_context,
-            );
+            )
+            .with_executor_from_context(std::sync::Arc::clone(&ctx.executor));
 
         let builder = builder
             .with_execution_history(execution_history_before)
@@ -1218,7 +1220,8 @@ fn run_initial_rebase(
                 &ctx.reviewer_agent,
                 &ctx.logger,
                 run_context,
-            );
+            )
+            .with_executor_from_context(std::sync::Arc::clone(&ctx.executor));
 
         // Include prompt history and execution history for hardened resume
         builder = builder
@@ -1259,6 +1262,7 @@ fn run_initial_rebase(
                         &ctx.logger,
                         run_context,
                     )
+                    .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
                     .with_execution_history(phase_ctx.execution_history.clone())
                     .with_prompt_history(phase_ctx.clone_prompt_history());
 
@@ -1294,6 +1298,7 @@ fn run_initial_rebase(
                         &ctx.logger,
                         run_context,
                     )
+                    .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
                     .with_execution_history(phase_ctx.execution_history.clone())
                     .with_prompt_history(phase_ctx.clone_prompt_history());
 
@@ -1342,7 +1347,8 @@ fn run_initial_rebase(
                         &ctx.reviewer_agent,
                         &ctx.logger,
                         run_context,
-                    );
+                    )
+                    .with_executor_from_context(std::sync::Arc::clone(&ctx.executor));
 
                 // Include prompt history and execution history for hardened resume
                 builder = builder
@@ -1363,12 +1369,16 @@ fn run_initial_rebase(
             ));
 
             // Attempt to resolve conflicts with AI
+            let resolution_ctx = ConflictResolutionContext {
+                config: &ctx.config,
+                template_context: &ctx.template_context,
+                logger: &ctx.logger,
+                colors: ctx.colors,
+                executor_arc: std::sync::Arc::clone(&ctx.executor),
+            };
             match try_resolve_conflicts_with_fallback(
                 &conflicted_files,
-                &ctx.config,
-                &ctx.template_context,
-                &ctx.logger,
-                ctx.colors,
+                resolution_ctx,
                 phase_ctx,
                 "PreRebase",
                 &*ctx.executor,
@@ -1404,6 +1414,7 @@ fn run_initial_rebase(
                                         &ctx.logger,
                                         run_context,
                                     )
+                                    .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
                                     .with_execution_history(phase_ctx.execution_history.clone())
                                     .with_prompt_history(phase_ctx.clone_prompt_history());
 
@@ -1503,17 +1514,25 @@ enum ConflictResolutionResult {
     Failed,
 }
 
+/// Context for conflict resolution operations.
+///
+/// Groups together the configuration and runtime state needed for
+/// AI-assisted conflict resolution during rebase operations.
+struct ConflictResolutionContext<'a> {
+    config: &'a crate::config::Config,
+    template_context: &'a TemplateContext,
+    logger: &'a Logger,
+    colors: Colors,
+    executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
+}
+
 /// Attempt to resolve rebase conflicts with AI fallback.
 ///
 /// This function accepts `PhaseContext` to capture prompts and track
 /// execution history for hardened resume functionality.
-#[allow(clippy::too_many_arguments)]
 fn try_resolve_conflicts_with_fallback(
     conflicted_files: &[String],
-    config: &crate::config::Config,
-    template_context: &TemplateContext,
-    logger: &Logger,
-    colors: Colors,
+    ctx: ConflictResolutionContext<'_>,
     phase_ctx: &mut PhaseContext<'_>,
     phase: &str,
     executor: &dyn ProcessExecutor,
@@ -1522,38 +1541,44 @@ fn try_resolve_conflicts_with_fallback(
         return Ok(false);
     }
 
-    logger.info(&format!(
+    ctx.logger.info(&format!(
         "Attempting AI conflict resolution for {} file(s)",
         conflicted_files.len()
     ));
 
-    let conflicts = collect_conflict_info_or_error(conflicted_files, logger)?;
+    let conflicts = collect_conflict_info_or_error(conflicted_files, ctx.logger)?;
 
     // Use stored_or_generate pattern for hardened resume
     // On resume, use the exact same prompt that was used before
     let prompt_key = format!("{}_conflict_resolution", phase.to_lowercase());
     let (resolution_prompt, was_replayed) =
         get_stored_or_generate_prompt(&prompt_key, &phase_ctx.prompt_history, || {
-            build_resolution_prompt(&conflicts, template_context)
+            build_resolution_prompt(&conflicts, ctx.template_context)
         });
 
     // Capture the resolution prompt for deterministic resume (only if newly generated)
     if !was_replayed {
         phase_ctx.capture_prompt(&prompt_key, &resolution_prompt);
     } else {
-        logger.info(&format!(
+        ctx.logger.info(&format!(
             "Using stored prompt from checkpoint for determinism: {}",
             prompt_key
         ));
     }
 
-    match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors, executor) {
+    match run_ai_conflict_resolution(
+        &resolution_prompt,
+        ctx.config,
+        ctx.logger,
+        ctx.colors,
+        std::sync::Arc::clone(&ctx.executor),
+    ) {
         Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
             // Agent provided JSON output - attempt to parse and write files
             // JSON is optional for verification - LibGit2 state is authoritative
-            match parse_and_validate_resolved_files(&resolved_content, logger) {
+            match parse_and_validate_resolved_files(&resolved_content, ctx.logger) {
                 Ok(resolved_files) => {
-                    write_resolved_files(&resolved_files, logger)?;
+                    write_resolved_files(&resolved_files, ctx.logger)?;
                 }
                 Err(_) => {
                     // JSON parsing failed - this is expected and normal
@@ -1567,7 +1592,7 @@ fn try_resolve_conflicts_with_fallback(
             if remaining_conflicts.is_empty() {
                 Ok(true)
             } else {
-                logger.warn(&format!(
+                ctx.logger.warn(&format!(
                     "{} conflicts remain after AI resolution",
                     remaining_conflicts.len()
                 ));
@@ -1576,15 +1601,15 @@ fn try_resolve_conflicts_with_fallback(
         }
         Ok(ConflictResolutionResult::FileEditsOnly) => {
             // Agent resolved conflicts by editing files directly
-            logger.info("Agent resolved conflicts via file edits (no JSON output)");
+            ctx.logger.info("Agent resolved conflicts via file edits (no JSON output)");
 
             // Verify all conflicts are resolved
             let remaining_conflicts = get_conflicted_files()?;
             if remaining_conflicts.is_empty() {
-                logger.success("All conflicts resolved via file edits");
+                ctx.logger.success("All conflicts resolved via file edits");
                 Ok(true)
             } else {
-                logger.warn(&format!(
+                ctx.logger.warn(&format!(
                     "{} conflicts remain after AI resolution",
                     remaining_conflicts.len()
                 ));
@@ -1592,33 +1617,33 @@ fn try_resolve_conflicts_with_fallback(
             }
         }
         Ok(ConflictResolutionResult::Failed) => {
-            logger.warn("AI conflict resolution failed");
-            logger.info("Attempting to continue rebase anyway...");
+            ctx.logger.warn("AI conflict resolution failed");
+            ctx.logger.info("Attempting to continue rebase anyway...");
 
             // Try to continue rebase - user may have manually resolved conflicts
             match crate::git_helpers::continue_rebase(executor) {
                 Ok(()) => {
-                    logger.info("Successfully continued rebase");
+                    ctx.logger.info("Successfully continued rebase");
                     Ok(true)
                 }
                 Err(rebase_err) => {
-                    logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
+                    ctx.logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
                     Ok(false) // Conflicts remain
                 }
             }
         }
         Err(e) => {
-            logger.warn(&format!("AI conflict resolution failed: {e}"));
-            logger.info("Attempting to continue rebase anyway...");
+            ctx.logger.warn(&format!("AI conflict resolution failed: {e}"));
+            ctx.logger.info("Attempting to continue rebase anyway...");
 
             // Try to continue rebase - user may have manually resolved conflicts
             match crate::git_helpers::continue_rebase(executor) {
                 Ok(()) => {
-                    logger.info("Successfully continued rebase");
+                    ctx.logger.info("Successfully continued rebase");
                     Ok(true)
                 }
                 Err(rebase_err) => {
-                    logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
+                    ctx.logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
                     Ok(false) // Conflicts remain
                 }
             }
@@ -1676,12 +1701,17 @@ fn try_resolve_conflicts_without_phase_ctx(
         executor_arc,
     };
 
-    try_resolve_conflicts_with_fallback(
-        conflicted_files,
+    let ctx = ConflictResolutionContext {
         config,
         template_context,
         logger,
         colors,
+        executor_arc,
+    };
+
+    try_resolve_conflicts_with_fallback(
+        conflicted_files,
+        ctx,
         &mut phase_ctx,
         "RebaseOnly",
         executor,
@@ -1747,10 +1777,9 @@ fn run_ai_conflict_resolution(
     config: &crate::config::Config,
     logger: &Logger,
     colors: Colors,
-    executor: &dyn ProcessExecutor,
+    executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
 ) -> anyhow::Result<ConflictResolutionResult> {
     use crate::agents::AgentRegistry;
-    use crate::executor::RealProcessExecutor;
     use crate::files::result_extraction::extract_last_result;
     use crate::pipeline::{
         run_with_fallback_and_validator, FallbackConfig, OutputValidator, PipelineRuntime,
@@ -1766,21 +1795,15 @@ fn run_ai_conflict_resolution(
     let registry = AgentRegistry::new()?;
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
 
-    // For conflict resolution, we need an Arc-wrapped executor for the runtime.
-    // Since we only have &dyn ProcessExecutor, we create a RealProcessExecutor for the Arc.
-    // This is acceptable because conflict resolution runs in the main thread context
-    // and doesn't need test mocking support.
-    let executor_for_arc = RealProcessExecutor::new();
-    let executor_arc = std::sync::Arc::new(executor_for_arc)
-        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
-
+    // Use the injected executor for the runtime
+    let executor_ref: &dyn crate::executor::ProcessExecutor = &*executor_arc;
     let mut runtime = PipelineRuntime {
         timer: &mut crate::pipeline::Timer::new(),
         logger,
         colors: &colors,
         config,
-        executor,
-        executor_arc,
+        executor: executor_ref,
+        executor_arc: std::sync::Arc::clone(&executor_arc),
     };
 
     // Output validator: checks if agent produced valid output OR resolved conflicts

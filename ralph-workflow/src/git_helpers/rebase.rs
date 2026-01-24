@@ -2198,7 +2198,8 @@ pub fn rebase_in_progress() -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::executor::RealProcessExecutor;
+    use crate::executor::MockProcessExecutor;
+    use std::sync::Arc;
 
     #[test]
     fn test_rebase_result_variants_exist() {
@@ -2384,7 +2385,10 @@ mod tests {
             write_file(dir.path().join("initial.txt"), "initial content");
             let _ = commit_all(&repo, "initial commit");
 
-            let executor = RealProcessExecutor::new();
+            // Use MockProcessExecutor to avoid spawning real processes
+            // The mock will return failure for the nonexistent branch
+            let executor = Arc::new(MockProcessExecutor::new())
+                as Arc<dyn crate::executor::ProcessExecutor>;
             let result = rebase_onto("nonexistent_branch_that_does_not_exist", &executor);
             // Should return Ok (either with Failed result or other outcome)
             assert!(result.is_ok());
@@ -2415,7 +2419,9 @@ mod tests {
             // Initialize a git repo first
             let _repo = init_git_repo(dir);
 
-            let executor = RealProcessExecutor::new();
+            // Use MockProcessExecutor to avoid spawning real processes
+            let executor = Arc::new(MockProcessExecutor::new())
+                as Arc<dyn crate::executor::ProcessExecutor>;
             let result = rebase_in_progress_cli(&executor);
             // Should succeed (returns bool)
             assert!(result.is_ok());
@@ -2431,7 +2437,9 @@ mod tests {
             // Initialize a git repo first
             let _repo = init_git_repo(dir);
 
-            let executor = RealProcessExecutor::new();
+            // Use MockProcessExecutor to avoid spawning real processes
+            let executor = Arc::new(MockProcessExecutor::new())
+                as Arc<dyn crate::executor::ProcessExecutor>;
             let result = is_dirty_tree_cli(&executor);
             // Should succeed (returns bool)
             assert!(result.is_ok());

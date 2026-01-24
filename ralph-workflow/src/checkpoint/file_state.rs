@@ -181,8 +181,6 @@ impl FileSystemState {
 
     /// Validate the current file system state against this snapshot with a provided executor.
     ///
-    /// If executor is None, uses RealProcessExecutor (production default).
-    ///
     /// Returns a list of validation errors. Empty list means all checks passed.
     pub fn validate_with_executor(
         &self,
@@ -197,12 +195,11 @@ impl FileSystemState {
             }
         }
 
-        // Validate git state if we captured it
-        // Create a longer-lived RealProcessExecutor for the validation
-        let real_executor = RealProcessExecutor::new();
-        let exec = executor.unwrap_or(&real_executor);
-        if let Err(e) = self.validate_git_state_with_executor(exec) {
-            errors.push(e);
+        // Validate git state if we captured it and executor was provided
+        if let Some(exec) = executor {
+            if let Err(e) = self.validate_git_state_with_executor(exec) {
+                errors.push(e);
+            }
         }
 
         errors

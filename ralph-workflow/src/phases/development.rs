@@ -105,6 +105,7 @@ pub fn run_development_phase(
                     ctx.logger,
                     &ctx.run_context,
                 )
+                .with_executor_from_context(std::sync::Arc::clone(&ctx.executor_arc))
                 .with_execution_history(ctx.execution_history.clone())
                 .with_prompt_history(ctx.clone_prompt_history());
 
@@ -221,6 +222,7 @@ pub fn run_development_phase(
                     ctx.logger,
                     &ctx.run_context,
                 )
+                .with_executor_from_context(std::sync::Arc::clone(&ctx.executor_arc))
                 .with_execution_history(ctx.execution_history.clone())
                 .with_prompt_history(ctx.clone_prompt_history());
 
@@ -579,6 +581,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
                 ctx.logger,
                 &ctx.run_context,
             )
+            .with_executor_from_context(std::sync::Arc::clone(&ctx.executor_arc))
             .with_execution_history(ctx.execution_history.clone())
             .with_prompt_history(ctx.clone_prompt_history());
 

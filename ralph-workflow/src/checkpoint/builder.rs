@@ -12,7 +12,9 @@ use crate::checkpoint::state::{
 };
 use crate::checkpoint::RunContext;
 use crate::config::{Config, ReviewDepth};
+use crate::executor::ProcessExecutor;
 use crate::logger::Logger;
+use std::sync::Arc;
 
 /// Builder for creating pipeline checkpoints.
 ///
@@ -50,6 +52,8 @@ pub struct CheckpointBuilder {
     prompt_history: Option<std::collections::HashMap<String, String>>,
     // Optional skip_rebase flag for CLI args capture
     skip_rebase: Option<bool>,
+    // Process executor for external process execution
+    executor: Option<Arc<dyn ProcessExecutor>>,
 }
 
 impl Default for CheckpointBuilder {
@@ -80,6 +84,7 @@ impl CheckpointBuilder {
             execution_history: None,
             prompt_history: None,
             skip_rebase: None,
+            executor: None,
         }
     }
 
@@ -145,6 +150,12 @@ impl CheckpointBuilder {
     /// Set the skip_rebase flag for CLI args capture.
     pub fn skip_rebase(mut self, value: bool) -> Self {
         self.skip_rebase = Some(value);
+        self
+    }
+
+    /// Set the process executor for external process execution.
+    pub fn with_executor(mut self, executor: Arc<dyn ProcessExecutor>) -> Self {
+        self.executor = Some(executor);
         self
     }
 
@@ -237,6 +248,15 @@ impl CheckpointBuilder {
         self
     }
 
+    /// Set the executor from a PhaseContext.
+    ///
+    /// This is a convenience method that extracts the executor_arc from PhaseContext
+    /// and sets it for the checkpoint builder.
+    pub fn with_executor_from_context(mut self, executor_arc: Arc<dyn ProcessExecutor>) -> Self {
+        self.executor = Some(executor_arc);
+        self
+    }
+
     /// Attach execution history from a PhaseContext.
     ///
     /// This method captures the execution history from the phase context
@@ -315,7 +335,8 @@ impl CheckpointBuilder {
         checkpoint.prompt_history = self.prompt_history;
 
         // Capture and populate file system state
-        checkpoint.file_system_state = Some(FileSystemState::capture_current());
+        let executor_ref = self.executor.as_ref().map(|e| e.as_ref());
+        checkpoint.file_system_state = Some(FileSystemState::capture_with_optional_executor(executor_ref));
 
         // Capture and populate environment snapshot
         checkpoint.env_snapshot =
