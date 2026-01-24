@@ -40,12 +40,13 @@ mod templates;
 
 use crate::cli::Args;
 use clap::Parser;
+use ralph_workflow::executor::RealProcessExecutor;
 
 fn main() -> anyhow::Result<()> {
     // Set up Ctrl+C handler for graceful checkpoint save on interrupt
     crate::interrupt::setup_interrupt_handler();
 
     // Create real process executor for production use
-    let executor = crate::executor::RealProcessExecutor::new();
-    app::run(Args::parse(), &executor)
+    let executor = std::sync::Arc::new(RealProcessExecutor::new());
+    app::run(Args::parse(), executor)
 }

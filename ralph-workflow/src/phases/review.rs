@@ -691,6 +691,7 @@ pub fn run_review_pass(
                 logger: ctx.logger,
                 colors: ctx.colors,
                 config: ctx.config,
+                executor: ctx.executor,
                 #[cfg(any(test, feature = "test-utils"))]
                 agent_executor: None,
             };
@@ -1193,6 +1194,7 @@ pub fn run_fix_pass(
                     logger: ctx.logger,
                     colors: ctx.colors,
                     config: ctx.config,
+                    executor: ctx.executor,
                     #[cfg(any(test, feature = "test-utils"))]
                     agent_executor: None,
                 };

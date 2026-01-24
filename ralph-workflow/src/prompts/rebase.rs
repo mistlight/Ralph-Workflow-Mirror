@@ -345,58 +345,53 @@ fn format_branch_info_section(info: &BranchInfo) -> String {
 /// # Arguments
 ///
 /// * `upstream_branch` - The name of the upstream/target branch
+/// * `executor` - Process executor for external process execution
 ///
 /// # Returns
 ///
 /// Returns `Ok(BranchInfo)` with the gathered information, or an error if git operations fail.
 #[cfg(any(test, feature = "test-utils"))]
-pub fn collect_branch_info(upstream_branch: &str) -> std::io::Result<BranchInfo> {
-    use std::process::Command;
-
+pub fn collect_branch_info(
+    upstream_branch: &str,
+    executor: &dyn crate::executor::ProcessExecutor,
+) -> std::io::Result<BranchInfo> {
     // Get current branch name
-    let current_branch = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .map_err(|e| std::io::Error::other(format!("git rev-parse failed: {e}")))?;
+    let current_branch =
+        executor.execute("git", &["rev-parse", "--abbrev-ref", "HEAD"], &[], None)?;
 
-    let current_branch = String::from_utf8_lossy(&current_branch.stdout)
-        .trim()
-        .to_string();
+    let current_branch = current_branch.stdout.trim().to_string();
 
     // Get recent commits from current branch
-    let current_log = Command::new("git")
-        .args(["log", "--oneline", "-10", "HEAD"])
-        .output()
-        .map_err(|e| std::io::Error::other(format!("git log failed: {e}")))?;
+    let current_log = executor.execute("git", &["log", "--oneline", "-10", "HEAD"], &[], None)?;
 
-    let current_commits: Vec<String> = String::from_utf8_lossy(&current_log.stdout)
-        .lines()
-        .map(|s| s.to_string())
-        .collect();
+    let current_commits: Vec<String> = current_log.stdout.lines().map(|s| s.to_string()).collect();
 
     // Get recent commits from upstream branch
-    let upstream_log = Command::new("git")
-        .args(["log", "--oneline", "-10", upstream_branch])
-        .output()
-        .map_err(|e| std::io::Error::other(format!("git log failed: {e}")))?;
+    let upstream_log = executor.execute(
+        "git",
+        &["log", "--oneline", "-10", upstream_branch],
+        &[],
+        None,
+    )?;
 
-    let upstream_commits: Vec<String> = String::from_utf8_lossy(&upstream_log.stdout)
-        .lines()
-        .map(|s| s.to_string())
-        .collect();
+    let upstream_commits: Vec<String> =
+        upstream_log.stdout.lines().map(|s| s.to_string()).collect();
 
     // Count diverging commits
-    let diverging = Command::new("git")
-        .args([
+    let diverging = executor.execute(
+        "git",
+        &[
             "rev-list",
             "--count",
             "--left-right",
             &format!("HEAD...{upstream_branch}"),
-        ])
-        .output()
-        .map_err(|e| std::io::Error::other(format!("git rev-list failed: {e}")))?;
+        ],
+        &[],
+        None,
+    )?;
 
-    let diverging_count = String::from_utf8_lossy(&diverging.stdout)
+    let diverging_count = diverging
+        .stdout
         .split_whitespace()
         .map(|s| s.parse::<usize>().unwrap_or(0))
         .sum::<usize>();

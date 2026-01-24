@@ -134,6 +134,7 @@ impl MainEffectHandler {
             logger: ctx.logger,
             colors: ctx.colors,
             config: ctx.config,
+            executor: ctx.executor,
             #[cfg(any(test, feature = "test-utils"))]
             agent_executor: None,
         };
@@ -367,6 +368,7 @@ impl MainEffectHandler {
             logger: ctx.logger,
             colors: ctx.colors,
             config: ctx.config,
+            executor: ctx.executor,
             #[cfg(any(test, feature = "test-utils"))]
             agent_executor: None,
         };

@@ -128,10 +128,11 @@ pub fn handle_generate_commit_msg(
     colors: Colors,
     developer_agent: &str,
     _reviewer_agent: &str,
+    executor: &dyn crate::executor::ProcessExecutor,
 ) -> anyhow::Result<()> {
     logger.info("Generating commit message...");
 
-    // Generate the commit message using the standard pipeline
+    // Generate the commit message using standard pipeline
     let diff = git_diff()?;
     if diff.trim().is_empty() {
         logger.warn("No changes detected to generate a commit message for");
@@ -141,12 +142,13 @@ pub fn handle_generate_commit_msg(
     // Create a timer for the pipeline runtime
     let mut timer = Timer::new();
 
-    // Set up the pipeline runtime
+    // Set up pipeline runtime
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger,
         colors: &colors,
         config,
+        executor,
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };

@@ -36,6 +36,9 @@ pub use files::llm_output_extraction::validate_development_result_xml;
 pub use files::llm_output_extraction::validate_fix_result_xml;
 pub use files::llm_output_extraction::validate_issues_xml;
 
-// Re-export process executor for test-utils feature
+// Re-export process executor
+pub use executor::{ProcessExecutor, ProcessOutput, RealProcessExecutor};
+
+// Re-export mock executor for test-utils feature
 #[cfg(any(test, feature = "test-utils"))]
-pub use executor::{MockProcessExecutor, ProcessExecutor, ProcessOutput, RealProcessExecutor};
+pub use executor::MockProcessExecutor;

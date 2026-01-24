@@ -385,6 +385,7 @@ pub fn run_development_iteration_with_xml_retry(
                     logger: ctx.logger,
                     colors: ctx.colors,
                     config: ctx.config,
+                    executor: ctx.executor,
                     #[cfg(any(test, feature = "test-utils"))]
                     agent_executor: None,
                 };
@@ -650,6 +651,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             logger: ctx.logger,
             colors: ctx.colors,
             config: ctx.config,
+            executor: ctx.executor,
             #[cfg(any(test, feature = "test-utils"))]
             agent_executor: None,
         };
@@ -1164,7 +1166,8 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
             .warn("FAST_CHECK_CMD is empty after parsing; skipping fast check");
         return Ok(());
     };
-    let output = ctx.executor.execute(program, cmd_args, &[], None)?;
+    let args_refs: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
+    let output = ctx.executor.execute(program, &args_refs, &[], None)?;
     let status = output.status;
 
     if status.success() {

@@ -104,13 +104,17 @@ pub trait GitOps {
 ///
 /// This is the production implementation that delegates to the existing
 /// git helper functions.
-#[derive(Debug, Clone, Default)]
-pub struct RealGit;
+#[derive(Debug, Clone)]
+pub struct RealGit {
+    executor: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
+}
 
 impl RealGit {
     /// Create a new RealGit instance.
     pub fn new() -> Self {
-        Self
+        Self {
+            executor: std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        }
     }
 }
 
@@ -153,7 +157,7 @@ impl GitOps for RealGit {
     }
 
     fn rebase_onto(&self, upstream_branch: &str) -> io::Result<RebaseResult> {
-        match super::rebase::rebase_onto(upstream_branch) {
+        match super::rebase::rebase_onto(upstream_branch, &*self.executor) {
             Ok(super::rebase::RebaseResult::Success) => Ok(RebaseResult::Success),
             Ok(super::rebase::RebaseResult::Conflicts(files)) => Ok(RebaseResult::Conflicts(files)),
             Ok(super::rebase::RebaseResult::NoOp { reason }) => Ok(RebaseResult::NoOp { reason }),

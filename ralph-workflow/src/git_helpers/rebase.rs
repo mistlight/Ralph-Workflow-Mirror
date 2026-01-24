@@ -773,21 +773,9 @@ pub fn detect_concurrent_git_operations() -> io::Result<Option<ConcurrentOperati
 ///
 /// Returns `Ok(true)` if a rebase is in progress, `Ok(false)` otherwise.
 #[cfg(any(test, feature = "test-utils"))]
-pub fn rebase_in_progress_cli() -> io::Result<bool> {
-    use std::process::Command;
-
-    let output = Command::new("git").args(["status", "--porcelain"]).output();
-
-    match output {
-        Ok(result) => {
-            let stdout = String::from_utf8_lossy(&result.stdout);
-            // Check for rebase state indicators
-            Ok(stdout.contains("rebasing"))
-        }
-        Err(e) => Err(io::Error::other(format!(
-            "Failed to check rebase status: {e}"
-        ))),
-    }
+pub fn rebase_in_progress_cli(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<bool> {
+    let output = executor.execute("git", &["status", "--porcelain"], &[], None)?;
+    Ok(output.stdout.contains("rebasing"))
 }
 
 /// Result of cleaning up stale rebase state.
@@ -1603,51 +1591,44 @@ pub fn rebase_onto(
     // Use git CLI for rebase via executor - more reliable than libgit2
     let output = executor.execute("git", &["rebase", upstream_branch], &[], None)?;
 
-    match output {
-        Ok(result) => {
-            if result.status.success() {
-                Ok(RebaseResult::Success)
-            } else {
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                let stdout = String::from_utf8_lossy(&result.stdout);
+    if output.status.success() {
+        Ok(RebaseResult::Success)
+    } else {
+        let stderr = &output.stderr;
+        let stdout = &output.stdout;
 
-                // Use classify_rebase_error to determine the specific failure mode
-                let error_kind = classify_rebase_error(&stderr, &stdout);
+        // Use classify_rebase_error to determine specific failure mode
+        let error_kind = classify_rebase_error(stderr, stdout);
 
-                match error_kind {
-                    RebaseErrorKind::ContentConflict { .. } => {
-                        // For conflicts, get the actual conflicted files
-                        match get_conflicted_files() {
-                            Ok(files) if files.is_empty() => {
-                                // If we detected a conflict but can't get the files,
-                                // return the error kind with the files from the error
-                                if let RebaseErrorKind::ContentConflict { files } = error_kind {
-                                    Ok(RebaseResult::Conflicts(files))
-                                } else {
-                                    Ok(RebaseResult::Conflicts(vec![]))
-                                }
-                            }
-                            Ok(files) => Ok(RebaseResult::Conflicts(files)),
-                            Err(_) => Ok(RebaseResult::Conflicts(vec![])),
-                        }
-                    }
-                    RebaseErrorKind::Unknown { .. } => {
-                        // Check for "up to date" message which is actually a no-op
-                        if stderr.contains("up to date") {
-                            Ok(RebaseResult::NoOp {
-                                reason: "Branch is already up-to-date with upstream".to_string(),
-                            })
+        match error_kind {
+            RebaseErrorKind::ContentConflict { .. } => {
+                // For conflicts, get of actual conflicted files
+                match get_conflicted_files() {
+                    Ok(files) if files.is_empty() => {
+                        // If we detected a conflict but can't get of files,
+                        // return error kind with files from error
+                        if let RebaseErrorKind::ContentConflict { files } = error_kind {
+                            Ok(RebaseResult::Conflicts(files))
                         } else {
-                            Ok(RebaseResult::Failed(error_kind))
+                            Ok(RebaseResult::Conflicts(vec![]))
                         }
                     }
-                    _ => Ok(RebaseResult::Failed(error_kind)),
+                    Ok(files) => Ok(RebaseResult::Conflicts(files)),
+                    Err(_) => Ok(RebaseResult::Conflicts(vec![])),
                 }
             }
+            RebaseErrorKind::Unknown { .. } => {
+                // Check for "up to date" message which is actually a no-op
+                if stderr.contains("up to date") {
+                    Ok(RebaseResult::NoOp {
+                        reason: "Branch is already up-to-date with upstream".to_string(),
+                    })
+                } else {
+                    Ok(RebaseResult::Failed(error_kind))
+                }
+            }
+            _ => Ok(RebaseResult::Failed(error_kind)),
         }
-        Err(e) => Err(io::Error::other(format!(
-            "Failed to execute git rebase: {e}"
-        ))),
     }
 }
 
@@ -1690,20 +1671,13 @@ fn abort_rebase_with_executor(executor: &dyn crate::executor::ProcessExecutor) -
     // Use git CLI for abort via executor
     let output = executor.execute("git", &["rebase", "--abort"], &[], None)?;
 
-    match output {
-        Ok(result) => {
-            if result.status.success() {
-                Ok(())
-            } else {
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                Err(io::Error::other(format!(
-                    "Failed to abort rebase: {stderr}"
-                )))
-            }
-        }
-        Err(e) => Err(io::Error::other(format!(
-            "Failed to execute git rebase --abort: {e}"
-        ))),
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "Failed to abort rebase: {}",
+            output.stderr
+        )))
     }
 }
 
@@ -2191,20 +2165,13 @@ fn continue_rebase_with_executor(
     // Use git CLI for continue via executor
     let output = executor.execute("git", &["rebase", "--continue"], &[], None)?;
 
-    match output {
-        Ok(result) => {
-            if result.status.success() {
-                Ok(())
-            } else {
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                Err(io::Error::other(format!(
-                    "Failed to continue rebase: {stderr}"
-                )))
-            }
-        }
-        Err(e) => Err(io::Error::other(format!(
-            "Failed to execute git rebase --continue: {e}"
-        ))),
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "Failed to continue rebase: {}",
+            output.stderr
+        )))
     }
 }
 
@@ -2405,6 +2372,7 @@ mod tests {
 
     #[test]
     fn test_rebase_onto_returns_result() {
+        use crate::executor::RealProcessExecutor;
         use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
         // Test that rebase_onto returns a Result
@@ -2414,8 +2382,8 @@ mod tests {
             write_file(dir.path().join("initial.txt"), "initial content");
             let _ = commit_all(&repo, "initial commit");
 
-            // We use a non-existent branch to test error handling
-            let result = rebase_onto("nonexistent_branch_that_does_not_exist");
+            let executor = RealProcessExecutor::new();
+            let result = rebase_onto("nonexistent_branch_that_does_not_exist", &executor);
             // Should return Ok (either with Failed result or other outcome)
             assert!(result.is_ok());
         });
@@ -2438,6 +2406,7 @@ mod tests {
 
     #[test]
     fn test_rebase_in_progress_cli_returns_result() {
+        use crate::executor::RealProcessExecutor;
         use test_helpers::{init_git_repo, with_temp_cwd};
 
         // Test that rebase_in_progress_cli returns a Result
@@ -2445,7 +2414,8 @@ mod tests {
             // Initialize a git repo first
             let _repo = init_git_repo(dir);
 
-            let result = rebase_in_progress_cli();
+            let executor = RealProcessExecutor::new();
+            let result = rebase_in_progress_cli(&executor);
             // Should succeed (returns bool)
             assert!(result.is_ok());
         });
@@ -2453,6 +2423,7 @@ mod tests {
 
     #[test]
     fn test_is_dirty_tree_cli_returns_result() {
+        use crate::executor::RealProcessExecutor;
         use test_helpers::{init_git_repo, with_temp_cwd};
 
         // Test that is_dirty_tree_cli returns a Result
@@ -2460,7 +2431,8 @@ mod tests {
             // Initialize a git repo first
             let _repo = init_git_repo(dir);
 
-            let result = is_dirty_tree_cli();
+            let executor = RealProcessExecutor::new();
+            let result = is_dirty_tree_cli(&executor);
             // Should succeed (returns bool)
             assert!(result.is_ok());
         });

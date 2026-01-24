@@ -38,7 +38,8 @@ use crate::cli::{
     handle_list_available_agents, handle_list_providers, handle_show_baseline,
     handle_template_commands, prompt_template_selection, Args,
 };
-use crate::executor::{ProcessExecutor, RealProcessExecutor};
+
+use crate::executor::ProcessExecutor;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::files::{
     create_prompt_backup, ensure_files, make_prompt_read_only, reset_context_for_isolation,
@@ -85,7 +86,7 @@ use validation::{
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
-pub fn run(args: Args, executor: &dyn ProcessExecutor) -> anyhow::Result<()> {
+pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow::Result<()> {
     let colors = Colors::new();
     let logger = Logger::new(colors);
 
@@ -139,13 +140,6 @@ pub fn run(args: Args, executor: &dyn ProcessExecutor) -> anyhow::Result<()> {
         return Ok(());
     };
 
-    // Handle --rebase-only
-    if args.rebase_flags.rebase_only {
-        let template_context =
-            TemplateContext::from_user_templates_dir(config.user_templates_dir().cloned());
-        return handle_rebase_only(&args, &config, &template_context, &logger, colors);
-    }
-
     // Prepare pipeline context or exit early
     (prepare_pipeline_or_exit(PipelinePreparationParams {
         args,
@@ -156,6 +150,7 @@ pub fn run(args: Args, executor: &dyn ProcessExecutor) -> anyhow::Result<()> {
         repo_root,
         logger,
         colors,
+        executor,
     })?)
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
 }
@@ -273,6 +268,7 @@ struct PipelinePreparationParams {
     repo_root: std::path::PathBuf,
     logger: Logger,
     colors: Colors,
+    executor: std::sync::Arc<dyn ProcessExecutor>,
 }
 
 /// Prepares the pipeline context after agent validation.
@@ -290,6 +286,7 @@ fn prepare_pipeline_or_exit(
         repo_root,
         mut logger,
         colors,
+        executor,
     } = params;
 
     ensure_files(config.isolation_mode)?;
@@ -320,6 +317,19 @@ fn prepare_pipeline_or_exit(
     let template_context =
         TemplateContext::from_user_templates_dir(config.user_templates_dir().cloned());
 
+    // Handle --rebase-only
+    if args.rebase_flags.rebase_only {
+        handle_rebase_only(
+            &args,
+            &config,
+            &template_context,
+            &logger,
+            colors,
+            &*executor,
+        )?;
+        return Ok(None);
+    }
+
     // Handle --generate-commit-msg
     if args.commit_plumbing.generate_commit_msg {
         handle_generate_commit_msg(
@@ -330,6 +340,7 @@ fn prepare_pipeline_or_exit(
             colors,
             &developer_agent,
             &reviewer_agent,
+            &*executor,
         )?;
         return Ok(None);
     }
@@ -339,7 +350,6 @@ fn prepare_pipeline_or_exit(
     let reviewer_display = registry.display_name(&reviewer_agent);
 
     // Build pipeline context
-    let executor_arc = std::sync::Arc::new(executor);
     let ctx = PipelineContext {
         args,
         config,
@@ -352,7 +362,7 @@ fn prepare_pipeline_or_exit(
         logger,
         colors,
         template_context,
-        executor: executor_arc,
+        executor,
     };
     Ok(Some(ctx))
 }
@@ -600,7 +610,7 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if should_run_rebase {
-        run_initial_rebase(ctx, &mut phase_ctx, &run_context)?;
+        run_initial_rebase(ctx, &mut phase_ctx, &run_context, &*ctx.executor)?;
         // Update interrupt context after rebase
         update_interrupt_context_from_phase(
             &phase_ctx,
@@ -953,6 +963,7 @@ fn create_phase_context_with_config<'ctx>(
         run_context: run_context.clone(),
         execution_history,
         prompt_history,
+        executor: &*ctx.executor,
     }
 }
 
@@ -1036,12 +1047,13 @@ fn check_prompt_restoration(
 ///
 /// This function performs a rebase to the default branch with AI conflict resolution and exits,
 /// without running the full pipeline.
-fn handle_rebase_only(
+pub fn handle_rebase_only(
     _args: &Args,
     config: &crate::config::Config,
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
+    executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<()> {
     // Check if we're on main/master branch
     if is_main_or_master_branch()? {
@@ -1054,7 +1066,7 @@ fn handle_rebase_only(
 
     logger.header("Rebase to default branch", Colors::cyan);
 
-    match run_rebase_to_default(logger, colors) {
+    match run_rebase_to_default(logger, colors, executor) {
         Ok(RebaseResult::Success) => {
             logger.success("Rebase completed successfully");
             Ok(())
@@ -1137,7 +1149,11 @@ fn handle_rebase_only(
 /// # Returns
 ///
 /// Returns `RebaseResult` indicating the outcome.
-fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<RebaseResult> {
+fn run_rebase_to_default(
+    logger: &Logger,
+    colors: Colors,
+    executor: &dyn ProcessExecutor,
+) -> std::io::Result<RebaseResult> {
     // Get the default branch
     let default_branch = get_default_branch()?;
     logger.info(&format!(
@@ -1209,7 +1225,7 @@ fn run_initial_rebase(
         }
     }
 
-    match run_rebase_to_default(&ctx.logger, ctx.colors) {
+    match run_rebase_to_default(&ctx.logger, ctx.colors, &*ctx.executor) {
         Ok(RebaseResult::Success) => {
             ctx.logger.success("Rebase completed successfully");
             // Record execution step: pre-rebase completed successfully
@@ -1347,6 +1363,7 @@ fn run_initial_rebase(
                 ctx.colors,
                 phase_ctx,
                 "PreRebase",
+                &*ctx.executor,
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
@@ -1439,7 +1456,7 @@ fn run_initial_rebase(
         }
         Ok(RebaseResult::Failed(err)) => {
             ctx.logger.error(&format!("Rebase failed: {err}"));
-            let _ = abort_rebase();
+            let _ = abort_rebase(&*ctx.executor);
             // Record execution step: rebase failed
             let step = ExecutionStep::new(
                 "PreRebase",
@@ -1490,6 +1507,7 @@ fn try_resolve_conflicts_with_fallback(
     colors: Colors,
     phase_ctx: &mut PhaseContext<'_>,
     phase: &str,
+    executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<bool> {
     if conflicted_files.is_empty() {
         return Ok(false);
@@ -1520,7 +1538,7 @@ fn try_resolve_conflicts_with_fallback(
         ));
     }
 
-    match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors) {
+    match run_ai_conflict_resolution(&resolution_prompt, config, logger, colors, executor) {
         Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
             // Agent provided JSON output - attempt to parse and write files
             // JSON is optional for verification - LibGit2 state is authoritative
@@ -1649,6 +1667,7 @@ fn try_resolve_conflicts_without_phase_ctx(
         colors,
         &mut phase_ctx,
         "RebaseOnly",
+        executor,
     )
 }
 
@@ -1711,6 +1730,7 @@ fn run_ai_conflict_resolution(
     config: &crate::config::Config,
     logger: &Logger,
     colors: Colors,
+    executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<ConflictResolutionResult> {
     use crate::agents::AgentRegistry;
     use crate::files::result_extraction::extract_last_result;
@@ -1733,6 +1753,7 @@ fn run_ai_conflict_resolution(
         logger,
         colors: &colors,
         config,
+        executor,
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };

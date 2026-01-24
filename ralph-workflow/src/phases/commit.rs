@@ -1136,6 +1136,7 @@ pub fn commit_with_generated_message(
         logger: ctx.logger,
         colors: ctx.colors,
         config: ctx.config,
+        executor: ctx.executor,
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
