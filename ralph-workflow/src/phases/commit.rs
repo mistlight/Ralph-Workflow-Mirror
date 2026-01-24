@@ -823,8 +823,7 @@ fn return_hardcoded_fallback(
 
 /// Generate a commit message using the standard agent pipeline with fallback.
 ///
-/// This function uses the same `run_with_fallback()` pipeline as other phases,
-/// which provides:
+/// This function uses the standard agent pipeline with fallback, which provides:
 /// - Proper stdout/stderr logging
 /// - Configurable fallback chains
 /// - Retry logic with exponential backoff

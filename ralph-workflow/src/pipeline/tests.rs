@@ -134,16 +134,17 @@ fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
     };
 
-    let exit = run_with_fallback(
-        crate::agents::AgentRole::Reviewer,
-        "test",
-        "hello",
-        &dir.path().join("logs").display().to_string(),
-        &mut runtime,
-        &registry,
-        "ccs/glm",
-    )
-    .unwrap();
+    let mut config = super::runner::FallbackConfig {
+        role: crate::agents::AgentRole::Reviewer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: &dir.path().join("logs").display().to_string(),
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/glm",
+        output_validator: None,
+    };
+    let exit = super::runner::run_with_fallback_and_validator(&mut config).unwrap();
 
     assert_eq!(exit, 0, "fallback agent should succeed");
     let fail_invocations = std::fs::read_to_string(&fail_count)
@@ -246,16 +247,17 @@ exit 0
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
     };
 
-    let exit = run_with_fallback(
-        crate::agents::AgentRole::Reviewer,
-        "test",
-        "hello",
-        &dir.path().join("logs").display().to_string(),
-        &mut runtime,
-        &registry,
-        "ccs/nonexistent",
-    )
-    .unwrap();
+    let mut config = super::runner::FallbackConfig {
+        role: crate::agents::AgentRole::Reviewer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: &dir.path().join("logs").display().to_string(),
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/nonexistent",
+        output_validator: None,
+    };
+    let exit = super::runner::run_with_fallback_and_validator(&mut config).unwrap();
 
     // The fallback should have succeeded
     assert_eq!(
@@ -493,16 +495,17 @@ exit 0
     };
 
     // Run the review with GLM agent
-    let exit = run_with_fallback(
-        crate::agents::AgentRole::Reviewer,
-        "test review",
-        "hello",
-        &dir.path().join("logs").display().to_string(),
-        &mut runtime,
-        &registry,
-        "ccs/glm",
-    )
-    .unwrap();
+    let mut config = super::runner::FallbackConfig {
+        role: crate::agents::AgentRole::Reviewer,
+        base_label: "test review",
+        prompt: "hello",
+        logfile_prefix: &dir.path().join("logs").display().to_string(),
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/glm",
+        output_validator: None,
+    };
+    let exit = super::runner::run_with_fallback_and_validator(&mut config).unwrap();
 
     // The fallback agent should succeed
     assert_eq!(exit, 0, "Fallback agent should succeed");

@@ -373,29 +373,6 @@ pub struct FallbackConfig<'a, 'b> {
 }
 
 /// Run a command with automatic fallback to alternative agents on failure.
-pub fn run_with_fallback(
-    role: AgentRole,
-    base_label: &str,
-    prompt: &str,
-    logfile_prefix: &str,
-    runtime: &mut PipelineRuntime<'_>,
-    registry: &AgentRegistry,
-    primary_agent: &str,
-) -> std::io::Result<i32> {
-    let mut config = FallbackConfig {
-        role,
-        base_label,
-        prompt,
-        logfile_prefix,
-        runtime,
-        registry,
-        primary_agent,
-        output_validator: None,
-    };
-    run_with_fallback_internal(&mut config)
-}
-
-/// Run a command with automatic fallback to alternative agents on failure.
 ///
 /// Includes an optional output validator callback that checks if the agent
 /// produced valid output after `exit_code=0`. If validation fails, triggers fallback.

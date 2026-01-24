@@ -2198,6 +2198,7 @@ pub fn rebase_in_progress() -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::executor::RealProcessExecutor;
 
     #[test]
     fn test_rebase_result_variants_exist() {

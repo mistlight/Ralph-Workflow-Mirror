@@ -26,9 +26,9 @@ use std::fs;
 use tempfile::TempDir;
 use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
+use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
 
-use ralph_workflow::executor::RealProcessExecutor;
 use ralph_workflow::git_helpers::{rebase_onto, RebaseErrorKind, RebaseResult, RecoveryAction};
 
 /// Helper to create a file with conflict markers
@@ -342,8 +342,8 @@ fn test_rebase_with_conflicts_is_detected() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase feature onto main - should get conflicts
-            let executor = RealProcessExecutor::new();
-            let result = rebase_onto(&default_branch, &executor);
+            let executor = mock_executor_for_git_success();
+            let result = rebase_onto(&default_branch, executor.as_ref());
 
             // Should either get conflicts or fail
             match result {
@@ -435,8 +435,8 @@ fn test_rebase_already_up_to_date() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase feature onto main (they're at the same point)
-            let executor = RealProcessExecutor::new();
-            let result = rebase_onto(&default_branch, &executor);
+            let executor = mock_executor_for_git_success();
+            let result = rebase_onto(&default_branch, executor.as_ref());
 
             // Should be NoOp since there's nothing to rebase
             match result {
@@ -465,8 +465,8 @@ fn test_rebase_no_common_ancestor() {
             let _repo = init_repo_with_initial_commit(dir);
 
             // Try to rebase onto a nonexistent branch
-            let executor = RealProcessExecutor::new();
-            let result = rebase_onto("nonexistent-branch", &executor);
+            let executor = mock_executor_for_git_success();
+            let result = rebase_onto("nonexistent-branch", executor.as_ref());
 
             // Should fail or return NoOp
             match result {
@@ -715,8 +715,8 @@ fn test_conflict_resolution_continues_without_json() {
             repo.set_head("refs/heads/feature").unwrap();
 
             // Try to rebase feature onto main - should get conflicts
-            let executor = RealProcessExecutor::new();
-            let result = rebase_onto(&default_branch, &executor);
+            let executor = mock_executor_for_git_success();
+            let result = rebase_onto(&default_branch, executor.as_ref());
 
             match result {
                 Ok(RebaseResult::Conflicts(files)) => {
@@ -742,8 +742,8 @@ fn test_conflict_resolution_continues_without_json() {
                     );
 
                     // Clean up
-                    let executor = RealProcessExecutor::new();
-                    let _ = abort_rebase(&executor);
+                    let executor = mock_executor_for_git_success();
+                    let _ = abort_rebase(executor.as_ref());
                 }
                 Ok(RebaseResult::Failed(_)) => {
                     // Rebase failed - acceptable
@@ -756,14 +756,14 @@ fn test_conflict_resolution_continues_without_json() {
                 }
                 _ => {
                     // Clean up any other state
-                    let executor = RealProcessExecutor::new();
-                    let _ = abort_rebase(&executor);
+                    let executor = mock_executor_for_git_success();
+                    let _ = abort_rebase(executor.as_ref());
                 }
             }
 
             // Always clean up
-            let executor = RealProcessExecutor::new();
-            let _ = abort_rebase(&executor);
+            let executor = mock_executor_for_git_success();
+            let _ = abort_rebase(executor.as_ref());
         });
     });
 }

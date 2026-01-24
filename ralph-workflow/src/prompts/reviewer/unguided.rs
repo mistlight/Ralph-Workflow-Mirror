@@ -41,7 +41,6 @@ pub fn prompt_detailed_review_without_guidelines_with_diff(
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
-    use crate::prompts::template_context::TemplateContext;
     use std::collections::HashMap;
 
     // NOTE: ContextLevel is now ignored - we use the consolidated standard_review template

@@ -153,7 +153,7 @@ pub fn handle_generate_commit_msg(
 
     // Use the standard commit message generation from phases/commit.rs
     // This provides:
-    // - Proper fallback chain support via run_with_fallback()
+    // - Proper fallback chain support
     // - Structured logging to .agent/logs/
     // - Meaningful error diagnostics
     let result = generate_commit_message(

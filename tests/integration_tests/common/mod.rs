@@ -19,7 +19,7 @@
 //! The utilities in this module support proper integration test patterns:
 //! - `run_ralph_cli()`: Run ralph CLI directly via app::run() without spawning processes
 //! - `mock_executor_with_success()`: Mock executor for successful agent execution
-//! - `mock_executor_with_agent_failure()`: Mock executor for agent failure scenarios
+//! - `mock_executor_for_git_success()`: Mock executor for git command success
 
 use clap::Parser;
 use std::sync::Arc;
@@ -145,57 +145,60 @@ pub fn mock_executor_with_success() -> Arc<dyn ralph_workflow::executor::Process
     )
 }
 
-/// Create a MockProcessExecutor configured for agent failure scenarios.
+/// Create a MockProcessExecutor configured for git command success.
 ///
-/// This helper tests error handling when agents fail. Use this to verify
-/// that the pipeline properly handles agent errors without hanging or crashing.
-///
-/// # Arguments
-///
-/// * `command_pattern` - Pattern to match against agent commands (e.g., "claude", "codex")
-/// * `exit_code` - Exit code the agent should return (non-zero = failure)
-/// * `stderr` - Stderr content to return from the failed agent
+/// This helper provides mock responses for common git commands used in
+/// rebase and other git operations, preventing real git subprocess spawning.
 ///
 /// # Returns
 ///
-/// Returns an Arc-wrapped MockProcessExecutor configured for the specified failure.
+/// Returns an Arc-wrapped MockProcessExecutor that returns successful outputs
+/// for common git commands (status, branch, rebase) and all agent types.
 ///
 /// # Usage
 ///
 /// ```ignore
-/// use crate::common::mock_executor_with_agent_failure;
+/// use crate::common::mock_executor_for_git_success;
 ///
 /// #[test]
-/// fn test_agent_failure_handling() {
+/// fn test_rebase_success() {
 ///     with_default_timeout(|| {
-///         let executor = mock_executor_with_agent_failure(
-///             "claude",
-///             1,
-///             "Agent failed to process request"
-///         );
-///         let result = run_ralph_cli(&["--init"], executor);
-///         // Verify error handling
-///         assert!(result.is_err());
+///         let executor = mock_executor_for_git_success();
+///         let result = rebase_onto("main", &executor);
+///         // Git commands are mocked - no real git subprocess spawned
 ///     });
 /// }
 /// ```
 ///
 /// # Integration Test Style Guide Compliance
 ///
-/// This helper enforces the style guide rule: tests must mock at architectural
-/// boundaries. Agent spawning is an external dependency, so tests use MockProcessExecutor
-/// to simulate failures without actually spawning processes.
-pub fn mock_executor_with_agent_failure(
-    command_pattern: &str,
-    exit_code: i32,
-    stderr: &str,
-) -> Arc<dyn ralph_workflow::executor::ProcessExecutor> {
+/// This helper enforces the style guide rule: **NO Process Spawning in Tests**.
+/// Git CLI commands are an external dependency that must be mocked in tests.
+pub fn mock_executor_for_git_success() -> Arc<dyn ralph_workflow::executor::ProcessExecutor> {
     Arc::new(
-        ralph_workflow::executor::MockProcessExecutor::new().with_agent_result(
-            command_pattern,
-            Ok(ralph_workflow::executor::AgentCommandResult::failure(
-                exit_code, stderr,
-            )),
-        ),
+        ralph_workflow::executor::MockProcessExecutor::new()
+            // git status --porcelain (clean working tree)
+            .with_output("git", "")
+            // Agent commands also return success
+            .with_agent_result(
+                "claude",
+                Ok(ralph_workflow::executor::AgentCommandResult::success()),
+            )
+            .with_agent_result(
+                "codex",
+                Ok(ralph_workflow::executor::AgentCommandResult::success()),
+            )
+            .with_agent_result(
+                "opencode",
+                Ok(ralph_workflow::executor::AgentCommandResult::success()),
+            )
+            .with_agent_result(
+                "glm",
+                Ok(ralph_workflow::executor::AgentCommandResult::success()),
+            )
+            .with_agent_result(
+                "aider",
+                Ok(ralph_workflow::executor::AgentCommandResult::success()),
+            ),
     )
 }

@@ -21,9 +21,8 @@ use std::fs;
 use tempfile::TempDir;
 use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
+use crate::common::mock_executor_for_git_success;
 use crate::test_timeout::with_default_timeout;
-
-use ralph_workflow::executor::RealProcessExecutor;
 use ralph_workflow::git_helpers::rebase_checkpoint::{
     load_rebase_checkpoint, rebase_checkpoint_exists, save_rebase_checkpoint, RebaseCheckpoint,
     RebasePhase,
@@ -229,7 +228,7 @@ fn rebase_handles_missing_orig_head() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
-            let executor = RealProcessExecutor::new();
+            let executor = mock_executor_for_git_success();
 
             // Create .git/rebase-apply directory without ORIG_HEAD
             let rebase_dir = dir.path().join(".git").join("rebase-apply");
@@ -239,7 +238,7 @@ fn rebase_handles_missing_orig_head() {
             fs::write(rebase_dir.join("head-name"), "refs/heads/feature\n").unwrap();
 
             // System should handle missing ORIG_HEAD gracefully
-            let result = rebase_onto(&default_branch, &executor);
+            let result = rebase_onto(&default_branch, executor.as_ref());
 
             // Result should be Ok (either succeeds or reports error gracefully)
             assert!(result.is_ok());
@@ -256,14 +255,14 @@ fn rebase_handles_missing_head_ref() {
     with_default_timeout(|| {
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
-            let executor = RealProcessExecutor::new();
+            let executor = mock_executor_for_git_success();
 
             // Delete HEAD to simulate corrupted state
             let head_file = dir.path().join(".git").join("HEAD");
             fs::remove_file(&head_file).unwrap();
 
             // Rebase should detect this and handle gracefully
-            let result = rebase_onto("main", &executor);
+            let result = rebase_onto("main", executor.as_ref());
 
             match result {
                 Ok(_) => {
@@ -355,14 +354,14 @@ fn rebase_handles_reflog_disabled() {
 
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
-            let executor = RealProcessExecutor::new();
+            let executor = mock_executor_for_git_success();
 
             // Disable reflog
             let git_dir = dir.path().join(".git");
             fs::create_dir_all(git_dir.join("refs").join("heads")).unwrap();
 
             // System should still work without reflog
-            let result = rebase_onto("main", &executor);
+            let result = rebase_onto("main", executor.as_ref());
             assert!(result.is_ok());
         });
     });
@@ -378,7 +377,7 @@ fn rebase_detects_sparse_checkout_conflicts() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
-            let executor = RealProcessExecutor::new();
+            let executor = mock_executor_for_git_success();
 
             // Configure sparse checkout
             let git_dir = dir.path().join(".git");
@@ -393,7 +392,7 @@ fn rebase_detects_sparse_checkout_conflicts() {
                 .expect("set sparseCheckout config");
 
             // System should handle sparse checkout gracefully
-            let result = rebase_onto(&default_branch, &executor);
+            let result = rebase_onto(&default_branch, executor.as_ref());
             assert!(result.is_ok());
         });
     });
@@ -409,7 +408,7 @@ fn rebase_detects_detached_head_after_interruption() {
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
             let default_branch = get_default_branch_name(&repo);
-            let executor = RealProcessExecutor::new();
+            let executor = mock_executor_for_git_success();
 
             // Create a commit
             write_file(dir.path().join("file.txt"), "content");
@@ -426,7 +425,7 @@ fn rebase_detects_detached_head_after_interruption() {
             fs::write(rebase_dir.join("onto"), head_commit.id().to_string()).unwrap();
 
             // System should handle detached HEAD with rebase state
-            let result = rebase_onto(&default_branch, &executor);
+            let result = rebase_onto(&default_branch, executor.as_ref());
 
             match result {
                 Ok(_) => {
@@ -438,7 +437,7 @@ fn rebase_detects_detached_head_after_interruption() {
             }
 
             // Clean up
-            let _ = ralph_workflow::git_helpers::abort_rebase(&executor);
+            let _ = ralph_workflow::git_helpers::abort_rebase(executor.as_ref());
         });
     });
 }

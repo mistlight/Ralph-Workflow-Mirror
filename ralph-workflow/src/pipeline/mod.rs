@@ -33,8 +33,6 @@ pub mod test_trait;
 
 pub use fallback::OutputValidator;
 pub use prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
-#[cfg(test)]
-pub use runner::run_with_fallback;
 pub use runner::{
     run_with_fallback_and_validator, run_xsd_retry_with_session, FallbackConfig, XsdRetryConfig,
 };

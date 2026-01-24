@@ -89,30 +89,6 @@ pub fn load_review_baseline() -> io::Result<ReviewBaseline> {
     Ok(ReviewBaseline::Commit(oid))
 }
 
-/// Get the diff from the review baseline (or start commit if baseline not set).
-///
-/// This function provides a per-review-cycle diff, falling back to the
-/// original start_commit if no review baseline has been set.
-///
-/// # Returns
-///
-/// Returns a formatted diff string, or an error if:
-/// - The repository cannot be opened
-/// - The baseline commit cannot be found
-/// - The diff cannot be generated
-pub fn get_git_diff_from_review_baseline() -> io::Result<String> {
-    match load_review_baseline()? {
-        ReviewBaseline::Commit(oid) => {
-            // Use the existing git_diff_from function from repo module
-            super::repo::git_diff_from(&oid.to_string())
-        }
-        ReviewBaseline::NotSet => {
-            // Fall back to start commit if review baseline not set
-            super::repo::get_git_diff_from_start()
-        }
-    }
-}
-
 /// Get information about the current review baseline.
 ///
 /// Returns a tuple of (baseline_oid, commits_since_baseline, is_stale).
@@ -474,9 +450,4 @@ mod tests {
         assert!(result.is_ok() || result.is_err());
     }
 
-    #[test]
-    fn test_get_git_diff_from_review_baseline_returns_result() {
-        let result = get_git_diff_from_review_baseline();
-        assert!(result.is_ok() || result.is_err());
-    }
 }

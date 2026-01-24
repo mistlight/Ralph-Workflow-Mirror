@@ -105,7 +105,6 @@ mod tests {
     use super::*;
     use crate::files::result_extraction::file_finder::find_log_files_with_prefix;
     use crate::files::result_extraction::json_extraction::extract_result_from_file;
-    use crate::files::result_extraction::text_extraction::extract_plan_from_text;
     use std::fs;
     use tempfile::TempDir;
 
@@ -387,51 +386,6 @@ mod tests {
     }
 
     // =====================================================
-    // TEXT-BASED FALLBACK EXTRACTION TESTS
-    // =====================================================
-
-    #[test]
-    fn test_extract_plan_from_text_with_summary() {
-        let content = r"Some random output
-## Summary
-This is the plan summary with enough content to pass validation.
-
-## Implementation Steps
-1. Do the thing
-2. Do the other thing
-";
-        let result = extract_plan_from_text(content);
-        assert!(result.is_some());
-        assert!(result.unwrap().starts_with("## Summary"));
-    }
-
-    #[test]
-    fn test_extract_plan_from_text_with_implementation_steps() {
-        let content = r"Agent thinking...
-## Implementation Steps
-Step 1: Create the component with all necessary features
-Step 2: Add tests and documentation
-";
-        let result = extract_plan_from_text(content);
-        assert!(result.is_some());
-        assert!(result.unwrap().starts_with("## Implementation Steps"));
-    }
-
-    #[test]
-    fn test_extract_plan_from_text_no_markers() {
-        let content = "This is just some random text without any plan markers.";
-        let result = extract_plan_from_text(content);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_extract_plan_from_text_too_short() {
-        let content = "## Summary\nShort";
-        let result = extract_plan_from_text(content);
-        assert!(result.is_none(), "Should reject content that's too short");
-    }
-
-    // =====================================================
     // ISSUES EXTRACTION WITH PREFIX TESTS
     // =====================================================
 
@@ -551,125 +505,5 @@ Step 2: Add tests and documentation
 
         let result = extract_result_from_file(&file_path).unwrap();
         assert!(result.is_none());
-    }
-
-    // =====================================================
-    // PERMISSIVE EXTRACTION TESTS (Plaintext mode fallback)
-    // =====================================================
-
-    #[test]
-    fn test_extract_plan_from_text_permissive_no_markers() {
-        // Plaintext content without markdown markers but with plan keywords
-        let content = "I need to implement a new feature for the user authentication system.
-First, I will create a new module that handles the login logic.
-Then, I will add functions for password validation and session management.
-Finally, I will write tests to ensure everything works correctly.
-
-The approach involves using secure hashing for passwords and JWT tokens for sessions.";
-
-        let result = extract_plan_from_text(content);
-        assert!(
-            result.is_some(),
-            "Should extract substantial content with plan keywords even without markdown markers"
-        );
-        let extracted = result.unwrap();
-        assert!(extracted.contains("implement"));
-        assert!(extracted.contains("create"));
-        assert!(extracted.len() > 200);
-    }
-
-    #[test]
-    fn test_extract_plan_from_text_permissive_filters_json() {
-        // Content with JSON lines mixed in - should filter them out
-        let content = r#"{"type": "tool", "tool": "read_file"}
-I need to build a new authentication module that handles user login.
-{"type": "system", "message": "processing"}
-This will handle registration for the web application.
-The development approach should be secure and follow best practices.
-We'll add password hashing, session management, and proper error handling.
-The module will integrate with the existing database layer."#;
-
-        let result = extract_plan_from_text(content);
-        assert!(
-            result.is_some(),
-            "Should extract content while filtering out JSON lines"
-        );
-        let extracted = result.unwrap();
-        assert!(!extracted.contains("{\"type\":"));
-        assert!(extracted.contains("authentication"));
-    }
-
-    #[test]
-    fn test_extract_plan_from_text_permissive_too_short() {
-        // Content with plan keywords but too short
-        let content = "I will build a feature.";
-        let result = extract_plan_from_text(content);
-        assert!(
-            result.is_none(),
-            "Should reject content that's too short even with plan keywords"
-        );
-    }
-
-    #[test]
-    fn test_extract_plan_from_text_permissive_no_plan_keywords() {
-        // Substantial content without plan-like keywords
-        let content = "The quick brown fox jumps over the lazy dog repeatedly.
-This text was composed to be long enough to pass the length requirement.
-It avoids using technical terminology that might trigger extraction.
-Instead we just talk about random things like animals and weather.
-Our purpose is to test that the extraction correctly filters out non-plan content.
-This should definitely be long enough but still rejected due to lack of keywords.
-We're discussing foxes, dogs, weather, and other non-technical subjects today.
-The weather is nice so all of the animals are playing in a large field outside.
-A sunny day with blue skies makes for perfect conditions to observe nature.";
-
-        let result = extract_plan_from_text(content);
-        assert!(
-            result.is_none(),
-            "Should reject content without plan-like keywords"
-        );
-    }
-
-    #[test]
-    fn test_extract_plan_from_text_permissive_filters_debug_output() {
-        // Content with debug/tool markers
-        let content = "[debug] Starting the process
-I need to develop the new module by writing code for authentication.
-[tool] Reading file: src/main.rs
-Then I must add functions for handling user sessions and password hashing.
-[warn] Deprecated API usage detected in legacy code
-Finally, I must verify everything works correctly through comprehensive testing.";
-
-        let result = extract_plan_from_text(content);
-        assert!(
-            result.is_some(),
-            "Should extract content while filtering out debug/tool markers"
-        );
-        let extracted = result.unwrap();
-        assert!(!extracted.contains("[debug]"));
-        assert!(!extracted.contains("[tool]"));
-        assert!(!extracted.contains("[warn]"));
-        assert!(extracted.contains("develop"));
-        assert!(extracted.contains("authentication"));
-    }
-
-    #[test]
-    fn test_extract_plan_from_text_markers_take_precedence() {
-        // When markdown markers exist, they should take precedence over permissive extraction
-        let content = "Some initial text without structure.
-## Summary
-This is the structured plan that should be extracted.
-The permissive fallback should not be used when markers are present.
-## Implementation Steps
-1. Step one
-2. Step two";
-
-        let result = extract_plan_from_text(content);
-        assert!(result.is_some());
-        let extracted = result.unwrap();
-        assert!(
-            extracted.starts_with("## Summary"),
-            "Should use marker-based extraction when markers are present"
-        );
     }
 }
