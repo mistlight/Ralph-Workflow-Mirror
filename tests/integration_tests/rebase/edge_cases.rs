@@ -713,8 +713,8 @@ fn verify_rebase_completed_returns_false_when_diverged() {
 #[test]
 fn validate_rebase_preconditions_detects_dirty_tree() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
@@ -749,8 +749,8 @@ fn validate_rebase_preconditions_detects_dirty_tree() {
 #[test]
 fn validate_rebase_preconditions_succeeds_on_clean_repo() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
@@ -774,8 +774,8 @@ fn validate_rebase_preconditions_succeeds_on_clean_repo() {
 #[test]
 fn validate_rebase_preconditions_detects_shallow_clone() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
@@ -821,8 +821,8 @@ fn validate_rebase_preconditions_detects_shallow_clone() {
 #[test]
 fn validate_rebase_preconditions_detects_uninitialized_submodules() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
@@ -868,8 +868,8 @@ fn validate_rebase_preconditions_detects_uninitialized_submodules() {
 #[test]
 fn validate_rebase_preconditions_succeeds_with_initialized_submodules() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -913,8 +913,8 @@ fn validate_rebase_preconditions_succeeds_with_initialized_submodules() {
 #[test]
 fn validate_rebase_preconditions_succeeds_without_submodules() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);
@@ -941,8 +941,8 @@ fn validate_rebase_preconditions_succeeds_without_submodules() {
 #[test]
 fn validate_rebase_preconditions_detects_misconfigured_sparse_checkout() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -988,8 +988,8 @@ fn validate_rebase_preconditions_detects_misconfigured_sparse_checkout() {
 #[test]
 fn validate_rebase_preconditions_succeeds_with_proper_sparse_checkout() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -1027,8 +1027,8 @@ fn validate_rebase_preconditions_succeeds_with_proper_sparse_checkout() {
 #[test]
 fn validate_rebase_preconditions_detects_empty_sparse_checkout_config() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -1258,8 +1258,8 @@ fn rebase_with_symlink_conflict() {
 #[test]
 fn validate_rebase_preconditions_detects_path_length() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
+        use ralph_workflow::git_helpers::validate_rebase_preconditions;
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -1287,14 +1287,14 @@ fn validate_rebase_preconditions_detects_path_length() {
                 // If we can't create the path due to length limits,
                 // the precondition check should handle this gracefully
                 let executor = RealProcessExecutor::new();
-            let result = validate_rebase_preconditions(&executor);
+                let result = validate_rebase_preconditions(&executor);
                 // On systems with strict path limits, this might fail
                 // On Linux with large limits, it will pass
                 let _ = result;
             } else {
                 // Path was created successfully, preconditions should pass
                 let executor = RealProcessExecutor::new();
-            let result = validate_rebase_preconditions(&executor);
+                let result = validate_rebase_preconditions(&executor);
                 if let Err(e) = result {
                     // If preconditions fail, it might be due to other checks (e.g., concurrent operations)
                     // The path length test primarily verifies we can create long paths

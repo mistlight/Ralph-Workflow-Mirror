@@ -130,10 +130,7 @@ fn test_spawn_failure_vs_execution_failure() {
             Arc::new(not_found_mock);
 
         let spawn_result = executor1.execute("nonexistent", &[], &[], None);
-        assert!(
-            spawn_result.is_err(),
-            "Nonexistent command should fail"
-        );
+        assert!(spawn_result.is_err(), "Nonexistent command should fail");
         assert_eq!(
             spawn_result.unwrap_err().kind(),
             std::io::ErrorKind::NotFound
@@ -207,8 +204,17 @@ fn test_mock_executor_returns_success() {
         assert!(result.is_ok(), "Should return Ok for successful execution");
 
         let output = result.unwrap();
-        assert!(output.status.success(), "Exit status should indicate success");
-        assert_eq!(output.stdout, "test output", "Stdout should match configured output");
-        assert_eq!(output.stderr, "", "Stderr should be empty for successful execution");
+        assert!(
+            output.status.success(),
+            "Exit status should indicate success"
+        );
+        assert_eq!(
+            output.stdout, "test output",
+            "Stdout should match configured output"
+        );
+        assert_eq!(
+            output.stderr, "",
+            "Stderr should be empty for successful execution"
+        );
     });
 }

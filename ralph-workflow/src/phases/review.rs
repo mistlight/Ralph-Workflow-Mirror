@@ -701,8 +701,6 @@ pub fn run_review_pass(
                 colors: ctx.colors,
                 config: ctx.config,
                 executor: ctx.executor,
-                #[cfg(any(test, feature = "test-utils"))]
-                agent_executor: None,
             };
 
             // Output validator: checks if reviewer produced valid JSON output
@@ -1218,8 +1216,6 @@ pub fn run_fix_pass(
                     colors: ctx.colors,
                     config: ctx.config,
                     executor: ctx.executor,
-                    #[cfg(any(test, feature = "test-utils"))]
-                    agent_executor: None,
                 };
 
                 // Output validator: checks if fixer produced valid JSON output

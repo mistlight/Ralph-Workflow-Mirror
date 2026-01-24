@@ -398,8 +398,6 @@ pub fn run_development_iteration_with_xml_retry(
                     colors: ctx.colors,
                     config: ctx.config,
                     executor: ctx.executor,
-                    #[cfg(any(test, feature = "test-utils"))]
-                    agent_executor: None,
                 };
                 let base_label = format!(
                     "run #{}{}",
@@ -671,8 +669,6 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             colors: ctx.colors,
             config: ctx.config,
             executor: ctx.executor,
-            #[cfg(any(test, feature = "test-utils"))]
-            agent_executor: None,
         };
 
         // Use session continuation for XSD retries (retry_num > 0)

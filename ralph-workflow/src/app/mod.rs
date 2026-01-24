@@ -1755,8 +1755,6 @@ fn run_ai_conflict_resolution(
         colors: &colors,
         config,
         executor,
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Output validator: checks if agent produced valid output OR resolved conflicts

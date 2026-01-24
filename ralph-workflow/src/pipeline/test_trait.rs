@@ -1,10 +1,47 @@
-//! Test trait for agent command execution.
+//! # DEPRECATED - Test trait for agent command execution.
 //!
-//! This module provides a trait-based abstraction for agent command execution
-//! that allows mocking external side effects (subprocess spawning) in tests.
-//! Only external side effects are mocked - internal code logic is never mocked.
+//! **This module is deprecated and will be removed in a future release.**
+//!
+//! # Migration Path
+//!
+//! All code using this module should migrate to `ralph_workflow::executor::ProcessExecutor`.
+//!
+//! ## Before (deprecated):
+//!
+//! ```ignore
+//! use ralph_workflow::pipeline::test_trait::{AgentExecutor, MockAgentExecutor};
+//!
+//! let mock = MockAgentExecutor::new();
+//! let result = mock.execute(&config)?;
+//! ```
+//!
+//! ## After (new approach):
+//!
+//! ```ignore
+//! use ralph_workflow::executor::{ProcessExecutor, MockProcessExecutor, AgentSpawnConfig};
+//!
+//! let mock = MockProcessExecutor::new()
+//!     .with_agent_result("claude", Ok(AgentCommandResult {
+//!         exit_code: 0,
+//!         stderr: String::new(),
+//!     }));
+//! let executor: Arc<dyn ProcessExecutor> = Arc::new(mock);
+//! let config = AgentSpawnConfig { ... };
+//! let agent_handle = executor.spawn_agent(&config)?;
+//! ```
+//!
+//! # Why This Change?
+//!
+//! The `AgentExecutor` trait only handled agent spawning, while the new `ProcessExecutor`
+//! trait provides a unified interface for ALL external process execution (git commands,
+//! clipboard operations, and agent spawning). This follows the same dependency injection
+//! pattern as `GitOps` trait.
+//!
+//! **Status:** This module is retained for backward compatibility during migration.
+//! Do not add new code using this module.
 
 #![cfg(any(test, feature = "test-utils"))]
+#![deprecated(note = "Use ralph_workflow::executor::ProcessExecutor instead")]
 
 use std::cell::RefCell;
 use std::collections::HashMap;

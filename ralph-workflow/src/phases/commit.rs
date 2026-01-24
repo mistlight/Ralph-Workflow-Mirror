@@ -1146,8 +1146,6 @@ pub fn commit_with_generated_message(
         colors: ctx.colors,
         config: ctx.config,
         executor: ctx.executor,
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Generate commit message using the standard pipeline

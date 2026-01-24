@@ -1166,7 +1166,9 @@ pub fn is_dirty_tree_cli(executor: &dyn crate::executor::ProcessExecutor) -> io:
 /// }
 /// ```
 #[cfg(any(test, feature = "test-utils"))]
-pub fn validate_rebase_preconditions(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<()> {
+pub fn validate_rebase_preconditions(
+    executor: &dyn crate::executor::ProcessExecutor,
+) -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // 1. Check repository integrity
@@ -2066,7 +2068,8 @@ pub fn validate_post_rebase_with_checks(
         result
             .messages
             .push("Running test validation...".to_string());
-        let test_output = executor.execute("cargo", &["test", "--lib", "--all-features"], &[], None);
+        let test_output =
+            executor.execute("cargo", &["test", "--lib", "--all-features"], &[], None);
 
         result.tests_valid = Some(match test_output {
             Ok(output) => output.status.success(),
@@ -2088,7 +2091,12 @@ pub fn validate_post_rebase_with_checks(
         result
             .messages
             .push("Running lint validation...".to_string());
-        let lint_output = executor.execute("cargo", &["clippy", "--lib", "--all-features", "-D", "warnings"], &[], None);
+        let lint_output = executor.execute(
+            "cargo",
+            &["clippy", "--lib", "--all-features", "-D", "warnings"],
+            &[],
+            None,
+        );
 
         result.lint_valid = Some(match lint_output {
             Ok(output) => output.status.success(),

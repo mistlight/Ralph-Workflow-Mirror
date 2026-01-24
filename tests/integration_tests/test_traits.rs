@@ -13,6 +13,12 @@
 //! - Tests verify **observable behavior** (trait exports and basic functionality)
 //! - Uses mock traits at architectural boundaries (git, filesystem, agent execution)
 //! - Tests are deterministic and isolated
+//!
+//! # Note on Deprecation
+//!
+//! This file tests deprecated traits (MockAgentExecutor, AgentCommandResult).
+//! These are kept for backward compatibility during migration to ProcessExecutor.
+#![allow(deprecated)]
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::files::{FileOperation, FileOps, MockFileOps};

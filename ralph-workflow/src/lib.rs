@@ -37,8 +37,11 @@ pub use files::llm_output_extraction::validate_fix_result_xml;
 pub use files::llm_output_extraction::validate_issues_xml;
 
 // Re-export process executor
-pub use executor::{ProcessExecutor, ProcessOutput, RealProcessExecutor};
+pub use executor::{
+    AgentChild, AgentChildHandle, AgentCommandResult, AgentSpawnConfig, ProcessExecutor,
+    ProcessOutput, RealAgentChild, RealProcessExecutor,
+};
 
 // Re-export mock executor for test-utils feature
 #[cfg(any(test, feature = "test-utils"))]
-pub use executor::MockProcessExecutor;
+pub use executor::{MockAgentChild, MockProcessExecutor};

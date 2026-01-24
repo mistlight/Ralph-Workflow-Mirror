@@ -132,8 +132,6 @@ fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     let exit = run_with_fallback(
@@ -246,8 +244,6 @@ exit 0
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     let exit = run_with_fallback(
@@ -494,8 +490,6 @@ exit 0
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Run the review with GLM agent
@@ -634,8 +628,6 @@ exit 1
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Run with output validator
@@ -739,8 +731,6 @@ exit 0
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Create fake session info
@@ -842,8 +832,6 @@ exit 0
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Create session info matching the agent
@@ -941,8 +929,6 @@ exit 0
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Create session info (even though agent doesn't support it)
@@ -1049,8 +1035,6 @@ fi
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Create session info
@@ -1168,8 +1152,6 @@ exit 0
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Create session info with SANITIZED agent name (as extracted from log file)
@@ -1303,8 +1285,6 @@ exit 0
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     // Run first attempt (retry_num = 0) - this creates the log file with session_id
@@ -1370,8 +1350,6 @@ exit 0
         colors: &colors,
         config: &config,
         executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
-        #[cfg(any(test, feature = "test-utils"))]
-        agent_executor: None,
     };
 
     let mut xsd_config2 = crate::pipeline::XsdRetryConfig {

@@ -135,8 +135,6 @@ impl MainEffectHandler {
             colors: ctx.colors,
             config: ctx.config,
             executor: ctx.executor,
-            #[cfg(any(test, feature = "test-utils"))]
-            agent_executor: None,
         };
 
         // Execute agent with fault-tolerant wrapper
@@ -369,8 +367,6 @@ impl MainEffectHandler {
             colors: ctx.colors,
             config: ctx.config,
             executor: ctx.executor,
-            #[cfg(any(test, feature = "test-utils"))]
-            agent_executor: None,
         };
 
         match commit::generate_commit_message(
