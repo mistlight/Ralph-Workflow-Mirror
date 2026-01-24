@@ -15,11 +15,13 @@
 //! - **Mocking strategy:** Mock only at architectural boundaries (filesystem, network)
 //! - **When to update tests:** Only update when expected behavior changes
 //! - **Forbidden patterns:** No `cfg!(test)` branches in production code
+//! - **No process spawning:** Tests must NOT spawn external processes
 //!
 //! Key patterns used in these tests:
 //! - **Parser tests:** Use `TestPrinter` from `ralph_workflow::json_parser::printer`
 //! - **File operations:** Use `tempfile::TempDir` for isolation
-//! - **CLI tests:** Use `assert_cmd::Command` for black-box testing
+//! - **CLI tests:** Use `run_ralph_cli()` which calls `app::run()` directly
+//! - **Process execution:** Use `ProcessExecutor` trait with `RealProcessExecutor`
 //!
 //! See individual test modules for examples of proper integration test structure.
 

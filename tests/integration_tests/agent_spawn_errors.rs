@@ -23,6 +23,7 @@
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::executor::{MockProcessExecutor, ProcessOutput};
+use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
