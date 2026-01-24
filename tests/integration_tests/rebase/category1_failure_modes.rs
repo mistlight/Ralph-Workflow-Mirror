@@ -24,7 +24,6 @@ use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::executor::RealProcessExecutor;
-#[allow(unused_imports)]
 use ralph_workflow::git_helpers::rebase_in_progress_cli;
 use ralph_workflow::git_helpers::RebaseResult;
 

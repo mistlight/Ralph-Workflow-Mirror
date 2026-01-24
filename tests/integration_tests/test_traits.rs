@@ -1,6 +1,6 @@
 //! Integration tests for test trait exports.
 //!
-//! These tests verify that test traits like MockGit, MockAgentExecutor, and MockFileOps
+//! These tests verify that test traits like MockGit and MockFileOps
 //! are properly exported from the ralph-workflow crate and can be used
 //! in integration tests.
 //!
@@ -13,17 +13,10 @@
 //! - Tests verify **observable behavior** (trait exports and basic functionality)
 //! - Uses mock traits at architectural boundaries (git, filesystem, agent execution)
 //! - Tests are deterministic and isolated
-//!
-//! # Note on Deprecation
-//!
-//! This file tests deprecated traits (MockAgentExecutor, AgentCommandResult).
-//! These are kept for backward compatibility during migration to ProcessExecutor.
-#![allow(deprecated)]
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::files::{FileOperation, FileOps, MockFileOps};
 use ralph_workflow::git_helpers::{CommitResult, GitOps, MockGit, OpsRebaseResult};
-use ralph_workflow::pipeline::test_trait::{AgentCommandResult, AgentExecutor, MockAgentExecutor};
 use std::path::{Path, PathBuf};
 
 /// Test that MockGit can be created and used via GitOps trait.
@@ -100,97 +93,6 @@ fn test_mock_git_call_capture() {
     });
 }
 
-/// Test that MockAgentExecutor can be created and used.
-///
-/// This verifies that when a MockAgentExecutor is created, it can be
-/// used to execute agent commands and track execution state.
-#[test]
-fn test_mock_agent_executor_creation() {
-    with_default_timeout(|| {
-        let mock = MockAgentExecutor::new();
-        assert!(!mock.was_called());
-    });
-}
-
-/// Test that MockAgentExecutor builder pattern works.
-///
-/// This verifies that when the builder methods are chained, they configure
-/// the MockAgentExecutor with responses for sequential command executions.
-#[test]
-fn test_mock_agent_executor_builder() {
-    with_default_timeout(|| {
-        let mock = MockAgentExecutor::new()
-            .with_response(Ok(AgentCommandResult::success("output")))
-            .with_response(Ok(AgentCommandResult::failure(1, "error")));
-
-        // Create a config for testing
-        use ralph_workflow::agents::JsonParserType;
-        use ralph_workflow::pipeline::test_trait::AgentCommandConfig;
-        use std::collections::HashMap;
-
-        let config = AgentCommandConfig {
-            cmd: "test-cmd".to_string(),
-            prompt: "test prompt".to_string(),
-            env_vars: HashMap::new(),
-            parser_type: JsonParserType::Claude,
-            logfile: "/tmp/test.log".to_string(),
-            display_name: "test".to_string(),
-        };
-
-        let r1 = mock.execute(&config).unwrap();
-        assert_eq!(r1.exit_code, 0);
-        assert_eq!(r1.stdout, "output");
-
-        let r2 = mock.execute(&config).unwrap();
-        assert_eq!(r2.exit_code, 1);
-        assert_eq!(r2.stderr, "error");
-    });
-}
-
-/// Test that MockAgentExecutor call capture works.
-///
-/// This verifies that when agent commands are executed, the executor
-/// captures call counts, prompts, and command strings for inspection.
-#[test]
-fn test_mock_agent_executor_call_capture() {
-    with_default_timeout(|| {
-        let mock = MockAgentExecutor::new();
-
-        use ralph_workflow::agents::JsonParserType;
-        use ralph_workflow::pipeline::test_trait::AgentCommandConfig;
-        use std::collections::HashMap;
-
-        let config1 = AgentCommandConfig {
-            cmd: "claude -p".to_string(),
-            prompt: "prompt1".to_string(),
-            env_vars: HashMap::new(),
-            parser_type: JsonParserType::Claude,
-            logfile: "/tmp/test.log".to_string(),
-            display_name: "test".to_string(),
-        };
-
-        let config2 = AgentCommandConfig {
-            cmd: "codex run".to_string(),
-            prompt: "prompt2".to_string(),
-            env_vars: HashMap::new(),
-            parser_type: JsonParserType::Codex,
-            logfile: "/tmp/test.log".to_string(),
-            display_name: "test".to_string(),
-        };
-
-        let _ = mock.execute(&config1);
-        let _ = mock.execute(&config2);
-
-        assert_eq!(mock.call_count(), 2);
-        assert_eq!(mock.prompts(), vec!["prompt1", "prompt2"]);
-        assert_eq!(mock.commands(), vec!["claude -p", "codex run"]);
-
-        // Test filtering
-        let claude_calls = mock.calls_matching("claude");
-        assert_eq!(claude_calls.len(), 1);
-    });
-}
-
 /// Test that mock error variants work.
 ///
 /// This verifies that when mock instances are created in error mode,
@@ -201,22 +103,6 @@ fn test_mock_error_variants() {
         let mock_git = MockGit::new_error();
         assert!(GitOps::repo_root(&mock_git).is_err());
         assert!(GitOps::diff(&mock_git).is_err());
-
-        let mock_executor = MockAgentExecutor::new_error();
-        use ralph_workflow::agents::JsonParserType;
-        use ralph_workflow::pipeline::test_trait::AgentCommandConfig;
-        use std::collections::HashMap;
-
-        let config = AgentCommandConfig {
-            cmd: "test".to_string(),
-            prompt: "test".to_string(),
-            env_vars: HashMap::new(),
-            parser_type: JsonParserType::Claude,
-            logfile: "/tmp/test.log".to_string(),
-            display_name: "test".to_string(),
-        };
-
-        assert!(mock_executor.execute(&config).is_err());
     });
 }
 

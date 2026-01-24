@@ -408,7 +408,6 @@ impl<T: Clone + Default> Default for MockResult<T> {
 /// what each execution returns.
 #[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug)]
-#[allow(clippy::type_complexity)]
 pub struct MockProcessExecutor {
     /// Captured execute calls: (command, args, env, workdir).
     execute_calls: Mutex<Vec<(String, Vec<String>, Vec<(String, String)>, Option<String>)>>,
@@ -535,7 +534,6 @@ impl MockProcessExecutor {
     /// Get all execute calls.
     ///
     /// Each call is a tuple of (command, args, env, workdir).
-    #[allow(clippy::type_complexity)]
     pub fn execute_calls(
         &self,
     ) -> Vec<(String, Vec<String>, Vec<(String, String)>, Option<String>)> {
@@ -543,7 +541,6 @@ impl MockProcessExecutor {
     }
 
     /// Get all execute calls for a specific command.
-    #[allow(clippy::type_complexity)]
     pub fn execute_calls_for(
         &self,
         command: &str,

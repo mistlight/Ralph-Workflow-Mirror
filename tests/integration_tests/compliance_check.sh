@@ -125,13 +125,12 @@ echo "Checking for external process spawning in tests..."
 
 # Pattern: std::process::Command::new or assert_cmd::Command::new with git/ls/cargo/ralph commands
 # Skip test_timeout.rs as it only documents the rules
-# Skip common/mod.rs as it only has a deprecated ralph_cmd function
+# Skip _TEMPLATE.rs as it only contains template examples
 PROCESS_SPAWN_VIOLATIONS=$(rg -n --no-heading \
     'std::process::Command::new|assert_cmd::Command::new|Command::new\("git"|Command::new\("ls"|Command::new\("cargo"|Command::new\("ralph"|\.spawn\(\)' \
     "$TEST_DIR" --glob '*.rs' \
     -g '!test_timeout.rs' \
     -g '!_TEMPLATE.rs' \
-    -g '!**/common/mod.rs' \
     | grep -v '^\s*//' | grep -v '^\s*\*' || true)
 
 if [ -n "$PROCESS_SPAWN_VIOLATIONS" ]; then

@@ -275,7 +275,7 @@ handle.join().unwrap();
 | `Command::new("rm -rf")` | `std::fs::remove_dir_all()` |
 | `Command::new("cp")` | `std::fs::copy()` |
 | `Command::new("ralph")` | `run_ralph_cli()` helper function |
-| `assert_cmd::Command` | Direct function calls with TestLogger |
+| `assert_cmd::Command` | Forbidden - use `run_ralph_cli()` for CLI tests |
 
 **Migration Examples:**
 
@@ -547,7 +547,7 @@ tests/
 ├── integration_tests/       # Main integration test package
 │   ├── main.rs              # Test entry point, declares all modules
 │   ├── common/              # Shared test utilities
-│   │   └── mod.rs           # ralph_cmd(), ralph_bin_path()
+│   │   └── mod.rs           # run_ralph_cli() - calls app::run() directly
 │   ├── workflows/           # Workflow integration tests
 │   │   ├── review.rs        # Review workflow tests
 │   │   ├── config.rs        # Configuration tests
@@ -605,46 +605,48 @@ fn test_parser_behavior() {
 - Asserts on observable output, not internal state
 - TestPrinter is an architectural boundary mock (replaces stdout)
 
-#### Pattern 2: CLI Testing with assert_cmd
+#### Pattern 2: CLI Testing with run_ralph_cli()
 
-Used when testing the CLI binary as a black box:
+Used when testing the CLI as a black box without spawning processes:
 
 ```rust
+use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
-use predicates::prelude::*;
 
-use crate::common::ralph_cmd;
+use crate::common::run_ralph_cli;
+use crate::test_timeout::with_default_timeout;
+use ralph_workflow::executor::RealProcessExecutor;
 
 #[test]
 fn test_cli_behavior() {
-    // 1. Set up isolated environment
-    let dir = TempDir::new().unwrap();
-    
-    // 2. Create any required fixtures
-    std::fs::write(dir.path().join("input.txt"), "test content").unwrap();
-    
-    // 3. Run the CLI as a subprocess (true black-box test)
-    let mut cmd = ralph_cmd();
-    cmd.current_dir(dir.path())
-        .env("SOME_CONFIG", "value")      // Control environment
-        .arg("--some-flag")
-        .arg("input.txt");
-    
-    // 4. Assert on OBSERVABLE BEHAVIOR
-    cmd.assert()
-        .success()                                    // Exit code
-        .stdout(predicate::str::contains("expected")); // Output
-    
-    // 5. Assert on SIDE EFFECTS (files created, etc.)
-    assert!(dir.path().join("output.txt").exists(), "Should create output file");
+    with_default_timeout(|| {
+        // 1. Set up isolated environment
+        let dir = TempDir::new().unwrap();
+
+        // 2. Create any required fixtures
+        fs::write(dir.path().join("input.txt"), "test content").unwrap();
+
+        // 3. Set test environment to avoid interactive prompts
+        std::env::set_var("RALPH_INTERACTIVE", "0");
+
+        // 4. Run CLI directly via app::run() (no process spawning)
+        let executor = Arc::new(RealProcessExecutor::new());
+        let result = run_ralph_cli(&["--some-flag", "input.txt"], executor);
+
+        // 5. Assert on OBSERVABLE BEHAVIOR (exit code, file side effects)
+        assert!(result.is_ok(), "CLI should succeed");
+        assert!(dir.path().join("output.txt").exists(), "Should create output file");
+    });
 }
 ```
 
 **Key points:**
-- Tests the binary as users would invoke it
+- Tests the CLI as users would experience it (black-box)
 - Uses `TempDir` for filesystem isolation
+- Calls `app::run()` directly without spawning subprocesses (process spawning is FORBIDDEN)
 - Environment variables control configuration (no internal mocking)
-- Asserts on exit code, stdout/stderr, and file side effects
+- Asserts on Result return type and file side effects
 
 ---
 

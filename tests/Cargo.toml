@@ -15,7 +15,6 @@ ralph-workflow = { path = "../ralph-workflow", features = ["test-utils"] }
 serde_json = "1"
 test-helpers = { path = "../test-helpers" }
 tempfile = "3.10"
-assert_cmd = "2.0"
 predicates = "3"
 git2 = "0.18"
 sha2 = "0.10"

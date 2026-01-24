@@ -82,16 +82,18 @@
 //! }
 //! ```
 //!
-//! ## Pattern 2: CLI Tests with assert_cmd
+//! ## Pattern 2: CLI Tests with run_ralph_cli()
 //!
-//! Used when testing the CLI binary as a black box:
+//! Used when testing the CLI as a black box without spawning processes:
 //!
 //! ```rust
+//! use std::fs;
+//! use std::sync::Arc;
 //! use tempfile::TempDir;
-//! use predicates::prelude::*;
 //!
-//! use crate::common::ralph_cmd;
+//! use crate::common::run_ralph_cli;
 //! use crate::test_timeout::with_default_timeout;
+//! use ralph_workflow::executor::RealProcessExecutor;
 //!
 //! /// Test that [CLI SCENARIO] produces [EXPECTED BEHAVIOR].
 //! ///
@@ -99,26 +101,56 @@
 //! #[test]
 //! fn test_cli_scenario_produces_expected_behavior() {
 //!     with_default_timeout(|| {
-//!         // Setup: Create isolated environment
+//!         // Setup: Create isolated test environment
+//!         let dir = TempDir::new().unwrap();
+//!         let _repo = test_helpers::init_git_repo(&dir);
+//!         std::env::set_current_dir(dir.path()).unwrap();
+//!
+//!         // Create required files for test scenario
+//!         fs::write(dir.path().join("test.txt"), "content").unwrap();
+//!
+//!         // Set test environment to avoid interactive prompts
+//!         std::env::set_var("RALPH_INTERACTIVE", "0");
+//!         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+//!         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+//!
+//!         // Execute: Run CLI directly via app::run() (no process spawning)
+//!         let executor = Arc::new(RealProcessExecutor::new());
+//!         let result = run_ralph_cli(&["--some-flag", "value"], executor);
+//!
+//!         // Assert: Verify OBSERVABLE behavior (exit code, file side effects)
+//!         assert!(result.is_ok(), "CLI should succeed");
+//!         assert!(dir.path().join("expected_output.txt").exists(),
+//!             "Should create expected output file");
+//!     });
+//! }
+//! ```
+//!
+//! ## Pattern 3: File Operation Tests with TempDir
+//!
+//! Used when testing file-based operations without external dependencies:
+//!
+//! ```rust
+//! use std::fs;
+//! use tempfile::TempDir;
+//!
+//! use crate::test_timeout::with_default_timeout;
+//!
+//! /// Test that [FILE SCENARIO] produces [EXPECTED BEHAVIOR].
+//! ///
+//! /// This verifies that when [CONDITION], the file system [OBSERVABLE OUTCOME].
+//! #[test]
+//! fn test_file_operation_produces_expected_behavior() {
+//!     with_default_timeout(|| {
+//!         // Setup: Create isolated test directory
 //!         let dir = TempDir::new().unwrap();
 //!
-//!         // Setup: Create any required fixtures
-//!         std::fs::write(dir.path().join("input.txt"), "test content").unwrap();
+//!         // Execute: Perform file operations directly (no shell commands)
+//!         fs::write(dir.path().join("test.txt"), "content").unwrap();
 //!
-//!         // Execute: Run the CLI as a subprocess (true black-box test)
-//!         let mut cmd = ralph_cmd();
-//!         cmd.current_dir(dir.path())
-//!             .env("SOME_CONFIG", "value")      // Control environment
-//!             .arg("--some-flag")
-//!             .arg("input.txt");
-//!
-//!         // Assert: Verify OBSERVABLE BEHAVIOR
-//!         cmd.assert()
-//!             .success()                                    // Exit code
-//!             .stdout(predicate::str::contains("expected")); // Output
-//!
-//!         // Assert: Verify SIDE EFFECTS (files created, etc.)
-//!         assert!(dir.path().join("output.txt").exists(), "Should create output file");
+//!         // Assert: Verify OBSERVABLE file system state
+//!         let content = fs::read_to_string(dir.path().join("test.txt")).unwrap();
+//!         assert_eq!(content, "content", "Should write file content correctly");
 //!     });
 //! }
 //! ```
@@ -159,7 +191,7 @@
 
 // TODO: Remove this comment and replace with your actual test code
 // Your test imports go here
-// use crate::common::ralph_cmd;
+// use crate::common::run_ralph_cli;
 // use ralph_workflow::...
 
 // Your test functions go here
