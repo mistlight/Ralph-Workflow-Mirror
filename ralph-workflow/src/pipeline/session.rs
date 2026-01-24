@@ -219,7 +219,7 @@ pub struct SessionInfo {
     /// The agent name extracted from the log file name.
     pub agent_name: String,
     /// The log file path (kept for debugging/future use).
-    #[allow(dead_code)]
+    #[cfg(any(test, feature = "test-utils"))]
     pub log_file: std::path::PathBuf,
 }
 
@@ -307,10 +307,14 @@ pub fn extract_session_info_from_log_prefix(
         };
 
         if let Some(session_id) = session_id {
+            #[cfg(any(test, feature = "test-utils"))]
+            let log_file = log_file.to_path_buf();
+
             return Some(SessionInfo {
                 session_id,
                 agent_name: agent_name.clone(),
-                log_file: log_file.to_path_buf(),
+                #[cfg(any(test, feature = "test-utils"))]
+                log_file,
             });
         }
     }

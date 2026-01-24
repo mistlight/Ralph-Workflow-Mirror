@@ -373,7 +373,6 @@ pub struct FallbackConfig<'a, 'b> {
 }
 
 /// Run a command with automatic fallback to alternative agents on failure.
-#[cfg_attr(not(test), allow(dead_code))] // Used by tests
 pub fn run_with_fallback(
     role: AgentRole,
     base_label: &str,
@@ -505,12 +504,10 @@ fn run_with_fallback_internal(config: &mut FallbackConfig<'_, '_>) -> std::io::R
 #[derive(Debug)]
 pub enum SessionContinuationResult {
     /// Session continuation ran (agent was invoked).
-    /// Contains the log file path for output extraction.
     /// NOTE: This does NOT mean the agent succeeded - the caller must check
     /// the log file for valid output. Some agents produce valid XML even
     /// when returning non-zero exit codes.
-    #[allow(dead_code)] // logfile is kept for debugging/future use
-    Ran { logfile: String, exit_code: i32 },
+    Ran { exit_code: i32 },
     /// Session continuation failed to run or was not attempted.
     /// The caller should fall back to normal `run_with_fallback`.
     Fallback,
@@ -583,10 +580,7 @@ pub fn run_xsd_retry_with_session(config: &mut XsdRetryConfig<'_, '_>) -> std::i
                 &session_info.session_id[..8.min(session_info.session_id.len())]
             ));
             match try_session_continuation(config, session_info) {
-                SessionContinuationResult::Ran {
-                    logfile: _,
-                    exit_code,
-                } => {
+                SessionContinuationResult::Ran { exit_code } => {
                     // Session continuation ran - agent was invoked and produced a log file
                     // Return the exit code; the caller will check for valid XML
                     // Even if exit_code != 0, there might be valid XML in the log
@@ -710,7 +704,6 @@ fn try_session_continuation(
             // Agent ran (even if it returned non-zero exit code)
             // The caller will check if valid XML was produced
             SessionContinuationResult::Ran {
-                logfile,
                 exit_code: cmd_result.exit_code,
             }
         }

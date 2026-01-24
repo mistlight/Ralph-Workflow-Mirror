@@ -276,16 +276,6 @@ pub struct PipelineRuntime<'a> {
     pub executor: &'a dyn crate::executor::ProcessExecutor,
 }
 
-/// Command configuration for building an agent command.
-#[expect(dead_code)]
-struct CommandConfig<'a> {
-    cmd_str: &'a str,
-    prompt: &'a str,
-    env_vars: &'a std::collections::HashMap<String, String>,
-    logfile: &'a str,
-    parser_type: JsonParserType,
-}
-
 /// Saves the prompt to a file and optionally copies it to the clipboard.
 fn save_prompt_to_file_and_clipboard(
     prompt: &str,

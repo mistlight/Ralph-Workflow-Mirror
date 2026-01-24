@@ -9,7 +9,7 @@
 /// - Contains markdown headers (lines starting with #)
 /// - Has reasonable length (> 50 chars)
 /// - Contains plan-like structure indicators
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(any(test, feature = "test-utils"))]
 pub(crate) fn validate_plan_content(content: &str) -> (bool, Option<String>) {
     let content_clean = content.trim();
 

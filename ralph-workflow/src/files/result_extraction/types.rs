@@ -5,19 +5,12 @@
 pub struct ExtractionResult {
     /// The raw content extracted from the log (if any)
     pub raw_content: Option<String>,
-    /// Whether the content passed validation (test-only field)
-    #[cfg_attr(not(any(test, feature = "test-utils")), allow(dead_code))]
+    /// Whether the content passed validation
     #[cfg(any(test, feature = "test-utils"))]
     pub is_valid: bool,
-    #[cfg(not(any(test, feature = "test-utils")))]
-    #[cfg_attr(not(any(test, feature = "test-utils")), allow(dead_code))]
-    is_valid: bool,
-    /// Validation warning message (test-only field)
+    /// Validation warning message
     #[cfg(any(test, feature = "test-utils"))]
     pub validation_warning: Option<String>,
-    #[cfg(not(any(test, feature = "test-utils")))]
-    #[cfg_attr(not(any(test, feature = "test-utils")), allow(dead_code))]
-    validation_warning: Option<String>,
 }
 
 impl ExtractionResult {
@@ -25,7 +18,9 @@ impl ExtractionResult {
     pub const fn valid(content: String) -> Self {
         Self {
             raw_content: Some(content),
+            #[cfg(any(test, feature = "test-utils"))]
             is_valid: true,
+            #[cfg(any(test, feature = "test-utils"))]
             validation_warning: None,
         }
     }
@@ -34,7 +29,9 @@ impl ExtractionResult {
     pub fn invalid(content: String, warning: &str) -> Self {
         Self {
             raw_content: Some(content),
+            #[cfg(any(test, feature = "test-utils"))]
             is_valid: false,
+            #[cfg(any(test, feature = "test-utils"))]
             validation_warning: Some(warning.to_string()),
         }
     }
@@ -43,7 +40,9 @@ impl ExtractionResult {
     pub const fn empty() -> Self {
         Self {
             raw_content: None,
+            #[cfg(any(test, feature = "test-utils"))]
             is_valid: false,
+            #[cfg(any(test, feature = "test-utils"))]
             validation_warning: None,
         }
     }

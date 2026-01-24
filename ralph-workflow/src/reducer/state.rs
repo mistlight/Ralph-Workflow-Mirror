@@ -118,7 +118,6 @@ impl AgentChainState {
     }
 
     #[doc(hidden)]
-    #[allow(dead_code)]
     pub fn with_max_cycles(mut self, max_cycles: u32) -> Self {
         self.max_cycles = max_cycles;
         self
@@ -129,7 +128,6 @@ impl AgentChainState {
     }
 
     #[doc(hidden)]
-    #[allow(dead_code)]
     pub fn current_model(&self) -> Option<&String> {
         self.models_per_agent
             .get(self.current_agent_index)
@@ -217,7 +215,7 @@ pub enum RebaseState {
 
 impl RebaseState {
     #[doc(hidden)]
-    #[allow(dead_code)]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn is_terminal(&self) -> bool {
         matches!(self, RebaseState::Completed { .. } | RebaseState::Skipped)
     }
@@ -232,7 +230,7 @@ impl RebaseState {
     }
 
     #[doc(hidden)]
-    #[allow(dead_code)]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn is_in_progress(&self) -> bool {
         matches!(
             self,
@@ -275,7 +273,7 @@ pub enum CommitState {
 
 impl CommitState {
     #[doc(hidden)]
-    #[allow(dead_code)]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn is_terminal(&self) -> bool {
         matches!(self, CommitState::Committed { .. } | CommitState::Skipped)
     }

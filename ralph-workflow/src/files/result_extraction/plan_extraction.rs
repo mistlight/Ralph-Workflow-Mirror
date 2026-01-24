@@ -6,12 +6,17 @@
 //! Note: Currently unused in production (XML extraction is used instead).
 //! Kept for potential future use and test compatibility.
 
+#[cfg(any(test, feature = "test-utils"))]
 use std::fs::File;
+#[cfg(any(test, feature = "test-utils"))]
 use std::io::{self, Read};
 use std::path::Path;
 
+#[cfg(any(test, feature = "test-utils"))]
 use super::file_finder::{find_log_files_with_prefix, find_subdirs_with_prefix};
+#[cfg(any(test, feature = "test-utils"))]
 use super::scoring::score_text_plan;
+#[cfg(any(test, feature = "test-utils"))]
 use super::text_extraction::extract_plan_from_text;
 
 /// Extract plan content from log files using text-based fallback.
@@ -19,7 +24,7 @@ use super::text_extraction::extract_plan_from_text;
 /// This scans all log files matching the prefix and looks for markdown plan structure.
 /// Also checks subdirectories matching the prefix pattern (for legacy logs where agent
 /// names with "/" created nested directories).
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(any(test, feature = "test-utils"))]
 pub(crate) fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>> {
     // Helper to extract from a list of files by finding the best plan across all files
     fn extract_from_files(files: &[std::path::PathBuf]) -> Option<String> {

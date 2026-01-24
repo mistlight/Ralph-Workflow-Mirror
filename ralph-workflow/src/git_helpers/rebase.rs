@@ -2199,11 +2199,6 @@ pub fn rebase_in_progress() -> io::Result<bool> {
 mod tests {
     use super::*;
 
-    // Note: RealProcessExecutor is re-exported at lib.rs level and used in tests
-    // We use the re-export path directly from crate root
-    #[allow(unused_imports)]
-    use crate::RealProcessExecutor;
-
     #[test]
     fn test_rebase_result_variants_exist() {
         // Test that RebaseResult has the expected variants

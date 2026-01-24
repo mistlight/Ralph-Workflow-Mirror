@@ -10,7 +10,6 @@
 /// - Markdown headers (#)
 /// - Content length (longer is generally better)
 /// - Plan-like keywords
-#[cfg_attr(not(any(test, feature = "test-utils")), allow(dead_code))]
 pub fn score_result(content: &str) -> u32 {
     let mut score: u32 = 0;
     let content_lower = content.to_lowercase();
@@ -79,7 +78,7 @@ pub fn score_result(content: &str) -> u32 {
 ///
 /// This is similar to `score_result()` but works on raw text content rather than
 /// JSON result events. Higher scores indicate more complete plans.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(any(test, feature = "test-utils"))]
 pub(crate) fn score_text_plan(content: &str) -> u32 {
     let mut score: u32 = 0;
     let content_lower = content.to_lowercase();
