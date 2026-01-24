@@ -2387,9 +2387,9 @@ mod tests {
 
             // Use MockProcessExecutor to avoid spawning real processes
             // The mock will return failure for the nonexistent branch
-            let executor = Arc::new(MockProcessExecutor::new())
-                as Arc<dyn crate::executor::ProcessExecutor>;
-            let result = rebase_onto("nonexistent_branch_that_does_not_exist", &executor);
+            let executor =
+                Arc::new(MockProcessExecutor::new()) as Arc<dyn crate::executor::ProcessExecutor>;
+            let result = rebase_onto("nonexistent_branch_that_does_not_exist", executor.as_ref());
             // Should return Ok (either with Failed result or other outcome)
             assert!(result.is_ok());
         });
@@ -2420,9 +2420,9 @@ mod tests {
             let _repo = init_git_repo(dir);
 
             // Use MockProcessExecutor to avoid spawning real processes
-            let executor = Arc::new(MockProcessExecutor::new())
-                as Arc<dyn crate::executor::ProcessExecutor>;
-            let result = rebase_in_progress_cli(&executor);
+            let executor =
+                Arc::new(MockProcessExecutor::new()) as Arc<dyn crate::executor::ProcessExecutor>;
+            let result = rebase_in_progress_cli(executor.as_ref());
             // Should succeed (returns bool)
             assert!(result.is_ok());
         });
@@ -2438,9 +2438,9 @@ mod tests {
             let _repo = init_git_repo(dir);
 
             // Use MockProcessExecutor to avoid spawning real processes
-            let executor = Arc::new(MockProcessExecutor::new())
-                as Arc<dyn crate::executor::ProcessExecutor>;
-            let result = is_dirty_tree_cli(&executor);
+            let executor =
+                Arc::new(MockProcessExecutor::new()) as Arc<dyn crate::executor::ProcessExecutor>;
+            let result = is_dirty_tree_cli(executor.as_ref());
             // Should succeed (returns bool)
             assert!(result.is_ok());
         });

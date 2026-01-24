@@ -33,20 +33,6 @@ impl FileSystemState {
         Self::default()
     }
 
-    /// Capture the current state using default process executor.
-    ///
-    /// This includes files that are critical for pipeline execution:
-    /// - PROMPT.md: The primary task description
-    /// - .agent/PLAN.md: The implementation plan (if exists)
-    /// - .agent/ISSUES.md: Review findings (if exists)
-    /// - .agent/config.toml: Agent configuration (if exists)
-    /// - .agent/start_commit: Baseline commit reference (if exists)
-    /// - .agent/NOTES.md: Development notes (if exists)
-    /// - .agent/status: Pipeline status file (if exists)
-    pub fn capture_current() -> Self {
-        Self::capture_current_with_executor(&RealProcessExecutor::new())
-    }
-
     /// Capture the current state with an optional executor.
     ///
     /// If executor is None, uses RealProcessExecutor (production default).

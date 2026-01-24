@@ -23,6 +23,7 @@ mod cli;
 mod common;
 mod config;
 mod diagnostics;
+mod executor;
 mod files;
 mod git_helpers;
 mod guidelines;
@@ -40,7 +41,7 @@ mod templates;
 
 use crate::cli::Args;
 use clap::Parser;
-use ralph_workflow::executor::RealProcessExecutor;
+use executor::RealProcessExecutor;
 
 fn main() -> anyhow::Result<()> {
     // Set up Ctrl+C handler for graceful checkpoint save on interrupt

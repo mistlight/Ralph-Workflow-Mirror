@@ -126,10 +126,12 @@ fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -246,10 +248,12 @@ exit 0
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -500,10 +504,12 @@ exit 0
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -646,10 +652,12 @@ exit 1
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -756,10 +764,12 @@ exit 0
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -864,10 +874,12 @@ exit 0
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -968,10 +980,12 @@ exit 0
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -1081,10 +1095,12 @@ fi
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -1205,10 +1221,12 @@ exit 0
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -1345,10 +1363,12 @@ exit 0
         ..Config::default()
     };
 
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc = std::sync::Arc::new(executor_for_arc)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
@@ -1417,10 +1437,12 @@ exit 0
     registry.set_ccs_aliases(&aliases2, defaults);
 
     // Run retry (retry_num = 1) with the extracted session info
-    // Unit tests for agent fallback behavior use RealProcessExecutor to test
-    // actual subprocess execution (nonexistent commands, error exit codes).
-    // The executor field is used for git commands, NOT for agent spawning.
-    let executor_for_arc2 = crate::executor::RealProcessExecutor::new();
+    // Use MockProcessExecutor for git commands - these tests are about
+    // agent fallback behavior, not git functionality. Git commands are
+    // mocked to avoid spawning real processes during test execution.
+    let executor_for_arc2 = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "");
     let executor_arc2 = std::sync::Arc::new(executor_for_arc2)
         as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime2 = PipelineRuntime {

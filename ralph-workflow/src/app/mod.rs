@@ -1414,7 +1414,9 @@ fn run_initial_rebase(
                                         &ctx.logger,
                                         run_context,
                                     )
-                                    .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
+                                    .with_executor_from_context(std::sync::Arc::clone(
+                                        &ctx.executor,
+                                    ))
                                     .with_execution_history(phase_ctx.execution_history.clone())
                                     .with_prompt_history(phase_ctx.clone_prompt_history());
 
@@ -1601,7 +1603,8 @@ fn try_resolve_conflicts_with_fallback(
         }
         Ok(ConflictResolutionResult::FileEditsOnly) => {
             // Agent resolved conflicts by editing files directly
-            ctx.logger.info("Agent resolved conflicts via file edits (no JSON output)");
+            ctx.logger
+                .info("Agent resolved conflicts via file edits (no JSON output)");
 
             // Verify all conflicts are resolved
             let remaining_conflicts = get_conflicted_files()?;
@@ -1627,13 +1630,15 @@ fn try_resolve_conflicts_with_fallback(
                     Ok(true)
                 }
                 Err(rebase_err) => {
-                    ctx.logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
+                    ctx.logger
+                        .warn(&format!("Failed to continue rebase: {rebase_err}"));
                     Ok(false) // Conflicts remain
                 }
             }
         }
         Err(e) => {
-            ctx.logger.warn(&format!("AI conflict resolution failed: {e}"));
+            ctx.logger
+                .warn(&format!("AI conflict resolution failed: {e}"));
             ctx.logger.info("Attempting to continue rebase anyway...");
 
             // Try to continue rebase - user may have manually resolved conflicts
@@ -1643,7 +1648,8 @@ fn try_resolve_conflicts_with_fallback(
                     Ok(true)
                 }
                 Err(rebase_err) => {
-                    ctx.logger.warn(&format!("Failed to continue rebase: {rebase_err}"));
+                    ctx.logger
+                        .warn(&format!("Failed to continue rebase: {rebase_err}"));
                     Ok(false) // Conflicts remain
                 }
             }
