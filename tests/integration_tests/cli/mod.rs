@@ -3,7 +3,7 @@
 //! # IMPORTANT: Timeout Enforcement
 //!
 //! **ALL tests in this module MUST use `with_default_timeout()` to wrap test code.**
-//! This ensures tests complete within 10 seconds and don't hang due to external I/O.
+//! This ensures tests complete within 5 seconds and don't hang due to external I/O.
 //!
 //! See `test_timeout.rs` for details on the timeout enforcement mechanism.
 //!

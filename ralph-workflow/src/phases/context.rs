@@ -9,6 +9,7 @@ use crate::agents::{AgentRegistry, AgentRole};
 use crate::checkpoint::execution_history::ExecutionHistory;
 use crate::checkpoint::RunContext;
 use crate::config::Config;
+use crate::executor::ProcessExecutor;
 use crate::guidelines::ReviewGuidelines;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::Stats;
@@ -46,6 +47,8 @@ pub struct PhaseContext<'a> {
     pub execution_history: ExecutionHistory,
     /// Prompt history for storing prompts used during execution.
     pub prompt_history: std::collections::HashMap<String, String>,
+    /// Process executor for external process execution.
+    pub executor: &'a dyn ProcessExecutor,
 }
 
 impl PhaseContext<'_> {

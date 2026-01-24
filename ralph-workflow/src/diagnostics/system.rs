@@ -1,6 +1,6 @@
 //! System information gathering.
 
-use std::process::Command;
+use crate::executor::{ProcessExecutor, RealProcessExecutor};
 
 /// System information.
 #[derive(Debug, Clone)]
@@ -16,45 +16,43 @@ pub struct SystemInfo {
 }
 
 impl SystemInfo {
-    /// Gather system information.
+    /// Gather system information using default process executor.
     pub fn gather() -> Self {
+        Self::gather_with_executor(&RealProcessExecutor)
+    }
+
+    /// Gather system information with a provided process executor.
+    pub fn gather_with_executor(executor: &dyn ProcessExecutor) -> Self {
         let os = format!("{} {}", std::env::consts::OS, std::env::consts::ARCH);
         let working_directory = std::env::current_dir()
             .ok()
             .map(|p| p.display().to_string());
         let shell = std::env::var("SHELL").ok();
 
-        let git_version = Command::new("git")
-            .args(["--version"])
-            .output()
+        let git_version = executor
+            .execute("git", &["--version"], &[], None)
             .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string());
+            .map(|o| o.stdout.trim().to_string());
 
-        let git_repo = Command::new("git")
-            .args(["rev-parse", "--git-dir"])
-            .output()
+        let git_repo = executor
+            .execute("git", &["rev-parse", "--git-dir"], &[], None)
             .map(|o| o.status.success())
             .unwrap_or(false);
 
         let git_branch = if git_repo {
-            Command::new("git")
-                .args(["branch", "--show-current"])
-                .output()
+            executor
+                .execute("git", &["branch", "--show-current"], &[], None)
                 .ok()
-                .and_then(|o| String::from_utf8(o.stdout).ok())
-                .map(|s| s.trim().to_string())
+                .map(|o| o.stdout.trim().to_string())
         } else {
             None
         };
 
         let uncommitted_changes = if git_repo {
-            Command::new("git")
-                .args(["status", "--porcelain"])
-                .output()
+            executor
+                .execute("git", &["status", "--porcelain"], &[], None)
                 .ok()
-                .and_then(|o| String::from_utf8(o.stdout).ok())
-                .map(|s| s.lines().count())
+                .map(|o| o.stdout.lines().count())
         } else {
             None
         };

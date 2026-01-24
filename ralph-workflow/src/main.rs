@@ -45,5 +45,7 @@ fn main() -> anyhow::Result<()> {
     // Set up Ctrl+C handler for graceful checkpoint save on interrupt
     crate::interrupt::setup_interrupt_handler();
 
-    app::run(Args::parse(), None)
+    // Create real process executor for production use
+    let executor = crate::executor::RealProcessExecutor::new();
+    app::run(Args::parse(), &executor)
 }

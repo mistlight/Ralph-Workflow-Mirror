@@ -267,7 +267,7 @@ impl MainEffectHandler {
     ) -> Result<PipelineEvent> {
         use crate::git_helpers::{get_conflicted_files, rebase_onto};
 
-        match rebase_onto(&target_branch) {
+        match rebase_onto(&target_branch, _ctx.executor) {
             Ok(_) => {
                 // Check for conflicts
                 let conflicted_files = get_conflicted_files().unwrap_or_default();
@@ -306,7 +306,7 @@ impl MainEffectHandler {
         use crate::git_helpers::{abort_rebase, continue_rebase, get_conflicted_files};
 
         match strategy {
-            ConflictStrategy::Continue => match continue_rebase() {
+            ConflictStrategy::Continue => match continue_rebase(_ctx.executor) {
                 Ok(_) => {
                     let files = get_conflicted_files()
                         .unwrap_or_default()
@@ -321,7 +321,7 @@ impl MainEffectHandler {
                     reason: e.to_string(),
                 }),
             },
-            ConflictStrategy::Abort => match abort_rebase() {
+            ConflictStrategy::Abort => match abort_rebase(_ctx.executor) {
                 Ok(_) => {
                     let restored_to = match git2::Repository::open(".") {
                         Ok(repo) => {

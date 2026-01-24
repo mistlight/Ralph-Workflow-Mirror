@@ -183,7 +183,7 @@ where
 /// **For CLI Testing:**
 ///
 /// Use `run_ralph_cli()` which calls `ralph_workflow::app::run()` directly,
- eliminating process spawning. Tests should verify behavior via side effects:
+/// eliminating process spawning. Tests should verify behavior via side effects:
 /// - Files created/modified
 /// - Return values (success/error)
 /// - Log files in `.agent/logs/`

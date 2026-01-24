@@ -272,6 +272,8 @@ pub struct PipelineRuntime<'a> {
     /// Optional agent executor for mocking subprocess execution in tests.
     #[cfg(any(test, feature = "test-utils"))]
     pub agent_executor: Option<Arc<dyn super::test_trait::AgentExecutor>>,
+    /// Process executor for external process execution.
+    pub executor: &'a dyn crate::executor::ProcessExecutor,
 }
 
 /// Command configuration for building an agent command.
@@ -290,6 +292,7 @@ fn save_prompt_to_file_and_clipboard(
     interactive: bool,
     logger: &Logger,
     colors: Colors,
+    executor: &dyn crate::executor::ProcessExecutor,
 ) -> io::Result<()> {
     // Save prompt to file
     if let Some(parent) = prompt_path.parent() {
@@ -306,21 +309,22 @@ fn save_prompt_to_file_and_clipboard(
     // Copy to clipboard if interactive
     if interactive {
         if let Some(clipboard_cmd) = get_platform_clipboard_command() {
-            if let Ok(mut child) = Command::new(clipboard_cmd.binary)
-                .args(clipboard_cmd.args)
-                .stdin(Stdio::piped())
-                .spawn()
-            {
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(prompt.as_bytes());
+            match executor.spawn(clipboard_cmd.binary, clipboard_cmd.args, &[], None) {
+                Ok(mut child) => {
+                    if let Some(mut stdin) = child.stdin.take() {
+                        let _ = stdin.write_all(prompt.as_bytes());
+                    }
+                    let _ = child.wait();
+                    logger.info(&format!(
+                        "Prompt copied to clipboard {}({}){}",
+                        colors.dim(),
+                        clipboard_cmd.paste_hint,
+                        colors.reset()
+                    ));
                 }
-                let _ = child.wait();
-                logger.info(&format!(
-                    "Prompt copied to clipboard {}({}){}",
-                    colors.dim(),
-                    clipboard_cmd.paste_hint,
-                    colors.reset()
-                ));
+                Err(e) => {
+                    logger.warn(&format!("Failed to copy to clipboard: {}", e));
+                }
             }
         }
     }

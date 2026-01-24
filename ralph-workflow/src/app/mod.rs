@@ -38,6 +38,7 @@ use crate::cli::{
     handle_list_available_agents, handle_list_providers, handle_show_baseline,
     handle_template_commands, prompt_template_selection, Args,
 };
+use crate::executor::{ProcessExecutor, RealProcessExecutor};
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::files::{
     create_prompt_backup, ensure_files, make_prompt_read_only, reset_context_for_isolation,
@@ -79,14 +80,14 @@ use validation::{
 /// # Arguments
 ///
 /// * `args` - The parsed CLI arguments
+/// * `executor` - Process executor for external process execution
 ///
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
-pub fn run(args: Args) -> anyhow::Result<()> {
+pub fn run(args: Args, executor: &dyn ProcessExecutor) -> anyhow::Result<()> {
     let colors = Colors::new();
-    static LOGGER: std::sync::OnceLock<Logger> = std::sync::OnceLock::new();
-    let logger = LOGGER.get_or_init(|| Logger::new(colors));
+    let logger = Logger::new(colors);
 
     // Initialize configuration and agent registry
     let Some(init_result) = initialize_config(&args, colors, &logger)? else {
@@ -338,6 +339,7 @@ fn prepare_pipeline_or_exit(
     let reviewer_display = registry.display_name(&reviewer_agent);
 
     // Build pipeline context
+    let executor_arc = std::sync::Arc::new(executor);
     let ctx = PipelineContext {
         args,
         config,
@@ -350,6 +352,7 @@ fn prepare_pipeline_or_exit(
         logger,
         colors,
         template_context,
+        executor: executor_arc,
     };
     Ok(Some(ctx))
 }
@@ -1069,7 +1072,7 @@ fn handle_rebase_only(
             let conflicted_files = get_conflicted_files()?;
             if conflicted_files.is_empty() {
                 logger.warn("Rebase reported conflicts but no conflicted files found");
-                let _ = abort_rebase();
+                let _ = abort_rebase(executor);
                 return Ok(());
             }
 
@@ -1085,18 +1088,19 @@ fn handle_rebase_only(
                 template_context,
                 logger,
                 colors,
+                executor,
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
                     logger.info("Continuing rebase after conflict resolution");
-                    match continue_rebase() {
+                    match continue_rebase(executor) {
                         Ok(()) => {
                             logger.success("Rebase completed successfully after AI resolution");
                             Ok(())
                         }
                         Err(e) => {
                             logger.error(&format!("Failed to continue rebase: {e}"));
-                            let _ = abort_rebase();
+                            let _ = abort_rebase(executor);
                             anyhow::bail!("Rebase failed after conflict resolution")
                         }
                     }
@@ -1104,12 +1108,12 @@ fn handle_rebase_only(
                 Ok(false) => {
                     // AI resolution failed
                     logger.error("AI conflict resolution failed, aborting rebase");
-                    let _ = abort_rebase();
+                    let _ = abort_rebase(executor);
                     anyhow::bail!("Rebase conflicts could not be resolved by AI")
                 }
                 Err(e) => {
                     logger.error(&format!("Conflict resolution error: {e}"));
-                    let _ = abort_rebase();
+                    let _ = abort_rebase(executor);
                     anyhow::bail!("Rebase conflict resolution failed: {e}")
                 }
             }
@@ -1144,7 +1148,7 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
     ));
 
     // Perform the rebase
-    rebase_onto(&default_branch)
+    rebase_onto(&default_branch, executor)
 }
 
 /// Run initial rebase before development phase.
@@ -1162,8 +1166,9 @@ fn run_rebase_to_default(logger: &Logger, colors: Colors) -> std::io::Result<Reb
 /// - `auto_rebase` config is enabled (checked here)
 fn run_initial_rebase(
     ctx: &PipelineContext,
-    phase_ctx: &mut PhaseContext,
+    phase_ctx: &mut PhaseContext<'_>,
     run_context: &crate::checkpoint::RunContext,
+    executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<()> {
     ctx.logger.header("Pre-development rebase", Colors::cyan);
 
@@ -1281,7 +1286,7 @@ fn run_initial_rebase(
             if conflicted_files.is_empty() {
                 ctx.logger
                     .warn("Rebase reported conflicts but no conflicted files found");
-                let _ = abort_rebase();
+                let _ = abort_rebase(executor);
                 return Ok(());
             }
 
@@ -1347,7 +1352,7 @@ fn run_initial_rebase(
                     // Conflicts resolved, continue the rebase
                     ctx.logger
                         .info("Continuing rebase after conflict resolution");
-                    match continue_rebase() {
+                    match continue_rebase(executor) {
                         Ok(()) => {
                             ctx.logger
                                 .success("Rebase completed successfully after AI resolution");
@@ -1386,7 +1391,7 @@ fn run_initial_rebase(
                         }
                         Err(e) => {
                             ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
-                            let _ = abort_rebase();
+                            let _ = abort_rebase(executor);
                             // Record execution step: resolution succeeded but continue failed
                             let step = ExecutionStep::new(
                                 "PreRebase",
@@ -1406,7 +1411,7 @@ fn run_initial_rebase(
                     // AI resolution failed
                     ctx.logger
                         .warn("AI conflict resolution failed, aborting rebase");
-                    let _ = abort_rebase();
+                    let _ = abort_rebase(executor);
                     // Record execution step: resolution failed
                     let step = ExecutionStep::new(
                         "PreRebase",
@@ -1419,7 +1424,7 @@ fn run_initial_rebase(
                 }
                 Err(e) => {
                     ctx.logger.error(&format!("Conflict resolution error: {e}"));
-                    let _ = abort_rebase();
+                    let _ = abort_rebase(executor);
                     // Record execution step: resolution error
                     let step = ExecutionStep::new(
                         "PreRebase",
@@ -1564,7 +1569,7 @@ fn try_resolve_conflicts_with_fallback(
             logger.info("Attempting to continue rebase anyway...");
 
             // Try to continue rebase - user may have manually resolved conflicts
-            match crate::git_helpers::continue_rebase() {
+            match crate::git_helpers::continue_rebase(executor) {
                 Ok(()) => {
                     logger.info("Successfully continued rebase");
                     Ok(true)
@@ -1580,7 +1585,7 @@ fn try_resolve_conflicts_with_fallback(
             logger.info("Attempting to continue rebase anyway...");
 
             // Try to continue rebase - user may have manually resolved conflicts
-            match crate::git_helpers::continue_rebase() {
+            match crate::git_helpers::continue_rebase(executor) {
                 Ok(()) => {
                     logger.info("Successfully continued rebase");
                     Ok(true)
@@ -1604,6 +1609,7 @@ fn try_resolve_conflicts_without_phase_ctx(
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
+    executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<bool> {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::execution_history::ExecutionHistory;
@@ -1632,6 +1638,7 @@ fn try_resolve_conflicts_without_phase_ctx(
         run_context: RunContext::new(),
         execution_history: ExecutionHistory::new(),
         prompt_history: std::collections::HashMap::new(),
+        executor,
     };
 
     try_resolve_conflicts_with_fallback(

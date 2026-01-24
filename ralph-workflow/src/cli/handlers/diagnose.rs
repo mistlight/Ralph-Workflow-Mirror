@@ -7,12 +7,12 @@ use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigS
 use crate::checkpoint::load_checkpoint;
 use crate::config::Config;
 use crate::diagnostics::run_diagnostics;
+use crate::executor::{ProcessExecutor, RealProcessExecutor};
 use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::language_detector;
 use crate::logger::Colors;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 /// Handle --diagnose command.
 ///
@@ -51,7 +51,7 @@ pub fn handle_diagnose(
     println!();
 
     print_system_info(colors);
-    print_git_info(colors);
+    print_git_info(colors, &RealProcessExecutor::new());
     print_config_info(colors, config, config_path, config_sources);
     print_agent_chain_info(colors, registry);
     print_agent_availability(colors, registry);
@@ -106,34 +106,24 @@ fn print_system_info(colors: Colors) {
 }
 
 /// Print git information section.
-fn print_git_info(colors: Colors) {
+fn print_git_info(colors: Colors, executor: &dyn ProcessExecutor) {
     println!("{}Git:{}", colors.bold(), colors.reset());
-    if let Ok(output) = Command::new("git").args(["--version"]).output() {
-        if let Ok(version) = std::str::from_utf8(&output.stdout) {
-            println!("  Version: {}", version.trim());
-        }
+    if let Ok(output) = executor.execute("git", &["--version"], &[], None) {
+        println!("  Version: {}", output.stdout.trim());
     }
-    let is_repo = Command::new("git")
-        .args(["rev-parse", "--git-dir"])
-        .output()
+    let is_repo = executor
+        .execute("git", &["rev-parse", "--git-dir"], &[], None)
         .map(|o| o.status.success())
         .unwrap_or(false);
     println!("  In git repo: {}", if is_repo { "yes" } else { "no" });
     if is_repo {
-        if let Ok(output) = Command::new("git")
-            .args(["branch", "--show-current"])
-            .output()
-        {
-            if let Ok(branch) = std::str::from_utf8(&output.stdout) {
-                println!("  Current branch: {}", branch.trim());
-            }
+        if let Ok(output) = executor.execute("git", &["branch", "--show-current"], &[], None) {
+            println!("  Current branch: {}", output.stdout.trim());
         }
         // Check for uncommitted changes
-        if let Ok(output) = Command::new("git").args(["status", "--porcelain"]).output() {
-            if let Ok(status) = std::str::from_utf8(&output.stdout) {
-                let changes = status.lines().count();
-                println!("  Uncommitted changes: {changes}");
-            }
+        if let Ok(output) = executor.execute("git", &["status", "--porcelain"], &[], None) {
+            let changes = output.stdout.lines().count();
+            println!("  Uncommitted changes: {changes}");
         }
     }
     println!();

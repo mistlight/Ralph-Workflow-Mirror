@@ -20,6 +20,8 @@
 
 use std::env;
 
+use crate::executor::{ProcessExecutor, RealProcessExecutor};
+
 /// Git user identity information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitIdentity {
@@ -92,8 +94,9 @@ pub fn fallback_username() -> String {
 
     // As a last resort, try to run whoami (Unix only)
     if cfg!(unix) {
-        if let Ok(output) = std::process::Command::new("whoami").output() {
-            let username = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let executor = RealProcessExecutor::new();
+        if let Ok(output) = executor.execute("whoami", &[], &[], None) {
+            let username = output.stdout.trim().to_string();
             if !username.is_empty() {
                 return username;
             }
@@ -128,8 +131,9 @@ fn get_hostname() -> Option<String> {
     }
 
     // Try the `hostname` command
-    if let Ok(output) = std::process::Command::new("hostname").output() {
-        let hostname = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let executor = RealProcessExecutor::new();
+    if let Ok(output) = executor.execute("hostname", &[], &[], None) {
+        let hostname = output.stdout.trim().to_string();
         if !hostname.is_empty() {
             return Some(hostname);
         }

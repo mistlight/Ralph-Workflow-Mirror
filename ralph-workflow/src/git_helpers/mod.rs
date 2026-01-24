@@ -58,6 +58,8 @@ pub use rebase::{
     rebase_in_progress, rebase_onto, RebaseResult,
 };
 
+use crate::executor::ProcessExecutor;
+
 // Types that are part of the public API but not used in binary
 #[cfg(any(test, feature = "test-utils"))]
 pub use rebase::{CleanupResult, ConcurrentOperation};

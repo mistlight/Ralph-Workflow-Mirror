@@ -225,7 +225,7 @@ fn ralph_diff_from_start_commit() {
 /// the system displays baseline summary information during review.
 ///
 /// Uses a 30-second timeout because this test runs ralph twice sequentially,
-/// which may exceed the default 10-second timeout on slower systems.
+/// which may exceed the default 5-second timeout on slower systems.
 #[test]
 fn ralph_stale_baseline_warning() {
     with_default_timeout(|| {
@@ -473,7 +473,7 @@ fn ralph_start_commit_shown_at_pipeline_start() {
 /// the system displays a warning about the stale baseline at pipeline start.
 ///
 /// Uses a 30-second timeout because this test runs ralph twice sequentially,
-/// which may exceed the default 10-second timeout on slower systems.
+/// which may exceed the default 5-second timeout on slower systems.
 #[test]
 fn ralph_stale_start_commit_warning_at_start() {
     with_default_timeout(|| {

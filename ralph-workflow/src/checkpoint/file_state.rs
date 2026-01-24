@@ -1,9 +1,10 @@
 //! File system state capture and validation for checkpoints.
 //!
-//! This module provides functionality for capturing and validating the state
-//! of key files in the repository to enable idempotent recovery.
+//! This module provides functionality for capturing and validating state
+//! of key files in repository to enable idempotent recovery.
 
 use crate::checkpoint::execution_history::FileSnapshot;
+use crate::executor::{ProcessExecutor, RealProcessExecutor};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -32,7 +33,7 @@ impl FileSystemState {
         Self::default()
     }
 
-    /// Capture the current state of key files.
+    /// Capture the current state of key files using default process executor.
     ///
     /// This includes files that are critical for pipeline execution:
     /// - PROMPT.md: The primary task description
@@ -43,6 +44,20 @@ impl FileSystemState {
     /// - .agent/NOTES.md: Development notes (if exists)
     /// - .agent/status: Pipeline status file (if exists)
     pub fn capture_current() -> Self {
+        Self::capture_current_with_executor(&RealProcessExecutor)
+    }
+
+    /// Capture the current state of key files with a provided process executor.
+    ///
+    /// This includes files that are critical for pipeline execution:
+    /// - PROMPT.md: The primary task description
+    /// - .agent/PLAN.md: The implementation plan (if exists)
+    /// - .agent/ISSUES.md: Review findings (if exists)
+    /// - .agent/config.toml: Agent configuration (if exists)
+    /// - .agent/start_commit: Baseline commit reference (if exists)
+    /// - .agent/NOTES.md: Development notes (if exists)
+    /// - .agent/status: Pipeline status file (if exists)
+    pub fn capture_current_with_executor(executor: &dyn ProcessExecutor) -> Self {
         let mut state = Self::new();
 
         // Always capture PROMPT.md
@@ -79,7 +94,7 @@ impl FileSystemState {
         }
 
         // Try to capture git state
-        state.capture_git_state();
+        state.capture_git_state(executor);
 
         state
     }
@@ -103,25 +118,21 @@ impl FileSystemState {
     }
 
     /// Capture git HEAD state and working tree status.
-    fn capture_git_state(&mut self) {
+    fn capture_git_state(&mut self, executor: &dyn ProcessExecutor) {
         // Try to get HEAD OID
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .output()
-        {
+        if let Ok(output) = executor.execute("git", &["rev-parse", "HEAD"], &[], None) {
             if output.status.success() {
-                let oid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let oid = output.stdout.trim().to_string();
                 self.git_head_oid = Some(oid);
             }
         }
 
         // Try to get branch name
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["rev-parse", "--abbrev-ref", "HEAD"])
-            .output()
+        if let Ok(output) =
+            executor.execute("git", &["rev-parse", "--abbrev-ref", "HEAD"], &[], None)
         {
             if output.status.success() {
-                let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let branch = output.stdout.trim().to_string();
                 if !branch.is_empty() && branch != "HEAD" {
                     self.git_branch = Some(branch);
                 }
@@ -129,12 +140,9 @@ impl FileSystemState {
         }
 
         // Capture git status --porcelain for tracking staged/unstaged changes
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["status", "--porcelain"])
-            .output()
-        {
+        if let Ok(output) = executor.execute("git", &["status", "--porcelain"], &[], None) {
             if output.status.success() {
-                let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let status = output.stdout.trim().to_string();
                 if !status.is_empty() {
                     self.git_status = Some(status);
                 }
@@ -142,12 +150,9 @@ impl FileSystemState {
         }
 
         // Capture list of modified files from git diff
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["diff", "--name-only"])
-            .output()
-        {
+        if let Ok(output) = executor.execute("git", &["diff", "--name-only"], &[], None) {
             if output.status.success() {
-                let diff_output = String::from_utf8_lossy(&output.stdout);
+                let diff_output = &output.stdout;
                 let modified_files: Vec<String> = diff_output
                     .lines()
                     .map(|line| line.trim().to_string())
@@ -210,14 +215,19 @@ impl FileSystemState {
 
     /// Validate git state against the snapshot.
     fn validate_git_state(&self) -> Result<(), ValidationError> {
+        self.validate_git_state_with_executor(&RealProcessExecutor)
+    }
+
+    /// Validate git state against the snapshot with a provided process executor.
+    fn validate_git_state_with_executor(
+        &self,
+        executor: &dyn ProcessExecutor,
+    ) -> Result<(), ValidationError> {
         // Validate HEAD OID if we captured it
         if let Some(expected_oid) = &self.git_head_oid {
-            if let Ok(output) = std::process::Command::new("git")
-                .args(["rev-parse", "HEAD"])
-                .output()
-            {
+            if let Ok(output) = executor.execute("git", &["rev-parse", "HEAD"], &[], None) {
                 if output.status.success() {
-                    let current_oid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    let current_oid = output.stdout.trim().to_string();
                     if current_oid != *expected_oid {
                         return Err(ValidationError::GitHeadChanged {
                             expected: expected_oid.clone(),

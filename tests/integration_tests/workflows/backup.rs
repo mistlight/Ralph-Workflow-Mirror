@@ -325,7 +325,7 @@ fn periodic_restoration_works_during_pipeline() {
 /// and all backups have read-only permissions on Unix systems.
 ///
 /// Uses a 30-second timeout because this test runs ralph 3 times sequentially,
-/// which may exceed the default 10-second timeout on slower systems.
+/// which may exceed the default 5-second timeout on slower systems.
 #[test]
 fn backup_rotation_maintains_multiple_backups() {
     with_default_timeout(|| {
@@ -378,7 +378,7 @@ fn backup_rotation_maintains_multiple_backups() {
 /// the oldest backup (e.g., `.backup.3`) is deleted while newer backups are retained.
 ///
 /// Uses a 30-second timeout because this test runs ralph 4 times sequentially,
-/// which may exceed the default 10-second timeout on slower systems.
+/// which may exceed the default 5-second timeout on slower systems.
 #[test]
 fn backup_oldest_deleted_when_exceeding_limit() {
     with_default_timeout(|| {
@@ -413,7 +413,7 @@ fn backup_oldest_deleted_when_exceeding_limit() {
 /// the system can restore PROMPT.md from fallback backup files.
 ///
 /// Uses a 30-second timeout because this test runs ralph 3 times sequentially,
-/// which may exceed the default 10-second timeout on slower systems.
+/// which may exceed the default 5-second timeout on slower systems.
 #[test]
 fn restore_from_fallback_backup_when_primary_corrupted() {
     with_default_timeout(|| {

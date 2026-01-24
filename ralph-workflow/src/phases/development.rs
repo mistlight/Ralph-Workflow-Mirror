@@ -31,7 +31,6 @@ use crate::prompts::{
 };
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use super::context::PhaseContext;
 
@@ -1165,7 +1164,8 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
             .warn("FAST_CHECK_CMD is empty after parsing; skipping fast check");
         return Ok(());
     };
-    let status = Command::new(program).args(cmd_args).status()?;
+    let output = ctx.executor.execute(program, cmd_args, &[], None)?;
+    let status = output.status;
 
     if status.success() {
         ctx.logger.success("Fast check passed");

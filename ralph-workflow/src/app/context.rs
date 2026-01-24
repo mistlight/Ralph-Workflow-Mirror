@@ -5,6 +5,7 @@
 use crate::agents::AgentRegistry;
 use crate::cli::Args;
 use crate::config::Config;
+use crate::executor::ProcessExecutor;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::prompts::template_context::TemplateContext;
@@ -25,4 +26,5 @@ pub struct PipelineContext {
     pub logger: Logger,
     pub colors: Colors,
     pub template_context: TemplateContext,
+    pub executor: std::sync::Arc<dyn ProcessExecutor>,
 }

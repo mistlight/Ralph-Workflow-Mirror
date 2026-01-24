@@ -11,6 +11,7 @@ pub mod cli;
 pub mod common;
 pub mod config;
 pub mod diagnostics;
+pub mod executor;
 pub mod files;
 pub mod git_helpers;
 pub mod guidelines;
@@ -34,3 +35,7 @@ pub use files::llm_output_extraction::format_xml_for_display;
 pub use files::llm_output_extraction::validate_development_result_xml;
 pub use files::llm_output_extraction::validate_fix_result_xml;
 pub use files::llm_output_extraction::validate_issues_xml;
+
+// Re-export process executor for test-utils feature
+#[cfg(any(test, feature = "test-utils"))]
+pub use executor::{MockProcessExecutor, ProcessExecutor, ProcessOutput, RealProcessExecutor};

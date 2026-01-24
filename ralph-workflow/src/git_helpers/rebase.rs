@@ -1513,9 +1513,15 @@ fn check_sparse_checkout_state() -> io::Result<()> {
 /// This function uses git CLI for rebase operations as libgit2's rebase API
 /// has limitations and complexity that make it unreliable for production use.
 /// The git CLI is more robust and better tested for rebase operations.
-pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
-    use std::process::Command;
-
+///
+/// # Arguments
+///
+/// * `upstream_branch` - The upstream branch to rebase onto
+/// * `executor` - Process executor for dependency injection
+pub fn rebase_onto(
+    upstream_branch: &str,
+    executor: &dyn crate::executor::ProcessExecutor,
+) -> io::Result<RebaseResult> {
     // Check if we have any commits
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
@@ -1560,7 +1566,7 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
     }
 
     // Check if branches share a common ancestor
-    // If merge_base fails with NotFound, the branches are unrelated
+    // If merge_base fails with NotFound, branches are unrelated
     match repo.merge_base(head_commit.id(), upstream_commit.id()) {
         Err(e)
             if e.class() == git2::ErrorClass::Reference
@@ -1594,10 +1600,8 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
         });
     }
 
-    // Use git CLI for rebase - more reliable than libgit2
-    let output = Command::new("git")
-        .args(["rebase", upstream_branch])
-        .output();
+    // Use git CLI for rebase via executor - more reliable than libgit2
+    let output = executor.execute("git", &["rebase", upstream_branch], &[], None)?;
 
     match output {
         Ok(result) => {
@@ -1652,14 +1656,23 @@ pub fn rebase_onto(upstream_branch: &str) -> io::Result<RebaseResult> {
 /// This cleans up the rebase state and returns the repository to its
 /// pre-rebase condition.
 ///
+/// # Arguments
+///
+/// * `executor` - Process executor for dependency injection
+///
 /// # Returns
 ///
 /// Returns `Ok(())` if successful, or an error if:
 /// - No rebase is in progress
 /// - The abort operation fails
-pub fn abort_rebase() -> io::Result<()> {
-    use std::process::Command;
+pub fn abort_rebase(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<()> {
+    abort_rebase_with_executor(executor)
+}
 
+/// Internal function that performs the actual abort using real executor.
+///
+/// This is a convenience wrapper for backward compatibility.
+fn abort_rebase_with_executor(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // Check if a rebase is in progress
@@ -1674,8 +1687,8 @@ pub fn abort_rebase() -> io::Result<()> {
         ));
     }
 
-    // Use git CLI for abort
-    let output = Command::new("git").args(["rebase", "--abort"]).output();
+    // Use git CLI for abort via executor
+    let output = executor.execute("git", &["rebase", "--abort"], &[], None)?;
 
     match output {
         Ok(result) => {
@@ -2139,9 +2152,16 @@ pub fn validate_post_rebase_with_checks(
 /// - No rebase is in progress
 /// - Conflicts remain unresolved
 /// - The continue operation fails
-pub fn continue_rebase() -> io::Result<()> {
-    use std::process::Command;
+pub fn continue_rebase(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<()> {
+    continue_rebase_with_executor(executor)
+}
 
+/// Internal function that performs the actual continue using real executor.
+///
+/// This is a convenience wrapper for backward compatibility.
+fn continue_rebase_with_executor(
+    executor: &dyn crate::executor::ProcessExecutor,
+) -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
     // Check if a rebase is in progress
@@ -2168,8 +2188,8 @@ pub fn continue_rebase() -> io::Result<()> {
         ));
     }
 
-    // Use git CLI for continue
-    let output = Command::new("git").args(["rebase", "--continue"]).output();
+    // Use git CLI for continue via executor
+    let output = executor.execute("git", &["rebase", "--continue"], &[], None)?;
 
     match output {
         Ok(result) => {

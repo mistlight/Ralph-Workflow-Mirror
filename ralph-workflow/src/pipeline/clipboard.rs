@@ -1,7 +1,7 @@
 //! Platform-specific clipboard command configuration.
 
+use crate::executor::{ProcessExecutor, RealProcessExecutor};
 use crate::platform::Platform;
-use std::process::Command;
 
 /// Platform-specific clipboard command configuration.
 pub struct ClipboardCommand {
@@ -10,11 +10,20 @@ pub struct ClipboardCommand {
     pub paste_hint: &'static str,
 }
 
-/// Get the platform-specific clipboard command.
+/// Get platform-specific clipboard command using default process executor.
 ///
-/// Returns None if no clipboard command is available for the current platform.
+/// Returns None if no clipboard command is available for current platform.
 pub fn get_platform_clipboard_command() -> Option<ClipboardCommand> {
-    let platform = Platform::detect();
+    get_platform_clipboard_command_with_executor(&RealProcessExecutor)
+}
+
+/// Get platform-specific clipboard command with a provided process executor.
+///
+/// Returns None if no clipboard command is available for current platform.
+pub fn get_platform_clipboard_command_with_executor(
+    executor: &dyn ProcessExecutor,
+) -> Option<ClipboardCommand> {
+    let platform = Platform::detect_with_executor(executor);
 
     match platform {
         Platform::MacWithBrew | Platform::MacWithoutBrew => Some(ClipboardCommand {
@@ -27,23 +36,13 @@ pub fn get_platform_clipboard_command() -> Option<ClipboardCommand> {
         | Platform::ArchLinux
         | Platform::GenericLinux => {
             // Try wl-copy (Wayland) first, then xclip (X11)
-            if Command::new("which")
-                .arg("wl-copy")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
+            if executor.command_exists("wl-copy") {
                 Some(ClipboardCommand {
                     binary: "wl-copy",
                     args: &[],
                     paste_hint: "wl-paste to view",
                 })
-            } else if Command::new("which")
-                .arg("xclip")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
+            } else if executor.command_exists("xclip") {
                 Some(ClipboardCommand {
                     binary: "xclip",
                     args: &["-selection", "clipboard"],
