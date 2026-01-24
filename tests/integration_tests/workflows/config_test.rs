@@ -15,14 +15,12 @@
 //! - Tests are deterministic and isolated
 
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 
 use test_helpers::init_git_repo;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 
 /// Helper function to set up base environment for tests.
 fn set_base_env(config_home: &std::path::Path) {
@@ -50,7 +48,7 @@ fn test_ralph_init_exits_cleanly() {
         // Set up environment and run ralph --init
         std::env::set_current_dir(dir_path).unwrap();
         set_base_env(&config_home);
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--init"], executor).unwrap();
 
         // Should have created config
@@ -104,7 +102,7 @@ reviewer = ["codex"]
         // Set up environment and run ralph --init bug-fix
         std::env::set_current_dir(dir_path).unwrap();
         set_base_env(&config_home);
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--init=bug-fix"], executor).unwrap();
 
         // Should have created PROMPT.md
@@ -152,7 +150,7 @@ reviewer = ["codex"]
         // Set up environment and run ralph --init
         std::env::set_current_dir(dir_path).unwrap();
         set_base_env(&config_home);
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--init"], executor).unwrap();
 
         // Should NOT run the pipeline - verify no agent files were created
@@ -191,7 +189,7 @@ reviewer = ["codex"]
         // Set up environment and run ralph --init with an invalid template name
         std::env::set_current_dir(dir_path).unwrap();
         set_base_env(&config_home);
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
 
         // Should exit successfully (even though template is invalid)
         let result = run_ralph_cli(&["--init=not-a-real-template"], executor);
@@ -237,7 +235,7 @@ reviewer = ["codex"]
         // clap will interpret "my commit message" as the value for --init
         std::env::set_current_dir(dir_path).unwrap();
         set_base_env(&config_home);
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
 
         // Should exit successfully
         let result = run_ralph_cli(&["--init", "my commit message"], executor);

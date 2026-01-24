@@ -14,12 +14,10 @@
 //! - Tests are deterministic and isolated
 
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
 fn base_env() {
@@ -59,7 +57,7 @@ fn ralph_succeeds_without_commit_message_file() {
 
         std::env::set_current_dir(dir.path()).unwrap();
         base_env();
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
 
         // Should succeed - auto-commit will generate a message
         run_ralph_cli(&[], executor).unwrap();
@@ -88,7 +86,7 @@ fn ralph_show_commit_msg_displays_message() {
         .unwrap();
 
         std::env::set_current_dir(dir.path()).unwrap();
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--show-commit-msg"], executor).unwrap();
     });
 }
@@ -121,7 +119,7 @@ fn ralph_show_commit_msg_uses_repo_root_from_subdir() {
         .unwrap();
 
         std::env::set_current_dir(&subdir).unwrap();
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--show-commit-msg"], executor).unwrap();
     });
 }
@@ -139,7 +137,7 @@ fn ralph_show_commit_msg_fails_if_missing() {
         // Don't create commit-message.txt
 
         std::env::set_current_dir(dir.path()).unwrap();
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         let result = run_ralph_cli(&["--show-commit-msg"], executor);
 
         // Should fail
@@ -173,7 +171,7 @@ fn ralph_apply_commit_creates_commit() {
         .unwrap();
 
         std::env::set_current_dir(dir.path()).unwrap();
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--apply-commit"], executor).unwrap();
 
         // Verify the commit was created
@@ -200,7 +198,7 @@ fn ralph_apply_commit_fails_without_message_file() {
         // Don't create commit-message.txt
 
         std::env::set_current_dir(dir.path()).unwrap();
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         let result = run_ralph_cli(&["--apply-commit"], executor);
 
         // Should fail

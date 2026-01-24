@@ -3,7 +3,6 @@
 //! Prompts for review and fix result generation using XML format with XSD validation.
 
 use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
-use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use std::collections::HashMap;

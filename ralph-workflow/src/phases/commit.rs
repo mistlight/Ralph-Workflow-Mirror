@@ -878,7 +878,9 @@ pub fn generate_commit_message(
 
     // Check if diff is empty before proceeding
     if diff.trim().is_empty() {
-        runtime.logger.warn("Empty diff provided to generate_commit_message, using fallback");
+        runtime
+            .logger
+            .warn("Empty diff provided to generate_commit_message, using fallback");
         return Ok(CommitMessageResult {
             message: HARDCODED_FALLBACK_COMMIT.to_string(),
             success: true,

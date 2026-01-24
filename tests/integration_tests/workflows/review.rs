@@ -18,12 +18,9 @@
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
 //! - Tests are deterministic and isolated
 
-use std::sync::Arc;
-
-use ralph_workflow::executor::RealProcessExecutor;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
@@ -72,7 +69,7 @@ fn ralph_zero_reviewer_reviews_skips_review() {
         std::env::set_current_dir(dir.path()).unwrap();
         base_env();
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review phase
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // ISSUES.md should NOT be created when review is skipped
@@ -102,7 +99,7 @@ fn ralph_succeeds_without_review_phase() {
         base_env();
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -129,7 +126,7 @@ fn ralph_commit_created_when_review_skipped() {
         base_env();
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify commit was created

@@ -19,12 +19,10 @@
 //! - Tests are deterministic and black-box (test git workflow as a user would experience it)
 
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests
@@ -91,7 +89,7 @@ fn ralph_reset_start_commit_on_main_uses_head() {
         std::env::set_var("GIT_COMMITTER_NAME", "Test");
         std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--reset-start-commit"], executor).unwrap();
 
         // Verify .agent/start_commit was updated to HEAD (since we're on main)
@@ -178,7 +176,7 @@ fn ralph_reset_start_commit_on_feature_branch_uses_merge_base() {
         std::env::set_var("GIT_COMMITTER_NAME", "Test");
         std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--reset-start-commit"], executor).unwrap();
 
         // Verify .agent/start_commit was updated to merge-base, NOT HEAD
@@ -217,7 +215,7 @@ fn ralph_start_commit_created_during_pipeline() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify .agent/start_commit exists (enables cumulative diffs for reviewers)
@@ -262,7 +260,7 @@ fn ralph_save_start_commit_handles_empty_repo() {
         std::env::set_var("GIT_COMMITTER_NAME", "Test");
         std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         let result = run_ralph_cli(&["--reset-start-commit"], executor);
 
         // Should fail because there's no HEAD commit
@@ -273,7 +271,7 @@ fn ralph_save_start_commit_handles_empty_repo() {
         let repo = git2::Repository::open(dir.path()).unwrap();
         let _ = commit_all(&repo, "initial commit");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--reset-start-commit"], executor).unwrap();
 
         // Verify the start_commit file was created with a valid OID

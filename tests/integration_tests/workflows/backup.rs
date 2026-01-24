@@ -21,12 +21,10 @@
 //! - Tests are deterministic and isolated
 
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::init_git_repo;
 
 fn set_base_env() {
@@ -100,7 +98,7 @@ fn backup_created_at_pipeline_start() {
         std::env::set_current_dir(dir.path()).unwrap();
         set_base_env();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created
@@ -144,7 +142,7 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
         std::env::set_current_dir(dir.path()).unwrap();
         set_base_env();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created and content matches
@@ -183,7 +181,7 @@ fn backup_not_deleted_during_cleanup() {
         std::env::set_current_dir(dir.path()).unwrap();
         set_base_env();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup exists
@@ -192,7 +190,7 @@ fn backup_not_deleted_during_cleanup() {
         // Run Ralph again - cleanup shouldn't delete backup
         create_plan_file(&dir);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup still exists (wasn't cleaned up)
@@ -218,7 +216,7 @@ fn backup_has_readonly_permissions() {
         std::env::set_current_dir(dir.path()).unwrap();
         set_base_env();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup exists
@@ -285,7 +283,7 @@ fn periodic_restoration_works_during_pipeline() {
         std::env::set_current_dir(dir.path()).unwrap();
         set_base_env();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created
@@ -294,7 +292,7 @@ fn periodic_restoration_works_during_pipeline() {
         // Run again - backup should persist
         create_plan_file(&dir);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup still exists and has correct content
@@ -335,7 +333,7 @@ fn backup_rotation_maintains_multiple_backups() {
             std::env::set_current_dir(dir.path()).unwrap();
             set_base_env();
 
-            let executor = Arc::new(RealProcessExecutor::new());
+            let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
         }
 
@@ -383,7 +381,7 @@ fn backup_oldest_deleted_when_exceeding_limit() {
             std::env::set_current_dir(dir.path()).unwrap();
             set_base_env();
 
-            let executor = Arc::new(RealProcessExecutor::new());
+            let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
         }
 
@@ -421,7 +419,7 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
             std::env::set_current_dir(dir.path()).unwrap();
             set_base_env();
 
-            let executor = Arc::new(RealProcessExecutor::new());
+            let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
         }
 
@@ -449,7 +447,7 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
         // Run Ralph again - it should successfully run with the restored PROMPT.md
         create_plan_file(&dir);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify PROMPT.md exists and has valid content
@@ -497,7 +495,7 @@ fn agent_chmod_rm_is_caught_and_restored() {
         std::env::set_current_dir(dir.path()).unwrap();
         set_base_env();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created
@@ -536,7 +534,7 @@ fn agent_overwrite_is_detected_and_restored() {
         std::env::set_current_dir(dir.path()).unwrap();
         set_base_env();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created
@@ -575,7 +573,7 @@ fn multiple_deletions_are_logged_with_context() {
         std::env::set_current_dir(dir.path()).unwrap();
         set_base_env();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify backup was created and PROMPT.md exists

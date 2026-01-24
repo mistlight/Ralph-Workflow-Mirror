@@ -13,12 +13,10 @@
 //! - Tests are deterministic and isolated
 
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::init_git_repo;
 
 /// Helper function to set up base environment for tests.
@@ -79,7 +77,7 @@ fn ralph_init_creates_config_file() {
         // Run ralph --init-legacy
         std::env::set_current_dir(dir_path).unwrap();
         std::env::set_var("XDG_CONFIG_HOME", &config_home);
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--init-legacy"], executor).unwrap();
 
         // Config file should now exist
@@ -119,7 +117,7 @@ reviewer = ["codex"]
         // Run ralph --init-legacy
         std::env::set_current_dir(dir_path).unwrap();
         std::env::set_var("XDG_CONFIG_HOME", &config_home);
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--init-legacy"], executor).unwrap();
 
         // Config file should still contain original content
@@ -154,7 +152,7 @@ fn ralph_first_run_creates_config_and_exits() {
         // Run ralph --init-global (unified config)
         std::env::set_current_dir(dir_path).unwrap();
         std::env::set_var("XDG_CONFIG_HOME", &config_home);
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--init-global"], executor).unwrap();
 
         // Should exit successfully after creating the config
@@ -190,7 +188,7 @@ reviewer = ["aider", "codex"]
         base_env(&config_home);
         // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -214,7 +212,7 @@ fn ralph_quick_mode_sets_minimal_iterations() {
         std::env::set_current_dir(dir.path()).unwrap();
         base_env(&config_home);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
         // Quick mode works without shell commands
     });
@@ -235,7 +233,7 @@ fn ralph_quick_mode_short_flag_works() {
         std::env::set_current_dir(dir.path()).unwrap();
         base_env(&config_home);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["-Q", "--developer-iters", "0"], executor).unwrap();
         // Quick mode works without shell commands
     });
@@ -256,7 +254,7 @@ fn ralph_quick_mode_explicit_iters_override() {
         std::env::set_current_dir(dir.path()).unwrap();
         base_env(&config_home);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
         // Explicit --developer-iters overrides quick mode
     });
@@ -277,7 +275,7 @@ fn ralph_rapid_mode_sets_two_iterations() {
         std::env::set_current_dir(dir.path()).unwrap();
         base_env(&config_home);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--rapid", "--developer-iters", "0"], executor).unwrap();
         // Rapid mode works without shell commands
     });
@@ -298,7 +296,7 @@ fn ralph_rapid_mode_short_flag_works() {
         std::env::set_current_dir(dir.path()).unwrap();
         base_env(&config_home);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["-U", "--developer-iters", "0"], executor).unwrap();
         // Rapid mode works without shell commands
     });
@@ -346,7 +344,7 @@ tokio = "1.0"
                                                    // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
         // Pipeline should complete and potentially mention Rust stack
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -389,7 +387,7 @@ fn ralph_stack_detection_javascript_project() {
         std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
         // agent commands removed (not needed when developer_iters=0)
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -422,7 +420,7 @@ name = "test"
         std::env::set_var("RALPH_AUTO_DETECT_STACK", "false"); // Explicitly disable
                                                                // agent commands removed (not needed when developer_iters=0)
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -459,7 +457,7 @@ version = "0.1.0"
         std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
         // agent commands removed (not needed when developer_iters=0)
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -485,7 +483,7 @@ fn ralph_review_depth_standard() {
         std::env::set_var("RALPH_REVIEW_DEPTH", "standard");
         // agent commands removed (not needed when developer_iters=0)
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -507,7 +505,7 @@ fn ralph_review_depth_comprehensive() {
         std::env::set_var("RALPH_REVIEW_DEPTH", "comprehensive");
         // agent commands removed (not needed when developer_iters=0)
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -529,7 +527,7 @@ fn ralph_review_depth_security() {
         std::env::set_var("RALPH_REVIEW_DEPTH", "security");
         // agent commands removed (not needed when developer_iters=0)
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -551,7 +549,7 @@ fn ralph_review_depth_incremental() {
         std::env::set_var("RALPH_REVIEW_DEPTH", "incremental");
         // agent commands removed (not needed when developer_iters=0)
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }

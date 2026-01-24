@@ -18,11 +18,9 @@
 //! - Uses `TempDir` for filesystem isolation
 //! - Tests are deterministic and focus on successful execution and file side effects
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 use test_helpers::init_git_repo;
 
@@ -37,7 +35,7 @@ use test_helpers::init_git_repo;
 #[test]
 fn ralph_prints_version() {
     with_default_timeout(|| {
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--version"], executor).unwrap();
     });
 }
@@ -50,7 +48,7 @@ fn ralph_prints_version() {
 #[test]
 fn ralph_help_shows_usage() {
     with_default_timeout(|| {
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--help"], executor).unwrap();
     });
 }
@@ -66,7 +64,7 @@ fn ralph_help_shows_usage() {
 #[test]
 fn ralph_list_templates_shows_available() {
     with_default_timeout(|| {
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--list-templates"], executor).unwrap();
     });
 }
@@ -85,7 +83,7 @@ fn ralph_diagnose_shows_system_info() {
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         // Change to the test directory before running
         std::env::set_current_dir(dir.path()).unwrap();
         run_ralph_cli(&["--diagnose"], executor).unwrap();
@@ -102,7 +100,7 @@ fn ralph_diagnose_short_flag_works() {
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         std::env::set_current_dir(dir.path()).unwrap();
         run_ralph_cli(&["-d"], executor).unwrap();
     });
@@ -137,7 +135,7 @@ reviewer = ["codex"]
         )
         .unwrap();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         std::env::set_current_dir(dir.path()).unwrap();
         std::env::set_var("XDG_CONFIG_HOME", &config_home);
         run_ralph_cli(&["--dry-run"], executor).unwrap();
@@ -179,7 +177,7 @@ reviewer = ["codex"]
         )
         .unwrap();
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         std::env::set_current_dir(dir.path()).unwrap();
         std::env::set_var("XDG_CONFIG_HOME", &config_home);
 

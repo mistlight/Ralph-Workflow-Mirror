@@ -19,12 +19,10 @@
 //! - Tests are deterministic and isolated
 
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::init_git_repo;
 
 /// Helper function to set up base environment for tests.
@@ -92,7 +90,7 @@ fn ralph_skips_plan_phase_when_zero_developer_iters() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify PLAN.md was never created (since planning was skipped)
@@ -125,7 +123,7 @@ fn ralph_commit_without_plan_succeeds() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify a commit was created (should have 2 commits: initial + test)

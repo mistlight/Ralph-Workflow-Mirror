@@ -25,7 +25,7 @@ use super::text_extraction::extract_plan_from_text;
 /// Also checks subdirectories matching the prefix pattern (for legacy logs where agent
 /// names with "/" created nested directories).
 #[cfg(any(test, feature = "test-utils"))]
-pub(crate) fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>> {
+pub(super) fn extract_plan_from_logs_text(log_path: &Path) -> io::Result<Option<String>> {
     // Helper to extract from a list of files by finding the best plan across all files
     fn extract_from_files(files: &[std::path::PathBuf]) -> Option<String> {
         let mut best_plan: Option<String> = None;

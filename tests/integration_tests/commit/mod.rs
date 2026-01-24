@@ -21,12 +21,10 @@
 //! - Tests are deterministic and black-box (test commit as a user would experience it)
 
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests.
@@ -97,7 +95,7 @@ fn test_commit_message_generated_with_simple_diff() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify a commit was created with a non-empty message
@@ -132,7 +130,7 @@ fn test_commit_message_generated_with_multiple_files() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         let message = get_last_commit_message(&repo);
@@ -179,7 +177,7 @@ fn test_commit_created_with_diff_content() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify commit was created
@@ -209,7 +207,7 @@ fn test_commit_succeeds_without_developer_or_review() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify a commit was created (we should have 2 commits now)

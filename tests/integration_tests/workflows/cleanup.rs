@@ -14,12 +14,10 @@
 //! - Tests are deterministic and isolated
 
 use std::fs;
-use std::sync::Arc;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests.
@@ -80,7 +78,7 @@ fn ralph_cleans_up_on_early_error() {
         // agent commands not needed when developer_iters=0 (phase is skipped)
         std::env::set_var("FULL_CHECK_CMD", "false");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         let result = run_ralph_cli(&[], executor);
 
         // Should fail because FULL_CHECK_CMD=false is invalid
@@ -130,7 +128,7 @@ fn ralph_cleanup_on_interrupt_simulation() {
         base_env(&config_home);
         // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         // Pipeline now succeeds even with developer errors (non-fatal)
         run_ralph_cli(&[], executor).unwrap();
 
@@ -170,7 +168,7 @@ fn ralph_handles_agent_timeout_gracefully() {
         // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
         // This tests that the pipeline handles phase-skipping correctly
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         // Should complete successfully without agent execution
         run_ralph_cli(&[], executor).unwrap();
     });
@@ -209,7 +207,7 @@ fn ralph_handles_invalid_json_in_config() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("XDG_CONFIG_HOME", &config_home);
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         // Pipeline should succeed using defaults (config loader is lenient)
         run_ralph_cli(&[], executor).unwrap();
     });
@@ -237,7 +235,7 @@ fn ralph_isolation_mode_does_not_create_status_notes_issues() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // STATUS.md, NOTES.md and ISSUES.md should NOT exist in isolation mode (default)
@@ -279,7 +277,7 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Files should be deleted
@@ -316,7 +314,7 @@ fn ralph_no_isolation_creates_status_notes_issues() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--no-isolation"], executor).unwrap();
 
         // STATUS.md, NOTES.md and ISSUES.md should exist when not in isolation mode
@@ -354,7 +352,7 @@ fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // STATUS.md, NOTES.md and ISSUES.md should exist when isolation mode is disabled via env
@@ -409,7 +407,7 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--no-isolation"], executor).unwrap();
 
         // Files should exist (non-isolation mode), but should be overwritten to 1 line.
@@ -457,7 +455,7 @@ fn ralph_resume_continues_from_checkpoint_phase() {
         base_env(&config_home);
         // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         // Should complete successfully without agent execution
         run_ralph_cli(&[], executor).unwrap();
     });
@@ -487,7 +485,7 @@ fn ralph_developer_iteration_creates_changes_for_commit() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Note: Test uses 0 iterations to avoid timeout from commit generation

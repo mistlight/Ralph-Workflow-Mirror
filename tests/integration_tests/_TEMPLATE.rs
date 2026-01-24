@@ -88,12 +88,10 @@
 //!
 //! ```rust
 //! use std::fs;
-//! use std::sync::Arc;
 //! use tempfile::TempDir;
 //!
-//! use crate::common::run_ralph_cli;
+//! use crate::common::{mock_executor_with_success, run_ralph_cli};
 //! use crate::test_timeout::with_default_timeout;
-//! use ralph_workflow::executor::RealProcessExecutor;
 //!
 //! /// Test that [CLI SCENARIO] produces [EXPECTED BEHAVIOR].
 //! ///
@@ -114,8 +112,8 @@
 //!         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
 //!         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 //!
-//!         // Execute: Run CLI directly via app::run() (no process spawning)
-//!         let executor = Arc::new(RealProcessExecutor::new());
+//!         // Execute: Run CLI directly via app::run() with mock executor (no process spawning)
+//!         let executor = mock_executor_with_success();
 //!         let result = run_ralph_cli(&["--some-flag", "value"], executor);
 //!
 //!         // Assert: Verify OBSERVABLE behavior (exit code, file side effects)

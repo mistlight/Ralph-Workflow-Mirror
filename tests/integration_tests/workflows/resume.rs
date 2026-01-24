@@ -7,10 +7,9 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::executor::RealProcessExecutor;
-use std::sync::Arc;
+
 use test_helpers::{init_git_repo, write_file};
 
 /// Helper function to set up base environment for tests.
@@ -80,7 +79,7 @@ fn ralph_creates_checkpoint_during_development() {
         base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         // Verify the pipeline completed successfully
         // Checkpoint behavior is tested in more specific tests below
@@ -100,7 +99,7 @@ fn ralph_creates_checkpoint_during_review() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
     });
 }
@@ -122,7 +121,7 @@ fn ralph_checkpoint_contains_iteration_info() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "2");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         // Check that checkpoint was created
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -165,7 +164,7 @@ fn ralph_checkpoint_contains_cli_args_snapshot() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "5");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "3");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
@@ -199,7 +198,7 @@ fn ralph_checkpoint_contains_agent_config_snapshot() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
@@ -277,7 +276,7 @@ fn ralph_resume_flag_reads_checkpoint() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -296,7 +295,7 @@ fn ralph_resume_without_checkpoint_starts_fresh() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -393,7 +392,7 @@ fn ralph_resume_validates_working_directory() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -421,7 +420,7 @@ fn ralph_checkpoint_records_prompt_md_checksum() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
@@ -518,7 +517,7 @@ fn ralph_resume_shows_checkpoint_summary() {
         base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -589,7 +588,7 @@ fn ralph_clears_checkpoint_on_success() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         // Checkpoint should be cleared on successful completion
         // (this behavior may vary based on implementation - adjust test if needed)
@@ -713,7 +712,7 @@ fn ralph_resume_preserves_developer_iterations_from_checkpoint() {
         base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -799,7 +798,7 @@ fn ralph_resume_preserves_reviewer_passes_from_checkpoint() {
         base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -843,7 +842,7 @@ fn ralph_resume_from_planning_phase() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -877,7 +876,7 @@ fn ralph_resume_from_development_phase() {
         base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -977,7 +976,7 @@ fn ralph_resume_from_review_phase() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume", "--recovery-strategy=force"], executor).unwrap();
     });
 }
@@ -1013,7 +1012,7 @@ fn ralph_resume_from_complete_phase() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "2");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Resume from Complete should recognize pipeline is done
     });
@@ -1055,7 +1054,7 @@ fn ralph_resume_is_idempotent_same_checkpoint() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Check that a Complete checkpoint was created
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -1143,7 +1142,7 @@ fn ralph_checkpoint_preserves_git_identity() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Should succeed and use checkpoint's git identity
     });
@@ -1222,7 +1221,7 @@ fn ralph_checkpoint_preserves_model_overrides() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -1319,7 +1318,7 @@ fn ralph_resume_warns_on_prompt_md_change() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -1397,7 +1396,7 @@ fn ralph_checkpoint_records_rebase_state() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -1533,7 +1532,7 @@ fn ralph_resume_from_prerebase_phase_preserves_full_config() {
         base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -1576,7 +1575,7 @@ fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
         base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -1621,7 +1620,7 @@ fn ralph_resume_from_postrebase_phase_preserves_full_config() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "2");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -1666,7 +1665,7 @@ fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -1713,7 +1712,7 @@ fn ralph_resume_passes_context_to_developer_agent() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Check that the captured prompt contains resume context
         if prompt_capture.exists() {
@@ -1837,7 +1836,7 @@ fn ralph_resume_passes_context_to_reviewer_agent() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Verify the checkpoint was restored with prompt history
         // The checkpoint should contain the prompt history we created
@@ -1897,7 +1896,7 @@ fn ralph_resume_is_idempotent_from_prerebase() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // After successful completion, checkpoint should be at Complete or cleared
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -1932,7 +1931,7 @@ fn ralph_checkpoint_tracks_prompt_history() {
         base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         // After successful run, checkpoint is cleared, but we can verify
         // the pipeline executed correctly which means prompt history was tracked
@@ -2030,7 +2029,7 @@ fn ralph_resume_shows_prompt_replay_info() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Verify the pipeline completed successfully
         // (The checkpoint should have been cleared on success)
@@ -2148,7 +2147,7 @@ fn ralph_v3_checkpoint_contains_execution_history() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Verify the checkpoint contains execution_history
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -2275,7 +2274,7 @@ fn ralph_v3_restores_execution_history_on_resume() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Verify the pipeline completed successfully
         assert!(!dir.path().join(".agent/checkpoint.json").exists());
@@ -2398,7 +2397,7 @@ fn ralph_v3_file_system_state_validates_on_resume() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -2534,7 +2533,7 @@ fn ralph_v3_file_system_state_detects_changes() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume", "--recovery-strategy", "fail"], executor).unwrap();
         // Should succeed - validation fails, resume is aborted, fresh run completes
     });
@@ -2653,7 +2652,7 @@ fn ralph_v3_file_system_state_auto_recovery() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume", "--recovery-strategy", "auto"], executor).unwrap();
 
         // Verify the file was restored
@@ -2764,7 +2763,7 @@ fn ralph_v3_prompt_replay_is_deterministic() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Verify that the deterministic prompt was used
         if prompt_capture.exists() {
@@ -2874,7 +2873,7 @@ fn ralph_v3_prompt_replay_across_multiple_iterations() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Verify the pipeline completed successfully
         assert!(!dir.path().join(".agent/checkpoint.json").exists());
@@ -2983,7 +2982,7 @@ fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         // Should succeed and clear the checkpoint
 
@@ -3071,7 +3070,7 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "5");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "3");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -3298,7 +3297,7 @@ fn ralph_v3_comprehensive_resume_from_review_phase() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
 
         // Verify the pipeline completed successfully
@@ -3428,7 +3427,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
 
         // Verify the checkpoint was consumed
@@ -3525,7 +3524,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
 
         // Verify the checkpoint was consumed
@@ -3577,7 +3576,7 @@ fn ralph_no_resume_flag_skips_interactive_prompt() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--no-resume"], executor).unwrap();
         // Should NOT show resume prompt, should complete successfully
     });
@@ -3619,7 +3618,7 @@ fn ralph_no_resume_env_var_skips_interactive_prompt() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         // Should NOT show resume prompt, should complete successfully
     });
@@ -3658,7 +3657,7 @@ fn ralph_resume_flag_takes_precedence_over_no_resume() {
         base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume", "--no-resume"], executor).unwrap();
     });
 }
@@ -3774,7 +3773,7 @@ fn ralph_resume_replays_prompts_deterministically() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
         // Verify the checkpoint was loaded with prompt_history
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -3811,7 +3810,7 @@ fn ralph_v3_checkpoint_contains_file_system_state() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
@@ -3844,7 +3843,7 @@ fn ralph_v3_checkpoint_contains_execution_history_after_failure() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
@@ -3974,7 +3973,7 @@ fn ralph_resume_with_force_strategy_ignores_file_changes() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume", "--recovery-strategy=force"], executor).unwrap();
         // Should proceed with warning
     });
@@ -4084,7 +4083,7 @@ fn ralph_resume_auto_strategy_attempts_recovery() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume", "--recovery-strategy=auto"], executor).unwrap();
         // Should attempt recovery and proceed
     });
@@ -4108,7 +4107,7 @@ fn ralph_checkpoint_saved_after_rebase_completion() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--with-rebase"], executor).unwrap();
         // Check that checkpoint was saved at Planning phase after rebase
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -4210,7 +4209,7 @@ fn ralph_checkpoint_saved_at_pipeline_start() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -4352,7 +4351,7 @@ fn ralph_v3_execution_step_contains_git_commit_oid() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -4474,7 +4473,7 @@ fn ralph_v3_execution_step_serialization_with_new_fields() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -4586,7 +4585,7 @@ fn ralph_v3_backward_compatible_missing_new_fields() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }
@@ -4730,7 +4729,7 @@ fn ralph_v3_resume_note_contains_execution_history() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
         std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&["--resume"], executor).unwrap();
     });
 }

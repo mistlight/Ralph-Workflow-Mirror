@@ -18,12 +18,9 @@
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
 //! - Tests are deterministic and isolated
 
-use std::sync::Arc;
-
-use ralph_workflow::executor::RealProcessExecutor;
 use tempfile::TempDir;
 
-use crate::common::run_ralph_cli;
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
@@ -69,7 +66,7 @@ fn ralph_skips_phases_with_zero_iterations() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Skip developer
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify no agent-related files were created (agents weren't called)
@@ -102,7 +99,7 @@ fn ralph_succeeds_with_zero_iterations() {
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        let executor = Arc::new(RealProcessExecutor::new());
+        let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
 
         // Verify a commit was created

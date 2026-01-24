@@ -345,7 +345,8 @@ fn handle_skipped_cycle(
 
             // Check if diff is empty before requesting commit message generation
             if diff.trim().is_empty() {
-                ctx.logger.info("Skipping commit (no meaningful changes in diff)");
+                ctx.logger
+                    .info("Skipping commit (no meaningful changes in diff)");
 
                 let duration = start_time.elapsed().as_secs();
                 let step = ExecutionStep::new(
@@ -1424,7 +1425,8 @@ fn handle_post_fix_commit(
 
             // Check if diff is empty before requesting commit message generation
             if diff.trim().is_empty() {
-                ctx.logger.info("Skipping commit (no meaningful changes in diff)");
+                ctx.logger
+                    .info("Skipping commit (no meaningful changes in diff)");
 
                 let duration = start_time.elapsed().as_secs();
                 let step = ExecutionStep::new(
