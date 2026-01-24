@@ -171,7 +171,7 @@ mod tests {
             run_context: RunContext::new(),
             execution_history: ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
-            executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+            executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -210,7 +210,7 @@ mod tests {
             run_context: RunContext::new(),
             execution_history: ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
-            executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+            executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -241,7 +241,7 @@ mod tests {
             run_context: RunContext::new(),
             execution_history: ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
-            executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+            executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         };
 
         let result = get_primary_commit_agent(&ctx);

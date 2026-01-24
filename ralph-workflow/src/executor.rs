@@ -109,7 +109,7 @@ impl ProcessExecutor for RealProcessExecutor {
 /// Test code can use `MockProcessExecutor` to control process behavior.
 ///
 /// Only external process execution is abstracted. Internal code logic is never mocked.
-pub trait ProcessExecutor: Send + Sync {
+pub trait ProcessExecutor: Send + Sync + std::fmt::Debug {
     /// Execute a command with given arguments and return its output.
     ///
     /// # Arguments
@@ -242,6 +242,7 @@ impl<T: Clone + Default> Default for MockResult<T> {
 /// what each execution returns.
 #[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug)]
+#[allow(clippy::type_complexity)]
 pub struct MockProcessExecutor {
     /// Captured execute calls: (command, args, env, workdir).
     execute_calls: Mutex<Vec<(String, Vec<String>, Vec<(String, String)>, Option<String>)>>,
@@ -356,6 +357,7 @@ impl MockProcessExecutor {
     /// Get all execute calls.
     ///
     /// Each call is a tuple of (command, args, env, workdir).
+    #[allow(clippy::type_complexity)]
     pub fn execute_calls(
         &self,
     ) -> Vec<(String, Vec<String>, Vec<(String, String)>, Option<String>)> {
@@ -363,6 +365,7 @@ impl MockProcessExecutor {
     }
 
     /// Get all execute calls for a specific command.
+    #[allow(clippy::type_complexity)]
     pub fn execute_calls_for(
         &self,
         command: &str,
@@ -394,8 +397,7 @@ impl ProcessExecutor for MockProcessExecutor {
         // Mock executor doesn't support real spawning
         // This is only used in production code (clipboard, agent spawn)
         // Tests use execute() instead which is properly mocked
-        Err(io::Error::new(
-            io::ErrorKind::Other,
+        Err(io::Error::other(
             "MockProcessExecutor doesn't support spawn() - use execute() instead",
         ))
     }

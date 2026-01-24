@@ -3,7 +3,6 @@
 use crate::agents::{is_glm_like_agent, JsonParserType};
 use crate::common::{format_argv_for_log, split_command, truncate_text};
 use crate::config::Config;
-use crate::executor::ProcessExecutor;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::logger::{argv_requests_json, format_generic_json_for_display};

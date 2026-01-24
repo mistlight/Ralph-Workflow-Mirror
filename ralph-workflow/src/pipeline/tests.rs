@@ -131,7 +131,7 @@ fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -245,7 +245,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -493,7 +493,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -633,7 +633,7 @@ exit 1
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -738,7 +738,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -841,7 +841,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -940,7 +940,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -1048,7 +1048,7 @@ fi
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -1167,7 +1167,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -1302,7 +1302,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };
@@ -1369,7 +1369,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &std::sync::Arc::new(crate::executor::RealProcessExecutor::new()) as _,
+        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         #[cfg(any(test, feature = "test-utils"))]
         agent_executor: None,
     };

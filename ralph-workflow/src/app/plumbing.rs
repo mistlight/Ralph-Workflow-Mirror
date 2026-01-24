@@ -120,6 +120,7 @@ pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if generation fails.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_generate_commit_msg(
     config: &Config,
     template_context: &TemplateContext,

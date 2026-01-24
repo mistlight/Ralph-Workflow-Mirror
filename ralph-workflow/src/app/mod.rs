@@ -1499,6 +1499,7 @@ enum ConflictResolutionResult {
 ///
 /// This function accepts `PhaseContext` to capture prompts and track
 /// execution history for hardened resume functionality.
+#[allow(clippy::too_many_arguments)]
 fn try_resolve_conflicts_with_fallback(
     conflicted_files: &[String],
     config: &crate::config::Config,

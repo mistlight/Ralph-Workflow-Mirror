@@ -118,6 +118,12 @@ impl RealGit {
     }
 }
 
+impl Default for RealGit {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GitOps for RealGit {
     fn repo_root(&self) -> io::Result<PathBuf> {
         super::repo::get_repo_root()

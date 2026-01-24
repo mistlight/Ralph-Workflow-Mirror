@@ -2423,7 +2423,6 @@ mod tests {
 
     #[test]
     fn test_is_dirty_tree_cli_returns_result() {
-        use crate::executor::RealProcessExecutor;
         use test_helpers::{init_git_repo, with_temp_cwd};
 
         // Test that is_dirty_tree_cli returns a Result
@@ -2431,8 +2430,7 @@ mod tests {
             // Initialize a git repo first
             let _repo = init_git_repo(dir);
 
-            let executor = RealProcessExecutor::new();
-            let result = is_dirty_tree_cli(&executor);
+            let result = is_dirty_tree_cli();
             // Should succeed (returns bool)
             assert!(result.is_ok());
         });
