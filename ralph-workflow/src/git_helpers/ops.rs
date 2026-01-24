@@ -116,6 +116,11 @@ impl RealGit {
             executor: std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
         }
     }
+
+    /// Create a new RealGit instance with a provided executor.
+    pub fn with_executor(executor: std::sync::Arc<dyn crate::executor::ProcessExecutor>) -> Self {
+        Self { executor }
+    }
 }
 
 impl Default for RealGit {

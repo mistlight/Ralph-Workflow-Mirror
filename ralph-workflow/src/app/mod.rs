@@ -332,7 +332,7 @@ fn prepare_pipeline_or_exit(
             &template_context,
             &logger,
             colors,
-            &*executor,
+            std::sync::Arc::clone(&executor),
         )?;
         return Ok(None);
     }
@@ -1063,7 +1063,7 @@ pub fn handle_rebase_only(
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
-    executor: &dyn ProcessExecutor,
+    executor: std::sync::Arc<dyn ProcessExecutor>,
 ) -> anyhow::Result<()> {
     // Check if we're on main/master branch
     if is_main_or_master_branch()? {
@@ -1076,7 +1076,7 @@ pub fn handle_rebase_only(
 
     logger.header("Rebase to default branch", Colors::cyan);
 
-    match run_rebase_to_default(logger, colors, executor) {
+    match run_rebase_to_default(logger, colors, &*executor) {
         Ok(RebaseResult::Success) => {
             logger.success("Rebase completed successfully");
             Ok(())
@@ -1094,7 +1094,7 @@ pub fn handle_rebase_only(
             let conflicted_files = get_conflicted_files()?;
             if conflicted_files.is_empty() {
                 logger.warn("Rebase reported conflicts but no conflicted files found");
-                let _ = abort_rebase(executor);
+                let _ = abort_rebase(&*executor);
                 return Ok(());
             }
 
@@ -1110,19 +1110,19 @@ pub fn handle_rebase_only(
                 template_context,
                 logger,
                 colors,
-                executor,
+                std::sync::Arc::clone(&executor),
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
                     logger.info("Continuing rebase after conflict resolution");
-                    match continue_rebase(executor) {
+                    match continue_rebase(&*executor) {
                         Ok(()) => {
                             logger.success("Rebase completed successfully after AI resolution");
                             Ok(())
                         }
                         Err(e) => {
                             logger.error(&format!("Failed to continue rebase: {e}"));
-                            let _ = abort_rebase(executor);
+                            let _ = abort_rebase(&*executor);
                             anyhow::bail!("Rebase failed after conflict resolution")
                         }
                     }
@@ -1130,12 +1130,12 @@ pub fn handle_rebase_only(
                 Ok(false) => {
                     // AI resolution failed
                     logger.error("AI conflict resolution failed, aborting rebase");
-                    let _ = abort_rebase(executor);
+                    let _ = abort_rebase(&*executor);
                     anyhow::bail!("Rebase conflicts could not be resolved by AI")
                 }
                 Err(e) => {
                     logger.error(&format!("Conflict resolution error: {e}"));
-                    let _ = abort_rebase(executor);
+                    let _ = abort_rebase(&*executor);
                     anyhow::bail!("Rebase conflict resolution failed: {e}")
                 }
             }
@@ -1571,7 +1571,7 @@ fn try_resolve_conflicts_with_fallback(
         ctx.config,
         ctx.logger,
         ctx.colors,
-        std::sync::Arc::clone(&ctx.executor),
+        std::sync::Arc::clone(&ctx.executor_arc),
     ) {
         Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
             // Agent provided JSON output - attempt to parse and write files
@@ -1661,7 +1661,7 @@ fn try_resolve_conflicts_without_phase_ctx(
     template_context: &TemplateContext,
     logger: &Logger,
     colors: Colors,
-    executor: &dyn ProcessExecutor,
+    executor: std::sync::Arc<dyn ProcessExecutor>,
 ) -> anyhow::Result<bool> {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::execution_history::ExecutionHistory;
@@ -1676,12 +1676,8 @@ fn try_resolve_conflicts_without_phase_ctx(
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
     let developer_agent = config.developer_agent.as_deref().unwrap_or("codex");
 
-    // For conflict resolution, we need an Arc-wrapped executor for the PhaseContext.
-    // Since we only have &dyn ProcessExecutor, we create a RealProcessExecutor for the Arc.
-    use crate::executor::RealProcessExecutor;
-    let executor_for_arc = RealProcessExecutor::new();
-    let executor_arc = std::sync::Arc::new(executor_for_arc)
-        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+    // Clone the executor Arc for use in PhaseContext and ConflictResolutionContext
+    let executor_arc = std::sync::Arc::clone(&executor);
 
     let mut phase_ctx = PhaseContext {
         config,
@@ -1697,8 +1693,8 @@ fn try_resolve_conflicts_without_phase_ctx(
         run_context: RunContext::new(),
         execution_history: ExecutionHistory::new(),
         prompt_history: std::collections::HashMap::new(),
-        executor,
-        executor_arc,
+        executor: &*executor,
+        executor_arc: std::sync::Arc::clone(&executor_arc),
     };
 
     let ctx = ConflictResolutionContext {
@@ -1714,7 +1710,7 @@ fn try_resolve_conflicts_without_phase_ctx(
         ctx,
         &mut phase_ctx,
         "RebaseOnly",
-        executor,
+        &*executor,
     )
 }
 

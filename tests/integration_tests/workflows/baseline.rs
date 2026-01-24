@@ -22,7 +22,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_for_git_success, mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::git_helpers::{GitOps, RealGit};
 use test_helpers::{commit_all, init_git_repo, write_file};
@@ -356,7 +356,10 @@ fn ralph_diff_shows_correct_range() {
         // Verify the diff from start_commit includes only the new changes
         // by running git diff directly in the test (not via the agent)
         // Use GitOps trait to get diff from start commit
-        let git = RealGit::new();
+        // Note: diff_from uses git2 library, not external processes, but we still
+        // use with_executor() to avoid creating a RealProcessExecutor instance
+        let executor = mock_executor_for_git_success();
+        let git = RealGit::with_executor(executor);
         let diff_content =
             GitOps::diff_from(&git, &start_commit.to_string()).expect("Failed to run git diff");
 
