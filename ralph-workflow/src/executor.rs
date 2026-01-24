@@ -399,7 +399,6 @@ impl<T: Clone> MockResult<T> {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl<T: Clone + Default> Default for MockResult<T> {
-    #[expect(dead_code)]
     fn default() -> Self {
         MockResult::Ok(T::default())
     }
