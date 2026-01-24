@@ -18,10 +18,10 @@
 {#   Valid <ralph-issues> XML conforming to the XSD schema                     #}
 {# ============================================================================ #}
 
-Your XML at `.agent/tmp/issues.xml` failed validation.
+Your XML at `{{ISSUES_XML_PATH}}` failed validation.
 
 ERROR: {{XSD_ERROR}}
 
-Fix `.agent/tmp/issues.xml` based on `.agent/tmp/issues.xsd`.
+Fix `{{ISSUES_XML_PATH}}` based on `{{ISSUES_XSD_PATH}}`.
 
 IMPORTANT: Use file editing tools to modify the XML file directly. Do NOT output the corrected XML in your response.

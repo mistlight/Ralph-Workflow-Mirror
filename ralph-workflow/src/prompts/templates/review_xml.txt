@@ -86,8 +86,8 @@ Do NOT report:
 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════════════════════════
 
-Write your XML to: `.agent/tmp/issues.xml`
-XSD schema at: `.agent/tmp/issues.xsd`
+Write your XML to: `{{ISSUES_XML_PATH}}`
+XSD schema at: `{{ISSUES_XSD_PATH}}`
 
 For special characters, use CDATA: <![CDATA[a < b]]>
 

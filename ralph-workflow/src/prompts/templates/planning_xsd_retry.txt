@@ -18,11 +18,11 @@
 {#   Valid <ralph-plan> XML conforming to the XSD schema                       #}
 {# ============================================================================ #}
 
-Your XML at `.agent/tmp/plan.xml` failed validation.
+Your XML at `{{PLAN_XML_PATH}}` failed validation.
 
 ERROR: {{XSD_ERROR}}
 
-Fix `.agent/tmp/plan.xml` based on `.agent/tmp/plan.xsd`.
+Fix `{{PLAN_XML_PATH}}` based on `{{PLAN_XSD_PATH}}`.
 
 IMPORTANT: Use file editing tools to modify the XML file directly. Do NOT output the corrected XML in your response.
 

@@ -19,10 +19,10 @@
 {# ============================================================================ #}
 {{> shared/_safety_no_execute}}
 
-Your XML at `.agent/tmp/commit_message.xml` failed validation.
+Your XML at `{{COMMIT_MESSAGE_XML_PATH}}` failed validation.
 
 ERROR: {{XSD_ERROR}}
 
-Fix `.agent/tmp/commit_message.xml` based on `.agent/tmp/commit_message.xsd`.
+Fix `{{COMMIT_MESSAGE_XML_PATH}}` based on `{{COMMIT_MESSAGE_XSD_PATH}}`.
 
 IMPORTANT: Use file editing tools to modify the XML file directly. Do NOT output the corrected XML in your response.

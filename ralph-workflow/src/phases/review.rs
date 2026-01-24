@@ -22,6 +22,7 @@ use crate::files::llm_output_extraction::{
     format_xml_for_display, validate_fix_result_xml, validate_issues_xml, xml_paths,
     IssuesElements,
 };
+use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
 use crate::git_helpers::{
     get_baseline_summary, git_snapshot, update_review_baseline, CommitResultFallback,
@@ -1072,6 +1073,9 @@ pub fn run_fix_pass(
     let plan_content = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
     let issues_content = fs::read_to_string(".agent/ISSUES.md").unwrap_or_default();
 
+    // Extract file paths from issues for the fix prompt
+    let files_to_modify = extract_file_paths_from_issues(&issues_content);
+
     let log_dir = format!(".agent/logs/reviewer_fix_{j}");
 
     let max_xsd_retries = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize;
@@ -1110,6 +1114,7 @@ pub fn run_fix_pass(
                             &prompt_content,
                             &plan_content,
                             &issues_content,
+                            &files_to_modify,
                         )
                     });
 
@@ -1155,6 +1160,7 @@ pub fn run_fix_pass(
                     &prompt_content,
                     &plan_content,
                     &issues_content,
+                    &files_to_modify,
                 )
             } else {
                 // Both continuation and XSD retry

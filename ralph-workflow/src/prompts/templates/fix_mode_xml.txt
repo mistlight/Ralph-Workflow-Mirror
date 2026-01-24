@@ -90,8 +90,8 @@ FIX GUIDELINES:
 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════════════════════════
 
-Write your XML to: `.agent/tmp/fix_result.xml`
-XSD schema at: `.agent/tmp/fix_result.xsd`
+Write your XML to: `{{FIX_RESULT_XML_PATH}}`
+XSD schema at: `{{FIX_RESULT_XSD_PATH}}`
 
 For special characters, use CDATA: <![CDATA[a < b]]>
 
