@@ -399,6 +399,18 @@ fn build_agent_command(
         }
     }
 
+    // Clear problematic Anthropic env vars that weren't explicitly set by the agent.
+    // We build a complete env map, sanitize it, then apply it to the command.
+    let mut complete_env: std::collections::HashMap<String, String> =
+        std::env::vars().collect();
+    for (key, value) in config.env_vars.iter() {
+        complete_env.insert(key.clone(), value.clone());
+    }
+    sanitize_command_env(&mut complete_env, &config.env_vars, anthropic_env_vars_to_sanitize);
+    for (key, value) in &complete_env {
+        command.env(key, value);
+    }
+
     // Set agent-side buffering disabling environment variables for real-time streaming.
     // These are only set if not already explicitly configured by the user's env_vars.
     // This mitigates the issue where AI agents buffer their stdout instead of streaming.
@@ -413,14 +425,46 @@ fn build_agent_command(
         }
     }
 
-    // Clear problematic Anthropic env vars that weren't explicitly set by the agent.
-    for &var in anthropic_env_vars_to_sanitize {
-        if !config.env_vars.contains_key(var) {
-            command.env_remove(var);
+    Ok((argv, command))
+}
+
+/// Sanitize environment variables for agent subprocess execution.
+///
+/// This function removes problematic Anthropic environment variables from the
+/// provided environment map, unless they were explicitly set by the agent
+/// configuration.
+///
+/// # Arguments
+///
+/// * `env_vars` - Mutable reference to environment variables map
+/// * `agent_env_vars` - Environment variables explicitly set by agent config
+/// * `vars_to_sanitize` - List of environment variable names to remove
+///
+/// # Behavior
+///
+/// - Removes all vars in `vars_to_sanitize` from `env_vars`
+/// - EXCEPT for vars that are present in `agent_env_vars` (explicitly set)
+/// - This prevents GLM CCS credentials from leaking into agent subprocesses
+///
+/// # Example
+///
+/// ```ignore
+/// let mut env = std::env::vars().collect::<HashMap<_, _>>();
+/// let agent_vars = HashMap::from([("ANTHROPIC_API_KEY", "agent-key")]);
+/// sanitize_command_env(&mut env, &agent_vars, ANTHROPIC_VARS);
+/// // env no longer contains ANTHROPIC_BASE_URL (not in agent_vars)
+/// // env still contains ANTHROPIC_API_KEY (explicitly set by agent)
+/// ```
+pub fn sanitize_command_env(
+    env_vars: &mut std::collections::HashMap<String, String>,
+    agent_env_vars: &std::collections::HashMap<String, String>,
+    vars_to_sanitize: &[&str],
+) {
+    for &var in vars_to_sanitize {
+        if !agent_env_vars.contains_key(var) {
+            env_vars.remove(var);
         }
     }
-
-    Ok((argv, command))
 }
 
 /// Spawns the agent process, converting ALL spawn errors into `CommandResult`.
@@ -1050,34 +1094,135 @@ mod tests {
         // Should preserve the end content (most relevant for XSD errors)
         assert!(result.contains("IMPORTANT_END_MARKER"));
     }
+}
+
+#[cfg(test)]
+mod sanitize_env_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    const ANTHROPIC_ENV_VARS_TO_SANITIZE: &[&str] = &[
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    ];
 
     #[test]
-    fn test_spawn_agent_process_command_not_found() {
-        // Try to spawn a command that doesn't exist
-        let command = Command::new("/nonexistent/command/that/does/not/exist");
-        let argv = vec!["/nonexistent/command/that/does/not/exist".to_string()];
+    fn test_sanitize_command_env_removes_anthropic_vars_when_not_explicitly_set() {
+        // Setup: Environment with GLM-like Anthropic credentials
+        let mut env_vars = HashMap::from([
+            ("ANTHROPIC_API_KEY".to_string(), "glm-test-key".to_string()),
+            ("ANTHROPIC_BASE_URL".to_string(), "https://glm.example.com".to_string()),
+            ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+            ("HOME".to_string(), "/home/user".to_string()),
+        ]);
+        let agent_env_vars = HashMap::new(); // Agent doesn't set any Anthropic vars
 
-        let result = spawn_agent_process(command, &argv);
+        // Execute: Sanitize environment
+        sanitize_command_env(&mut env_vars, &agent_env_vars, ANTHROPIC_ENV_VARS_TO_SANITIZE);
 
-        // Should return Err(CommandResult) with exit code 127, not panic
-        assert!(result.is_err());
-        let cmd_result = result.unwrap_err();
-        assert_eq!(cmd_result.exit_code, 127);
-        assert!(cmd_result.stderr.contains("command not found"));
+        // Assert: Anthropic vars should be removed, other vars preserved
+        assert!(
+            !env_vars.contains_key("ANTHROPIC_API_KEY"),
+            "ANTHROPIC_API_KEY should be removed when not explicitly set by agent"
+        );
+        assert!(
+            !env_vars.contains_key("ANTHROPIC_BASE_URL"),
+            "ANTHROPIC_BASE_URL should be removed when not explicitly set by agent"
+        );
+        assert_eq!(
+            env_vars.get("PATH"),
+            Some(&"/usr/bin:/bin".to_string()),
+            "Non-Anthropic vars should be preserved"
+        );
+        assert_eq!(
+            env_vars.get("HOME"),
+            Some(&"/home/user".to_string()),
+            "Non-Anthropic vars should be preserved"
+        );
     }
 
     #[test]
-    fn test_spawn_agent_process_converts_all_errors_to_command_result() {
-        // Verify that spawn errors don't propagate as io::Error
-        // This test ensures fallback can handle the error
-        let command = Command::new(""); // Empty command should fail
-        let argv = vec!["".to_string()];
+    fn test_sanitize_command_env_preserves_explicitly_set_anthropic_vars() {
+        // Setup: Environment with parent Anthropic vars + agent's explicit vars
+        let mut env_vars = HashMap::from([
+            ("ANTHROPIC_API_KEY".to_string(), "parent-key".to_string()),
+            ("ANTHROPIC_BASE_URL".to_string(), "https://parent.example.com".to_string()),
+            ("ANTHROPIC_AUTH_TOKEN".to_string(), "parent-token".to_string()),
+            ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+        ]);
+        let agent_env_vars = HashMap::from([
+            ("ANTHROPIC_API_KEY".to_string(), "agent-specific-key".to_string()),
+            ("ANTHROPIC_BASE_URL".to_string(), "https://agent.example.com".to_string()),
+        ]);
 
-        let result = spawn_agent_process(command, &argv);
+        // Execute: Sanitize environment
+        sanitize_command_env(&mut env_vars, &agent_env_vars, ANTHROPIC_ENV_VARS_TO_SANITIZE);
 
-        // Should be Err(CommandResult), not a panic or io::Error propagation
-        assert!(result.is_err());
-        // The CommandResult should have a non-zero exit code
-        assert_ne!(result.unwrap_err().exit_code, 0);
+        // Assert: Explicitly set Anthropic vars should be preserved with agent's values
+        assert_eq!(
+            env_vars.get("ANTHROPIC_API_KEY"),
+            Some(&"agent-specific-key".to_string()),
+            "ANTHROPIC_API_KEY explicitly set by agent should be preserved"
+        );
+        assert_eq!(
+            env_vars.get("ANTHROPIC_BASE_URL"),
+            Some(&"https://agent.example.com".to_string()),
+            "ANTHROPIC_BASE_URL explicitly set by agent should be preserved"
+        );
+        assert!(
+            !env_vars.contains_key("ANTHROPIC_AUTH_TOKEN"),
+            "ANTHROPIC_AUTH_TOKEN not explicitly set by agent should be removed"
+        );
+        assert_eq!(
+            env_vars.get("PATH"),
+            Some(&"/usr/bin:/bin".to_string()),
+            "Non-Anthropic vars should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_command_env_handles_empty_env_vars() {
+        // Setup: Empty environment
+        let mut env_vars = HashMap::new();
+        let agent_env_vars = HashMap::new();
+
+        // Execute: Should not panic on empty input
+        sanitize_command_env(&mut env_vars, &agent_env_vars, ANTHROPIC_ENV_VARS_TO_SANITIZE);
+
+        // Assert: Environment should remain empty
+        assert!(env_vars.is_empty(), "Empty environment should remain empty");
+    }
+
+    #[test]
+    fn test_sanitize_command_env_handles_all_anthropic_vars() {
+        // Setup: Environment with all Anthropic vars
+        let mut env_vars = ANTHROPIC_ENV_VARS_TO_SANITIZE
+            .iter()
+            .map(|&var| (var.to_string(), format!("value-{var}")))
+            .collect();
+        env_vars.insert("OTHER_VAR".to_string(), "other-value".to_string());
+
+        let agent_env_vars = HashMap::new();
+
+        // Execute: Sanitize all Anthropic vars
+        sanitize_command_env(&mut env_vars, &agent_env_vars, ANTHROPIC_ENV_VARS_TO_SANITIZE);
+
+        // Assert: All Anthropic vars should be removed
+        for &var in ANTHROPIC_ENV_VARS_TO_SANITIZE {
+            assert!(
+                !env_vars.contains_key(var),
+                "{var} should be removed when not explicitly set"
+            );
+        }
+        assert_eq!(
+            env_vars.get("OTHER_VAR"),
+            Some(&"other-value".to_string()),
+            "Non-Anthropic vars should be preserved"
+        );
     }
 }

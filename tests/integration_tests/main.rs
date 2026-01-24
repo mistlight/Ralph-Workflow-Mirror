@@ -23,6 +23,7 @@
 //!
 //! See individual test modules for examples of proper integration test structure.
 
+mod agent_spawn_errors;
 mod cli;
 mod codex_parser_tests;
 mod commit;
