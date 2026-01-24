@@ -113,6 +113,7 @@ pub fn get_primary_commit_agent(ctx: &PhaseContext<'_>) -> Option<String> {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
     use crate::logger::{Colors, Logger};
     use crate::pipeline::{Stats, Timer};
     use crate::prompts::template_context::TemplateContext;
@@ -170,7 +171,7 @@ mod tests {
             run_context: RunContext::new(),
             execution_history: ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
-            executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+            executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -209,7 +210,7 @@ mod tests {
             run_context: RunContext::new(),
             execution_history: ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
-            executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+            executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -240,7 +241,7 @@ mod tests {
             run_context: RunContext::new(),
             execution_history: ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
-            executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+            executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
         };
 
         let result = get_primary_commit_agent(&ctx);

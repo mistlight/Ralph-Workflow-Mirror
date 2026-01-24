@@ -51,7 +51,8 @@ pub fn handle_diagnose(
     println!();
 
     print_system_info(colors);
-    print_git_info(colors, &RealProcessExecutor::new());
+    let executor = RealProcessExecutor::new();
+    print_git_info(colors, &executor);
     print_config_info(colors, config, config_path, config_sources);
     print_agent_chain_info(colors, registry);
     print_agent_availability(colors, registry);

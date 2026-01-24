@@ -44,7 +44,12 @@ impl FileSystemState {
     /// - .agent/NOTES.md: Development notes (if exists)
     /// - .agent/status: Pipeline status file (if exists)
     pub fn capture_current() -> Self {
-        Self::capture_current_with_executor(&RealProcessExecutor)
+        Self::capture_current_with_executor(&RealProcessExecutor::new())
+    }
+
+    /// Capture the current state with a provided executor (public method for tests).
+    pub fn capture_with_executor(executor: &dyn ProcessExecutor) -> Self {
+        Self::capture_current_with_executor(executor)
     }
 
     /// Capture the current state of key files with a provided process executor.
@@ -169,6 +174,13 @@ impl FileSystemState {
     ///
     /// Returns a list of validation errors. Empty list means all checks passed.
     pub fn validate(&self) -> Vec<ValidationError> {
+        self.validate_with_executor(None)
+    }
+
+    /// Validate the current file system state against this snapshot with a provided executor.
+    ///
+    /// Returns a list of validation errors. Empty list means all checks passed.
+    pub fn validate_with_executor(&self, executor: Option<&dyn ProcessExecutor>) -> Vec<ValidationError> {
         let mut errors = Vec::new();
 
         // Validate each tracked file
@@ -179,7 +191,9 @@ impl FileSystemState {
         }
 
         // Validate git state if we captured it
-        if let Err(e) = self.validate_git_state() {
+        if let Err(e) = self.validate_git_state_with_executor(
+            executor.unwrap_or(&RealProcessExecutor::new())
+        ) {
             errors.push(e);
         }
 
@@ -211,11 +225,6 @@ impl FileSystemState {
         }
 
         Ok(())
-    }
-
-    /// Validate git state against the snapshot.
-    fn validate_git_state(&self) -> Result<(), ValidationError> {
-        self.validate_git_state_with_executor(&RealProcessExecutor)
     }
 
     /// Validate git state against the snapshot with a provided process executor.

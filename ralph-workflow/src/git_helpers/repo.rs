@@ -432,8 +432,8 @@ fn resolve_commit_identity(
     }
 
     // Priority 5: System username + derived email
-    let username = fallback_username();
-    let system_email = fallback_email(&username);
+    let username = fallback_username_with_real();
+    let system_email = fallback_email_with_real(&username);
     let identity = GitIdentity::new(
         if final_name.is_empty() {
             username

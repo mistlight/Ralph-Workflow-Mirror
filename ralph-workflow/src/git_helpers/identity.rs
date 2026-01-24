@@ -71,7 +71,7 @@ impl GitIdentity {
 /// Uses platform-specific methods:
 /// - On Unix: `whoami` command, fallback to `$USER` env var
 /// - On Windows: `%USERNAME%` env var
-pub fn fallback_username() -> String {
+pub fn fallback_username(executor: Option<&dyn ProcessExecutor>) -> String {
     // Try environment variables first (fastest)
     if cfg!(unix) {
         if let Ok(user) = env::var("USER") {
@@ -94,11 +94,12 @@ pub fn fallback_username() -> String {
 
     // As a last resort, try to run whoami (Unix only)
     if cfg!(unix) {
-        let executor = RealProcessExecutor::new();
-        if let Ok(output) = executor.execute("whoami", &[], &[], None) {
-            let username = output.stdout.trim().to_string();
-            if !username.is_empty() {
-                return username;
+        if let Some(exec) = executor {
+            if let Ok(output) = exec.execute("whoami", &[], &[], None) {
+                let username = output.stdout.trim().to_string();
+                if !username.is_empty() {
+                    return username;
+                }
             }
         }
     }
@@ -107,12 +108,17 @@ pub fn fallback_username() -> String {
     "Unknown User".to_string()
 }
 
+/// Get the system username with a real process executor (convenience function).
+pub fn fallback_username_with_real() -> String {
+    fallback_username(Some(&RealProcessExecutor::new()))
+}
+
 /// Get a fallback email based on the username.
 ///
 /// Format: `{username}@{hostname}` or `{username}@localhost`
-pub fn fallback_email(username: &str) -> String {
+pub fn fallback_email(username: &str, executor: Option<&dyn ProcessExecutor>) -> String {
     // Try to get hostname
-    let hostname = match get_hostname() {
+    let hostname = match get_hostname(executor) {
         Some(host) if !host.is_empty() => host,
         _ => "localhost".to_string(),
     };
@@ -120,8 +126,13 @@ pub fn fallback_email(username: &str) -> String {
     format!("{username}@{hostname}")
 }
 
+/// Get a fallback email with a real process executor (convenience function).
+pub fn fallback_email_with_real(username: &str) -> String {
+    fallback_email(username, Some(&RealProcessExecutor::new()))
+}
+
 /// Get the system hostname.
-fn get_hostname() -> Option<String> {
+fn get_hostname(executor: Option<&dyn ProcessExecutor>) -> Option<String> {
     // Try HOSTNAME environment variable first (fastest)
     if let Ok(hostname) = env::var("HOSTNAME") {
         let hostname = hostname.trim();
@@ -131,11 +142,12 @@ fn get_hostname() -> Option<String> {
     }
 
     // Try the `hostname` command
-    let executor = RealProcessExecutor::new();
-    if let Ok(output) = executor.execute("hostname", &[], &[], None) {
-        let hostname = output.stdout.trim().to_string();
-        if !hostname.is_empty() {
-            return Some(hostname);
+    if let Some(exec) = executor {
+        if let Ok(output) = exec.execute("hostname", &[], &[], None) {
+            let hostname = output.stdout.trim().to_string();
+            if !hostname.is_empty() {
+                return Some(hostname);
+            }
         }
     }
 
@@ -205,14 +217,28 @@ mod tests {
 
     #[test]
     fn test_fallback_username_not_empty() {
-        let username = fallback_username();
+        let username = fallback_username_with_real();
         assert!(!username.is_empty());
     }
 
     #[test]
     fn test_fallback_email_format() {
         let username = "testuser";
-        let email = fallback_email(username);
+        let email = fallback_email_with_real(username);
+        assert!(email.contains('@'));
+        assert!(email.starts_with(username));
+    }
+
+    #[test]
+    fn test_fallback_username_without_executor() {
+        let username = fallback_username(None);
+        assert!(!username.is_empty());
+    }
+
+    #[test]
+    fn test_fallback_email_without_executor() {
+        let username = "testuser";
+        let email = fallback_email(username, None);
         assert!(email.contains('@'));
         assert!(email.starts_with(username));
     }

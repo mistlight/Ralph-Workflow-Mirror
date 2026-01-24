@@ -12,6 +12,7 @@ use crate::logger::argv_requests_json;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::pipeline::Timer;
+use crate::executor::MockProcessExecutor;
 use std::collections::HashMap;
 use std::path;
 
@@ -131,7 +132,7 @@ fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     let mut config = super::runner::FallbackConfig {
@@ -244,7 +245,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     let mut config = super::runner::FallbackConfig {
@@ -491,7 +492,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     // Run the review with GLM agent
@@ -630,7 +631,7 @@ exit 1
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     // Run with output validator
@@ -733,7 +734,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     // Create fake session info
@@ -834,7 +835,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     // Create session info matching the agent
@@ -931,7 +932,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     // Create session info (even though agent doesn't support it)
@@ -1037,7 +1038,7 @@ fi
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     // Create session info
@@ -1154,7 +1155,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     // Create session info with SANITIZED agent name (as extracted from log file)
@@ -1287,7 +1288,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     // Run first attempt (retry_num = 0) - this creates the log file with session_id
@@ -1352,7 +1353,7 @@ exit 0
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::RealProcessExecutor::new()),
+        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
     };
 
     let mut xsd_config2 = crate::pipeline::XsdRetryConfig {
