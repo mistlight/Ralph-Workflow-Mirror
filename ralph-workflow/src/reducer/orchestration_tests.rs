@@ -39,6 +39,7 @@ fn test_planning_initializes_agent_chain_when_empty() {
 fn test_planning_generates_plan_when_agents_ready() {
     let state = PipelineState {
         phase: PipelinePhase::Planning,
+        context_cleaned: true, // Context must be cleaned before planning
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
@@ -104,11 +105,17 @@ fn test_development_runs_exactly_n_iterations() {
 
     let mut iterations_run = Vec::new();
 
-    // Simulate the development phase
-    while state.phase == PipelinePhase::Planning || state.phase == PipelinePhase::Development {
+    // Simulate the development phase (includes CommitMessage after each iteration)
+    while state.phase == PipelinePhase::Planning
+        || state.phase == PipelinePhase::Development
+        || state.phase == PipelinePhase::CommitMessage
+    {
         let effect = determine_next_effect(&state);
 
         match effect {
+            Effect::CleanupContext => {
+                state = reduce(state, PipelineEvent::ContextCleaned);
+            }
             Effect::GeneratePlan { iteration } => {
                 state = reduce(
                     state,
@@ -125,6 +132,16 @@ fn test_development_runs_exactly_n_iterations() {
                     PipelineEvent::DevelopmentIterationCompleted {
                         iteration,
                         output_valid: true,
+                    },
+                );
+            }
+            Effect::GenerateCommitMessage => {
+                state = reduce(state, PipelineEvent::CommitGenerationStarted);
+                state = reduce(
+                    state,
+                    PipelineEvent::CommitCreated {
+                        hash: format!("abc{}", iterations_run.len()),
+                        message: "test".to_string(),
                     },
                 );
             }
@@ -277,7 +294,7 @@ fn test_review_triggers_fix_when_issues_found() {
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::RunFixAttempt { pass: 0 }));
 
-    // Fix completes
+    // Fix completes - now transitions to CommitMessage phase
     state = reduce(
         state,
         PipelineEvent::FixAttemptCompleted {
@@ -287,6 +304,38 @@ fn test_review_triggers_fix_when_issues_found() {
     );
 
     assert!(!state.review_issues_found);
+    assert_eq!(state.phase, PipelinePhase::CommitMessage);
+    assert_eq!(
+        state.previous_phase,
+        Some(PipelinePhase::Review),
+        "Should remember we came from Review"
+    );
+    // reviewer_pass stays at 0 until CommitCreated
+    assert_eq!(state.reviewer_pass, 0);
+
+    // Generate commit message
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::GenerateCommitMessage));
+    state = reduce(
+        state,
+        PipelineEvent::CommitMessageGenerated {
+            message: "fix: address review issues".to_string(),
+            attempt: 1,
+        },
+    );
+
+    // Create commit
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::CreateCommit { .. }));
+    state = reduce(
+        state,
+        PipelineEvent::CommitCreated {
+            hash: "abc123".to_string(),
+            message: "fix: address review issues".to_string(),
+        },
+    );
+
+    // Now we're back in Review with incremented pass
     assert_eq!(state.reviewer_pass, 1);
     assert_eq!(state.phase, PipelinePhase::Review);
 }
@@ -425,6 +474,9 @@ fn test_complete_pipeline_flow() {
                         agents: vec!["claude".to_string()],
                     },
                 );
+            }
+            Effect::CleanupContext => {
+                state = reduce(state, PipelineEvent::ContextCleaned);
             }
             Effect::GeneratePlan { iteration } => {
                 state = reduce(

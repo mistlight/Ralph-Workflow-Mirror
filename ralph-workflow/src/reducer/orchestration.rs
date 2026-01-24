@@ -131,6 +131,7 @@ mod tests {
     fn test_determine_effect_planning_with_agents() {
         let state = PipelineState {
             phase: PipelinePhase::Planning,
+            context_cleaned: true, // Context must be cleaned before planning
             agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
                 vec!["claude".to_string()],
                 vec![vec![]],
@@ -305,10 +306,17 @@ mod tests {
         let mut iterations_run = Vec::new();
 
         // Simulate the development phase
-        while state.phase == PipelinePhase::Planning || state.phase == PipelinePhase::Development {
+        while state.phase == PipelinePhase::Planning
+            || state.phase == PipelinePhase::Development
+            || state.phase == PipelinePhase::CommitMessage
+        {
             let effect = determine_next_effect(&state);
 
             match effect {
+                Effect::CleanupContext => {
+                    // Context cleanup before planning
+                    state = reduce(state, PipelineEvent::ContextCleaned);
+                }
                 Effect::GeneratePlan { iteration } => {
                     // Complete planning
                     state = reduce(
@@ -321,12 +329,23 @@ mod tests {
                 }
                 Effect::RunDevelopmentIteration { iteration } => {
                     iterations_run.push(iteration);
-                    // Complete the iteration
+                    // Complete the iteration (goes to CommitMessage phase)
                     state = reduce(
                         state,
                         PipelineEvent::DevelopmentIterationCompleted {
                             iteration,
                             output_valid: true,
+                        },
+                    );
+                }
+                Effect::GenerateCommitMessage => {
+                    // Generate and commit
+                    state = reduce(state, PipelineEvent::CommitGenerationStarted);
+                    state = reduce(
+                        state,
+                        PipelineEvent::CommitCreated {
+                            hash: format!("abc{}", iterations_run.len()),
+                            message: "test".to_string(),
                         },
                     );
                 }
@@ -489,7 +508,7 @@ mod tests {
             effect
         );
 
-        // After fix completes, flag should be reset and move to next pass
+        // After fix completes, goes to CommitMessage phase
         state = reduce(
             state,
             PipelineEvent::FixAttemptCompleted {
@@ -502,11 +521,35 @@ mod tests {
             !state.review_issues_found,
             "review_issues_found should be reset after fix"
         );
-        assert_eq!(state.reviewer_pass, 1, "Should increment to next pass");
+        // After fix, goes to CommitMessage phase (pass increment happens after commit)
+        assert_eq!(
+            state.reviewer_pass, 0,
+            "Pass stays at 0 until CommitCreated"
+        );
+        assert_eq!(
+            state.phase,
+            PipelinePhase::CommitMessage,
+            "Should go to CommitMessage phase after fix"
+        );
+
+        // After commit is created, pass is incremented
+        state = reduce(state, PipelineEvent::CommitGenerationStarted);
+        state = reduce(
+            state,
+            PipelineEvent::CommitCreated {
+                hash: "abc123".to_string(),
+                message: "fix commit".to_string(),
+            },
+        );
+
+        assert_eq!(
+            state.reviewer_pass, 1,
+            "Should increment to next pass after commit"
+        );
         assert_eq!(
             state.phase,
             PipelinePhase::Review,
-            "Should stay in Review phase"
+            "Should return to Review phase after commit"
         );
     }
 
@@ -525,12 +568,15 @@ mod tests {
         let mut review_passes_run = Vec::new();
 
         // Simulate complete pipeline execution
-        let max_steps = 50; // Safety limit to prevent infinite loops
+        let max_steps = 100; // Safety limit to prevent infinite loops (increased for commit flow)
         for step in 0..max_steps {
             phase_sequence.push(state.phase);
             let effect = determine_next_effect(&state);
 
             match effect {
+                Effect::CleanupContext => {
+                    state = reduce(state, PipelineEvent::ContextCleaned);
+                }
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
@@ -579,6 +625,7 @@ mod tests {
                     );
                 }
                 Effect::GenerateCommitMessage => {
+                    state = reduce(state, PipelineEvent::CommitGenerationStarted);
                     state = reduce(
                         state,
                         PipelineEvent::CommitMessageGenerated {

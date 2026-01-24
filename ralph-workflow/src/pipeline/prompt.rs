@@ -6,13 +6,16 @@ use crate::config::Config;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::logger::{argv_requests_json, format_generic_json_for_display};
+use crate::pipeline::idle_timeout::{
+    monitor_idle_timeout, new_activity_timestamp, ActivityTrackingReader, MonitorResult,
+    SharedActivityTimestamp, IDLE_TIMEOUT_SECS,
+};
 use crate::pipeline::Timer;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdout, Command, Stdio};
-
-#[cfg(any(test, feature = "test-utils"))]
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 /// A line-oriented reader that processes data as it arrives.
@@ -455,15 +458,21 @@ fn spawn_agent_process(mut command: Command, argv: &[String]) -> Result<Child, C
 }
 
 /// Streams agent output based on parser type.
+///
+/// The `activity_timestamp` is updated whenever data is read from stdout,
+/// allowing external monitoring for idle timeout detection.
 fn stream_agent_output(
     stdout: ChildStdout,
     cmd: &PromptCommand<'_>,
     runtime: &PipelineRuntime<'_>,
+    activity_timestamp: SharedActivityTimestamp,
 ) -> io::Result<()> {
+    // Wrap stdout with activity tracking for idle timeout detection
+    let tracked_stdout = ActivityTrackingReader::new(stdout, activity_timestamp);
     // Use StreamingLineReader for real-time streaming instead of BufReader::lines().
     // StreamingLineReader yields lines immediately when newlines are found,
     // enabling character-by-character streaming for agents that output NDJSON gradually.
-    let reader = StreamingLineReader::new(stdout);
+    let reader = StreamingLineReader::new(tracked_stdout);
 
     if cmd.parser_type != JsonParserType::Generic
         || argv_requests_json(&split_command(cmd.cmd_str)?)
@@ -655,6 +664,9 @@ pub fn run_with_prompt(
     run_with_subprocess(cmd, runtime, ANTHROPIC_ENV_VARS_TO_SANITIZE)
 }
 
+/// Exit code returned when a process is killed due to SIGTERM.
+const SIGTERM_EXIT_CODE: i32 = 143;
+
 /// Run agent using the real subprocess execution.
 #[cfg(not(any(test, feature = "test-utils")))]
 fn run_with_subprocess(
@@ -680,10 +692,29 @@ fn run_with_subprocess(
         Err(result) => return Ok(result),
     };
 
+    // Get child PID for idle timeout monitoring
+    let child_id = child.id();
+
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
+
+    // Set up idle timeout monitoring
+    let activity_timestamp = new_activity_timestamp();
+    let monitor_should_stop = Arc::new(AtomicBool::new(false));
+    let monitor_should_stop_clone = monitor_should_stop.clone();
+    let activity_timestamp_clone = activity_timestamp.clone();
+
+    // Spawn idle timeout monitor thread
+    let monitor_handle = std::thread::spawn(move || {
+        monitor_idle_timeout(
+            activity_timestamp_clone,
+            child_id,
+            IDLE_TIMEOUT_SECS,
+            monitor_should_stop_clone,
+        )
+    });
 
     let stderr_join_handle = child.stderr.take().map(|stderr| {
         std::thread::spawn(move || -> io::Result<String> {
@@ -726,10 +757,29 @@ fn run_with_subprocess(
         })
     });
 
-    stream_agent_output(stdout, cmd, runtime)?;
+    stream_agent_output(stdout, cmd, runtime, activity_timestamp)?;
+
+    // Signal monitor to stop (process completed or streaming ended)
+    monitor_should_stop.store(true, std::sync::atomic::Ordering::Release);
 
     let (exit_code, stderr_output) =
         wait_for_completion_and_collect_stderr(child, stderr_join_handle, runtime)?;
+
+    // Check if monitor killed the process due to idle timeout
+    let monitor_result = monitor_handle
+        .join()
+        .unwrap_or(MonitorResult::ProcessCompleted);
+
+    // If monitor timed out, use SIGTERM exit code regardless of actual exit code
+    let final_exit_code = if monitor_result == MonitorResult::TimedOut {
+        runtime.logger.warn(&format!(
+            "Agent killed due to idle timeout (no output for {} seconds)",
+            IDLE_TIMEOUT_SECS
+        ));
+        SIGTERM_EXIT_CODE
+    } else {
+        exit_code
+    };
 
     if runtime.config.verbosity.is_verbose() {
         runtime.logger.info(&format!(
@@ -739,7 +789,7 @@ fn run_with_subprocess(
     }
 
     Ok(CommandResult {
-        exit_code,
+        exit_code: final_exit_code,
         stderr: stderr_output,
     })
 }
@@ -769,10 +819,29 @@ fn run_with_subprocess(
         Err(result) => return Ok(result),
     };
 
+    // Get child PID for idle timeout monitoring
+    let child_id = child.id();
+
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
+
+    // Set up idle timeout monitoring
+    let activity_timestamp = new_activity_timestamp();
+    let monitor_should_stop = Arc::new(AtomicBool::new(false));
+    let monitor_should_stop_clone = monitor_should_stop.clone();
+    let activity_timestamp_clone = activity_timestamp.clone();
+
+    // Spawn idle timeout monitor thread
+    let monitor_handle = std::thread::spawn(move || {
+        monitor_idle_timeout(
+            activity_timestamp_clone,
+            child_id,
+            IDLE_TIMEOUT_SECS,
+            monitor_should_stop_clone,
+        )
+    });
 
     let stderr_join_handle = child.stderr.take().map(|stderr| {
         std::thread::spawn(move || -> io::Result<String> {
@@ -815,10 +884,29 @@ fn run_with_subprocess(
         })
     });
 
-    stream_agent_output(stdout, cmd, runtime)?;
+    stream_agent_output(stdout, cmd, runtime, activity_timestamp)?;
+
+    // Signal monitor to stop (process completed or streaming ended)
+    monitor_should_stop.store(true, std::sync::atomic::Ordering::Release);
 
     let (exit_code, stderr_output) =
         wait_for_completion_and_collect_stderr(child, stderr_join_handle, runtime)?;
+
+    // Check if monitor killed the process due to idle timeout
+    let monitor_result = monitor_handle
+        .join()
+        .unwrap_or(MonitorResult::ProcessCompleted);
+
+    // If monitor timed out, use SIGTERM exit code regardless of actual exit code
+    let final_exit_code = if monitor_result == MonitorResult::TimedOut {
+        runtime.logger.warn(&format!(
+            "Agent killed due to idle timeout (no output for {} seconds)",
+            IDLE_TIMEOUT_SECS
+        ));
+        SIGTERM_EXIT_CODE
+    } else {
+        exit_code
+    };
 
     if runtime.config.verbosity.is_verbose() {
         runtime.logger.info(&format!(
@@ -828,7 +916,7 @@ fn run_with_subprocess(
     }
 
     Ok(CommandResult {
-        exit_code,
+        exit_code: final_exit_code,
         stderr: stderr_output,
     })
 }

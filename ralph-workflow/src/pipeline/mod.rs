@@ -20,6 +20,7 @@
 
 mod clipboard;
 mod fallback;
+pub mod idle_timeout;
 pub mod logfile;
 mod model_flag;
 mod prompt;
