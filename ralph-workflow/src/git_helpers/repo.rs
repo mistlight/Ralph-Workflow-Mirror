@@ -377,6 +377,10 @@ fn resolve_commit_identity(
 ) -> GitIdentity {
     use super::identity::{default_identity, fallback_email, fallback_username};
 
+    // Use None for executor to avoid spawning processes in this context
+    // The fallback will use environment variables instead
+    let executor = None;
+
     // Priority 1: Git config (via libgit2) - primary source
     let mut name = String::new();
     let mut email = String::new();
@@ -432,8 +436,9 @@ fn resolve_commit_identity(
     }
 
     // Priority 5: System username + derived email
-    let username = fallback_username_with_real();
-    let system_email = fallback_email_with_real(&username);
+    // Use None for executor - fallback will use environment variables
+    let username = fallback_username(executor);
+    let system_email = fallback_email(&username, executor);
     let identity = GitIdentity::new(
         if final_name.is_empty() {
             username
@@ -574,6 +579,13 @@ pub fn git_commit(
 /// - The repository cannot be opened
 /// - The starting commit cannot be found
 /// - The diff cannot be generated
+///
+/// # Note
+///
+/// This function is part of the test infrastructure (used by `RealGit` which
+/// implements the `GitOps` trait for integration testing). The compiler
+/// reports it as "unused" because `RealGit` is only used in integration tests,
+/// but it is legitimately exported and used through the public API.
 pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
@@ -610,6 +622,17 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     Ok(String::from_utf8_lossy(&result).to_string())
 }
 
+/// Generate a diff from the empty tree (initial commit).
+///
+/// This is a helper function for `get_git_diff_from_start` that handles the
+/// case of a repository with no commits yet.
+///
+/// # Note
+///
+/// This function is part of the test infrastructure (used by `RealGit` which
+/// implements the `GitOps` trait for integration testing). The compiler
+/// reports it as "unused" because `RealGit` is only used in integration tests,
+/// but it is legitimately exported and used through the public API.
 fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
     let mut diff_opts = git2::DiffOptions::new();
     diff_opts.include_untracked(true);
@@ -640,6 +663,13 @@ fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
 /// Returns a formatted diff string, or an error if:
 /// - The diff cannot be generated
 /// - The starting commit file exists but is invalid
+///
+/// # Note
+///
+/// This function is part of the test infrastructure (used by `RealGit` which
+/// implements the `GitOps` trait for integration testing). The compiler
+/// reports it as "unused" because `RealGit` is only used in integration tests,
+/// but it is legitimately exported and used through the public API.
 pub fn get_git_diff_from_start() -> io::Result<String> {
     use crate::git_helpers::start_commit::{load_start_point, save_start_commit, StartPoint};
 

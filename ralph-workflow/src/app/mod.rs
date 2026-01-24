@@ -114,7 +114,14 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
 
     // Handle --diagnose
     if args.recovery.diagnose {
-        handle_diagnose(colors, &config, &registry, &config_path, &config_sources);
+        handle_diagnose(
+            colors,
+            &config,
+            &registry,
+            &config_path,
+            &config_sources,
+            &*executor,
+        );
         return Ok(());
     }
 
@@ -964,6 +971,7 @@ fn create_phase_context_with_config<'ctx>(
         execution_history,
         prompt_history,
         executor: &*ctx.executor,
+        executor_arc: std::sync::Arc::clone(&ctx.executor),
     }
 }
 
@@ -1643,6 +1651,13 @@ fn try_resolve_conflicts_without_phase_ctx(
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
     let developer_agent = config.developer_agent.as_deref().unwrap_or("codex");
 
+    // For conflict resolution, we need an Arc-wrapped executor for the PhaseContext.
+    // Since we only have &dyn ProcessExecutor, we create a RealProcessExecutor for the Arc.
+    use crate::executor::RealProcessExecutor;
+    let executor_for_arc = RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+
     let mut phase_ctx = PhaseContext {
         config,
         registry: &registry,
@@ -1658,6 +1673,7 @@ fn try_resolve_conflicts_without_phase_ctx(
         execution_history: ExecutionHistory::new(),
         prompt_history: std::collections::HashMap::new(),
         executor,
+        executor_arc,
     };
 
     try_resolve_conflicts_with_fallback(
@@ -1734,6 +1750,7 @@ fn run_ai_conflict_resolution(
     executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<ConflictResolutionResult> {
     use crate::agents::AgentRegistry;
+    use crate::executor::RealProcessExecutor;
     use crate::files::result_extraction::extract_last_result;
     use crate::pipeline::{
         run_with_fallback_and_validator, FallbackConfig, OutputValidator, PipelineRuntime,
@@ -1749,12 +1766,21 @@ fn run_ai_conflict_resolution(
     let registry = AgentRegistry::new()?;
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
 
+    // For conflict resolution, we need an Arc-wrapped executor for the runtime.
+    // Since we only have &dyn ProcessExecutor, we create a RealProcessExecutor for the Arc.
+    // This is acceptable because conflict resolution runs in the main thread context
+    // and doesn't need test mocking support.
+    let executor_for_arc = RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+
     let mut runtime = PipelineRuntime {
         timer: &mut crate::pipeline::Timer::new(),
         logger,
         colors: &colors,
         config,
         executor,
+        executor_arc,
     };
 
     // Output validator: checks if agent produced valid output OR resolved conflicts

@@ -48,6 +48,8 @@ pub struct PhaseContext<'a> {
     pub prompt_history: std::collections::HashMap<String, String>,
     /// Process executor for external process execution.
     pub executor: &'a dyn ProcessExecutor,
+    /// Arc-wrapped executor for spawning into threads (e.g., idle timeout monitor).
+    pub executor_arc: std::sync::Arc<dyn ProcessExecutor>,
 }
 
 impl PhaseContext<'_> {
@@ -126,11 +128,14 @@ mod tests {
         timer: Timer,
         stats: Stats,
         template_context: TemplateContext,
+        executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
     }
 
     impl TestFixture {
         fn new() -> Self {
             let colors = Colors { enabled: false };
+            let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
+                as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
             Self {
                 config: Config::default(),
                 colors,
@@ -138,6 +143,7 @@ mod tests {
                 timer: Timer::new(),
                 stats: Stats::default(),
                 template_context: TemplateContext::default(),
+                executor_arc,
             }
         }
     }
@@ -172,6 +178,7 @@ mod tests {
             execution_history: ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
             executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+            executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -211,6 +218,7 @@ mod tests {
             execution_history: ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
             executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+            executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -242,6 +250,7 @@ mod tests {
             execution_history: ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
             executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+            executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
         };
 
         let result = get_primary_commit_agent(&ctx);

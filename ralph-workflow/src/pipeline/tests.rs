@@ -12,7 +12,6 @@ use crate::logger::argv_requests_json;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::pipeline::Timer;
-use crate::executor::MockProcessExecutor;
 use std::collections::HashMap;
 use std::path;
 
@@ -127,12 +126,19 @@ fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     let mut config = super::runner::FallbackConfig {
@@ -240,12 +246,19 @@ exit 0
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     let mut config = super::runner::FallbackConfig {
@@ -487,12 +500,19 @@ exit 0
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     // Run the review with GLM agent
@@ -626,12 +646,19 @@ exit 1
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     // Run with output validator
@@ -729,12 +756,19 @@ exit 0
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     // Create fake session info
@@ -830,12 +864,19 @@ exit 0
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     // Create session info matching the agent
@@ -927,12 +968,19 @@ exit 0
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     // Create session info (even though agent doesn't support it)
@@ -1033,12 +1081,19 @@ fi
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     // Create session info
@@ -1150,12 +1205,19 @@ exit 0
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     // Create session info with SANITIZED agent name (as extracted from log file)
@@ -1283,12 +1345,19 @@ exit 0
         ..Config::default()
     };
 
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
     };
 
     // Run first attempt (retry_num = 0) - this creates the log file with session_id
@@ -1348,12 +1417,19 @@ exit 0
     registry.set_ccs_aliases(&aliases2, defaults);
 
     // Run retry (retry_num = 1) with the extracted session info
+    // Unit tests for agent fallback behavior use RealProcessExecutor to test
+    // actual subprocess execution (nonexistent commands, error exit codes).
+    // The executor field is used for git commands, NOT for agent spawning.
+    let executor_for_arc2 = crate::executor::RealProcessExecutor::new();
+    let executor_arc2 = std::sync::Arc::new(executor_for_arc2)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime2 = PipelineRuntime {
         timer: &mut timer,
         logger: &logger,
         colors: &colors,
         config: &config,
-        executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
+        executor: executor_arc2.as_ref(),
+        executor_arc: executor_arc2.clone(),
     };
 
     let mut xsd_config2 = crate::pipeline::XsdRetryConfig {

@@ -26,13 +26,13 @@ impl ExtractionResult {
     }
 
     /// Create a result with invalid content
-    pub fn invalid(content: String, warning: &str) -> Self {
+    pub fn invalid(content: String, _warning: &str) -> Self {
         Self {
             raw_content: Some(content),
             #[cfg(any(test, feature = "test-utils"))]
             is_valid: false,
             #[cfg(any(test, feature = "test-utils"))]
-            validation_warning: Some(warning.to_string()),
+            validation_warning: Some(_warning.to_string()),
         }
     }
 

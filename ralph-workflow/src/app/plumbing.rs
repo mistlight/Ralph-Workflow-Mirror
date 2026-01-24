@@ -145,12 +145,18 @@ pub fn handle_generate_commit_msg(
     let mut timer = Timer::new();
 
     // Set up pipeline runtime
+    // For plumbing commands, we need an Arc-wrapped executor. Since we only have
+    // &dyn ProcessExecutor, we create a RealProcessExecutor for the Arc.
+    let executor_for_arc = crate::executor::RealProcessExecutor::new();
+    let executor_arc = std::sync::Arc::new(executor_for_arc)
+        as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
         logger,
         colors: &colors,
         config,
         executor,
+        executor_arc,
     };
 
     // Use the standard commit message generation from phases/commit.rs

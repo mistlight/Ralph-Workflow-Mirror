@@ -7,7 +7,7 @@ use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigS
 use crate::checkpoint::load_checkpoint;
 use crate::config::Config;
 use crate::diagnostics::run_diagnostics;
-use crate::executor::{ProcessExecutor, RealProcessExecutor};
+use crate::executor::ProcessExecutor;
 use crate::guidelines::{CheckSeverity, ReviewGuidelines};
 use crate::language_detector;
 use crate::logger::Colors;
@@ -39,6 +39,7 @@ pub fn handle_diagnose(
     registry: &AgentRegistry,
     config_path: &Path,
     config_sources: &[ConfigSource],
+    executor: &dyn ProcessExecutor,
 ) {
     // Gather diagnostics using the diagnostics module
     let report = run_diagnostics(registry);
@@ -51,8 +52,7 @@ pub fn handle_diagnose(
     println!();
 
     print_system_info(colors);
-    let executor = RealProcessExecutor::new();
-    print_git_info(colors, &executor);
+    print_git_info(colors, executor);
     print_config_info(colors, config, config_path, config_sources);
     print_agent_chain_info(colors, registry);
     print_agent_availability(colors, registry);

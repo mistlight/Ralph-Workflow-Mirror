@@ -274,6 +274,8 @@ pub struct PipelineRuntime<'a> {
     pub config: &'a Config,
     /// Process executor for external process execution.
     pub executor: &'a dyn crate::executor::ProcessExecutor,
+    /// Arc-wrapped executor for spawning into threads (e.g., idle timeout monitor).
+    pub executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
 }
 
 /// Saves the prompt to a file and optionally copies it to the clipboard.
@@ -571,8 +573,9 @@ fn run_with_agent_spawn(
     let activity_timestamp_clone = activity_timestamp.clone();
 
     // Create executor for monitor thread to kill the subprocess if needed
+    // Use the Arc-wrapped executor from runtime to support mocking in tests
     let monitor_executor: Arc<dyn crate::executor::ProcessExecutor> =
-        Arc::new(crate::executor::RealProcessExecutor::new());
+        std::sync::Arc::clone(&runtime.executor_arc);
 
     // Spawn idle timeout monitor thread
     let monitor_handle = std::thread::spawn(move || {

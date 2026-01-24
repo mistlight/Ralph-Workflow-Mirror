@@ -1159,6 +1159,7 @@ pub fn commit_with_generated_message(
         colors: ctx.colors,
         config: ctx.config,
         executor: ctx.executor,
+        executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
     };
 
     // Generate commit message using the standard pipeline

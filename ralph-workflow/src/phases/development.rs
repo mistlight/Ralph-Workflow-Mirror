@@ -397,6 +397,7 @@ pub fn run_development_iteration_with_xml_retry(
                     colors: ctx.colors,
                     config: ctx.config,
                     executor: ctx.executor,
+                    executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
                 };
                 let base_label = format!(
                     "run #{}{}",
@@ -668,6 +669,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             colors: ctx.colors,
             config: ctx.config,
             executor: ctx.executor,
+            executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
         };
 
         // Use session continuation for XSD retries (retry_num > 0)

@@ -33,7 +33,7 @@ impl FileSystemState {
         Self::default()
     }
 
-    /// Capture the current state of key files using default process executor.
+    /// Capture the current state using default process executor.
     ///
     /// This includes files that are critical for pipeline execution:
     /// - PROMPT.md: The primary task description
@@ -47,9 +47,11 @@ impl FileSystemState {
         Self::capture_current_with_executor(&RealProcessExecutor::new())
     }
 
-    /// Capture the current state with a provided executor (public method for tests).
-    pub fn capture_with_executor(executor: &dyn ProcessExecutor) -> Self {
-        Self::capture_current_with_executor(executor)
+    /// Capture the current state with an optional executor.
+    ///
+    /// If executor is None, uses RealProcessExecutor (production default).
+    pub fn capture_with_optional_executor(executor: Option<&dyn ProcessExecutor>) -> Self {
+        Self::capture_current_with_executor(executor.unwrap_or(&RealProcessExecutor::new()))
     }
 
     /// Capture the current state of key files with a provided process executor.
@@ -179,8 +181,13 @@ impl FileSystemState {
 
     /// Validate the current file system state against this snapshot with a provided executor.
     ///
+    /// If executor is None, uses RealProcessExecutor (production default).
+    ///
     /// Returns a list of validation errors. Empty list means all checks passed.
-    pub fn validate_with_executor(&self, executor: Option<&dyn ProcessExecutor>) -> Vec<ValidationError> {
+    pub fn validate_with_executor(
+        &self,
+        executor: Option<&dyn ProcessExecutor>,
+    ) -> Vec<ValidationError> {
         let mut errors = Vec::new();
 
         // Validate each tracked file
@@ -191,9 +198,10 @@ impl FileSystemState {
         }
 
         // Validate git state if we captured it
-        if let Err(e) = self.validate_git_state_with_executor(
-            executor.unwrap_or(&RealProcessExecutor::new())
-        ) {
+        // Create a longer-lived RealProcessExecutor for the validation
+        let real_executor = RealProcessExecutor::new();
+        let exec = executor.unwrap_or(&real_executor);
+        if let Err(e) = self.validate_git_state_with_executor(exec) {
             errors.push(e);
         }
 
