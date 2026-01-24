@@ -618,6 +618,14 @@ pub fn run_review_pass(
         let is_retry = retry_num > 0;
         let log_dir = format!(".agent/logs/reviewer_review_{j}_attempt_{retry_num}");
 
+        // Before each retry, check if the XML file is writable and clean up if locked
+        if is_retry {
+            use crate::files::io::check_and_cleanup_xml_before_retry;
+            use std::path::Path;
+            let xml_path = Path::new(crate::files::llm_output_extraction::xml_paths::ISSUES_XML);
+            let _ = check_and_cleanup_xml_before_retry(xml_path, ctx.logger);
+        }
+
         // For initial attempt, use XML prompt
         // For retries, use XSD retry prompt with error feedback
         let review_prompt_xml = if !is_retry {
@@ -1101,6 +1109,15 @@ pub fn run_fix_pass(
         for retry_num in 0..max_xsd_retries {
             let is_retry = retry_num > 0;
             let total_attempts = continuation_num * max_xsd_retries + retry_num + 1;
+
+            // Before each retry, check if the XML file is writable and clean up if locked
+            if is_retry {
+                use crate::files::io::check_and_cleanup_xml_before_retry;
+                use std::path::Path;
+                let xml_path =
+                    Path::new(crate::files::llm_output_extraction::xml_paths::FIX_RESULT_XML);
+                let _ = check_and_cleanup_xml_before_retry(xml_path, ctx.logger);
+            }
 
             // For initial attempt, use XML prompt
             // For retries, use XSD retry prompt with error feedback

@@ -603,6 +603,15 @@ fn run_commit_attempt_with_agent(
     let mut xsd_error: Option<String> = None;
 
     for retry_num in 0..max_retries {
+        // Before each retry, check if the XML file is writable and clean up if locked
+        if retry_num > 0 {
+            use crate::files::io::check_and_cleanup_xml_before_retry;
+            use std::path::Path;
+            let xml_path =
+                Path::new(crate::files::llm_output_extraction::xml_paths::COMMIT_MESSAGE_XML);
+            let _ = check_and_cleanup_xml_before_retry(xml_path, runtime.logger);
+        }
+
         // For initial attempt, xsd_error is None
         // For retries, we use the XSD error to guide the agent
         // Build prompt key for this attempt (strategy-specific)
