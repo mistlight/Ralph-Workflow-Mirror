@@ -319,11 +319,21 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
 /// * `context` - Template context containing the template registry
 /// * `diff` - The git diff to generate a commit message for
 pub fn prompt_simplified_commit_with_context(context: &TemplateContext, diff: &str) -> String {
+    // Check if diff is empty or whitespace-only
+    let diff_content = diff.trim();
+    let has_changes = !diff_content.is_empty();
+
+    if !has_changes {
+        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
+                meaningful changes should be checked before requesting a commit message."
+            .to_string();
+    }
+
     let template_content = context
         .registry()
         .get_template("commit_simplified")
         .unwrap_or_else(|_| include_str!("templates/commit_simplified.txt").to_string());
-    let variables = HashMap::from([("DIFF", diff.trim().to_string())]);
+    let variables = HashMap::from([("DIFF", diff_content.to_string())]);
     Template::new(&template_content)
         .render(&variables)
         .unwrap_or_else(|_| {
@@ -331,7 +341,7 @@ pub fn prompt_simplified_commit_with_context(context: &TemplateContext, diff: &s
             format!(
                 "Generate a commit message for this diff:\n\n{}\n\n\
                  Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>",
-                diff.trim()
+                diff_content
             )
         })
 }
@@ -353,8 +363,18 @@ pub fn prompt_xsd_retry_with_context(
     diff: &str,
     xsd_error: &str,
 ) -> String {
+    // Check if diff is empty or whitespace-only
+    let diff_content = diff.trim();
+    let has_changes = !diff_content.is_empty();
+
+    if !has_changes {
+        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
+                meaningful changes should be checked before requesting a commit message."
+            .to_string();
+    }
+
     // Write context files to .agent/tmp/ for the agent to read
-    write_commit_xsd_retry_files(diff);
+    write_commit_xsd_retry_files(diff_content);
 
     let template_content = context
         .registry()
