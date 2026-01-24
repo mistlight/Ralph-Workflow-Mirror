@@ -23,6 +23,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::executor::ProcessExecutor;
+
 /// Default idle timeout in seconds (5 minutes).
 ///
 /// This value was chosen because:
@@ -130,15 +132,17 @@ pub enum MonitorResult {
 /// * `child_id` - Process ID to kill if timeout exceeded
 /// * `timeout_secs` - Maximum seconds of inactivity before killing
 /// * `should_stop` - Atomic flag to signal monitor should exit (set when process completes)
+/// * `executor` - Process executor for killing the subprocess
 ///
 /// # Platform Notes
 ///
-/// Uses `kill -TERM` command on Unix and `taskkill` on Windows to avoid unsafe code.
+/// Uses `kill -TERM` command on Unix and `taskkill` on Windows via the ProcessExecutor trait.
 pub fn monitor_idle_timeout(
     activity_timestamp: SharedActivityTimestamp,
     child_id: u32,
     timeout_secs: u64,
     should_stop: Arc<std::sync::atomic::AtomicBool>,
+    executor: Arc<dyn ProcessExecutor>,
 ) -> MonitorResult {
     use std::sync::atomic::Ordering;
 
@@ -156,7 +160,7 @@ pub fn monitor_idle_timeout(
         // Check if idle timeout exceeded
         if is_idle_timeout_exceeded(&activity_timestamp, timeout_secs) {
             // Kill the process using platform-specific command
-            let killed = kill_process(child_id);
+            let killed = kill_process(child_id, executor.as_ref());
             if killed {
                 return MonitorResult::TimedOut;
             }
@@ -173,13 +177,10 @@ pub fn monitor_idle_timeout(
 ///
 /// Returns true if the kill command succeeded, false otherwise.
 #[cfg(unix)]
-fn kill_process(pid: u32) -> bool {
-    // Use kill command to send SIGTERM via std::process::Command
-    // Note: This is only called when a subprocess needs to be terminated due to timeout.
-    // The timeout monitoring itself happens via ProcessExecutor in production.
-    std::process::Command::new("kill")
-        .args(["-TERM", &pid.to_string()])
-        .output()
+fn kill_process(pid: u32, executor: &dyn ProcessExecutor) -> bool {
+    // Use kill command to send SIGTERM via ProcessExecutor
+    executor
+        .execute("kill", &["-TERM", &pid.to_string()], &[], None)
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -188,13 +189,10 @@ fn kill_process(pid: u32) -> bool {
 ///
 /// Returns true if the kill command succeeded, false otherwise.
 #[cfg(windows)]
-fn kill_process(pid: u32) -> bool {
-    // Use taskkill to force kill the process via std::process::Command
-    // Note: This is only called when a subprocess needs to be terminated due to timeout.
-    // The timeout monitoring itself happens via ProcessExecutor in production.
-    std::process::Command::new("taskkill")
-        .args(["/F", "/PID", &pid.to_string()])
-        .output()
+fn kill_process(pid: u32, executor: &dyn ProcessExecutor) -> bool {
+    // Use taskkill to force kill the process via ProcessExecutor
+    executor
+        .execute("taskkill", &["/F", "/PID", &pid.to_string()], &[], None)
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -349,9 +347,14 @@ mod tests {
         // Use a fake PID (0 - which won't match any real process)
         let fake_pid = 0u32;
 
+        // Create a mock executor for the monitor
+        let executor: Arc<dyn crate::executor::ProcessExecutor> =
+            Arc::new(crate::executor::MockProcessExecutor::new());
+
         // Spawn monitor in a thread
-        let handle =
-            thread::spawn(move || monitor_idle_timeout(timestamp, fake_pid, 60, should_stop_clone));
+        let handle = thread::spawn(move || {
+            monitor_idle_timeout(timestamp, fake_pid, 60, should_stop_clone, executor)
+        });
 
         // Signal stop after a short delay
         thread::sleep(Duration::from_millis(50));

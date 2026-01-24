@@ -711,6 +711,10 @@ fn run_with_subprocess(
     let monitor_should_stop_clone = monitor_should_stop.clone();
     let activity_timestamp_clone = activity_timestamp.clone();
 
+    // Create executor for monitor thread to kill the subprocess if needed
+    let monitor_executor: Arc<dyn crate::executor::ProcessExecutor> =
+        Arc::new(crate::executor::RealProcessExecutor::new());
+
     // Spawn idle timeout monitor thread
     let monitor_handle = std::thread::spawn(move || {
         monitor_idle_timeout(
@@ -718,6 +722,7 @@ fn run_with_subprocess(
             child_id,
             IDLE_TIMEOUT_SECS,
             monitor_should_stop_clone,
+            monitor_executor,
         )
     });
 
@@ -838,6 +843,10 @@ fn run_with_subprocess(
     let monitor_should_stop_clone = monitor_should_stop.clone();
     let activity_timestamp_clone = activity_timestamp.clone();
 
+    // Create executor for monitor thread to kill the subprocess if needed
+    let monitor_executor: Arc<dyn crate::executor::ProcessExecutor> =
+        Arc::new(crate::executor::RealProcessExecutor::new());
+
     // Spawn idle timeout monitor thread
     let monitor_handle = std::thread::spawn(move || {
         monitor_idle_timeout(
@@ -845,6 +854,7 @@ fn run_with_subprocess(
             child_id,
             IDLE_TIMEOUT_SECS,
             monitor_should_stop_clone,
+            monitor_executor,
         )
     });
 

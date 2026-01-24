@@ -715,7 +715,6 @@ fn validate_rebase_preconditions_detects_dirty_tree() {
     with_default_timeout(|| {
         use ralph_workflow::git_helpers::validate_rebase_preconditions;
         use ralph_workflow::executor::RealProcessExecutor;
-        use ralph_workflow::executor::RealProcessExecutor;
 
         with_temp_cwd(|dir| {
             let _repo = init_repo_with_initial_commit(dir);

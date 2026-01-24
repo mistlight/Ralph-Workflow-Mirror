@@ -2191,6 +2191,11 @@ pub fn rebase_in_progress() -> io::Result<bool> {
 mod tests {
     use super::*;
 
+    // Note: RealProcessExecutor is re-exported at lib.rs level and used in tests
+    // We use the re-export path directly from crate root
+    #[allow(unused_imports)]
+    use crate::RealProcessExecutor;
+
     #[test]
     fn test_rebase_result_variants_exist() {
         // Test that RebaseResult has the expected variants
@@ -2366,7 +2371,6 @@ mod tests {
 
     #[test]
     fn test_rebase_onto_returns_result() {
-        use crate::executor::RealProcessExecutor;
         use test_helpers::{commit_all, init_git_repo, with_temp_cwd, write_file};
 
         // Test that rebase_onto returns a Result
@@ -2400,7 +2404,6 @@ mod tests {
 
     #[test]
     fn test_rebase_in_progress_cli_returns_result() {
-        use crate::executor::RealProcessExecutor;
         use test_helpers::{init_git_repo, with_temp_cwd};
 
         // Test that rebase_in_progress_cli returns a Result
@@ -2424,7 +2427,8 @@ mod tests {
             // Initialize a git repo first
             let _repo = init_git_repo(dir);
 
-            let result = is_dirty_tree_cli();
+            let executor = RealProcessExecutor::new();
+            let result = is_dirty_tree_cli(&executor);
             // Should succeed (returns bool)
             assert!(result.is_ok());
         });
