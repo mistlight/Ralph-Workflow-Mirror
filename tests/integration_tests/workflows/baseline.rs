@@ -23,7 +23,8 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::{
-    mock_executor_for_git_success, mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard,
+    mock_executor_for_git_success, mock_executor_with_success, run_ralph_cli, with_cwd_guard,
+    EnvGuard,
 };
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::git_helpers::{GitOps, RealGit};
