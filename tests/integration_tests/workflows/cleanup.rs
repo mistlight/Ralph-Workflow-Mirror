@@ -16,57 +16,12 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
+use crate::common::{
+    create_test_config_struct, create_test_config_struct_with_isolation,
+    mock_executor_with_success, run_ralph_cli_injected,
+};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
-
-/// Helper function to set up base environment for tests with automatic cleanup.
-///
-/// This function sets up config isolation using XDG_CONFIG_HOME to prevent
-/// the tests from loading the user's actual config which may contain
-/// opencode/* references that would trigger network calls.
-/// Uses EnvGuard to ensure all environment variables are restored when dropped.
-fn base_env(config_home: &std::path::Path) -> EnvGuard {
-    let guard = EnvGuard::new(&[
-        "RALPH_INTERACTIVE",
-        "RALPH_DEVELOPER_ITERS",
-        "RALPH_REVIEWER_REVIEWS",
-        "XDG_CONFIG_HOME",
-        "GIT_AUTHOR_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_NAME",
-        "GIT_COMMITTER_EMAIL",
-    ]);
-
-    guard.set(&[
-        ("RALPH_INTERACTIVE", Some("0")),
-        ("RALPH_DEVELOPER_ITERS", Some("0")),
-        ("RALPH_REVIEWER_REVIEWS", Some("0")),
-        ("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap())),
-        ("GIT_AUTHOR_NAME", Some("Test")),
-        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
-        ("GIT_COMMITTER_NAME", Some("Test")),
-        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
-    ]);
-
-    guard
-}
-
-/// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
-fn create_isolated_config(dir: &TempDir) -> std::path::PathBuf {
-    let config_home = dir.path().join(".config");
-    fs::create_dir_all(&config_home).unwrap();
-    // Create minimal config without opencode/* references
-    fs::write(
-        config_home.join("ralph-workflow.toml"),
-        r#"[agent_chain]
-developer = ["claude"]
-reviewer = ["codex"]
-"#,
-    )
-    .unwrap();
-    config_home
-}
 
 // ============================================================================
 // Cleanup and Error Recovery Tests
@@ -80,7 +35,7 @@ reviewer = ["codex"]
 fn ralph_cleans_up_on_early_error() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct();
         let repo = init_git_repo(&dir);
 
         // Create an initial commit so we can verify no unexpected commits were made
@@ -90,10 +45,8 @@ fn ralph_cleans_up_on_early_error() {
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
-        let _env_guard = base_env(&config_home);
-
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify a commit was made (pipeline should create one)
         let final_oid = head_oid(&repo);
@@ -124,19 +77,18 @@ fn ralph_cleanup_on_interrupt_simulation() {
         // Note: With the new implementation, developer errors are non-fatal
         // The pipeline logs a warning and continues to completion
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct();
         let repo = init_git_repo(&dir);
 
         // Create an initial commit so we can verify no unexpected commits were made
         write_file(dir.path().join("initial.txt"), "initial content");
         let _ = commit_all(&repo, "initial commit");
 
-        let _env_guard = base_env(&config_home);
         // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
         let executor = mock_executor_with_success();
         // Pipeline now succeeds even with developer errors (non-fatal)
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify no unexpected commits were made (HEAD OID unchanged or only auto-commit)
         // Note: The pipeline may create an auto-commit after the iteration, so we just
@@ -166,16 +118,15 @@ fn ralph_handles_agent_timeout_gracefully() {
         // rather than actual agent execution which requires subprocess spawning.
         // Agent execution behavior should be tested at the unit level with mocked executors.
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct();
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
         // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
         // This tests that the pipeline handles phase-skipping correctly
 
         let executor = mock_executor_with_success();
         // Should complete successfully without agent execution
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -190,7 +141,7 @@ fn ralph_handles_invalid_json_in_config() {
         // Note: The config loader is lenient and uses defaults when config fails to load
         // The pipeline should succeed with a warning, not fail
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct();
         let dir_path = dir.path();
 
         // Initialize git repo
@@ -217,14 +168,9 @@ Test cleanup functionality.
         )
         .unwrap();
 
-        std::env::set_var("RALPH_INTERACTIVE", "0");
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
-
         let executor = mock_executor_with_success();
         // Pipeline should succeed using defaults (config loader is lenient)
-        run_ralph_cli(&[], executor, Some(dir_path)).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir_path)).unwrap();
     });
 }
 
@@ -241,16 +187,13 @@ fn ralph_isolation_mode_does_not_create_status_notes_issues() {
     with_default_timeout(|| {
         // Isolation mode (default) should NOT create STATUS.md, NOTES.md or ISSUES.md
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct();
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // STATUS.md, NOTES.md and ISSUES.md should NOT exist in isolation mode (default)
         assert!(
@@ -277,7 +220,7 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
     with_default_timeout(|| {
         // Isolation mode should DELETE existing STATUS.md, NOTES.md and ISSUES.md
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct();
         let _ = init_git_repo(&dir);
 
         // Pre-create STATUS.md, NOTES.md and ISSUES.md
@@ -285,13 +228,10 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
         fs::write(dir.path().join(".agent/NOTES.md"), "old notes").unwrap();
         fs::write(dir.path().join(".agent/ISSUES.md"), "old issues").unwrap();
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Files should be deleted
         assert!(
@@ -318,16 +258,13 @@ fn ralph_no_isolation_creates_status_notes_issues() {
     with_default_timeout(|| {
         // --no-isolation flag should create STATUS.md, NOTES.md and ISSUES.md
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct_with_isolation(false);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--no-isolation"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&["--no-isolation"], executor, config, Some(dir.path())).unwrap();
 
         // STATUS.md, NOTES.md and ISSUES.md should exist when not in isolation mode
         assert!(
@@ -345,39 +282,33 @@ fn ralph_no_isolation_creates_status_notes_issues() {
     });
 }
 
-/// Test that RALPH_ISOLATION_MODE=0 creates STATUS.md, NOTES.md, and ISSUES.md.
+/// Test that isolation_mode = false creates STATUS.md, NOTES.md, and ISSUES.md.
 ///
-/// This verifies that when isolation mode is disabled via environment variable,
+/// This verifies that when isolation mode is disabled via config,
 /// the system creates STATUS.md, NOTES.md, and ISSUES.md files.
 #[test]
 fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
     with_default_timeout(|| {
-        // RALPH_ISOLATION_MODE=0 should create STATUS.md, NOTES.md and ISSUES.md
+        // isolation_mode = false should create STATUS.md, NOTES.md and ISSUES.md
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct_with_isolation(false);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_ISOLATION_MODE", "0");
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        // No agent commands needed when both phases are skipped
-
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        // STATUS.md, NOTES.md and ISSUES.md should exist when isolation mode is disabled via env
+        // STATUS.md, NOTES.md and ISSUES.md should exist when isolation mode is disabled via config
         assert!(
             dir.path().join(".agent/STATUS.md").exists(),
-            "STATUS.md should be created when RALPH_ISOLATION_MODE=0"
+            "STATUS.md should be created when isolation_mode = false"
         );
         assert!(
             dir.path().join(".agent/NOTES.md").exists(),
-            "NOTES.md should be created when RALPH_ISOLATION_MODE=0"
+            "NOTES.md should be created when isolation_mode = false"
         );
         assert!(
             dir.path().join(".agent/ISSUES.md").exists(),
-            "ISSUES.md should be created when RALPH_ISOLATION_MODE=0"
+            "ISSUES.md should be created when isolation_mode = false"
         );
     });
 }
@@ -392,7 +323,7 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
         // --no-isolation should overwrite/truncate STATUS.md, NOTES.md and ISSUES.md
         // to a single vague sentence, to prevent detailed context from persisting.
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct_with_isolation(false);
         let _ = init_git_repo(&dir);
 
         // Pre-create STATUS.md, NOTES.md and ISSUES.md with detailed multi-line content.
@@ -412,13 +343,10 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
         )
         .unwrap();
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--no-isolation"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&["--no-isolation"], executor, config, Some(dir.path())).unwrap();
 
         // Files should exist (non-isolation mode), but should be overwritten to 1 line.
         assert_eq!(
@@ -458,15 +386,14 @@ fn ralph_resume_continues_from_checkpoint_phase() {
         // Agent execution behavior should be tested at the unit level with mocked executors.
         // This test verifies the pipeline completes successfully when phases are skipped.
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct();
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
         // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
 
         let executor = mock_executor_with_success();
         // Should complete successfully without agent execution
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -485,16 +412,13 @@ fn ralph_developer_iteration_creates_changes_for_commit() {
         // Note: Full commit testing requires a real LLM agent for commit message generation.
         // This test verifies the changes are created correctly.
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
+        let config = create_test_config_struct();
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Use 0 to avoid timeout from commit generation
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         // No agent commands needed when both phases are skipped
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Note: Test uses 0 iterations to avoid timeout from commit generation
         // The test verifies the infrastructure is in place without running iterations

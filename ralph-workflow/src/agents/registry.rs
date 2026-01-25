@@ -113,6 +113,20 @@ impl AgentRegistry {
         self.agents.insert(name.to_string(), config);
     }
 
+    /// Create a registry with only built-in agents (no config file loading).
+    ///
+    /// This is useful for integration tests that need a minimal registry
+    /// without loading from config files or environment variables.
+    ///
+    /// # Test-Utils Only
+    ///
+    /// This function is only available when the `test-utils` feature is enabled.
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn with_builtins_only() -> Self {
+        Self::new().expect("Built-in agents should always be valid")
+    }
+
     /// Resolve an agent's configuration, including on-the-fly CCS and OpenCode references.
     ///
     /// CCS supports direct execution via `ccs/<alias>` even when the alias isn't

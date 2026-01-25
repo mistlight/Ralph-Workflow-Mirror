@@ -11,61 +11,17 @@
 //! - Tests verify **observable behavior** (file creation, config validation)
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
 //! - Tests are deterministic and isolated
+//! - Uses **dependency injection** via `create_test_config_struct()` instead of env vars
 
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
+use crate::common::{
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli, run_ralph_cli_injected,
+    EnvGuard,
+};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
-
-/// Helper function to set up base environment for tests with automatic cleanup.
-///
-/// This function sets up config isolation using XDG_CONFIG_HOME to prevent
-/// the tests from loading the user's actual config which may contain
-/// opencode/* references that would trigger network calls.
-/// Uses EnvGuard to ensure all environment variables are restored when dropped.
-fn base_env(config_home: &std::path::Path) -> EnvGuard {
-    let guard = EnvGuard::new(&[
-        "RALPH_INTERACTIVE",
-        "RALPH_DEVELOPER_ITERS",
-        "RALPH_REVIEWER_REVIEWS",
-        "XDG_CONFIG_HOME",
-        "GIT_AUTHOR_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_NAME",
-        "GIT_COMMITTER_EMAIL",
-    ]);
-
-    guard.set(&[
-        ("RALPH_INTERACTIVE", Some("0")),
-        ("RALPH_DEVELOPER_ITERS", Some("0")),
-        ("RALPH_REVIEWER_REVIEWS", Some("0")),
-        ("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap())),
-        ("GIT_AUTHOR_NAME", Some("Test")),
-        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
-        ("GIT_COMMITTER_NAME", Some("Test")),
-        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
-    ]);
-
-    guard
-}
-
-/// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
-fn create_isolated_config(dir: &TempDir) -> std::path::PathBuf {
-    let config_home = dir.path().join(".config");
-    fs::create_dir_all(&config_home).unwrap();
-    // Create minimal config without opencode/* references
-    fs::write(
-        config_home.join("ralph-workflow.toml"),
-        r#"[agent_chain]
-developer = ["claude"]
-reviewer = ["codex"]
-"#,
-    )
-    .unwrap();
-    config_home
-}
 
 // ============================================================================
 // Config and Init Tests
@@ -75,11 +31,13 @@ reviewer = ["codex"]
 ///
 /// This verifies that when ralph --init-legacy is run, the system
 /// creates .agent/agents.toml with default configuration sections.
+///
+/// Note: This test uses run_ralph_cli (not injected) because --init-legacy
+/// is handled in the early exit path before Config is fully built.
 #[test]
 fn ralph_init_creates_config_file() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let dir_path = dir.path();
 
         // Initialize git repo but don't create agents.toml
@@ -88,8 +46,6 @@ fn ralph_init_creates_config_file() {
         let config_path = dir_path.join(".agent/agents.toml");
         assert!(!config_path.exists());
 
-        // Run ralph --init-legacy
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
         let executor = mock_executor_with_success();
         run_ralph_cli(&["--init-legacy"], executor, Some(dir_path)).unwrap();
 
@@ -109,11 +65,13 @@ fn ralph_init_creates_config_file() {
 ///
 /// This verifies that when a config file already exists, the system
 /// reports it exists and does not overwrite the original content.
+///
+/// Note: This test uses run_ralph_cli (not injected) because --init-legacy
+/// is handled in the early exit path before Config is fully built.
 #[test]
 fn ralph_init_reports_existing_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let dir_path = dir.path();
 
         // Initialize git repo
@@ -127,8 +85,6 @@ reviewer = ["codex"]
 "#;
         fs::write(dir_path.join(".agent/agents.toml"), custom_config).unwrap();
 
-        // Run ralph --init-legacy
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
         let executor = mock_executor_with_success();
         run_ralph_cli(&["--init-legacy"], executor, Some(dir_path)).unwrap();
 
@@ -142,6 +98,11 @@ reviewer = ["codex"]
 ///
 /// This verifies that when ralph --init-global is run, the system
 /// creates ralph-workflow.toml in the XDG config home directory.
+///
+/// Note: This test uses run_ralph_cli (not injected) because --init-global
+/// is handled in the early exit path before Config is fully built.
+/// EnvGuard is used for XDG_CONFIG_HOME because unified_config_path()
+/// uses this env var to determine the filesystem location for the config file.
 #[test]
 fn ralph_first_run_creates_config_and_exits() {
     with_default_timeout(|| {
@@ -172,8 +133,10 @@ Test configuration functionality.
         let unified_config_path = config_home.join("ralph-workflow.toml");
         assert!(!unified_config_path.exists());
 
-        // Run ralph --init-global (unified config)
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
+        // XDG_CONFIG_HOME controls where unified_config_path() writes the file
+        let _env_guard = EnvGuard::new(&["XDG_CONFIG_HOME"]);
+        _env_guard.set(&[("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap()))]);
+
         let executor = mock_executor_with_success();
         run_ralph_cli(&["--init-global"], executor, Some(dir_path)).unwrap();
 
@@ -193,24 +156,13 @@ fn ralph_uses_agent_chain_first_entries_as_defaults() {
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
 
-        // Ensure no explicit agent selection via env is in play.
-        // Use non-opencode agents to avoid network calls for API catalog.
-        let config_home = dir.path().join(".config");
-        fs::create_dir_all(&config_home).unwrap();
-        fs::write(
-            config_home.join("ralph-workflow.toml"),
-            r#"[agent_chain]
-developer = ["claude", "codex"]
-reviewer = ["aider", "codex"]
-"#,
-        )
-        .unwrap();
-
-        let _env_guard = base_env(&config_home);
-        // agent commands not needed when developer_iters=0 and reviewer_reviews=0
+        // Create config with specific agents (simulating first entries from chain)
+        let config = create_test_config_struct()
+            .with_developer_agent("claude".to_string())
+            .with_reviewer_agent("aider".to_string());
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -227,15 +179,14 @@ fn ralph_quick_mode_sets_minimal_iterations() {
     with_default_timeout(|| {
         // Quick mode should set developer_iters=1 and reviewer_reviews=1
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_injected(
             &["--quick", "--developer-iters", "0"],
             executor,
+            config,
             Some(dir.path()),
         )
         .unwrap();
@@ -252,15 +203,14 @@ fn ralph_quick_mode_short_flag_works() {
     with_default_timeout(|| {
         // -Q should work the same as --quick
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_injected(
             &["-Q", "--developer-iters", "0"],
             executor,
+            config,
             Some(dir.path()),
         )
         .unwrap();
@@ -277,15 +227,14 @@ fn ralph_quick_mode_explicit_iters_override() {
     with_default_timeout(|| {
         // Explicit --developer-iters should override quick mode
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_injected(
             &["--quick", "--developer-iters", "0"],
             executor,
+            config,
             Some(dir.path()),
         )
         .unwrap();
@@ -302,15 +251,14 @@ fn ralph_rapid_mode_sets_two_iterations() {
     with_default_timeout(|| {
         // Rapid mode should set developer_iters=2 and reviewer_reviews=1
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_injected(
             &["--rapid", "--developer-iters", "0"],
             executor,
+            config,
             Some(dir.path()),
         )
         .unwrap();
@@ -327,15 +275,14 @@ fn ralph_rapid_mode_short_flag_works() {
     with_default_timeout(|| {
         // -U should work the same as --rapid
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_injected(
             &["-U", "--developer-iters", "0"],
             executor,
+            config,
             Some(dir.path()),
         )
         .unwrap();
@@ -356,7 +303,6 @@ fn ralph_stack_detection_rust_project() {
     with_default_timeout(|| {
         // Test that stack detection works in an integration context
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Create a Rust project structure
@@ -377,15 +323,14 @@ tokio = "1.0"
         fs::create_dir_all(dir.path().join("tests")).unwrap();
         fs::write(dir.path().join("tests/test.rs"), "#[test] fn it_works() {}").unwrap();
 
-        // Run ralph with verbose output to see stack detection
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
-        std::env::set_var("RALPH_VERBOSITY", "2"); // Verbose mode
-                                                   // agent commands not needed when developer_iters=0 and reviewer_reviews=0
+        // Create config with stack detection enabled and verbose output
+        let config = create_test_config_struct()
+            .with_auto_detect_stack(true)
+            .with_verbosity(ralph_workflow::config::Verbosity::Verbose);
 
         // Pipeline should complete and potentially mention Rust stack
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -398,7 +343,6 @@ fn ralph_stack_detection_javascript_project() {
     with_default_timeout(|| {
         // Test stack detection for a JavaScript/React project
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Create a JavaScript/React project structure
@@ -422,25 +366,21 @@ fn ralph_stack_detection_javascript_project() {
         )
         .unwrap();
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
-        // agent commands removed (not needed when developer_iters=0)
-
+        let config = create_test_config_struct().with_auto_detect_stack(true);
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
-/// Test that stack detection can be disabled via environment variable.
+/// Test that stack detection can be disabled via configuration.
 ///
-/// This verifies that when RALPH_AUTO_DETECT_STACK is set to false,
+/// This verifies that when auto_detect_stack is set to false,
 /// the system skips automatic stack detection.
 #[test]
 fn ralph_stack_detection_disabled() {
     with_default_timeout(|| {
         // Test that stack detection can be disabled
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Create a project structure
@@ -454,12 +394,10 @@ name = "test"
         fs::create_dir_all(dir.path().join("src")).unwrap();
         fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_AUTO_DETECT_STACK", "false"); // Explicitly disable
-                                                               // agent commands removed (not needed when developer_iters=0)
-
+        // Explicitly disable stack detection
+        let config = create_test_config_struct().with_auto_detect_stack(false);
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -472,7 +410,6 @@ fn ralph_mixed_language_project() {
     with_default_timeout(|| {
         // Test stack detection with multiple languages
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
         // Create a mixed-language project (Rust backend + Python scripts)
@@ -490,12 +427,9 @@ version = "0.1.0"
         fs::create_dir_all(dir.path().join("scripts")).unwrap();
         fs::write(dir.path().join("scripts/deploy.py"), "print('deploy')").unwrap();
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
-        // agent commands removed (not needed when developer_iters=0)
-
+        let config = create_test_config_struct().with_auto_detect_stack(true);
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -505,84 +439,72 @@ version = "0.1.0"
 
 /// Test that standard review depth configures the review process.
 ///
-/// This verifies that when RALPH_REVIEW_DEPTH is set to standard,
+/// This verifies that when review_depth is set to standard,
 /// the system uses standard-level review configurations.
 #[test]
 fn ralph_review_depth_standard() {
     with_default_timeout(|| {
         // Test standard review depth
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_REVIEW_DEPTH", "standard");
-        // agent commands removed (not needed when developer_iters=0)
-
+        let config = create_test_config_struct()
+            .with_review_depth(ralph_workflow::config::ReviewDepth::Standard);
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
 /// Test that comprehensive review depth configures detailed review.
 ///
-/// This verifies that when RALPH_REVIEW_DEPTH is set to comprehensive,
+/// This verifies that when review_depth is set to comprehensive,
 /// the system uses thorough review configurations.
 #[test]
 fn ralph_review_depth_comprehensive() {
     with_default_timeout(|| {
         // Test comprehensive review depth
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_REVIEW_DEPTH", "comprehensive");
-        // agent commands removed (not needed when developer_iters=0)
-
+        let config = create_test_config_struct()
+            .with_review_depth(ralph_workflow::config::ReviewDepth::Comprehensive);
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
 /// Test that security review depth configures security-focused review.
 ///
-/// This verifies that when RALPH_REVIEW_DEPTH is set to security,
+/// This verifies that when review_depth is set to security,
 /// the system uses security-oriented review configurations.
 #[test]
 fn ralph_review_depth_security() {
     with_default_timeout(|| {
         // Test security-focused review depth
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_REVIEW_DEPTH", "security");
-        // agent commands removed (not needed when developer_iters=0)
-
+        let config = create_test_config_struct()
+            .with_review_depth(ralph_workflow::config::ReviewDepth::Security);
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
 /// Test that incremental review depth focuses on git diff.
 ///
-/// This verifies that when RALPH_REVIEW_DEPTH is set to incremental,
+/// This verifies that when review_depth is set to incremental,
 /// the system configures review to focus on changed files only.
 #[test]
 fn ralph_review_depth_incremental() {
     with_default_timeout(|| {
         // Test incremental review depth (focuses on git diff)
         let dir = TempDir::new().unwrap();
-        let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_REVIEW_DEPTH", "incremental");
-        // agent commands removed (not needed when developer_iters=0)
-
+        let config = create_test_config_struct()
+            .with_review_depth(ralph_workflow::config::ReviewDepth::Incremental);
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }

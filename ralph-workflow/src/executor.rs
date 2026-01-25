@@ -725,8 +725,9 @@ impl AgentChild for MockAgentChild {
         #[cfg(unix)]
         use std::os::unix::process::ExitStatusExt;
 
+        // On Unix, wait status encoding: exit code is in bits 8-15, so shift left by 8
         #[cfg(unix)]
-        return Ok(ExitStatus::from_raw(self.exit_code));
+        return Ok(ExitStatus::from_raw(self.exit_code << 8));
         #[cfg(not(unix))]
         return Ok(std::process::ExitStatus::default());
     }
@@ -735,8 +736,9 @@ impl AgentChild for MockAgentChild {
         #[cfg(unix)]
         use std::os::unix::process::ExitStatusExt;
 
+        // On Unix, wait status encoding: exit code is in bits 8-15, so shift left by 8
         #[cfg(unix)]
-        return Ok(Some(ExitStatus::from_raw(self.exit_code)));
+        return Ok(Some(ExitStatus::from_raw(self.exit_code << 8)));
         #[cfg(not(unix))]
         return Ok(Some(std::process::ExitStatus::default()));
     }

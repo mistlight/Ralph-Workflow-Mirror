@@ -11,46 +11,18 @@
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (git state, commit messages)
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
+//! - Pipeline tests use **dependency injection** via `create_test_config_struct()`
+//! - Plumbing command tests use `run_ralph_cli` (they bypass config loading anyway)
 //! - Tests are deterministic and isolated
 
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
+use crate::common::{
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli, run_ralph_cli_injected,
+};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
-
-/// Helper function to set up base environment for tests with automatic cleanup.
-///
-/// Uses EnvGuard to ensure all environment variables are restored when dropped,
-/// preventing cross-test pollution.
-fn base_env() -> EnvGuard {
-    let guard = EnvGuard::new(&[
-        "RALPH_INTERACTIVE",
-        "RALPH_DEVELOPER_ITERS",
-        "RALPH_REVIEWER_REVIEWS",
-        "RALPH_DEVELOPER_AGENT",
-        "RALPH_REVIEWER_AGENT",
-        "GIT_AUTHOR_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_NAME",
-        "GIT_COMMITTER_EMAIL",
-    ]);
-
-    guard.set(&[
-        ("RALPH_INTERACTIVE", Some("0")),
-        ("RALPH_DEVELOPER_ITERS", Some("0")),
-        ("RALPH_REVIEWER_REVIEWS", Some("0")),
-        ("RALPH_DEVELOPER_AGENT", Some("codex")),
-        ("RALPH_REVIEWER_AGENT", Some("codex")),
-        ("GIT_AUTHOR_NAME", Some("Test")),
-        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
-        ("GIT_COMMITTER_NAME", Some("Test")),
-        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
-    ]);
-
-    guard
-}
 
 // ============================================================================
 // Commit Behavior Tests
@@ -73,11 +45,11 @@ fn ralph_succeeds_without_commit_message_file() {
         // Create a file to have something to commit
         fs::write(dir.path().join("test.txt"), "test content").unwrap();
 
-        let _env_guard = base_env();
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
         // Should succeed - auto-commit will generate a message
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -89,6 +61,9 @@ fn ralph_succeeds_without_commit_message_file() {
 ///
 /// This verifies that when a user invokes ralph with the `--show-commit-msg` flag
 /// and a commit-message.txt file exists, the command succeeds.
+///
+/// Note: Plumbing commands bypass config loading entirely, so we use `run_ralph_cli`
+/// which calls the main `app::run` function that handles plumbing commands.
 #[test]
 fn ralph_show_commit_msg_displays_message() {
     with_default_timeout(|| {
@@ -112,6 +87,9 @@ fn ralph_show_commit_msg_displays_message() {
 /// This verifies that when a user invokes ralph with the `--show-commit-msg` flag
 /// and specifies a working directory, the command reads the commit-message.txt
 /// from that directory regardless of where subdirectories might have their own files.
+///
+/// Note: Plumbing commands bypass config loading entirely, so we use `run_ralph_cli`
+/// which calls the main `app::run` function that handles plumbing commands.
 #[test]
 fn ralph_show_commit_msg_reads_from_working_dir() {
     with_default_timeout(|| {
@@ -144,6 +122,9 @@ fn ralph_show_commit_msg_reads_from_working_dir() {
 ///
 /// This verifies that when a user invokes ralph with the `--show-commit-msg` flag
 /// without a commit-message.txt file, the command fails.
+///
+/// Note: Plumbing commands bypass config loading entirely, so we use `run_ralph_cli`
+/// which calls the main `app::run` function that handles plumbing commands.
 #[test]
 fn ralph_show_commit_msg_fails_if_missing() {
     with_default_timeout(|| {
@@ -165,6 +146,9 @@ fn ralph_show_commit_msg_fails_if_missing() {
 /// This verifies that when a user invokes ralph with the `--apply-commit` flag
 /// and a commit-message.txt file exists, a commit is created with that message
 /// and the commit-message.txt file is cleaned up afterward.
+///
+/// Note: Plumbing commands bypass config loading entirely, so we use `run_ralph_cli`
+/// which calls the main `app::run` function that handles plumbing commands.
 #[test]
 fn ralph_apply_commit_creates_commit() {
     with_default_timeout(|| {
@@ -203,6 +187,9 @@ fn ralph_apply_commit_creates_commit() {
 ///
 /// This verifies that when a user invokes ralph with the `--apply-commit` flag
 /// without a commit-message.txt file, the command fails.
+///
+/// Note: Plumbing commands bypass config loading entirely, so we use `run_ralph_cli`
+/// which calls the main `app::run` function that handles plumbing commands.
 #[test]
 fn ralph_apply_commit_fails_without_message_file() {
     with_default_timeout(|| {

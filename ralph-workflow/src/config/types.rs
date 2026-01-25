@@ -260,6 +260,139 @@ impl Config {
     pub const fn user_templates_dir(&self) -> Option<&std::path::PathBuf> {
         self.user_templates_dir.as_ref()
     }
+
+    /// Create a test-appropriate Config with safe defaults.
+    ///
+    /// This function creates a Config suitable for integration tests,
+    /// with all agent execution disabled and isolation mode enabled.
+    /// It does NOT load from environment variables or config files.
+    ///
+    /// # Test-Utils Only
+    ///
+    /// This function is only available when the `test-utils` feature is enabled.
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn test_default() -> Self {
+        Self {
+            developer_agent: Some("codex".to_string()),
+            reviewer_agent: Some("codex".to_string()),
+            developer_cmd: None,
+            reviewer_cmd: None,
+            commit_cmd: None,
+            developer_model: None,
+            reviewer_model: None,
+            developer_provider: None,
+            reviewer_provider: None,
+            reviewer_json_parser: None,
+            features: FeatureFlags {
+                checkpoint_enabled: true,
+                force_universal_prompt: false,
+            },
+            developer_iters: 0,
+            reviewer_reviews: 0,
+            fast_check_cmd: None,
+            full_check_cmd: None,
+            behavior: BehavioralFlags {
+                interactive: false,
+                auto_detect_stack: false,
+                strict_validation: false,
+            },
+            prompt_path: PathBuf::from(".agent/last_prompt.txt"),
+            user_templates_dir: None,
+            developer_context: 0,
+            reviewer_context: 0,
+            verbosity: Verbosity::Quiet,
+            commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
+            review_depth: ReviewDepth::Standard,
+            isolation_mode: true,
+            git_user_name: Some("Test".to_string()),
+            git_user_email: Some("test@example.com".to_string()),
+            show_streaming_metrics: false,
+            review_format_retries: 5,
+        }
+    }
+
+    /// Set isolation mode and return self (builder pattern).
+    ///
+    /// # Test-Utils Only
+    ///
+    /// This function is only available when the `test-utils` feature is enabled.
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn with_isolation_mode(mut self, isolation_mode: bool) -> Self {
+        self.isolation_mode = isolation_mode;
+        self
+    }
+
+    /// Set developer iterations and return self (builder pattern).
+    ///
+    /// # Test-Utils Only
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn with_developer_iters(mut self, iters: u32) -> Self {
+        self.developer_iters = iters;
+        self
+    }
+
+    /// Set reviewer reviews and return self (builder pattern).
+    ///
+    /// # Test-Utils Only
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn with_reviewer_reviews(mut self, reviews: u32) -> Self {
+        self.reviewer_reviews = reviews;
+        self
+    }
+
+    /// Set auto_detect_stack and return self (builder pattern).
+    ///
+    /// # Test-Utils Only
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn with_auto_detect_stack(mut self, auto_detect: bool) -> Self {
+        self.behavior.auto_detect_stack = auto_detect;
+        self
+    }
+
+    /// Set verbosity and return self (builder pattern).
+    ///
+    /// # Test-Utils Only
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn with_verbosity(mut self, verbosity: Verbosity) -> Self {
+        self.verbosity = verbosity;
+        self
+    }
+
+    /// Set review_depth and return self (builder pattern).
+    ///
+    /// # Test-Utils Only
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn with_review_depth(mut self, review_depth: ReviewDepth) -> Self {
+        self.review_depth = review_depth;
+        self
+    }
+
+    /// Set developer_agent and return self (builder pattern).
+    ///
+    /// # Test-Utils Only
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn with_developer_agent(mut self, agent: String) -> Self {
+        self.developer_agent = Some(agent);
+        self
+    }
+
+    /// Set reviewer_agent and return self (builder pattern).
+    ///
+    /// # Test-Utils Only
+    #[cfg(feature = "test-utils")]
+    #[must_use]
+    pub fn with_reviewer_agent(mut self, agent: String) -> Self {
+        self.reviewer_agent = Some(agent);
+        self
+    }
 }
 
 impl Default for Config {

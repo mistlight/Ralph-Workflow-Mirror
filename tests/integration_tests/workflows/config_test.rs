@@ -19,14 +19,10 @@ use tempfile::TempDir;
 
 use test_helpers::init_git_repo;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+};
 use crate::test_timeout::with_default_timeout;
-
-/// Helper function to set up base environment for tests.
-fn set_base_env(config_home: &std::path::Path) {
-    std::env::set_var("RALPH_INTERACTIVE", "0");
-    std::env::set_var("XDG_CONFIG_HOME", config_home);
-}
 
 /// Test that `ralph --init` exits cleanly without running the pipeline.
 ///
@@ -45,10 +41,10 @@ fn test_ralph_init_exits_cleanly() {
         let config_home = dir_path.join(".config");
         fs::create_dir_all(&config_home).unwrap();
 
-        // Set up environment and run ralph --init
-        set_base_env(&config_home);
+        // Run ralph --init with injected config
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--init"], executor, Some(dir_path)).unwrap();
+        run_ralph_cli_injected(&["--init"], executor, config, Some(dir_path)).unwrap();
 
         // Should have created config
         let unified_config_path = config_home.join("ralph-workflow.toml");
@@ -98,10 +94,10 @@ reviewer = ["codex"]
         )
         .unwrap();
 
-        // Set up environment and run ralph --init bug-fix
-        set_base_env(&config_home);
+        // Run ralph --init bug-fix with injected config
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--init=bug-fix"], executor, Some(dir_path)).unwrap();
+        run_ralph_cli_injected(&["--init=bug-fix"], executor, config, Some(dir_path)).unwrap();
 
         // Should have created PROMPT.md
         assert!(
@@ -156,10 +152,10 @@ Test configuration functionality.
         )
         .unwrap();
 
-        // Set up environment and run ralph --init
-        set_base_env(&config_home);
+        // Run ralph --init with injected config
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--init"], executor, Some(dir_path)).unwrap();
+        run_ralph_cli_injected(&["--init"], executor, config, Some(dir_path)).unwrap();
 
         // Should NOT run the pipeline - verify no agent files were created
         assert!(
@@ -194,12 +190,17 @@ reviewer = ["codex"]
         )
         .unwrap();
 
-        // Set up environment and run ralph --init with an invalid template name
-        set_base_env(&config_home);
+        // Run ralph --init with an invalid template name
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
         // Should exit successfully (even though template is invalid)
-        let result = run_ralph_cli(&["--init=not-a-real-template"], executor, Some(dir_path));
+        let result = run_ralph_cli_injected(
+            &["--init=not-a-real-template"],
+            executor,
+            config,
+            Some(dir_path),
+        );
         assert!(
             result.is_ok(),
             "ralph --init=not-a-real-template should exit successfully"
@@ -238,13 +239,18 @@ reviewer = ["codex"]
         )
         .unwrap();
 
-        // Set up environment and run ralph --init "my commit message"
+        // Run ralph --init "my commit message"
         // clap will interpret "my commit message" as the value for --init
-        set_base_env(&config_home);
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
         // Should exit successfully
-        let result = run_ralph_cli(&["--init", "my commit message"], executor, Some(dir_path));
+        let result = run_ralph_cli_injected(
+            &["--init", "my commit message"],
+            executor,
+            config,
+            Some(dir_path),
+        );
         assert!(
             result.is_ok(),
             "ralph --init with commit message should exit successfully"

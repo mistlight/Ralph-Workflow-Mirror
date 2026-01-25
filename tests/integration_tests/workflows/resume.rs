@@ -8,8 +8,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::{
-    create_test_config, mock_executor_with_success, run_ralph_cli, run_ralph_cli_with_config,
-    EnvGuard,
+    create_test_config, mock_executor_with_success, run_ralph_cli_with_config, EnvGuard,
 };
 use crate::test_timeout::with_default_timeout;
 
@@ -21,9 +20,21 @@ use test_helpers::{init_git_repo, write_file};
 /// the tests from loading the user's actual config which may contain
 /// opencode/* references that would trigger network calls.
 /// Uses EnvGuard to ensure all environment variables are restored when dropped.
+///
+/// All env vars that tests may use are captured here so they are restored on drop,
+/// enabling safe parallel test execution.
 fn base_env(config_home: &std::path::Path) -> EnvGuard {
     let guard = EnvGuard::new(&[
         "RALPH_INTERACTIVE",
+        "RALPH_CI",
+        "RALPH_DEVELOPER_ITERS",
+        "RALPH_REVIEWER_REVIEWS",
+        "RALPH_DEVELOPER_CMD",
+        "RALPH_REVIEWER_CMD",
+        "RALPH_DEVELOPER_AGENT",
+        "RALPH_REVIEWER_AGENT",
+        "RALPH_ISOLATION_MODE",
+        "RALPH_NO_RESUME_PROMPT",
         "XDG_CONFIG_HOME",
         "GIT_AUTHOR_NAME",
         "GIT_AUTHOR_EMAIL",
@@ -33,6 +44,12 @@ fn base_env(config_home: &std::path::Path) -> EnvGuard {
 
     guard.set(&[
         ("RALPH_INTERACTIVE", Some("0")),
+        ("RALPH_CI", Some("1")),
+        ("RALPH_DEVELOPER_ITERS", Some("0")),
+        ("RALPH_REVIEWER_REVIEWS", Some("0")),
+        ("RALPH_DEVELOPER_AGENT", Some("codex")),
+        ("RALPH_REVIEWER_AGENT", Some("codex")),
+        ("RALPH_ISOLATION_MODE", Some("1")),
         ("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap())),
         ("GIT_AUTHOR_NAME", Some("Test")),
         ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
@@ -106,8 +123,6 @@ fn ralph_creates_checkpoint_during_development() {
 
         // Run with 0 iterations - checkpoint creation is tested elsewhere
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
         run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
             .unwrap();
@@ -126,9 +141,6 @@ fn ralph_creates_checkpoint_during_review() {
 
         // Run with 1 review iteration
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
         run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
             .unwrap();
@@ -143,6 +155,7 @@ fn ralph_creates_checkpoint_during_review() {
 fn ralph_checkpoint_contains_iteration_info() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -200,10 +213,9 @@ fn ralph_checkpoint_contains_iteration_info() {
 
         // Run pipeline with 0 iterations - should validate checkpoint structure
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
+            .unwrap();
 
         // Verify checkpoint structure
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -233,6 +245,7 @@ fn ralph_checkpoint_contains_iteration_info() {
 fn ralph_checkpoint_contains_cli_args_snapshot() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -289,10 +302,9 @@ fn ralph_checkpoint_contains_cli_args_snapshot() {
 
         // Run pipeline with 0 iterations - should validate checkpoint structure
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
+            .unwrap();
 
         // Verify checkpoint structure
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -318,6 +330,7 @@ fn ralph_checkpoint_contains_cli_args_snapshot() {
 fn ralph_checkpoint_contains_agent_config_snapshot() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -374,10 +387,9 @@ fn ralph_checkpoint_contains_agent_config_snapshot() {
 
         // Run pipeline with 0 iterations - should validate checkpoint structure
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
+            .unwrap();
 
         // Verify checkpoint structure
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -403,7 +415,7 @@ fn ralph_checkpoint_contains_agent_config_snapshot() {
 fn ralph_resume_flag_reads_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -453,11 +465,14 @@ fn ralph_resume_flag_reads_checkpoint() {
 
         // Run with --resume flag - should detect the checkpoint
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -465,18 +480,20 @@ fn ralph_resume_flag_reads_checkpoint() {
 fn ralph_resume_without_checkpoint_starts_fresh() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
         // No checkpoint exists, but we pass --resume
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -488,7 +505,7 @@ fn ralph_resume_without_checkpoint_starts_fresh() {
 fn ralph_resume_validates_working_directory() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -568,12 +585,14 @@ fn ralph_resume_validates_working_directory() {
 
         // Run with --resume - should detect working directory mismatch
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -597,9 +616,6 @@ fn ralph_checkpoint_records_prompt_md_checksum() {
 
         // Create a failing run to leave a checkpoint
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
         run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
             .unwrap();
@@ -622,7 +638,7 @@ fn ralph_checkpoint_records_prompt_md_checksum() {
 fn ralph_resume_shows_checkpoint_summary() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -707,10 +723,14 @@ Test resume functionality.
 
         // Run with --resume - should just show summary and exit since Complete phase
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -776,10 +796,6 @@ fn ralph_clears_checkpoint_on_success() {
 
         // Run successfully without --resume
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
         run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
             .unwrap();
@@ -877,7 +893,7 @@ fn make_checkpoint_json(params: CheckpointTestParams<'_>) -> String {
 fn ralph_resume_preserves_developer_iterations_from_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -903,10 +919,14 @@ fn ralph_resume_preserves_developer_iterations_from_checkpoint() {
         // Run with --resume but pass DIFFERENT env config (1 dev iter, 0 reviews)
         // The resume should use checkpoint values (5 dev iters), not env values
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -914,7 +934,7 @@ fn ralph_resume_preserves_developer_iterations_from_checkpoint() {
 fn ralph_resume_preserves_reviewer_passes_from_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1000,10 +1020,14 @@ Test resume functionality.
 
         // Run with --resume - should just show checkpoint info and exit
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1015,7 +1039,7 @@ Test resume functionality.
 fn ralph_resume_from_planning_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1043,11 +1067,14 @@ fn ralph_resume_from_planning_phase() {
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1055,7 +1082,7 @@ fn ralph_resume_from_planning_phase() {
 fn ralph_resume_from_development_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1078,10 +1105,14 @@ fn ralph_resume_from_development_phase() {
         .unwrap();
 
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1089,7 +1120,7 @@ fn ralph_resume_from_development_phase() {
 fn ralph_resume_from_review_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1156,8 +1187,6 @@ fn ralph_resume_from_review_phase() {
             "prompt_history": null,
             "env_snapshot": {{
                 "ralph_vars": {{
-                    "RALPH_DEVELOPER_CMD": "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
-                    "RALPH_REVIEWER_CMD": "sh -c 'exit 0'",
                     "RALPH_DEVELOPER_ITERS": "0",
                     "RALPH_REVIEWER_REVIEWS": "0"
                 }},
@@ -1176,14 +1205,11 @@ fn ralph_resume_from_review_phase() {
         fs::write(dir.path().join(".agent/ISSUES.md"), "No issues\n").unwrap();
 
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_with_config(
             &["--resume", "--recovery-strategy=force"],
             executor,
+            Some(test_config.as_path()),
             Some(dir.path()),
         )
         .unwrap();
@@ -1194,7 +1220,7 @@ fn ralph_resume_from_review_phase() {
 fn ralph_resume_from_complete_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1217,12 +1243,14 @@ fn ralph_resume_from_complete_phase() {
         .unwrap();
 
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Resume from Complete should recognize pipeline is done
     });
 }
@@ -1235,7 +1263,7 @@ fn ralph_resume_from_complete_phase() {
 fn ralph_resume_is_idempotent_same_checkpoint() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1260,11 +1288,14 @@ fn ralph_resume_is_idempotent_same_checkpoint() {
 
         // First resume run
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Check that a Complete checkpoint was created
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         if checkpoint_path.exists() {
@@ -1286,7 +1317,7 @@ fn ralph_resume_is_idempotent_same_checkpoint() {
 fn ralph_checkpoint_preserves_git_identity() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1348,11 +1379,14 @@ fn ralph_checkpoint_preserves_git_identity() {
 
         // Run with --resume
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Should succeed and use checkpoint's git identity
     });
 }
@@ -1365,7 +1399,7 @@ fn ralph_checkpoint_preserves_git_identity() {
 fn ralph_checkpoint_preserves_model_overrides() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1427,11 +1461,14 @@ fn ralph_checkpoint_preserves_model_overrides() {
 
         // Run with --resume - should show model overrides being restored
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1443,7 +1480,7 @@ fn ralph_checkpoint_preserves_model_overrides() {
 fn ralph_resume_warns_on_prompt_md_change() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1524,11 +1561,14 @@ fn ralph_resume_warns_on_prompt_md_change() {
 
         // Run with --resume - should warn about PROMPT.md change
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1540,7 +1580,7 @@ fn ralph_resume_warns_on_prompt_md_change() {
 fn ralph_checkpoint_records_rebase_state() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1602,11 +1642,14 @@ fn ralph_checkpoint_records_rebase_state() {
 
         // Run with --resume - should detect rebase phase checkpoint
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1707,7 +1750,7 @@ fn make_rebase_checkpoint_json(
 fn ralph_resume_from_prerebase_phase_preserves_full_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1739,10 +1782,14 @@ fn ralph_resume_from_prerebase_phase_preserves_full_config() {
 
         // Run with --resume - should use checkpoint config
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1750,7 +1797,7 @@ fn ralph_resume_from_prerebase_phase_preserves_full_config() {
 fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1782,10 +1829,14 @@ fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
 
         // Run with --resume
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1793,7 +1844,7 @@ fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
 fn ralph_resume_from_postrebase_phase_preserves_full_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1825,12 +1876,14 @@ fn ralph_resume_from_postrebase_phase_preserves_full_config() {
 
         // Run with --resume
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1838,7 +1891,7 @@ fn ralph_resume_from_postrebase_phase_preserves_full_config() {
 fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1870,12 +1923,14 @@ fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
 
         // Run with --resume
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -1887,7 +1942,7 @@ fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
 fn ralph_resume_passes_context_to_developer_agent() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -1909,32 +1964,17 @@ fn ralph_resume_passes_context_to_developer_agent() {
         )
         .unwrap();
 
-        // Use a command that captures the prompt to a file
-        // Note: Prompts are passed as command-line arguments, not via stdin
-        let prompt_capture = dir.path().join("captured_prompt.txt");
-        let _capture_cmd = format!(
-        "sh -c 'echo \"$1\" > {}; mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt' sh",
-        prompt_capture.display()
-    );
-
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
-        // Check that the captured prompt contains resume context
-        if prompt_capture.exists() {
-            let captured = fs::read_to_string(&prompt_capture).unwrap_or_default();
-            // The prompt should mention resuming or previous run
-            assert!(
-                captured.contains("resuming")
-                    || captured.contains("previous run")
-                    || captured.contains("git log"),
-                "Developer prompt should contain resume context. Got: {}",
-                &captured[..captured.len().min(500)]
-            );
-        }
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
+        // Test verifies that resume completes successfully when resuming from Development phase
+        // The mock executor handles agent commands - no real processes spawned
     });
 }
 
@@ -1942,7 +1982,7 @@ fn ralph_resume_passes_context_to_developer_agent() {
 fn ralph_resume_passes_context_to_reviewer_agent() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -2033,8 +2073,6 @@ Test resume functionality.
             "prompt_history": {},
             "env_snapshot": {{
                 "ralph_vars": {{
-                    "RALPH_DEVELOPER_CMD": "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
-                    "RALPH_REVIEWER_CMD": "sh -c 'exit 0'",
                     "RALPH_DEVELOPER_ITERS": "0",
                     "RALPH_REVIEWER_REVIEWS": "0"
                 }},
@@ -2052,12 +2090,14 @@ Test resume functionality.
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Verify the checkpoint was restored with prompt history
         // The checkpoint should contain the prompt history we created
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
@@ -2080,7 +2120,7 @@ Test resume functionality.
 fn ralph_resume_is_idempotent_from_prerebase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -2113,11 +2153,14 @@ fn ralph_resume_is_idempotent_from_prerebase() {
 
         // First resume run
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // After successful completion, checkpoint should be at Complete or cleared
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         if checkpoint_path.exists() {
@@ -2149,8 +2192,6 @@ fn ralph_checkpoint_tracks_prompt_history() {
 
         // Run pipeline with 0 iterations
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
         run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
             .unwrap();
@@ -2164,7 +2205,7 @@ fn ralph_checkpoint_tracks_prompt_history() {
 fn ralph_resume_shows_prompt_replay_info() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -2247,11 +2288,14 @@ fn ralph_resume_shows_prompt_replay_info() {
 
         // Resume and capture output
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Verify the pipeline completed successfully
         // (The checkpoint should have been cleared on success)
         assert!(!dir.path().join(".agent/checkpoint.json").exists());
@@ -2266,7 +2310,7 @@ fn ralph_resume_shows_prompt_replay_info() {
 fn ralph_v3_checkpoint_contains_execution_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -2344,8 +2388,6 @@ fn ralph_v3_checkpoint_contains_execution_history() {
             "prompt_history": null,
             "env_snapshot": {{
                 "ralph_vars": {{
-                    "RALPH_DEVELOPER_CMD": "sh -c 'exit 0'",
-                    "RALPH_REVIEWER_CMD": "sh -c 'exit 0'",
                     "RALPH_DEVELOPER_ITERS": "0",
                     "RALPH_REVIEWER_REVIEWS": "0"
                 }},
@@ -2364,12 +2406,14 @@ fn ralph_v3_checkpoint_contains_execution_history() {
 
         // Resume should load checkpoint with execution history
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Verify the checkpoint contains execution_history
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         if checkpoint_path.exists() {
@@ -2386,7 +2430,7 @@ fn ralph_v3_checkpoint_contains_execution_history() {
 fn ralph_v3_restores_execution_history_on_resume() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -2492,11 +2536,14 @@ fn ralph_v3_restores_execution_history_on_resume() {
 
         // Resume and verify it succeeds
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Verify the pipeline completed successfully
         assert!(!dir.path().join(".agent/checkpoint.json").exists());
     });
@@ -2510,7 +2557,7 @@ fn ralph_v3_restores_execution_history_on_resume() {
 fn ralph_v3_file_system_state_validates_on_resume() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -2615,11 +2662,14 @@ fn ralph_v3_file_system_state_validates_on_resume() {
 
         // Resume - should validate file system state successfully
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -2627,7 +2677,7 @@ fn ralph_v3_file_system_state_validates_on_resume() {
 fn ralph_v3_file_system_state_detects_changes() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -2751,13 +2801,11 @@ fn ralph_v3_file_system_state_detects_changes() {
         // With strategy=fail, the resume is aborted and the program continues with a fresh run
         // Since developer_iters=0 in the command line, the program completes immediately
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_with_config(
             &["--resume", "--recovery-strategy", "fail"],
             executor,
+            Some(test_config.as_path()),
             Some(dir.path()),
         )
         .unwrap();
@@ -2769,7 +2817,7 @@ fn ralph_v3_file_system_state_detects_changes() {
 fn ralph_v3_file_system_state_auto_recovery() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -2875,13 +2923,11 @@ fn ralph_v3_file_system_state_auto_recovery() {
 
         // Resume with --recovery-strategy=auto should restore the file
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_with_config(
             &["--resume", "--recovery-strategy", "auto"],
             executor,
+            Some(test_config.as_path()),
             Some(dir.path()),
         )
         .unwrap();
@@ -2900,7 +2946,7 @@ fn ralph_v3_file_system_state_auto_recovery() {
 fn ralph_v3_prompt_replay_is_deterministic() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -2983,30 +3029,17 @@ fn ralph_v3_prompt_replay_is_deterministic() {
         )
         .unwrap();
 
-        // Use a command that captures the prompt to verify it's using the stored one
-        let prompt_capture = dir.path().join("captured_prompt.txt");
-        let _capture_cmd = format!(
-        "sh -c 'echo \"$1\" > {}; cat \"$1\"; mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt' sh",
-        prompt_capture.display()
-    );
-
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
-        // Verify that the deterministic prompt was used
-        if prompt_capture.exists() {
-            let captured = fs::read_to_string(&prompt_capture).unwrap_or_default();
-            // The captured prompt should contain the deterministic marker
-            // (This verifies that the stored prompt was replayed)
-            assert!(
-                captured.contains("DETERMINISTIC PROMPT FOR DEVELOPMENT ITERATION 1"),
-                "Expected stored prompt to be replayed. Got: {}",
-                &captured[..captured.len().min(200)]
-            );
-        }
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
+        // Test verifies that resume completes successfully with prompt history
+        // The mock executor handles agent commands - no real processes spawned
     });
 }
 
@@ -3014,7 +3047,7 @@ fn ralph_v3_prompt_replay_is_deterministic() {
 fn ralph_v3_prompt_replay_across_multiple_iterations() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -3101,11 +3134,14 @@ fn ralph_v3_prompt_replay_across_multiple_iterations() {
 
         // Resume - should replay prompts for iterations 2 and 3 (1 is already done)
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Verify the pipeline completed successfully
         assert!(!dir.path().join(".agent/checkpoint.json").exists());
     });
@@ -3183,8 +3219,6 @@ fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
             "prompt_history": null,
             "env_snapshot": {{
                 "ralph_vars": {{
-                    "RALPH_DEVELOPER_CMD": "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
-                    "RALPH_REVIEWER_CMD": "sh -c 'exit 0'",
                     "RALPH_DEVELOPER_ITERS": "0",
                     "RALPH_REVIEWER_REVIEWS": "0"
                 }},
@@ -3209,10 +3243,6 @@ fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
         // But since we're not in a TTY, it should skip the offer and start fresh
         let _env_guard = base_env(&config_home);
         std::env::set_var("RALPH_INTERACTIVE", "0");
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
         run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
             .unwrap();
@@ -3227,7 +3257,7 @@ fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
 fn ralph_v3_shows_user_friendly_checkpoint_summary() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -3299,11 +3329,14 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
 
         // Run with --resume - should show user-friendly summary
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -3315,7 +3348,7 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
 fn ralph_v3_comprehensive_resume_from_review_phase() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -3494,8 +3527,6 @@ fn ralph_v3_comprehensive_resume_from_review_phase() {
             "prompt_history": {},
             "env_snapshot": {{
                 "ralph_vars": {{
-                    "RALPH_DEVELOPER_CMD": "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
-                    "RALPH_REVIEWER_CMD": "sh -c 'exit 0'",
                     "RALPH_DEVELOPER_ITERS": "0",
                     "RALPH_REVIEWER_REVIEWS": "0"
                 }},
@@ -3525,12 +3556,14 @@ fn ralph_v3_comprehensive_resume_from_review_phase() {
 
         // Resume from Complete phase
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
 
         // Verify the pipeline completed successfully
         assert!(!dir.path().join(".agent/checkpoint.json").exists());
@@ -3545,7 +3578,7 @@ fn ralph_v3_comprehensive_resume_from_review_phase() {
 fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -3655,12 +3688,14 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
 
         // Load checkpoint and verify execution history is preserved
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
 
         // Verify the checkpoint was consumed
         assert!(!dir.path().join(".agent/checkpoint.json").exists());
@@ -3671,7 +3706,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
 fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -3752,12 +3787,14 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
 
         // Resume and verify prompt history is preserved
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
 
         // Verify the checkpoint was consumed
         assert!(!dir.path().join(".agent/checkpoint.json").exists());
@@ -3777,7 +3814,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
 fn ralph_no_resume_flag_skips_interactive_prompt() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -3814,12 +3851,14 @@ Do something.
 
         // Run with --no-resume - should skip interactive prompt and start fresh
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--no-resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--no-resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Should NOT show resume prompt, should complete successfully
     });
 }
@@ -3866,10 +3905,6 @@ Do something.
         // Run with RALPH_NO_RESUME_PROMPT env var - should skip interactive prompt
         let _env_guard = base_env(&config_home);
         std::env::set_var("RALPH_NO_RESUME_PROMPT", "1");
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
         run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
             .unwrap();
@@ -3881,7 +3916,7 @@ Do something.
 fn ralph_resume_flag_takes_precedence_over_no_resume() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -3918,10 +3953,14 @@ Do something.
 
         // Run with both --resume and --no-resume - --resume should take precedence
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume", "--no-resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume", "--no-resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -3933,7 +3972,7 @@ Do something.
 fn ralph_resume_replays_prompts_deterministically() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -4018,8 +4057,6 @@ Do something.
             "prompt_history": {},
             "env_snapshot": {{
                 "ralph_vars": {{
-                    "RALPH_DEVELOPER_CMD": "sh -c 'mkdir -p .agent; echo plan > .agent/PLAN.md; echo change > change.txt'",
-                    "RALPH_REVIEWER_CMD": "sh -c 'exit 0'",
                     "RALPH_DEVELOPER_ITERS": "0",
                     "RALPH_REVIEWER_REVIEWS": "0"
                 }},
@@ -4042,12 +4079,14 @@ Do something.
 
         // Resume and verify the checkpoint with prompt history is loaded
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Verify the checkpoint was loaded with prompt_history
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         if checkpoint_path.exists() {
@@ -4080,9 +4119,6 @@ fn ralph_v3_checkpoint_contains_file_system_state() {
 
         // Create a failing run to leave a v3 checkpoint
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
         run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
             .unwrap();
@@ -4114,9 +4150,6 @@ fn ralph_v3_checkpoint_contains_execution_history_after_failure() {
         // Create a failing run to leave a v3 checkpoint.
         // The agent creates whitespace-only PLAN.md which fails validation.
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
         run_ralph_cli_with_config(&[], executor, Some(test_config.as_path()), Some(dir.path()))
             .unwrap();
@@ -4151,7 +4184,7 @@ fn ralph_v3_checkpoint_contains_execution_history_after_failure() {
 fn ralph_resume_with_force_strategy_ignores_file_changes() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -4245,13 +4278,11 @@ fn ralph_resume_with_force_strategy_ignores_file_changes() {
 
         // Run with --resume --recovery-strategy=force
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_with_config(
             &["--resume", "--recovery-strategy=force"],
             executor,
+            Some(test_config.as_path()),
             Some(dir.path()),
         )
         .unwrap();
@@ -4263,7 +4294,7 @@ fn ralph_resume_with_force_strategy_ignores_file_changes() {
 fn ralph_resume_auto_strategy_attempts_recovery() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -4359,14 +4390,11 @@ fn ralph_resume_auto_strategy_attempts_recovery() {
 
         // Run with --resume --recovery-strategy=auto
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(
+        run_ralph_cli_with_config(
             &["--resume", "--recovery-strategy=auto"],
             executor,
+            Some(test_config.as_path()),
             Some(dir.path()),
         )
         .unwrap();
@@ -4378,7 +4406,7 @@ fn ralph_resume_auto_strategy_attempts_recovery() {
 fn ralph_checkpoint_saved_after_rebase_completion() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -4398,12 +4426,14 @@ Do something.
         // Run pipeline with rebase enabled - should complete successfully
         // We use 0 iterations to skip actual development work
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--with-rebase"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--with-rebase"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
         // Check that checkpoint was saved at Planning phase after rebase
         let checkpoint_path = dir.path().join(".agent/checkpoint.json");
         if checkpoint_path.exists() {
@@ -4421,7 +4451,7 @@ Do something.
 fn ralph_checkpoint_saved_at_pipeline_start() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -4511,11 +4541,14 @@ Do something.
 
         // Verify checkpoint can be loaded
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -4527,7 +4560,7 @@ Do something.
 fn ralph_v3_execution_step_contains_git_commit_oid() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -4662,12 +4695,14 @@ Do something.
 
         // Verify checkpoint can be loaded with the new fields
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -4675,7 +4710,7 @@ Do something.
 fn ralph_v3_execution_step_serialization_with_new_fields() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -4794,12 +4829,14 @@ Do something.
 
         // Verify checkpoint can be loaded
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -4807,7 +4844,7 @@ Do something.
 fn ralph_v3_backward_compatible_missing_new_fields() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -4916,12 +4953,14 @@ Do something.
 
         // Verify checkpoint can still be loaded (backward compatibility)
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }
 
@@ -4929,7 +4968,7 @@ Do something.
 fn ralph_v3_resume_note_contains_execution_history() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
-        let _test_config = create_test_config(&dir);
+        let test_config = create_test_config(&dir);
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
 
@@ -5070,11 +5109,13 @@ Do something.
 
         // Verify checkpoint can be loaded
         let _env_guard = base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_with_config(
+            &["--resume"],
+            executor,
+            Some(test_config.as_path()),
+            Some(dir.path()),
+        )
+        .unwrap();
     });
 }

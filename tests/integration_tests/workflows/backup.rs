@@ -24,43 +24,10 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::{
-    create_test_config, mock_executor_with_success, run_ralph_cli, run_ralph_cli_with_config,
-    EnvGuard,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
 };
 use crate::test_timeout::{with_default_timeout, with_timeout};
 use test_helpers::init_git_repo;
-
-/// Helper function to set up base environment for tests with automatic cleanup.
-///
-/// This function uses EnvGuard to ensure all environment variables are
-/// restored when the guard is dropped, preventing cross-test pollution.
-fn set_base_env() -> EnvGuard {
-    let guard = EnvGuard::new(&[
-        "RALPH_INTERACTIVE",
-        "RALPH_DEVELOPER_ITERS",
-        "RALPH_REVIEWER_REVIEWS",
-        "RALPH_DEVELOPER_AGENT",
-        "RALPH_REVIEWER_AGENT",
-        "GIT_AUTHOR_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_NAME",
-        "GIT_COMMITTER_EMAIL",
-    ]);
-
-    guard.set(&[
-        ("RALPH_INTERACTIVE", Some("0")),
-        ("RALPH_DEVELOPER_ITERS", Some("0")),
-        ("RALPH_REVIEWER_REVIEWS", Some("0")),
-        ("RALPH_DEVELOPER_AGENT", Some("codex")),
-        ("RALPH_REVIEWER_AGENT", Some("codex")),
-        ("GIT_AUTHOR_NAME", Some("Test")),
-        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
-        ("GIT_COMMITTER_NAME", Some("Test")),
-        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
-    ]);
-
-    guard
-}
 
 /// Helper to pre-create a PLAN.md file to avoid agent execution.
 ///
@@ -131,10 +98,9 @@ fn backup_created_at_pipeline_start() {
         // Pre-create PLAN.md to avoid agent execution
         create_plan_file(&dir);
 
-        let _env_guard = set_base_env();
-
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify backup was created
         assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
@@ -174,10 +140,10 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
 
         // Run to create backup
         create_plan_file(&dir);
-        let _env_guard = set_base_env();
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify backup was created and content matches
         assert!(backup_path.exists(), "Backup should be created after run");
@@ -213,10 +179,10 @@ fn backup_not_deleted_during_cleanup() {
 
             // Run Ralph to create backup
             create_plan_file(&dir);
-            let _env_guard = set_base_env();
 
+            let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // Verify backup exists
             assert!(backup_path.exists());
@@ -224,8 +190,9 @@ fn backup_not_deleted_during_cleanup() {
             // Run Ralph again - cleanup shouldn't delete backup
             create_plan_file(&dir);
 
+            let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // Verify backup still exists (wasn't cleaned up)
             assert!(backup_path.exists());
@@ -249,10 +216,10 @@ fn backup_has_readonly_permissions() {
 
         // Run Ralph to create backup
         create_plan_file(&dir);
-        let _env_guard = set_base_env();
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify backup exists
         assert!(backup_path.exists());
@@ -316,10 +283,10 @@ fn periodic_restoration_works_during_pipeline() {
 
             // Initial run to create backup
             create_plan_file(&dir);
-            let _env_guard = set_base_env();
 
+            let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // Verify backup was created
             assert!(backup_path.exists());
@@ -327,8 +294,9 @@ fn periodic_restoration_works_during_pipeline() {
             // Run again - backup should persist
             create_plan_file(&dir);
 
+            let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // Verify backup still exists and has correct content
             assert!(prompt_path.exists());
@@ -369,10 +337,10 @@ fn backup_rotation_maintains_multiple_backups() {
             // Run Ralph multiple times to create multiple backups
             for _ in 0..3 {
                 create_plan_file(&dir);
-                let _env_guard = set_base_env();
 
+                let config = create_test_config_struct();
                 let executor = mock_executor_with_success();
-                run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+                run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
             }
 
             // Verify all 3 backup levels exist
@@ -419,10 +387,10 @@ fn backup_oldest_deleted_when_exceeding_limit() {
             // Run Ralph 4 times - should only keep 3 backups
             for _ in 0..4 {
                 create_plan_file(&dir);
-                let _env_guard = set_base_env();
 
+                let config = create_test_config_struct();
                 let executor = mock_executor_with_success();
-                run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+                run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
             }
 
             // Verify .backup.3 doesn't exist (oldest was deleted)
@@ -456,20 +424,13 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
             let backup_base = dir.path().join(".agent/PROMPT.md.backup");
             let backup_1 = dir.path().join(".agent/PROMPT.md.backup.1");
 
-            // Create test config to prevent agent execution
-            let test_config = create_test_config(&dir);
-
             // Run Ralph twice to create multiple backups
             for _ in 0..2 {
                 create_plan_file(&dir);
+
+                let config = create_test_config_struct();
                 let executor = mock_executor_with_success();
-                run_ralph_cli_with_config(
-                    &[],
-                    executor,
-                    Some(test_config.as_path()),
-                    Some(dir.path()),
-                )
-                .unwrap();
+                run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
             }
 
             // Verify both backups exist
@@ -496,14 +457,9 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
             // Run Ralph again - it should successfully run with the restored PROMPT.md
             create_plan_file(&dir);
 
+            let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli_with_config(
-                &[],
-                executor,
-                Some(test_config.as_path()),
-                Some(dir.path()),
-            )
-            .unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // Verify PROMPT.md exists and has valid content
             assert!(prompt_path.exists(), "PROMPT.md should exist");
@@ -549,10 +505,10 @@ fn agent_chmod_rm_is_caught_and_restored() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        let _env_guard = set_base_env();
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify backup was created
         assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
@@ -587,10 +543,10 @@ fn agent_overwrite_is_detected_and_restored() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        let _env_guard = set_base_env();
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify backup was created
         assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
@@ -626,10 +582,10 @@ fn multiple_deletions_are_logged_with_context() {
 
             // Initial run to create backup
             create_plan_file(&dir);
-            let _env_guard = set_base_env();
 
+            let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // Verify backup was created and PROMPT.md exists
             assert!(dir.path().join(".agent/PROMPT.md.backup").exists());

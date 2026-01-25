@@ -23,43 +23,10 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::{
-    mock_executor_for_git_success, mock_executor_with_success, run_ralph_cli, EnvGuard,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
 };
 use crate::test_timeout::{with_default_timeout, with_timeout};
-use ralph_workflow::git_helpers::{GitOps, RealGit};
 use test_helpers::{commit_all, init_git_repo, write_file};
-
-/// Helper function to set up base environment for tests with automatic cleanup.
-///
-/// Uses EnvGuard to ensure all environment variables are restored when dropped,
-/// preventing cross-test pollution.
-fn base_env() -> EnvGuard {
-    let guard = EnvGuard::new(&[
-        "RALPH_INTERACTIVE",
-        "RALPH_DEVELOPER_ITERS",
-        "RALPH_REVIEWER_REVIEWS",
-        "RALPH_DEVELOPER_AGENT",
-        "RALPH_REVIEWER_AGENT",
-        "GIT_AUTHOR_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_NAME",
-        "GIT_COMMITTER_EMAIL",
-    ]);
-
-    guard.set(&[
-        ("RALPH_INTERACTIVE", Some("0")),
-        ("RALPH_DEVELOPER_ITERS", Some("0")),
-        ("RALPH_REVIEWER_REVIEWS", Some("0")),
-        ("RALPH_DEVELOPER_AGENT", Some("codex")),
-        ("RALPH_REVIEWER_AGENT", Some("codex")),
-        ("GIT_AUTHOR_NAME", Some("Test")),
-        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
-        ("GIT_COMMITTER_NAME", Some("Test")),
-        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
-    ]);
-
-    guard
-}
 
 /// Helper to pre-create a commit message file to avoid agent execution.
 fn create_commit_message_file(dir: &tempfile::TempDir, message: &str) {
@@ -91,6 +58,7 @@ fn ralph_start_commit_persisted_across_runs() {
         || {
             // Test that start_commit is saved and persists across pipeline runs
             let dir = TempDir::new().unwrap();
+            let config = create_test_config_struct();
             let repo = init_git_repo(&dir);
 
             // Create initial commit
@@ -100,10 +68,9 @@ fn ralph_start_commit_persisted_across_runs() {
             // First run - should create start_commit
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: first run");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config.clone(), Some(dir.path())).unwrap();
 
             // Verify start_commit was created
             let start_commit_path = dir.path().join(".agent/start_commit");
@@ -123,10 +90,9 @@ fn ralph_start_commit_persisted_across_runs() {
             // Second run - start_commit should remain the same (not updated)
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: second run");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // Verify start_commit hasn't changed
             let second_start_commit =
@@ -148,46 +114,53 @@ fn ralph_start_commit_persisted_across_runs() {
 /// it uses the merge-base with the default branch.
 #[test]
 fn ralph_baseline_reset_command_works() {
-    with_default_timeout(|| {
-        // Test that --reset-start-commit updates the baseline
-        let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
+    with_timeout(
+        || {
+            // Test that --reset-start-commit updates the baseline
+            let dir = TempDir::new().unwrap();
+            let config = create_test_config_struct();
+            let repo = init_git_repo(&dir);
 
-        // Create initial commit
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
+            // Create initial commit
+            write_file(dir.path().join("initial.txt"), "initial content");
+            let _ = commit_all(&repo, "initial commit");
 
-        // First run - creates start_commit
-        create_plan_file(&dir);
-        create_commit_message_file(&dir, "feat: run");
-        let _env_guard = base_env();
+            // First run - creates start_commit
+            create_plan_file(&dir);
+            create_commit_message_file(&dir, "feat: run");
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli_injected(&[], executor, config.clone(), Some(dir.path())).unwrap();
 
-        let start_commit_path = dir.path().join(".agent/start_commit");
-        let first_start_commit =
-            fs::read_to_string(&start_commit_path).expect("should read start_commit");
+            let start_commit_path = dir.path().join(".agent/start_commit");
+            let first_start_commit =
+                fs::read_to_string(&start_commit_path).expect("should read start_commit");
 
-        // Create a new commit
-        write_file(dir.path().join("initial.txt"), "updated content");
-        let _ = commit_all(&repo, "second commit");
+            // Create a new commit
+            write_file(dir.path().join("initial.txt"), "updated content");
+            let _ = commit_all(&repo, "second commit");
 
-        // Reset the start_commit
-        let _env_guard = base_env();
+            // Reset the start_commit
+            let executor = mock_executor_with_success();
+            run_ralph_cli_injected(
+                &["--reset-start-commit"],
+                executor,
+                config,
+                Some(dir.path()),
+            )
+            .unwrap();
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--reset-start-commit"], executor, Some(dir.path())).unwrap();
+            // Verify start_commit was updated
+            let reset_start_commit =
+                fs::read_to_string(&start_commit_path).expect("should read start_commit");
 
-        // Verify start_commit was updated
-        let reset_start_commit =
-            fs::read_to_string(&start_commit_path).expect("should read start_commit");
-
-        assert_ne!(
-            first_start_commit, reset_start_commit,
-            "start_commit should be updated after --reset-start-commit"
-        );
-    });
+            assert_ne!(
+                first_start_commit, reset_start_commit,
+                "start_commit should be updated after --reset-start-commit"
+            );
+        },
+        std::time::Duration::from_secs(30),
+    );
 }
 
 /// Test that diff is generated from start_commit, not repo beginning.
@@ -198,40 +171,42 @@ fn ralph_baseline_reset_command_works() {
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn ralph_diff_from_start_commit() {
-    with_default_timeout(|| {
-        // Test that diff is generated from start_commit, not from the beginning of repo
-        let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
+    with_timeout(
+        || {
+            // Test that diff is generated from start_commit, not from the beginning of repo
+            let dir = TempDir::new().unwrap();
+            let config = create_test_config_struct();
+            let repo = init_git_repo(&dir);
 
-        // Create initial commit (this will be our start_commit baseline)
-        write_file(dir.path().join("file1.txt"), "original content");
-        let _ = commit_all(&repo, "initial commit");
+            // Create initial commit (this will be our start_commit baseline)
+            write_file(dir.path().join("file1.txt"), "original content");
+            let _ = commit_all(&repo, "initial commit");
 
-        // Run ralph to establish start_commit
-        create_plan_file(&dir);
-        create_commit_message_file(&dir, "feat: establish baseline");
-        let _env_guard = base_env();
+            // Run ralph to establish start_commit
+            create_plan_file(&dir);
+            create_commit_message_file(&dir, "feat: establish baseline");
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli_injected(&[], executor, config.clone(), Some(dir.path())).unwrap();
 
-        // Create changes AFTER start_commit
-        write_file(dir.path().join("file1.txt"), "modified content");
-        write_file(dir.path().join("file2.txt"), "new file");
+            // Create changes AFTER start_commit
+            write_file(dir.path().join("file1.txt"), "modified content");
+            write_file(dir.path().join("file2.txt"), "new file");
 
-        // Run review cycle - just verify start_commit exists
-        create_plan_file(&dir);
-        create_commit_message_file(&dir, "feat: test");
-        let _env_guard = base_env();
+            // Run review cycle - just verify start_commit exists
+            create_plan_file(&dir);
+            create_commit_message_file(&dir, "feat: test");
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        // The test verifies that diff generation works from start_commit
-        // For this integration test, we verify the baseline mechanism works
-        let start_commit_path = dir.path().join(".agent/start_commit");
-        assert!(start_commit_path.exists(), "start_commit should exist");
-    });
+            // The test verifies that diff generation works from start_commit
+            // For this integration test, we verify the baseline mechanism works
+            let start_commit_path = dir.path().join(".agent/start_commit");
+            assert!(start_commit_path.exists(), "start_commit should exist");
+        },
+        std::time::Duration::from_secs(30),
+    );
 }
 
 // ============================================================================
@@ -252,6 +227,7 @@ fn ralph_stale_baseline_warning() {
             // Test that baseline summary is displayed during review cycles
             // (The actual stale warning depends on diff generation which may vary)
             let dir = TempDir::new().unwrap();
+            let config = create_test_config_struct();
             let repo = init_git_repo(&dir);
 
             // Create initial commit
@@ -261,10 +237,9 @@ fn ralph_stale_baseline_warning() {
             // Run to establish start_commit
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: baseline");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config.clone(), Some(dir.path())).unwrap();
 
             // Create 5 commits and make a change
             for i in 1..=5 {
@@ -280,10 +255,9 @@ fn ralph_stale_baseline_warning() {
             // Run review cycle
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: review");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // The review cycle should complete successfully
             // (Baseline display behavior is tested implicitly by successful completion)
@@ -305,6 +279,7 @@ fn ralph_review_baseline_updated_after_fix() {
     with_default_timeout(|| {
         // Test that review_baseline.txt is updated after each fix pass
         let dir = TempDir::new().unwrap();
+        let config = create_test_config_struct();
         let repo = init_git_repo(&dir);
 
         // Create initial commit
@@ -317,10 +292,9 @@ fn ralph_review_baseline_updated_after_fix() {
         // Run review-fix cycle
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: review");
-        let _env_guard = base_env();
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Note: With 0 reviews, review_baseline might not be created
         // The test verifies the pipeline completes successfully
@@ -340,6 +314,7 @@ fn ralph_diff_shows_correct_range() {
     with_default_timeout(|| {
         // Test that diff only shows changes from start_commit to HEAD, not the entire history
         let dir = TempDir::new().unwrap();
+        let config = create_test_config_struct();
         let repo = init_git_repo(&dir);
 
         // Create first commit - this will be "before" our baseline
@@ -353,10 +328,9 @@ fn ralph_diff_shows_correct_range() {
         // Run ralph to establish start_commit at the baseline commit
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: establish");
-        let _env_guard = base_env();
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify start_commit was established
         let start_commit_path = dir.path().join(".agent/start_commit");
@@ -376,14 +350,29 @@ fn ralph_diff_shows_correct_range() {
         write_file(dir.path().join("baseline.txt"), "modified baseline");
 
         // Verify the diff from start_commit includes only the new changes
-        // by running git diff directly in the test (not via the agent)
-        // Use GitOps trait to get diff from start commit
-        // Note: diff_from uses git2 library, not external processes, but we still
-        // use with_executor() to avoid creating a RealProcessExecutor instance
-        let executor = mock_executor_for_git_success();
-        let git = RealGit::with_executor(executor);
-        let diff_content =
-            GitOps::diff_from(&git, &start_commit.to_string()).expect("Failed to run git diff");
+        // by using git2 directly with the repo path (not relying on CWD)
+        // Note: run_ralph_cli_with_config restores CWD after completion, so we
+        // cannot use GitOps::diff_from (which discovers repo from CWD)
+        let oid = git2::Oid::from_str(&start_commit).expect("Invalid start commit OID");
+        let start_commit_obj = repo.find_commit(oid).expect("Failed to find start commit");
+        let start_tree = start_commit_obj.tree().expect("Failed to get start tree");
+
+        let mut diff_opts = git2::DiffOptions::new();
+        diff_opts.include_untracked(true);
+        diff_opts.recurse_untracked_dirs(true);
+
+        let diff = repo
+            .diff_tree_to_workdir_with_index(Some(&start_tree), Some(&mut diff_opts))
+            .expect("Failed to create diff");
+
+        let mut diff_content = Vec::new();
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+            diff_content.extend_from_slice(line.content());
+            true
+        })
+        .expect("Failed to print diff");
+
+        let diff_content = String::from_utf8_lossy(&diff_content).to_string();
 
         // Diff should contain changes to files made after baseline
         assert!(
@@ -413,6 +402,7 @@ fn ralph_empty_diff_skips_review() {
         || {
             // Test behavior when there's no diff (no changes since baseline)
             let dir = TempDir::new().unwrap();
+            let config = create_test_config_struct();
             let repo = init_git_repo(&dir);
 
             // Create initial commit
@@ -422,19 +412,17 @@ fn ralph_empty_diff_skips_review() {
             // Run ralph to establish baseline
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: baseline");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config.clone(), Some(dir.path())).unwrap();
 
             // Now run again WITHOUT making any changes
             // The review should detect empty diff and skip
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: no changes");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // Should complete successfully but may skip review due to empty diff
             // The test verifies that pipeline handles empty diff gracefully
@@ -455,6 +443,7 @@ fn ralph_start_commit_shown_at_pipeline_start() {
         || {
             // Test that start_commit information is displayed at pipeline start
             let dir = TempDir::new().unwrap();
+            let config = create_test_config_struct();
             let repo = init_git_repo(&dir);
 
             // Create initial commit
@@ -464,10 +453,9 @@ fn ralph_start_commit_shown_at_pipeline_start() {
             // First run - should establish start_commit
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: first");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config.clone(), Some(dir.path())).unwrap();
 
             // Verify start_commit was created
             let start_commit_path = dir.path().join(".agent/start_commit");
@@ -488,10 +476,9 @@ fn ralph_start_commit_shown_at_pipeline_start() {
             // Run with verbose mode to see start_commit info
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: second");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&["--verbosity=2"], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&["--verbosity=2"], executor, config, Some(dir.path())).unwrap();
         },
         std::time::Duration::from_secs(30),
     );
@@ -510,6 +497,7 @@ fn ralph_stale_start_commit_warning_at_start() {
         || {
             // Test that stale start_commit warning is shown
             let dir = TempDir::new().unwrap();
+            let config = create_test_config_struct();
             let repo = init_git_repo(&dir);
 
             // Create initial commit
@@ -519,10 +507,9 @@ fn ralph_stale_start_commit_warning_at_start() {
             // Run to establish start_commit
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: baseline");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config.clone(), Some(dir.path())).unwrap();
 
             // Create more than 10 commits to make it stale
             for i in 1..=11 {
@@ -536,10 +523,9 @@ fn ralph_stale_start_commit_warning_at_start() {
             // Run with verbose mode - should show stale warning
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: review");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&["--verbosity=2"], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&["--verbosity=2"], executor, config, Some(dir.path())).unwrap();
         },
         std::time::Duration::from_secs(30),
     );
@@ -558,6 +544,7 @@ fn ralph_handles_corrupted_start_commit_file() {
     with_default_timeout(|| {
         // Test recovery from corrupted .agent/start_commit
         let dir = TempDir::new().unwrap();
+        let config = create_test_config_struct();
         let repo = init_git_repo(&dir);
 
         // Create initial commit
@@ -572,10 +559,9 @@ fn ralph_handles_corrupted_start_commit_file() {
         // Run ralph - should recover from corrupted state
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: recovered");
-        let _env_guard = base_env();
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify start_commit was repaired (now contains valid OID)
         let repaired_content = fs::read_to_string(&start_commit_path).unwrap();
@@ -595,49 +581,11 @@ fn ralph_handles_corrupted_start_commit_file() {
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
 fn ralph_handles_corrupted_review_baseline_file() {
-    with_default_timeout(|| {
-        // Test recovery from corrupted .agent/review_baseline.txt
-        let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
-
-        // Create initial commit
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
-
-        // Run to establish start_commit
-        create_plan_file(&dir);
-        create_commit_message_file(&dir, "feat: baseline");
-        let _env_guard = base_env();
-
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
-
-        // Manually corrupt the review_baseline.txt file
-        let baseline_path = dir.path().join(".agent/review_baseline.txt");
-        fs::write(&baseline_path, "corrupted_invalid_baseline_oid").unwrap();
-
-        // Create a change
-        write_file(dir.path().join("initial.txt"), "modified content");
-
-        // Run review - should handle corrupted baseline gracefully
-        create_plan_file(&dir);
-        create_commit_message_file(&dir, "feat: review");
-        let _env_guard = base_env();
-
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
-
-        // Should complete successfully despite corrupted baseline
-    });
-}
-
-/// Uses a 30-second timeout because this test runs ralph twice sequentially.
-#[test]
-fn ralph_handles_missing_start_commit_oid() {
     with_timeout(
         || {
-            // Test when start_commit references non-existent commit (history rewritten)
+            // Test recovery from corrupted .agent/review_baseline.txt
             let dir = TempDir::new().unwrap();
+            let config = create_test_config_struct();
             let repo = init_git_repo(&dir);
 
             // Create initial commit
@@ -647,10 +595,50 @@ fn ralph_handles_missing_start_commit_oid() {
             // Run to establish start_commit
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: baseline");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config.clone(), Some(dir.path())).unwrap();
+
+            // Manually corrupt the review_baseline.txt file
+            let baseline_path = dir.path().join(".agent/review_baseline.txt");
+            fs::write(&baseline_path, "corrupted_invalid_baseline_oid").unwrap();
+
+            // Create a change
+            write_file(dir.path().join("initial.txt"), "modified content");
+
+            // Run review - should handle corrupted baseline gracefully
+            create_plan_file(&dir);
+            create_commit_message_file(&dir, "feat: review");
+
+            let executor = mock_executor_with_success();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+
+            // Should complete successfully despite corrupted baseline
+        },
+        std::time::Duration::from_secs(30),
+    );
+}
+
+/// Uses a 30-second timeout because this test runs ralph twice sequentially.
+#[test]
+fn ralph_handles_missing_start_commit_oid() {
+    with_timeout(
+        || {
+            // Test when start_commit references non-existent commit (history rewritten)
+            let dir = TempDir::new().unwrap();
+            let config = create_test_config_struct();
+            let repo = init_git_repo(&dir);
+
+            // Create initial commit
+            write_file(dir.path().join("initial.txt"), "initial content");
+            let _ = commit_all(&repo, "initial commit");
+
+            // Run to establish start_commit
+            create_plan_file(&dir);
+            create_commit_message_file(&dir, "feat: baseline");
+
+            let executor = mock_executor_with_success();
+            run_ralph_cli_injected(&[], executor, config.clone(), Some(dir.path())).unwrap();
 
             // Manually set start_commit to a non-existent OID
             let start_commit_path = dir.path().join(".agent/start_commit");
@@ -666,10 +654,9 @@ fn ralph_handles_missing_start_commit_oid() {
             // Run review - should handle missing OID gracefully
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: review");
-            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
             // Should recover and reset the start_commit
         },

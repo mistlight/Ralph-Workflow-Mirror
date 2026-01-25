@@ -21,41 +21,11 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
+use crate::common::{
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
-
-/// Helper function to set up base environment for tests with automatic cleanup.
-///
-/// Uses EnvGuard to ensure all environment variables are restored when dropped,
-/// preventing cross-test pollution.
-fn set_base_env() -> EnvGuard {
-    let guard = EnvGuard::new(&[
-        "RALPH_INTERACTIVE",
-        "RALPH_DEVELOPER_ITERS",
-        "RALPH_REVIEWER_REVIEWS",
-        "RALPH_DEVELOPER_AGENT",
-        "RALPH_REVIEWER_AGENT",
-        "GIT_AUTHOR_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_NAME",
-        "GIT_COMMITTER_EMAIL",
-    ]);
-
-    guard.set(&[
-        ("RALPH_INTERACTIVE", Some("0")),
-        ("RALPH_DEVELOPER_ITERS", Some("0")),
-        ("RALPH_REVIEWER_REVIEWS", Some("0")),
-        ("RALPH_DEVELOPER_AGENT", Some("codex")),
-        ("RALPH_REVIEWER_AGENT", Some("codex")),
-        ("GIT_AUTHOR_NAME", Some("Test")),
-        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
-        ("GIT_COMMITTER_NAME", Some("Test")),
-        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
-    ]);
-
-    guard
-}
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
     let repo = init_git_repo(dir);
@@ -74,6 +44,7 @@ fn ralph_reset_start_commit_on_main_uses_head() {
     with_default_timeout(|| {
         // Test that --reset-start-commit on main branch uses HEAD
         let dir = TempDir::new().unwrap();
+        let config = create_test_config_struct();
 
         // Initialize repo and create commits on main branch
         let repo = init_git_repo(&dir);
@@ -101,14 +72,14 @@ fn ralph_reset_start_commit_on_main_uses_head() {
         // Get the current HEAD commit OID
         let head_oid_str = head_oid(&repo);
 
-        // Run ralph with --reset-start-commit
-        std::env::set_var("GIT_AUTHOR_NAME", "Test");
-        std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
-        std::env::set_var("GIT_COMMITTER_NAME", "Test");
-        std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
-
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--reset-start-commit"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(
+            &["--reset-start-commit"],
+            executor,
+            config,
+            Some(dir.path()),
+        )
+        .unwrap();
 
         // Verify .agent/start_commit was updated to HEAD (since we're on main)
         let start_commit_content =
@@ -131,6 +102,7 @@ fn ralph_reset_start_commit_on_feature_branch_uses_merge_base() {
     with_default_timeout(|| {
         // Test that --reset-start-commit on feature branch uses merge-base
         let dir = TempDir::new().unwrap();
+        let config = create_test_config_struct();
 
         // Initialize repo with initial commit on main
         let repo = init_git_repo(&dir);
@@ -187,14 +159,14 @@ fn ralph_reset_start_commit_on_feature_branch_uses_merge_base() {
             "HEAD should be different from merge-base"
         );
 
-        // Run ralph with --reset-start-commit
-        std::env::set_var("GIT_AUTHOR_NAME", "Test");
-        std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
-        std::env::set_var("GIT_COMMITTER_NAME", "Test");
-        std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
-
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--reset-start-commit"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(
+            &["--reset-start-commit"],
+            executor,
+            config,
+            Some(dir.path()),
+        )
+        .unwrap();
 
         // Verify .agent/start_commit was updated to merge-base, NOT HEAD
         let start_commit_content =
@@ -222,17 +194,15 @@ fn ralph_start_commit_created_during_pipeline() {
     with_default_timeout(|| {
         // Test that .agent/start_commit is created during pipeline execution
         let dir = TempDir::new().unwrap();
+        let config = create_test_config_struct();
+
         init_repo_with_initial_commit(&dir);
 
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
-        let _env_guard = set_base_env();
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
         // Verify .agent/start_commit exists (enables cumulative diffs for reviewers)
         assert!(
@@ -263,6 +233,7 @@ fn ralph_save_start_commit_handles_empty_repo() {
         // Test that the pipeline handles an empty repository (no commits)
         // This verifies the graceful handling when HEAD is unborn
         let dir = TempDir::new().unwrap();
+        let config = create_test_config_struct();
 
         // Initialize an empty git repo (no commits)
         let _ = init_git_repo(&dir);
@@ -281,13 +252,13 @@ Test git command functionality.
 
         // Try to run ralph with --reset-start-commit on empty repo
         // This should fail because there's no HEAD commit to reference
-        std::env::set_var("GIT_AUTHOR_NAME", "Test");
-        std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
-        std::env::set_var("GIT_COMMITTER_NAME", "Test");
-        std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
-
         let executor = mock_executor_with_success();
-        let result = run_ralph_cli(&["--reset-start-commit"], executor, Some(dir.path()));
+        let result = run_ralph_cli_injected(
+            &["--reset-start-commit"],
+            executor,
+            config.clone(),
+            Some(dir.path()),
+        );
 
         // Should fail because there's no HEAD commit
         assert!(result.is_err());
@@ -298,7 +269,13 @@ Test git command functionality.
         let _ = commit_all(&repo, "initial commit");
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--reset-start-commit"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(
+            &["--reset-start-commit"],
+            executor,
+            config,
+            Some(dir.path()),
+        )
+        .unwrap();
 
         // Verify the start_commit file was created with a valid OID
         assert!(dir.path().join(".agent/start_commit").exists());

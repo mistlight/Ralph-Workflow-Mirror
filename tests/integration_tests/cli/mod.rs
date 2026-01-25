@@ -18,7 +18,7 @@
 //! - Uses `TempDir` for filesystem isolation
 //! - Tests are deterministic and focus on successful execution and file side effects
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use std::fs;
 use tempfile::TempDir;
@@ -146,8 +146,11 @@ reviewer = ["codex"]
         )
         .unwrap();
 
+        // Use EnvGuard to ensure environment variables are properly restored
+        let guard = EnvGuard::new(&["XDG_CONFIG_HOME"]);
+        guard.set(&[("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap()))]);
+
         let executor = mock_executor_with_success();
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
         run_ralph_cli(&["--dry-run"], executor, Some(dir.path())).unwrap();
     });
 }
@@ -187,8 +190,11 @@ reviewer = ["codex"]
         )
         .unwrap();
 
+        // Use EnvGuard to ensure environment variables are properly restored
+        let guard = EnvGuard::new(&["XDG_CONFIG_HOME"]);
+        guard.set(&[("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap()))]);
+
         let executor = mock_executor_with_success();
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
 
         // Note: --init in non-interactive mode returns early without creating PROMPT.md
         // The actual PROMPT.md creation happens in interactive mode

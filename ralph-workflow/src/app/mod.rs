@@ -90,6 +90,12 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     let colors = Colors::new();
     let logger = Logger::new(colors);
 
+    // Set working directory first if override is provided
+    // This ensures all subsequent operations (including config init) use the correct directory
+    if let Some(ref override_dir) = args.working_dir_override {
+        std::env::set_current_dir(override_dir)?;
+    }
+
     // Initialize configuration and agent registry
     let Some(init_result) = initialize_config(&args, colors, &logger)? else {
         return Ok(()); // Early exit (--init/--init-global/--init-legacy)
@@ -163,6 +169,75 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
 }
 
+/// Test-only entry point that accepts a pre-built Config.
+///
+/// This function is for integration testing only. It bypasses environment variable
+/// loading and uses the provided Config directly, enabling deterministic tests
+/// that don't rely on process-global state.
+///
+/// # Arguments
+///
+/// * `args` - The parsed CLI arguments
+/// * `executor` - Process executor for external process execution  
+/// * `config` - Pre-built configuration (bypasses env var loading)
+/// * `registry` - Pre-built agent registry
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success or an error if any phase fails.
+#[cfg(feature = "test-utils")]
+pub fn run_with_config(
+    args: Args,
+    executor: std::sync::Arc<dyn ProcessExecutor>,
+    config: crate::config::Config,
+    registry: AgentRegistry,
+) -> anyhow::Result<()> {
+    let colors = Colors::new();
+    let logger = Logger::new(colors);
+
+    // Set working directory first if override is provided
+    if let Some(ref override_dir) = args.working_dir_override {
+        std::env::set_current_dir(override_dir)?;
+    }
+
+    // Use provided config directly (no env var loading)
+    let config_path = std::path::PathBuf::from("test-config");
+
+    // Resolve required agent names
+    let validated = resolve_required_agents(&config)?;
+    let developer_agent = validated.developer_agent;
+    let reviewer_agent = validated.reviewer_agent;
+
+    // Validate agents and set up git repo and PROMPT.md
+    let Some(repo_root) = validate_and_setup_agents(AgentSetupParams {
+        config: &config,
+        registry: &registry,
+        developer_agent: &developer_agent,
+        reviewer_agent: &reviewer_agent,
+        config_path: &config_path,
+        colors,
+        logger: &logger,
+        working_dir_override: args.working_dir_override.as_deref(),
+    })?
+    else {
+        return Ok(());
+    };
+
+    // Prepare pipeline context or exit early
+    (prepare_pipeline_or_exit(PipelinePreparationParams {
+        args,
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        repo_root,
+        logger,
+        colors,
+        executor,
+    })?)
+    .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
+}
+
 /// Handles listing commands that don't require the full pipeline.
 ///
 /// Returns `true` if a listing command was handled and we should exit.
@@ -202,21 +277,33 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
 /// Returns `Ok(true)` if a plumbing command was handled and we should exit.
 /// Returns `Ok(false)` if we should continue to the main pipeline.
 fn handle_plumbing_commands(args: &Args, logger: &Logger, colors: Colors) -> anyhow::Result<bool> {
+    // Helper to set up working directory for plumbing commands
+    let setup_working_dir = |override_dir: Option<&std::path::Path>| -> anyhow::Result<()> {
+        if let Some(dir) = override_dir {
+            env::set_current_dir(dir)?;
+        } else {
+            require_git_repo()?;
+            let repo_root = get_repo_root()?;
+            env::set_current_dir(&repo_root)?;
+        }
+        Ok(())
+    };
+
     // Show commit message
     if args.commit_display.show_commit_msg {
+        setup_working_dir(args.working_dir_override.as_deref())?;
         return handle_show_commit_msg().map(|()| true);
     }
 
     // Apply commit
     if args.commit_plumbing.apply_commit {
+        setup_working_dir(args.working_dir_override.as_deref())?;
         return handle_apply_commit(logger, colors).map(|()| true);
     }
 
     // Reset start commit
     if args.commit_display.reset_start_commit {
-        require_git_repo()?;
-        let repo_root = get_repo_root()?;
-        env::set_current_dir(&repo_root)?;
+        setup_working_dir(args.working_dir_override.as_deref())?;
 
         return match reset_start_commit() {
             Ok(result) => {
@@ -248,9 +335,7 @@ fn handle_plumbing_commands(args: &Args, logger: &Logger, colors: Colors) -> any
 
     // Show baseline state
     if args.commit_display.show_baseline {
-        require_git_repo()?;
-        let repo_root = get_repo_root()?;
-        env::set_current_dir(&repo_root)?;
+        setup_working_dir(args.working_dir_override.as_deref())?;
 
         return match handle_show_baseline() {
             Ok(()) => Ok(true),
@@ -393,7 +478,9 @@ struct AgentSetupParams<'a> {
 ///
 /// Returns `Some(repo_root)` if setup succeeded and should continue.
 /// Returns `None` if the user declined PROMPT.md creation (to exit early).
-fn validate_and_setup_agents(params: AgentSetupParams<'_>) -> anyhow::Result<Option<std::path::PathBuf>> {
+fn validate_and_setup_agents(
+    params: AgentSetupParams<'_>,
+) -> anyhow::Result<Option<std::path::PathBuf>> {
     let AgentSetupParams {
         config,
         registry,
@@ -424,8 +511,9 @@ fn validate_and_setup_agents(params: AgentSetupParams<'_>) -> anyhow::Result<Opt
 
     // Determine repo root - use override if provided (for testing), otherwise discover
     let repo_root = if let Some(override_dir) = working_dir_override {
-        // Testing mode: use provided directory, skip CWD change
-        // This enables parallel test execution without mutex contention
+        // Testing mode: use provided directory and change CWD to it
+        // The rest of the pipeline uses relative paths, so CWD must be set
+        env::set_current_dir(override_dir)?;
         override_dir.to_path_buf()
     } else {
         // Production mode: discover repo root and change CWD

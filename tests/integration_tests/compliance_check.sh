@@ -164,10 +164,9 @@ fi
 # Summary
 # ============================================================================
 
- echo "Summary:"
- file_count=$(wc -l < "$TEMP_OUTPUT" | tr -d ' ')
- echo "  - Checked $file_count test file(s)"
- echo "  - All tests properly wrapped with timeout wrapper (with_default_timeout or with_timeout)"
- echo "  - No process spawning violations detected"
- exit 0
-fi
+echo "Summary:"
+file_count=$(wc -l < "$TEMP_OUTPUT" | tr -d ' ')
+echo "  - Checked $file_count test file(s)"
+echo "  - All tests properly wrapped with timeout wrapper (with_default_timeout or with_timeout)"
+echo "  - No process spawning violations detected"
+exit 0

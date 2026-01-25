@@ -15,26 +15,38 @@
 //! - Use `TestPrinter` for parser tests (replaces stdout)
 //! - Use `TempDir` for filesystem isolation
 //! - NEVER use `cfg!(test)` branches in production code
+//! - Use **dependency injection** for configuration, not environment variables
 //!
 //! The utilities in this module support proper integration test patterns:
-//! - `run_ralph_cli()`: Run ralph CLI directly via app::run() without spawning processes
+//! - `run_ralph_cli()`: Run ralph CLI directly via app::run_with_config() without spawning processes
+//! - `create_test_config_struct()`: Create a Config struct directly for dependency injection
 //! - `mock_executor_with_success()`: Mock executor for successful agent execution
 //! - `mock_executor_for_git_success()`: Mock executor for git command success
 //!
-//! # Working Directory Management
+//! # Configuration via Dependency Injection
 //!
-//! Integration tests support parallel execution by passing `working_dir` to
-//! `run_ralph_cli()` instead of changing the global current working directory.
+//! Tests use `create_test_config_struct()` to build a Config directly, bypassing
+//! environment variable loading. This ensures tests are deterministic and can
+//! run in parallel without affecting each other.
 //!
 //! ```ignore
 //! let dir = TempDir::new().unwrap();
+//! let config = create_test_config_struct();
 //! let executor = mock_executor_with_success();
 //! run_ralph_cli(&["--init"], executor, Some(dir.path())).unwrap();
 //! ```
 
 use clap::error::ErrorKind;
 use clap::Parser;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+/// Global lock for CWD-changing operations.
+///
+/// The production code uses relative paths extensively, and CWD is process-global.
+/// Tests that change CWD must hold this lock to prevent races.
+///
+/// This lock is used internally by `run_ralph_cli()` when a `working_dir` is provided.
+static CWD_LOCK: Mutex<()> = Mutex::new(());
 
 /// Run ralph workflow directly without spawning a process.
 ///
@@ -100,8 +112,14 @@ pub fn run_ralph_cli(
 /// * `args` - Command line arguments to pass to ralph
 /// * `executor` - Process executor for external process execution
 /// * `config_path` - Optional path to config file (defaults to None)
-/// * `working_dir` - Optional working directory override for test parallelism.
-///   When provided, ralph uses this path without changing the global CWD.
+/// * `working_dir` - Optional working directory override. When provided, this function
+///   acquires `CWD_LOCK` and restores the original CWD after execution.
+///
+/// # Thread Safety
+///
+/// When `working_dir` is provided, this function acquires `CWD_LOCK` to prevent
+/// races with other tests that change CWD. The lock is held for the duration
+/// of the ralph execution.
 pub fn run_ralph_cli_with_config(
     args: &[&str],
     executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
@@ -130,17 +148,109 @@ pub fn run_ralph_cli_with_config(
         Err(e) => return Err(e.into()),
     };
 
-    // Set working_dir_override if provided (enables test parallelism)
+    // Set working_dir_override if provided
     if let Some(dir) = working_dir {
         parsed_args.working_dir_override = Some(dir.to_path_buf());
     }
 
-    // Set environment variables for test isolation
-    std::env::set_var("RALPH_INTERACTIVE", "0");
-    std::env::set_var("RALPH_CI", "1");
+    // NOTE: RALPH_INTERACTIVE and RALPH_CI should be set by the test's EnvGuard.
+    // We don't set them here to avoid racing with other tests' EnvGuard settings.
+    // Tests that need these values should include them in their EnvGuard::new() call.
 
-    // Call app::run() directly with executor (no process spawning)
-    ralph_workflow::app::run(parsed_args, executor)
+    // If working_dir is provided, we need to lock CWD and restore it after
+    if working_dir.is_some() {
+        // Acquire CWD lock to prevent races with other tests
+        let _lock = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Save current CWD so we can restore it after
+        let original_cwd = std::env::current_dir().ok();
+
+        // Run ralph (which will change CWD to working_dir)
+        let result = ralph_workflow::app::run(parsed_args, executor);
+
+        // Restore original CWD
+        if let Some(cwd) = original_cwd {
+            let _ = std::env::set_current_dir(cwd);
+        }
+
+        result
+    } else {
+        // No working_dir, no lock needed
+        ralph_workflow::app::run(parsed_args, executor)
+    }
+}
+
+/// Run ralph workflow with injected Config (no environment variable loading).
+///
+/// This is the recommended approach for integration tests per the style guide
+/// (Rule 3: Use Dependency Injection for Testability). It bypasses all
+/// environment variable loading and uses the provided Config directly.
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments to pass to ralph
+/// * `executor` - Process executor for external process execution
+/// * `config` - Pre-built Config struct (bypasses env var loading)
+/// * `working_dir` - Optional working directory override
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected};
+///
+/// #[test]
+/// fn test_workflow() {
+///     with_default_timeout(|| {
+///         let dir = TempDir::new().unwrap();
+///         let config = create_test_config_struct();
+///         let executor = mock_executor_with_success();
+///         run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+///     });
+/// }
+/// ```
+pub fn run_ralph_cli_injected(
+    args: &[&str],
+    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+    config: ralph_workflow::config::Config,
+    working_dir: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
+    // Build argv: binary name + args
+    let mut argv: Vec<String> = vec!["ralph".to_string()];
+    argv.extend(args.iter().map(|s| s.to_string()));
+
+    // Parse args using clap directly
+    let mut parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+        Ok(args) => args,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Set working_dir_override if provided
+    if let Some(dir) = working_dir {
+        parsed_args.working_dir_override = Some(dir.to_path_buf());
+    }
+
+    // Create test registry with built-in agents only
+    let registry = create_test_registry();
+
+    // If working_dir is provided, we need to lock CWD and restore it after
+    if working_dir.is_some() {
+        let _lock = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let original_cwd = std::env::current_dir().ok();
+
+        // Use run_with_config which bypasses env var loading
+        let result = ralph_workflow::app::run_with_config(parsed_args, executor, config, registry);
+
+        if let Some(cwd) = original_cwd {
+            let _ = std::env::set_current_dir(cwd);
+        }
+
+        result
+    } else {
+        ralph_workflow::app::run_with_config(parsed_args, executor, config, registry)
+    }
 }
 
 /// Create a MockProcessExecutor configured for successful agent execution.
@@ -281,6 +391,58 @@ commit = ["codex"]
     std::fs::write(&config_path, config_content).expect("Failed to create test config file");
 
     config_path
+}
+
+/// Create a Config struct directly for dependency injection in tests.
+///
+/// This function creates a Config struct with test-appropriate defaults,
+/// bypassing environment variable loading entirely. This is the recommended
+/// approach per the Integration Test Style Guide (Rule 3: Dependency Injection).
+///
+/// # Returns
+///
+/// Returns a Config struct with:
+/// - `developer_iters = 0` (skip development phase)
+/// - `reviewer_reviews = 0` (skip review phase)
+/// - `interactive = false` (no prompts)
+/// - `isolation_mode = true` (clean context each run)
+/// - `checkpoint_enabled = true`
+/// - `auto_detect_stack = false`
+/// - `verbosity = Quiet`
+///
+/// # Usage
+///
+/// ```ignore
+/// use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected};
+///
+/// #[test]
+/// fn test_workflow() {
+///     with_default_timeout(|| {
+///         let dir = TempDir::new().unwrap();
+///         let config = create_test_config_struct();
+///         let executor = mock_executor_with_success();
+///         run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+///     });
+/// }
+/// ```
+pub fn create_test_config_struct() -> ralph_workflow::config::Config {
+    ralph_workflow::config::Config::test_default()
+}
+
+/// Create a test Config with custom isolation mode setting.
+///
+/// This is useful for tests that specifically need to test isolation mode behavior.
+pub fn create_test_config_struct_with_isolation(
+    isolation_mode: bool,
+) -> ralph_workflow::config::Config {
+    ralph_workflow::config::Config::test_default().with_isolation_mode(isolation_mode)
+}
+
+/// Create a minimal agent registry for tests.
+///
+/// Returns a registry with built-in agents only (no config file loading).
+pub fn create_test_registry() -> ralph_workflow::agents::AgentRegistry {
+    ralph_workflow::agents::AgentRegistry::with_builtins_only()
 }
 
 /// Create a MockProcessExecutor configured for git command success.
