@@ -85,8 +85,63 @@ let yolo = true;
 
 **Required patterns:**
 - Parser tests → Use `TestPrinter` from `ralph_workflow::json_parser::printer`
-- File operations → Use `tempfile::TempDir` for isolation
-- CLI tests → Use `assert_cmd::Command` for black-box testing
+- File operations → Use `MemoryWorkspace` (NO `TempDir`, NO `std::fs::*`)
+- Process execution → Use `MockProcessExecutor` (NO real process spawning)
+
+---
+
+## Workspace Dependency Injection (Filesystem Abstraction)
+
+**CRITICAL:** ALL filesystem operations in production code MUST go through the `Workspace` trait. Direct `std::fs::*` calls are FORBIDDEN.
+
+### Why This Matters
+
+1. **Testability**: Code using `Workspace` can be tested with `MemoryWorkspace` - no real filesystem needed
+2. **Isolation**: Tests run in containers with no filesystem access
+3. **Explicit paths**: All paths are relative to workspace root - no CWD dependencies
+4. **Consistency**: Single abstraction for all file I/O
+
+### The Rule
+
+| FORBIDDEN | REQUIRED |
+|-----------|----------|
+| `std::fs::read_to_string(path)` | `workspace.read(path)` |
+| `std::fs::write(path, content)` | `workspace.write(path, content)` |
+| `std::fs::create_dir_all(path)` | `workspace.create_dir_all(path)` |
+| `std::fs::read_dir(path)` | `workspace.read_dir(path)` |
+| `std::fs::exists(path)` / `path.exists()` | `workspace.exists(path)` |
+| `std::fs::remove_file(path)` | `workspace.remove(path)` |
+| `std::fs::metadata(path)` | Use `DirEntry` from `workspace.read_dir()` |
+
+### Implementation
+
+```rust
+// Production code - accepts workspace via dependency injection
+fn my_function(workspace: &dyn Workspace) -> Result<()> {
+    let content = workspace.read(Path::new(".agent/config.toml"))?;
+    workspace.write(Path::new(".agent/output.txt"), "result")?;
+    Ok(())
+}
+
+// Tests - use MemoryWorkspace
+#[test]
+fn test_my_function() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/config.toml", "key = value");
+    
+    my_function(&workspace).unwrap();
+    
+    assert!(workspace.was_written(".agent/output.txt"));
+}
+```
+
+### Exceptions
+
+The ONLY acceptable uses of `std::fs` are:
+1. Inside `WorkspaceFs` implementation itself (the production `Workspace` impl)
+2. Bootstrap code that discovers the repo root before `Workspace` is created
+
+**When you see `std::fs` in production code outside these exceptions, it MUST be refactored to use `Workspace`.**
 
 ---
 
