@@ -36,6 +36,7 @@ impl std::fmt::Display for CheckSeverity {
 #[derive(Debug, Clone)]
 pub struct SeverityCheck {
     /// The check description
+    #[allow(dead_code)]
     pub(crate) check: String,
     /// Severity level for this check
     pub(crate) severity: CheckSeverity,
@@ -152,6 +153,7 @@ impl Default for ReviewGuidelines {
 }
 
 impl ReviewGuidelines {
+    #[allow(dead_code)]
     fn format_section(items: &[String], title: &str, limit: usize) -> Option<String> {
         if items.is_empty() {
             return None;
@@ -168,6 +170,7 @@ impl ReviewGuidelines {
     }
 
     /// Format guidelines as a prompt section
+    #[allow(dead_code)]
     pub(crate) fn format_for_prompt(&self) -> String {
         let mut sections = Vec::new();
 
@@ -251,6 +254,7 @@ impl ReviewGuidelines {
     ///
     /// This produces a more detailed prompt section that groups checks by priority,
     /// helping agents focus on the most critical issues first.
+    #[allow(dead_code)]
     pub(crate) fn format_for_prompt_with_priorities(&self) -> String {
         fn push_section(
             sections: &mut Vec<String>,
