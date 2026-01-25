@@ -4,15 +4,7 @@
 //! events to log files, even in edge cases like missing turn.completed events
 //! or last lines without trailing newlines.
 //!
-//! # Integration Test Style Guide
-//!
-//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
-//! defined in **[../INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
-//!
-//! Key principles applied in this module:
-//! - Tests verify **observable behavior** (log file contents), not internal state
-//! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
-//! - Tests are deterministic and isolated
+//! Uses `MemoryWorkspace` for all file operations - NO real filesystem access.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;
@@ -20,8 +12,9 @@ use ralph_workflow::files::result_extraction::extract_last_result;
 use ralph_workflow::json_parser::codex::CodexParser;
 use ralph_workflow::json_parser::printer::{SharedPrinter, TestPrinter};
 use ralph_workflow::logger::Colors;
+use ralph_workflow::workspace::MemoryWorkspace;
 use std::io::BufReader;
-use tempfile::TempDir;
+use std::path::Path;
 
 /// Test that normal parsing flow produces log file with synthetic result.
 ///
@@ -30,8 +23,8 @@ use tempfile::TempDir;
 #[test]
 fn test_codex_parser_normal_flow_with_turn_completed() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("codex_test.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/codex_test.log");
 
         // Create a CodexParser with log file
         let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
@@ -46,10 +39,10 @@ fn test_codex_parser_normal_flow_with_turn_completed() {
 {"type":"turn.completed","usage":{"prompt_tokens":10,"completion_tokens":20}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify the synthetic result event was written and can be extracted
-        let result = extract_last_result(&log_path).unwrap();
+        let result = extract_last_result(&workspace, log_path).unwrap();
         assert!(
             result.is_some(),
             "Expected to find result event in normal flow"
@@ -66,8 +59,8 @@ fn test_codex_parser_normal_flow_with_turn_completed() {
 #[test]
 fn test_codex_parser_fallback_without_turn_completed() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("codex_fallback.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/codex_fallback.log");
 
         let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
         let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
@@ -80,10 +73,10 @@ fn test_codex_parser_fallback_without_turn_completed() {
 {"type":"item.completed","item":{"type":"agent_message"}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify the fallback synthetic result event was written
-        let result = extract_last_result(&log_path).unwrap();
+        let result = extract_last_result(&workspace, log_path).unwrap();
         assert!(
             result.is_some(),
             "Expected to find result event in fallback flow (no turn.completed)"
@@ -100,8 +93,8 @@ fn test_codex_parser_fallback_without_turn_completed() {
 #[test]
 fn test_codex_parser_last_line_without_trailing_newline() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("codex_no_newline.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/codex_no_newline.log");
 
         let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
         let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
@@ -115,10 +108,10 @@ fn test_codex_parser_last_line_without_trailing_newline() {
 {"type":"turn.completed","usage":{"prompt_tokens":5,"completion_tokens":10}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify extraction works regardless of trailing newline
-        let result = extract_last_result(&log_path).unwrap();
+        let result = extract_last_result(&workspace, log_path).unwrap();
         assert!(result.is_some(), "Expected to find result event");
         assert!(result.unwrap().contains("No newline test"));
     });
@@ -131,8 +124,8 @@ fn test_codex_parser_last_line_without_trailing_newline() {
 #[test]
 fn test_codex_parser_multiple_turns() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("codex_multi_turn.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/codex_multi_turn.log");
 
         let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
         let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
@@ -150,10 +143,10 @@ fn test_codex_parser_multiple_turns() {
 {"type":"turn.completed","usage":{"prompt_tokens":15,"completion_tokens":25}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify at least one result event was written (extraction picks the best one)
-        let result = extract_last_result(&log_path).unwrap();
+        let result = extract_last_result(&workspace, log_path).unwrap();
         assert!(
             result.is_some(),
             "Expected to find at least one result event"
@@ -174,8 +167,8 @@ fn test_codex_parser_multiple_turns() {
 #[test]
 fn test_user_reported_bug_scenario() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("user_bug_scenario.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/user_bug_scenario.log");
 
         let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
         let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
@@ -189,15 +182,15 @@ fn test_user_reported_bug_scenario() {
 {"type":"item.completed","item":{"type":"agent_message"}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify the result event IS found (this would have failed in the original bug)
-        let result = extract_last_result(&log_path).unwrap();
+        let result = extract_last_result(&workspace, log_path).unwrap();
 
         assert!(
-        result.is_some(),
-        "Expected to find result event but got None. This indicates the last-line extraction bug."
-    );
+            result.is_some(),
+            "Expected to find result event but got None. This indicates the last-line extraction bug."
+        );
 
         let result_content = result.unwrap();
         assert!(result_content.contains("prioritized checklist"));
@@ -213,8 +206,8 @@ fn test_user_reported_bug_scenario() {
 #[test]
 fn test_codex_parser_empty_accumulated_content() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("codex_empty.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/codex_empty.log");
 
         let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
         let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
@@ -226,11 +219,11 @@ fn test_codex_parser_empty_accumulated_content() {
 {"type":"turn.completed","usage":{"prompt_tokens":0,"completion_tokens":0}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // With empty accumulated content, we might not get a result event
         // or we might get one with empty result - both are acceptable
-        let _result = extract_last_result(&log_path).unwrap();
+        let _result = extract_last_result(&workspace, log_path).unwrap();
         // The test passes as long as we don't crash
     });
 }
@@ -242,8 +235,8 @@ fn test_codex_parser_empty_accumulated_content() {
 #[test]
 fn test_codex_parser_log_file_flushed() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("codex_flushed.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/codex_flushed.log");
 
         let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
         let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
@@ -256,12 +249,15 @@ fn test_codex_parser_log_file_flushed() {
 {"type":"turn.completed","usage":{"prompt_tokens":8,"completion_tokens":12}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
-        // Verify the log file exists and is readable
-        assert!(log_path.exists(), "Log file should exist after parsing");
+        // Verify the log file exists and is readable via workspace
+        assert!(
+            workspace.exists(log_path),
+            "Log file should exist after parsing"
+        );
 
-        let log_content = std::fs::read_to_string(&log_path).unwrap();
+        let log_content = workspace.get_file(log_path.to_str().unwrap()).unwrap();
         assert!(
             log_content.contains(r#"{"type":"thread.started""#),
             "Log should contain thread.started event"
@@ -280,8 +276,8 @@ fn test_codex_parser_log_file_flushed() {
 #[test]
 fn test_codex_parser_persistence_with_sync_all() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("codex_persistence.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/codex_persistence.log");
 
         let printer: SharedPrinter = std::rc::Rc::new(std::cell::RefCell::new(TestPrinter::new()));
         let parser = CodexParser::with_printer_for_test(Colors::new(), Verbosity::Quiet, printer)
@@ -294,11 +290,11 @@ fn test_codex_parser_persistence_with_sync_all() {
 {"type":"turn.completed","usage":{"prompt_tokens":10,"completion_tokens":15}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Immediately after parsing, the result should be extractable
         // (this verifies that sync_all was called)
-        let result = extract_last_result(&log_path).unwrap();
+        let result = extract_last_result(&workspace, log_path).unwrap();
         assert!(
             result.is_some(),
             "Result should be extractable immediately after parsing (sync_all worked)"

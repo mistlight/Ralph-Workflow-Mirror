@@ -37,6 +37,7 @@ use ralph_workflow::json_parser::printer::{SharedPrinter, VirtualTerminal};
 use ralph_workflow::json_parser::terminal::TerminalMode;
 use ralph_workflow::json_parser::ClaudeParser;
 use ralph_workflow::logger::Colors;
+use ralph_workflow::workspace::MemoryWorkspace;
 
 // =============================================================================
 // Helper Functions
@@ -54,11 +55,12 @@ fn create_parser_with_vterm() -> (ClaudeParser, Rc<RefCell<VirtualTerminal>>) {
 /// Parse events and return the VirtualTerminal for inspection.
 fn parse_events(events: &[&str]) -> Rc<RefCell<VirtualTerminal>> {
     let (parser, vterm) = create_parser_with_vterm();
+    let workspace = MemoryWorkspace::new_test();
     let input = events.join("\n");
     let cursor = Cursor::new(input);
     let reader = BufReader::new(cursor);
     parser
-        .parse_stream(reader)
+        .parse_stream(reader, &workspace)
         .expect("parse_stream should succeed");
     vterm
 }
@@ -986,10 +988,11 @@ fn test_real_log_file_no_visible_duplicates() {
             .unwrap_or_else(|e| panic!("Failed to read log file: {}", e));
 
         let (parser, vterm) = create_parser_with_vterm();
+        let workspace = MemoryWorkspace::new_test();
         let cursor = Cursor::new(log_content);
         let reader = BufReader::new(cursor);
         parser
-            .parse_stream(reader)
+            .parse_stream(reader, &workspace)
             .expect("parse_stream should succeed");
 
         let vterm_ref = vterm.borrow();

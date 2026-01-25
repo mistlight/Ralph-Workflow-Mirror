@@ -3,25 +3,18 @@
 //! These tests verify that the Gemini parser correctly handles streaming events,
 //! produces proper output, and writes events to log files for extraction.
 //!
-//! # Integration Test Style Guide
-//!
-//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
-//! defined in **[../INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
-//!
-//! Key principles applied in this module:
-//! - Tests verify **observable behavior** (log file contents), not internal state
-//! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
-//! - Tests are deterministic and isolated
+//! Uses `MemoryWorkspace` for all file operations - NO real filesystem access.
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::config::Verbosity;
 use ralph_workflow::json_parser::gemini::GeminiParser;
 use ralph_workflow::json_parser::printer::{SharedPrinter, TestPrinter};
 use ralph_workflow::logger::Colors;
+use ralph_workflow::workspace::MemoryWorkspace;
 use std::cell::RefCell;
 use std::io::BufReader;
+use std::path::Path;
 use std::rc::Rc;
-use tempfile::TempDir;
 
 /// Test that normal parsing flow produces proper output and log file.
 ///
@@ -30,8 +23,8 @@ use tempfile::TempDir;
 #[test]
 fn test_gemini_parser_normal_flow() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("gemini_test.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/gemini_test.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
@@ -43,12 +36,15 @@ fn test_gemini_parser_normal_flow() {
 {"type":"result","status":"success","stats":{"total_tokens":100,"input_tokens":50,"output_tokens":50,"duration_ms":2000}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify the log file exists and contains events
-        assert!(log_path.exists(), "Log file should exist after parsing");
+        assert!(
+            workspace.exists(log_path),
+            "Log file should exist after parsing"
+        );
 
-        let log_content = std::fs::read_to_string(&log_path).unwrap();
+        let log_content = workspace.get_file(log_path.to_str().unwrap()).unwrap();
         assert!(
             log_content.contains(r#""type":"init""#),
             "Log should contain init event"
@@ -74,6 +70,7 @@ fn test_gemini_parser_normal_flow() {
 #[test]
 fn test_gemini_parser_delta_streaming() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -84,7 +81,7 @@ fn test_gemini_parser_delta_streaming() {
 {"type":"message","role":"assistant","content":"Hello World","delta":false}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify delta streaming was processed
         let output = test_printer.borrow().get_output();
@@ -102,6 +99,7 @@ fn test_gemini_parser_delta_streaming() {
 #[test]
 fn test_gemini_parser_tool_use() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
@@ -110,7 +108,7 @@ fn test_gemini_parser_tool_use() {
         let input = r#"{"type":"tool_use","tool_name":"Bash","tool_id":"bash-123","parameters":{"command":"ls -la"}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let output = test_printer.borrow().get_output();
         assert!(output.contains("Tool"), "Output should contain Tool label");
@@ -125,6 +123,7 @@ fn test_gemini_parser_tool_use() {
 #[test]
 fn test_gemini_parser_tool_result() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
@@ -133,7 +132,7 @@ fn test_gemini_parser_tool_result() {
         let input = r#"{"type":"tool_result","tool_id":"bash-123","status":"success","output":"file1.txt\nfile2.txt"}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let output = test_printer.borrow().get_output();
         assert!(
@@ -150,6 +149,7 @@ fn test_gemini_parser_tool_result() {
 #[test]
 fn test_gemini_parser_error_event() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -157,7 +157,7 @@ fn test_gemini_parser_error_event() {
         let input = r#"{"type":"error","message":"Rate limit exceeded","code":"429"}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let output = test_printer.borrow().get_output();
         assert!(output.contains("Error"), "Output should contain Error");
@@ -176,6 +176,7 @@ fn test_gemini_parser_error_event() {
 #[test]
 fn test_gemini_parser_result_with_stats() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -183,7 +184,7 @@ fn test_gemini_parser_result_with_stats() {
         let input = r#"{"type":"result","status":"success","stats":{"total_tokens":250,"input_tokens":50,"output_tokens":200,"duration_ms":180000,"tool_calls":3}}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let output = test_printer.borrow().get_output();
         assert!(
@@ -212,6 +213,7 @@ fn test_gemini_parser_result_with_stats() {
 #[test]
 fn test_gemini_parser_user_message() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -220,7 +222,7 @@ fn test_gemini_parser_user_message() {
             r#"{"type":"message","role":"user","content":"List files in current directory"}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let output = test_printer.borrow().get_output();
         assert!(output.contains("user"), "Output should contain user role");
@@ -234,12 +236,12 @@ fn test_gemini_parser_user_message() {
 /// Test that log files are properly flushed after parsing.
 ///
 /// This verifies that when parsing completes, the log file is
-/// immediately readable with all events written to disk.
+/// immediately readable with all events written.
 #[test]
 fn test_gemini_parser_log_file_flushed() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("gemini_flush.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/gemini_flush.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
@@ -251,12 +253,15 @@ fn test_gemini_parser_log_file_flushed() {
 {"type":"result","status":"success"}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify log file exists and is readable immediately
-        assert!(log_path.exists(), "Log file should exist after parsing");
+        assert!(
+            workspace.exists(log_path),
+            "Log file should exist after parsing"
+        );
 
-        let log_content = std::fs::read_to_string(&log_path).unwrap();
+        let log_content = workspace.get_file(log_path.to_str().unwrap()).unwrap();
         assert!(
             log_content.contains(r#"session_id"#),
             "Log should be readable immediately after parsing (sync_all worked)"
@@ -275,6 +280,7 @@ fn test_gemini_parser_log_file_flushed() {
 #[test]
 fn test_gemini_parser_consecutive_duplicates_filtered() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -286,7 +292,7 @@ fn test_gemini_parser_consecutive_duplicates_filtered() {
 {"type":"message","role":"assistant","content":"Hello World","delta":false}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify output doesn't have excessive repetition
         let output = test_printer.borrow().get_output();
@@ -308,6 +314,7 @@ fn test_gemini_parser_consecutive_duplicates_filtered() {
 #[test]
 fn test_gemini_parser_snapshot_glitch() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -322,7 +329,7 @@ fn test_gemini_parser_snapshot_glitch() {
 {"type":"message","role":"assistant","content":"The quick brown fox","delta":false}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify output contains the final content
         let output = test_printer.borrow().get_output();
@@ -340,6 +347,7 @@ fn test_gemini_parser_snapshot_glitch() {
 #[test]
 fn test_gemini_parser_intentional_repetition_preserved() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -351,7 +359,7 @@ fn test_gemini_parser_intentional_repetition_preserved() {
 {"type":"message","role":"assistant","content":"echo echo echo","delta":false}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify output contains the intentional repetition pattern
         let output = test_printer.borrow().get_output();
@@ -373,8 +381,8 @@ fn test_gemini_parser_intentional_repetition_preserved() {
 #[test]
 fn test_gemini_parser_log_contains_events() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("gemini_events.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/gemini_events.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
@@ -386,11 +394,11 @@ fn test_gemini_parser_log_contains_events() {
 {"type":"result","status":"success","content":"Final result content"}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify log file contains all events for analysis
-        assert!(log_path.exists(), "Log file should exist");
-        let log_content = std::fs::read_to_string(&log_path).unwrap();
+        assert!(workspace.exists(log_path), "Log file should exist");
+        let log_content = workspace.get_file(log_path.to_str().unwrap()).unwrap();
         assert!(
             log_content.contains("init"),
             "Log should contain init event"
@@ -413,8 +421,8 @@ fn test_gemini_parser_log_contains_events() {
 #[test]
 fn test_gemini_parser_multiple_turns() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("gemini_multi.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/gemini_multi.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
@@ -429,10 +437,10 @@ fn test_gemini_parser_multiple_turns() {
 {"type":"result","status":"success"}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify log contains both turns
-        let log_content = std::fs::read_to_string(&log_path).unwrap();
+        let log_content = workspace.get_file(log_path.to_str().unwrap()).unwrap();
         assert!(
             log_content.contains("First answer") && log_content.contains("Second answer"),
             "Log should contain both conversation turns"
@@ -451,6 +459,7 @@ fn test_gemini_parser_multiple_turns() {
 #[test]
 fn test_gemini_parser_malformed_json() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -463,7 +472,7 @@ fn test_gemini_parser_malformed_json() {
 
         let reader = BufReader::new(input.as_bytes());
         // Should not panic on malformed JSON
-        let result = parser.parse_stream_for_test(reader);
+        let result = parser.parse_stream_for_test(reader, &workspace);
         assert!(
             result.is_ok(),
             "Parser should handle malformed JSON gracefully"
@@ -485,8 +494,8 @@ fn test_gemini_parser_malformed_json() {
 #[test]
 fn test_gemini_parser_truncated_stream() {
     with_default_timeout(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("gemini_truncated.log");
+        let workspace = MemoryWorkspace::new_test();
+        let log_path = Path::new("/test/logs/gemini_truncated.log");
 
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
@@ -499,7 +508,7 @@ fn test_gemini_parser_truncated_stream() {
 {"type":"message","role":"assistant","content":" more content","delta":true}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        let result = parser.parse_stream_for_test(reader);
+        let result = parser.parse_stream_for_test(reader, &workspace);
 
         // Parser should handle truncated stream gracefully
         assert!(
@@ -509,7 +518,7 @@ fn test_gemini_parser_truncated_stream() {
 
         // Log should still contain the partial events
         assert!(
-            log_path.exists(),
+            workspace.exists(log_path),
             "Log file should exist even for truncated stream"
         );
     });
@@ -526,6 +535,7 @@ fn test_gemini_parser_truncated_stream() {
 #[test]
 fn test_gemini_parser_snapshot_as_delta_glitch() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -540,7 +550,7 @@ fn test_gemini_parser_snapshot_as_delta_glitch() {
 {"type":"message","role":"assistant","content":"The quick brown fox","delta":false}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify output contains the final content without duplicates
         let output = test_printer.borrow().get_output();
@@ -565,6 +575,7 @@ fn test_gemini_parser_snapshot_as_delta_glitch() {
 #[test]
 fn test_gemini_parser_alternating_deltas_not_filtered() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -578,7 +589,7 @@ fn test_gemini_parser_alternating_deltas_not_filtered() {
 {"type":"message","role":"assistant","content":"PingPongPingPong","delta":false}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         let output = test_printer.borrow().get_output();
         // Alternating pattern is not consecutive duplicates, so all should be processed
@@ -597,6 +608,7 @@ fn test_gemini_parser_alternating_deltas_not_filtered() {
 #[test]
 fn test_gemini_parser_consecutive_identical_deltas_filtered() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -610,7 +622,7 @@ fn test_gemini_parser_consecutive_identical_deltas_filtered() {
 {"type":"message","role":"assistant","content":"Repeat message","delta":false}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify no duplicate consecutive lines in output
         assert!(
@@ -634,6 +646,7 @@ fn test_gemini_parser_consecutive_identical_deltas_filtered() {
 #[test]
 fn test_gemini_parser_repeated_init_events() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
@@ -646,7 +659,7 @@ fn test_gemini_parser_repeated_init_events() {
 {"type":"message","role":"assistant","content":"Hello World","delta":false}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Parser should handle repeated init events gracefully
         let output = test_printer.borrow().get_output();
@@ -664,6 +677,7 @@ fn test_gemini_parser_repeated_init_events() {
 #[test]
 fn test_gemini_parser_tool_use_interleaved_with_text() {
     with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
@@ -677,7 +691,7 @@ fn test_gemini_parser_tool_use_interleaved_with_text() {
 {"type":"message","role":"assistant","content":"Let me checkNow I can see","delta":false}"#;
 
         let reader = BufReader::new(input.as_bytes());
-        parser.parse_stream_for_test(reader).unwrap();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
 
         // Verify no duplicates
         assert!(
