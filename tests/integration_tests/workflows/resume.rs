@@ -534,7 +534,18 @@ fn ralph_resume_shows_checkpoint_summary() {
         .unwrap();
 
         // Pre-create required files
-        fs::write(dir.path().join("PROMPT.md"), "Test prompt\n").unwrap();
+        fs::write(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Test resume functionality.
+
+## Acceptance
+
+- Tests pass
+"#,
+        )
+        .unwrap();
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         // Run with --resume - should just show summary and exit since Complete phase
@@ -818,7 +829,18 @@ fn ralph_resume_preserves_reviewer_passes_from_checkpoint() {
         .unwrap();
 
         // Pre-create required files
-        fs::write(dir.path().join("PROMPT.md"), "Test prompt\n").unwrap();
+        fs::write(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Test resume functionality.
+
+## Acceptance
+
+- Tests pass
+"#,
+        )
+        .unwrap();
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         // Run with --resume - should just show checkpoint info and exit
@@ -1780,7 +1802,18 @@ fn ralph_resume_passes_context_to_reviewer_agent() {
         let _repo = init_git_repo(&dir);
 
         // Pre-create required files
-        fs::write(dir.path().join("PROMPT.md"), "Test prompt\n").unwrap();
+        fs::write(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Test resume functionality.
+
+## Acceptance
+
+- Tests pass
+"#,
+        )
+        .unwrap();
         fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
 
         // Create a checkpoint at Complete phase (after review is done)
@@ -3608,7 +3641,17 @@ fn ralph_no_resume_flag_skips_interactive_prompt() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md to satisfy validation
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
 
         // Create a checkpoint
         fs::create_dir_all(dir.path().join(".agent")).unwrap();
@@ -3650,7 +3693,17 @@ fn ralph_no_resume_env_var_skips_interactive_prompt() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md to satisfy validation
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
 
         // Create a checkpoint
         fs::create_dir_all(dir.path().join(".agent")).unwrap();
@@ -3693,7 +3746,17 @@ fn ralph_resume_flag_takes_precedence_over_no_resume() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md to satisfy validation
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
 
         // Create a checkpoint
         fs::create_dir_all(dir.path().join(".agent")).unwrap();
@@ -3736,7 +3799,17 @@ fn ralph_resume_replays_prompts_deterministically() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md and PLAN.md to satisfy validation
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
         write_file(
             dir.path().join(".agent/PLAN.md"),
             "# Plan\n\n1. Step 1\n2. Step 2",
@@ -4164,7 +4237,17 @@ fn ralph_checkpoint_saved_after_rebase_completion() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md to satisfy validation
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
 
         // Run pipeline with rebase enabled - should complete successfully
         // We use 0 iterations to skip actual development work
@@ -4198,7 +4281,17 @@ fn ralph_checkpoint_saved_at_pipeline_start() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
 
         // Simulate interruption by creating a checkpoint manually
         // This verifies the initial checkpoint would be created
@@ -4295,7 +4388,17 @@ fn ralph_v3_execution_step_contains_git_commit_oid() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
 
         let working_dir = canonical_working_dir(&dir);
 
@@ -4434,7 +4537,17 @@ fn ralph_v3_execution_step_serialization_with_new_fields() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
 
         let working_dir = canonical_working_dir(&dir);
 
@@ -4557,7 +4670,17 @@ fn ralph_v3_backward_compatible_missing_new_fields() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
 
         let working_dir = canonical_working_dir(&dir);
 
@@ -4670,7 +4793,17 @@ fn ralph_v3_resume_note_contains_execution_history() {
         let _repo = init_git_repo(&dir);
 
         // Create PROMPT.md
-        write_file(dir.path().join("PROMPT.md"), "# Test\nDo something.");
+        write_file(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        );
 
         let working_dir = canonical_working_dir(&dir);
 

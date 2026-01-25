@@ -147,7 +147,18 @@ reviewer = ["codex"]
         .unwrap();
 
         // Create existing PROMPT.md
-        fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
+        fs::write(
+            dir_path.join("PROMPT.md"),
+            r#"## Goal
+
+Test configuration functionality.
+
+## Acceptance
+
+- Tests pass
+"#,
+        )
+        .unwrap();
 
         // Set up environment and run ralph --init
         with_cwd_guard(dir_path, || {

@@ -122,7 +122,18 @@ fn ralph_dry_run_validates_without_executing() {
         let _ = init_git_repo(&dir);
 
         // Create a PROMPT.md for validation
-        fs::write(dir.path().join("PROMPT.md"), "# Test Task\n\nDo something.").unwrap();
+        fs::write(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#,
+        )
+        .unwrap();
 
         // Set up a config
         let config_home = dir.path().join(".config");

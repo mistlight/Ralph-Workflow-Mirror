@@ -142,7 +142,18 @@ fn ralph_first_run_creates_config_and_exits() {
         let _ = init_git_repo(&dir);
 
         // Create PROMPT.md (required)
-        fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
+        fs::write(
+            dir_path.join("PROMPT.md"),
+            r#"## Goal
+
+Test configuration functionality.
+
+## Acceptance
+
+- Tests pass
+"#,
+        )
+        .unwrap();
 
         // Use a temp config dir so the test doesn't touch the real home directory.
         let config_home = dir_path.join(".config");

@@ -195,7 +195,18 @@ fn ralph_handles_invalid_json_in_config() {
         let _ = init_git_repo(&dir);
 
         // Create PROMPT.md
-        fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
+        fs::write(
+            dir_path.join("PROMPT.md"),
+            r#"## Goal
+
+Test cleanup functionality.
+
+## Acceptance
+
+- Tests pass
+"#,
+        )
+        .unwrap();
 
         // Create malformed agents.toml (invalid TOML)
         fs::write(

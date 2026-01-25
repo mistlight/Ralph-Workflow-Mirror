@@ -255,7 +255,18 @@ fn ralph_save_start_commit_handles_empty_repo() {
 
         // Initialize an empty git repo (no commits)
         let _ = init_git_repo(&dir);
-        fs::write(dir.path().join("PROMPT.md"), "# Test\n").unwrap();
+        fs::write(
+            dir.path().join("PROMPT.md"),
+            r#"## Goal
+
+Test git command functionality.
+
+## Acceptance
+
+- Tests pass
+"#,
+        )
+        .unwrap();
 
         // Try to run ralph with --reset-start-commit on empty repo
         // This should fail because there's no HEAD commit to reference
