@@ -33,6 +33,8 @@ pub struct CommitGenerationConfig<'a> {
     pub config: &'a Config,
     /// Template context for prompt expansion.
     pub template_context: &'a TemplateContext,
+    /// Workspace filesystem for file operations.
+    pub workspace: &'a crate::workspace::WorkspaceFs,
     /// Agent registry for accessing configured agents.
     pub registry: &'a AgentRegistry,
     /// Logger for info/warning messages.
@@ -183,6 +185,7 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
         &mut runtime,
         config.developer_agent,
         config.template_context,
+        config.workspace,
         &std::collections::HashMap::new(), // Empty prompt history for plumbing command
     )
     .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;

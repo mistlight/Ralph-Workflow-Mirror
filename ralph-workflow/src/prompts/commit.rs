@@ -2,11 +2,13 @@
 //!
 //! Prompts for commit message generation and fix actions.
 
-use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
+use crate::workspace::WorkspaceFs;
 use std::collections::HashMap;
 
+#[cfg(any(test, feature = "test-utils"))]
+use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::files::result_extraction::extract_file_paths_from_issues;
 
@@ -14,20 +16,15 @@ use crate::files::result_extraction::extract_file_paths_from_issues;
 const COMMIT_MESSAGE_XSD_SCHEMA: &str =
     include_str!("../files/llm_output_extraction/commit_message.xsd");
 
-/// Directory for XSD retry context files
-const XSD_RETRY_TMP_DIR: &str = ".agent/tmp";
-
 /// Write XSD retry context files for commit message to `.agent/tmp/` directory.
-fn write_commit_xsd_retry_files(diff: &str) {
-    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
-    if std::fs::create_dir_all(tmp_dir).is_err() {
+///
+/// Uses WorkspaceFs to write files to the correct location regardless of CWD.
+fn write_commit_xsd_retry_files_to_workspace(diff: &str, workspace: &WorkspaceFs) {
+    if workspace.create_dir_all(".agent/tmp").is_err() {
         return;
     }
-    let _ = std::fs::write(
-        tmp_dir.join("commit_message.xsd"),
-        COMMIT_MESSAGE_XSD_SCHEMA,
-    );
-    let _ = std::fs::write(tmp_dir.join("diff.txt"), diff);
+    let _ = workspace.write(".agent/tmp/commit_message.xsd", COMMIT_MESSAGE_XSD_SCHEMA);
+    let _ = workspace.write(".agent/tmp/diff.txt", diff);
 }
 
 /// Generate fix prompt (applies to either role).
@@ -268,9 +265,11 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
 ///
 /// * `context` - Template context containing the template registry
 /// * `diff` - The git diff to generate a commit message for
+/// * `workspace` - Workspace filesystem for resolving absolute paths
 pub fn prompt_generate_commit_message_with_diff_with_context(
     context: &TemplateContext,
     diff: &str,
+    workspace: &WorkspaceFs,
 ) -> String {
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
@@ -291,11 +290,11 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
         ("DIFF", diff_content.to_string()),
         (
             "COMMIT_MESSAGE_XML_PATH",
-            resolve_absolute_path(".agent/tmp/commit_message.xml"),
+            workspace.absolute_str(".agent/tmp/commit_message.xml"),
         ),
         (
             "COMMIT_MESSAGE_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/commit_message.xsd"),
+            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
         ),
     ]);
 
@@ -358,10 +357,12 @@ pub fn prompt_simplified_commit_with_context(context: &TemplateContext, diff: &s
 /// * `context` - Template context containing the template registry
 /// * `diff` - The git diff to generate a commit message for
 /// * `xsd_error` - The XSD validation error message to include in the prompt
+/// * `workspace` - Workspace filesystem for resolving absolute paths and writing files
 pub fn prompt_xsd_retry_with_context(
     context: &TemplateContext,
     diff: &str,
     xsd_error: &str,
+    workspace: &WorkspaceFs,
 ) -> String {
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
@@ -374,7 +375,7 @@ pub fn prompt_xsd_retry_with_context(
     }
 
     // Write context files to .agent/tmp/ for the agent to read
-    write_commit_xsd_retry_files(diff_content);
+    write_commit_xsd_retry_files_to_workspace(diff_content, workspace);
 
     let template_content = context
         .registry()
@@ -384,15 +385,15 @@ pub fn prompt_xsd_retry_with_context(
         ("XSD_ERROR", xsd_error.to_string()),
         (
             "COMMIT_MESSAGE_XML_PATH",
-            resolve_absolute_path(".agent/tmp/commit_message.xml"),
+            workspace.absolute_str(".agent/tmp/commit_message.xml"),
         ),
         (
             "COMMIT_MESSAGE_XSD_PATH",
-            resolve_absolute_path(".agent/tmp/commit_message.xsd"),
+            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
         ),
         (
             "DIFF_TXT_PATH",
-            resolve_absolute_path(".agent/tmp/diff.txt"),
+            workspace.absolute_str(".agent/tmp/diff.txt"),
         ),
     ]);
     Template::new(&template_content)
@@ -727,8 +728,10 @@ mod tests {
     #[test]
     fn test_prompt_generate_commit_message_with_diff_with_context() {
         let context = TemplateContext::default();
+        let workspace = WorkspaceFs::new(std::path::PathBuf::from("/test/repo"));
         let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
-        let result = prompt_generate_commit_message_with_diff_with_context(&context, diff);
+        let result =
+            prompt_generate_commit_message_with_diff_with_context(&context, diff, &workspace);
         assert!(!result.is_empty());
         assert!(result.contains("DIFF:") || result.contains("diff"));
         assert!(!result.contains("ERROR: Empty diff"));
@@ -737,17 +740,24 @@ mod tests {
     #[test]
     fn test_prompt_generate_commit_message_with_diff_with_context_empty() {
         let context = TemplateContext::default();
-        let result = prompt_generate_commit_message_with_diff_with_context(&context, "");
+        let workspace = WorkspaceFs::new(std::path::PathBuf::from("/test/repo"));
+        let result =
+            prompt_generate_commit_message_with_diff_with_context(&context, "", &workspace);
         assert!(result.contains("ERROR: Empty diff"));
     }
 
     #[test]
-    fn test_context_based_commit_matches_regular() {
+    fn test_context_based_commit_uses_workspace_paths() {
         let context = TemplateContext::default();
+        let workspace = WorkspaceFs::new(std::path::PathBuf::from("/test/repo"));
         let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
-        let regular = prompt_generate_commit_message_with_diff(diff);
-        let with_context = prompt_generate_commit_message_with_diff_with_context(&context, diff);
-        // Both should produce equivalent output
-        assert_eq!(regular, with_context);
+        let result =
+            prompt_generate_commit_message_with_diff_with_context(&context, diff, &workspace);
+        // Verify the prompt uses absolute paths from workspace
+        assert!(
+            result.contains("/test/repo/.agent/tmp/commit_message.xml")
+                || result.contains("/test/repo/.agent/tmp/commit_message.xsd"),
+            "Prompt should contain absolute paths from workspace"
+        );
     }
 }

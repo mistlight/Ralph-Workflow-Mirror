@@ -401,6 +401,9 @@ fn prepare_pipeline_or_exit(
         executor,
     } = params;
 
+    // Create workspace filesystem for explicit path resolution
+    let workspace = crate::workspace::WorkspaceFs::new(repo_root.clone());
+
     ensure_files(config.isolation_mode)?;
 
     // Reset context for isolation mode
@@ -448,6 +451,7 @@ fn prepare_pipeline_or_exit(
         handle_generate_commit_msg(plumbing::CommitGenerationConfig {
             config: &config,
             template_context: &template_context,
+            workspace: &workspace,
             registry: &registry,
             logger: &logger,
             colors,

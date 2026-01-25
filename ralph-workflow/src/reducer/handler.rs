@@ -377,6 +377,7 @@ impl MainEffectHandler {
             &mut runtime,
             &commit_agent,
             ctx.template_context,
+            ctx.workspace,
             &ctx.prompt_history,
         ) {
             Ok(result) => Ok(PipelineEvent::CommitMessageGenerated {

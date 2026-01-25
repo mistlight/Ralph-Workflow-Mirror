@@ -412,6 +412,7 @@ fn generate_prompt_for_strategy(
     strategy: CommitRetryStrategy,
     working_diff: &str,
     template_context: &crate::prompts::TemplateContext,
+    workspace: &crate::workspace::WorkspaceFs,
     xsd_error: Option<&str>,
     prompt_history: &HashMap<String, String>,
     prompt_key: &str,
@@ -429,19 +430,30 @@ fn generate_prompt_for_strategy(
             CommitRetryStrategy::Normal => {
                 if let Some(error_msg) = xsd_error {
                     // In-session XSD retry with error feedback
-                    prompt_xsd_retry_with_context(template_context, working_diff, error_msg)
+                    prompt_xsd_retry_with_context(
+                        template_context,
+                        working_diff,
+                        error_msg,
+                        workspace,
+                    )
                 } else {
                     // First attempt with normal XML prompt
                     prompt_generate_commit_message_with_diff_with_context(
                         template_context,
                         working_diff,
+                        workspace,
                     )
                 }
             }
             CommitRetryStrategy::Simplified => {
                 if let Some(error_msg) = xsd_error {
                     // In-session XSD retry with error feedback
-                    prompt_xsd_retry_with_context(template_context, working_diff, error_msg)
+                    prompt_xsd_retry_with_context(
+                        template_context,
+                        working_diff,
+                        error_msg,
+                        workspace,
+                    )
                 } else {
                     // Simplified XML prompt
                     prompt_simplified_commit_with_context(template_context, working_diff)
@@ -557,6 +569,8 @@ struct CommitAttemptContext<'a> {
     diff_was_truncated: bool,
     /// Template context for user template overrides
     template_context: &'a crate::prompts::TemplateContext,
+    /// Workspace filesystem for file operations
+    workspace: &'a crate::workspace::WorkspaceFs,
     /// Prompt history for checkpoint/resume determinism
     prompt_history: &'a HashMap<String, String>,
     /// Unique key for this commit generation attempt
@@ -620,6 +634,7 @@ fn run_commit_attempt_with_agent(
             strategy,
             ctx.working_diff,
             ctx.template_context,
+            ctx.workspace,
             xsd_error.as_deref(),
             ctx.prompt_history,
             &prompt_key,
@@ -857,6 +872,7 @@ fn return_hardcoded_fallback(
 /// * `runtime` - The pipeline runtime for execution services
 /// * `commit_agent` - The primary agent to use for commit generation
 /// * `template_context` - Template context for user template overrides
+/// * `workspace` - Workspace filesystem for file operations
 /// * `prompt_history` - Prompt history for checkpoint/resume determinism
 ///
 /// # Returns
@@ -868,6 +884,7 @@ pub fn generate_commit_message(
     runtime: &mut PipelineRuntime,
     commit_agent: &str,
     template_context: &crate::prompts::TemplateContext,
+    workspace: &crate::workspace::WorkspaceFs,
     prompt_history: &HashMap<String, String>,
 ) -> anyhow::Result<CommitMessageResult> {
     let log_dir = ".agent/logs/commit_generation";
@@ -919,6 +936,7 @@ pub fn generate_commit_message(
         log_dir,
         diff_was_truncated: diff_was_pre_truncated,
         template_context,
+        workspace,
         prompt_history,
         prompt_key,
         generated_prompts: &mut generated_prompts,
@@ -1169,6 +1187,7 @@ pub fn commit_with_generated_message(
         &mut runtime,
         commit_agent,
         ctx.template_context,
+        ctx.workspace,
         &ctx.prompt_history,
     ) {
         Ok(r) => r,
