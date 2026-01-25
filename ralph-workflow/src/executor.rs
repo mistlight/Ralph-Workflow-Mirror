@@ -25,6 +25,9 @@ use std::process::ExitStatus;
 #[cfg(any(test, feature = "test-utils"))]
 use std::sync::Mutex;
 
+#[cfg(any(test, feature = "test-utils"))]
+use std::io::Cursor;
+
 /// Output from an executed process.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessOutput {
@@ -624,6 +627,79 @@ impl MockProcessExecutor {
     }
 }
 
+/// Generate minimal valid agent output for mock testing.
+///
+/// This function creates a minimal valid NDJSON output that the streaming
+/// parser can successfully parse without hanging. The output format depends
+/// on the parser type being used.
+///
+/// # Arguments
+///
+/// * `parser_type` - The JSON parser type (Claude, Codex, Gemini, OpenCode, Generic)
+/// * `_command` - The agent command name (reserved for future logging/debugging)
+///
+/// # Returns
+///
+/// A string containing valid NDJSON output for the given parser type.
+#[cfg(any(test, feature = "test-utils"))]
+fn generate_mock_agent_output(parser_type: JsonParserType, _command: &str) -> String {
+    // Valid commit message in XML format for commit generation tests
+    let commit_message = r#"<ralph-commit>
+<ralph-subject>test: commit message</ralph-subject>
+<ralph-body>Test commit message for integration tests.</ralph-body>
+</ralph-commit>"#;
+
+    match parser_type {
+        JsonParserType::Claude => {
+            // Claude expects events with "type" field
+            // Include the commit message in the result
+            format!(
+                r#"{{"type":"result","result":"{}"}}
+"#,
+                commit_message.replace('\n', "\\n").replace('"', "\\\"")
+            )
+        }
+        JsonParserType::Codex => {
+            // Codex expects completion events with the actual content
+            // We need to provide events that will be written to the log file
+            // and then extracted as the commit message
+            format!(
+                r#"{{"type":"turn_started","turn_id":"test_turn"}}
+{{"type":"item_started","item":{{"type":"agent_message","text":"{}"}}}}
+{{"type":"item_completed","item":{{"type":"agent_message","text":"{}"}}}}
+{{"type":"turn_completed"}}
+{{"type":"completion","reason":"stop"}}
+"#,
+                commit_message,
+                commit_message
+            )
+        }
+        JsonParserType::Gemini => {
+            // Gemini expects message events with content
+            format!(
+                r#"{{"type":"message","role":"assistant","content":"{}"}}
+{{"type":"result","status":"success"}}
+"#,
+                commit_message.replace('\n', "\\n")
+            )
+        }
+        JsonParserType::OpenCode => {
+            // OpenCode expects text events
+            format!(
+                r#"{{"type":"text","content":"{}"}}
+{{"type":"end","success":true}}
+"#,
+                commit_message.replace('\n', "\\n")
+            )
+        }
+        JsonParserType::Generic => {
+            // Generic parser treats all output as plain text
+            // Return the commit message directly
+            format!("{}\n", commit_message)
+        }
+    }
+}
+
 /// Mock agent child process for testing.
 ///
 /// This simulates a real Child process but returns a predetermined exit code.
@@ -691,10 +767,13 @@ impl ProcessExecutor for MockProcessExecutor {
         // Find the appropriate mock result
         let result = self.find_agent_result(&config.command);
 
-        // Return a mock handle that simulates the process
-        // The stdout/stderr are empty since tests use different result extraction
+        // Generate minimal valid JSON output based on parser type
+        // This prevents the streaming parser from hanging on empty input
+        let mock_output = generate_mock_agent_output(config.parser_type, &config.command);
+
+        // Return a mock handle with valid stdout that provides complete JSON
         Ok(AgentChildHandle {
-            stdout: Box::new(io::empty()),
+            stdout: Box::new(Cursor::new(mock_output)),
             stderr: Box::new(io::empty()),
             inner: Box::new(MockAgentChild::new(result.exit_code)),
         })

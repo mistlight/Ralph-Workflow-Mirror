@@ -339,16 +339,16 @@ fn prepare_pipeline_or_exit(
 
     // Handle --generate-commit-msg
     if args.commit_plumbing.generate_commit_msg {
-        handle_generate_commit_msg(
-            &config,
-            &template_context,
-            &registry,
-            &logger,
+        handle_generate_commit_msg(plumbing::CommitGenerationConfig {
+            config: &config,
+            template_context: &template_context,
+            registry: &registry,
+            logger: &logger,
             colors,
-            &developer_agent,
-            &reviewer_agent,
-            std::sync::Arc::clone(&executor),
-        )?;
+            developer_agent: &developer_agent,
+            reviewer_agent: &reviewer_agent,
+            executor: std::sync::Arc::clone(&executor),
+        })?;
         return Ok(None);
     }
 

@@ -22,6 +22,30 @@ use crate::pipeline::PipelineRuntime;
 use crate::pipeline::Timer;
 use crate::prompts::TemplateContext;
 use std::env;
+use std::sync::Arc;
+
+/// Configuration for commit message generation in plumbing commands.
+///
+/// Groups related parameters for `handle_generate_commit_msg` to avoid
+/// excessive function arguments.
+pub struct CommitGenerationConfig<'a> {
+    /// The pipeline configuration.
+    pub config: &'a Config,
+    /// Template context for prompt expansion.
+    pub template_context: &'a TemplateContext,
+    /// Agent registry for accessing configured agents.
+    pub registry: &'a AgentRegistry,
+    /// Logger for info/warning messages.
+    pub logger: &'a Logger,
+    /// Color configuration for output.
+    pub colors: Colors,
+    /// Name of the developer agent to use for commit generation.
+    pub developer_agent: &'a str,
+    /// Name of the reviewer agent (not used, kept for API compatibility).
+    pub reviewer_agent: &'a str,
+    /// Process executor for external command execution.
+    pub executor: Arc<dyn ProcessExecutor>,
+}
 
 /// Handles the `--show-commit-msg` command.
 ///
@@ -122,23 +146,13 @@ pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if generation fails.
-#[allow(clippy::too_many_arguments)]
-pub fn handle_generate_commit_msg(
-    config: &Config,
-    template_context: &TemplateContext,
-    registry: &AgentRegistry,
-    logger: &Logger,
-    colors: Colors,
-    developer_agent: &str,
-    _reviewer_agent: &str,
-    executor: std::sync::Arc<dyn ProcessExecutor>,
-) -> anyhow::Result<()> {
-    logger.info("Generating commit message...");
+pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow::Result<()> {
+    config.logger.info("Generating commit message...");
 
     // Generate the commit message using standard pipeline
     let diff = git_diff()?;
     if diff.trim().is_empty() {
-        logger.warn("No changes detected to generate a commit message for");
+        config.logger.warn("No changes detected to generate a commit message for");
         anyhow::bail!("No changes to commit");
     }
 
@@ -146,14 +160,14 @@ pub fn handle_generate_commit_msg(
     let mut timer = Timer::new();
 
     // Set up pipeline runtime with the injected executor
-    let executor_ref: &dyn ProcessExecutor = &*executor;
+    let executor_ref: &dyn ProcessExecutor = &*config.executor;
     let mut runtime = PipelineRuntime {
         timer: &mut timer,
-        logger,
-        colors: &colors,
-        config,
+        logger: config.logger,
+        colors: &config.colors,
+        config: config.config,
         executor: executor_ref,
-        executor_arc: std::sync::Arc::clone(&executor),
+        executor_arc: Arc::clone(&config.executor),
     };
 
     // Use the standard commit message generation from phases/commit.rs
@@ -163,10 +177,10 @@ pub fn handle_generate_commit_msg(
     // - Meaningful error diagnostics
     let result = generate_commit_message(
         &diff,
-        registry,
+        config.registry,
         &mut runtime,
-        developer_agent,
-        template_context,
+        config.developer_agent,
+        config.template_context,
         &std::collections::HashMap::new(), // Empty prompt history for plumbing command
     )
     .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;
@@ -177,16 +191,23 @@ pub fn handle_generate_commit_msg(
 
     let commit_message = result.message;
 
-    logger.success("Commit message generated:");
+    config.logger.success("Commit message generated:");
     println!();
-    println!("{}{}{}", colors.cyan(), commit_message, colors.reset());
+    println!(
+        "{}{}{}",
+        config.colors.cyan(),
+        commit_message,
+        config.colors.reset()
+    );
     println!();
 
     // Write the message to file for use with --apply-commit
     write_commit_message_file(&commit_message)?;
 
-    logger.info("Message saved to .agent/commit-message.txt");
-    logger.info("Run 'ralph --apply-commit' to create the commit");
+    config
+        .logger
+        .info("Message saved to .agent/commit-message.txt");
+    config.logger.info("Run 'ralph --apply-commit' to create the commit");
 
     Ok(())
 }
