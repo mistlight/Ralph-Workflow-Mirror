@@ -23,36 +23,14 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
 
-/// RAII guard to restore environment variables on drop.
-struct EnvGuard {
-    vars: Vec<(&'static str, Option<String>)>,
-}
-
-impl EnvGuard {
-    fn new(keys: &[&'static str]) -> Self {
-        let vars = keys
-            .iter()
-            .map(|&k| (k, std::env::var(k).ok()))
-            .collect();
-        Self { vars }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        for (key, value) in &self.vars {
-            match value {
-                Some(v) => std::env::set_var(key, v),
-                None => std::env::remove_var(key),
-            }
-        }
-    }
-}
-
+/// Helper function to set up base environment for tests with automatic cleanup.
+///
+/// This function uses EnvGuard to ensure all environment variables are
+/// restored when the guard is dropped, preventing cross-test pollution.
 fn set_base_env() -> EnvGuard {
     let guard = EnvGuard::new(&[
         "RALPH_INTERACTIVE",
@@ -66,15 +44,17 @@ fn set_base_env() -> EnvGuard {
         "GIT_COMMITTER_EMAIL",
     ]);
 
-    std::env::set_var("RALPH_INTERACTIVE", "0");
-    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-    std::env::set_var("RALPH_DEVELOPER_AGENT", "codex");
-    std::env::set_var("RALPH_REVIEWER_AGENT", "codex");
-    std::env::set_var("GIT_AUTHOR_NAME", "Test");
-    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
-    std::env::set_var("GIT_COMMITTER_NAME", "Test");
-    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+    guard.set(&[
+        ("RALPH_INTERACTIVE", Some("0")),
+        ("RALPH_DEVELOPER_ITERS", Some("0")),
+        ("RALPH_REVIEWER_REVIEWS", Some("0")),
+        ("RALPH_DEVELOPER_AGENT", Some("codex")),
+        ("RALPH_REVIEWER_AGENT", Some("codex")),
+        ("GIT_AUTHOR_NAME", Some("Test")),
+        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
+        ("GIT_COMMITTER_NAME", Some("Test")),
+        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
+    ]);
 
     guard
 }

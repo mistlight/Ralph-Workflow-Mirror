@@ -22,22 +22,41 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::{
-    mock_executor_with_success, run_ralph_cli, with_cwd_guard, with_cwd_guard_result,
+    mock_executor_with_success, run_ralph_cli, with_cwd_guard, with_cwd_guard_result, EnvGuard,
 };
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
-/// Helper function to set up base environment for tests
-fn set_base_env() {
-    std::env::set_var("RALPH_INTERACTIVE", "0");
-    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-    std::env::set_var("RALPH_DEVELOPER_AGENT", "codex");
-    std::env::set_var("RALPH_REVIEWER_AGENT", "codex");
-    std::env::set_var("GIT_AUTHOR_NAME", "Test");
-    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
-    std::env::set_var("GIT_COMMITTER_NAME", "Test");
-    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+/// Helper function to set up base environment for tests with automatic cleanup.
+///
+/// Uses EnvGuard to ensure all environment variables are restored when dropped,
+/// preventing cross-test pollution.
+fn set_base_env() -> EnvGuard {
+    let guard = EnvGuard::new(&[
+        "RALPH_INTERACTIVE",
+        "RALPH_DEVELOPER_ITERS",
+        "RALPH_REVIEWER_REVIEWS",
+        "RALPH_DEVELOPER_AGENT",
+        "RALPH_REVIEWER_AGENT",
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ]);
+
+    guard.set(&[
+        ("RALPH_INTERACTIVE", Some("0")),
+        ("RALPH_DEVELOPER_ITERS", Some("0")),
+        ("RALPH_REVIEWER_REVIEWS", Some("0")),
+        ("RALPH_DEVELOPER_AGENT", Some("codex")),
+        ("RALPH_REVIEWER_AGENT", Some("codex")),
+        ("GIT_AUTHOR_NAME", Some("Test")),
+        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
+        ("GIT_COMMITTER_NAME", Some("Test")),
+        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
+    ]);
+
+    guard
 }
 
 fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
@@ -214,7 +233,7 @@ fn ralph_start_commit_created_during_pipeline() {
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
-        set_base_env();
+        let _env_guard = set_base_env();
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 

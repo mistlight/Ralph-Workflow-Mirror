@@ -23,22 +23,42 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::{
-    mock_executor_for_git_success, mock_executor_with_success, run_ralph_cli, with_cwd_guard,
+    mock_executor_for_git_success, mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard,
 };
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::git_helpers::{GitOps, RealGit};
 use test_helpers::{commit_all, init_git_repo, write_file};
 
-fn base_env() {
-    std::env::set_var("RALPH_INTERACTIVE", "0");
-    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-    std::env::set_var("RALPH_DEVELOPER_AGENT", "codex");
-    std::env::set_var("RALPH_REVIEWER_AGENT", "codex");
-    std::env::set_var("GIT_AUTHOR_NAME", "Test");
-    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
-    std::env::set_var("GIT_COMMITTER_NAME", "Test");
-    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+/// Helper function to set up base environment for tests with automatic cleanup.
+///
+/// Uses EnvGuard to ensure all environment variables are restored when dropped,
+/// preventing cross-test pollution.
+fn base_env() -> EnvGuard {
+    let guard = EnvGuard::new(&[
+        "RALPH_INTERACTIVE",
+        "RALPH_DEVELOPER_ITERS",
+        "RALPH_REVIEWER_REVIEWS",
+        "RALPH_DEVELOPER_AGENT",
+        "RALPH_REVIEWER_AGENT",
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ]);
+
+    guard.set(&[
+        ("RALPH_INTERACTIVE", Some("0")),
+        ("RALPH_DEVELOPER_ITERS", Some("0")),
+        ("RALPH_REVIEWER_REVIEWS", Some("0")),
+        ("RALPH_DEVELOPER_AGENT", Some("codex")),
+        ("RALPH_REVIEWER_AGENT", Some("codex")),
+        ("GIT_AUTHOR_NAME", Some("Test")),
+        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
+        ("GIT_COMMITTER_NAME", Some("Test")),
+        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
+    ]);
+
+    guard
 }
 
 /// Helper to pre-create a commit message file to avoid agent execution.
@@ -80,7 +100,7 @@ fn ralph_start_commit_persisted_across_runs() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: first run");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -103,7 +123,7 @@ fn ralph_start_commit_persisted_across_runs() {
             // Second run - start_commit should remain the same (not updated)
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: second run");
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -140,7 +160,7 @@ fn ralph_baseline_reset_command_works() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: run");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -154,7 +174,7 @@ fn ralph_baseline_reset_command_works() {
             let _ = commit_all(&repo, "second commit");
 
             // Reset the start_commit
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&["--reset-start-commit"], executor).unwrap();
@@ -192,7 +212,7 @@ fn ralph_diff_from_start_commit() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: establish baseline");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -204,7 +224,7 @@ fn ralph_diff_from_start_commit() {
             // Run review cycle - just verify start_commit exists
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: test");
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -244,7 +264,7 @@ fn ralph_stale_baseline_warning() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -263,7 +283,7 @@ fn ralph_stale_baseline_warning() {
             // Run review cycle
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: review");
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -300,7 +320,7 @@ fn ralph_review_baseline_updated_after_fix() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: review");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -338,7 +358,7 @@ fn ralph_diff_shows_correct_range() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: establish");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -408,7 +428,7 @@ fn ralph_empty_diff_skips_review() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -417,7 +437,7 @@ fn ralph_empty_diff_skips_review() {
             // The review should detect empty diff and skip
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: no changes");
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -449,7 +469,7 @@ fn ralph_start_commit_shown_at_pipeline_start() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: first");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -473,7 +493,7 @@ fn ralph_start_commit_shown_at_pipeline_start() {
             // Run with verbose mode to see start_commit info
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: second");
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&["--verbosity=2"], executor).unwrap();
@@ -503,7 +523,7 @@ fn ralph_stale_start_commit_warning_at_start() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -520,7 +540,7 @@ fn ralph_stale_start_commit_warning_at_start() {
             // Run with verbose mode - should show stale warning
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: review");
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&["--verbosity=2"], executor).unwrap();
@@ -556,7 +576,7 @@ fn ralph_handles_corrupted_start_commit_file() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: recovered");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -593,7 +613,7 @@ fn ralph_handles_corrupted_review_baseline_file() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -608,7 +628,7 @@ fn ralph_handles_corrupted_review_baseline_file() {
             // Run review - should handle corrupted baseline gracefully
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: review");
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -620,7 +640,7 @@ fn ralph_handles_corrupted_review_baseline_file() {
 
 /// Uses a 30-second timeout because this test runs ralph twice sequentially.
 #[test]
-fn ralf_handles_missing_start_commit_oid() {
+fn ralph_handles_missing_start_commit_oid() {
     with_default_timeout(|| {
         // Test when start_commit references non-existent commit (history rewritten)
         let dir = TempDir::new().unwrap();
@@ -634,7 +654,7 @@ fn ralf_handles_missing_start_commit_oid() {
         create_plan_file(&dir);
         create_commit_message_file(&dir, "feat: baseline");
         with_cwd_guard(dir.path(), || {
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -653,7 +673,7 @@ fn ralf_handles_missing_start_commit_oid() {
             // Run review - should handle missing OID gracefully
             create_plan_file(&dir);
             create_commit_message_file(&dir, "feat: review");
-            base_env();
+            let _env_guard = base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();

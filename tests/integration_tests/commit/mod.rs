@@ -23,24 +23,40 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
-/// Helper function to set up base environment for tests.
+/// Helper function to set up base environment for tests with automatic cleanup.
 ///
 /// This function sets up config isolation using XDG_CONFIG_HOME to prevent
 /// the tests from loading the user's actual config which may contain
 /// opencode/* references that would trigger network calls.
-fn set_base_env(config_home: &std::path::Path) {
-    std::env::set_var("RALPH_INTERACTIVE", "0");
-    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-    std::env::set_var("XDG_CONFIG_HOME", config_home);
-    std::env::set_var("GIT_AUTHOR_NAME", "Test");
-    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
-    std::env::set_var("GIT_COMMITTER_NAME", "Test");
-    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+/// Uses EnvGuard to ensure all environment variables are restored when dropped.
+fn set_base_env(config_home: &std::path::Path) -> EnvGuard {
+    let guard = EnvGuard::new(&[
+        "RALPH_INTERACTIVE",
+        "RALPH_DEVELOPER_ITERS",
+        "RALPH_REVIEWER_REVIEWS",
+        "XDG_CONFIG_HOME",
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ]);
+
+    guard.set(&[
+        ("RALPH_INTERACTIVE", Some("0")),
+        ("RALPH_DEVELOPER_ITERS", Some("0")),
+        ("RALPH_REVIEWER_REVIEWS", Some("0")),
+        ("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap())),
+        ("GIT_AUTHOR_NAME", Some("Test")),
+        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
+        ("GIT_COMMITTER_NAME", Some("Test")),
+        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
+    ]);
+
+    guard
 }
 
 /// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
@@ -90,7 +106,7 @@ fn test_commit_message_generated_with_simple_diff() {
         write_file(dir.path().join("test.txt"), "new content");
 
         // Run ralph with developer_iters=0 (skip to commit)
-        set_base_env(&config_home);
+        let _env_guard = set_base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
@@ -126,7 +142,7 @@ fn test_commit_message_generated_with_multiple_files() {
         write_file(dir.path().join("file2.txt"), "content 2");
         write_file(dir.path().join("file3.rs"), "fn main() {}");
 
-        set_base_env(&config_home);
+        let _env_guard = set_base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
@@ -174,7 +190,7 @@ fn test_commit_created_with_diff_content() {
         }
         write_file(dir.path().join("large_file.txt"), &content);
 
-        set_base_env(&config_home);
+        let _env_guard = set_base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
@@ -205,7 +221,7 @@ fn test_commit_succeeds_without_developer_or_review() {
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
-        set_base_env(&config_home);
+        let _env_guard = set_base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 

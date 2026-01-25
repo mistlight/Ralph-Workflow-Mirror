@@ -16,26 +16,40 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
-/// Helper function to set up base environment for tests.
+/// Helper function to set up base environment for tests with automatic cleanup.
 ///
 /// This function sets up config isolation using XDG_CONFIG_HOME to prevent
 /// the tests from loading the user's actual config which may contain
 /// opencode/* references that would trigger network calls.
-fn base_env(config_home: &std::path::Path) {
-    std::env::set_var("RALPH_INTERACTIVE", "0");
-    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-    // Isolate config to prevent loading user's actual config with opencode/* refs
-    std::env::set_var("XDG_CONFIG_HOME", config_home);
-    // Ensure git identity isn't a factor if a commit happens in the test.
-    std::env::set_var("GIT_AUTHOR_NAME", "Test");
-    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
-    std::env::set_var("GIT_COMMITTER_NAME", "Test");
-    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+/// Uses EnvGuard to ensure all environment variables are restored when dropped.
+fn base_env(config_home: &std::path::Path) -> EnvGuard {
+    let guard = EnvGuard::new(&[
+        "RALPH_INTERACTIVE",
+        "RALPH_DEVELOPER_ITERS",
+        "RALPH_REVIEWER_REVIEWS",
+        "XDG_CONFIG_HOME",
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ]);
+
+    guard.set(&[
+        ("RALPH_INTERACTIVE", Some("0")),
+        ("RALPH_DEVELOPER_ITERS", Some("0")),
+        ("RALPH_REVIEWER_REVIEWS", Some("0")),
+        ("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap())),
+        ("GIT_AUTHOR_NAME", Some("Test")),
+        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
+        ("GIT_COMMITTER_NAME", Some("Test")),
+        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
+    ]);
+
+    guard
 }
 
 /// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
@@ -74,7 +88,7 @@ fn ralph_cleans_up_on_early_error() {
         let initial_oid = commit_all(&repo, "initial commit").to_string();
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             // agent commands not needed when developer_iters=0 (phase is skipped)
             std::env::set_var("FULL_CHECK_CMD", "false");
 
@@ -126,7 +140,7 @@ fn ralph_cleanup_on_interrupt_simulation() {
         let _ = commit_all(&repo, "initial commit");
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
             let executor = mock_executor_with_success();
@@ -166,7 +180,7 @@ fn ralph_handles_agent_timeout_gracefully() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
             // This tests that the pipeline handles phase-skipping correctly
 
@@ -245,7 +259,7 @@ fn ralph_isolation_mode_does_not_create_status_notes_issues() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
             std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
             // No agent commands needed when both phases are skipped
@@ -288,7 +302,7 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
         fs::write(dir.path().join(".agent/ISSUES.md"), "old issues").unwrap();
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
             std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
             // No agent commands needed when both phases are skipped
@@ -326,7 +340,7 @@ fn ralph_no_isolation_creates_status_notes_issues() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
             std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
             // No agent commands needed when both phases are skipped
@@ -364,7 +378,7 @@ fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_ISOLATION_MODE", "0");
             std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
             std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
@@ -421,7 +435,7 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
         .unwrap();
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
             std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
             // No agent commands needed when both phases are skipped
@@ -472,7 +486,7 @@ fn ralph_resume_continues_from_checkpoint_phase() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
 
             let executor = mock_executor_with_success();
@@ -501,7 +515,7 @@ fn ralph_developer_iteration_creates_changes_for_commit() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Use 0 to avoid timeout from commit generation
             std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
             // No agent commands needed when both phases are skipped

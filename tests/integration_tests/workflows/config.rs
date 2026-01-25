@@ -15,26 +15,40 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
 
-/// Helper function to set up base environment for tests.
+/// Helper function to set up base environment for tests with automatic cleanup.
 ///
 /// This function sets up config isolation using XDG_CONFIG_HOME to prevent
 /// the tests from loading the user's actual config which may contain
 /// opencode/* references that would trigger network calls.
-fn base_env(config_home: &std::path::Path) {
-    std::env::set_var("RALPH_INTERACTIVE", "0");
-    std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-    std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-    // Isolate config to prevent loading user's actual config with opencode/* refs
-    std::env::set_var("XDG_CONFIG_HOME", config_home);
-    // Ensure git identity isn't a factor if a commit happens in the test.
-    std::env::set_var("GIT_AUTHOR_NAME", "Test");
-    std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
-    std::env::set_var("GIT_COMMITTER_NAME", "Test");
-    std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+/// Uses EnvGuard to ensure all environment variables are restored when dropped.
+fn base_env(config_home: &std::path::Path) -> EnvGuard {
+    let guard = EnvGuard::new(&[
+        "RALPH_INTERACTIVE",
+        "RALPH_DEVELOPER_ITERS",
+        "RALPH_REVIEWER_REVIEWS",
+        "XDG_CONFIG_HOME",
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ]);
+
+    guard.set(&[
+        ("RALPH_INTERACTIVE", Some("0")),
+        ("RALPH_DEVELOPER_ITERS", Some("0")),
+        ("RALPH_REVIEWER_REVIEWS", Some("0")),
+        ("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap())),
+        ("GIT_AUTHOR_NAME", Some("Test")),
+        ("GIT_AUTHOR_EMAIL", Some("test@example.com")),
+        ("GIT_COMMITTER_NAME", Some("Test")),
+        ("GIT_COMMITTER_EMAIL", Some("test@example.com")),
+    ]);
+
+    guard
 }
 
 /// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
@@ -199,7 +213,7 @@ reviewer = ["aider", "codex"]
         .unwrap();
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
             let executor = mock_executor_with_success();
@@ -225,7 +239,7 @@ fn ralph_quick_mode_sets_minimal_iterations() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
@@ -247,7 +261,7 @@ fn ralph_quick_mode_short_flag_works() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&["-Q", "--developer-iters", "0"], executor).unwrap();
@@ -269,7 +283,7 @@ fn ralph_quick_mode_explicit_iters_override() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
@@ -291,7 +305,7 @@ fn ralph_rapid_mode_sets_two_iterations() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&["--rapid", "--developer-iters", "0"], executor).unwrap();
@@ -313,7 +327,7 @@ fn ralph_rapid_mode_short_flag_works() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&["-U", "--developer-iters", "0"], executor).unwrap();
@@ -358,7 +372,7 @@ tokio = "1.0"
 
         // Run ralph with verbose output to see stack detection
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
             std::env::set_var("RALPH_VERBOSITY", "2"); // Verbose mode
                                                        // agent commands not needed when developer_iters=0 and reviewer_reviews=0
@@ -404,7 +418,7 @@ fn ralph_stack_detection_javascript_project() {
         .unwrap();
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
             // agent commands removed (not needed when developer_iters=0)
 
@@ -438,7 +452,7 @@ name = "test"
         fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_AUTO_DETECT_STACK", "false"); // Explicitly disable
                                                                    // agent commands removed (not needed when developer_iters=0)
 
@@ -476,7 +490,7 @@ version = "0.1.0"
         fs::write(dir.path().join("scripts/deploy.py"), "print('deploy')").unwrap();
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
             // agent commands removed (not needed when developer_iters=0)
 
@@ -503,7 +517,7 @@ fn ralph_review_depth_standard() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_REVIEW_DEPTH", "standard");
             // agent commands removed (not needed when developer_iters=0)
 
@@ -526,7 +540,7 @@ fn ralph_review_depth_comprehensive() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_REVIEW_DEPTH", "comprehensive");
             // agent commands removed (not needed when developer_iters=0)
 
@@ -549,7 +563,7 @@ fn ralph_review_depth_security() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_REVIEW_DEPTH", "security");
             // agent commands removed (not needed when developer_iters=0)
 
@@ -572,7 +586,7 @@ fn ralph_review_depth_incremental() {
         let _ = init_git_repo(&dir);
 
         with_cwd_guard(dir.path(), || {
-            base_env(&config_home);
+            let _env_guard = base_env(&config_home);
             std::env::set_var("RALPH_REVIEW_DEPTH", "incremental");
             // agent commands removed (not needed when developer_iters=0)
 
