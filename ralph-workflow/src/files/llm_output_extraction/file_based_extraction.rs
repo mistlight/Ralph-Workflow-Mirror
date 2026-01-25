@@ -49,11 +49,39 @@ pub mod paths {
 /// let path = resolve_absolute_path(".agent/tmp/issues.xml");
 /// // Returns: "/Users/user/project/.agent/tmp/issues.xml"
 /// ```
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`resolve_absolute_path_at`] instead.
 pub fn resolve_absolute_path(relative_path: &str) -> String {
     std::env::current_dir()
         .ok()
         .map(|cwd| cwd.join(relative_path).display().to_string())
         .unwrap_or_else(|| relative_path.to_string())
+}
+
+/// Resolve a relative path to an absolute path at a specific repository root.
+///
+/// This is used to provide agents with absolute paths in prompts, ensuring
+/// they write files to the correct locations.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+/// * `relative_path` - The relative path to resolve (e.g., ".agent/tmp/issues.xml")
+///
+/// # Returns
+///
+/// The absolute path as a string.
+///
+/// # Example
+///
+/// ```ignore
+/// // repo_root: /Users/user/project
+/// let path = resolve_absolute_path_at(Path::new("/Users/user/project"), ".agent/tmp/issues.xml");
+/// // Returns: "/Users/user/project/.agent/tmp/issues.xml"
+/// ```
+pub fn resolve_absolute_path_at(repo_root: &std::path::Path, relative_path: &str) -> String {
+    repo_root.join(relative_path).display().to_string()
 }
 
 /// Try to read XML from a designated file location.
