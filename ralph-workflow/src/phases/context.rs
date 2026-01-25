@@ -14,6 +14,7 @@ use crate::logger::{Colors, Logger};
 use crate::pipeline::Stats;
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
+use crate::workspace::WorkspaceFs;
 use std::path::Path;
 
 /// Shared context for all pipeline phases.
@@ -57,6 +58,11 @@ pub struct PhaseContext<'a> {
     /// file operations. Code should use `repo_root.join("relative/path")` instead
     /// of `Path::new("relative/path")`.
     pub repo_root: &'a Path,
+    /// Workspace filesystem for explicit path resolution.
+    ///
+    /// Provides convenient methods for file operations and path resolution
+    /// without depending on the current working directory.
+    pub workspace: &'a WorkspaceFs,
 }
 
 impl PhaseContext<'_> {
@@ -138,6 +144,7 @@ mod tests {
         template_context: TemplateContext,
         executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: PathBuf,
+        workspace: WorkspaceFs,
     }
 
     impl TestFixture {
@@ -145,6 +152,8 @@ mod tests {
             let colors = Colors { enabled: false };
             let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
                 as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+            let repo_root = PathBuf::from("/test/repo");
+            let workspace = WorkspaceFs::new(repo_root.clone());
             Self {
                 config: Config::default(),
                 colors,
@@ -153,7 +162,8 @@ mod tests {
                 stats: Stats::default(),
                 template_context: TemplateContext::default(),
                 executor_arc,
-                repo_root: PathBuf::from("/test/repo"),
+                repo_root,
+                workspace,
             }
         }
     }
@@ -190,6 +200,7 @@ mod tests {
             executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
+            workspace: &fixture.workspace,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -231,6 +242,7 @@ mod tests {
             executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
+            workspace: &fixture.workspace,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -264,6 +276,7 @@ mod tests {
             executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
             repo_root: &fixture.repo_root,
+            workspace: &fixture.workspace,
         };
 
         let result = get_primary_commit_agent(&ctx);

@@ -8,6 +8,7 @@ use crate::config::Config;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::prompts::template_context::TemplateContext;
+use crate::workspace::WorkspaceFs;
 
 /// Context for running the pipeline.
 ///
@@ -22,6 +23,8 @@ pub struct PipelineContext {
     pub developer_display: String,
     pub reviewer_display: String,
     pub repo_root: std::path::PathBuf,
+    /// Workspace filesystem for explicit path resolution (no CWD dependency).
+    pub workspace: WorkspaceFs,
     pub logger: Logger,
     pub colors: Colors,
     pub template_context: TemplateContext,

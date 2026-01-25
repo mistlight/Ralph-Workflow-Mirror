@@ -463,6 +463,7 @@ fn prepare_pipeline_or_exit(
     let reviewer_display = registry.display_name(&reviewer_agent);
 
     // Build pipeline context
+    let workspace = crate::workspace::WorkspaceFs::new(repo_root.clone());
     let ctx = PipelineContext {
         args,
         config,
@@ -472,6 +473,7 @@ fn prepare_pipeline_or_exit(
         developer_display,
         reviewer_display,
         repo_root,
+        workspace,
         logger,
         colors,
         template_context,
@@ -1108,6 +1110,7 @@ fn create_phase_context_with_config<'ctx>(
         executor: &*ctx.executor,
         executor_arc: std::sync::Arc::clone(&ctx.executor),
         repo_root: &ctx.repo_root,
+        workspace: &ctx.workspace,
     }
 }
 
@@ -1815,6 +1818,7 @@ fn try_resolve_conflicts_without_phase_ctx(
     let registry = AgentRegistry::new()?;
     let mut timer = Timer::new();
     let mut stats = Stats::default();
+    let workspace = crate::workspace::WorkspaceFs::new(repo_root.to_path_buf());
 
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
     let developer_agent = config.developer_agent.as_deref().unwrap_or("codex");
@@ -1839,6 +1843,7 @@ fn try_resolve_conflicts_without_phase_ctx(
         executor: &*executor,
         executor_arc: std::sync::Arc::clone(&executor_arc),
         repo_root,
+        workspace: &workspace,
     };
 
     let ctx = ConflictResolutionContext {
