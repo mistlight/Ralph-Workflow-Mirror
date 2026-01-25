@@ -23,7 +23,10 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
+use crate::common::{
+    create_test_config, mock_executor_with_success, run_ralph_cli, run_ralph_cli_with_config,
+    with_cwd_guard, EnvGuard,
+};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
 
@@ -455,14 +458,15 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
         let backup_base = dir.path().join(".agent/PROMPT.md.backup");
         let backup_1 = dir.path().join(".agent/PROMPT.md.backup.1");
 
+        // Create test config to prevent agent execution
+        let test_config = create_test_config(&dir);
+
         // Run Ralph twice to create multiple backups
         for _ in 0..2 {
             create_plan_file(&dir);
             with_cwd_guard(dir.path(), || {
-                let _env_guard = set_base_env();
-
                 let executor = mock_executor_with_success();
-                run_ralph_cli(&[], executor).unwrap();
+                run_ralph_cli_with_config(&[], executor, Some(test_config.as_path())).unwrap();
             });
         }
 
@@ -492,7 +496,7 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
             create_plan_file(&dir);
 
             let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
+            run_ralph_cli_with_config(&[], executor, Some(test_config.as_path())).unwrap();
 
             // Verify PROMPT.md exists and has valid content
             assert!(prompt_path.exists(), "PROMPT.md should exist");

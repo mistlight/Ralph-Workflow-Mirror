@@ -59,8 +59,8 @@
 
 use clap::error::ErrorKind;
 use clap::Parser;
-use std::sync::Mutex;
 use std::sync::Arc;
+use std::sync::Mutex;
 use test_helpers::CWD_LOCK;
 
 /// Run ralph workflow directly without spawning a process.
@@ -111,8 +111,34 @@ pub fn run_ralph_cli(
     args: &[&str],
     executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
 ) -> anyhow::Result<()> {
+    run_ralph_cli_with_config(args, executor, None)
+}
+
+/// Run ralph workflow directly without spawning a process, with optional config path.
+///
+/// This is the internal implementation that accepts an optional config path to override
+/// the default config file location. Used for tests that need to control
+/// configuration values like developer_iters and reviewer_reviews.
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments to pass to ralph
+/// * `executor` - Process executor for external process execution
+/// * `config_path` - Optional path to config file (defaults to None)
+pub fn run_ralph_cli_with_config(
+    args: &[&str],
+    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+    config_path: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
     // Build argv: binary name + args
     let mut argv: Vec<String> = vec!["ralph".to_string()];
+
+    // Add config path if provided
+    if let Some(path) = config_path {
+        argv.push("--config".to_string());
+        argv.push(path.to_string_lossy().to_string());
+    }
+
     argv.extend(args.iter().map(|s| s.to_string()));
 
     // Parse args using clap directly (same as main.rs does)
@@ -206,6 +232,73 @@ pub fn mock_executor_with_success() -> Arc<dyn ralph_workflow::executor::Process
                 Ok(ralph_workflow::executor::AgentCommandResult::success()),
             ),
     )
+}
+
+/// Create a test config file with minimal settings to override user's global config.
+///
+/// This helper creates a config file in the test directory that sets
+/// developer_iters=0 and reviewer_reviews=0, preventing the pipeline from
+/// attempting to execute real agents during tests.
+///
+/// This is necessary because the user's global config file (~/.config/ralph-workflow.toml)
+/// has developer_iters=5 which would override environment variables if config loading
+/// is not working correctly.
+///
+/// # Arguments
+///
+/// * `dir` - TempDir where the config file should be created
+///
+/// # Returns
+///
+/// Returns the path to the created config file.
+///
+/// # Usage
+///
+/// ```ignore
+/// use crate::common::{mock_executor_with_success, run_ralph_cli, create_test_config};
+///
+/// #[test]
+/// fn test_workflow() {
+///     with_default_timeout(|| {
+///         let dir = TempDir::new().unwrap();
+///         let config_path = create_test_config(&dir);
+///         
+///         let executor = mock_executor_with_success();
+///         run_ralph_cli_with_config(&[], executor, Some(config_path.as_path())).unwrap();
+///     });
+/// }
+/// }
+/// ```
+pub fn create_test_config(dir: &tempfile::TempDir) -> std::path::PathBuf {
+    let config_path = dir.path().join("ralph-workflow-test.toml");
+    let config_content = r#"# Test configuration for integration tests
+# This overrides the global config to prevent agent execution
+
+[general]
+# Disable all agent execution for tests
+developer_iters = 0
+reviewer_reviews = 0
+interactive = false
+isolation_mode = true
+checkpoint_enabled = true
+auto_rebase = false
+
+# Verbosity: quiet for cleaner test output
+verbosity = 0
+
+# Stack detection: disabled for tests
+auto_detect_stack = false
+
+[agent_chain]
+# Use simple agent chain for tests
+developer = ["codex"]
+reviewer = ["codex"]
+commit = ["codex"]
+"#;
+
+    std::fs::write(&config_path, config_content).expect("Failed to create test config file");
+
+    config_path
 }
 
 /// Create a MockProcessExecutor configured for git command success.
@@ -462,9 +555,7 @@ pub fn with_cwd_guard_result<F: FnOnce() -> R, R>(dir: &std::path::Path, f: F) -
     // Clear poison if a previous test panicked while holding the lock
     let _cwd_guard = match lock.lock() {
         Ok(guard) => guard,
-        Err(poisoned) => {
-            poisoned.into_inner()
-        }
+        Err(poisoned) => poisoned.into_inner(),
     };
 
     let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
