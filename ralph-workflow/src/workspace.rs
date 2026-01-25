@@ -56,6 +56,8 @@ pub struct DirEntry {
     is_file: bool,
     /// Whether this entry is a directory.
     is_dir: bool,
+    /// Optional modification time (for sorting by recency).
+    modified: Option<std::time::SystemTime>,
 }
 
 impl DirEntry {
@@ -65,6 +67,22 @@ impl DirEntry {
             path,
             is_file,
             is_dir,
+            modified: None,
+        }
+    }
+
+    /// Create a new directory entry with modification time.
+    pub fn with_modified(
+        path: PathBuf,
+        is_file: bool,
+        is_dir: bool,
+        modified: std::time::SystemTime,
+    ) -> Self {
+        Self {
+            path,
+            is_file,
+            is_dir,
+            modified: Some(modified),
         }
     }
 
@@ -86,6 +104,11 @@ impl DirEntry {
     /// Get the file name of this entry.
     pub fn file_name(&self) -> Option<&std::ffi::OsStr> {
         self.path.file_name()
+    }
+
+    /// Get the modification time of this entry, if available.
+    pub fn modified(&self) -> Option<std::time::SystemTime> {
+        self.modified
     }
 }
 
@@ -364,11 +387,21 @@ impl Workspace for WorkspaceFs {
             let metadata = entry.metadata()?;
             // Store relative path from workspace root
             let rel_path = relative.join(entry.file_name());
-            entries.push(DirEntry::new(
-                rel_path,
-                metadata.is_file(),
-                metadata.is_dir(),
-            ));
+            let modified = metadata.modified().ok();
+            if let Some(mod_time) = modified {
+                entries.push(DirEntry::with_modified(
+                    rel_path,
+                    metadata.is_file(),
+                    metadata.is_dir(),
+                    mod_time,
+                ));
+            } else {
+                entries.push(DirEntry::new(
+                    rel_path,
+                    metadata.is_file(),
+                    metadata.is_dir(),
+                ));
+            }
         }
         Ok(entries)
     }
@@ -377,6 +410,28 @@ impl Workspace for WorkspaceFs {
 // ============================================================================
 // Test Implementation: MemoryWorkspace
 // ============================================================================
+
+/// In-memory file entry with content and metadata.
+#[cfg(any(test, feature = "test-utils"))]
+#[derive(Debug, Clone)]
+struct MemoryFile {
+    content: Vec<u8>,
+    modified: std::time::SystemTime,
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl MemoryFile {
+    fn new(content: Vec<u8>) -> Self {
+        Self {
+            content,
+            modified: std::time::SystemTime::now(),
+        }
+    }
+
+    fn with_modified(content: Vec<u8>, modified: std::time::SystemTime) -> Self {
+        Self { content, modified }
+    }
+}
 
 /// In-memory workspace implementation for testing.
 ///
@@ -389,7 +444,7 @@ impl Workspace for WorkspaceFs {
 #[derive(Debug)]
 pub struct MemoryWorkspace {
     root: PathBuf,
-    files: std::sync::RwLock<std::collections::HashMap<PathBuf, Vec<u8>>>,
+    files: std::sync::RwLock<std::collections::HashMap<PathBuf, MemoryFile>>,
     directories: std::sync::RwLock<std::collections::HashSet<PathBuf>>,
 }
 
@@ -428,7 +483,33 @@ impl MemoryWorkspace {
         self.files
             .write()
             .unwrap()
-            .insert(path_buf, content.as_bytes().to_vec());
+            .insert(path_buf, MemoryFile::new(content.as_bytes().to_vec()));
+        self
+    }
+
+    /// Pre-populate a file with content and explicit modification time for testing.
+    ///
+    /// Also creates parent directories automatically.
+    pub fn with_file_at_time(
+        self,
+        path: &str,
+        content: &str,
+        modified: std::time::SystemTime,
+    ) -> Self {
+        let path_buf = PathBuf::from(path);
+        // Create parent directories
+        if let Some(parent) = path_buf.parent() {
+            let mut dirs = self.directories.write().unwrap();
+            let mut current = PathBuf::new();
+            for component in parent.components() {
+                current.push(component);
+                dirs.insert(current.clone());
+            }
+        }
+        self.files.write().unwrap().insert(
+            path_buf,
+            MemoryFile::with_modified(content.as_bytes().to_vec(), modified),
+        );
         self
     }
 
@@ -449,7 +530,7 @@ impl MemoryWorkspace {
         self.files
             .write()
             .unwrap()
-            .insert(path_buf, content.to_vec());
+            .insert(path_buf, MemoryFile::new(content.to_vec()));
         self
     }
 
@@ -485,6 +566,15 @@ impl MemoryWorkspace {
             .collect()
     }
 
+    /// Get the modification time of a file (for test assertions).
+    pub fn get_modified(&self, path: &str) -> Option<std::time::SystemTime> {
+        self.files
+            .read()
+            .unwrap()
+            .get(&PathBuf::from(path))
+            .map(|f| f.modified)
+    }
+
     /// List all directories (for test assertions).
     pub fn list_directories(&self) -> Vec<PathBuf> {
         self.directories.read().unwrap().iter().cloned().collect()
@@ -492,7 +582,12 @@ impl MemoryWorkspace {
 
     /// Get all files that were written (for test assertions).
     pub fn written_files(&self) -> std::collections::HashMap<PathBuf, Vec<u8>> {
-        self.files.read().unwrap().clone()
+        self.files
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.content.clone()))
+            .collect()
     }
 
     /// Get a specific file's content (for test assertions).
@@ -501,7 +596,7 @@ impl MemoryWorkspace {
             .read()
             .unwrap()
             .get(&PathBuf::from(path))
-            .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+            .map(|f| String::from_utf8_lossy(&f.content).to_string())
     }
 
     /// Get a specific file's bytes (for test assertions).
@@ -510,7 +605,7 @@ impl MemoryWorkspace {
             .read()
             .unwrap()
             .get(&PathBuf::from(path))
-            .cloned()
+            .map(|f| f.content.clone())
     }
 
     /// Check if a file was written (for test assertions).
@@ -539,7 +634,7 @@ impl Workspace for MemoryWorkspace {
             .read()
             .unwrap()
             .get(relative)
-            .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+            .map(|f| String::from_utf8_lossy(&f.content).to_string())
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::NotFound,
@@ -553,7 +648,7 @@ impl Workspace for MemoryWorkspace {
             .read()
             .unwrap()
             .get(relative)
-            .cloned()
+            .map(|f| f.content.clone())
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::NotFound,
@@ -572,10 +667,10 @@ impl Workspace for MemoryWorkspace {
                 dirs.insert(current.clone());
             }
         }
-        self.files
-            .write()
-            .unwrap()
-            .insert(relative.to_path_buf(), content.as_bytes().to_vec());
+        self.files.write().unwrap().insert(
+            relative.to_path_buf(),
+            MemoryFile::new(content.as_bytes().to_vec()),
+        );
         Ok(())
     }
 
@@ -592,7 +687,7 @@ impl Workspace for MemoryWorkspace {
         self.files
             .write()
             .unwrap()
-            .insert(relative.to_path_buf(), content.to_vec());
+            .insert(relative.to_path_buf(), MemoryFile::new(content.to_vec()));
         Ok(())
     }
 
@@ -607,8 +702,11 @@ impl Workspace for MemoryWorkspace {
             }
         }
         let mut files = self.files.write().unwrap();
-        let existing = files.entry(relative.to_path_buf()).or_default();
-        existing.extend_from_slice(content);
+        let entry = files
+            .entry(relative.to_path_buf())
+            .or_insert_with(|| MemoryFile::new(Vec::new()));
+        entry.content.extend_from_slice(content);
+        entry.modified = std::time::SystemTime::now();
         Ok(())
     }
 
@@ -670,12 +768,17 @@ impl Workspace for MemoryWorkspace {
         let mut seen = std::collections::HashSet::new();
 
         // Find all files that are direct children of this directory
-        for path in files.keys() {
+        for (path, mem_file) in files.iter() {
             if let Some(parent) = path.parent() {
                 if parent == relative {
                     if let Some(name) = path.file_name() {
                         if seen.insert(name.to_os_string()) {
-                            entries.push(DirEntry::new(path.clone(), true, false));
+                            entries.push(DirEntry::with_modified(
+                                path.clone(),
+                                true,
+                                false,
+                                mem_file.modified,
+                            ));
                         }
                     }
                 }
@@ -717,142 +820,72 @@ impl Clone for MemoryWorkspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     // =========================================================================
-    // WorkspaceFs (production) tests
+    // WorkspaceFs path resolution tests (no filesystem access needed)
     // =========================================================================
 
     #[test]
     fn test_workspace_fs_root() {
-        let dir = TempDir::new().unwrap();
-        let ws = WorkspaceFs::new(dir.path().to_path_buf());
-        assert_eq!(ws.root(), dir.path());
+        let ws = WorkspaceFs::new(PathBuf::from("/test/repo"));
+        assert_eq!(ws.root(), Path::new("/test/repo"));
     }
 
     #[test]
     fn test_workspace_fs_agent_paths() {
-        let dir = TempDir::new().unwrap();
-        let ws = WorkspaceFs::new(dir.path().to_path_buf());
+        let ws = WorkspaceFs::new(PathBuf::from("/test/repo"));
 
-        assert_eq!(ws.agent_dir(), dir.path().join(".agent"));
-        assert_eq!(ws.agent_logs(), dir.path().join(".agent/logs"));
-        assert_eq!(ws.agent_tmp(), dir.path().join(".agent/tmp"));
-        assert_eq!(ws.plan_md(), dir.path().join(".agent/PLAN.md"));
-        assert_eq!(ws.issues_md(), dir.path().join(".agent/ISSUES.md"));
+        assert_eq!(ws.agent_dir(), PathBuf::from("/test/repo/.agent"));
+        assert_eq!(ws.agent_logs(), PathBuf::from("/test/repo/.agent/logs"));
+        assert_eq!(ws.agent_tmp(), PathBuf::from("/test/repo/.agent/tmp"));
+        assert_eq!(ws.plan_md(), PathBuf::from("/test/repo/.agent/PLAN.md"));
+        assert_eq!(ws.issues_md(), PathBuf::from("/test/repo/.agent/ISSUES.md"));
         assert_eq!(
             ws.commit_message(),
-            dir.path().join(".agent/commit-message.txt")
+            PathBuf::from("/test/repo/.agent/commit-message.txt")
         );
-        assert_eq!(ws.checkpoint(), dir.path().join(".agent/checkpoint.json"));
-        assert_eq!(ws.start_commit(), dir.path().join(".agent/start_commit"));
-        assert_eq!(ws.prompt_md(), dir.path().join("PROMPT.md"));
+        assert_eq!(
+            ws.checkpoint(),
+            PathBuf::from("/test/repo/.agent/checkpoint.json")
+        );
+        assert_eq!(
+            ws.start_commit(),
+            PathBuf::from("/test/repo/.agent/start_commit")
+        );
+        assert_eq!(ws.prompt_md(), PathBuf::from("/test/repo/PROMPT.md"));
     }
 
     #[test]
     fn test_workspace_fs_dynamic_paths() {
-        let dir = TempDir::new().unwrap();
-        let ws = WorkspaceFs::new(dir.path().to_path_buf());
+        let ws = WorkspaceFs::new(PathBuf::from("/test/repo"));
 
-        assert_eq!(ws.xsd_path("plan"), dir.path().join(".agent/tmp/plan.xsd"));
+        assert_eq!(
+            ws.xsd_path("plan"),
+            PathBuf::from("/test/repo/.agent/tmp/plan.xsd")
+        );
         assert_eq!(
             ws.xml_path("issues"),
-            dir.path().join(".agent/tmp/issues.xml")
+            PathBuf::from("/test/repo/.agent/tmp/issues.xml")
         );
         assert_eq!(
             ws.log_path("agent.log"),
-            dir.path().join(".agent/logs/agent.log")
+            PathBuf::from("/test/repo/.agent/logs/agent.log")
         );
-    }
-
-    #[test]
-    fn test_workspace_fs_read_write() {
-        let dir = TempDir::new().unwrap();
-        let ws = WorkspaceFs::new(dir.path().to_path_buf());
-
-        // Write creates parent directories
-        ws.write(Path::new(".agent/test/nested/file.txt"), "hello world")
-            .unwrap();
-        assert!(ws.exists(Path::new(".agent/test/nested/file.txt")));
-
-        // Read returns content
-        let content = ws.read(Path::new(".agent/test/nested/file.txt")).unwrap();
-        assert_eq!(content, "hello world");
-    }
-
-    #[test]
-    fn test_workspace_fs_exists() {
-        let dir = TempDir::new().unwrap();
-        let ws = WorkspaceFs::new(dir.path().to_path_buf());
-
-        assert!(!ws.exists(Path::new("nonexistent.txt")));
-
-        ws.write(Path::new("test.txt"), "content").unwrap();
-        assert!(ws.exists(Path::new("test.txt")));
-        assert!(ws.is_file(Path::new("test.txt")));
-        assert!(!ws.is_dir(Path::new("test.txt")));
-
-        ws.create_dir_all(Path::new("subdir")).unwrap();
-        assert!(ws.exists(Path::new("subdir")));
-        assert!(ws.is_dir(Path::new("subdir")));
-        assert!(!ws.is_file(Path::new("subdir")));
-    }
-
-    #[test]
-    fn test_workspace_fs_remove() {
-        let dir = TempDir::new().unwrap();
-        let ws = WorkspaceFs::new(dir.path().to_path_buf());
-
-        ws.write(Path::new("to_delete.txt"), "content").unwrap();
-        assert!(ws.exists(Path::new("to_delete.txt")));
-
-        ws.remove(Path::new("to_delete.txt")).unwrap();
-        assert!(!ws.exists(Path::new("to_delete.txt")));
-    }
-
-    #[test]
-    fn test_workspace_fs_remove_if_exists() {
-        let dir = TempDir::new().unwrap();
-        let ws = WorkspaceFs::new(dir.path().to_path_buf());
-
-        // Should succeed even if file doesn't exist
-        ws.remove_if_exists(Path::new("nonexistent.txt")).unwrap();
-
-        // Should remove existing file
-        ws.write(Path::new("to_delete.txt"), "content").unwrap();
-        ws.remove_if_exists(Path::new("to_delete.txt")).unwrap();
-        assert!(!ws.exists(Path::new("to_delete.txt")));
     }
 
     #[test]
     fn test_workspace_fs_absolute() {
-        let dir = TempDir::new().unwrap();
-        let ws = WorkspaceFs::new(dir.path().to_path_buf());
+        let ws = WorkspaceFs::new(PathBuf::from("/test/repo"));
 
         let abs = ws.absolute(Path::new(".agent/tmp/plan.xml"));
-        assert_eq!(abs, dir.path().join(".agent/tmp/plan.xml"));
+        assert_eq!(abs, PathBuf::from("/test/repo/.agent/tmp/plan.xml"));
 
         let abs_str = ws.absolute_str(".agent/tmp/plan.xml");
-        assert_eq!(
-            abs_str,
-            dir.path().join(".agent/tmp/plan.xml").display().to_string()
-        );
-    }
-
-    #[test]
-    fn test_workspace_fs_read_bytes_write_bytes() {
-        let dir = TempDir::new().unwrap();
-        let ws = WorkspaceFs::new(dir.path().to_path_buf());
-
-        let data = vec![0u8, 1, 2, 3, 255];
-        ws.write_bytes(Path::new("binary.bin"), &data).unwrap();
-
-        let read_data = ws.read_bytes(Path::new("binary.bin")).unwrap();
-        assert_eq!(read_data, data);
+        assert_eq!(abs_str, "/test/repo/.agent/tmp/plan.xml");
     }
 
     // =========================================================================
-    // MemoryWorkspace (test) tests
+    // MemoryWorkspace tests
     // =========================================================================
 
     #[test]

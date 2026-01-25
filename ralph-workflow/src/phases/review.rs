@@ -691,7 +691,7 @@ pub fn run_review_pass(
             let prev_dir = prev_log_dir
                 .as_ref()
                 .expect("Previous log directory should exist on retry");
-            let last_output = read_last_review_output(Path::new(prev_dir));
+            let last_output = read_last_review_output(Path::new(prev_dir), ctx.workspace);
 
             // Get XSD error from previous iteration
             let xsd_error = get_last_xsd_error(ctx, Path::new(prev_dir));
@@ -1020,8 +1020,11 @@ fn extract_and_validate_review_output_xml(
 /// The `log_prefix` is a path prefix (not a directory) like `.agent/logs/reviewer_1`.
 /// Actual log files are named `{prefix}_{agent}_{model}.log`, e.g.:
 /// `.agent/logs/reviewer_1_ccs-glm_0.log`
-fn read_last_review_output(log_prefix: &Path) -> String {
-    read_last_output_from_prefix(log_prefix)
+fn read_last_review_output(
+    log_prefix: &Path,
+    workspace: &dyn crate::workspace::Workspace,
+) -> String {
+    read_last_output_from_prefix(log_prefix, workspace)
 }
 
 /// Get the last XSD error from the log directory for retry feedback.
@@ -1073,16 +1076,19 @@ fn handle_postflight_validation(ctx: &PhaseContext<'_>, j: u32) {
 /// The `log_prefix` is a path prefix (not a directory) like `.agent/logs/fix_1_1`.
 /// Actual log files are named `{prefix}_{agent}_{model}.log`, e.g.:
 /// `.agent/logs/fix_1_1_ccs-glm_0.log`
-fn read_last_fix_output(log_prefix: &Path) -> String {
-    read_last_output_from_prefix(log_prefix)
+fn read_last_fix_output(log_prefix: &Path, workspace: &dyn crate::workspace::Workspace) -> String {
+    read_last_output_from_prefix(log_prefix, workspace)
 }
 
 /// Read the most recent log file matching a prefix pattern.
 ///
 /// This is a shared helper for reading log output. Truncation of large prompts
 /// is handled centrally in `build_agent_command` to prevent E2BIG errors.
-fn read_last_output_from_prefix(log_prefix: &Path) -> String {
-    crate::pipeline::logfile::read_most_recent_logfile(log_prefix)
+fn read_last_output_from_prefix(
+    log_prefix: &Path,
+    workspace: &dyn crate::workspace::Workspace,
+) -> String {
+    crate::pipeline::logfile::read_most_recent_logfile(log_prefix, workspace)
 }
 
 /// Format XSD error for display (for fix result).
@@ -1199,7 +1205,7 @@ pub fn run_fix_pass(
                     ctx.logger.info(&format!("  XSD error: {}", error));
                 }
 
-                let last_output = read_last_fix_output(Path::new(&log_dir));
+                let last_output = read_last_fix_output(Path::new(&log_dir), ctx.workspace);
 
                 prompt_fix_xsd_retry_with_context(
                     ctx.template_context,
@@ -1233,7 +1239,7 @@ pub fn run_fix_pass(
                     ctx.logger.info(&format!("  XSD error: {}", error));
                 }
 
-                let last_output = read_last_fix_output(Path::new(&log_dir));
+                let last_output = read_last_fix_output(Path::new(&log_dir), ctx.workspace);
 
                 prompt_fix_xsd_retry_with_context(
                     ctx.template_context,
@@ -1322,7 +1328,7 @@ pub fn run_fix_pass(
             if exit_code.is_err() || exit_code.ok() != Some(0) {
                 _had_any_error = true;
             }
-            let fix_content = read_last_fix_output(log_dir_path);
+            let fix_content = read_last_fix_output(log_dir_path, ctx.workspace);
 
             // Try file-based extraction first - allows agents to write XML to .agent/tmp/fix_result.xml
             let xml_to_validate = extract_xml_with_file_fallback(

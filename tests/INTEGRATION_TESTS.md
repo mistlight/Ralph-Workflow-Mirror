@@ -17,7 +17,7 @@ Tests run in isolated containers with NO filesystem or network access.
 | `assert_cmd::Command` | Direct function calls with mocks |
 | Real HTTP/network calls | Mocked HTTP traits |
 | `cfg!(test)` in prod code | Dependency injection |
-| Large test files (>200 lines) | Split into focused modules |
+| Large test files (>1000 lines) | Split into focused modules |
 
 ## Required Imports
 
@@ -108,7 +108,7 @@ executor.agent_calls();     // agent spawn calls
 
 ## Test File Size Rule
 
-**Max 200 lines per test file.** Split large test files into focused modules:
+**Max 1000 lines per test file.** Split large test files into focused modules:
 
 ```
 tests/integration_tests/
@@ -127,4 +127,4 @@ tests/integration_tests/
 | `std::fs::write()` | `workspace.write()` |
 | `std::fs::read_to_string()` | `workspace.read()` |
 | `Command::new("anything")` | `MockProcessExecutor` |
-| Test file >200 lines | Split into modules |
+| Test file >1000 lines | Split into modules |

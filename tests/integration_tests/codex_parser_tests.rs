@@ -12,7 +12,7 @@ use ralph_workflow::files::result_extraction::extract_last_result;
 use ralph_workflow::json_parser::codex::CodexParser;
 use ralph_workflow::json_parser::printer::{SharedPrinter, TestPrinter};
 use ralph_workflow::logger::Colors;
-use ralph_workflow::workspace::MemoryWorkspace;
+use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
 use std::io::BufReader;
 use std::path::Path;
 

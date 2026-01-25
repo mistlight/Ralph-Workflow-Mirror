@@ -6,22 +6,11 @@
 //! 2. Reads the XSD error from the correct location
 //! 3. Continues the agent session properly
 //!
-//! # Integration Test Style Guide
-//!
-//! **CRITICAL:** All integration tests MUST follow the style guide defined in
-//! **[INTEGRATION_TESTS.md](../INTEGRATION_TESTS.md)**.
-//!
-//! Before writing, modifying, or debugging any integration test, you MUST read
-//! that document. Key principles:
-//!
-//! - Test **observable behavior**, not implementation details
-//! - Mock only at **architectural boundaries** (filesystem, network, external APIs)
-//! - Use `with_default_timeout()` wrapper for all tests
-//! - NEVER use `cfg!(test)` branches in production code
+//! Uses `MemoryWorkspace` for all file operations - NO real filesystem access.
 
 use crate::test_timeout::with_default_timeout;
-use std::fs;
-use tempfile::TempDir;
+use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+use std::path::Path;
 
 /// Test that XSD error files are stored and read from correct directories.
 ///
@@ -34,40 +23,42 @@ use tempfile::TempDir;
 #[test]
 fn test_review_xsd_error_stored_in_correct_directory() {
     with_default_timeout(|| {
-        // Setup: Create a temp directory to simulate log structure
-        let temp_dir = TempDir::new().unwrap();
-        let base_path = temp_dir.path();
-
-        // Simulate the first attempt (retry_num = 0)
-        let attempt_0_dir = base_path.join(".agent/logs/reviewer_review_1_attempt_0");
-        fs::create_dir_all(&attempt_0_dir).unwrap();
-
-        // Store XSD error in attempt 0 (simulating validation failure)
+        // Setup: Create workspace with log structure
         let error_msg = "Missing required element: ralph-issue";
-        let error_file = attempt_0_dir.join("xsd_error.txt");
-        fs::write(&error_file, error_msg).unwrap();
 
-        // Store some output in attempt 0
-        let output_file = attempt_0_dir.join("output.log");
-        fs::write(&output_file, "Some invalid XML output").unwrap();
+        let workspace = MemoryWorkspace::new_test()
+            .with_dir(".agent/logs/reviewer_review_1_attempt_0")
+            .with_file(
+                ".agent/logs/reviewer_review_1_attempt_0/xsd_error.txt",
+                error_msg,
+            )
+            .with_file(
+                ".agent/logs/reviewer_review_1_attempt_0/output.log",
+                "Some invalid XML output",
+            );
 
         // Execute: Verify the error file exists in attempt 0
         assert!(
-            error_file.exists(),
+            workspace.exists(Path::new(
+                ".agent/logs/reviewer_review_1_attempt_0/xsd_error.txt"
+            )),
             "XSD error should be stored in attempt_0 directory"
         );
 
         // Assert: When retry_num = 1, we should look for the error in attempt 0, not attempt 1
-        let attempt_1_dir = base_path.join(".agent/logs/reviewer_review_1_attempt_1");
-        let error_file_wrong_location = attempt_1_dir.join("xsd_error.txt");
-
         assert!(
-            !error_file_wrong_location.exists(),
+            !workspace.exists(Path::new(
+                ".agent/logs/reviewer_review_1_attempt_1/xsd_error.txt"
+            )),
             "XSD error should NOT be in attempt_1 directory (it hasn't run yet)"
         );
 
         // The correct behavior is to read from attempt_0 when retry_num = 1
-        let error_from_attempt_0 = fs::read_to_string(&error_file).unwrap();
+        let error_from_attempt_0 = workspace
+            .read(Path::new(
+                ".agent/logs/reviewer_review_1_attempt_0/xsd_error.txt",
+            ))
+            .unwrap();
         assert_eq!(
             error_from_attempt_0, error_msg,
             "Should be able to read XSD error from previous attempt"
@@ -85,26 +76,24 @@ fn test_session_info_extraction_uses_log_prefix() {
         use ralph_workflow::agents::JsonParserType;
         use ralph_workflow::pipeline::session::extract_session_info_from_log_prefix;
 
-        // Setup: Create a temp directory with log files
-        let temp_dir = TempDir::new().unwrap();
-        let base_path = temp_dir.path();
-
-        // Create log directory for attempt 0
-        let log_dir = base_path.join(".agent/logs");
-        fs::create_dir_all(&log_dir).unwrap();
-
-        // Create a log file with OpenCode session ID
-        let log_file = log_dir.join("reviewer_review_1_attempt_0_opencode_0.log");
+        // Setup: Create workspace with log files
         let log_content = r#"{"type":"step_start","timestamp":1768191337567,"sessionID":"ses_test123","part":{"id":"prt_test"}}
 {"type":"text","timestamp":1768191347231,"sessionID":"ses_test123","part":{"text":"Hello"}}"#;
-        fs::write(&log_file, log_content).unwrap();
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_dir(".agent/logs")
+            .with_file(
+                ".agent/logs/reviewer_review_1_attempt_0_opencode_0.log",
+                log_content,
+            );
 
         // Execute: Extract session info using the log prefix (without agent name suffix)
-        let log_prefix = log_dir.join("reviewer_review_1_attempt_0");
+        let log_prefix = Path::new(".agent/logs/reviewer_review_1_attempt_0");
         let session_info = extract_session_info_from_log_prefix(
-            &log_prefix,
+            log_prefix,
             JsonParserType::OpenCode,
             Some("opencode"),
+            &workspace,
         );
 
         // Assert: Session info should be extracted successfully
@@ -158,14 +147,12 @@ fn test_read_from_nonexistent_directory_returns_empty() {
     with_default_timeout(|| {
         use ralph_workflow::pipeline::logfile::read_most_recent_logfile;
 
-        // Setup: Use a path that doesn't exist
-        let temp_dir = TempDir::new().unwrap();
-        let nonexistent_path = temp_dir
-            .path()
-            .join(".agent/logs/reviewer_review_1_attempt_999");
+        // Setup: Create workspace with no matching log files
+        let workspace = MemoryWorkspace::new_test().with_dir(".agent/logs");
 
         // Execute: Try to read from non-existent path
-        let result = read_most_recent_logfile(&nonexistent_path);
+        let nonexistent_prefix = Path::new(".agent/logs/reviewer_review_1_attempt_999");
+        let result = read_most_recent_logfile(nonexistent_prefix, &workspace);
 
         // Assert: Should return empty string (graceful degradation)
         assert_eq!(
@@ -185,9 +172,7 @@ fn test_read_from_nonexistent_directory_returns_empty() {
 #[test]
 fn test_xsd_retry_should_read_from_previous_attempt() {
     with_default_timeout(|| {
-        // Setup: Create temp directory with previous attempt's data
-        let temp_dir = TempDir::new().unwrap();
-        let base_path = temp_dir.path();
+        use ralph_workflow::pipeline::logfile::read_most_recent_logfile;
 
         let j = 1;
         let retry_num = 1;
@@ -195,31 +180,28 @@ fn test_xsd_retry_should_read_from_previous_attempt() {
         // Previous attempt's directory (retry_num - 1)
         let prev_attempt = retry_num - 1;
         let prev_dir = format!(".agent/logs/reviewer_review_{}_attempt_{}", j, prev_attempt);
-        let prev_dir_path = base_path.join(&prev_dir);
-        let log_parent_dir = base_path.join(".agent/logs");
-        fs::create_dir_all(&log_parent_dir).unwrap();
 
-        // Store XSD error in previous attempt directory
-        // Note: xsd_error.txt goes IN the attempt directory
-        fs::create_dir_all(&prev_dir_path).unwrap();
         let error_msg = "XSD validation failed: missing ralph-issues root element";
-        fs::write(prev_dir_path.join("xsd_error.txt"), error_msg).unwrap();
-
-        // Store output in previous attempt
-        // Log files are stored in .agent/logs/ (parent), not in the attempt subdirectory
-        // The prefix is "reviewer_review_1_attempt_0" and files are:
-        // .agent/logs/reviewer_review_1_attempt_0_{agent}_{model_index}.log
         let prev_output = "Invalid XML without proper tags";
-        let prev_log_file = log_parent_dir.join("reviewer_review_1_attempt_0_codex_0.log");
-        fs::write(&prev_log_file, prev_output).unwrap();
+
+        // Setup: Create workspace with previous attempt's data
+        let workspace = MemoryWorkspace::new_test()
+            .with_dir(".agent/logs")
+            .with_dir(&prev_dir)
+            .with_file(&format!("{}/xsd_error.txt", prev_dir), error_msg)
+            .with_file(
+                ".agent/logs/reviewer_review_1_attempt_0_codex_0.log",
+                prev_output,
+            );
 
         // Execute: Read from PREVIOUS directory (this is what the fix should do)
-        let error_content = fs::read_to_string(prev_dir_path.join("xsd_error.txt")).unwrap();
+        let error_content = workspace
+            .read(Path::new(&format!("{}/xsd_error.txt", prev_dir)))
+            .unwrap();
 
         // Build the full path for the log prefix
-        let prev_log_prefix = base_path.join(&prev_dir);
-        let output_content =
-            ralph_workflow::pipeline::logfile::read_most_recent_logfile(&prev_log_prefix);
+        let prev_log_prefix = Path::new(&prev_dir);
+        let output_content = read_most_recent_logfile(prev_log_prefix, &workspace);
 
         // Assert: We should successfully read from previous attempt
         assert_eq!(error_content, error_msg, "Should read error from prev dir");
@@ -230,9 +212,8 @@ fn test_xsd_retry_should_read_from_previous_attempt() {
 
         // Current attempt's directory (doesn't exist yet)
         let curr_dir = format!(".agent/logs/reviewer_review_{}_attempt_{}", j, retry_num);
-        let curr_dir_path = base_path.join(&curr_dir);
         assert!(
-            !curr_dir_path.exists(),
+            !workspace.exists(Path::new(&curr_dir)),
             "Current attempt dir should not exist yet"
         );
     });

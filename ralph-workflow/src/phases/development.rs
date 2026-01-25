@@ -350,7 +350,7 @@ pub fn run_development_iteration_with_xml_retry(
                     ctx.logger.info(&format!("  XSD error: {}", error));
                 }
 
-                let last_output = read_last_development_output(Path::new(&log_dir));
+                let last_output = read_last_development_output(Path::new(&log_dir), ctx.workspace);
 
                 prompt_developer_iteration_xsd_retry_with_context(
                     ctx.template_context,
@@ -383,7 +383,7 @@ pub fn run_development_iteration_with_xml_retry(
                     ctx.logger.info(&format!("  XSD error: {}", error));
                 }
 
-                let last_output = read_last_development_output(Path::new(&log_dir));
+                let last_output = read_last_development_output(Path::new(&log_dir), ctx.workspace);
 
                 prompt_developer_iteration_xsd_retry_with_context(
                     ctx.template_context,
@@ -439,7 +439,7 @@ pub fn run_development_iteration_with_xml_retry(
 
             // Extract and validate the development result XML
             let log_dir_path = Path::new(&log_dir);
-            let dev_content = read_last_development_output(log_dir_path);
+            let dev_content = read_last_development_output(log_dir_path, ctx.workspace);
 
             // Extract session info for potential retry (only if we don't have it yet)
             // This is best-effort - if extraction fails, we just won't use session continuation
@@ -664,7 +664,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             }
 
             // Read the last output for retry context (used as fallback if session continuation fails)
-            let last_output = read_last_planning_output(Path::new(&log_dir));
+            let last_output = read_last_planning_output(Path::new(&log_dir), ctx.workspace);
 
             prompt_planning_xsd_retry_with_context(
                 ctx.template_context,
@@ -705,7 +705,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
 
         // Extract and validate the plan XML
         let log_dir_path = Path::new(&log_dir);
-        let plan_content = read_last_planning_output(log_dir_path);
+        let plan_content = read_last_planning_output(log_dir_path, ctx.workspace);
 
         // Extract session info for potential retry (only if we don't have it yet)
         // This is best-effort - if extraction fails, we just won't use session continuation
@@ -819,8 +819,11 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
 /// The `log_prefix` is a path prefix (not a directory) like `.agent/logs/planning_1`.
 /// Actual log files are named `{prefix}_{agent}_{model}.log`, e.g.:
 /// `.agent/logs/planning_1_ccs-glm_0.log`
-fn read_last_planning_output(log_prefix: &Path) -> String {
-    read_last_output_from_prefix(log_prefix)
+fn read_last_planning_output(
+    log_prefix: &Path,
+    workspace: &dyn crate::workspace::Workspace,
+) -> String {
+    read_last_output_from_prefix(log_prefix, workspace)
 }
 
 /// Read the last development output from logs.
@@ -828,16 +831,22 @@ fn read_last_planning_output(log_prefix: &Path) -> String {
 /// The `log_prefix` is a path prefix (not a directory) like `.agent/logs/development_1`.
 /// Actual log files are named `{prefix}_{agent}_{model}.log`, e.g.:
 /// `.agent/logs/development_1_ccs-glm_0.log`
-fn read_last_development_output(log_prefix: &Path) -> String {
-    read_last_output_from_prefix(log_prefix)
+fn read_last_development_output(
+    log_prefix: &Path,
+    workspace: &dyn crate::workspace::Workspace,
+) -> String {
+    read_last_output_from_prefix(log_prefix, workspace)
 }
 
 /// Read the most recent log file matching a prefix pattern.
 ///
 /// This is a shared helper for reading log output. Truncation of large prompts
 /// is handled centrally in `build_agent_command` to prevent E2BIG errors.
-fn read_last_output_from_prefix(log_prefix: &Path) -> String {
-    crate::pipeline::logfile::read_most_recent_logfile(log_prefix)
+fn read_last_output_from_prefix(
+    log_prefix: &Path,
+    workspace: &dyn crate::workspace::Workspace,
+) -> String {
+    crate::pipeline::logfile::read_most_recent_logfile(log_prefix, workspace)
 }
 
 /// Format XSD error for display.

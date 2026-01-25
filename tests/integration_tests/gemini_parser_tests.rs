@@ -10,7 +10,7 @@ use ralph_workflow::config::Verbosity;
 use ralph_workflow::json_parser::gemini::GeminiParser;
 use ralph_workflow::json_parser::printer::{SharedPrinter, TestPrinter};
 use ralph_workflow::logger::Colors;
-use ralph_workflow::workspace::MemoryWorkspace;
+use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
 use std::cell::RefCell;
 use std::io::BufReader;
 use std::path::Path;

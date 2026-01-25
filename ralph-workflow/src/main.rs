@@ -38,6 +38,7 @@ mod prompts;
 mod reducer;
 mod review_metrics;
 mod templates;
+mod workspace;
 
 use crate::cli::Args;
 use clap::Parser;

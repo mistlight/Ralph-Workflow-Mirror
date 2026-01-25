@@ -26,7 +26,7 @@
 //! - `ccs/glm` → `ccs-glm`
 //! - `opencode/anthropic/claude-sonnet-4` → `opencode-anthropic-claude-sonnet-4`
 
-use std::fs;
+use crate::workspace::Workspace;
 use std::path::{Path, PathBuf};
 
 /// Sanitize an agent name for use in file paths.
@@ -132,6 +132,7 @@ pub fn extract_agent_name_from_logfile(log_file: &Path, log_prefix: &Path) -> Op
 /// # Arguments
 ///
 /// * `log_prefix` - The prefix path (e.g., ".agent/logs/planning_1")
+/// * `workspace` - The workspace to search in
 ///
 /// # Returns
 ///
@@ -142,36 +143,45 @@ pub fn extract_agent_name_from_logfile(log_file: &Path, log_prefix: &Path) -> Op
 /// ```ignore
 /// use std::path::Path;
 /// use ralph_workflow::pipeline::logfile::find_most_recent_logfile;
+/// use ralph_workflow::workspace::WorkspaceFs;
 ///
+/// let workspace = WorkspaceFs::new("/repo".into());
 /// let prefix = Path::new(".agent/logs/planning_1");
-/// if let Some(log_file) = find_most_recent_logfile(prefix) {
+/// if let Some(log_file) = find_most_recent_logfile(prefix, &workspace) {
 ///     println!("Most recent log: {:?}", log_file);
 /// }
 /// ```
-pub fn find_most_recent_logfile(log_prefix: &Path) -> Option<PathBuf> {
+pub fn find_most_recent_logfile(log_prefix: &Path, workspace: &dyn Workspace) -> Option<PathBuf> {
     let parent = log_prefix.parent().unwrap_or(Path::new("."));
     let prefix_str = log_prefix.file_name().and_then(|s| s.to_str())?;
 
     let mut best_file: Option<(PathBuf, std::time::SystemTime)> = None;
 
-    if let Ok(entries) = fs::read_dir(parent) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                // Match files that start with our prefix, have more content, and end with .log
-                if filename.starts_with(prefix_str)
-                    && filename.len() > prefix_str.len()
-                    && filename.ends_with(".log")
-                {
-                    // Get modification time for this file
-                    if let Ok(metadata) = fs::metadata(&path) {
-                        if let Ok(modified) = metadata.modified() {
+    if let Ok(entries) = workspace.read_dir(parent) {
+        for entry in entries {
+            if entry.is_file() {
+                if let Some(filename) = entry.file_name().and_then(|s| s.to_str()) {
+                    // Match files that start with our prefix, have more content, and end with .log
+                    if filename.starts_with(prefix_str)
+                        && filename.len() > prefix_str.len()
+                        && filename.ends_with(".log")
+                    {
+                        // Get modification time for this file
+                        if let Some(modified) = entry.modified() {
                             match &best_file {
-                                None => best_file = Some((path.clone(), modified)),
+                                None => best_file = Some((entry.path().to_path_buf(), modified)),
                                 Some((_, best_time)) if modified > *best_time => {
-                                    best_file = Some((path.clone(), modified));
+                                    best_file = Some((entry.path().to_path_buf(), modified));
                                 }
                                 _ => {}
+                            }
+                        } else {
+                            // No modification time available, use this if we have no best yet
+                            if best_file.is_none() {
+                                best_file = Some((
+                                    entry.path().to_path_buf(),
+                                    std::time::SystemTime::UNIX_EPOCH,
+                                ));
                             }
                         }
                     }
@@ -191,24 +201,22 @@ pub fn find_most_recent_logfile(log_prefix: &Path) -> Option<PathBuf> {
 /// # Arguments
 ///
 /// * `log_prefix` - The prefix path (e.g., ".agent/logs/planning_1")
+/// * `workspace` - The workspace to read from
 ///
 /// # Returns
 ///
 /// The content of the most recent matching log file, or an empty string if not found.
-pub fn read_most_recent_logfile(log_prefix: &Path) -> String {
-    find_most_recent_logfile(log_prefix)
-        .and_then(|path| fs::read_to_string(path).ok())
+pub fn read_most_recent_logfile(log_prefix: &Path, workspace: &dyn Workspace) -> String {
+    find_most_recent_logfile(log_prefix, workspace)
+        .and_then(|path| workspace.read(&path).ok())
         .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::Write;
-    use std::thread;
-    use std::time::Duration;
-    use tempfile::TempDir;
+    use crate::workspace::MemoryWorkspace;
+    use std::time::{Duration, SystemTime};
 
     #[test]
     fn test_sanitize_agent_name() {
@@ -265,18 +273,52 @@ mod tests {
 
     #[test]
     fn test_find_most_recent_logfile() {
-        let dir = TempDir::new().unwrap();
-        let prefix = dir.path().join("test_1");
+        // Create workspace with two log files with different modification times
+        let time1 = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        let time2 = SystemTime::UNIX_EPOCH + Duration::from_secs(2000);
 
-        // Create two log files with different modification times
-        let file1 = dir.path().join("test_1_agent-a_0.log");
-        let file2 = dir.path().join("test_1_agent-b_0.log");
+        let workspace = MemoryWorkspace::new_test()
+            .with_file_at_time(".agent/logs/test_1_agent-a_0.log", "old", time1)
+            .with_file_at_time(".agent/logs/test_1_agent-b_0.log", "new", time2);
 
-        File::create(&file1).unwrap().write_all(b"old").unwrap();
-        thread::sleep(Duration::from_millis(10));
-        File::create(&file2).unwrap().write_all(b"new").unwrap();
+        let prefix = Path::new(".agent/logs/test_1");
+        let result = find_most_recent_logfile(prefix, &workspace);
+        assert_eq!(
+            result,
+            Some(PathBuf::from(".agent/logs/test_1_agent-b_0.log"))
+        );
+    }
 
-        let result = find_most_recent_logfile(&prefix);
-        assert_eq!(result, Some(file2));
+    #[test]
+    fn test_find_most_recent_logfile_no_match() {
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/logs/other_1_claude_0.log", "content");
+
+        let prefix = Path::new(".agent/logs/test_1");
+        let result = find_most_recent_logfile(prefix, &workspace);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_read_most_recent_logfile() {
+        let time1 = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        let time2 = SystemTime::UNIX_EPOCH + Duration::from_secs(2000);
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_file_at_time(".agent/logs/test_1_agent-a_0.log", "old content", time1)
+            .with_file_at_time(".agent/logs/test_1_agent-b_0.log", "new content", time2);
+
+        let prefix = Path::new(".agent/logs/test_1");
+        let result = read_most_recent_logfile(prefix, &workspace);
+        assert_eq!(result, "new content");
+    }
+
+    #[test]
+    fn test_read_most_recent_logfile_empty_when_not_found() {
+        let workspace = MemoryWorkspace::new_test();
+
+        let prefix = Path::new(".agent/logs/nonexistent");
+        let result = read_most_recent_logfile(prefix, &workspace);
+        assert_eq!(result, "");
     }
 }
