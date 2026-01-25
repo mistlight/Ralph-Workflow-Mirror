@@ -59,7 +59,9 @@
 
 use clap::error::ErrorKind;
 use clap::Parser;
+use std::sync::Mutex;
 use std::sync::Arc;
+use test_helpers::CWD_LOCK;
 
 /// Run ralph workflow directly without spawning a process.
 ///
@@ -397,6 +399,18 @@ impl Drop for DirGuard {
 ///
 /// See the [module-level documentation](self) for details on why this is required.
 pub fn with_cwd_guard<F: FnOnce()>(dir: &std::path::Path, f: F) {
+    let lock = CWD_LOCK.get_or_init(|| Mutex::new(()));
+
+    // Clear poison if a previous test panicked while holding the lock
+    let _cwd_guard = match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            // Clear the poison and continue - the directory will be restored
+            // by the DirGuard even if the test panics
+            poisoned.into_inner()
+        }
+    };
+
     let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
     std::env::set_current_dir(dir).expect("Failed to change directory");
     let _guard = DirGuard(old_dir);
@@ -443,6 +457,16 @@ pub fn with_cwd_guard<F: FnOnce()>(dir: &std::path::Path, f: F) {
 ///
 /// See the [module-level documentation](self) for details on why this is required.
 pub fn with_cwd_guard_result<F: FnOnce() -> R, R>(dir: &std::path::Path, f: F) -> R {
+    let lock = CWD_LOCK.get_or_init(|| Mutex::new(()));
+
+    // Clear poison if a previous test panicked while holding the lock
+    let _cwd_guard = match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            poisoned.into_inner()
+        }
+    };
+
     let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
     std::env::set_current_dir(dir).expect("Failed to change directory");
     let _guard = DirGuard(old_dir);
