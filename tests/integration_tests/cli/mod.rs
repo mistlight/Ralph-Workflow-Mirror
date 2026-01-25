@@ -18,7 +18,7 @@
 //! - Uses `TempDir` for filesystem isolation
 //! - Tests are deterministic and focus on successful execution and file side effects
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
+use crate::common::{mock_executor_with_success, run_ralph_cli};
 use crate::test_timeout::with_default_timeout;
 use std::fs;
 use tempfile::TempDir;
@@ -36,7 +36,8 @@ use test_helpers::init_git_repo;
 fn ralph_prints_version() {
     with_default_timeout(|| {
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--version"], executor).unwrap();
+        // --version doesn't need a working directory
+        run_ralph_cli(&["--version"], executor, None).unwrap();
     });
 }
 
@@ -49,7 +50,8 @@ fn ralph_prints_version() {
 fn ralph_help_shows_usage() {
     with_default_timeout(|| {
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--help"], executor).unwrap();
+        // --help doesn't need a working directory
+        run_ralph_cli(&["--help"], executor, None).unwrap();
     });
 }
 
@@ -65,7 +67,8 @@ fn ralph_help_shows_usage() {
 fn ralph_list_templates_shows_available() {
     with_default_timeout(|| {
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--list-templates"], executor).unwrap();
+        // --list-templates doesn't need a working directory
+        run_ralph_cli(&["--list-templates"], executor, None).unwrap();
     });
 }
 
@@ -84,9 +87,7 @@ fn ralph_diagnose_shows_system_info() {
         let _ = init_git_repo(&dir);
 
         let executor = mock_executor_with_success();
-        with_cwd_guard(dir.path(), || {
-            run_ralph_cli(&["--diagnose"], executor).unwrap();
-        });
+        run_ralph_cli(&["--diagnose"], executor, Some(dir.path())).unwrap();
     });
 }
 
@@ -101,9 +102,7 @@ fn ralph_diagnose_short_flag_works() {
         let _ = init_git_repo(&dir);
 
         let executor = mock_executor_with_success();
-        with_cwd_guard(dir.path(), || {
-            run_ralph_cli(&["-d"], executor).unwrap();
-        });
+        run_ralph_cli(&["-d"], executor, Some(dir.path())).unwrap();
     });
 }
 
@@ -149,9 +148,7 @@ reviewer = ["codex"]
 
         let executor = mock_executor_with_success();
         std::env::set_var("XDG_CONFIG_HOME", &config_home);
-        with_cwd_guard(dir.path(), || {
-            run_ralph_cli(&["--dry-run"], executor).unwrap();
-        });
+        run_ralph_cli(&["--dry-run"], executor, Some(dir.path())).unwrap();
     });
 }
 
@@ -195,8 +192,6 @@ reviewer = ["codex"]
 
         // Note: --init in non-interactive mode returns early without creating PROMPT.md
         // The actual PROMPT.md creation happens in interactive mode
-        with_cwd_guard(dir.path(), || {
-            run_ralph_cli(&["--init", "bug-fix"], executor).unwrap();
-        });
+        run_ralph_cli(&["--init", "bug-fix"], executor, Some(dir.path())).unwrap();
     });
 }

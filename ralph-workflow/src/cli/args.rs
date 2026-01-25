@@ -714,6 +714,12 @@ pub struct Args {
     )]
     pub config: Option<std::path::PathBuf>,
 
+    /// Internal: Working directory override for testing.
+    /// When set, app::run uses this path instead of discovering the repo root
+    /// and does not change the global CWD. This enables test parallelism.
+    #[arg(skip)]
+    pub working_dir_override: Option<std::path::PathBuf>,
+
     /// Initialize PROMPT.md from a Work Guide and exit
     ///
     /// This is a legacy alias for `--init <template>`. Consider using `--init` instead.

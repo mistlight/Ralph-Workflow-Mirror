@@ -21,7 +21,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
+use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
@@ -102,16 +102,14 @@ fn ralph_zero_reviewer_reviews_skips_review() {
         // Create a change for the diff
         write_file(dir.path().join("initial.txt"), "updated content");
 
-        with_cwd_guard(dir.path(), || {
-            let _env_guard = base_env();
-            std::env::set_var("XDG_CONFIG_HOME", &config_home); // Use isolated config
-            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review phase
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
+        let _env_guard = base_env();
+        std::env::set_var("XDG_CONFIG_HOME", &config_home); // Use isolated config
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review phase
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
-            // ISSUES.md should NOT be created when review is skipped
-            assert!(!dir.path().join(".agent/ISSUES.md").exists());
-        });
+        // ISSUES.md should NOT be created when review is skipped
+        assert!(!dir.path().join(".agent/ISSUES.md").exists());
     });
 }
 
@@ -134,14 +132,12 @@ fn ralph_succeeds_without_review_phase() {
         // Create a change
         write_file(dir.path().join("test.txt"), "new content");
 
-        with_cwd_guard(dir.path(), || {
-            let _env_guard = base_env();
-            std::env::set_var("XDG_CONFIG_HOME", &config_home); // Use isolated config
-            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
-        });
+        let _env_guard = base_env();
+        std::env::set_var("XDG_CONFIG_HOME", &config_home); // Use isolated config
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
     });
 }
 
@@ -164,14 +160,12 @@ fn ralph_commit_created_when_review_skipped() {
         // Create a change
         write_file(dir.path().join("test.txt"), "new content");
 
-        with_cwd_guard(dir.path(), || {
-            let _env_guard = base_env();
-            std::env::set_var("XDG_CONFIG_HOME", &config_home); // Use isolated config
-            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
-        });
+        let _env_guard = base_env();
+        std::env::set_var("XDG_CONFIG_HOME", &config_home); // Use isolated config
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
         // Verify commit was created
         let repo = git2::Repository::open(dir.path()).unwrap();

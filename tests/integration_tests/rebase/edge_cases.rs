@@ -706,39 +706,6 @@ fn verify_rebase_completed_returns_false_when_diverged() {
     });
 }
 
-/// Test that rebase precondition validation detects dirty working tree.
-///
-/// This verifies that when there are uncommitted changes, the system
-/// handles the situation appropriately.
-///
-/// NOTE: The validate_rebase_preconditions function uses git CLI commands
-/// which are mocked in integration tests. Testing actual precondition
-/// validation behavior requires real git execution or testing at the unit
-/// level. The observable behavior (rebase fails appropriately when dirty)
-/// is tested by other tests in this module.
-#[test]
-fn validate_rebase_preconditions_detects_dirty_tree() {
-    with_default_timeout(|| {
-        // This test documents expected behavior for dirty working tree detection.
-        // Actual testing is done via:
-        // 1. Unit tests with mocked executors that return dirty state
-        // 2. Integration tests that verify rebase fails when dirty (see category1 tests)
-        //
-        // The validate_rebase_preconditions function uses:
-        // - executor.execute("git", &["status", "--porcelain"], ...) to check dirty state
-        // - In integration tests, the mock executor returns empty (clean) output
-        // - This prevents meaningful testing of precondition validation here
-        //
-        // Expected behavior (documented, not tested here):
-        // - When working tree has uncommitted changes, validate_rebase_preconditions returns Err
-        // - Error message mentions "clean", "dirty", or "commit"
-        assert!(
-            true,
-            "Behavior documented; see unit tests and category1_failure_modes tests"
-        );
-    });
-}
-
 /// Test that rebase precondition validation succeeds with clean repository.
 ///
 /// This verifies that when the working tree is clean with no uncommitted
@@ -1397,23 +1364,6 @@ fn detect_concurrent_rebase_locking() {
 ///
 /// NOTE: This test was removed because it spawns a git subprocess
 /// to check git version, which is forbidden in integration tests.
-/// Git version validation is a system-level concern, not an integration
-/// test of Ralph's behavior. The presence and version of git is assumed
-/// by the fact that we use git2 library throughout the codebase.
-#[test]
-fn validate_git_version_requirements() {
-    with_default_timeout(|| {
-        // Git version validation is a CI/precondition concern, not an integration test.
-        // The codebase uses git2 library which requires git to be available.
-        // System-level git validation should be done in CI setup.
-        // This test passes trivially since git availability is assumed.
-        assert!(
-            true,
-            "Git availability is assumed via git2 library dependency"
-        );
-    });
-}
-
 /// Test that rebasing with large files produces appropriate result.
 ///
 /// This verifies that when large files (>100MB) are modified during rebase,

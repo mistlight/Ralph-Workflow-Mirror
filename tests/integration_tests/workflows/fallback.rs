@@ -20,7 +20,7 @@
 
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
+use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
@@ -80,22 +80,20 @@ fn ralph_skips_phases_with_zero_iterations() {
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
-        with_cwd_guard(dir.path(), || {
-            let _env_guard = base_env();
-            std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Skip developer
-            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review
+        let _env_guard = base_env();
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Skip developer
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review
 
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
-            // Verify pipeline completed successfully
-            // STATUS.md may be created for pipeline state tracking
-            // ISSUES.md is only created when --no-isolation is used (default is isolation)
-            assert!(
-                !dir.path().join(".agent/ISSUES.md").exists(),
-                "ISSUES.md should not exist in isolation mode (default)"
-            );
-        });
+        // Verify pipeline completed successfully
+        // STATUS.md may be created for pipeline state tracking
+        // ISSUES.md is only created when --no-isolation is used (default is isolation)
+        assert!(
+            !dir.path().join(".agent/ISSUES.md").exists(),
+            "ISSUES.md should not exist in isolation mode (default)"
+        );
     });
 }
 
@@ -118,19 +116,17 @@ fn ralph_succeeds_with_zero_iterations() {
         // Create a change
         write_file(dir.path().join("test.txt"), "new content");
 
-        with_cwd_guard(dir.path(), || {
-            let _env_guard = base_env();
-            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+        let _env_guard = base_env();
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
-            // Verify a commit was created
-            let repo = git2::Repository::open(dir.path()).unwrap();
-            let head = repo.head().unwrap();
-            let commit = head.peel_to_commit().unwrap();
-            assert!(!commit.message().unwrap().is_empty());
-        });
+        // Verify a commit was created
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        let head = repo.head().unwrap();
+        let commit = head.peel_to_commit().unwrap();
+        assert!(!commit.message().unwrap().is_empty());
     });
 }

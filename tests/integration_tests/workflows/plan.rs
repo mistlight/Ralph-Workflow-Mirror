@@ -21,7 +21,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
+use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
 
@@ -99,17 +99,15 @@ fn ralph_skips_plan_phase_when_zero_developer_iters() {
         // Create a file to have something to commit
         fs::write(dir.path().join("test.txt"), "content").unwrap();
 
-        with_cwd_guard(dir.path(), || {
-            let _env_guard = base_env(&config_home);
-            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+        let _env_guard = base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
-            // Verify PLAN.md was never created (since planning was skipped)
-            assert!(!dir.path().join(".agent/PLAN.md").exists());
-        });
+        // Verify PLAN.md was never created (since planning was skipped)
+        assert!(!dir.path().join(".agent/PLAN.md").exists());
     });
 }
 
@@ -133,19 +131,17 @@ fn ralph_commit_without_plan_succeeds() {
         // Create a new file to have something to commit in the test run
         fs::write(dir.path().join("test.txt"), "content").unwrap();
 
-        with_cwd_guard(dir.path(), || {
-            let _env_guard = base_env(&config_home);
-            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+        let _env_guard = base_env(&config_home);
+        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
-            // Verify a commit was created (should have 2 commits: initial + test)
-            let repo = git2::Repository::open(dir.path()).unwrap();
-            let head = repo.head().unwrap();
-            let commit = head.peel_to_commit().unwrap();
-            assert!(!commit.message().unwrap().is_empty());
-        });
+        // Verify a commit was created (should have 2 commits: initial + test)
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        let head = repo.head().unwrap();
+        let commit = head.peel_to_commit().unwrap();
+        assert!(!commit.message().unwrap().is_empty());
     });
 }

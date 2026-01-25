@@ -23,7 +23,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
+use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
@@ -111,9 +111,7 @@ fn test_commit_message_generated_with_simple_diff() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
         let executor = mock_executor_with_success();
-        with_cwd_guard(dir.path(), || {
-            run_ralph_cli(&[], executor).unwrap();
-        });
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
         // Verify a commit was created with a non-empty message
         let message = get_last_commit_message(&repo);
@@ -147,9 +145,7 @@ fn test_commit_message_generated_with_multiple_files() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
         let executor = mock_executor_with_success();
-        with_cwd_guard(dir.path(), || {
-            run_ralph_cli(&[], executor).unwrap();
-        });
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
         let message = get_last_commit_message(&repo);
         assert!(!message.trim().is_empty());
@@ -195,9 +191,7 @@ fn test_commit_created_with_diff_content() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
         let executor = mock_executor_with_success();
-        with_cwd_guard(dir.path(), || {
-            run_ralph_cli(&[], executor).unwrap();
-        });
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
         // Verify commit was created
         let message = get_last_commit_message(&repo);
@@ -226,9 +220,7 @@ fn test_commit_succeeds_without_developer_or_review() {
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
         let executor = mock_executor_with_success();
-        with_cwd_guard(dir.path(), || {
-            run_ralph_cli(&[], executor).unwrap();
-        });
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
 
         // Verify a commit was created (we should have 2 commits now)
         let repo = git2::Repository::open(dir.path()).unwrap();

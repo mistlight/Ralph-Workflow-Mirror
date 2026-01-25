@@ -16,7 +16,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard, EnvGuard};
+use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
@@ -73,13 +73,11 @@ fn ralph_succeeds_without_commit_message_file() {
         // Create a file to have something to commit
         fs::write(dir.path().join("test.txt"), "test content").unwrap();
 
-        with_cwd_guard(dir.path(), || {
-            let _env_guard = base_env();
-            let executor = mock_executor_with_success();
+        let _env_guard = base_env();
+        let executor = mock_executor_with_success();
 
-            // Should succeed - auto-commit will generate a message
-            run_ralph_cli(&[], executor).unwrap();
-        });
+        // Should succeed - auto-commit will generate a message
+        run_ralph_cli(&[], executor, Some(dir.path())).unwrap();
     });
 }
 
@@ -104,20 +102,18 @@ fn ralph_show_commit_msg_displays_message() {
         )
         .unwrap();
 
-        with_cwd_guard(dir.path(), || {
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&["--show-commit-msg"], executor).unwrap();
-        });
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&["--show-commit-msg"], executor, Some(dir.path())).unwrap();
     });
 }
 
-/// Test that the `--show-commit-msg` flag uses the repo root commit message from a subdirectory.
+/// Test that the `--show-commit-msg` flag reads from the specified repo root.
 ///
 /// This verifies that when a user invokes ralph with the `--show-commit-msg` flag
-/// from a subdirectory, the command reads the commit-message.txt from the repo root
-/// rather than from the subdirectory.
+/// and specifies a working directory, the command reads the commit-message.txt
+/// from that directory regardless of where subdirectories might have their own files.
 #[test]
-fn ralph_show_commit_msg_uses_repo_root_from_subdir() {
+fn ralph_show_commit_msg_reads_from_working_dir() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
@@ -129,7 +125,7 @@ fn ralph_show_commit_msg_uses_repo_root_from_subdir() {
         )
         .unwrap();
 
-        // Subdir has a different file that should NOT be read (we always chdir to repo root)
+        // Subdir has a different file that should NOT be read (we pass the repo root explicitly)
         let subdir = dir.path().join("nested/dir");
         fs::create_dir_all(subdir.join(".agent")).unwrap();
         fs::write(
@@ -138,10 +134,9 @@ fn ralph_show_commit_msg_uses_repo_root_from_subdir() {
         )
         .unwrap();
 
-        with_cwd_guard(&subdir, || {
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&["--show-commit-msg"], executor).unwrap();
-        });
+        // Explicitly specify repo root as working directory
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&["--show-commit-msg"], executor, Some(dir.path())).unwrap();
     });
 }
 
@@ -157,13 +152,11 @@ fn ralph_show_commit_msg_fails_if_missing() {
 
         // Don't create commit-message.txt
 
-        with_cwd_guard(dir.path(), || {
-            let executor = mock_executor_with_success();
-            let result = run_ralph_cli(&["--show-commit-msg"], executor);
+        let executor = mock_executor_with_success();
+        let result = run_ralph_cli(&["--show-commit-msg"], executor, Some(dir.path()));
 
-            // Should fail
-            assert!(result.is_err());
-        });
+        // Should fail
+        assert!(result.is_err());
     });
 }
 
@@ -192,19 +185,17 @@ fn ralph_apply_commit_creates_commit() {
         )
         .unwrap();
 
-        with_cwd_guard(dir.path(), || {
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&["--apply-commit"], executor).unwrap();
+        let executor = mock_executor_with_success();
+        run_ralph_cli(&["--apply-commit"], executor, Some(dir.path())).unwrap();
 
-            // Verify the commit was created
-            let repo = git2::Repository::open(dir.path()).unwrap();
-            let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
-            let msg = head_commit.message().unwrap_or_default();
-            assert!(msg.contains("feat: add new file"));
+        // Verify the commit was created
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let msg = head_commit.message().unwrap_or_default();
+        assert!(msg.contains("feat: add new file"));
 
-            // Verify commit-message.txt was cleaned up
-            assert!(!dir.path().join(".agent/commit-message.txt").exists());
-        });
+        // Verify commit-message.txt was cleaned up
+        assert!(!dir.path().join(".agent/commit-message.txt").exists());
     });
 }
 
@@ -220,12 +211,10 @@ fn ralph_apply_commit_fails_without_message_file() {
 
         // Don't create commit-message.txt
 
-        with_cwd_guard(dir.path(), || {
-            let executor = mock_executor_with_success();
-            let result = run_ralph_cli(&["--apply-commit"], executor);
+        let executor = mock_executor_with_success();
+        let result = run_ralph_cli(&["--apply-commit"], executor, Some(dir.path()));
 
-            // Should fail
-            assert!(result.is_err());
-        });
+        // Should fail
+        assert!(result.is_err());
     });
 }

@@ -584,9 +584,8 @@ pub fn git_commit(
 /// # Note
 ///
 /// This function is part of the test infrastructure (used by `RealGit` which
-/// implements the `GitOps` trait for integration testing). The compiler
-/// reports it as "unused" because `RealGit` is only used in integration tests,
-/// but it is legitimately exported and used through the public API.
+/// implements the `GitOps` trait for integration testing).
+#[cfg(any(test, feature = "test-utils"))]
 pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
@@ -628,12 +627,9 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
 /// This is a helper function for `get_git_diff_from_start` that handles the
 /// case of a repository with no commits yet.
 ///
-/// # Note
-///
 /// This function is part of the test infrastructure (used by `RealGit` which
-/// implements the `GitOps` trait for integration testing). The compiler
-/// reports it as "unused" because `RealGit` is only used in integration tests,
-/// but it is legitimately exported and used through the public API.
+/// implements the `GitOps` trait for integration testing).
+#[cfg(any(test, feature = "test-utils"))]
 fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
     let mut diff_opts = git2::DiffOptions::new();
     diff_opts.include_untracked(true);
@@ -665,12 +661,9 @@ fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
 /// - The diff cannot be generated
 /// - The starting commit file exists but is invalid
 ///
-/// # Note
-///
 /// This function is part of the test infrastructure (used by `RealGit` which
-/// implements the `GitOps` trait for integration testing). The compiler
-/// reports it as "unused" because `RealGit` is only used in integration tests,
-/// but it is legitimately exported and used through the public API.
+/// implements the `GitOps` trait for integration testing).
+#[cfg(any(test, feature = "test-utils"))]
 pub fn get_git_diff_from_start() -> io::Result<String> {
     use crate::git_helpers::start_commit::{load_start_point, save_start_commit, StartPoint};
 

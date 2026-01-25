@@ -134,15 +134,16 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     }
 
     // Validate agents and set up git repo and PROMPT.md
-    let Some(repo_root) = validate_and_setup_agents(
-        &config,
-        &registry,
-        &developer_agent,
-        &reviewer_agent,
-        &config_path,
+    let Some(repo_root) = validate_and_setup_agents(AgentSetupParams {
+        config: &config,
+        registry: &registry,
+        developer_agent: &developer_agent,
+        reviewer_agent: &reviewer_agent,
+        config_path: &config_path,
         colors,
-        &logger,
-    )?
+        logger: &logger,
+        working_dir_override: args.working_dir_override.as_deref(),
+    })?
     else {
         return Ok(());
     };
@@ -374,19 +375,35 @@ fn prepare_pipeline_or_exit(
     Ok(Some(ctx))
 }
 
+/// Parameters for agent validation and setup.
+struct AgentSetupParams<'a> {
+    config: &'a crate::config::Config,
+    registry: &'a AgentRegistry,
+    developer_agent: &'a str,
+    reviewer_agent: &'a str,
+    config_path: &'a std::path::Path,
+    colors: Colors,
+    logger: &'a Logger,
+    /// If Some, use this path as the working directory without discovering the repo root
+    /// or changing the global CWD. This enables test parallelism.
+    working_dir_override: Option<&'a std::path::Path>,
+}
+
 /// Validates agent commands and workflow capability, then sets up git repo and PROMPT.md.
 ///
 /// Returns `Some(repo_root)` if setup succeeded and should continue.
 /// Returns `None` if the user declined PROMPT.md creation (to exit early).
-fn validate_and_setup_agents(
-    config: &crate::config::Config,
-    registry: &AgentRegistry,
-    developer_agent: &str,
-    reviewer_agent: &str,
-    config_path: &std::path::Path,
-    colors: Colors,
-    logger: &Logger,
-) -> anyhow::Result<Option<std::path::PathBuf>> {
+fn validate_and_setup_agents(params: AgentSetupParams<'_>) -> anyhow::Result<Option<std::path::PathBuf>> {
+    let AgentSetupParams {
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        config_path,
+        colors,
+        logger,
+        working_dir_override,
+    } = params;
     // Validate agent commands exist
     validate_agent_commands(
         config,
@@ -405,10 +422,18 @@ fn validate_and_setup_agents(
         config_path,
     )?;
 
-    // Set up git repo and working directory
-    require_git_repo()?;
-    let repo_root = get_repo_root()?;
-    env::set_current_dir(&repo_root)?;
+    // Determine repo root - use override if provided (for testing), otherwise discover
+    let repo_root = if let Some(override_dir) = working_dir_override {
+        // Testing mode: use provided directory, skip CWD change
+        // This enables parallel test execution without mutex contention
+        override_dir.to_path_buf()
+    } else {
+        // Production mode: discover repo root and change CWD
+        require_git_repo()?;
+        let root = get_repo_root()?;
+        env::set_current_dir(&root)?;
+        root
+    };
 
     // Set up PROMPT.md if needed (may return None to exit early)
     let should_continue = setup_git_and_prompt_file(config, colors, logger)?;

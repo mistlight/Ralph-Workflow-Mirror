@@ -23,45 +23,18 @@
 //!
 //! # Working Directory Management
 //!
-//! **CRITICAL:** Tests that change the current working directory MUST use
-//! [`with_cwd_guard`] to ensure the directory is restored after the test.
-//!
-//! ## Why This Matters
-//!
-//! Integration tests use `TempDir` which automatically deletes the temporary
-//! directory when dropped. If a test changes to a temporary directory without
-//! restoring it, subsequent tests will run in a deleted directory, causing
-//! "No such file or directory" errors.
-//!
-//! ## The Wrong Way (DO NOT DO THIS)
+//! Integration tests support parallel execution by passing `working_dir` to
+//! `run_ralph_cli()` instead of changing the global current working directory.
 //!
 //! ```ignore
-//! // ❌ WRONG: Manual directory change without restoration
 //! let dir = TempDir::new().unwrap();
-//! std::env::set_current_dir(dir.path()).unwrap();
-//! // ... test code ...
-//! // When test ends, dir is dropped but CWD still points to deleted directory!
+//! let executor = mock_executor_with_success();
+//! run_ralph_cli(&["--init"], executor, Some(dir.path())).unwrap();
 //! ```
-//!
-//! ## The Right Way (USE THIS INSTEAD)
-//!
-//! ```ignore
-//! // ✅ CORRECT: Automatic directory restoration
-//! let dir = TempDir::new().unwrap();
-//! with_cwd_guard(dir.path(), || {
-//!     // ... test code ...
-//!     // CWD is automatically restored when this closure ends
-//! });
-//! ```
-//!
-//! The [`with_cwd_guard`] function uses an RAII guard to restore the original
-//! directory even if the test panics.
 
 use clap::error::ErrorKind;
 use clap::Parser;
 use std::sync::Arc;
-use std::sync::Mutex;
-use test_helpers::CWD_LOCK;
 
 /// Run ralph workflow directly without spawning a process.
 ///
@@ -78,6 +51,8 @@ use test_helpers::CWD_LOCK;
 ///
 /// * `args` - Command line arguments to pass to ralph
 /// * `executor` - Process executor for external process execution
+/// * `working_dir` - Optional working directory override for test parallelism.
+///   When provided, ralph uses this path without changing the global CWD.
 ///
 /// # Returns
 ///
@@ -97,10 +72,9 @@ use test_helpers::CWD_LOCK;
 /// fn test_init() {
 ///     with_default_timeout(|| {
 ///         let dir = TempDir::new().unwrap();
-///         std::env::set_current_dir(dir.path()).unwrap();
-///
+///         // No need to change CWD - pass working_dir instead
 ///         let executor = mock_executor_with_success();
-///         run_ralph_cli(&["--init"], executor).unwrap();
+///         run_ralph_cli(&["--init"], executor, Some(dir.path())).unwrap();
 ///
 ///         // Check side effects
 ///         assert!(dir.path().join("PROMPT.md").exists());
@@ -110,8 +84,9 @@ use test_helpers::CWD_LOCK;
 pub fn run_ralph_cli(
     args: &[&str],
     executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+    working_dir: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
-    run_ralph_cli_with_config(args, executor, None)
+    run_ralph_cli_with_config(args, executor, None, working_dir)
 }
 
 /// Run ralph workflow directly without spawning a process, with optional config path.
@@ -125,10 +100,13 @@ pub fn run_ralph_cli(
 /// * `args` - Command line arguments to pass to ralph
 /// * `executor` - Process executor for external process execution
 /// * `config_path` - Optional path to config file (defaults to None)
+/// * `working_dir` - Optional working directory override for test parallelism.
+///   When provided, ralph uses this path without changing the global CWD.
 pub fn run_ralph_cli_with_config(
     args: &[&str],
     executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
     config_path: Option<&std::path::Path>,
+    working_dir: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
     // Build argv: binary name + args
     let mut argv: Vec<String> = vec!["ralph".to_string()];
@@ -143,7 +121,7 @@ pub fn run_ralph_cli_with_config(
 
     // Parse args using clap directly (same as main.rs does)
     // Handle --version and --help flags which exit successfully
-    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+    let mut parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
         Ok(args) => args,
         Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
             // These are successful exits (version printed or help shown)
@@ -151,6 +129,11 @@ pub fn run_ralph_cli_with_config(
         }
         Err(e) => return Err(e.into()),
     };
+
+    // Set working_dir_override if provided (enables test parallelism)
+    if let Some(dir) = working_dir {
+        parsed_args.working_dir_override = Some(dir.to_path_buf());
+    }
 
     // Set environment variables for test isolation
     std::env::set_var("RALPH_INTERACTIVE", "0");
@@ -180,7 +163,7 @@ pub fn run_ralph_cli_with_config(
 /// fn test_workflow_with_agent() {
 ///     with_default_timeout(|| {
 ///         let executor = mock_executor_with_success();
-///         run_ralph_cli(&["--init"], executor).unwrap();
+///         run_ralph_cli(&["--init"], executor, Some(dir.path())).unwrap();
 ///         // Agent calls are mocked - no real processes spawned
 ///     });
 /// }
@@ -262,11 +245,10 @@ pub fn mock_executor_with_success() -> Arc<dyn ralph_workflow::executor::Process
 ///     with_default_timeout(|| {
 ///         let dir = TempDir::new().unwrap();
 ///         let config_path = create_test_config(&dir);
-///         
+///
 ///         let executor = mock_executor_with_success();
-///         run_ralph_cli_with_config(&[], executor, Some(config_path.as_path())).unwrap();
+///         run_ralph_cli_with_config(&[], executor, Some(config_path.as_path()), Some(dir.path())).unwrap();
 ///     });
-/// }
 /// }
 /// ```
 pub fn create_test_config(dir: &tempfile::TempDir) -> std::path::PathBuf {
@@ -441,125 +423,4 @@ impl Drop for EnvGuard {
             }
         }
     }
-}
-
-/// RAII guard to restore the working directory on drop.
-///
-/// This struct stores the original directory path and restores it
-/// when dropped, ensuring the working directory is always restored
-/// even if the test panics.
-struct DirGuard(std::path::PathBuf);
-
-impl Drop for DirGuard {
-    fn drop(&mut self) {
-        let _ = std::env::set_current_dir(&self.0);
-    }
-}
-
-/// Run a closure in the specified directory with automatic CWD restoration.
-///
-/// This helper function:
-/// 1. Changes to the specified directory
-/// 2. Runs the provided closure
-/// 3. Automatically restores the original directory when done (even on panic)
-///
-/// # Arguments
-///
-/// * `dir` - The directory to change to
-/// * `f` - The closure to execute while in that directory
-///
-/// # Example
-///
-/// ```ignore
-/// use crate::common::with_cwd_guard;
-///
-/// #[test]
-/// fn test_example() {
-///     with_default_timeout(|| {
-///         let dir = TempDir::new().unwrap();
-///         with_cwd_guard(dir.path(), || {
-///             // Test code here - already in dir.path()
-///             // CWD will be restored automatically
-///         });
-///     });
-/// }
-/// ```
-///
-/// # Working Directory Management
-///
-/// **CRITICAL:** All integration tests that change the current working directory
-/// MUST use this helper instead of `std::env::set_current_dir()` directly.
-///
-/// See the [module-level documentation](self) for details on why this is required.
-pub fn with_cwd_guard<F: FnOnce()>(dir: &std::path::Path, f: F) {
-    let lock = CWD_LOCK.get_or_init(|| Mutex::new(()));
-
-    // Clear poison if a previous test panicked while holding the lock
-    let _cwd_guard = match lock.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => {
-            // Clear the poison and continue - the directory will be restored
-            // by the DirGuard even if the test panics
-            poisoned.into_inner()
-        }
-    };
-
-    let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
-    std::env::set_current_dir(dir).expect("Failed to change directory");
-    let _guard = DirGuard(old_dir);
-    f();
-}
-
-/// Run a closure in the specified directory with automatic CWD restoration and return a value.
-///
-/// This is the same as [`with_cwd_guard`] but allows the closure to return a value.
-/// Use this when you need to get a result from the closure.
-///
-/// # Arguments
-///
-/// * `dir` - The directory to change to
-/// * `f` - The closure to execute while in that directory
-///
-/// # Returns
-///
-/// Returns the value returned by the closure.
-///
-/// # Example
-///
-/// ```ignore
-/// use crate::common::with_cwd_guard_result;
-///
-/// #[test]
-/// fn test_example() {
-///     with_default_timeout(|| {
-///         let dir = TempDir::new().unwrap();
-///         let result = with_cwd_guard_result(dir.path(), || {
-///             // Test code here - already in dir.path()
-///             // CWD will be restored automatically
-///             Ok("success")
-///         });
-///         assert!(result.is_ok());
-///     });
-/// }
-/// ```
-///
-/// # Working Directory Management
-///
-/// **CRITICAL:** All integration tests that change the current working directory
-/// MUST use this helper instead of `std::env::set_current_dir()` directly.
-///
-/// See the [module-level documentation](self) for details on why this is required.
-pub fn with_cwd_guard_result<F: FnOnce() -> R, R>(dir: &std::path::Path, f: F) -> R {
-    let lock = CWD_LOCK.get_or_init(|| Mutex::new(()));
-
-    // Clear poison if a previous test panicked while holding the lock
-    let _cwd_guard = match lock.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-
-    let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
-    std::env::set_current_dir(dir).expect("Failed to change directory");
-    let _guard = DirGuard(old_dir);
-    f()
 }
