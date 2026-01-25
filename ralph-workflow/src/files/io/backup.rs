@@ -5,11 +5,9 @@
 
 use std::fs;
 use std::io;
+use std::path::Path;
 
 use super::integrity;
-
-/// Path to the PROMPT.md backup file in the .agent directory.
-const PROMPT_BACKUP_PATH: &str = ".agent/PROMPT.md.backup";
 
 /// Create a backup of PROMPT.md to protect against accidental deletion.
 ///
@@ -35,8 +33,27 @@ const PROMPT_BACKUP_PATH: &str = ".agent/PROMPT.md.backup";
 /// - `Ok(None)` - backup created and read-only set successfully
 /// - `Ok(Some(warning))` - backup created but read-only couldn't be set
 /// - `Err(e)` - if the backup cannot be created
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`create_prompt_backup_at`] instead.
 pub fn create_prompt_backup() -> io::Result<Option<String>> {
-    let prompt_path = std::path::Path::new("PROMPT.md");
+    create_prompt_backup_at(Path::new("."))
+}
+
+/// Create a backup of PROMPT.md at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+///
+/// # Returns
+///
+/// Returns `io::Result<Option<String>>` where:
+/// - `Ok(None)` - backup created and read-only set successfully
+/// - `Ok(Some(warning))` - backup created but read-only couldn't be set
+/// - `Err(e)` - if the backup cannot be created
+pub fn create_prompt_backup_at(repo_root: &Path) -> io::Result<Option<String>> {
+    let prompt_path = repo_root.join("PROMPT.md");
 
     // If PROMPT.md doesn't exist, that's fine - nothing to backup
     if !prompt_path.exists() {
@@ -44,13 +61,12 @@ pub fn create_prompt_backup() -> io::Result<Option<String>> {
     }
 
     // Ensure .agent directory exists
-    let backup_base = std::path::Path::new(PROMPT_BACKUP_PATH);
-    if let Some(parent) = backup_base.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    let agent_dir = repo_root.join(".agent");
+    let backup_base = agent_dir.join("PROMPT.md.backup");
+    fs::create_dir_all(&agent_dir)?;
 
     // Read PROMPT.md content
-    let content = fs::read_to_string(prompt_path).map_err(|e| {
+    let content = fs::read_to_string(&prompt_path).map_err(|e| {
         io::Error::new(
             e.kind(),
             format!("Failed to read PROMPT.md for backup: {e}"),
@@ -58,31 +74,31 @@ pub fn create_prompt_backup() -> io::Result<Option<String>> {
     })?;
 
     // Backup rotation: .2 → deleted, .1 → .2, .backup → .1
-    let backup_2 = std::path::Path::new(".agent/PROMPT.md.backup.2");
-    let backup_1 = std::path::Path::new(".agent/PROMPT.md.backup.1");
+    let backup_2 = agent_dir.join("PROMPT.md.backup.2");
+    let backup_1 = agent_dir.join("PROMPT.md.backup.1");
 
     // Delete oldest backup if it exists
-    let _ = fs::remove_file(backup_2);
+    let _ = fs::remove_file(&backup_2);
 
     // Rotate .1 → .2
     if backup_1.exists() {
-        let _ = fs::rename(backup_1, backup_2);
+        let _ = fs::rename(&backup_1, &backup_2);
     }
 
     // Rotate .backup → .1
     if backup_base.exists() {
-        let _ = fs::rename(backup_base, backup_1);
+        let _ = fs::rename(&backup_base, &backup_1);
     }
 
     // Write new backup atomically
-    integrity::write_file_atomic(backup_base, &content)
+    integrity::write_file_atomic(&backup_base, &content)
         .map_err(|e| io::Error::new(e.kind(), format!("Failed to write PROMPT.md backup: {e}")))?;
 
     // Set read-only permissions on all backups and track any failure
     let mut readonly_warning = None;
 
     // Helper to set read-only permissions on a file
-    let set_readonly = |path: &std::path::Path| -> io::Result<()> {
+    let set_readonly = |path: &Path| -> io::Result<()> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -115,7 +131,7 @@ pub fn create_prompt_backup() -> io::Result<Option<String>> {
     };
 
     // Try to set read-only on all backup files (best-effort)
-    for backup_path in &[backup_base, backup_1, backup_2] {
+    for backup_path in [&backup_base, &backup_1, &backup_2] {
         if backup_path.exists() {
             if let Err(e) = set_readonly(backup_path) {
                 if readonly_warning.is_none() {
@@ -145,8 +161,26 @@ pub fn create_prompt_backup() -> io::Result<Option<String>> {
 /// Returns `Ok(Option<String>)` where:
 /// - `Ok(None)` - permissions set successfully or file doesn't exist
 /// - `Ok(Some(warning))` - couldn't set read-only permissions
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`make_prompt_read_only_at`] instead.
 pub fn make_prompt_read_only() -> Option<String> {
-    let prompt_path = std::path::Path::new("PROMPT.md");
+    make_prompt_read_only_at(Path::new("."))
+}
+
+/// Make PROMPT.md read-only at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+///
+/// # Returns
+///
+/// Returns `Option<String>` where:
+/// - `None` - permissions set successfully or file doesn't exist
+/// - `Some(warning)` - couldn't set read-only permissions
+pub fn make_prompt_read_only_at(repo_root: &Path) -> Option<String> {
+    let prompt_path = repo_root.join("PROMPT.md");
 
     // If PROMPT.md doesn't exist, that's fine - nothing to protect
     if !prompt_path.exists() {
@@ -159,11 +193,11 @@ pub fn make_prompt_read_only() -> Option<String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        match fs::metadata(prompt_path) {
+        match fs::metadata(&prompt_path) {
             Ok(metadata) => {
                 let mut perms = metadata.permissions();
                 perms.set_mode(0o444); // Read-only for all
-                if fs::set_permissions(prompt_path, perms).is_err() {
+                if fs::set_permissions(&prompt_path, perms).is_err() {
                     readonly_warning =
                         Some("Failed to set read-only permissions on PROMPT.md".to_string());
                 }
@@ -176,11 +210,11 @@ pub fn make_prompt_read_only() -> Option<String> {
 
     #[cfg(windows)]
     {
-        match fs::metadata(prompt_path) {
+        match fs::metadata(&prompt_path) {
             Ok(metadata) => {
                 let mut perms = metadata.permissions();
                 perms.set_readonly(true);
-                if fs::set_permissions(prompt_path, perms).is_err() {
+                if fs::set_permissions(&prompt_path, perms).is_err() {
                     readonly_warning =
                         Some("Failed to set read-only permissions on PROMPT.md".to_string());
                 }
@@ -211,8 +245,26 @@ pub fn make_prompt_read_only() -> Option<String> {
 /// Returns `Option<String>` where:
 /// - `None` - permissions restored successfully or file doesn't exist
 /// - `Some(warning)` - couldn't restore write permissions
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`make_prompt_writable_at`] instead.
 pub fn make_prompt_writable() -> Option<String> {
-    let prompt_path = std::path::Path::new("PROMPT.md");
+    make_prompt_writable_at(Path::new("."))
+}
+
+/// Make PROMPT.md writable again at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+///
+/// # Returns
+///
+/// Returns `Option<String>` where:
+/// - `None` - permissions restored successfully or file doesn't exist
+/// - `Some(warning)` - couldn't restore write permissions
+pub fn make_prompt_writable_at(repo_root: &Path) -> Option<String> {
+    let prompt_path = repo_root.join("PROMPT.md");
 
     // If PROMPT.md doesn't exist, that's fine - nothing to modify
     if !prompt_path.exists() {
@@ -225,11 +277,11 @@ pub fn make_prompt_writable() -> Option<String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        match fs::metadata(prompt_path) {
+        match fs::metadata(&prompt_path) {
             Ok(metadata) => {
                 let mut perms = metadata.permissions();
                 perms.set_mode(0o644); // Owner read-write, group/others read-only
-                if fs::set_permissions(prompt_path, perms).is_err() {
+                if fs::set_permissions(&prompt_path, perms).is_err() {
                     writable_warning =
                         Some("Failed to set write permissions on PROMPT.md".to_string());
                 }
@@ -242,11 +294,11 @@ pub fn make_prompt_writable() -> Option<String> {
 
     #[cfg(windows)]
     {
-        match fs::metadata(prompt_path) {
+        match fs::metadata(&prompt_path) {
             Ok(metadata) => {
                 let mut perms = metadata.permissions();
                 perms.set_readonly(false);
-                if fs::set_permissions(prompt_path, perms).is_err() {
+                if fs::set_permissions(&prompt_path, perms).is_err() {
                     writable_warning =
                         Some("Failed to set write permissions on PROMPT.md".to_string());
                 }

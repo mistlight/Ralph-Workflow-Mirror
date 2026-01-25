@@ -66,37 +66,56 @@ pub fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result<bool> 
 ///
 /// When `isolation_mode` is true (the default), STATUS.md, NOTES.md and ISSUES.md
 /// are NOT created. This prevents context contamination from previous runs.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`ensure_files_at`] instead.
 pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
-    let agent_dir = Path::new(".agent");
+    ensure_files_at(Path::new("."), isolation_mode)
+}
+
+/// Ensure required files and directories exist at a specific repository path.
+///
+/// Creates the `.agent/logs` and `.agent/tmp` directories if they don't exist.
+/// Also writes XSD schemas to `.agent/tmp/` for agent self-validation.
+///
+/// When `isolation_mode` is true (the default), STATUS.md, NOTES.md and ISSUES.md
+/// are NOT created. This prevents context contamination from previous runs.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+/// * `isolation_mode` - If true, skip creating STATUS.md, NOTES.md, ISSUES.md
+pub fn ensure_files_at(repo_root: &Path, isolation_mode: bool) -> io::Result<()> {
+    let agent_dir = repo_root.join(".agent");
 
     // Best-effort state repair before we start touching `.agent/` contents.
     // If the state is unrecoverable, fail early with a clear error.
-    if let recovery::RecoveryStatus::Unrecoverable(msg) = recovery::auto_repair(agent_dir)? {
+    if let recovery::RecoveryStatus::Unrecoverable(msg) = recovery::auto_repair(&agent_dir)? {
         return Err(io::Error::other(format!(
             "Failed to repair .agent state: {msg}"
         )));
     }
 
-    integrity::check_filesystem_ready(agent_dir)?;
-    fs::create_dir_all(".agent/logs")?;
-    fs::create_dir_all(".agent/tmp")?;
+    integrity::check_filesystem_ready(&agent_dir)?;
+    fs::create_dir_all(agent_dir.join("logs"))?;
+    fs::create_dir_all(agent_dir.join("tmp"))?;
 
     // Clean up any stale XML files from previous runs that might be locked
     // This prevents permission errors when agents try to write to these files
-    let tmp_dir = Path::new(".agent/tmp");
-    let _ = integrity::cleanup_stale_xml_files(tmp_dir, false);
+    let tmp_dir = agent_dir.join("tmp");
+    let _ = integrity::cleanup_stale_xml_files(&tmp_dir, false);
     // Note: cleanup is best-effort, failures are not fatal
 
     // Write XSD schemas to .agent/tmp/ for agent self-validation
-    setup_xsd_schemas()?;
+    setup_xsd_schemas_at(repo_root)?;
 
     // Only create STATUS.md, NOTES.md and ISSUES.md when NOT in isolation mode
     if !isolation_mode {
         // Always overwrite/truncate these files to a single vague sentence to
         // avoid detailed context persisting across runs.
-        overwrite_one_liner(Path::new(".agent/STATUS.md"), VAGUE_STATUS_LINE)?;
-        overwrite_one_liner(Path::new(".agent/NOTES.md"), VAGUE_NOTES_LINE)?;
-        overwrite_one_liner(Path::new(".agent/ISSUES.md"), VAGUE_ISSUES_LINE)?;
+        overwrite_one_liner(&agent_dir.join("STATUS.md"), VAGUE_STATUS_LINE)?;
+        overwrite_one_liner(&agent_dir.join("NOTES.md"), VAGUE_NOTES_LINE)?;
+        overwrite_one_liner(&agent_dir.join("ISSUES.md"), VAGUE_ISSUES_LINE)?;
     }
 
     Ok(())
@@ -115,9 +134,21 @@ pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
 /// - `issues.xsd` - Review phase issues structure
 /// - `fix_result.xsd` - Fix phase result structure
 /// - `commit_message.xsd` - Commit message structure
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`setup_xsd_schemas_at`] instead.
 pub fn setup_xsd_schemas() -> io::Result<()> {
-    let tmp_dir = Path::new(".agent/tmp");
-    fs::create_dir_all(tmp_dir)?;
+    setup_xsd_schemas_at(Path::new("."))
+}
+
+/// Write all XSD schemas to `.agent/xsd/` directory at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+pub fn setup_xsd_schemas_at(repo_root: &Path) -> io::Result<()> {
+    let tmp_dir = repo_root.join(".agent/tmp");
+    fs::create_dir_all(&tmp_dir)?;
 
     fs::write(tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA)?;
     fs::write(
@@ -138,8 +169,20 @@ pub fn setup_xsd_schemas() -> io::Result<()> {
 ///
 /// Called after the plan has been integrated into the codebase.
 /// Silently succeeds if the file doesn't exist.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`delete_plan_file_at`] instead.
 pub fn delete_plan_file() -> io::Result<()> {
-    let plan_path = Path::new(".agent/PLAN.md");
+    delete_plan_file_at(Path::new("."))
+}
+
+/// Delete the PLAN.md file after integration at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+pub fn delete_plan_file_at(repo_root: &Path) -> io::Result<()> {
+    let plan_path = repo_root.join(".agent/PLAN.md");
     if plan_path.exists() {
         fs::remove_file(plan_path)?;
     }
@@ -150,8 +193,20 @@ pub fn delete_plan_file() -> io::Result<()> {
 ///
 /// Called after a successful git commit to clean up the temporary
 /// commit message file. Silently succeeds if the file doesn't exist.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`delete_commit_message_file_at`] instead.
 pub fn delete_commit_message_file() -> io::Result<()> {
-    let msg_path = Path::new(".agent/commit-message.txt");
+    delete_commit_message_file_at(Path::new("."))
+}
+
+/// Delete the commit-message.txt file after committing at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+pub fn delete_commit_message_file_at(repo_root: &Path) -> io::Result<()> {
+    let msg_path = repo_root.join(".agent/commit-message.txt");
     if msg_path.exists() {
         fs::remove_file(msg_path)?;
     }
@@ -163,15 +218,31 @@ pub fn delete_commit_message_file() -> io::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the file doesn't exist, cannot be read, or is empty.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`read_commit_message_file_at`] instead.
 pub fn read_commit_message_file() -> io::Result<String> {
-    let msg_path = Path::new(".agent/commit-message.txt");
-    if msg_path.exists() && !integrity::verify_file_not_corrupted(msg_path)? {
+    read_commit_message_file_at(Path::new("."))
+}
+
+/// Read commit message from file at a specific repository path; fails if missing or empty.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+///
+/// # Errors
+///
+/// Returns an error if the file doesn't exist, cannot be read, or is empty.
+pub fn read_commit_message_file_at(repo_root: &Path) -> io::Result<String> {
+    let msg_path = repo_root.join(".agent/commit-message.txt");
+    if msg_path.exists() && !integrity::verify_file_not_corrupted(&msg_path)? {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             ".agent/commit-message.txt appears corrupted",
         ));
     }
-    let content = fs::read_to_string(msg_path).map_err(|e| {
+    let content = fs::read_to_string(&msg_path).map_err(|e| {
         io::Error::new(
             e.kind(),
             format!("Failed to read .agent/commit-message.txt: {e}"),
@@ -199,12 +270,32 @@ pub fn read_commit_message_file() -> io::Result<String> {
 /// # Errors
 ///
 /// Returns an error if the file cannot be created or written.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`write_commit_message_file_at`] instead.
 pub fn write_commit_message_file(message: &str) -> io::Result<()> {
-    let msg_path = Path::new(".agent/commit-message.txt");
+    write_commit_message_file_at(Path::new("."), message)
+}
+
+/// Write commit message to file at a specific repository path.
+///
+/// Creates the .agent directory if it doesn't exist and writes the
+/// commit message to .agent/commit-message.txt.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+/// * `message` - The commit message to write
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be created or written.
+pub fn write_commit_message_file_at(repo_root: &Path, message: &str) -> io::Result<()> {
+    let msg_path = repo_root.join(".agent/commit-message.txt");
     if let Some(parent) = msg_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    integrity::write_file_atomic(msg_path, message)?;
+    integrity::write_file_atomic(&msg_path, message)?;
     Ok(())
 }
 
@@ -216,9 +307,28 @@ pub fn write_commit_message_file(message: &str) -> io::Result<()> {
 ///
 /// This function is best-effort: individual file deletion failures are
 /// silently ignored since we're in a cleanup context.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`cleanup_generated_files_at`] instead.
 pub fn cleanup_generated_files() {
+    cleanup_generated_files_at(Path::new("."))
+}
+
+/// Clean up all generated files at a specific repository path.
+///
+/// Removes temporary files that may have been left behind by an interrupted
+/// pipeline run. This includes PLAN.md, commit-message.txt, and other
+/// artifacts listed in [`GENERATED_FILES`].
+///
+/// This function is best-effort: individual file deletion failures are
+/// silently ignored since we're in a cleanup context.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+pub fn cleanup_generated_files_at(repo_root: &Path) {
     for file in GENERATED_FILES {
-        let _ = fs::remove_file(file);
+        let _ = fs::remove_file(repo_root.join(file));
     }
 }
 

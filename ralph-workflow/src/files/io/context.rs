@@ -36,7 +36,25 @@ pub fn overwrite_one_liner(path: &Path, line: &str) -> io::Result<()> {
 /// In non-isolation mode, this overwrites the context files with vague
 /// one-liners to give the reviewer "fresh eyes" without context from
 /// the development phase.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`clean_context_for_reviewer_at`] instead.
 pub fn clean_context_for_reviewer(logger: &Logger, isolation_mode: bool) -> io::Result<()> {
+    clean_context_for_reviewer_at(Path::new("."), logger, isolation_mode)
+}
+
+/// Clean context before reviewer phase at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+/// * `logger` - Logger for output
+/// * `isolation_mode` - If true, skip cleanup since files don't exist
+pub fn clean_context_for_reviewer_at(
+    repo_root: &Path,
+    logger: &Logger,
+    isolation_mode: bool,
+) -> io::Result<()> {
     if isolation_mode {
         // In isolation mode, these files don't exist, so nothing to clean
         logger.info("Isolation mode: skipping context cleanup (files don't exist)");
@@ -45,16 +63,19 @@ pub fn clean_context_for_reviewer(logger: &Logger, isolation_mode: bool) -> io::
 
     logger.info("Cleaning context for reviewer (fresh eyes)...");
 
+    let agent_dir = repo_root.join(".agent");
+
     // Remove any archived context; preserving it defeats the "fresh eyes" intent.
-    if Path::new(".agent/archive").exists() {
+    let archive_dir = agent_dir.join("archive");
+    if archive_dir.exists() {
         // Best-effort: if this fails, proceed with overwriting the live files.
-        let _ = fs::remove_dir_all(".agent/archive");
+        let _ = fs::remove_dir_all(&archive_dir);
     }
 
     // Overwrite live context files with intentionally vague one-liners.
-    overwrite_one_liner(Path::new(".agent/STATUS.md"), VAGUE_STATUS_LINE)?;
-    overwrite_one_liner(Path::new(".agent/NOTES.md"), VAGUE_NOTES_LINE)?;
-    overwrite_one_liner(Path::new(".agent/ISSUES.md"), VAGUE_ISSUES_LINE)?;
+    overwrite_one_liner(&agent_dir.join("STATUS.md"), VAGUE_STATUS_LINE)?;
+    overwrite_one_liner(&agent_dir.join("NOTES.md"), VAGUE_NOTES_LINE)?;
+    overwrite_one_liner(&agent_dir.join("ISSUES.md"), VAGUE_ISSUES_LINE)?;
 
     logger.success("Context cleaned for reviewer");
     Ok(())
@@ -69,25 +90,39 @@ pub fn clean_context_for_reviewer(logger: &Logger, isolation_mode: bool) -> io::
 /// Unlike `clean_context_for_reviewer()`, this does NOT archive the files -
 /// in isolation mode, the goal is to operate without these files entirely,
 /// so there's no value in preserving them.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`reset_context_for_isolation_at`] instead.
 pub fn reset_context_for_isolation(logger: &Logger) -> io::Result<()> {
+    reset_context_for_isolation_at(Path::new("."), logger)
+}
+
+/// Delete STATUS.md, NOTES.md and ISSUES.md for isolation mode at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+/// * `logger` - Logger for output
+pub fn reset_context_for_isolation_at(repo_root: &Path, logger: &Logger) -> io::Result<()> {
     logger.info("Isolation mode: removing STATUS.md, NOTES.md and ISSUES.md...");
 
-    let status_path = Path::new(".agent/STATUS.md");
-    let notes_path = Path::new(".agent/NOTES.md");
-    let issues_path = Path::new(".agent/ISSUES.md");
+    let agent_dir = repo_root.join(".agent");
+    let status_path = agent_dir.join("STATUS.md");
+    let notes_path = agent_dir.join("NOTES.md");
+    let issues_path = agent_dir.join("ISSUES.md");
 
     if status_path.exists() {
-        fs::remove_file(status_path)?;
+        fs::remove_file(&status_path)?;
         logger.info("Deleted .agent/STATUS.md");
     }
 
     if notes_path.exists() {
-        fs::remove_file(notes_path)?;
+        fs::remove_file(&notes_path)?;
         logger.info("Deleted .agent/NOTES.md");
     }
 
     if issues_path.exists() {
-        fs::remove_file(issues_path)?;
+        fs::remove_file(&issues_path)?;
         logger.info("Deleted .agent/ISSUES.md");
     }
 
@@ -101,11 +136,24 @@ pub fn reset_context_for_isolation(logger: &Logger) -> io::Result<()> {
 /// is enabled. Between Review and Fix phases, ISSUES.md must persist so the Fix
 /// agent knows what to fix. But after all cycles complete, ISSUES.md should be
 /// deleted to prevent context contamination for subsequent runs.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`delete_issues_file_for_isolation_at`] instead.
 pub fn delete_issues_file_for_isolation(logger: &Logger) -> io::Result<()> {
-    let issues_path = Path::new(".agent/ISSUES.md");
+    delete_issues_file_for_isolation_at(Path::new("."), logger)
+}
+
+/// Delete ISSUES.md after the final fix iteration completes in isolation mode at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+/// * `logger` - Logger for output
+pub fn delete_issues_file_for_isolation_at(repo_root: &Path, logger: &Logger) -> io::Result<()> {
+    let issues_path = repo_root.join(".agent/ISSUES.md");
 
     if issues_path.exists() {
-        fs::remove_file(issues_path)?;
+        fs::remove_file(&issues_path)?;
         logger.info("Isolation mode: deleted .agent/ISSUES.md after final fix");
     }
 
@@ -119,12 +167,26 @@ pub fn delete_issues_file_for_isolation(logger: &Logger) -> io::Result<()> {
 ///
 /// When `isolation_mode` is true (the default), this function does nothing
 /// since STATUS.md should not exist in isolation mode.
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`update_status_at`] instead.
 pub fn update_status(_status: &str, isolation_mode: bool) -> io::Result<()> {
+    update_status_at(Path::new("."), _status, isolation_mode)
+}
+
+/// Update the status file with minimal, vague content at a specific repository path.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+/// * `_status` - Status string (unused, always writes vague status)
+/// * `isolation_mode` - If true, do nothing since STATUS.md should not exist
+pub fn update_status_at(repo_root: &Path, _status: &str, isolation_mode: bool) -> io::Result<()> {
     if isolation_mode {
         // In isolation mode, STATUS.md should not exist
         return Ok(());
     }
-    overwrite_one_liner(Path::new(".agent/STATUS.md"), VAGUE_STATUS_LINE)
+    overwrite_one_liner(&repo_root.join(".agent/STATUS.md"), VAGUE_STATUS_LINE)
 }
 
 #[cfg(test)]
