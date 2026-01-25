@@ -14,6 +14,7 @@ use crate::logger::{Colors, Logger};
 use crate::pipeline::Stats;
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
+use std::path::Path;
 
 /// Shared context for all pipeline phases.
 ///
@@ -50,6 +51,12 @@ pub struct PhaseContext<'a> {
     pub executor: &'a dyn ProcessExecutor,
     /// Arc-wrapped executor for spawning into threads (e.g., idle timeout monitor).
     pub executor_arc: std::sync::Arc<dyn ProcessExecutor>,
+    /// Repository root path for explicit file operations.
+    ///
+    /// This eliminates CWD dependencies by providing an explicit path for all
+    /// file operations. Code should use `repo_root.join("relative/path")` instead
+    /// of `Path::new("relative/path")`.
+    pub repo_root: &'a Path,
 }
 
 impl PhaseContext<'_> {
@@ -119,6 +126,7 @@ mod tests {
     use crate::logger::{Colors, Logger};
     use crate::pipeline::{Stats, Timer};
     use crate::prompts::template_context::TemplateContext;
+    use std::path::PathBuf;
 
     /// Test fixture for creating `PhaseContext` in tests.
     struct TestFixture {
@@ -129,6 +137,7 @@ mod tests {
         stats: Stats,
         template_context: TemplateContext,
         executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: PathBuf,
     }
 
     impl TestFixture {
@@ -144,6 +153,7 @@ mod tests {
                 stats: Stats::default(),
                 template_context: TemplateContext::default(),
                 executor_arc,
+                repo_root: PathBuf::from("/test/repo"),
             }
         }
     }
@@ -179,6 +189,7 @@ mod tests {
             prompt_history: std::collections::HashMap::new(),
             executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
+            repo_root: &fixture.repo_root,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -219,6 +230,7 @@ mod tests {
             prompt_history: std::collections::HashMap::new(),
             executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
+            repo_root: &fixture.repo_root,
         };
 
         let result = get_primary_commit_agent(&ctx);
@@ -251,6 +263,7 @@ mod tests {
             prompt_history: std::collections::HashMap::new(),
             executor: &*std::sync::Arc::new(crate::executor::MockProcessExecutor::new()),
             executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
+            repo_root: &fixture.repo_root,
         };
 
         let result = get_primary_commit_agent(&ctx);

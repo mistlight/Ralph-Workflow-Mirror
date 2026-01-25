@@ -438,6 +438,7 @@ fn prepare_pipeline_or_exit(
             &logger,
             colors,
             std::sync::Arc::clone(&executor),
+            &repo_root,
         )?;
         return Ok(None);
     }
@@ -1106,6 +1107,7 @@ fn create_phase_context_with_config<'ctx>(
         prompt_history,
         executor: &*ctx.executor,
         executor_arc: std::sync::Arc::clone(&ctx.executor),
+        repo_root: &ctx.repo_root,
     }
 }
 
@@ -1196,6 +1198,7 @@ pub fn handle_rebase_only(
     logger: &Logger,
     colors: Colors,
     executor: std::sync::Arc<dyn ProcessExecutor>,
+    repo_root: &std::path::Path,
 ) -> anyhow::Result<()> {
     // Check if we're on main/master branch
     if is_main_or_master_branch()? {
@@ -1243,6 +1246,7 @@ pub fn handle_rebase_only(
                 logger,
                 colors,
                 std::sync::Arc::clone(&executor),
+                repo_root,
             ) {
                 Ok(true) => {
                     // Conflicts resolved, continue the rebase
@@ -1800,6 +1804,7 @@ fn try_resolve_conflicts_without_phase_ctx(
     logger: &Logger,
     colors: Colors,
     executor: std::sync::Arc<dyn ProcessExecutor>,
+    repo_root: &std::path::Path,
 ) -> anyhow::Result<bool> {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::execution_history::ExecutionHistory;
@@ -1833,6 +1838,7 @@ fn try_resolve_conflicts_without_phase_ctx(
         prompt_history: std::collections::HashMap::new(),
         executor: &*executor,
         executor_arc: std::sync::Arc::clone(&executor_arc),
+        repo_root,
     };
 
     let ctx = ConflictResolutionContext {
