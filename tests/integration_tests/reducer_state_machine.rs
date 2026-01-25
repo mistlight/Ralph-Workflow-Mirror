@@ -135,6 +135,8 @@ fn test_development_iteration_increments() {
             total_iterations: 5,
             ..create_initial_state()
         };
+        // DevelopmentIterationCompleted transitions to CommitMessage phase
+        // The iteration stays the same; increment happens after CommitCreated
         let new_state = reduce(
             state,
             PipelineEvent::DevelopmentIterationCompleted {
@@ -142,8 +144,9 @@ fn test_development_iteration_increments() {
                 output_valid: true,
             },
         );
-        assert_eq!(new_state.iteration, 3);
-        assert_eq!(new_state.phase, PipelinePhase::Development);
+        assert_eq!(new_state.iteration, 2);
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert_eq!(new_state.previous_phase, Some(PipelinePhase::Development));
     });
 }
 
@@ -156,6 +159,8 @@ fn test_development_iteration_complete_moves_to_review() {
             total_iterations: 5,
             ..create_initial_state()
         };
+        // DevelopmentIterationCompleted goes to CommitMessage first
+        // Transition to Review happens after CommitCreated when iteration >= total_iterations
         let new_state = reduce(
             state,
             PipelineEvent::DevelopmentIterationCompleted {
@@ -163,8 +168,9 @@ fn test_development_iteration_complete_moves_to_review() {
                 output_valid: true,
             },
         );
-        assert_eq!(new_state.iteration, 6);
-        assert_eq!(new_state.phase, PipelinePhase::Review);
+        assert_eq!(new_state.iteration, 5);
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert_eq!(new_state.previous_phase, Some(PipelinePhase::Development));
     });
 }
 
@@ -199,6 +205,8 @@ fn test_review_pass_increments() {
             total_reviewer_passes: 2,
             ..create_initial_state()
         };
+        // FixAttemptCompleted transitions to CommitMessage phase
+        // The reviewer_pass stays the same; increment happens after CommitCreated
         let new_state = reduce(
             state,
             PipelineEvent::FixAttemptCompleted {
@@ -206,7 +214,9 @@ fn test_review_pass_increments() {
                 changes_made: true,
             },
         );
-        assert_eq!(new_state.reviewer_pass, 2);
+        assert_eq!(new_state.reviewer_pass, 1);
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert_eq!(new_state.previous_phase, Some(PipelinePhase::Review));
     });
 }
 
@@ -219,6 +229,8 @@ fn test_review_pass_complete_moves_to_commit_message() {
             total_reviewer_passes: 2,
             ..create_initial_state()
         };
+        // FixAttemptCompleted goes to CommitMessage phase
+        // reviewer_pass stays the same; increment happens after CommitCreated
         let new_state = reduce(
             state,
             PipelineEvent::FixAttemptCompleted {
@@ -226,8 +238,9 @@ fn test_review_pass_complete_moves_to_commit_message() {
                 changes_made: true,
             },
         );
-        assert_eq!(new_state.reviewer_pass, 3);
+        assert_eq!(new_state.reviewer_pass, 2);
         assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert_eq!(new_state.previous_phase, Some(PipelinePhase::Review));
     });
 }
 
@@ -523,6 +536,7 @@ fn test_event_replay_reproduces_final_state() {
         let final_state = events.into_iter().fold(initial_state, reduce);
 
         assert_eq!(final_state.phase, PipelinePhase::Complete);
-        assert_eq!(final_state.iteration, 4);
+        // The last DevelopmentIterationCompleted sets iteration to 3
+        assert_eq!(final_state.iteration, 3);
     });
 }

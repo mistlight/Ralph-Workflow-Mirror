@@ -18,6 +18,7 @@
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
 //! - Tests are deterministic and isolated
 
+use std::fs;
 use tempfile::TempDir;
 
 use crate::common::{mock_executor_with_success, run_ralph_cli};
@@ -36,6 +37,22 @@ fn base_env() {
     std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
     std::env::set_var("GIT_COMMITTER_NAME", "Test");
     std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+}
+
+/// Create an isolated config home with a minimal config that doesn't use opencode/* refs.
+fn create_isolated_config(dir: &TempDir) -> std::path::PathBuf {
+    let config_home = dir.path().join(".config");
+    fs::create_dir_all(&config_home).unwrap();
+    // Create minimal config without opencode/* references
+    fs::write(
+        config_home.join("ralph-workflow.toml"),
+        r#"[agent_chain]
+developer = ["codex"]
+reviewer = ["codex"]
+"#,
+    )
+    .unwrap();
+    config_home
 }
 
 // ============================================================================
@@ -57,17 +74,19 @@ fn ralph_zero_reviewer_reviews_skips_review() {
     with_default_timeout(|| {
         // Test that reviewer_reviews=0 skips the review phase entirely
         let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
+        let config_home = create_isolated_config(&dir);
+        let _repo = init_git_repo(&dir);
 
         // Create initial commit with tracked files
         write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
+        let _ = commit_all(&_repo, "initial commit");
 
         // Create a change for the diff
         write_file(dir.path().join("initial.txt"), "updated content");
 
         std::env::set_current_dir(dir.path()).unwrap();
         base_env();
+        std::env::set_var("XDG_CONFIG_HOME", &config_home); // Use isolated config
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review phase
         let executor = mock_executor_with_success();
         run_ralph_cli(&[], executor).unwrap();
@@ -86,17 +105,19 @@ fn ralph_succeeds_without_review_phase() {
     with_default_timeout(|| {
         // Test that the pipeline can succeed without any review phase
         let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
+        let config_home = create_isolated_config(&dir);
+        let _repo = init_git_repo(&dir);
 
         // Create initial commit
         write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
+        let _ = commit_all(&_repo, "initial commit");
 
         // Create a change
         write_file(dir.path().join("test.txt"), "new content");
 
         std::env::set_current_dir(dir.path()).unwrap();
         base_env();
+        std::env::set_var("XDG_CONFIG_HOME", &config_home); // Use isolated config
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();
@@ -113,17 +134,19 @@ fn ralph_commit_created_when_review_skipped() {
     with_default_timeout(|| {
         // Test that commits are still created when review phase is skipped
         let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
+        let config_home = create_isolated_config(&dir);
+        let _repo = init_git_repo(&dir);
 
         // Create initial commit
         write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
+        let _ = commit_all(&_repo, "initial commit");
 
         // Create a change
         write_file(dir.path().join("test.txt"), "new content");
 
         std::env::set_current_dir(dir.path()).unwrap();
         base_env();
+        std::env::set_var("XDG_CONFIG_HOME", &config_home); // Use isolated config
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
         let executor = mock_executor_with_success();

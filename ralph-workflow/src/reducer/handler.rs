@@ -406,9 +406,13 @@ impl MainEffectHandler {
                 hash: hash.to_string(),
                 message,
             }),
-            Ok(None) => Ok(PipelineEvent::CommitGenerationFailed {
-                reason: "No changes to commit".to_string(),
-            }),
+            Ok(None) => {
+                // No changes to commit - skip to FinalValidation instead of failing
+                // This prevents infinite loop when there are no changes
+                Ok(PipelineEvent::CommitSkipped {
+                    reason: "No changes to commit".to_string(),
+                })
+            }
             Err(e) => Ok(PipelineEvent::CommitGenerationFailed {
                 reason: e.to_string(),
             }),

@@ -54,6 +54,15 @@ fn canonical_working_dir(dir: &TempDir) -> String {
         .to_string()
 }
 
+/// Pre-create PLAN.md to skip the planning phase and avoid agent execution.
+///
+/// Integration tests should not spawn real agent processes. This helper
+/// creates a minimal PLAN.md so tests can verify behavior without running agents.
+fn precreate_plan_file(dir: &TempDir) {
+    fs::create_dir_all(dir.path().join(".agent")).unwrap();
+    fs::write(dir.path().join(".agent/PLAN.md"), "# Test Plan\n\nTest task description.\n").unwrap();
+}
+
 // ============================================================================
 // Checkpoint Creation Tests
 // ============================================================================
@@ -114,6 +123,9 @@ fn ralph_checkpoint_contains_iteration_info() {
         let dir = TempDir::new().unwrap();
         let config_home = create_isolated_config(&dir);
         let _repo = init_git_repo(&dir);
+
+        // Pre-create PLAN.md to skip planning phase and avoid agent execution
+        precreate_plan_file(&dir);
 
         // Create a failing developer command that leaves a checkpoint
         std::env::set_current_dir(dir.path()).unwrap();

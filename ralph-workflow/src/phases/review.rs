@@ -81,11 +81,6 @@ pub fn run_review_phase(
 ) -> anyhow::Result<ReviewResult> {
     let reviewer_context = ContextLevel::from(ctx.config.reviewer_context);
 
-    // Clean context for reviewer if using minimal context
-    if reviewer_context == ContextLevel::Minimal {
-        clean_context_for_reviewer(ctx.logger, ctx.config.isolation_mode)?;
-    }
-
     // Skip if no review cycles configured
     if ctx.config.reviewer_reviews == 0 {
         ctx.logger
@@ -93,6 +88,11 @@ pub fn run_review_phase(
         return Ok(ReviewResult {
             completed_early: false,
         });
+    }
+
+    // Clean context for reviewer if using minimal context (only if review is enabled)
+    if reviewer_context == ContextLevel::Minimal {
+        clean_context_for_reviewer(ctx.logger, ctx.config.isolation_mode)?;
     }
 
     ctx.logger.info(&format!(
