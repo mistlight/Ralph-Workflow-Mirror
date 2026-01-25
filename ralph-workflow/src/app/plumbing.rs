@@ -42,7 +42,7 @@ pub struct CommitGenerationConfig<'a> {
     /// Name of the developer agent to use for commit generation.
     pub developer_agent: &'a str,
     /// Name of the reviewer agent (not used, kept for API compatibility).
-    pub reviewer_agent: &'a str,
+    pub _reviewer_agent: &'a str,
     /// Process executor for external command execution.
     pub executor: Arc<dyn ProcessExecutor>,
 }

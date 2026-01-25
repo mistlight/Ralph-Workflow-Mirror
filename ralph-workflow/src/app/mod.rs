@@ -346,7 +346,7 @@ fn prepare_pipeline_or_exit(
             logger: &logger,
             colors,
             developer_agent: &developer_agent,
-            reviewer_agent: &reviewer_agent,
+            _reviewer_agent: &reviewer_agent,
             executor: std::sync::Arc::clone(&executor),
         })?;
         return Ok(None);
