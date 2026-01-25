@@ -19,7 +19,7 @@ use tempfile::TempDir;
 
 use test_helpers::init_git_repo;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
 use crate::test_timeout::with_default_timeout;
 
 /// Helper function to set up base environment for tests.
@@ -46,28 +46,29 @@ fn test_ralph_init_exits_cleanly() {
         fs::create_dir_all(&config_home).unwrap();
 
         // Set up environment and run ralph --init
-        std::env::set_current_dir(dir_path).unwrap();
-        set_base_env(&config_home);
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--init"], executor).unwrap();
+        with_cwd_guard(dir_path, || {
+            set_base_env(&config_home);
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--init"], executor).unwrap();
 
-        // Should have created config
-        let unified_config_path = config_home.join("ralph-workflow.toml");
-        assert!(
-            unified_config_path.exists(),
-            "Config should be created at {}",
-            unified_config_path.display()
-        );
+            // Should have created config
+            let unified_config_path = config_home.join("ralph-workflow.toml");
+            assert!(
+                unified_config_path.exists(),
+                "Config should be created at {}",
+                unified_config_path.display()
+            );
 
-        // Should NOT run the pipeline - verify no agent files were created
-        assert!(
-            !dir_path.join(".agent/PLAN.md").exists(),
-            "PLAN.md should not be created when --init is used"
-        );
-        assert!(
-            !dir_path.join(".agent/ISSUES.md").exists(),
-            "ISSUES.md should not be created when --init is used"
-        );
+            // Should NOT run the pipeline - verify no agent files were created
+            assert!(
+                !dir_path.join(".agent/PLAN.md").exists(),
+                "PLAN.md should not be created when --init is used"
+            );
+            assert!(
+                !dir_path.join(".agent/ISSUES.md").exists(),
+                "ISSUES.md should not be created when --init is used"
+            );
+        });
     });
 }
 
@@ -100,22 +101,23 @@ reviewer = ["codex"]
         .unwrap();
 
         // Set up environment and run ralph --init bug-fix
-        std::env::set_current_dir(dir_path).unwrap();
-        set_base_env(&config_home);
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--init=bug-fix"], executor).unwrap();
+        with_cwd_guard(dir_path, || {
+            set_base_env(&config_home);
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--init=bug-fix"], executor).unwrap();
 
-        // Should have created PROMPT.md
-        assert!(
-            dir_path.join("PROMPT.md").exists(),
-            "PROMPT.md should be created"
-        );
+            // Should have created PROMPT.md
+            assert!(
+                dir_path.join("PROMPT.md").exists(),
+                "PROMPT.md should be created"
+            );
 
-        // Should NOT run the pipeline - verify no agent files were created
-        assert!(
-            !dir_path.join(".agent/PLAN.md").exists(),
-            "PLAN.md should not be created when --init=bug-fix is used"
-        );
+            // Should NOT run the pipeline - verify no agent files were created
+            assert!(
+                !dir_path.join(".agent/PLAN.md").exists(),
+                "PLAN.md should not be created when --init=bug-fix is used"
+            );
+        });
     });
 }
 
@@ -148,16 +150,17 @@ reviewer = ["codex"]
         fs::write(dir_path.join("PROMPT.md"), "# Test\n").unwrap();
 
         // Set up environment and run ralph --init
-        std::env::set_current_dir(dir_path).unwrap();
-        set_base_env(&config_home);
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--init"], executor).unwrap();
+        with_cwd_guard(dir_path, || {
+            set_base_env(&config_home);
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--init"], executor).unwrap();
 
-        // Should NOT run the pipeline - verify no agent files were created
-        assert!(
-            !dir_path.join(".agent/PLAN.md").exists(),
-            "PLAN.md should not be created when --init is used with existing setup"
-        );
+            // Should NOT run the pipeline - verify no agent files were created
+            assert!(
+                !dir_path.join(".agent/PLAN.md").exists(),
+                "PLAN.md should not be created when --init is used with existing setup"
+            );
+        });
     });
 }
 
@@ -187,22 +190,23 @@ reviewer = ["codex"]
         .unwrap();
 
         // Set up environment and run ralph --init with an invalid template name
-        std::env::set_current_dir(dir_path).unwrap();
-        set_base_env(&config_home);
-        let executor = mock_executor_with_success();
+        with_cwd_guard(dir_path, || {
+            set_base_env(&config_home);
+            let executor = mock_executor_with_success();
 
-        // Should exit successfully (even though template is invalid)
-        let result = run_ralph_cli(&["--init=not-a-real-template"], executor);
-        assert!(
-            result.is_ok(),
-            "ralph --init=not-a-real-template should exit successfully"
-        );
+            // Should exit successfully (even though template is invalid)
+            let result = run_ralph_cli(&["--init=not-a-real-template"], executor);
+            assert!(
+                result.is_ok(),
+                "ralph --init=not-a-real-template should exit successfully"
+            );
 
-        // Should NOT run the pipeline - verify no agent files were created
-        assert!(
-            !dir_path.join(".agent/PLAN.md").exists(),
-            "PLAN.md should not be created when --init is used with invalid template"
-        );
+            // Should NOT run the pipeline - verify no agent files were created
+            assert!(
+                !dir_path.join(".agent/PLAN.md").exists(),
+                "PLAN.md should not be created when --init is used with invalid template"
+            );
+        });
     });
 }
 
@@ -233,25 +237,26 @@ reviewer = ["codex"]
 
         // Set up environment and run ralph --init "my commit message"
         // clap will interpret "my commit message" as the value for --init
-        std::env::set_current_dir(dir_path).unwrap();
-        set_base_env(&config_home);
-        let executor = mock_executor_with_success();
+        with_cwd_guard(dir_path, || {
+            set_base_env(&config_home);
+            let executor = mock_executor_with_success();
 
-        // Should exit successfully
-        let result = run_ralph_cli(&["--init", "my commit message"], executor);
-        assert!(
-            result.is_ok(),
-            "ralph --init with commit message should exit successfully"
-        );
+            // Should exit successfully
+            let result = run_ralph_cli(&["--init", "my commit message"], executor);
+            assert!(
+                result.is_ok(),
+                "ralph --init with commit message should exit successfully"
+            );
 
-        // Should NOT run the pipeline - verify no agent files were created
-        assert!(
-            !dir_path.join(".agent/PLAN.md").exists(),
-            "PLAN.md should not be created when --init is used with commit message"
-        );
-        assert!(
-            !dir_path.join(".agent/ISSUES.md").exists(),
-            "ISSUES.md should not be created when --init is used with commit message"
-        );
+            // Should NOT run the pipeline - verify no agent files were created
+            assert!(
+                !dir_path.join(".agent/PLAN.md").exists(),
+                "PLAN.md should not be created when --init is used with commit message"
+            );
+            assert!(
+                !dir_path.join(".agent/ISSUES.md").exists(),
+                "ISSUES.md should not be created when --init is used with commit message"
+            );
+        });
     });
 }

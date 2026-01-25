@@ -20,6 +20,42 @@
 //! - `run_ralph_cli()`: Run ralph CLI directly via app::run() without spawning processes
 //! - `mock_executor_with_success()`: Mock executor for successful agent execution
 //! - `mock_executor_for_git_success()`: Mock executor for git command success
+//!
+//! # Working Directory Management
+//!
+//! **CRITICAL:** Tests that change the current working directory MUST use
+//! [`with_cwd_guard`] to ensure the directory is restored after the test.
+//!
+//! ## Why This Matters
+//!
+//! Integration tests use `TempDir` which automatically deletes the temporary
+//! directory when dropped. If a test changes to a temporary directory without
+//! restoring it, subsequent tests will run in a deleted directory, causing
+//! "No such file or directory" errors.
+//!
+//! ## The Wrong Way (DO NOT DO THIS)
+//!
+//! ```ignore
+//! // ❌ WRONG: Manual directory change without restoration
+//! let dir = TempDir::new().unwrap();
+//! std::env::set_current_dir(dir.path()).unwrap();
+//! // ... test code ...
+//! // When test ends, dir is dropped but CWD still points to deleted directory!
+//! ```
+//!
+//! ## The Right Way (USE THIS INSTEAD)
+//!
+//! ```ignore
+//! // ✅ CORRECT: Automatic directory restoration
+//! let dir = TempDir::new().unwrap();
+//! with_cwd_guard(dir.path(), || {
+//!     // ... test code ...
+//!     // CWD is automatically restored when this closure ends
+//! });
+//! ```
+//!
+//! The [`with_cwd_guard`] function uses an RAII guard to restore the original
+//! directory even if the test panics.
 
 use clap::error::ErrorKind;
 use clap::Parser;
@@ -240,4 +276,105 @@ pub fn mock_executor_for_git_success() -> Arc<dyn ralph_workflow::executor::Proc
                 Ok(ralph_workflow::executor::AgentCommandResult::success()),
             ),
     )
+}
+
+/// RAII guard to restore the working directory on drop.
+///
+/// This struct stores the original directory path and restores it
+/// when dropped, ensuring the working directory is always restored
+/// even if the test panics.
+struct DirGuard(std::path::PathBuf);
+
+impl Drop for DirGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.0);
+    }
+}
+
+/// Run a closure in the specified directory with automatic CWD restoration.
+///
+/// This helper function:
+/// 1. Changes to the specified directory
+/// 2. Runs the provided closure
+/// 3. Automatically restores the original directory when done (even on panic)
+///
+/// # Arguments
+///
+/// * `dir` - The directory to change to
+/// * `f` - The closure to execute while in that directory
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::common::with_cwd_guard;
+///
+/// #[test]
+/// fn test_example() {
+///     with_default_timeout(|| {
+///         let dir = TempDir::new().unwrap();
+///         with_cwd_guard(dir.path(), || {
+///             // Test code here - already in dir.path()
+///             // CWD will be restored automatically
+///         });
+///     });
+/// }
+/// ```
+///
+/// # Working Directory Management
+///
+/// **CRITICAL:** All integration tests that change the current working directory
+/// MUST use this helper instead of `std::env::set_current_dir()` directly.
+///
+/// See the [module-level documentation](self) for details on why this is required.
+pub fn with_cwd_guard<F: FnOnce()>(dir: &std::path::Path, f: F) {
+    let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+    std::env::set_current_dir(dir).expect("Failed to change directory");
+    let _guard = DirGuard(old_dir);
+    f();
+}
+
+/// Run a closure in the specified directory with automatic CWD restoration and return a value.
+///
+/// This is the same as [`with_cwd_guard`] but allows the closure to return a value.
+/// Use this when you need to get a result from the closure.
+///
+/// # Arguments
+///
+/// * `dir` - The directory to change to
+/// * `f` - The closure to execute while in that directory
+///
+/// # Returns
+///
+/// Returns the value returned by the closure.
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::common::with_cwd_guard_result;
+///
+/// #[test]
+/// fn test_example() {
+///     with_default_timeout(|| {
+///         let dir = TempDir::new().unwrap();
+///         let result = with_cwd_guard_result(dir.path(), || {
+///             // Test code here - already in dir.path()
+///             // CWD will be restored automatically
+///             Ok("success")
+///         });
+///         assert!(result.is_ok());
+///     });
+/// }
+/// ```
+///
+/// # Working Directory Management
+///
+/// **CRITICAL:** All integration tests that change the current working directory
+/// MUST use this helper instead of `std::env::set_current_dir()` directly.
+///
+/// See the [module-level documentation](self) for details on why this is required.
+pub fn with_cwd_guard_result<F: FnOnce() -> R, R>(dir: &std::path::Path, f: F) -> R {
+    let old_dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+    std::env::set_current_dir(dir).expect("Failed to change directory");
+    let _guard = DirGuard(old_dir);
+    f()
 }

@@ -16,7 +16,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 
@@ -73,36 +73,37 @@ fn ralph_cleans_up_on_early_error() {
         write_file(dir.path().join("initial.txt"), "initial content");
         let initial_oid = commit_all(&repo, "initial commit").to_string();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        // agent commands not needed when developer_iters=0 (phase is skipped)
-        std::env::set_var("FULL_CHECK_CMD", "false");
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            // agent commands not needed when developer_iters=0 (phase is skipped)
+            std::env::set_var("FULL_CHECK_CMD", "false");
 
-        let executor = mock_executor_with_success();
-        let result = run_ralph_cli(&[], executor);
+            let executor = mock_executor_with_success();
+            let result = run_ralph_cli(&[], executor);
 
-        // Should fail because FULL_CHECK_CMD=false is invalid
-        assert!(result.is_err());
+            // Should fail because FULL_CHECK_CMD=false is invalid
+            assert!(result.is_err());
 
-        // Verify no commits were made (HEAD OID unchanged)
-        let final_oid = head_oid(&repo);
-        assert_eq!(
-            initial_oid, final_oid,
-            "No commits should have been made before the error"
-        );
+            // Verify no commits were made (HEAD OID unchanged)
+            let final_oid = head_oid(&repo);
+            assert_eq!(
+                initial_oid, final_oid,
+                "No commits should have been made before the error"
+            );
 
-        // Verify repository is in a clean state (only expected files exist)
-        // The .gitignore lists .agent/ as ignored, so it should be clean
-        let mut status_opts = git2::StatusOptions::new();
-        status_opts
-            .include_untracked(true)
-            .recurse_untracked_dirs(true);
-        let statuses = repo.statuses(Some(&mut status_opts)).unwrap();
-        assert!(
-            statuses.is_empty(),
-            "Repository should be clean (no uncommitted changes), found {} status entries",
-            statuses.len()
-        );
+            // Verify repository is in a clean state (only expected files exist)
+            // The .gitignore lists .agent/ as ignored, so it should be clean
+            let mut status_opts = git2::StatusOptions::new();
+            status_opts
+                .include_untracked(true)
+                .recurse_untracked_dirs(true);
+            let statuses = repo.statuses(Some(&mut status_opts)).unwrap();
+            assert!(
+                statuses.is_empty(),
+                "Repository should be clean (no uncommitted changes), found {} status entries",
+                statuses.len()
+            );
+        });
     });
 }
 
@@ -124,27 +125,28 @@ fn ralph_cleanup_on_interrupt_simulation() {
         write_file(dir.path().join("initial.txt"), "initial content");
         let _ = commit_all(&repo, "initial commit");
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        // agent commands not needed when developer_iters=0 and reviewer_reviews=0
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
-        let executor = mock_executor_with_success();
-        // Pipeline now succeeds even with developer errors (non-fatal)
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            // Pipeline now succeeds even with developer errors (non-fatal)
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify no unexpected commits were made (HEAD OID unchanged or only auto-commit)
-        // Note: The pipeline may create an auto-commit after the iteration, so we just
-        // verify the repository is in a clean state (no uncommitted changes)
-        let mut status_opts = git2::StatusOptions::new();
-        status_opts
-            .include_untracked(true)
-            .recurse_untracked_dirs(true);
-        let statuses = repo.statuses(Some(&mut status_opts)).unwrap();
-        assert!(
-            statuses.is_empty(),
-            "Repository should be clean after pipeline completes, found {} status entries",
-            statuses.len()
-        );
+            // Verify no unexpected commits were made (HEAD OID unchanged or only auto-commit)
+            // Note: The pipeline may create an auto-commit after the iteration, so we just
+            // verify the repository is in a clean state (no uncommitted changes)
+            let mut status_opts = git2::StatusOptions::new();
+            status_opts
+                .include_untracked(true)
+                .recurse_untracked_dirs(true);
+            let statuses = repo.statuses(Some(&mut status_opts)).unwrap();
+            assert!(
+                statuses.is_empty(),
+                "Repository should be clean after pipeline completes, found {} status entries",
+                statuses.len()
+            );
+        });
     });
 }
 
@@ -163,14 +165,15 @@ fn ralph_handles_agent_timeout_gracefully() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
-        // This tests that the pipeline handles phase-skipping correctly
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
+            // This tests that the pipeline handles phase-skipping correctly
 
-        let executor = mock_executor_with_success();
-        // Should complete successfully without agent execution
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            // Should complete successfully without agent execution
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -201,15 +204,16 @@ fn ralph_handles_invalid_json_in_config() {
         )
         .unwrap();
 
-        std::env::set_current_dir(dir_path).unwrap();
-        std::env::set_var("RALPH_INTERACTIVE", "0");
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
+        with_cwd_guard(dir_path, || {
+            std::env::set_var("RALPH_INTERACTIVE", "0");
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
 
-        let executor = mock_executor_with_success();
-        // Pipeline should succeed using defaults (config loader is lenient)
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            // Pipeline should succeed using defaults (config loader is lenient)
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -229,28 +233,29 @@ fn ralph_isolation_mode_does_not_create_status_notes_issues() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        // No agent commands needed when both phases are skipped
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            // No agent commands needed when both phases are skipped
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // STATUS.md, NOTES.md and ISSUES.md should NOT exist in isolation mode (default)
-        assert!(
-            !dir.path().join(".agent/STATUS.md").exists(),
-            "STATUS.md should not be created in isolation mode"
-        );
-        assert!(
-            !dir.path().join(".agent/NOTES.md").exists(),
-            "NOTES.md should not be created in isolation mode"
-        );
-        assert!(
-            !dir.path().join(".agent/ISSUES.md").exists(),
-            "ISSUES.md should not be created in isolation mode"
-        );
+            // STATUS.md, NOTES.md and ISSUES.md should NOT exist in isolation mode (default)
+            assert!(
+                !dir.path().join(".agent/STATUS.md").exists(),
+                "STATUS.md should not be created in isolation mode"
+            );
+            assert!(
+                !dir.path().join(".agent/NOTES.md").exists(),
+                "NOTES.md should not be created in isolation mode"
+            );
+            assert!(
+                !dir.path().join(".agent/ISSUES.md").exists(),
+                "ISSUES.md should not be created in isolation mode"
+            );
+        });
     });
 }
 
@@ -271,28 +276,29 @@ fn ralph_isolation_mode_deletes_existing_status_notes_issues() {
         fs::write(dir.path().join(".agent/NOTES.md"), "old notes").unwrap();
         fs::write(dir.path().join(".agent/ISSUES.md"), "old issues").unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        // No agent commands needed when both phases are skipped
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            // No agent commands needed when both phases are skipped
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Files should be deleted
-        assert!(
-            !dir.path().join(".agent/STATUS.md").exists(),
-            "STATUS.md should be deleted in isolation mode"
-        );
-        assert!(
-            !dir.path().join(".agent/NOTES.md").exists(),
-            "NOTES.md should be deleted in isolation mode"
-        );
-        assert!(
-            !dir.path().join(".agent/ISSUES.md").exists(),
-            "ISSUES.md should be deleted in isolation mode"
-        );
+            // Files should be deleted
+            assert!(
+                !dir.path().join(".agent/STATUS.md").exists(),
+                "STATUS.md should be deleted in isolation mode"
+            );
+            assert!(
+                !dir.path().join(".agent/NOTES.md").exists(),
+                "NOTES.md should be deleted in isolation mode"
+            );
+            assert!(
+                !dir.path().join(".agent/ISSUES.md").exists(),
+                "ISSUES.md should be deleted in isolation mode"
+            );
+        });
     });
 }
 
@@ -308,28 +314,29 @@ fn ralph_no_isolation_creates_status_notes_issues() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        // No agent commands needed when both phases are skipped
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            // No agent commands needed when both phases are skipped
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--no-isolation"], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--no-isolation"], executor).unwrap();
 
-        // STATUS.md, NOTES.md and ISSUES.md should exist when not in isolation mode
-        assert!(
-            dir.path().join(".agent/STATUS.md").exists(),
-            "STATUS.md should be created when --no-isolation is used"
-        );
-        assert!(
-            dir.path().join(".agent/NOTES.md").exists(),
-            "NOTES.md should be created when --no-isolation is used"
-        );
-        assert!(
-            dir.path().join(".agent/ISSUES.md").exists(),
-            "ISSUES.md should be created when --no-isolation is used"
-        );
+            // STATUS.md, NOTES.md and ISSUES.md should exist when not in isolation mode
+            assert!(
+                dir.path().join(".agent/STATUS.md").exists(),
+                "STATUS.md should be created when --no-isolation is used"
+            );
+            assert!(
+                dir.path().join(".agent/NOTES.md").exists(),
+                "NOTES.md should be created when --no-isolation is used"
+            );
+            assert!(
+                dir.path().join(".agent/ISSUES.md").exists(),
+                "ISSUES.md should be created when --no-isolation is used"
+            );
+        });
     });
 }
 
@@ -345,29 +352,30 @@ fn ralph_isolation_mode_env_false_creates_status_notes_issues() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_ISOLATION_MODE", "0");
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        // No agent commands needed when both phases are skipped
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_ISOLATION_MODE", "0");
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            // No agent commands needed when both phases are skipped
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // STATUS.md, NOTES.md and ISSUES.md should exist when isolation mode is disabled via env
-        assert!(
-            dir.path().join(".agent/STATUS.md").exists(),
-            "STATUS.md should be created when RALPH_ISOLATION_MODE=0"
-        );
-        assert!(
-            dir.path().join(".agent/NOTES.md").exists(),
-            "NOTES.md should be created when RALPH_ISOLATION_MODE=0"
-        );
-        assert!(
-            dir.path().join(".agent/ISSUES.md").exists(),
-            "ISSUES.md should be created when RALPH_ISOLATION_MODE=0"
-        );
+            // STATUS.md, NOTES.md and ISSUES.md should exist when isolation mode is disabled via env
+            assert!(
+                dir.path().join(".agent/STATUS.md").exists(),
+                "STATUS.md should be created when RALPH_ISOLATION_MODE=0"
+            );
+            assert!(
+                dir.path().join(".agent/NOTES.md").exists(),
+                "NOTES.md should be created when RALPH_ISOLATION_MODE=0"
+            );
+            assert!(
+                dir.path().join(".agent/ISSUES.md").exists(),
+                "ISSUES.md should be created when RALPH_ISOLATION_MODE=0"
+            );
+        });
     });
 }
 
@@ -401,34 +409,35 @@ fn ralph_no_isolation_overwrites_existing_status_notes_issues() {
         )
         .unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        // No agent commands needed when both phases are skipped
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            // No agent commands needed when both phases are skipped
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--no-isolation"], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--no-isolation"], executor).unwrap();
 
-        // Files should exist (non-isolation mode), but should be overwritten to 1 line.
-        assert_eq!(
-            fs::read_to_string(dir.path().join(".agent/STATUS.md")).unwrap(),
-            "In progress.\n"
-        );
-        assert_eq!(
-            fs::read_to_string(dir.path().join(".agent/NOTES.md")).unwrap(),
-            "Notes.\n"
-        );
-        assert_eq!(
-            fs::read_to_string(dir.path().join(".agent/ISSUES.md")).unwrap(),
-            "No issues recorded.\n"
-        );
+            // Files should exist (non-isolation mode), but should be overwritten to 1 line.
+            assert_eq!(
+                fs::read_to_string(dir.path().join(".agent/STATUS.md")).unwrap(),
+                "In progress.\n"
+            );
+            assert_eq!(
+                fs::read_to_string(dir.path().join(".agent/NOTES.md")).unwrap(),
+                "Notes.\n"
+            );
+            assert_eq!(
+                fs::read_to_string(dir.path().join(".agent/ISSUES.md")).unwrap(),
+                "No issues recorded.\n"
+            );
 
-        // No archived context should be left behind.
-        assert!(
-            !dir.path().join(".agent/archive").exists(),
-            ".agent/archive should not be created during cleanup"
-        );
+            // No archived context should be left behind.
+            assert!(
+                !dir.path().join(".agent/archive").exists(),
+                ".agent/archive should not be created during cleanup"
+            );
+        });
     });
 }
 
@@ -451,13 +460,14 @@ fn ralph_resume_continues_from_checkpoint_phase() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            // With developer_iters=0 and reviewer_reviews=0, agent phases are skipped
 
-        let executor = mock_executor_with_success();
-        // Should complete successfully without agent execution
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            // Should complete successfully without agent execution
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -479,16 +489,17 @@ fn ralph_developer_iteration_creates_changes_for_commit() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Use 0 to avoid timeout from commit generation
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        // No agent commands needed when both phases are skipped
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Use 0 to avoid timeout from commit generation
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            // No agent commands needed when both phases are skipped
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Note: Test uses 0 iterations to avoid timeout from commit generation
-        // The test verifies the infrastructure is in place without running iterations
+            // Note: Test uses 0 iterations to avoid timeout from commit generation
+            // The test verifies the infrastructure is in place without running iterations
+        });
     });
 }

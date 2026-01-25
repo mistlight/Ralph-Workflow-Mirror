@@ -18,7 +18,7 @@
 //! - Uses `TempDir` for filesystem isolation
 //! - Tests are deterministic and focus on successful execution and file side effects
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
 use crate::test_timeout::with_default_timeout;
 use std::fs;
 use tempfile::TempDir;
@@ -84,9 +84,9 @@ fn ralph_diagnose_shows_system_info() {
         let _ = init_git_repo(&dir);
 
         let executor = mock_executor_with_success();
-        // Change to the test directory before running
-        std::env::set_current_dir(dir.path()).unwrap();
-        run_ralph_cli(&["--diagnose"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            run_ralph_cli(&["--diagnose"], executor).unwrap();
+        });
     });
 }
 
@@ -101,8 +101,9 @@ fn ralph_diagnose_short_flag_works() {
         let _ = init_git_repo(&dir);
 
         let executor = mock_executor_with_success();
-        std::env::set_current_dir(dir.path()).unwrap();
-        run_ralph_cli(&["-d"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            run_ralph_cli(&["-d"], executor).unwrap();
+        });
     });
 }
 
@@ -136,9 +137,10 @@ reviewer = ["codex"]
         .unwrap();
 
         let executor = mock_executor_with_success();
-        std::env::set_current_dir(dir.path()).unwrap();
         std::env::set_var("XDG_CONFIG_HOME", &config_home);
-        run_ralph_cli(&["--dry-run"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            run_ralph_cli(&["--dry-run"], executor).unwrap();
+        });
     });
 }
 
@@ -178,11 +180,12 @@ reviewer = ["codex"]
         .unwrap();
 
         let executor = mock_executor_with_success();
-        std::env::set_current_dir(dir.path()).unwrap();
         std::env::set_var("XDG_CONFIG_HOME", &config_home);
 
         // Note: --init in non-interactive mode returns early without creating PROMPT.md
         // The actual PROMPT.md creation happens in interactive mode
-        run_ralph_cli(&["--init", "bug-fix"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            run_ralph_cli(&["--init", "bug-fix"], executor).unwrap();
+        });
     });
 }

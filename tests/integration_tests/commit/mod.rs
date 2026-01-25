@@ -23,7 +23,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
@@ -90,13 +90,14 @@ fn test_commit_message_generated_with_simple_diff() {
         write_file(dir.path().join("test.txt"), "new content");
 
         // Run ralph with developer_iters=0 (skip to commit)
-        std::env::set_current_dir(dir.path()).unwrap();
         set_base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            run_ralph_cli(&[], executor).unwrap();
+        });
 
         // Verify a commit was created with a non-empty message
         let message = get_last_commit_message(&repo);
@@ -125,13 +126,14 @@ fn test_commit_message_generated_with_multiple_files() {
         write_file(dir.path().join("file2.txt"), "content 2");
         write_file(dir.path().join("file3.rs"), "fn main() {}");
 
-        std::env::set_current_dir(dir.path()).unwrap();
         set_base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            run_ralph_cli(&[], executor).unwrap();
+        });
 
         let message = get_last_commit_message(&repo);
         assert!(!message.trim().is_empty());
@@ -172,13 +174,14 @@ fn test_commit_created_with_diff_content() {
         }
         write_file(dir.path().join("large_file.txt"), &content);
 
-        std::env::set_current_dir(dir.path()).unwrap();
         set_base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            run_ralph_cli(&[], executor).unwrap();
+        });
 
         // Verify commit was created
         let message = get_last_commit_message(&repo);
@@ -202,13 +205,14 @@ fn test_commit_succeeds_without_developer_or_review() {
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
-        std::env::set_current_dir(dir.path()).unwrap();
         set_base_env(&config_home);
         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
         let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            run_ralph_cli(&[], executor).unwrap();
+        });
 
         // Verify a commit was created (we should have 2 commits now)
         let repo = git2::Repository::open(dir.path()).unwrap();

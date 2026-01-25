@@ -20,7 +20,7 @@
 
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
 
@@ -61,17 +61,18 @@ fn ralph_skips_phases_with_zero_iterations() {
         // Create a change to commit
         write_file(dir.path().join("test.txt"), "new content");
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env();
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Skip developer
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review
+        with_cwd_guard(dir.path(), || {
+            base_env();
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0"); // Skip developer
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0"); // Skip review
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify no agent-related files were created (agents weren't called)
-        assert!(!dir.path().join(".agent/PLAN.md").exists());
-        assert!(!dir.path().join(".agent/ISSUES.md").exists());
+            // Verify no agent-related files were created (agents weren't called)
+            assert!(!dir.path().join(".agent/PLAN.md").exists());
+            assert!(!dir.path().join(".agent/ISSUES.md").exists());
+        });
     });
 }
 
@@ -94,18 +95,19 @@ fn ralph_succeeds_with_zero_iterations() {
         // Create a change
         write_file(dir.path().join("test.txt"), "new content");
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env();
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+        with_cwd_guard(dir.path(), || {
+            base_env();
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify a commit was created
-        let repo = git2::Repository::open(dir.path()).unwrap();
-        let head = repo.head().unwrap();
-        let commit = head.peel_to_commit().unwrap();
-        assert!(!commit.message().unwrap().is_empty());
+            // Verify a commit was created
+            let repo = git2::Repository::open(dir.path()).unwrap();
+            let head = repo.head().unwrap();
+            let commit = head.peel_to_commit().unwrap();
+            assert!(!commit.message().unwrap().is_empty());
+        });
     });
 }

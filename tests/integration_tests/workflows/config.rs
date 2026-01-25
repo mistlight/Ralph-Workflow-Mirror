@@ -15,7 +15,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
 
@@ -75,20 +75,21 @@ fn ralph_init_creates_config_file() {
         assert!(!config_path.exists());
 
         // Run ralph --init-legacy
-        std::env::set_current_dir(dir_path).unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--init-legacy"], executor).unwrap();
+        with_cwd_guard(dir_path, || {
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--init-legacy"], executor).unwrap();
 
-        // Config file should now exist
-        assert!(config_path.exists());
+            // Config file should now exist
+            assert!(config_path.exists());
 
-        // Verify content contains expected sections
-        let content = fs::read_to_string(&config_path).unwrap();
-        assert!(content.contains("Ralph Agents Configuration File"));
-        assert!(content.contains("[agents.claude]"));
-        assert!(content.contains("[agents.codex]"));
-        assert!(content.contains("[agent_chain]"));
+            // Verify content contains expected sections
+            let content = fs::read_to_string(&config_path).unwrap();
+            assert!(content.contains("Ralph Agents Configuration File"));
+            assert!(content.contains("[agents.claude]"));
+            assert!(content.contains("[agents.codex]"));
+            assert!(content.contains("[agent_chain]"));
+        });
     });
 }
 
@@ -115,14 +116,15 @@ reviewer = ["codex"]
         fs::write(dir_path.join(".agent/agents.toml"), custom_config).unwrap();
 
         // Run ralph --init-legacy
-        std::env::set_current_dir(dir_path).unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--init-legacy"], executor).unwrap();
+        with_cwd_guard(dir_path, || {
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--init-legacy"], executor).unwrap();
 
-        // Config file should still contain original content
-        let content = fs::read_to_string(dir_path.join(".agent/agents.toml")).unwrap();
-        assert_eq!(content, custom_config);
+            // Config file should still contain original content
+            let content = fs::read_to_string(dir_path.join(".agent/agents.toml")).unwrap();
+            assert_eq!(content, custom_config);
+        });
     });
 }
 
@@ -150,14 +152,15 @@ fn ralph_first_run_creates_config_and_exits() {
         assert!(!unified_config_path.exists());
 
         // Run ralph --init-global (unified config)
-        std::env::set_current_dir(dir_path).unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", &config_home);
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--init-global"], executor).unwrap();
+        with_cwd_guard(dir_path, || {
+            std::env::set_var("XDG_CONFIG_HOME", &config_home);
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--init-global"], executor).unwrap();
 
-        // Should exit successfully after creating the config
-        // Unified config file should now exist
-        assert!(unified_config_path.exists());
+            // Should exit successfully after creating the config
+            // Unified config file should now exist
+            assert!(unified_config_path.exists());
+        });
     });
 }
 
@@ -184,12 +187,13 @@ reviewer = ["aider", "codex"]
         )
         .unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        // agent commands not needed when developer_iters=0 and reviewer_reviews=0
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -209,12 +213,13 @@ fn ralph_quick_mode_sets_minimal_iterations() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
-        // Quick mode works without shell commands
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
+            // Quick mode works without shell commands
+        });
     });
 }
 
@@ -230,12 +235,13 @@ fn ralph_quick_mode_short_flag_works() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["-Q", "--developer-iters", "0"], executor).unwrap();
-        // Quick mode works without shell commands
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["-Q", "--developer-iters", "0"], executor).unwrap();
+            // Quick mode works without shell commands
+        });
     });
 }
 
@@ -251,12 +257,13 @@ fn ralph_quick_mode_explicit_iters_override() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
-        // Explicit --developer-iters overrides quick mode
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--quick", "--developer-iters", "0"], executor).unwrap();
+            // Explicit --developer-iters overrides quick mode
+        });
     });
 }
 
@@ -272,12 +279,13 @@ fn ralph_rapid_mode_sets_two_iterations() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--rapid", "--developer-iters", "0"], executor).unwrap();
-        // Rapid mode works without shell commands
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--rapid", "--developer-iters", "0"], executor).unwrap();
+            // Rapid mode works without shell commands
+        });
     });
 }
 
@@ -293,12 +301,13 @@ fn ralph_rapid_mode_short_flag_works() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["-U", "--developer-iters", "0"], executor).unwrap();
-        // Rapid mode works without shell commands
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["-U", "--developer-iters", "0"], executor).unwrap();
+            // Rapid mode works without shell commands
+        });
     });
 }
 
@@ -337,15 +346,16 @@ tokio = "1.0"
         fs::write(dir.path().join("tests/test.rs"), "#[test] fn it_works() {}").unwrap();
 
         // Run ralph with verbose output to see stack detection
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
-        std::env::set_var("RALPH_VERBOSITY", "2"); // Verbose mode
-                                                   // agent commands not needed when developer_iters=0 and reviewer_reviews=0
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
+            std::env::set_var("RALPH_VERBOSITY", "2"); // Verbose mode
+                                                       // agent commands not needed when developer_iters=0 and reviewer_reviews=0
 
-        // Pipeline should complete and potentially mention Rust stack
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            // Pipeline should complete and potentially mention Rust stack
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -382,13 +392,14 @@ fn ralph_stack_detection_javascript_project() {
         )
         .unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
-        // agent commands removed (not needed when developer_iters=0)
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
+            // agent commands removed (not needed when developer_iters=0)
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -415,13 +426,14 @@ name = "test"
         fs::create_dir_all(dir.path().join("src")).unwrap();
         fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_AUTO_DETECT_STACK", "false"); // Explicitly disable
-                                                               // agent commands removed (not needed when developer_iters=0)
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_AUTO_DETECT_STACK", "false"); // Explicitly disable
+                                                                   // agent commands removed (not needed when developer_iters=0)
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -452,13 +464,14 @@ version = "0.1.0"
         fs::create_dir_all(dir.path().join("scripts")).unwrap();
         fs::write(dir.path().join("scripts/deploy.py"), "print('deploy')").unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
-        // agent commands removed (not needed when developer_iters=0)
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_AUTO_DETECT_STACK", "true");
+            // agent commands removed (not needed when developer_iters=0)
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -478,13 +491,14 @@ fn ralph_review_depth_standard() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_REVIEW_DEPTH", "standard");
-        // agent commands removed (not needed when developer_iters=0)
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_REVIEW_DEPTH", "standard");
+            // agent commands removed (not needed when developer_iters=0)
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -500,13 +514,14 @@ fn ralph_review_depth_comprehensive() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_REVIEW_DEPTH", "comprehensive");
-        // agent commands removed (not needed when developer_iters=0)
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_REVIEW_DEPTH", "comprehensive");
+            // agent commands removed (not needed when developer_iters=0)
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -522,13 +537,14 @@ fn ralph_review_depth_security() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_REVIEW_DEPTH", "security");
-        // agent commands removed (not needed when developer_iters=0)
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_REVIEW_DEPTH", "security");
+            // agent commands removed (not needed when developer_iters=0)
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -544,12 +560,13 @@ fn ralph_review_depth_incremental() {
         let config_home = create_isolated_config(&dir);
         let _ = init_git_repo(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_REVIEW_DEPTH", "incremental");
-        // agent commands removed (not needed when developer_iters=0)
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_REVIEW_DEPTH", "incremental");
+            // agent commands removed (not needed when developer_iters=0)
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }

@@ -23,7 +23,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
 
@@ -95,19 +95,20 @@ fn backup_created_at_pipeline_start() {
         // Pre-create PLAN.md to avoid agent execution
         create_plan_file(&dir);
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        set_base_env();
+        with_cwd_guard(dir.path(), || {
+            set_base_env();
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup was created
-        assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
+            // Verify backup was created
+            assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
 
-        // Verify backup content matches original PROMPT.md
-        let original = fs::read_to_string(dir.path().join("PROMPT.md")).unwrap();
-        let backup = fs::read_to_string(dir.path().join(".agent/PROMPT.md.backup")).unwrap();
-        assert_eq!(original, backup);
+            // Verify backup content matches original PROMPT.md
+            let original = fs::read_to_string(dir.path().join("PROMPT.md")).unwrap();
+            let backup = fs::read_to_string(dir.path().join(".agent/PROMPT.md.backup")).unwrap();
+            assert_eq!(original, backup);
+        });
     });
 }
 
@@ -139,21 +140,22 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
 
         // Run to create backup
         create_plan_file(&dir);
-        std::env::set_current_dir(dir.path()).unwrap();
-        set_base_env();
+        with_cwd_guard(dir.path(), || {
+            set_base_env();
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup was created and content matches
-        assert!(backup_path.exists(), "Backup should be created after run");
+            // Verify backup was created and content matches
+            assert!(backup_path.exists(), "Backup should be created after run");
 
-        let backup_content = fs::read_to_string(&backup_path).unwrap();
-        assert_eq!(backup_content, original_content);
-        assert!(prompt_path.exists());
+            let backup_content = fs::read_to_string(&backup_path).unwrap();
+            assert_eq!(backup_content, original_content);
+            assert!(prompt_path.exists());
 
-        // Note: Runtime restoration behavior is tested via unit tests
-        // with mock file operations handlers.
+            // Note: Runtime restoration behavior is tested via unit tests
+            // with mock file operations handlers.
+        });
     });
 }
 
@@ -178,23 +180,24 @@ fn backup_not_deleted_during_cleanup() {
 
         // Run Ralph to create backup
         create_plan_file(&dir);
-        std::env::set_current_dir(dir.path()).unwrap();
-        set_base_env();
+        with_cwd_guard(dir.path(), || {
+            set_base_env();
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup exists
-        assert!(backup_path.exists());
+            // Verify backup exists
+            assert!(backup_path.exists());
 
-        // Run Ralph again - cleanup shouldn't delete backup
-        create_plan_file(&dir);
+            // Run Ralph again - cleanup shouldn't delete backup
+            create_plan_file(&dir);
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup still exists (wasn't cleaned up)
-        assert!(backup_path.exists());
+            // Verify backup still exists (wasn't cleaned up)
+            assert!(backup_path.exists());
+        });
     });
 }
 
@@ -213,43 +216,44 @@ fn backup_has_readonly_permissions() {
 
         // Run Ralph to create backup
         create_plan_file(&dir);
-        std::env::set_current_dir(dir.path()).unwrap();
-        set_base_env();
+        with_cwd_guard(dir.path(), || {
+            set_base_env();
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup exists
-        assert!(backup_path.exists());
+            // Verify backup exists
+            assert!(backup_path.exists());
 
-        // On Unix systems, check if file is read-only
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let metadata = fs::metadata(&backup_path).unwrap();
-            let permissions = metadata.permissions();
-            let mode = permissions.mode();
+            // On Unix systems, check if file is read-only
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let metadata = fs::metadata(&backup_path).unwrap();
+                let permissions = metadata.permissions();
+                let mode = permissions.mode();
 
-            // Check if read-only (0o444 means read for all, no write)
-            // The file should have read permission but not write permission
-            assert!(
-                mode & 0o222 == 0,
-                "Backup file should not have write permissions"
-            );
-        }
+                // Check if read-only (0o444 means read for all, no write)
+                // The file should have read permission but not write permission
+                assert!(
+                    mode & 0o222 == 0,
+                    "Backup file should not have write permissions"
+                );
+            }
 
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::MetadataExt;
-            let metadata = fs::metadata(&backup_path).unwrap();
-            let attrs = metadata.file_attributes();
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                let metadata = fs::metadata(&backup_path).unwrap();
+                let attrs = metadata.file_attributes();
 
-            // Check if readonly flag is set (FILE_ATTRIBUTE_READONLY = 0x1)
-            assert!(
-                attrs & 0x1 != 0,
-                "Backup file should have readonly attribute set"
-            );
-        }
+                // Check if readonly flag is set (FILE_ATTRIBUTE_READONLY = 0x1)
+                assert!(
+                    attrs & 0x1 != 0,
+                    "Backup file should have readonly attribute set"
+                );
+            }
+        });
     });
 }
 
@@ -280,29 +284,30 @@ fn periodic_restoration_works_during_pipeline() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        std::env::set_current_dir(dir.path()).unwrap();
-        set_base_env();
+        with_cwd_guard(dir.path(), || {
+            set_base_env();
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup was created
-        assert!(backup_path.exists());
+            // Verify backup was created
+            assert!(backup_path.exists());
 
-        // Run again - backup should persist
-        create_plan_file(&dir);
+            // Run again - backup should persist
+            create_plan_file(&dir);
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup still exists and has correct content
-        assert!(prompt_path.exists());
-        assert!(backup_path.exists());
-        let backup_content = fs::read_to_string(&backup_path).unwrap();
-        assert_eq!(backup_content, original_content);
+            // Verify backup still exists and has correct content
+            assert!(prompt_path.exists());
+            assert!(backup_path.exists());
+            let backup_content = fs::read_to_string(&backup_path).unwrap();
+            assert_eq!(backup_content, original_content);
 
-        // Note: Runtime periodic restoration is tested via unit tests
-        // with mock file operations handlers.
+            // Note: Runtime periodic restoration is tested via unit tests
+            // with mock file operations handlers.
+        });
     });
 }
 
@@ -330,11 +335,12 @@ fn backup_rotation_maintains_multiple_backups() {
         // Run Ralph multiple times to create multiple backups
         for _ in 0..3 {
             create_plan_file(&dir);
-            std::env::set_current_dir(dir.path()).unwrap();
-            set_base_env();
+            with_cwd_guard(dir.path(), || {
+                set_base_env();
 
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
+                let executor = mock_executor_with_success();
+                run_ralph_cli(&[], executor).unwrap();
+            });
         }
 
         // Verify all 3 backup levels exist
@@ -378,11 +384,12 @@ fn backup_oldest_deleted_when_exceeding_limit() {
         // Run Ralph 4 times - should only keep 3 backups
         for _ in 0..4 {
             create_plan_file(&dir);
-            std::env::set_current_dir(dir.path()).unwrap();
-            set_base_env();
+            with_cwd_guard(dir.path(), || {
+                set_base_env();
 
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
+                let executor = mock_executor_with_success();
+                run_ralph_cli(&[], executor).unwrap();
+            });
         }
 
         // Verify .backup.3 doesn't exist (oldest was deleted)
@@ -416,11 +423,12 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
         // Run Ralph twice to create multiple backups
         for _ in 0..2 {
             create_plan_file(&dir);
-            std::env::set_current_dir(dir.path()).unwrap();
-            set_base_env();
+            with_cwd_guard(dir.path(), || {
+                set_base_env();
 
-            let executor = mock_executor_with_success();
-            run_ralph_cli(&[], executor).unwrap();
+                let executor = mock_executor_with_success();
+                run_ralph_cli(&[], executor).unwrap();
+            });
         }
 
         // Verify both backups exist
@@ -445,24 +453,26 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
         fs::write(&prompt_path, &fallback_content).unwrap();
 
         // Run Ralph again - it should successfully run with the restored PROMPT.md
-        create_plan_file(&dir);
+        with_cwd_guard(dir.path(), || {
+            create_plan_file(&dir);
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify PROMPT.md exists and has valid content
-        assert!(prompt_path.exists(), "PROMPT.md should exist");
+            // Verify PROMPT.md exists and has valid content
+            assert!(prompt_path.exists(), "PROMPT.md should exist");
 
-        // The content should match the fallback backup (not the corrupted primary)
-        let final_content = fs::read_to_string(&prompt_path).unwrap();
-        assert_eq!(
-            final_content, fallback_content,
-            "PROMPT.md should have the content from the fallback backup"
-        );
-        assert!(
-            !final_content.contains("CORRUPTED"),
-            "PROMPT.md should not have corrupted content from primary backup"
-        );
+            // The content should match the fallback backup (not the corrupted primary)
+            let final_content = fs::read_to_string(&prompt_path).unwrap();
+            assert_eq!(
+                final_content, fallback_content,
+                "PROMPT.md should have the content from the fallback backup"
+            );
+            assert!(
+                !final_content.contains("CORRUPTED"),
+                "PROMPT.md should not have corrupted content from primary backup"
+            );
+        });
     });
 }
 
@@ -492,18 +502,19 @@ fn agent_chmod_rm_is_caught_and_restored() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        std::env::set_current_dir(dir.path()).unwrap();
-        set_base_env();
+        with_cwd_guard(dir.path(), || {
+            set_base_env();
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup was created
-        assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
-        assert!(prompt_path.exists());
+            // Verify backup was created
+            assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
+            assert!(prompt_path.exists());
 
-        // Note: The actual restoration behavior is tested via unit tests
-        // with mock file operations handlers.
+            // Note: The actual restoration behavior is tested via unit tests
+            // with mock file operations handlers.
+        });
     });
 }
 
@@ -531,18 +542,19 @@ fn agent_overwrite_is_detected_and_restored() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        std::env::set_current_dir(dir.path()).unwrap();
-        set_base_env();
+        with_cwd_guard(dir.path(), || {
+            set_base_env();
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup was created
-        assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
-        assert!(prompt_path.exists());
+            // Verify backup was created
+            assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
+            assert!(prompt_path.exists());
 
-        // Note: The actual overwrite detection and restoration is tested
-        // via unit tests with mock file operations handlers.
+            // Note: The actual overwrite detection and restoration is tested
+            // via unit tests with mock file operations handlers.
+        });
     });
 }
 
@@ -570,17 +582,18 @@ fn multiple_deletions_are_logged_with_context() {
 
         // Initial run to create backup
         create_plan_file(&dir);
-        std::env::set_current_dir(dir.path()).unwrap();
-        set_base_env();
+        with_cwd_guard(dir.path(), || {
+            set_base_env();
 
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
 
-        // Verify backup was created and PROMPT.md exists
-        assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
-        assert!(prompt_path.exists());
+            // Verify backup was created and PROMPT.md exists
+            assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
+            assert!(prompt_path.exists());
 
-        // Note: Multiple deletion handling is tested via unit tests
-        // with mock file operations handlers.
+            // Note: Multiple deletion handling is tested via unit tests
+            // with mock file operations handlers.
+        });
     });
 }

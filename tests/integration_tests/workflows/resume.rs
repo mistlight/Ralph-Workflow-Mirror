@@ -7,7 +7,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use crate::common::{mock_executor_with_success, run_ralph_cli};
+use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
 use crate::test_timeout::with_default_timeout;
 
 use test_helpers::{init_git_repo, write_file};
@@ -60,7 +60,11 @@ fn canonical_working_dir(dir: &TempDir) -> String {
 /// creates a minimal PLAN.md so tests can verify behavior without running agents.
 fn precreate_plan_file(dir: &TempDir) {
     fs::create_dir_all(dir.path().join(".agent")).unwrap();
-    fs::write(dir.path().join(".agent/PLAN.md"), "# Test Plan\n\nTest task description.\n").unwrap();
+    fs::write(
+        dir.path().join(".agent/PLAN.md"),
+        "# Test Plan\n\nTest task description.\n",
+    )
+    .unwrap();
 }
 
 // ============================================================================
@@ -84,14 +88,15 @@ fn ralph_creates_checkpoint_during_development() {
         .unwrap();
 
         // Run with 0 iterations - checkpoint creation is tested elsewhere
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        // Verify the pipeline completed successfully
-        // Checkpoint behavior is tested in more specific tests below
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            // Verify the pipeline completed successfully
+            // Checkpoint behavior is tested in more specific tests below
+        });
     });
 }
 
@@ -103,13 +108,14 @@ fn ralph_creates_checkpoint_during_review() {
         let _repo = init_git_repo(&dir);
 
         // Run with 1 review iteration
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+        });
     });
 }
 
@@ -128,38 +134,39 @@ fn ralph_checkpoint_contains_iteration_info() {
         precreate_plan_file(&dir);
 
         // Create a failing developer command that leaves a checkpoint
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "2");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        // Check that checkpoint was created
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        assert!(
-            checkpoint_path.exists(),
-            "Checkpoint should be created on failure"
-        );
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "2");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            // Check that checkpoint was created
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            assert!(
+                checkpoint_path.exists(),
+                "Checkpoint should be created on failure"
+            );
 
-        // Verify checkpoint content has expected structure
-        let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
-        assert!(
-            checkpoint_content.contains("\"phase\""),
-            "Checkpoint should contain phase"
-        );
-        assert!(
-            checkpoint_content.contains("\"total_iterations\""),
-            "Checkpoint should contain total_iterations"
-        );
-        assert!(
-            checkpoint_content.contains("\"total_reviewer_passes\""),
-            "Checkpoint should contain total_reviewer_passes"
-        );
-        assert!(
-            checkpoint_content.contains("\"version\""),
-            "Checkpoint should contain version"
-        );
+            // Verify checkpoint content has expected structure
+            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+            assert!(
+                checkpoint_content.contains("\"phase\""),
+                "Checkpoint should contain phase"
+            );
+            assert!(
+                checkpoint_content.contains("\"total_iterations\""),
+                "Checkpoint should contain total_iterations"
+            );
+            assert!(
+                checkpoint_content.contains("\"total_reviewer_passes\""),
+                "Checkpoint should contain total_reviewer_passes"
+            );
+            assert!(
+                checkpoint_content.contains("\"version\""),
+                "Checkpoint should contain version"
+            );
+        });
     });
 }
 
@@ -171,29 +178,30 @@ fn ralph_checkpoint_contains_cli_args_snapshot() {
         let _repo = init_git_repo(&dir);
 
         // Create a failing run with specific config
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "5");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "3");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "5");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "3");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
 
-        // Verify CLI args snapshot is present
-        assert!(
-            checkpoint_content.contains("\"cli_args\""),
-            "Checkpoint should contain cli_args snapshot"
-        );
-        assert!(
-            checkpoint_content.contains("\"developer_iters\""),
-            "Checkpoint should contain developer_iters in cli_args"
-        );
-        assert!(
-            checkpoint_content.contains("\"reviewer_reviews\""),
-            "Checkpoint should contain reviewer_reviews in cli_args"
-        );
+            // Verify CLI args snapshot is present
+            assert!(
+                checkpoint_content.contains("\"cli_args\""),
+                "Checkpoint should contain cli_args snapshot"
+            );
+            assert!(
+                checkpoint_content.contains("\"developer_iters\""),
+                "Checkpoint should contain developer_iters in cli_args"
+            );
+            assert!(
+                checkpoint_content.contains("\"reviewer_reviews\""),
+                "Checkpoint should contain reviewer_reviews in cli_args"
+            );
+        });
     });
 }
 
@@ -205,25 +213,26 @@ fn ralph_checkpoint_contains_agent_config_snapshot() {
         let _repo = init_git_repo(&dir);
 
         // Create a failing run
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
 
-        // Verify agent config snapshots are present
-        assert!(
-            checkpoint_content.contains("\"developer_agent_config\""),
-            "Checkpoint should contain developer_agent_config"
-        );
-        assert!(
-            checkpoint_content.contains("\"reviewer_agent_config\""),
-            "Checkpoint should contain reviewer_agent_config"
-        );
+            // Verify agent config snapshots are present
+            assert!(
+                checkpoint_content.contains("\"developer_agent_config\""),
+                "Checkpoint should contain developer_agent_config"
+            );
+            assert!(
+                checkpoint_content.contains("\"reviewer_agent_config\""),
+                "Checkpoint should contain reviewer_agent_config"
+            );
+        });
     });
 }
 
@@ -283,13 +292,14 @@ fn ralph_resume_flag_reads_checkpoint() {
         .unwrap();
 
         // Run with --resume flag - should detect the checkpoint
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -301,14 +311,15 @@ fn ralph_resume_without_checkpoint_starts_fresh() {
         let _repo = init_git_repo(&dir);
 
         // No checkpoint exists, but we pass --resume
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -398,14 +409,15 @@ fn ralph_resume_validates_working_directory() {
         .unwrap();
 
         // Run with --resume - should detect working directory mismatch
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -427,21 +439,22 @@ fn ralph_checkpoint_records_prompt_md_checksum() {
         );
 
         // Create a failing run to leave a checkpoint
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
 
-        // Verify PROMPT.md checksum is recorded
-        assert!(
-            checkpoint_content.contains("\"prompt_md_checksum\""),
-            "Checkpoint should contain prompt_md_checksum"
-        );
+            // Verify PROMPT.md checksum is recorded
+            assert!(
+                checkpoint_content.contains("\"prompt_md_checksum\""),
+                "Checkpoint should contain prompt_md_checksum"
+            );
+        });
     });
 }
 
@@ -525,12 +538,13 @@ fn ralph_resume_shows_checkpoint_summary() {
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         // Run with --resume - should just show summary and exit since Complete phase
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -594,16 +608,17 @@ fn ralph_clears_checkpoint_on_success() {
         .unwrap();
 
         // Run successfully without --resume
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        // Checkpoint should be cleared on successful completion
-        // (this behavior may vary based on implementation - adjust test if needed)
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            // Checkpoint should be cleared on successful completion
+            // (this behavior may vary based on implementation - adjust test if needed)
+        });
     });
 }
 
@@ -720,12 +735,13 @@ fn ralph_resume_preserves_developer_iterations_from_checkpoint() {
 
         // Run with --resume but pass DIFFERENT env config (1 dev iter, 0 reviews)
         // The resume should use checkpoint values (5 dev iters), not env values
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -806,12 +822,13 @@ fn ralph_resume_preserves_reviewer_passes_from_checkpoint() {
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         // Run with --resume - should just show checkpoint info and exit
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -849,13 +866,14 @@ fn ralph_resume_from_planning_phase() {
         fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -884,12 +902,13 @@ fn ralph_resume_from_development_phase() {
         )
         .unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -982,14 +1001,15 @@ fn ralph_resume_from_review_phase() {
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
         fs::write(dir.path().join(".agent/ISSUES.md"), "No issues\n").unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume", "--recovery-strategy=force"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume", "--recovery-strategy=force"], executor).unwrap();
+        });
     });
 }
 
@@ -1018,15 +1038,16 @@ fn ralph_resume_from_complete_phase() {
         )
         .unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "2");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Resume from Complete should recognize pipeline is done
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "2");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Resume from Complete should recognize pipeline is done
+        });
     });
 }
 
@@ -1061,23 +1082,24 @@ fn ralph_resume_is_idempotent_same_checkpoint() {
         .unwrap();
 
         // First resume run
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Check that a Complete checkpoint was created
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        if checkpoint_path.exists() {
-            let content = fs::read_to_string(&checkpoint_path).unwrap();
-            // Should be at Complete phase now
-            assert!(
-                content.contains("Complete"),
-                "Checkpoint should be at Complete phase after successful run"
-            );
-        }
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Check that a Complete checkpoint was created
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            if checkpoint_path.exists() {
+                let content = fs::read_to_string(&checkpoint_path).unwrap();
+                // Should be at Complete phase now
+                assert!(
+                    content.contains("Complete"),
+                    "Checkpoint should be at Complete phase after successful run"
+                );
+            }
+        });
     });
 }
 
@@ -1149,14 +1171,15 @@ fn ralph_checkpoint_preserves_git_identity() {
         .unwrap();
 
         // Run with --resume
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Should succeed and use checkpoint's git identity
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Should succeed and use checkpoint's git identity
+        });
     });
 }
 
@@ -1228,13 +1251,14 @@ fn ralph_checkpoint_preserves_model_overrides() {
         .unwrap();
 
         // Run with --resume - should show model overrides being restored
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -1325,13 +1349,14 @@ fn ralph_resume_warns_on_prompt_md_change() {
         );
 
         // Run with --resume - should warn about PROMPT.md change
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -1403,13 +1428,14 @@ fn ralph_checkpoint_records_rebase_state() {
         .unwrap();
 
         // Run with --resume - should detect rebase phase checkpoint
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -1540,12 +1566,13 @@ fn ralph_resume_from_prerebase_phase_preserves_full_config() {
         .unwrap();
 
         // Run with --resume - should use checkpoint config
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -1583,12 +1610,13 @@ fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
         .unwrap();
 
         // Run with --resume
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -1626,14 +1654,15 @@ fn ralph_resume_from_postrebase_phase_preserves_full_config() {
         .unwrap();
 
         // Run with --resume
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "2");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "2");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -1671,14 +1700,15 @@ fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
         .unwrap();
 
         // Run with --resume
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -1719,25 +1749,26 @@ fn ralph_resume_passes_context_to_developer_agent() {
         prompt_capture.display()
     );
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Check that the captured prompt contains resume context
-        if prompt_capture.exists() {
-            let captured = fs::read_to_string(&prompt_capture).unwrap_or_default();
-            // The prompt should mention resuming or previous run
-            assert!(
-                captured.contains("resuming")
-                    || captured.contains("previous run")
-                    || captured.contains("git log"),
-                "Developer prompt should contain resume context. Got: {}",
-                &captured[..captured.len().min(500)]
-            );
-        }
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Check that the captured prompt contains resume context
+            if prompt_capture.exists() {
+                let captured = fs::read_to_string(&prompt_capture).unwrap_or_default();
+                // The prompt should mention resuming or previous run
+                assert!(
+                    captured.contains("resuming")
+                        || captured.contains("previous run")
+                        || captured.contains("git log"),
+                    "Developer prompt should contain resume context. Got: {}",
+                    &captured[..captured.len().min(500)]
+                );
+            }
+        });
     });
 }
 
@@ -1842,25 +1873,26 @@ fn ralph_resume_passes_context_to_reviewer_agent() {
         fs::write(dir.path().join(".agent/ISSUES.md"), "No issues found.\n").unwrap();
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Verify the checkpoint was restored with prompt history
-        // The checkpoint should contain the prompt history we created
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        if checkpoint_path.exists() {
-            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
-            assert!(
-                checkpoint_content.contains("prompt_history"),
-                "Checkpoint should contain prompt_history. Got: {}",
-                &checkpoint_content[..checkpoint_content.len().min(500)]
-            );
-        }
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Verify the checkpoint was restored with prompt history
+            // The checkpoint should contain the prompt history we created
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            if checkpoint_path.exists() {
+                let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+                assert!(
+                    checkpoint_content.contains("prompt_history"),
+                    "Checkpoint should contain prompt_history. Got: {}",
+                    &checkpoint_content[..checkpoint_content.len().min(500)]
+                );
+            }
+        });
     });
 }
 
@@ -1903,22 +1935,23 @@ fn ralph_resume_is_idempotent_from_prerebase() {
         .unwrap();
 
         // First resume run
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // After successful completion, checkpoint should be at Complete or cleared
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        if checkpoint_path.exists() {
-            let content = fs::read_to_string(&checkpoint_path).unwrap();
-            assert!(
-                content.contains("Complete"),
-                "Checkpoint should be at Complete phase after successful run from PreRebase"
-            );
-        }
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // After successful completion, checkpoint should be at Complete or cleared
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            if checkpoint_path.exists() {
+                let content = fs::read_to_string(&checkpoint_path).unwrap();
+                assert!(
+                    content.contains("Complete"),
+                    "Checkpoint should be at Complete phase after successful run from PreRebase"
+                );
+            }
+        });
     });
 }
 
@@ -1939,15 +1972,16 @@ fn ralph_checkpoint_tracks_prompt_history() {
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         // Run pipeline with 0 iterations
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        // After successful run, checkpoint is cleared, but we can verify
-        // the pipeline executed correctly which means prompt history was tracked
-        // (the checkpoint would have contained prompt history if it had been interrupted)
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            // After successful run, checkpoint is cleared, but we can verify
+            // the pipeline executed correctly which means prompt history was tracked
+            // (the checkpoint would have contained prompt history if it had been interrupted)
+        });
     });
 }
 
@@ -2036,16 +2070,17 @@ fn ralph_resume_shows_prompt_replay_info() {
         .unwrap();
 
         // Resume and capture output
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Verify the pipeline completed successfully
-        // (The checkpoint should have been cleared on success)
-        assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Verify the pipeline completed successfully
+            // (The checkpoint should have been cleared on success)
+            assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        });
     });
 }
 
@@ -2153,23 +2188,24 @@ fn ralph_v3_checkpoint_contains_execution_history() {
         fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
 
         // Resume should load checkpoint with execution history
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Verify the checkpoint contains execution_history
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        if checkpoint_path.exists() {
-            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
-            assert!(
-                checkpoint_content.contains("execution_history"),
-                "V3 checkpoint should contain execution_history"
-            );
-        }
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Verify the checkpoint contains execution_history
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            if checkpoint_path.exists() {
+                let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+                assert!(
+                    checkpoint_content.contains("execution_history"),
+                    "V3 checkpoint should contain execution_history"
+                );
+            }
+        });
     });
 }
 
@@ -2281,15 +2317,16 @@ fn ralph_v3_restores_execution_history_on_resume() {
         .unwrap();
 
         // Resume and verify it succeeds
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Verify the pipeline completed successfully
-        assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Verify the pipeline completed successfully
+            assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        });
     });
 }
 
@@ -2404,13 +2441,14 @@ fn ralph_v3_file_system_state_validates_on_resume() {
         .unwrap();
 
         // Resume - should validate file system state successfully
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -2540,14 +2578,15 @@ fn ralph_v3_file_system_state_detects_changes() {
         // The file has been modified, so checksum validation will fail
         // With strategy=fail, the resume is aborted and the program continues with a fresh run
         // Since developer_iters=0 in the command line, the program completes immediately
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume", "--recovery-strategy", "fail"], executor).unwrap();
-        // Should succeed - validation fails, resume is aborted, fresh run completes
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume", "--recovery-strategy", "fail"], executor).unwrap();
+            // Should succeed - validation fails, resume is aborted, fresh run completes
+        });
     });
 }
 
@@ -2659,17 +2698,18 @@ fn ralph_v3_file_system_state_auto_recovery() {
         write_file(dir.path().join(".agent/PLAN.md"), "Modified plan content");
 
         // Resume with --recovery-strategy=auto should restore the file
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume", "--recovery-strategy", "auto"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume", "--recovery-strategy", "auto"], executor).unwrap();
 
-        // Verify the file was restored
-        let restored_content = fs::read_to_string(dir.path().join(".agent/PLAN.md")).unwrap();
-        assert_eq!(restored_content, plan_content);
+            // Verify the file was restored
+            let restored_content = fs::read_to_string(dir.path().join(".agent/PLAN.md")).unwrap();
+            assert_eq!(restored_content, plan_content);
+        });
     });
 }
 
@@ -2770,24 +2810,25 @@ fn ralph_v3_prompt_replay_is_deterministic() {
         prompt_capture.display()
     );
 
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Verify that the deterministic prompt was used
-        if prompt_capture.exists() {
-            let captured = fs::read_to_string(&prompt_capture).unwrap_or_default();
-            // The captured prompt should contain the deterministic marker
-            // (This verifies that the stored prompt was replayed)
-            assert!(
-                captured.contains("DETERMINISTIC PROMPT FOR DEVELOPMENT ITERATION 1"),
-                "Expected stored prompt to be replayed. Got: {}",
-                &captured[..captured.len().min(200)]
-            );
-        }
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Verify that the deterministic prompt was used
+            if prompt_capture.exists() {
+                let captured = fs::read_to_string(&prompt_capture).unwrap_or_default();
+                // The captured prompt should contain the deterministic marker
+                // (This verifies that the stored prompt was replayed)
+                assert!(
+                    captured.contains("DETERMINISTIC PROMPT FOR DEVELOPMENT ITERATION 1"),
+                    "Expected stored prompt to be replayed. Got: {}",
+                    &captured[..captured.len().min(200)]
+                );
+            }
+        });
     });
 }
 
@@ -2880,15 +2921,16 @@ fn ralph_v3_prompt_replay_across_multiple_iterations() {
         .unwrap();
 
         // Resume - should replay prompts for iterations 2 and 3 (1 is already done)
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Verify the pipeline completed successfully
-        assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Verify the pipeline completed successfully
+            assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        });
     });
 }
 
@@ -2987,19 +3029,20 @@ fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
 
         // Run without --resume flag - should offer to resume interactively
         // But since we're not in a TTY, it should skip the offer and start fresh
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_INTERACTIVE", "0");
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        // Should succeed and clear the checkpoint
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_INTERACTIVE", "0");
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            // Should succeed and clear the checkpoint
 
-        // Verify the checkpoint was cleared
-        assert!(!dir.path().join(".agent/checkpoint.json").exists());
+            // Verify the checkpoint was cleared
+            assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        });
     });
 }
 
@@ -3077,13 +3120,14 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
         .unwrap();
 
         // Run with --resume - should show user-friendly summary
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "5");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "3");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "5");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "3");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -3303,17 +3347,18 @@ fn ralph_v3_comprehensive_resume_from_review_phase() {
         );
 
         // Resume from Complete phase
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
 
-        // Verify the pipeline completed successfully
-        assert!(!dir.path().join(".agent/checkpoint.json").exists());
+            // Verify the pipeline completed successfully
+            assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        });
     });
 }
 
@@ -3433,17 +3478,18 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
         .unwrap();
 
         // Load checkpoint and verify execution history is preserved
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
 
-        // Verify the checkpoint was consumed
-        assert!(!dir.path().join(".agent/checkpoint.json").exists());
+            // Verify the checkpoint was consumed
+            assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        });
     });
 }
 
@@ -3530,17 +3576,18 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
         .unwrap();
 
         // Resume and verify prompt history is preserved
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
 
-        // Verify the checkpoint was consumed
-        assert!(!dir.path().join(".agent/checkpoint.json").exists());
+            // Verify the checkpoint was consumed
+            assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        });
     });
 }
 
@@ -3582,15 +3629,16 @@ fn ralph_no_resume_flag_skips_interactive_prompt() {
         .unwrap();
 
         // Run with --no-resume - should skip interactive prompt and start fresh
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--no-resume"], executor).unwrap();
-        // Should NOT show resume prompt, should complete successfully
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--no-resume"], executor).unwrap();
+            // Should NOT show resume prompt, should complete successfully
+        });
     });
 }
 
@@ -3623,16 +3671,17 @@ fn ralph_no_resume_env_var_skips_interactive_prompt() {
         .unwrap();
 
         // Run with RALPH_NO_RESUME_PROMPT env var - should skip interactive prompt
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_NO_RESUME_PROMPT", "1");
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        // Should NOT show resume prompt, should complete successfully
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_NO_RESUME_PROMPT", "1");
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            // Should NOT show resume prompt, should complete successfully
+        });
     });
 }
 
@@ -3665,12 +3714,13 @@ fn ralph_resume_flag_takes_precedence_over_no_resume() {
         .unwrap();
 
         // Run with both --resume and --no-resume - --resume should take precedence
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume", "--no-resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume", "--no-resume"], executor).unwrap();
+        });
     });
 }
 
@@ -3779,23 +3829,24 @@ fn ralph_resume_replays_prompts_deterministically() {
         write_file(dir.path().join(".agent/commit-message.txt"), "feat: test\n");
 
         // Resume and verify the checkpoint with prompt history is loaded
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
-        // Verify the checkpoint was loaded with prompt_history
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        if checkpoint_path.exists() {
-            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
-            assert!(
-                checkpoint_content.contains("prompt_history"),
-                "Checkpoint should contain prompt_history for deterministic replay"
-            );
-        }
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+            // Verify the checkpoint was loaded with prompt_history
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            if checkpoint_path.exists() {
+                let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+                assert!(
+                    checkpoint_content.contains("prompt_history"),
+                    "Checkpoint should contain prompt_history for deterministic replay"
+                );
+            }
+        });
     });
 }
 
@@ -3817,27 +3868,28 @@ fn ralph_v3_checkpoint_contains_file_system_state() {
         );
 
         // Create a failing run to leave a v3 checkpoint
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
 
-        // Verify v3 checkpoint has file_system_state
-        assert!(
-            checkpoint_content.contains("\"file_system_state\""),
-            "V3 checkpoint should contain file_system_state"
-        );
+            // Verify v3 checkpoint has file_system_state
+            assert!(
+                checkpoint_content.contains("\"file_system_state\""),
+                "V3 checkpoint should contain file_system_state"
+            );
 
-        // Verify PROMPT.md is captured in file system state
-        assert!(
-            checkpoint_content.contains("PROMPT.md"),
-            "File system state should capture PROMPT.md"
-        );
+            // Verify PROMPT.md is captured in file system state
+            assert!(
+                checkpoint_content.contains("PROMPT.md"),
+                "File system state should capture PROMPT.md"
+            );
+        });
     });
 }
 
@@ -3850,37 +3902,38 @@ fn ralph_v3_checkpoint_contains_execution_history_after_failure() {
 
         // Create a failing run to leave a v3 checkpoint.
         // The agent creates whitespace-only PLAN.md which fails validation.
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&[], executor).unwrap();
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&[], executor).unwrap();
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
 
-        // Parse the checkpoint JSON to verify execution_history structure
-        let checkpoint: serde_json::Value =
-            serde_json::from_str(&checkpoint_content).expect("Checkpoint should be valid JSON");
+            // Parse the checkpoint JSON to verify execution_history structure
+            let checkpoint: serde_json::Value =
+                serde_json::from_str(&checkpoint_content).expect("Checkpoint should be valid JSON");
 
-        // Verify v3 checkpoint has execution_history field with proper structure
-        let execution_history = checkpoint
-            .get("execution_history")
-            .and_then(|v| v.as_object())
-            .expect("V3 checkpoint should have execution_history object");
+            // Verify v3 checkpoint has execution_history field with proper structure
+            let execution_history = checkpoint
+                .get("execution_history")
+                .and_then(|v| v.as_object())
+                .expect("V3 checkpoint should have execution_history object");
 
-        // Verify execution_history has steps array (may be empty for early failures)
-        let _steps = execution_history
-            .get("steps")
-            .and_then(|v| v.as_array())
-            .expect("Execution history should have steps array");
+            // Verify execution_history has steps array (may be empty for early failures)
+            let _steps = execution_history
+                .get("steps")
+                .and_then(|v| v.as_array())
+                .expect("Execution history should have steps array");
 
-        // Verify file_snapshots exists
-        let _file_snapshots = execution_history
-            .get("file_snapshots")
-            .and_then(|v| v.as_object())
-            .expect("Execution history should have file_snapshots object");
+            // Verify file_snapshots exists
+            let _file_snapshots = execution_history
+                .get("file_snapshots")
+                .and_then(|v| v.as_object())
+                .expect("Execution history should have file_snapshots object");
+        });
     });
 }
 
@@ -3980,14 +4033,15 @@ fn ralph_resume_with_force_strategy_ignores_file_changes() {
         .unwrap();
 
         // Run with --resume --recovery-strategy=force
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume", "--recovery-strategy=force"], executor).unwrap();
-        // Should proceed with warning
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume", "--recovery-strategy=force"], executor).unwrap();
+            // Should proceed with warning
+        });
     });
 }
 
@@ -4089,15 +4143,16 @@ fn ralph_resume_auto_strategy_attempts_recovery() {
         .unwrap();
 
         // Run with --resume --recovery-strategy=auto
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume", "--recovery-strategy=auto"], executor).unwrap();
-        // Should attempt recovery and proceed
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume", "--recovery-strategy=auto"], executor).unwrap();
+            // Should attempt recovery and proceed
+        });
     });
 }
 
@@ -4113,24 +4168,25 @@ fn ralph_checkpoint_saved_after_rebase_completion() {
 
         // Run pipeline with rebase enabled - should complete successfully
         // We use 0 iterations to skip actual development work
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--with-rebase"], executor).unwrap();
-        // Check that checkpoint was saved at Planning phase after rebase
-        let checkpoint_path = dir.path().join(".agent/checkpoint.json");
-        if checkpoint_path.exists() {
-            let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
-            // Verify it has the expected structure
-            assert!(
-                checkpoint_content.contains("\"phase\""),
-                "Checkpoint should contain phase"
-            );
-        }
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--with-rebase"], executor).unwrap();
+            // Check that checkpoint was saved at Planning phase after rebase
+            let checkpoint_path = dir.path().join(".agent/checkpoint.json");
+            if checkpoint_path.exists() {
+                let checkpoint_content = fs::read_to_string(&checkpoint_path).unwrap();
+                // Verify it has the expected structure
+                assert!(
+                    checkpoint_content.contains("\"phase\""),
+                    "Checkpoint should contain phase"
+                );
+            }
+        });
     });
 }
 
@@ -4216,13 +4272,14 @@ fn ralph_checkpoint_saved_at_pipeline_start() {
         .unwrap();
 
         // Verify checkpoint can be loaded
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "1");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -4357,14 +4414,15 @@ fn ralph_v3_execution_step_contains_git_commit_oid() {
         );
 
         // Verify checkpoint can be loaded with the new fields
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -4479,14 +4537,15 @@ fn ralph_v3_execution_step_serialization_with_new_fields() {
         .unwrap();
 
         // Verify checkpoint can be loaded
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "2");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -4591,14 +4650,15 @@ fn ralph_v3_backward_compatible_missing_new_fields() {
         .unwrap();
 
         // Verify checkpoint can still be loaded (backward compatibility)
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
 
@@ -4735,13 +4795,14 @@ fn ralph_v3_resume_note_contains_execution_history() {
         );
 
         // Verify checkpoint can be loaded
-        std::env::set_current_dir(dir.path()).unwrap();
-        base_env(&config_home);
-        std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
-        std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
-        std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
-        std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
-        let executor = mock_executor_with_success();
-        run_ralph_cli(&["--resume"], executor).unwrap();
+        with_cwd_guard(dir.path(), || {
+            base_env(&config_home);
+            std::env::set_var("RALPH_DEVELOPER_ITERS", "3");
+            std::env::set_var("RALPH_REVIEWER_REVIEWS", "1");
+            std::env::set_var("RALPH_DEVELOPER_CMD", "sh -c 'exit 0'");
+            std::env::set_var("RALPH_REVIEWER_CMD", "sh -c 'exit 0'");
+            let executor = mock_executor_with_success();
+            run_ralph_cli(&["--resume"], executor).unwrap();
+        });
     });
 }
