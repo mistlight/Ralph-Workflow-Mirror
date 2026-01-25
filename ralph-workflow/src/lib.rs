@@ -26,6 +26,7 @@ pub mod prompts;
 pub mod reducer;
 pub mod review_metrics;
 pub mod templates;
+pub mod workspace;
 
 // Re-export XML extraction and validation functions for use in integration tests
 pub use files::llm_output_extraction::extract_development_result_xml;
