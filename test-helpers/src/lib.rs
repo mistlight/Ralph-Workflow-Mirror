@@ -101,7 +101,17 @@ pub fn init_git_repo(dir: &TempDir) -> Repository {
     .expect("write .gitignore");
     fs::write(
         dir.path().join("PROMPT.md"),
-        "# Test Requirements\nTest task",
+        r#"# Test Requirements
+
+## Goal
+
+Test the Ralph workflow integration.
+
+## Acceptance
+
+- Tests pass successfully
+- No validation errors occur
+"#,
     )
     .expect("write PROMPT.md");
     fs::create_dir_all(dir.path().join(".agent")).expect("create .agent");

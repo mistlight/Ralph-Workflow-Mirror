@@ -27,7 +27,45 @@ use crate::common::{mock_executor_with_success, run_ralph_cli, with_cwd_guard};
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
 
-fn set_base_env() {
+/// RAII guard to restore environment variables on drop.
+struct EnvGuard {
+    vars: Vec<(&'static str, Option<String>)>,
+}
+
+impl EnvGuard {
+    fn new(keys: &[&'static str]) -> Self {
+        let vars = keys
+            .iter()
+            .map(|&k| (k, std::env::var(k).ok()))
+            .collect();
+        Self { vars }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for (key, value) in &self.vars {
+            match value {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
+        }
+    }
+}
+
+fn set_base_env() -> EnvGuard {
+    let guard = EnvGuard::new(&[
+        "RALPH_INTERACTIVE",
+        "RALPH_DEVELOPER_ITERS",
+        "RALPH_REVIEWER_REVIEWS",
+        "RALPH_DEVELOPER_AGENT",
+        "RALPH_REVIEWER_AGENT",
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ]);
+
     std::env::set_var("RALPH_INTERACTIVE", "0");
     std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
     std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
@@ -37,6 +75,8 @@ fn set_base_env() {
     std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
     std::env::set_var("GIT_COMMITTER_NAME", "Test");
     std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+
+    guard
 }
 
 /// Helper to pre-create a PLAN.md file to avoid agent execution.
@@ -71,11 +111,24 @@ fn make_writable(path: &std::path::Path) {
 
 /// Helper to create a minimal valid PROMPT.md for testing.
 ///
-/// Ralph requires a valid PROMPT.md to run. This helper creates the minimal
-/// required sections for testing backup functionality.
+/// Ralph requires a valid PROMPT.md to run with Goal and Acceptance sections.
+/// This helper creates the minimal required sections for testing backup functionality.
+///
+/// The content parameter is used as the Goal section text.
 fn create_prompt_file(dir: &tempfile::TempDir, content: &str) {
     let prompt_path = dir.path().join("PROMPT.md");
-    fs::write(&prompt_path, content).unwrap();
+    let valid_content = format!(
+        r#"## Goal
+
+{}
+
+## Acceptance
+
+- Tests pass
+"#,
+        content
+    );
+    fs::write(&prompt_path, valid_content).unwrap();
 }
 
 /// Test that a backup is created at pipeline start.
@@ -90,13 +143,13 @@ fn backup_created_at_pipeline_start() {
         let _ = init_git_repo(&dir);
 
         // Create a minimal PROMPT.md to allow ralph to run
-        create_prompt_file(&dir, "# Test Requirements\nTest task");
+        create_prompt_file(&dir, "Test the Ralph workflow integration");
 
         // Pre-create PLAN.md to avoid agent execution
         create_plan_file(&dir);
 
         with_cwd_guard(dir.path(), || {
-            set_base_env();
+            let _env_guard = set_base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -135,13 +188,13 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
         let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
         // Create the original PROMPT.md content
-        let original_content = "# Test Requirements\nTest task";
+        let original_content = "Test the Ralph workflow integration";
         create_prompt_file(&dir, original_content);
 
         // Run to create backup
         create_plan_file(&dir);
         with_cwd_guard(dir.path(), || {
-            set_base_env();
+            let _env_guard = set_base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -150,7 +203,8 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
             assert!(backup_path.exists(), "Backup should be created after run");
 
             let backup_content = fs::read_to_string(&backup_path).unwrap();
-            assert_eq!(backup_content, original_content);
+            let prompt_content = fs::read_to_string(&prompt_path).unwrap();
+            assert_eq!(backup_content, prompt_content);
             assert!(prompt_path.exists());
 
             // Note: Runtime restoration behavior is tested via unit tests
@@ -176,12 +230,12 @@ fn backup_not_deleted_during_cleanup() {
         let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
         // Create a minimal PROMPT.md
-        create_prompt_file(&dir, "# Test\n");
+        create_prompt_file(&dir, "Test backup persistence across runs");
 
         // Run Ralph to create backup
         create_plan_file(&dir);
         with_cwd_guard(dir.path(), || {
-            set_base_env();
+            let _env_guard = set_base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -217,7 +271,7 @@ fn backup_has_readonly_permissions() {
         // Run Ralph to create backup
         create_plan_file(&dir);
         with_cwd_guard(dir.path(), || {
-            set_base_env();
+            let _env_guard = set_base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -275,7 +329,7 @@ fn periodic_restoration_works_during_pipeline() {
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
 
-        let original_content = "# Test Requirements\nTest task";
+        let original_content = "Test the Ralph workflow integration";
         let prompt_path = dir.path().join("PROMPT.md");
         let backup_path = dir.path().join(".agent/PROMPT.md.backup");
 
@@ -285,7 +339,7 @@ fn periodic_restoration_works_during_pipeline() {
         // Initial run to create backup
         create_plan_file(&dir);
         with_cwd_guard(dir.path(), || {
-            set_base_env();
+            let _env_guard = set_base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -303,7 +357,8 @@ fn periodic_restoration_works_during_pipeline() {
             assert!(prompt_path.exists());
             assert!(backup_path.exists());
             let backup_content = fs::read_to_string(&backup_path).unwrap();
-            assert_eq!(backup_content, original_content);
+            let prompt_content = fs::read_to_string(&prompt_path).unwrap();
+            assert_eq!(backup_content, prompt_content);
 
             // Note: Runtime periodic restoration is tested via unit tests
             // with mock file operations handlers.
@@ -330,13 +385,13 @@ fn backup_rotation_maintains_multiple_backups() {
         let backup_2 = dir.path().join(".agent/PROMPT.md.backup.2");
 
         // Create initial PROMPT.md
-        create_prompt_file(&dir, "# Test\n");
+        create_prompt_file(&dir, "Test backup rotation functionality");
 
         // Run Ralph multiple times to create multiple backups
         for _ in 0..3 {
             create_plan_file(&dir);
             with_cwd_guard(dir.path(), || {
-                set_base_env();
+                let _env_guard = set_base_env();
 
                 let executor = mock_executor_with_success();
                 run_ralph_cli(&[], executor).unwrap();
@@ -385,7 +440,7 @@ fn backup_oldest_deleted_when_exceeding_limit() {
         for _ in 0..4 {
             create_plan_file(&dir);
             with_cwd_guard(dir.path(), || {
-                set_base_env();
+                let _env_guard = set_base_env();
 
                 let executor = mock_executor_with_success();
                 run_ralph_cli(&[], executor).unwrap();
@@ -424,7 +479,7 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
         for _ in 0..2 {
             create_plan_file(&dir);
             with_cwd_guard(dir.path(), || {
-                set_base_env();
+                let _env_guard = set_base_env();
 
                 let executor = mock_executor_with_success();
                 run_ralph_cli(&[], executor).unwrap();
@@ -497,13 +552,13 @@ fn agent_chmod_rm_is_caught_and_restored() {
         let _ = init_git_repo(&dir);
 
         let prompt_path = dir.path().join("PROMPT.md");
-        let original_content = "# Test Requirements\nTest task";
+        let original_content = "Test the Ralph workflow integration";
         create_prompt_file(&dir, original_content);
 
         // Initial run to create backup
         create_plan_file(&dir);
         with_cwd_guard(dir.path(), || {
-            set_base_env();
+            let _env_guard = set_base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -538,12 +593,12 @@ fn agent_overwrite_is_detected_and_restored() {
         let prompt_path = dir.path().join("PROMPT.md");
 
         // Create initial PROMPT.md
-        create_prompt_file(&dir, "# Test Requirements\nTest task");
+        create_prompt_file(&dir, "Test the Ralph workflow integration");
 
         // Initial run to create backup
         create_plan_file(&dir);
         with_cwd_guard(dir.path(), || {
-            set_base_env();
+            let _env_guard = set_base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
@@ -578,12 +633,12 @@ fn multiple_deletions_are_logged_with_context() {
         let prompt_path = dir.path().join("PROMPT.md");
 
         // Create initial PROMPT.md
-        create_prompt_file(&dir, "# Test Requirements\nTest task");
+        create_prompt_file(&dir, "Test the Ralph workflow integration");
 
         // Initial run to create backup
         create_plan_file(&dir);
         with_cwd_guard(dir.path(), || {
-            set_base_env();
+            let _env_guard = set_base_env();
 
             let executor = mock_executor_with_success();
             run_ralph_cli(&[], executor).unwrap();
