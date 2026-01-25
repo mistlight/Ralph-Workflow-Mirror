@@ -91,8 +91,10 @@ fn ralph_skips_phases_with_zero_iterations() {
             // Verify pipeline completed successfully
             // STATUS.md may be created for pipeline state tracking
             // ISSUES.md is only created when --no-isolation is used (default is isolation)
-            assert!(!dir.path().join(".agent/ISSUES.md").exists(),
-                "ISSUES.md should not exist in isolation mode (default)");
+            assert!(
+                !dir.path().join(".agent/ISSUES.md").exists(),
+                "ISSUES.md should not exist in isolation mode (default)"
+            );
         });
     });
 }

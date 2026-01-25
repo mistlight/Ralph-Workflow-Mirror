@@ -732,7 +732,10 @@ fn validate_rebase_preconditions_detects_dirty_tree() {
         // Expected behavior (documented, not tested here):
         // - When working tree has uncommitted changes, validate_rebase_preconditions returns Err
         // - Error message mentions "clean", "dirty", or "commit"
-        assert!(true, "Behavior documented; see unit tests and category1_failure_modes tests");
+        assert!(
+            true,
+            "Behavior documented; see unit tests and category1_failure_modes tests"
+        );
     });
 }
 
@@ -1404,7 +1407,10 @@ fn validate_git_version_requirements() {
         // The codebase uses git2 library which requires git to be available.
         // System-level git validation should be done in CI setup.
         // This test passes trivially since git availability is assumed.
-        assert!(true, "Git availability is assumed via git2 library dependency");
+        assert!(
+            true,
+            "Git availability is assumed via git2 library dependency"
+        );
     });
 }
 
