@@ -84,8 +84,8 @@ while IFS= read -r file; do
                 # Extract and check function body
                 function_body=$(sed -n "${current_line},${check_end}p" "$file")
 
-                # Check if with_default_timeout appears in the function body
-                if ! echo "$function_body" | grep -q 'with_default_timeout'; then
+                # Check if with_default_timeout or with_timeout appears in the function body
+                if ! echo "$function_body" | grep -qE 'with_default_timeout|with_timeout'; then
                     echo "VIOLATION:$file:$line_num:$test_name" >> "$TEMP_VIOLATIONS"
                 fi
             fi
@@ -102,14 +102,20 @@ if [ -s "$TEMP_VIOLATIONS" ]; then
         echo "  - $file:$line_num: test '$test_name' missing timeout wrapper"
     done < "$TEMP_VIOLATIONS"
     echo
-    echo -e "${YELLOW}To fix: Wrap test body with with_default_timeout(|| { ... });${NC}"
+    echo -e "${YELLOW}To fix: Wrap test body with with_default_timeout(|| { ... }); or with_timeout(||, Duration::from_secs(30))${NC}"
     echo
     echo "Example:"
     echo "  #[test]"
     echo "  fn test_example() {"
     echo "      with_default_timeout(|| {"
-    echo "          // test code here"
+    echo "          // test code here (for fast tests)"
     echo "      });"
+    echo "  }"
+    echo "  #[test]"
+    echo "  fn slow_test_example() {"
+    echo "      with_timeout(|| {"
+    echo "          // test code here (for slow tests that need longer timeout)"
+    echo "      }, std::time::Duration::from_secs(30));"
     echo "  }"
     exit 1
 else
@@ -158,10 +164,10 @@ fi
 # Summary
 # ============================================================================
 
-echo "Summary:"
-file_count=$(wc -l < "$TEMP_OUTPUT" | tr -d ' ')
-echo "  - Checked $file_count test file(s)"
-echo "  - All tests properly wrapped with with_default_timeout()"
-echo "  - No process spawning violations detected"
-exit 0
+ echo "Summary:"
+ file_count=$(wc -l < "$TEMP_OUTPUT" | tr -d ' ')
+ echo "  - Checked $file_count test file(s)"
+ echo "  - All tests properly wrapped with timeout wrapper (with_default_timeout or with_timeout)"
+ echo "  - No process spawning violations detected"
+ exit 0
 fi
