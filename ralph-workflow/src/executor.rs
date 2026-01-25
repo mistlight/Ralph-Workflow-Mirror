@@ -670,8 +670,7 @@ fn generate_mock_agent_output(parser_type: JsonParserType, _command: &str) -> St
 {{"type":"turn_completed"}}
 {{"type":"completion","reason":"stop"}}
 "#,
-                commit_message,
-                commit_message
+                commit_message, commit_message
             )
         }
         JsonParserType::Gemini => {

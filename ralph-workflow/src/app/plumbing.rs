@@ -152,7 +152,9 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
     // Generate the commit message using standard pipeline
     let diff = git_diff()?;
     if diff.trim().is_empty() {
-        config.logger.warn("No changes detected to generate a commit message for");
+        config
+            .logger
+            .warn("No changes detected to generate a commit message for");
         anyhow::bail!("No changes to commit");
     }
 
@@ -207,7 +209,9 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
     config
         .logger
         .info("Message saved to .agent/commit-message.txt");
-    config.logger.info("Run 'ralph --apply-commit' to create the commit");
+    config
+        .logger
+        .info("Run 'ralph --apply-commit' to create the commit");
 
     Ok(())
 }
