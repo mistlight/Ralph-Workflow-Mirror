@@ -12,7 +12,7 @@
 //! even when git is not installed.
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::identity::GitIdentity;
 
@@ -140,17 +140,52 @@ pub fn get_repo_root() -> io::Result<PathBuf> {
 ///
 /// Returns the path to the hooks directory inside .git (or the equivalent
 /// for worktrees and other configurations).
+///
+/// **Note:** This function uses the current working directory to discover the repo.
+/// For explicit path control, use [`get_hooks_dir_at`] instead.
 pub fn get_hooks_dir() -> io::Result<PathBuf> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    Ok(repo.path().join("hooks"))
+}
+
+/// Get the git hooks directory path at a specific repository path.
+///
+/// Returns the path to the hooks directory inside .git (or the equivalent
+/// for worktrees and other configurations).
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+pub fn get_hooks_dir_at(repo_root: &Path) -> io::Result<PathBuf> {
+    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
     Ok(repo.path().join("hooks"))
 }
 
 /// Get a snapshot of the current git status.
 ///
 /// Returns status in porcelain format (similar to `git status --porcelain=v1`).
+///
+/// **Note:** This function uses the current working directory to discover the repo.
+/// For explicit path control, use [`git_snapshot_at`] instead.
 pub fn git_snapshot() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    git_snapshot_impl(&repo)
+}
 
+/// Get a snapshot of the git status at a specific repository path.
+///
+/// Returns status in porcelain format (similar to `git status --porcelain=v1`).
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+pub fn git_snapshot_at(repo_root: &Path) -> io::Result<String> {
+    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
+    git_snapshot_impl(&repo)
+}
+
+/// Implementation of git snapshot.
+fn git_snapshot_impl(repo: &git2::Repository) -> io::Result<String> {
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
     let statuses = repo
@@ -218,9 +253,29 @@ pub fn git_snapshot() -> io::Result<String> {
 ///
 /// Handles the case of an empty repository (no commits yet) by
 /// diffing against an empty tree using a read-only approach.
+///
+/// **Note:** This function uses the current working directory to discover the repo.
+/// For explicit path control, use [`git_diff_at`] instead.
 pub fn git_diff() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    git_diff_impl(&repo)
+}
 
+/// Get the diff of all changes at a specific repository path.
+///
+/// Returns a formatted diff string suitable for LLM analysis.
+/// This is similar to `git diff HEAD`.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+pub fn git_diff_at(repo_root: &Path) -> io::Result<String> {
+    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
+    git_diff_impl(&repo)
+}
+
+/// Implementation of git diff.
+fn git_diff_impl(repo: &git2::Repository) -> io::Result<String> {
     // Try to get HEAD tree
     let head_tree = match repo.head() {
         Ok(head) => Some(head.peel_to_tree().map_err(|e| git2_to_io_error(&e))?),
@@ -302,9 +357,33 @@ fn is_internal_agent_artifact(path: &std::path::Path) -> bool {
 ///
 /// Returns `Ok(true)` if files were successfully staged, `Ok(false)` if there
 /// were no files to stage, or an error if staging failed.
+///
+/// **Note:** This function uses the current working directory to discover the repo.
+/// For explicit path control, use [`git_add_all_at`] instead.
 pub fn git_add_all() -> io::Result<bool> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    git_add_all_impl(&repo)
+}
 
+/// Stage all changes at a specific repository path.
+///
+/// Similar to `git add -A`.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if files were successfully staged, `Ok(false)` if there
+/// were no files to stage, or an error if staging failed.
+pub fn git_add_all_at(repo_root: &Path) -> io::Result<bool> {
+    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
+    git_add_all_impl(&repo)
+}
+
+/// Implementation of git add all.
+fn git_add_all_impl(repo: &git2::Repository) -> io::Result<bool> {
     let mut index = repo.index().map_err(|e| git2_to_io_error(&e))?;
 
     // Stage deletions (equivalent to `git add -A` behavior).
@@ -345,7 +424,7 @@ pub fn git_add_all() -> io::Result<bool> {
     index.write().map_err(|e| git2_to_io_error(&e))?;
 
     // Return true if staging produced something commit-worthy.
-    index_has_changes_to_commit(&repo, &index)
+    index_has_changes_to_commit(repo, &index)
 }
 
 /// Resolve git commit identity with the full priority chain.
@@ -488,6 +567,9 @@ fn resolve_commit_identity(
 ///
 /// Returns `Ok(Some(oid))` with the commit OID if successful, `Ok(None)` if the
 /// OID is zero (no commit created), or an error if the operation failed.
+///
+/// **Note:** This function uses the current working directory to discover the repo.
+/// For explicit path control, use [`git_commit_at`] instead.
 pub fn git_commit(
     message: &str,
     git_user_name: Option<&str>,
@@ -495,13 +577,50 @@ pub fn git_commit(
     executor: Option<&dyn crate::executor::ProcessExecutor>,
 ) -> io::Result<Option<git2::Oid>> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    git_commit_impl(&repo, message, git_user_name, git_user_email, executor)
+}
 
+/// Create a commit at a specific repository path.
+///
+/// Similar to `git commit -m <message>`.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+/// * `message` - The commit message
+/// * `git_user_name` - Optional git user name (overrides git config)
+/// * `git_user_email` - Optional git user email (overrides git config)
+/// * `executor` - Optional process executor for system username/hostname lookup
+///
+/// # Returns
+///
+/// Returns `Ok(Some(oid))` with the commit OID if successful, `Ok(None)` if the
+/// OID is zero (no commit created), or an error if the operation failed.
+pub fn git_commit_at(
+    repo_root: &Path,
+    message: &str,
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+    executor: Option<&dyn crate::executor::ProcessExecutor>,
+) -> io::Result<Option<git2::Oid>> {
+    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
+    git_commit_impl(&repo, message, git_user_name, git_user_email, executor)
+}
+
+/// Implementation of git commit.
+fn git_commit_impl(
+    repo: &git2::Repository,
+    message: &str,
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+    executor: Option<&dyn crate::executor::ProcessExecutor>,
+) -> io::Result<Option<git2::Oid>> {
     // Get the index
     let mut index = repo.index().map_err(|e| git2_to_io_error(&e))?;
 
     // Don't create empty commits: if the index matches HEAD (or is empty on an unborn branch),
     // there's nothing to commit.
-    if !index_has_changes_to_commit(&repo, &index)? {
+    if !index_has_changes_to_commit(repo, &index)? {
         return Ok(None);
     }
 
@@ -513,7 +632,7 @@ pub fn git_commit(
     // Resolve git identity using the identity resolution system.
     // This implements the full priority chain with proper fallbacks.
     let GitIdentity { name, email } =
-        resolve_commit_identity(&repo, git_user_name, git_user_email, executor);
+        resolve_commit_identity(repo, git_user_name, git_user_email, executor);
 
     // Debug logging: identity resolution source
     // Only log if RALPH_DEBUG or similar debug mode is enabled

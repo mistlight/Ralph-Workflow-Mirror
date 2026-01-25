@@ -18,9 +18,9 @@
 
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::Path;
 
-use super::start_commit::get_current_head_oid;
+use super::start_commit::{get_current_head_oid, get_current_head_oid_at};
 
 /// Path to the review baseline file.
 ///
@@ -50,9 +50,31 @@ pub enum ReviewBaseline {
 /// Returns an error if:
 /// - The current HEAD cannot be determined
 /// - The file cannot be written
+///
+/// **Note:** This function uses the current working directory to discover the repo.
+/// For explicit path control, use [`update_review_baseline_at`] instead.
 pub fn update_review_baseline() -> io::Result<()> {
     let oid = get_current_head_oid()?;
-    write_review_baseline(&oid)
+    write_review_baseline_cwd(&oid)
+}
+
+/// Update the review baseline to current HEAD at a specific repository path.
+///
+/// This should be called AFTER each fix pass to update the baseline so
+/// the next review cycle sees only new changes.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The current HEAD cannot be determined
+/// - The file cannot be written
+pub fn update_review_baseline_at(repo_root: &Path) -> io::Result<()> {
+    let oid = get_current_head_oid_at(repo_root)?;
+    write_review_baseline(repo_root, &oid)
 }
 
 /// Load the review baseline.
@@ -64,14 +86,39 @@ pub fn update_review_baseline() -> io::Result<()> {
 /// Returns an error if:
 /// - The file cannot be read
 /// - The file content is invalid
+///
+/// **Note:** This function uses the current working directory for paths.
+/// For explicit path control, use [`load_review_baseline_at`] instead.
 pub fn load_review_baseline() -> io::Result<ReviewBaseline> {
-    let path = PathBuf::from(REVIEW_BASELINE_FILE);
+    let path = Path::new(REVIEW_BASELINE_FILE);
+    load_review_baseline_impl(path)
+}
 
+/// Load the review baseline at a specific repository path.
+///
+/// Returns the baseline commit for the current review cycle.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The file cannot be read
+/// - The file content is invalid
+pub fn load_review_baseline_at(repo_root: &Path) -> io::Result<ReviewBaseline> {
+    let path = repo_root.join(REVIEW_BASELINE_FILE);
+    load_review_baseline_impl(&path)
+}
+
+/// Implementation of load_review_baseline.
+fn load_review_baseline_impl(path: &Path) -> io::Result<ReviewBaseline> {
     if !path.exists() {
         return Ok(ReviewBaseline::NotSet);
     }
 
-    let content = fs::read_to_string(&path)?;
+    let content = fs::read_to_string(path)?;
     let raw = content.trim();
 
     if raw.is_empty() || raw == BASELINE_NOT_SET {
@@ -95,16 +142,41 @@ pub fn load_review_baseline() -> io::Result<ReviewBaseline> {
 /// - `baseline_oid`: The OID of the baseline commit (or None if not set)
 /// - `commits_since_baseline`: Number of commits since baseline
 /// - `is_stale`: true if baseline is old (>10 commits behind)
+///
+/// **Note:** This function uses the current working directory to discover the repo.
+/// For explicit path control, use [`get_review_baseline_info_at`] instead.
 pub fn get_review_baseline_info() -> io::Result<(Option<String>, usize, bool)> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
+    get_review_baseline_info_impl(&repo, load_review_baseline()?)
+}
 
-    let baseline_oid = match load_review_baseline()? {
+/// Get information about the current review baseline at a specific repository path.
+///
+/// Returns a tuple of (baseline_oid, commits_since_baseline, is_stale).
+/// - `baseline_oid`: The OID of the baseline commit (or None if not set)
+/// - `commits_since_baseline`: Number of commits since baseline
+/// - `is_stale`: true if baseline is old (>10 commits behind)
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+pub fn get_review_baseline_info_at(repo_root: &Path) -> io::Result<(Option<String>, usize, bool)> {
+    let repo = git2::Repository::open(repo_root).map_err(|e| to_io_error(&e))?;
+    get_review_baseline_info_impl(&repo, load_review_baseline_at(repo_root)?)
+}
+
+/// Implementation of get_review_baseline_info.
+fn get_review_baseline_info_impl(
+    repo: &git2::Repository,
+    baseline: ReviewBaseline,
+) -> io::Result<(Option<String>, usize, bool)> {
+    let baseline_oid = match baseline {
         ReviewBaseline::Commit(oid) => Some(oid.to_string()),
         ReviewBaseline::NotSet => None,
     };
 
     let commits_since = if let Some(ref oid) = baseline_oid {
-        count_commits_since(&repo, oid)?
+        count_commits_since(repo, oid)?
     } else {
         0
     };
@@ -114,9 +186,19 @@ pub fn get_review_baseline_info() -> io::Result<(Option<String>, usize, bool)> {
     Ok((baseline_oid, commits_since, is_stale))
 }
 
-/// Write the review baseline to disk.
-fn write_review_baseline(oid: &str) -> io::Result<()> {
-    let path = PathBuf::from(REVIEW_BASELINE_FILE);
+/// Write the review baseline to disk (CWD-based, for backward compatibility).
+fn write_review_baseline_cwd(oid: &str) -> io::Result<()> {
+    let path = Path::new(REVIEW_BASELINE_FILE);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, oid)?;
+    Ok(())
+}
+
+/// Write the review baseline to disk at a specific repository path.
+fn write_review_baseline(repo_root: &Path, oid: &str) -> io::Result<()> {
+    let path = repo_root.join(REVIEW_BASELINE_FILE);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -285,16 +367,39 @@ impl BaselineSummary {
 ///
 /// Returns a `BaselineSummary` containing information about the current
 /// baseline, commits since baseline, staleness, and diff statistics.
+///
+/// **Note:** This function uses the current working directory to discover the repo.
+/// For explicit path control, use [`get_baseline_summary_at`] instead.
 pub fn get_baseline_summary() -> io::Result<BaselineSummary> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
+    get_baseline_summary_impl(&repo, load_review_baseline()?)
+}
 
-    let baseline_oid = match load_review_baseline()? {
+/// Get a summary of the baseline state for display at a specific repository path.
+///
+/// Returns a `BaselineSummary` containing information about the current
+/// baseline, commits since baseline, staleness, and diff statistics.
+///
+/// # Arguments
+///
+/// * `repo_root` - Path to the repository root
+pub fn get_baseline_summary_at(repo_root: &Path) -> io::Result<BaselineSummary> {
+    let repo = git2::Repository::open(repo_root).map_err(|e| to_io_error(&e))?;
+    get_baseline_summary_impl(&repo, load_review_baseline_at(repo_root)?)
+}
+
+/// Implementation of get_baseline_summary.
+fn get_baseline_summary_impl(
+    repo: &git2::Repository,
+    baseline: ReviewBaseline,
+) -> io::Result<BaselineSummary> {
+    let baseline_oid = match baseline {
         ReviewBaseline::Commit(oid) => Some(oid.to_string()),
         ReviewBaseline::NotSet => None,
     };
 
     let commits_since = if let Some(ref oid) = baseline_oid {
-        count_commits_since(&repo, oid)?
+        count_commits_since(repo, oid)?
     } else {
         0
     };
@@ -302,7 +407,7 @@ pub fn get_baseline_summary() -> io::Result<BaselineSummary> {
     let is_stale = commits_since > 10;
 
     // Get diff statistics
-    let diff_stats = get_diff_stats(&repo, &baseline_oid)?;
+    let diff_stats = get_diff_stats(repo, &baseline_oid)?;
 
     Ok(BaselineSummary {
         baseline_oid,
