@@ -140,7 +140,8 @@ fn ralph_baseline_reset_command_works() {
             write_file(dir.path().join("initial.txt"), "updated content");
             let _ = commit_all(&repo, "second commit");
 
-            // Reset the start_commit
+            // Reset the start_commit with dependency injection
+            let config = create_test_config_struct();
             let executor = mock_executor_with_success();
             run_ralph_cli_injected(
                 &["--reset-start-commit"],

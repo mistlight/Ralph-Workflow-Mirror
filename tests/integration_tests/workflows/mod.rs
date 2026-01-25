@@ -9,7 +9,7 @@
 //! - Baseline management tests (baseline.rs)
 //! - PLAN workflow tests (plan.rs)
 //! - Review workflow tests (review.rs)
-//! - Resume/checkpoint tests (resume.rs)
+//! - Resume/checkpoint tests (resume/)
 //! - Development XML tests (development_xml.rs)
 //!
 //! # Integration Test Style Guide

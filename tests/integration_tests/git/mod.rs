@@ -44,7 +44,6 @@ fn ralph_reset_start_commit_on_main_uses_head() {
     with_default_timeout(|| {
         // Test that --reset-start-commit on main branch uses HEAD
         let dir = TempDir::new().unwrap();
-        let config = create_test_config_struct();
 
         // Initialize repo and create commits on main branch
         let repo = init_git_repo(&dir);
@@ -72,6 +71,8 @@ fn ralph_reset_start_commit_on_main_uses_head() {
         // Get the current HEAD commit OID
         let head_oid_str = head_oid(&repo);
 
+        // Use run_ralph_cli_injected with config for --reset-start-commit
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
         run_ralph_cli_injected(
             &["--reset-start-commit"],
@@ -102,7 +103,6 @@ fn ralph_reset_start_commit_on_feature_branch_uses_merge_base() {
     with_default_timeout(|| {
         // Test that --reset-start-commit on feature branch uses merge-base
         let dir = TempDir::new().unwrap();
-        let config = create_test_config_struct();
 
         // Initialize repo with initial commit on main
         let repo = init_git_repo(&dir);
@@ -159,6 +159,8 @@ fn ralph_reset_start_commit_on_feature_branch_uses_merge_base() {
             "HEAD should be different from merge-base"
         );
 
+        // Use run_ralph_cli_injected with config for --reset-start-commit
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
         run_ralph_cli_injected(
             &["--reset-start-commit"],
@@ -233,7 +235,6 @@ fn ralph_save_start_commit_handles_empty_repo() {
         // Test that the pipeline handles an empty repository (no commits)
         // This verifies the graceful handling when HEAD is unborn
         let dir = TempDir::new().unwrap();
-        let config = create_test_config_struct();
 
         // Initialize an empty git repo (no commits)
         let _ = init_git_repo(&dir);
@@ -252,11 +253,12 @@ Test git command functionality.
 
         // Try to run ralph with --reset-start-commit on empty repo
         // This should fail because there's no HEAD commit to reference
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
         let result = run_ralph_cli_injected(
             &["--reset-start-commit"],
             executor,
-            config.clone(),
+            config,
             Some(dir.path()),
         );
 
@@ -268,6 +270,7 @@ Test git command functionality.
         let repo = git2::Repository::open(dir.path()).unwrap();
         let _ = commit_all(&repo, "initial commit");
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
         run_ralph_cli_injected(
             &["--reset-start-commit"],

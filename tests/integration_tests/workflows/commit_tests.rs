@@ -19,7 +19,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli, run_ralph_cli_injected,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
 };
 use crate::test_timeout::with_default_timeout;
 use test_helpers::{commit_all, init_git_repo, write_file};
@@ -77,8 +77,9 @@ fn ralph_show_commit_msg_displays_message() {
         )
         .unwrap();
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--show-commit-msg"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&["--show-commit-msg"], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -113,8 +114,9 @@ fn ralph_show_commit_msg_reads_from_working_dir() {
         .unwrap();
 
         // Explicitly specify repo root as working directory
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--show-commit-msg"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&["--show-commit-msg"], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -133,8 +135,10 @@ fn ralph_show_commit_msg_fails_if_missing() {
 
         // Don't create commit-message.txt
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        let result = run_ralph_cli(&["--show-commit-msg"], executor, Some(dir.path()));
+        let result =
+            run_ralph_cli_injected(&["--show-commit-msg"], executor, config, Some(dir.path()));
 
         // Should fail
         assert!(result.is_err());
@@ -169,8 +173,9 @@ fn ralph_apply_commit_creates_commit() {
         )
         .unwrap();
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--apply-commit"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&["--apply-commit"], executor, config, Some(dir.path())).unwrap();
 
         // Verify the commit was created
         let repo = git2::Repository::open(dir.path()).unwrap();
@@ -198,8 +203,10 @@ fn ralph_apply_commit_fails_without_message_file() {
 
         // Don't create commit-message.txt
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        let result = run_ralph_cli(&["--apply-commit"], executor, Some(dir.path()));
+        let result =
+            run_ralph_cli_injected(&["--apply-commit"], executor, config, Some(dir.path()));
 
         // Should fail
         assert!(result.is_err());

@@ -175,6 +175,9 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
 /// loading and uses the provided Config directly, enabling deterministic tests
 /// that don't rely on process-global state.
 ///
+/// This function handles ALL commands including early-exit commands (--init, --diagnose,
+/// --reset-start-commit, etc.) so that tests can use a single entry point.
+///
 /// # Arguments
 ///
 /// * `args` - The parsed CLI arguments
@@ -207,6 +210,22 @@ pub fn run_with_config(
     let validated = resolve_required_agents(&config)?;
     let developer_agent = validated.developer_agent;
     let reviewer_agent = validated.reviewer_agent;
+
+    // Handle listing commands (these can run without git repo)
+    if handle_listing_commands(&args, &registry, colors) {
+        return Ok(());
+    }
+
+    // Handle --diagnose
+    if args.recovery.diagnose {
+        handle_diagnose(colors, &config, &registry, &config_path, &[], &*executor);
+        return Ok(());
+    }
+
+    // Handle plumbing commands (--reset-start-commit, --show-commit-msg, etc.)
+    if handle_plumbing_commands(&args, &logger, colors)? {
+        return Ok(());
+    }
 
     // Validate agents and set up git repo and PROMPT.md
     let Some(repo_root) = validate_and_setup_agents(AgentSetupParams {

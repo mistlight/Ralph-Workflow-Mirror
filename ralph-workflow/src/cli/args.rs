@@ -481,7 +481,7 @@ pub struct RebaseFlags {
 }
 
 /// Ralph: PROMPT-driven agent orchestrator for git repos
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default)]
 #[command(name = "ralph")]
 #[command(about = "PROMPT-driven multi-agent orchestrator for git repos")]
 #[command(

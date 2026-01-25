@@ -20,8 +20,8 @@
 //! Key patterns used in these tests:
 //! - **Parser tests:** Use `TestPrinter` from `ralph_workflow::json_parser::printer`
 //! - **File operations:** Use `tempfile::TempDir` for isolation
-//! - **CLI tests:** Use `run_ralph_cli()` which calls `app::run()` directly
-//! - **Process execution:** Use `ProcessExecutor` trait with `RealProcessExecutor`
+//! - **CLI tests:** Use `run_ralph_cli_injected()` which calls `app::run_with_config()` directly
+//! - **Process execution:** Use `MockProcessExecutor` (never spawn real processes in tests)
 //!
 //! See individual test modules for examples of proper integration test structure.
 

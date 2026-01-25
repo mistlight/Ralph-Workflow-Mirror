@@ -14,11 +14,13 @@
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (exit codes, file changes)
-//! - Uses `run_ralph_cli()` which calls `app::run()` directly (no process spawning)
+//! - Uses `run_ralph_cli_injected()` which calls `app::run_with_config()` directly
 //! - Uses `TempDir` for filesystem isolation
 //! - Tests are deterministic and focus on successful execution and file side effects
 
-use crate::common::{mock_executor_with_success, run_ralph_cli, EnvGuard};
+use crate::common::{
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+};
 use crate::test_timeout::with_default_timeout;
 use std::fs;
 use tempfile::TempDir;
@@ -35,9 +37,10 @@ use test_helpers::init_git_repo;
 #[test]
 fn ralph_prints_version() {
     with_default_timeout(|| {
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
         // --version doesn't need a working directory
-        run_ralph_cli(&["--version"], executor, None).unwrap();
+        run_ralph_cli_injected(&["--version"], executor, config, None).unwrap();
     });
 }
 
@@ -49,9 +52,10 @@ fn ralph_prints_version() {
 #[test]
 fn ralph_help_shows_usage() {
     with_default_timeout(|| {
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
         // --help doesn't need a working directory
-        run_ralph_cli(&["--help"], executor, None).unwrap();
+        run_ralph_cli_injected(&["--help"], executor, config, None).unwrap();
     });
 }
 
@@ -66,9 +70,10 @@ fn ralph_help_shows_usage() {
 #[test]
 fn ralph_list_templates_shows_available() {
     with_default_timeout(|| {
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
         // --list-templates doesn't need a working directory
-        run_ralph_cli(&["--list-templates"], executor, None).unwrap();
+        run_ralph_cli_injected(&["--list-templates"], executor, config, None).unwrap();
     });
 }
 
@@ -86,8 +91,9 @@ fn ralph_diagnose_shows_system_info() {
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--diagnose"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&["--diagnose"], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -101,8 +107,9 @@ fn ralph_diagnose_short_flag_works() {
         let dir = TempDir::new().unwrap();
         let _ = init_git_repo(&dir);
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["-d"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&["-d"], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -134,24 +141,9 @@ Do something.
         )
         .unwrap();
 
-        // Set up a config
-        let config_home = dir.path().join(".config");
-        fs::create_dir_all(&config_home).unwrap();
-        fs::write(
-            config_home.join("ralph-workflow.toml"),
-            r#"[agent_chain]
-developer = ["codex"]
-reviewer = ["codex"]
-"#,
-        )
-        .unwrap();
-
-        // Use EnvGuard to ensure environment variables are properly restored
-        let guard = EnvGuard::new(&["XDG_CONFIG_HOME"]);
-        guard.set(&[("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap()))]);
-
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli(&["--dry-run"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&["--dry-run"], executor, config, Some(dir.path())).unwrap();
     });
 }
 
@@ -178,26 +170,11 @@ fn ralph_init_with_template_creates_prompt() {
             "PROMPT.md should be removed for test"
         );
 
-        // Create config so we can use --init with template
-        let config_home = dir.path().join(".config");
-        fs::create_dir_all(&config_home).unwrap();
-        fs::write(
-            config_home.join("ralph-workflow.toml"),
-            r#"[agent_chain]
-developer = ["codex"]
-reviewer = ["codex"]
-"#,
-        )
-        .unwrap();
-
-        // Use EnvGuard to ensure environment variables are properly restored
-        let guard = EnvGuard::new(&["XDG_CONFIG_HOME"]);
-        guard.set(&[("XDG_CONFIG_HOME", Some(config_home.to_str().unwrap()))]);
-
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
         // Note: --init in non-interactive mode returns early without creating PROMPT.md
         // The actual PROMPT.md creation happens in interactive mode
-        run_ralph_cli(&["--init", "bug-fix"], executor, Some(dir.path())).unwrap();
+        run_ralph_cli_injected(&["--init", "bug-fix"], executor, config, Some(dir.path())).unwrap();
     });
 }
