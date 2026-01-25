@@ -33,8 +33,8 @@ pub struct CommitGenerationConfig<'a> {
     pub config: &'a Config,
     /// Template context for prompt expansion.
     pub template_context: &'a TemplateContext,
-    /// Workspace filesystem for file operations.
-    pub workspace: &'a crate::workspace::WorkspaceFs,
+    /// Workspace for file operations (trait object for DI).
+    pub workspace: &'a dyn crate::workspace::Workspace,
     /// Agent registry for accessing configured agents.
     pub registry: &'a AgentRegistry,
     /// Logger for info/warning messages.

@@ -4,8 +4,9 @@
 
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
-use crate::workspace::WorkspaceFs;
+use crate::workspace::Workspace;
 use std::collections::HashMap;
+use std::path::Path;
 
 #[cfg(any(test, feature = "test-utils"))]
 use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
@@ -18,13 +19,16 @@ const COMMIT_MESSAGE_XSD_SCHEMA: &str =
 
 /// Write XSD retry context files for commit message to `.agent/tmp/` directory.
 ///
-/// Uses WorkspaceFs to write files to the correct location regardless of CWD.
-fn write_commit_xsd_retry_files_to_workspace(diff: &str, workspace: &WorkspaceFs) {
-    if workspace.create_dir_all(".agent/tmp").is_err() {
+/// Uses Workspace to write files to the correct location regardless of CWD.
+fn write_commit_xsd_retry_files_to_workspace(diff: &str, workspace: &dyn Workspace) {
+    if workspace.create_dir_all(Path::new(".agent/tmp")).is_err() {
         return;
     }
-    let _ = workspace.write(".agent/tmp/commit_message.xsd", COMMIT_MESSAGE_XSD_SCHEMA);
-    let _ = workspace.write(".agent/tmp/diff.txt", diff);
+    let _ = workspace.write(
+        Path::new(".agent/tmp/commit_message.xsd"),
+        COMMIT_MESSAGE_XSD_SCHEMA,
+    );
+    let _ = workspace.write(Path::new(".agent/tmp/diff.txt"), diff);
 }
 
 /// Generate fix prompt (applies to either role).
@@ -265,11 +269,11 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
 ///
 /// * `context` - Template context containing the template registry
 /// * `diff` - The git diff to generate a commit message for
-/// * `workspace` - Workspace filesystem for resolving absolute paths
+/// * `workspace` - Workspace for resolving absolute paths (accepts any Workspace implementation)
 pub fn prompt_generate_commit_message_with_diff_with_context(
     context: &TemplateContext,
     diff: &str,
-    workspace: &WorkspaceFs,
+    workspace: &dyn Workspace,
 ) -> String {
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
@@ -357,12 +361,12 @@ pub fn prompt_simplified_commit_with_context(context: &TemplateContext, diff: &s
 /// * `context` - Template context containing the template registry
 /// * `diff` - The git diff to generate a commit message for
 /// * `xsd_error` - The XSD validation error message to include in the prompt
-/// * `workspace` - Workspace filesystem for resolving absolute paths and writing files
+/// * `workspace` - Workspace for resolving absolute paths and writing files (accepts any Workspace implementation)
 pub fn prompt_xsd_retry_with_context(
     context: &TemplateContext,
     diff: &str,
     xsd_error: &str,
-    workspace: &WorkspaceFs,
+    workspace: &dyn Workspace,
 ) -> String {
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
@@ -413,6 +417,7 @@ pub fn prompt_xsd_retry_with_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace::MemoryWorkspace;
 
     #[test]
     fn test_prompt_fix() {
@@ -728,7 +733,8 @@ mod tests {
     #[test]
     fn test_prompt_generate_commit_message_with_diff_with_context() {
         let context = TemplateContext::default();
-        let workspace = WorkspaceFs::new(std::path::PathBuf::from("/test/repo"));
+        // Use MemoryWorkspace instead of WorkspaceFs - no real filesystem access needed
+        let workspace = MemoryWorkspace::new_test();
         let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
         let result =
             prompt_generate_commit_message_with_diff_with_context(&context, diff, &workspace);
@@ -740,7 +746,8 @@ mod tests {
     #[test]
     fn test_prompt_generate_commit_message_with_diff_with_context_empty() {
         let context = TemplateContext::default();
-        let workspace = WorkspaceFs::new(std::path::PathBuf::from("/test/repo"));
+        // Use MemoryWorkspace instead of WorkspaceFs - no real filesystem access needed
+        let workspace = MemoryWorkspace::new_test();
         let result =
             prompt_generate_commit_message_with_diff_with_context(&context, "", &workspace);
         assert!(result.contains("ERROR: Empty diff"));
@@ -749,7 +756,8 @@ mod tests {
     #[test]
     fn test_context_based_commit_uses_workspace_paths() {
         let context = TemplateContext::default();
-        let workspace = WorkspaceFs::new(std::path::PathBuf::from("/test/repo"));
+        // Use MemoryWorkspace instead of WorkspaceFs - no real filesystem access needed
+        let workspace = MemoryWorkspace::new_test();
         let diff = "diff --git a/src/main.rs b/src/main.rs\n+fn new_func() {}";
         let result =
             prompt_generate_commit_message_with_diff_with_context(&context, diff, &workspace);

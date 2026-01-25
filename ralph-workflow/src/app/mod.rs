@@ -467,7 +467,8 @@ fn prepare_pipeline_or_exit(
     let reviewer_display = registry.display_name(&reviewer_agent);
 
     // Build pipeline context
-    let workspace = crate::workspace::WorkspaceFs::new(repo_root.clone());
+    let workspace: std::sync::Arc<dyn crate::workspace::Workspace> =
+        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()));
     let ctx = PipelineContext {
         args,
         config,
@@ -1114,7 +1115,7 @@ fn create_phase_context_with_config<'ctx>(
         executor: &*ctx.executor,
         executor_arc: std::sync::Arc::clone(&ctx.executor),
         repo_root: &ctx.repo_root,
-        workspace: &ctx.workspace,
+        workspace: &*ctx.workspace,
     }
 }
 

@@ -14,7 +14,10 @@ use crate::logger::{Colors, Logger};
 use crate::pipeline::Stats;
 use crate::pipeline::Timer;
 use crate::prompts::template_context::TemplateContext;
-use crate::workspace::WorkspaceFs;
+use crate::workspace::Workspace;
+// MemoryWorkspace is used in test fixtures for proper DI
+#[cfg(test)]
+use crate::workspace::MemoryWorkspace;
 use std::path::Path;
 
 /// Shared context for all pipeline phases.
@@ -58,11 +61,15 @@ pub struct PhaseContext<'a> {
     /// file operations. Code should use `repo_root.join("relative/path")` instead
     /// of `Path::new("relative/path")`.
     pub repo_root: &'a Path,
-    /// Workspace filesystem for explicit path resolution.
+    /// Workspace for explicit path resolution and file operations.
     ///
     /// Provides convenient methods for file operations and path resolution
     /// without depending on the current working directory.
-    pub workspace: &'a WorkspaceFs,
+    ///
+    /// This uses trait object (`&dyn Workspace`) for proper dependency injection:
+    /// - Production code passes `&WorkspaceFs` (real filesystem)
+    /// - Tests can pass `&MemoryWorkspace` (in-memory storage)
+    pub workspace: &'a dyn Workspace,
 }
 
 impl PhaseContext<'_> {
@@ -135,6 +142,9 @@ mod tests {
     use std::path::PathBuf;
 
     /// Test fixture for creating `PhaseContext` in tests.
+    ///
+    /// Uses `MemoryWorkspace` instead of `WorkspaceFs` for proper dependency injection.
+    /// This allows tests to run without touching the real filesystem.
     struct TestFixture {
         config: Config,
         colors: Colors,
@@ -144,7 +154,7 @@ mod tests {
         template_context: TemplateContext,
         executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
         repo_root: PathBuf,
-        workspace: WorkspaceFs,
+        workspace: MemoryWorkspace,
     }
 
     impl TestFixture {
@@ -153,7 +163,8 @@ mod tests {
             let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
                 as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
             let repo_root = PathBuf::from("/test/repo");
-            let workspace = WorkspaceFs::new(repo_root.clone());
+            // Use MemoryWorkspace for testing - no real filesystem access
+            let workspace = MemoryWorkspace::new(repo_root.clone());
             Self {
                 config: Config::default(),
                 colors,

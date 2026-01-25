@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::prompts::template_context::TemplateContext;
-use crate::workspace::WorkspaceFs;
+use crate::workspace::Workspace;
 
 /// Context for running the pipeline.
 ///
@@ -23,8 +23,12 @@ pub struct PipelineContext {
     pub developer_display: String,
     pub reviewer_display: String,
     pub repo_root: std::path::PathBuf,
-    /// Workspace filesystem for explicit path resolution (no CWD dependency).
-    pub workspace: WorkspaceFs,
+    /// Workspace for explicit path resolution (no CWD dependency).
+    ///
+    /// Uses `Arc<dyn Workspace>` for proper dependency injection:
+    /// - Production code passes `Arc::new(WorkspaceFs::new(...))`
+    /// - Tests can pass `Arc::new(MemoryWorkspace::new(...))`
+    pub workspace: std::sync::Arc<dyn Workspace>,
     pub logger: Logger,
     pub colors: Colors,
     pub template_context: TemplateContext,

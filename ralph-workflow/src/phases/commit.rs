@@ -412,7 +412,7 @@ fn generate_prompt_for_strategy(
     strategy: CommitRetryStrategy,
     working_diff: &str,
     template_context: &crate::prompts::TemplateContext,
-    workspace: &crate::workspace::WorkspaceFs,
+    workspace: &dyn crate::workspace::Workspace,
     xsd_error: Option<&str>,
     prompt_history: &HashMap<String, String>,
     prompt_key: &str,
@@ -569,8 +569,8 @@ struct CommitAttemptContext<'a> {
     diff_was_truncated: bool,
     /// Template context for user template overrides
     template_context: &'a crate::prompts::TemplateContext,
-    /// Workspace filesystem for file operations
-    workspace: &'a crate::workspace::WorkspaceFs,
+    /// Workspace for file operations (trait object for DI)
+    workspace: &'a dyn crate::workspace::Workspace,
     /// Prompt history for checkpoint/resume determinism
     prompt_history: &'a HashMap<String, String>,
     /// Unique key for this commit generation attempt
@@ -884,7 +884,7 @@ pub fn generate_commit_message(
     runtime: &mut PipelineRuntime,
     commit_agent: &str,
     template_context: &crate::prompts::TemplateContext,
-    workspace: &crate::workspace::WorkspaceFs,
+    workspace: &dyn crate::workspace::Workspace,
     prompt_history: &HashMap<String, String>,
 ) -> anyhow::Result<CommitMessageResult> {
     let log_dir = ".agent/logs/commit_generation";
