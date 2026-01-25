@@ -31,7 +31,6 @@
 //! The `SessionState` struct tracks both the session ID and the agent name,
 //! ensuring that session continuation is only attempted with the same agent.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Tracks session state for agent continuation.
@@ -108,13 +107,17 @@ impl SessionState {
 /// # Arguments
 ///
 /// * `log_path` - Path to the log file containing OpenCode NDJSON output
+/// * `workspace` - Workspace for file operations
 ///
 /// # Returns
 ///
 /// * `Some(session_id)` if a valid session ID was found
 /// * `None` if no session ID could be extracted
-pub fn extract_opencode_session_id(log_path: &Path) -> Option<String> {
-    let content = fs::read_to_string(log_path).ok()?;
+pub fn extract_opencode_session_id(
+    log_path: &Path,
+    workspace: &dyn crate::workspace::Workspace,
+) -> Option<String> {
+    let content = workspace.read(log_path).ok()?;
     extract_opencode_session_id_from_content(&content)
 }
 
@@ -146,13 +149,17 @@ pub fn extract_opencode_session_id_from_content(content: &str) -> Option<String>
 /// # Arguments
 ///
 /// * `log_path` - Path to the log file containing Claude CLI JSON output
+/// * `workspace` - Workspace for file operations
 ///
 /// # Returns
 ///
 /// * `Some(session_id)` if a valid session ID was found
 /// * `None` if no session ID could be extracted
-pub fn extract_claude_session_id(log_path: &Path) -> Option<String> {
-    let content = fs::read_to_string(log_path).ok()?;
+pub fn extract_claude_session_id(
+    log_path: &Path,
+    workspace: &dyn crate::workspace::Workspace,
+) -> Option<String> {
+    let content = workspace.read(log_path).ok()?;
     extract_claude_session_id_from_content(&content)
 }
 
@@ -223,9 +230,9 @@ pub struct SessionInfo {
     pub log_file: std::path::PathBuf,
 }
 
-/// Find the most recent log file matching a prefix pattern and extract session info.
+/// Find log files matching a prefix pattern and extract session info.
 ///
-/// This function finds the log file and extracts the session ID from the content
+/// This function finds log files and extracts the session ID from the content
 /// based on the JSON parser type. The agent name can be provided directly (preferred)
 /// or extracted from the log file name (fallback for backwards compatibility).
 ///
@@ -237,6 +244,7 @@ pub struct SessionInfo {
 ///   If provided, this is used directly instead of extracting from the log file name.
 ///   This is preferred because log file names use sanitized names (slashes → hyphens)
 ///   which can be ambiguous for agents with hyphenated provider names.
+/// * `workspace` - Workspace for file operations
 ///
 /// # Returns
 ///
@@ -246,30 +254,26 @@ pub fn extract_session_info_from_log_prefix(
     log_prefix: &Path,
     parser_type: crate::agents::JsonParserType,
     known_agent_name: Option<&str>,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> Option<SessionInfo> {
     use crate::agents::JsonParserType;
 
-    // Get all log files matching the prefix, sorted by modification time (oldest first)
-    // This handles the case where continuation logs (without session IDs) exist
-    // alongside the initial log (with session ID).
+    // Get all log files matching the prefix
     let parent = log_prefix.parent().unwrap_or(Path::new("."));
     let prefix_str = log_prefix.file_name().and_then(|s| s.to_str())?;
 
-    let mut log_files: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+    let mut log_files: Vec<PathBuf> = Vec::new();
 
-    if let Ok(entries) = fs::read_dir(parent) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                // Match files that start with our prefix, have more content, and end with .log
-                if filename.starts_with(prefix_str)
-                    && filename.len() > prefix_str.len()
-                    && filename.ends_with(".log")
-                {
-                    if let Ok(metadata) = fs::metadata(&path) {
-                        if let Ok(modified) = metadata.modified() {
-                            log_files.push((path, modified));
-                        }
+    if let Ok(entries) = workspace.read_dir(parent) {
+        for entry in entries {
+            if entry.is_file() {
+                if let Some(filename) = entry.file_name().and_then(|s| s.to_str()) {
+                    // Match files that start with our prefix, have more content, and end with .log
+                    if filename.starts_with(prefix_str)
+                        && filename.len() > prefix_str.len()
+                        && filename.ends_with(".log")
+                    {
+                        log_files.push(entry.path().to_path_buf());
                     }
                 }
             }
@@ -280,28 +284,27 @@ pub fn extract_session_info_from_log_prefix(
         return None;
     }
 
-    // Sort by modification time (oldest first)
-    // This ensures we check the initial log (with session ID) before continuation logs
-    log_files.sort_by_key(|(_, time)| *time);
+    // Sort by filename for deterministic ordering
+    log_files.sort();
 
     // Use the known agent name if provided
     let agent_name = if let Some(name) = known_agent_name {
         name.to_string()
     } else {
         // If no known agent name, try to extract from the first log file
-        if let Some((first_log, _)) = log_files.first() {
+        if let Some(first_log) = log_files.first() {
             super::logfile::extract_agent_name_from_logfile(first_log, log_prefix)?
         } else {
             return None;
         }
     };
 
-    // Try to extract session ID from each log file (oldest first)
+    // Try to extract session ID from each log file
     // The first file with a valid session ID wins
-    for (log_file, _) in &log_files {
+    for log_file in &log_files {
         let session_id = match parser_type {
-            JsonParserType::OpenCode => extract_opencode_session_id(log_file),
-            JsonParserType::Claude => extract_claude_session_id(log_file),
+            JsonParserType::OpenCode => extract_opencode_session_id(log_file, workspace),
+            JsonParserType::Claude => extract_claude_session_id(log_file, workspace),
             // Other parsers don't support session continuation
             JsonParserType::Codex | JsonParserType::Gemini | JsonParserType::Generic => None,
         };
@@ -319,7 +322,6 @@ pub fn extract_session_info_from_log_prefix(
         }
     }
 
-    // No log file contained a valid session ID
     None
 }
 

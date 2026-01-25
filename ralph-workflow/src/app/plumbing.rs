@@ -172,6 +172,7 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
         config: config.config,
         executor: executor_ref,
         executor_arc: Arc::clone(&config.executor),
+        workspace: config.workspace,
     };
 
     // Use the standard commit message generation from phases/commit.rs

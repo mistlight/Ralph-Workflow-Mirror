@@ -136,6 +136,7 @@ impl MainEffectHandler {
             config: ctx.config,
             executor: ctx.executor,
             executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+            workspace: ctx.workspace,
         };
 
         // Execute agent with fault-tolerant wrapper
@@ -369,6 +370,7 @@ impl MainEffectHandler {
             config: ctx.config,
             executor: ctx.executor,
             executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+            workspace: ctx.workspace,
         };
 
         match commit::generate_commit_message(

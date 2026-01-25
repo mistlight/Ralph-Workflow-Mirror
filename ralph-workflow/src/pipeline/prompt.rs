@@ -11,7 +11,7 @@ use crate::pipeline::idle_timeout::{
     SharedActivityTimestamp, IDLE_TIMEOUT_SECS,
 };
 use crate::pipeline::Timer;
-use std::fs::{self, File, OpenOptions};
+
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::sync::Arc;
@@ -276,22 +276,22 @@ pub struct PipelineRuntime<'a> {
     pub executor: &'a dyn crate::executor::ProcessExecutor,
     /// Arc-wrapped executor for spawning into threads (e.g., idle timeout monitor).
     pub executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
+    /// Workspace for file operations.
+    pub workspace: &'a dyn crate::workspace::Workspace,
 }
 
 /// Saves the prompt to a file and optionally copies it to the clipboard.
 fn save_prompt_to_file_and_clipboard(
     prompt: &str,
-    prompt_path: &std::path::PathBuf,
+    prompt_path: &std::path::Path,
     interactive: bool,
     logger: &Logger,
     colors: Colors,
     executor: &dyn crate::executor::ProcessExecutor,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> io::Result<()> {
-    // Save prompt to file
-    if let Some(parent) = prompt_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(prompt_path, prompt)?;
+    // Save prompt to file using workspace
+    workspace.write(prompt_path, prompt)?;
     logger.info(&format!(
         "Prompt saved to {}{}{}",
         colors.cyan(),
@@ -451,6 +451,7 @@ pub fn run_with_prompt(
         runtime.logger,
         *runtime.colors,
         runtime.executor,
+        runtime.workspace,
     )?;
 
     // Use ProcessExecutor for agent spawning
@@ -512,11 +513,9 @@ fn run_with_agent_spawn(
         .logger
         .info(&format!("Using {} parser...", cmd.parser_type));
 
-    // Create log file
-    if let Some(parent) = Path::new(cmd.logfile).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    File::create(cmd.logfile)?;
+    // Create log file using workspace
+    let logfile_path = Path::new(cmd.logfile);
+    runtime.workspace.write(logfile_path, "")?;
 
     // Build sanitized environment map
     let mut complete_env: std::collections::HashMap<String, String> = std::env::vars().collect();
@@ -703,7 +702,7 @@ fn stream_agent_output_from_handle(
                 .with_display_name(cmd.display_name)
                 .with_log_file(cmd.logfile)
                 .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
-                p.parse_stream(reader)?;
+                p.parse_stream(reader, runtime.workspace)?;
             }
             JsonParserType::Codex => {
                 let p =
@@ -711,7 +710,7 @@ fn stream_agent_output_from_handle(
                         .with_display_name(cmd.display_name)
                         .with_log_file(cmd.logfile)
                         .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
-                p.parse_stream(reader)?;
+                p.parse_stream(reader, runtime.workspace)?;
             }
             JsonParserType::Gemini => {
                 let p = crate::json_parser::GeminiParser::new(
@@ -721,7 +720,7 @@ fn stream_agent_output_from_handle(
                 .with_display_name(cmd.display_name)
                 .with_log_file(cmd.logfile)
                 .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
-                p.parse_stream(reader)?;
+                p.parse_stream(reader, runtime.workspace)?;
             }
             JsonParserType::OpenCode => {
                 let p = crate::json_parser::OpenCodeParser::new(
@@ -731,49 +730,37 @@ fn stream_agent_output_from_handle(
                 .with_display_name(cmd.display_name)
                 .with_log_file(cmd.logfile)
                 .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
-                p.parse_stream(reader)?;
+                p.parse_stream(reader, runtime.workspace)?;
             }
             JsonParserType::Generic => {
-                let mut logfile = OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(cmd.logfile)?;
-
+                let logfile_path = Path::new(cmd.logfile);
                 let mut buf = String::new();
                 for line in reader.lines() {
                     let line = line?;
-                    // Write raw line to log file for extraction
-                    writeln!(logfile, "{line}")?;
+                    // Write raw line to log file for extraction using workspace
+                    runtime
+                        .workspace
+                        .append_bytes(logfile_path, format!("{line}\n").as_bytes())?;
                     buf.push_str(&line);
                     buf.push('\n');
                 }
-                logfile.flush()?;
-                // Ensure data is written to disk before continuing
-                // This prevents race conditions where extraction runs before OS commits writes
-                let _ = logfile.sync_all();
 
                 let formatted = format_generic_json_for_display(&buf, runtime.config.verbosity);
                 out.write_all(formatted.as_bytes())?;
             }
         }
     } else {
-        let mut logfile = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(cmd.logfile)?;
-
+        let logfile_path = Path::new(cmd.logfile);
         let stdout_io = io::stdout();
         let mut out = stdout_io.lock();
 
         for line in reader.lines() {
             let line = line?;
             writeln!(out, "{line}")?;
-            writeln!(logfile, "{line}")?;
+            runtime
+                .workspace
+                .append_bytes(logfile_path, format!("{line}\n").as_bytes())?;
         }
-        logfile.flush()?;
-        // Ensure data is written to disk before continuing
-        // This prevents race conditions where extraction runs before OS commits writes
-        let _ = logfile.sync_all();
     }
     Ok(())
 }

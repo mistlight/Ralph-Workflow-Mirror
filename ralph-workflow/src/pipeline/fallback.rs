@@ -24,9 +24,13 @@ pub enum TryAgentResult {
 
 /// Callback type for validating agent output after execution.
 ///
-/// Takes the log directory path and returns Ok(true) if output is valid,
+/// Takes workspace, log directory path and returns Ok(true) if output is valid,
 /// Ok(false) if output is missing/invalid (trigger fallback), or Err(e) for errors.
-pub type OutputValidator = fn(log_dir: &Path, logger: &Logger) -> io::Result<bool>;
+pub type OutputValidator = fn(
+    workspace: &dyn crate::workspace::Workspace,
+    log_dir: &Path,
+    logger: &Logger,
+) -> io::Result<bool>;
 
 /// Configuration for attempting an agent with retries.
 pub struct AgentAttemptConfig<'a> {
@@ -65,6 +69,8 @@ pub struct AgentAttemptConfig<'a> {
     pub output_validator: Option<OutputValidator>,
     /// Retry timer provider for controlling sleep behavior
     pub retry_timer: Arc<dyn RetryTimerProvider>,
+    /// Workspace for file operations (used by output validators and GLM fallback)
+    pub workspace: &'a dyn crate::workspace::Workspace,
 }
 
 /// Log GLM-specific diagnostic output (only on first try to avoid spam).
@@ -281,7 +287,7 @@ fn validate_agent_output(
 
     let log_prefix_path = Path::new(config.logfile_prefix);
 
-    match validator(log_prefix_path, runtime.logger) {
+    match validator(config.workspace, log_prefix_path, runtime.logger) {
         Ok(true) => Some(true),
         Ok(false) => {
             runtime.logger.warn(&format!(
@@ -403,7 +409,9 @@ pub fn try_agent_with_retries(
 
                 let has_valid_output = [log_prefix_path, logfile_path, logfile_no_ext.as_path()]
                     .into_iter()
-                    .any(|path| extract_last_result(path).is_ok_and(|v| v.is_some()));
+                    .any(|path| {
+                        extract_last_result(config.workspace, path).is_ok_and(|v| v.is_some())
+                    });
 
                 if has_valid_output {
                     runtime.logger.info(&format!(

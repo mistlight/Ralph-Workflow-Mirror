@@ -206,6 +206,7 @@ struct TryModelContext<'a> {
     fallback_config: &'a crate::agents::fallback::FallbackConfig,
     output_validator: Option<crate::pipeline::fallback::OutputValidator>,
     retry_timer: Arc<dyn crate::agents::RetryTimerProvider>,
+    workspace: &'a dyn crate::workspace::Workspace,
 }
 
 /// Try a single model configuration for an agent.
@@ -264,6 +265,7 @@ fn try_single_model(
         fallback_config: ctx.fallback_config,
         output_validator: ctx.output_validator,
         retry_timer: Arc::clone(&ctx.retry_timer),
+        workspace: ctx.workspace,
     };
     let result = try_agent_with_retries(&attempt_config, runtime)?;
 
@@ -290,6 +292,7 @@ struct TryAgentContext<'a> {
     cli_provider_override: Option<&'a String>,
     output_validator: Option<crate::pipeline::fallback::OutputValidator>,
     retry_timer: Arc<dyn crate::agents::RetryTimerProvider>,
+    workspace: &'a dyn crate::workspace::Workspace,
 }
 
 /// Try a single agent with all its model configurations.
@@ -344,6 +347,7 @@ fn try_single_agent(
             fallback_config,
             output_validator: ctx.output_validator,
             retry_timer: Arc::clone(&ctx.retry_timer),
+            workspace: ctx.workspace,
         };
         let result = try_single_model(&model_ctx, runtime)?;
 
@@ -370,6 +374,7 @@ pub struct FallbackConfig<'a, 'b> {
     pub registry: &'a AgentRegistry,
     pub primary_agent: &'a str,
     pub output_validator: Option<crate::pipeline::fallback::OutputValidator>,
+    pub workspace: &'a dyn crate::workspace::Workspace,
 }
 
 /// Run a command with automatic fallback to alternative agents on failure.
@@ -437,6 +442,7 @@ fn run_with_fallback_internal(config: &mut FallbackConfig<'_, '_>) -> std::io::R
                 cli_provider_override: cli_provider_override.as_ref(),
                 output_validator: config.output_validator,
                 retry_timer: config.registry.retry_timer(),
+                workspace: config.workspace,
             };
             let result = try_single_agent(&ctx, config.runtime, config.registry, fallback_config)?;
 
@@ -514,6 +520,8 @@ pub struct XsdRetryConfig<'a, 'b> {
     /// Optional output validator to check if agent produced valid output.
     /// Used by review phase to validate JSON output extraction.
     pub output_validator: Option<crate::pipeline::fallback::OutputValidator>,
+    /// Workspace for file operations.
+    pub workspace: &'a dyn crate::workspace::Workspace,
 }
 
 /// Run an XSD retry with optional session continuation.
@@ -593,6 +601,7 @@ pub fn run_xsd_retry_with_session(config: &mut XsdRetryConfig<'_, '_>) -> std::i
         registry: config.registry,
         primary_agent: config.primary_agent,
         output_validator: config.output_validator,
+        workspace: config.workspace,
     };
     run_with_fallback_and_validator(&mut fallback_config)
 }

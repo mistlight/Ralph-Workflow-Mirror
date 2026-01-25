@@ -42,6 +42,54 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 // ============================================================================
+// DirEntry - abstraction for directory entries
+// ============================================================================
+
+/// A directory entry returned by `Workspace::read_dir`.
+///
+/// This abstracts `std::fs::DirEntry` to allow in-memory implementations.
+#[derive(Debug, Clone)]
+pub struct DirEntry {
+    /// The path of this entry (relative to workspace root).
+    path: PathBuf,
+    /// Whether this entry is a file.
+    is_file: bool,
+    /// Whether this entry is a directory.
+    is_dir: bool,
+}
+
+impl DirEntry {
+    /// Create a new directory entry.
+    pub fn new(path: PathBuf, is_file: bool, is_dir: bool) -> Self {
+        Self {
+            path,
+            is_file,
+            is_dir,
+        }
+    }
+
+    /// Get the path of this entry.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Check if this entry is a file.
+    pub fn is_file(&self) -> bool {
+        self.is_file
+    }
+
+    /// Check if this entry is a directory.
+    pub fn is_dir(&self) -> bool {
+        self.is_dir
+    }
+
+    /// Get the file name of this entry.
+    pub fn file_name(&self) -> Option<&std::ffi::OsStr> {
+        self.path.file_name()
+    }
+}
+
+// ============================================================================
 // Workspace Trait
 // ============================================================================
 
@@ -71,6 +119,10 @@ pub trait Workspace: Send + Sync {
     /// Creates parent directories if they don't exist.
     fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()>;
 
+    /// Append bytes to a file relative to the repository root.
+    /// Creates the file if it doesn't exist. Creates parent directories if needed.
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()>;
+
     /// Check if a path exists relative to the repository root.
     fn exists(&self, relative: &Path) -> bool;
 
@@ -88,6 +140,13 @@ pub trait Workspace: Send + Sync {
 
     /// Create a directory and all parent directories relative to the repository root.
     fn create_dir_all(&self, relative: &Path) -> io::Result<()>;
+
+    /// List entries in a directory relative to the repository root.
+    ///
+    /// Returns a vector of `DirEntry`-like information for each entry.
+    /// For production, this wraps `std::fs::read_dir`.
+    /// For testing, this returns entries from the in-memory filesystem.
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>>;
 
     // =========================================================================
     // Path resolution (default implementations)
@@ -255,6 +314,20 @@ impl Workspace for WorkspaceFs {
         fs::write(path, content)
     }
 
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        use std::io::Write;
+        let path = self.root.join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        file.write_all(content)?;
+        file.flush()
+    }
+
     fn exists(&self, relative: &Path) -> bool {
         self.root.join(relative).exists()
     }
@@ -281,6 +354,23 @@ impl Workspace for WorkspaceFs {
 
     fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
         fs::create_dir_all(self.root.join(relative))
+    }
+
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>> {
+        let abs_path = self.root.join(relative);
+        let mut entries = Vec::new();
+        for entry in fs::read_dir(abs_path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            // Store relative path from workspace root
+            let rel_path = relative.join(entry.file_name());
+            entries.push(DirEntry::new(
+                rel_path,
+                metadata.is_file(),
+                metadata.is_dir(),
+            ));
+        }
+        Ok(entries)
     }
 }
 
@@ -506,6 +596,22 @@ impl Workspace for MemoryWorkspace {
         Ok(())
     }
 
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        // Create parent directories
+        if let Some(parent) = relative.parent() {
+            let mut dirs = self.directories.write().unwrap();
+            let mut current = PathBuf::new();
+            for component in parent.components() {
+                current.push(component);
+                dirs.insert(current.clone());
+            }
+        }
+        let mut files = self.files.write().unwrap();
+        let existing = files.entry(relative.to_path_buf()).or_default();
+        existing.extend_from_slice(content);
+        Ok(())
+    }
+
     fn exists(&self, relative: &Path) -> bool {
         self.files.read().unwrap().contains_key(relative)
             || self.directories.read().unwrap().contains(relative)
@@ -546,6 +652,50 @@ impl Workspace for MemoryWorkspace {
             dirs.insert(current.clone());
         }
         Ok(())
+    }
+
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>> {
+        let files = self.files.read().unwrap();
+        let dirs = self.directories.read().unwrap();
+
+        // Check if the directory exists
+        if !relative.as_os_str().is_empty() && !dirs.contains(relative) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Directory not found: {}", relative.display()),
+            ));
+        }
+
+        let mut entries = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        // Find all files that are direct children of this directory
+        for path in files.keys() {
+            if let Some(parent) = path.parent() {
+                if parent == relative {
+                    if let Some(name) = path.file_name() {
+                        if seen.insert(name.to_os_string()) {
+                            entries.push(DirEntry::new(path.clone(), true, false));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Find all directories that are direct children of this directory
+        for dir_path in dirs.iter() {
+            if let Some(parent) = dir_path.parent() {
+                if parent == relative {
+                    if let Some(name) = dir_path.file_name() {
+                        if seen.insert(name.to_os_string()) {
+                            entries.push(DirEntry::new(dir_path.clone(), false, true));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(entries)
     }
 }
 

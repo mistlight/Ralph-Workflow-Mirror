@@ -4,6 +4,7 @@ use super::*;
 use crate::config::Verbosity;
 use crate::files::result_extraction::extract_last_result;
 use crate::logger::Colors;
+use crate::workspace::MemoryWorkspace;
 
 #[test]
 fn test_parse_codex_thread_started() {
@@ -200,61 +201,30 @@ fn test_codex_result_event_debug_mode() {
 /// including the synthetic result event, and then extraction retrieves it.
 #[test]
 fn test_codex_synthetic_result_event_extraction() {
-    use std::io::Write;
+    use std::path::PathBuf;
 
-    let temp_dir = tempfile::TempDir::new().unwrap();
-    let log_path = temp_dir.path().join("codex_test.log");
+    // Build the log content that would be written by the parser
+    let log_content = concat!(
+        r#"{"type":"thread.started","thread_id":"thread123"}"#,
+        "\n",
+        r#"{"type":"turn.started"}"#,
+        "\n",
+        r#"{"type":"item.started","item":{"type":"agent_message","text":"I'll craft a prioritized checklist"}}"#,
+        "\n",
+        r#"{"type":"item.completed","item":{"type":"agent_message","text":"I'll craft a prioritized checklist with about ten items"}}"#,
+        "\n",
+        r#"{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":50}}"#,
+        "\n",
+        r#"{"type":"result","result":"I'll craft a prioritized checklist with about ten items across four levels."}"#,
+        "\n"
+    );
 
-    // Create a Codex parser with log file
-    let _parser = CodexParser::new(Colors { enabled: false }, Verbosity::Normal)
-        .with_log_file(log_path.to_str().unwrap());
-
-    // Simulate Codex events being written to the log file
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .unwrap();
-
-    // Write typical Codex events
-    writeln!(
-        file,
-        r#"{{"type":"thread.started","thread_id":"thread123"}}"#
-    )
-    .unwrap();
-    writeln!(file, r#"{{"type":"turn.started"}}"#).unwrap();
-
-    // Write agent_message items (simulating streaming content)
-    writeln!(
-        file,
-        r#"{{"type":"item.started","item":{{"type":"agent_message","text":"I'll craft a prioritized checklist"}}}}"#
-    )
-    .unwrap();
-    writeln!(
-        file,
-        r#"{{"type":"item.completed","item":{{"type":"agent_message","text":"I'll craft a prioritized checklist with about ten items"}}}}"#
-    )
-    .unwrap();
-
-    // Write turn completed event
-    writeln!(
-        file,
-        r#"{{"type":"turn.completed","usage":{{"input_tokens":100,"output_tokens":50}}}}"#
-    )
-    .unwrap();
-
-    // The parser should have written a synthetic result event
-    // Let's manually write one to simulate what the parser does
-    writeln!(
-        file,
-        r#"{{"type":"result","result":"I'll craft a prioritized checklist with about ten items across four levels."}}"#
-    )
-    .unwrap();
-
-    drop(file);
+    // Create workspace with the log file pre-populated
+    let workspace = MemoryWorkspace::new_test().with_file("/test/repo/codex_test.log", log_content);
+    let log_path = PathBuf::from("/test/repo/codex_test.log");
 
     // Verify extraction can find the result event
-    let result = extract_last_result(&log_path).unwrap();
+    let result = extract_last_result(&workspace, &log_path).unwrap();
     assert!(
         result.is_some(),
         "Expected to find result event from Codex parser"

@@ -35,8 +35,10 @@ mod event_handlers;
 
 use crate::config::Verbosity;
 use crate::logger::Colors;
+use crate::workspace::Workspace;
 use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use super::health::HealthMonitor;
@@ -56,7 +58,8 @@ use event_handlers::{
 pub struct CodexParser {
     colors: Colors,
     verbosity: Verbosity,
-    log_file: Option<String>,
+    /// Relative path to log file (if logging enabled)
+    log_path: Option<PathBuf>,
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
@@ -103,7 +106,7 @@ impl CodexParser {
         Self {
             colors,
             verbosity,
-            log_file: None,
+            log_path: None,
             display_name: "Codex".to_string(),
             streaming_session: Rc::new(RefCell::new(streaming_session)),
             reasoning_accumulator: Rc::new(RefCell::new(super::types::DeltaAccumulator::new())),
@@ -124,8 +127,11 @@ impl CodexParser {
         self
     }
 
+    /// Configure log file path.
+    ///
+    /// The workspace is passed to `parse_stream` separately.
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
-        self.log_file = Some(path.to_string());
+        self.log_path = Some(PathBuf::from(path));
         self
     }
 
@@ -153,10 +159,10 @@ impl CodexParser {
     /// Set the log file path (for testing).
     ///
     /// This method is public when the `test-utils` feature is enabled,
-    /// allowing integration tests to configure log file output.
+    /// allowing integration tests to configure log file path.
     #[cfg(feature = "test-utils")]
     pub fn with_log_file_for_test(mut self, path: &str) -> Self {
-        self.log_file = Some(path.to_string());
+        self.log_path = Some(PathBuf::from(path));
         self
     }
 
@@ -165,8 +171,12 @@ impl CodexParser {
     /// This method is public when the `test-utils` feature is enabled,
     /// allowing integration tests to invoke parsing.
     #[cfg(feature = "test-utils")]
-    pub fn parse_stream_for_test<R: std::io::BufRead>(&self, reader: R) -> std::io::Result<()> {
-        self.parse_stream(reader)
+    pub fn parse_stream_for_test<R: std::io::BufRead>(
+        &self,
+        reader: R,
+        workspace: &dyn Workspace,
+    ) -> std::io::Result<()> {
+        self.parse_stream(reader, workspace)
     }
 
     /// Get a shared reference to the printer.
@@ -347,8 +357,7 @@ impl CodexParser {
     ///
     /// # Persistence Guarantees
     ///
-    /// This function flushes the `BufWriter` after writing and calls `sync_all()`
-    /// to ensure data is committed to physical storage. Errors are propagated
+    /// This function flushes the writer after writing. Errors are propagated
     /// to ensure the result event is actually persisted before continuing.
     fn write_synthetic_result_event(
         file: &mut impl std::io::Write,
@@ -361,6 +370,11 @@ impl CodexParser {
         writeln!(file, "{json}")?;
         file.flush()?;
         Ok(())
+    }
+
+    /// Write a synthetic result event to a byte buffer.
+    fn write_synthetic_result_to_buffer(buffer: &mut Vec<u8>, accumulated: &str) -> io::Result<()> {
+        Self::write_synthetic_result_event(buffer, accumulated)
     }
 
     /// Process a single JSON event line during parsing.
@@ -380,11 +394,12 @@ impl CodexParser {
     ///
     /// `Ok(true)` if the line was successfully processed, `Ok(false)` if the line
     /// was empty or skipped, or `Err` if an IO error occurred.
-    fn process_event_line(
+    fn process_event_line_with_buffer(
         &self,
         line: &str,
         monitor: &HealthMonitor,
-        log_writer: &mut Option<std::io::BufWriter<std::fs::File>>,
+        logging_enabled: bool,
+        log_buffer: &mut Vec<u8>,
     ) -> io::Result<bool> {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -445,8 +460,8 @@ impl CodexParser {
             }
         }
 
-        if let Some(ref mut file) = log_writer {
-            writeln!(file, "{line}")?;
+        if logging_enabled {
+            writeln!(log_buffer, "{line}")?;
             // Write synthetic result event on turn.completed to ensure content is captured
             // This handles the normal case where the stream completes properly
             if is_turn_completed {
@@ -455,10 +470,7 @@ impl CodexParser {
                     .borrow()
                     .get_accumulated(super::types::ContentType::Text, "agent_msg")
                 {
-                    // Propagate the error to ensure the result event is written
-                    Self::write_synthetic_result_event(file, accumulated)?;
-                    // Sync to disk to ensure result event is persisted immediately
-                    file.get_mut().sync_all()?;
+                    Self::write_synthetic_result_to_buffer(log_buffer, accumulated)?;
                 }
             }
         }
@@ -467,18 +479,17 @@ impl CodexParser {
     }
 
     /// Parse a stream of Codex NDJSON events
-    pub(crate) fn parse_stream<R: BufRead>(&self, mut reader: R) -> io::Result<()> {
+    pub(crate) fn parse_stream<R: BufRead>(
+        &self,
+        mut reader: R,
+        workspace: &dyn Workspace,
+    ) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
         let monitor = HealthMonitor::new("Codex");
-        let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(log_path)
-                .ok()
-                .map(std::io::BufWriter::new)
-        });
+        // Accumulate log content in memory, write to workspace at the end
+        let logging_enabled = self.log_path.is_some();
+        let mut log_buffer: Vec<u8> = Vec::new();
 
         let mut incremental_parser = IncrementalNdjsonParser::new();
         let mut byte_buffer = Vec::new();
@@ -506,7 +517,12 @@ impl CodexParser {
                         .ok()
                         .is_some_and(|e| matches!(e, CodexEvent::TurnStarted { .. }));
 
-                self.process_event_line(&line, &monitor, &mut log_writer)?;
+                self.process_event_line_with_buffer(
+                    &line,
+                    &monitor,
+                    logging_enabled,
+                    &mut log_buffer,
+                )?;
 
                 // Track result event writes - reset flag when new turn starts
                 if is_turn_started {
@@ -523,31 +539,33 @@ impl CodexParser {
             // Only process if it's valid JSON to avoid processing incomplete buffered data
             if remaining.starts_with('{') && serde_json::from_str::<CodexEvent>(&remaining).is_ok()
             {
-                self.process_event_line(&remaining, &monitor, &mut log_writer)?;
+                self.process_event_line_with_buffer(
+                    &remaining,
+                    &monitor,
+                    logging_enabled,
+                    &mut log_buffer,
+                )?;
             }
         }
 
         // Ensure accumulated content is written even if turn.completed was not received
         // This handles the case where the stream ends unexpectedly
-        if let Some(ref mut file) = log_writer {
-            if !result_written_for_current_turn {
-                if let Some(accumulated) = self
-                    .streaming_session
-                    .borrow()
-                    .get_accumulated(super::types::ContentType::Text, "agent_msg")
-                {
-                    // Write the synthetic result event for any accumulated content
-                    Self::write_synthetic_result_event(file, accumulated)?;
-                }
+        if logging_enabled && !result_written_for_current_turn {
+            if let Some(accumulated) = self
+                .streaming_session
+                .borrow()
+                .get_accumulated(super::types::ContentType::Text, "agent_msg")
+            {
+                // Write the synthetic result event for any accumulated content
+                Self::write_synthetic_result_to_buffer(&mut log_buffer, accumulated)?;
             }
-            file.flush()?;
         }
-        // Ensure data is written to disk before continuing
-        // This prevents race conditions where extraction runs before OS commits writes
-        if let Some(ref mut file) = log_writer {
-            // Propagate sync_all errors to ensure all data is committed to disk
-            file.get_mut().sync_all()?;
+
+        // Write accumulated log content to workspace
+        if let Some(log_path) = &self.log_path {
+            workspace.append_bytes(log_path, &log_buffer)?;
         }
+
         if let Some(warning) = monitor.check_and_warn(self.colors) {
             let mut printer = self.printer.borrow_mut();
             writeln!(printer, "{warning}")?;

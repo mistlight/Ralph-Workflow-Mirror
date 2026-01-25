@@ -61,7 +61,8 @@ use super::types::{
 pub struct ClaudeParser {
     colors: Colors,
     pub(crate) verbosity: Verbosity,
-    log_file: Option<String>,
+    /// Relative path to log file (if logging enabled)
+    log_path: Option<std::path::PathBuf>,
     display_name: String,
     /// Unified streaming session tracker
     /// Provides single source of truth for streaming state across all content types
@@ -122,7 +123,7 @@ impl ClaudeParser {
         Self {
             colors,
             verbosity,
-            log_file: None,
+            log_path: None,
             display_name: "Claude".to_string(),
             streaming_session: Rc::new(RefCell::new(streaming_session)),
             terminal_mode: RefCell::new(TerminalMode::detect()),
@@ -151,7 +152,7 @@ impl ClaudeParser {
     }
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
-        self.log_file = Some(path.to_string());
+        self.log_path = Some(std::path::PathBuf::from(path));
         self
     }
 
@@ -1161,19 +1162,18 @@ impl ClaudeParser {
     }
 
     /// Parse a stream of Claude NDJSON events
-    pub fn parse_stream<R: BufRead>(&self, mut reader: R) -> io::Result<()> {
+    pub fn parse_stream<R: BufRead>(
+        &self,
+        mut reader: R,
+        workspace: &dyn crate::workspace::Workspace,
+    ) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
         let c = &self.colors;
         let monitor = HealthMonitor::new("Claude");
-        let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(log_path)
-                .ok()
-                .map(std::io::BufWriter::new)
-        });
+        // Accumulate log content in memory, write to workspace at the end
+        let logging_enabled = self.log_path.is_some();
+        let mut log_buffer: Vec<u8> = Vec::new();
 
         // Use incremental parser for true real-time streaming
         // This processes JSON as soon as it's complete, not waiting for newlines
@@ -1287,9 +1287,8 @@ impl ClaudeParser {
 
                 // Skip suppressed result events but still log them
                 if should_skip_result {
-                    if let Some(ref mut file) = log_writer {
-                        writeln!(file, "{line}")?;
-                        file.get_mut().sync_all()?;
+                    if logging_enabled {
+                        writeln!(log_buffer, "{line}")?;
                     }
                     monitor.record_control_event();
                     continue;
@@ -1338,18 +1337,16 @@ impl ClaudeParser {
                     }
                 }
 
-                // Log raw JSON to file if configured
-                if let Some(ref mut file) = log_writer {
-                    writeln!(file, "{line}")?;
+                // Log raw JSON to buffer if configured
+                if logging_enabled {
+                    writeln!(log_buffer, "{line}")?;
                 }
             }
         }
 
-        if let Some(ref mut file) = log_writer {
-            file.flush()?;
-            // Ensure data is written to disk before continuing
-            // This prevents race conditions where extraction runs before OS commits writes
-            let _ = file.get_mut().sync_all();
+        // Write accumulated log content to workspace
+        if let Some(log_path) = &self.log_path {
+            workspace.append_bytes(log_path, &log_buffer)?;
         }
         if let Some(warning) = monitor.check_and_warn(*c) {
             let mut printer = self.printer.borrow_mut();

@@ -652,9 +652,11 @@ fn generate_mock_agent_output(parser_type: JsonParserType, _command: &str) -> St
     match parser_type {
         JsonParserType::Claude => {
             // Claude expects events with "type" field
-            // Include the commit message in the result
+            // Include session_id in init event (for session continuation tests)
+            // and the commit message in the result
             format!(
-                r#"{{"type":"result","result":"{}"}}
+                r#"{{"type":"system","subtype":"init","session_id":"ses_mock_session_12345"}}
+{{"type":"result","result":"{}"}}
 "#,
                 commit_message.replace('\n', "\\n").replace('"', "\\\"")
             )

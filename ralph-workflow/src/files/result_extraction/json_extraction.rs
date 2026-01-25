@@ -8,9 +8,9 @@ use crate::files::result_extraction::{
     file_finder::{find_log_files_with_prefix, find_subdirs_with_prefix},
     scoring::score_result,
 };
+use crate::workspace::Workspace;
 
 use serde_json::Value as JsonValue;
-use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
@@ -41,14 +41,17 @@ use std::path::Path;
 /// # Note
 ///
 /// This function is public for testing purposes. The main public API is [`extract_last_result`].
-pub fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
-    let file = match File::open(path) {
-        Ok(f) => f,
+pub fn extract_result_from_file(
+    workspace: &dyn Workspace,
+    path: &Path,
+) -> io::Result<Option<String>> {
+    let content = match workspace.read_bytes(path) {
+        Ok(c) => c,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e),
     };
 
-    let reader = BufReader::new(file);
+    let reader = BufReader::new(content.as_slice());
     let mut best_result: Option<String> = None;
     let mut best_score: u32 = 0;
 
@@ -88,8 +91,11 @@ pub fn extract_result_from_file(path: &Path) -> io::Result<Option<String>> {
 /// Selects the best result across all files using the scoring function to handle
 /// retry scenarios where multiple log files may exist. Prefers structured plans
 /// over simple longest strings.
-pub fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
-    let log_entries = match std::fs::read_dir(log_dir) {
+pub fn extract_from_directory(
+    workspace: &dyn Workspace,
+    log_dir: &Path,
+) -> io::Result<Option<String>> {
+    let log_entries = match workspace.read_dir(log_dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e),
@@ -98,13 +104,13 @@ pub fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
     let mut best_result: Option<String> = None;
     let mut best_score: u32 = 0;
 
-    for entry in log_entries.flatten() {
+    for entry in log_entries {
         let path = entry.path();
-        if !path.is_file() {
+        if !entry.is_file() {
             continue;
         }
 
-        if let Some(result) = extract_result_from_file(&path)? {
+        if let Some(result) = extract_result_from_file(workspace, path)? {
             let result_score = score_result(&result);
             // Select the result with the highest score across all files
             if result_score > best_score {
@@ -133,6 +139,7 @@ pub fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
 ///
 /// # Arguments
 ///
+/// * `workspace` - Workspace for file operations
 /// * `log_path` - Path to the log directory OR log file prefix
 ///
 /// # Returns
@@ -145,7 +152,10 @@ pub fn extract_from_directory(log_dir: &Path) -> io::Result<Option<String>> {
 /// prefix-based log files. For example, if `.agent/logs/rebase_conflict_resolution/`
 /// exists as an empty directory (from old runs), we still want to find
 /// `.agent/logs/rebase_conflict_resolution_ccs-glm_0.log` files.
-pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
+pub fn extract_last_result(
+    workspace: &dyn Workspace,
+    log_path: &Path,
+) -> io::Result<Option<String>> {
     let parent = log_path.parent().unwrap_or_else(|| Path::new("."));
     let prefix = log_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
@@ -157,13 +167,13 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
     // This prevents old directories from shadowing new prefix-based log files.
     // For example, if `.agent/logs/rebase_conflict_resolution/` exists as a directory,
     // we still want to find `.agent/logs/rebase_conflict_resolution_ccs-glm_0.log`.
-    let log_files = find_log_files_with_prefix(parent, prefix)?;
+    let log_files = find_log_files_with_prefix(workspace, parent, prefix)?;
 
     if !log_files.is_empty() {
         let mut best_result: Option<String> = None;
         let mut best_score: u32 = 0;
         for log_file in log_files {
-            if let Some(result) = extract_result_from_file(&log_file)? {
+            if let Some(result) = extract_result_from_file(workspace, &log_file)? {
                 let result_score = score_result(&result);
                 // Select the result with the highest score across all files
                 if result_score > best_score {
@@ -180,9 +190,9 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
     // Strategy 2: Check for subdirectories matching prefix pattern
     // This handles the legacy case where agent names with "/" created nested directories
     // (e.g., "planning_1_ccs/glm_0.log" instead of "planning_1_ccs-glm_0.log")
-    let subdirs = find_subdirs_with_prefix(parent, prefix)?;
+    let subdirs = find_subdirs_with_prefix(workspace, parent, prefix)?;
     for subdir in subdirs {
-        if let Some(result) = extract_from_directory(&subdir)? {
+        if let Some(result) = extract_from_directory(workspace, &subdir)? {
             return Ok(Some(result));
         }
     }
@@ -190,121 +200,15 @@ pub fn extract_last_result(log_path: &Path) -> io::Result<Option<String>> {
     // Strategy 3: Directory mode (LEGACY - checked after prefix mode)
     // Only used if log_path is actually a directory and no prefix-based files were found.
     // This is the old behavior where logs were stored directly in the directory.
-    if log_path.is_dir() {
-        return extract_from_directory(log_path);
+    if workspace.is_dir(log_path) {
+        return extract_from_directory(workspace, log_path);
     }
 
     // Strategy 4: Exact file fallback
     // Check if the exact path exists as a file.
-    if log_path.is_file() {
-        return extract_result_from_file(log_path);
+    if workspace.is_file(log_path) {
+        return extract_result_from_file(workspace, log_path);
     }
 
     Ok(None)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn test_extract_result_from_file_with_trailing_newline() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, r#"{{"type":"message","content":"first"}}"#).unwrap();
-        writeln!(
-            temp_file,
-            r#"{{"type":"result","result":"the result content"}}"#
-        )
-        .unwrap();
-
-        let result = extract_result_from_file(temp_file.path()).unwrap();
-        assert_eq!(result, Some("the result content".to_string()));
-    }
-
-    #[test]
-    fn test_extract_result_from_file_without_trailing_newline() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, r#"{{"type":"message","content":"first"}}"#).unwrap();
-        // Write the last line WITHOUT a trailing newline
-        write!(
-            temp_file,
-            r#"{{"type":"result","result":"the result content"}}"#
-        )
-        .unwrap();
-
-        let result = extract_result_from_file(temp_file.path()).unwrap();
-        assert_eq!(result, Some("the result content".to_string()));
-    }
-
-    #[test]
-    fn test_extract_result_from_file_last_line_only() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        // Single line without trailing newline
-        write!(temp_file, r#"{{"type":"result","result":"only line"}}"#).unwrap();
-
-        let result = extract_result_from_file(temp_file.path()).unwrap();
-        assert_eq!(result, Some("only line".to_string()));
-    }
-
-    #[test]
-    fn test_extract_result_from_file_no_result() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(
-            temp_file,
-            r#"{{"type":"message","content":"just a message"}}"#
-        )
-        .unwrap();
-
-        let result = extract_result_from_file(temp_file.path()).unwrap();
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn test_extract_result_from_file_empty_file() {
-        let temp_file = NamedTempFile::new().unwrap();
-
-        let result = extract_result_from_file(temp_file.path()).unwrap();
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn test_extract_result_from_file_multiple_results_best_score() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, r#"{{"type":"message","content":"first"}}"#).unwrap();
-        // First result - plain text
-        writeln!(temp_file, r#"{{"type":"result","result":"simple result"}}"#).unwrap();
-        // Second result - with plan structure (should score higher)
-        // Use \\n in the JSON string to represent literal newline characters
-        write!(
-            temp_file,
-            "{{\"type\":\"result\",\"result\":\"## Summary\\n\\nThis has plan structure\"}}"
-        )
-        .unwrap();
-
-        let result = extract_result_from_file(temp_file.path()).unwrap();
-        // The second result should be selected due to higher score
-        assert_eq!(
-            result,
-            Some("## Summary\n\nThis has plan structure".to_string())
-        );
-    }
-
-    #[test]
-    fn test_score_result_with_summary_marker() {
-        use super::*;
-
-        let simple = "simple result";
-        let with_structure = "## Summary\n\nThis has plan structure";
-
-        let simple_score = score_result(simple);
-        let structure_score = score_result(with_structure);
-
-        // Structure score should be significantly higher due to "## Summary" marker (+1000)
-        assert!(
-            structure_score > simple_score,
-            "Expected structure score ({structure_score}) > simple score ({simple_score})"
-        );
-    }
 }

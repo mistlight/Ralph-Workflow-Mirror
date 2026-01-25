@@ -34,7 +34,7 @@ use crate::prompts::{
     get_stored_or_generate_prompt, prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context,
     prompt_review_xml_with_context, prompt_review_xsd_retry_with_context, ContextLevel,
 };
-use std::fs;
+use crate::workspace::Workspace;
 use std::path::Path;
 
 mod prompt;
@@ -447,7 +447,12 @@ enum ParseResult {
 }
 
 /// Log prefix-based file search results.
-fn log_prefix_search_results(logger: &Logger, parent: &Path, prefix: &str) {
+fn log_prefix_search_results(
+    logger: &Logger,
+    workspace: &dyn Workspace,
+    parent: &Path,
+    prefix: &str,
+) {
     use crate::files::result_extraction::file_finder::{
         find_log_files_with_prefix, find_subdirs_with_prefix,
     };
@@ -457,7 +462,7 @@ fn log_prefix_search_results(logger: &Logger, parent: &Path, prefix: &str) {
 
     // Check for prefix-based log files (PRIMARY mode)
     let prefix_files_result: std::io::Result<Vec<std::path::PathBuf>> =
-        find_log_files_with_prefix(parent, prefix);
+        find_log_files_with_prefix(workspace, parent, prefix);
     match prefix_files_result {
         Ok(files) if !files.is_empty() => {
             logger.info(&format!(
@@ -478,7 +483,7 @@ fn log_prefix_search_results(logger: &Logger, parent: &Path, prefix: &str) {
 
     // Check for subdirectory fallback
     let subdirs_result: std::io::Result<Vec<std::path::PathBuf>> =
-        find_subdirs_with_prefix(parent, prefix);
+        find_subdirs_with_prefix(workspace, parent, prefix);
     match subdirs_result {
         Ok(subdirs) if !subdirs.is_empty() => {
             logger.info(&format!(
@@ -499,17 +504,16 @@ fn log_prefix_search_results(logger: &Logger, parent: &Path, prefix: &str) {
 }
 
 /// Log directory contents and file details.
-fn log_directory_details(logger: &Logger, log_dir_path: &Path) {
+fn log_directory_details(logger: &Logger, workspace: &dyn Workspace, log_dir_path: &Path) {
     // Count log files in the directory
-    match std::fs::read_dir(log_dir_path) {
+    match workspace.read_dir(log_dir_path) {
         Ok(entries) => {
-            let files: Vec<_> = entries.filter_map(Result::ok).collect();
-            let file_count = files.len();
+            let file_count = entries.len();
             logger.info(&format!(
                 "Debug: Log directory exists with {file_count} file(s)"
             ));
             // List files for diagnosis
-            for entry in &files {
+            for entry in &entries {
                 logger.info(&format!("Debug:   - {}", entry.path().display()));
             }
         }
@@ -519,13 +523,13 @@ fn log_directory_details(logger: &Logger, log_dir_path: &Path) {
     }
 
     // Try to read first log file content for diagnosis
-    if let Ok(mut entries) = std::fs::read_dir(log_dir_path) {
-        if let Some(Ok(first_entry)) = entries.next() {
+    if let Ok(entries) = workspace.read_dir(log_dir_path) {
+        if let Some(first_entry) = entries.first() {
             logger.info(&format!(
                 "Debug: Reading first file for diagnosis: {}",
                 first_entry.path().display()
             ));
-            match std::fs::read_to_string(first_entry.path()) {
+            match workspace.read(first_entry.path()) {
                 Ok(content) => {
                     let preview: String = content.chars().take(300).collect();
                     logger.info(&format!(
@@ -563,7 +567,7 @@ fn log_directory_details(logger: &Logger, log_dir_path: &Path) {
 ///
 /// Provides detailed debug logging about log file search strategies,
 /// file contents, and why extraction might have failed.
-fn log_extraction_diagnostics(logger: &Logger, log_dir: &str) {
+fn log_extraction_diagnostics(logger: &Logger, workspace: &dyn Workspace, log_dir: &str) {
     let log_dir_path = Path::new(log_dir);
 
     // Show the exact log path being searched
@@ -577,13 +581,13 @@ fn log_extraction_diagnostics(logger: &Logger, log_dir: &str) {
         .unwrap_or("");
 
     if !prefix.is_empty() {
-        log_prefix_search_results(logger, parent, prefix);
+        log_prefix_search_results(logger, workspace, parent, prefix);
     }
 
     // Check if log path exists as directory
-    if log_dir_path.exists() {
-        if log_dir_path.is_dir() {
-            log_directory_details(logger, log_dir_path);
+    if workspace.exists(log_dir_path) {
+        if workspace.is_dir(log_dir_path) {
+            log_directory_details(logger, workspace, log_dir_path);
         } else {
             logger.info(&format!(
                 "Debug: Path exists but is not a directory: {}",
@@ -611,8 +615,14 @@ pub fn run_review_pass(
     let max_xsd_retries = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize;
 
     // Read PROMPT.md, PLAN.md for context
-    let prompt_content = fs::read_to_string("PROMPT.md").unwrap_or_default();
-    let plan_content = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
+    let prompt_content = ctx
+        .workspace
+        .read(Path::new("PROMPT.md"))
+        .unwrap_or_default();
+    let plan_content = ctx
+        .workspace
+        .read(Path::new(".agent/PLAN.md"))
+        .unwrap_or_default();
 
     // Get the diff for review context
     let changes_content = match crate::git_helpers::git_diff() {
@@ -719,13 +729,17 @@ pub fn run_review_pass(
                 config: ctx.config,
                 executor: ctx.executor,
                 executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+                workspace: ctx.workspace,
             };
 
             // Output validator: checks if reviewer produced valid JSON output
             let validate_output: crate::pipeline::OutputValidator =
-                |log_dir_path: &Path, _logger: &crate::logger::Logger| -> std::io::Result<bool> {
+                |ws: &dyn crate::workspace::Workspace,
+                 log_dir_path: &Path,
+                 _logger: &crate::logger::Logger|
+                 -> std::io::Result<bool> {
                     use crate::files::result_extraction::extract_last_result;
-                    match extract_last_result(log_dir_path) {
+                    match extract_last_result(ws, log_dir_path) {
                         Ok(Some(_)) => Ok(true), // Valid JSON output exists
                         Ok(None) => Ok(false),   // No JSON output found
                         Err(_) => Ok(true), // On error, assume success (let extraction handle validation)
@@ -752,6 +766,7 @@ pub fn run_review_pass(
                 session_info: session_info.as_ref(),
                 retry_num,
                 output_validator: Some(validate_output),
+                workspace: ctx.workspace,
             };
             run_xsd_retry_with_session(&mut xsd_retry_config)
         };
@@ -768,6 +783,7 @@ pub fn run_review_pass(
                     log_dir_path,
                     agent_config.json_parser,
                     Some(ctx.reviewer_agent),
+                    ctx.workspace,
                 );
             }
         }
@@ -786,7 +802,7 @@ pub fn run_review_pass(
                     .success(&format!("Issues extracted: {} total", issues.len()));
 
                 // Display formatted XML for user
-                if let Ok(xml_content) = fs::read_to_string(issues_path) {
+                if let Ok(xml_content) = ctx.workspace.read(issues_path) {
                     if let Some(extracted_xml) = extract_issues_xml(&xml_content) {
                         ctx.logger.info(&format!(
                             "Review output:\n{}",
@@ -845,7 +861,7 @@ pub fn run_review_pass(
                 ctx.execution_history.add_step(step);
 
                 // Store XSD error for next retry
-                store_xsd_error_for_retry(Path::new(&log_dir), &error_description);
+                store_xsd_error_for_retry(ctx, Path::new(&log_dir), &error_description);
 
                 // Last retry failed - write marker and continue
                 if retry_num >= max_xsd_retries - 1 {
@@ -862,7 +878,7 @@ pub fn run_review_pass(
                         Please check the logs in .agent/logs/ for the raw reviewer output.\n",
                         max_xsd_retries, error_description
                     );
-                    fs::write(issues_path, failure_marker)?;
+                    ctx.workspace.write(issues_path, &failure_marker)?;
                     // Continue with fix pass anyway - the fix agent will see the failure message
                     return Ok(ReviewPassResult { early_exit: false });
                 }
@@ -895,7 +911,7 @@ fn extract_and_validate_review_output_xml(
     log_dir: &str,
     issues_path: &Path,
 ) -> anyhow::Result<ParseResult> {
-    let extraction = extract_issues(Path::new(log_dir))?;
+    let extraction = extract_issues(ctx.workspace, Path::new(log_dir))?;
 
     // First, try to get content from extraction or legacy file
     let raw_content = if let Some(content) = extraction.raw_content {
@@ -905,12 +921,12 @@ fn extract_and_validate_review_output_xml(
         if ctx.config.verbosity.is_debug() {
             ctx.logger
                 .info("No JSON result event found in reviewer logs");
-            log_extraction_diagnostics(ctx.logger, log_dir);
+            log_extraction_diagnostics(ctx.logger, ctx.workspace, log_dir);
         }
 
         // Check if agent wrote the file directly (legacy fallback)
-        if issues_path.exists() {
-            if let Ok(content) = fs::read_to_string(issues_path) {
+        if ctx.workspace.exists(issues_path) {
+            if let Ok(content) = ctx.workspace.read(issues_path) {
                 if !content.trim().is_empty() {
                     ctx.logger
                         .info("Using agent-written ISSUES.md (legacy mode)");
@@ -973,7 +989,7 @@ fn extract_and_validate_review_output_xml(
     match validated {
         Ok(elements) => {
             // Write the validated XML to ISSUES.md
-            fs::write(issues_path, &xml_content)?;
+            ctx.workspace.write(issues_path, &xml_content)?;
 
             // Archive the XML file for debugging (moves to .xml.processed)
             archive_xml_file(Path::new(xml_paths::ISSUES_XML));
@@ -1009,9 +1025,9 @@ fn read_last_review_output(log_prefix: &Path) -> String {
 }
 
 /// Get the last XSD error from the log directory for retry feedback.
-fn get_last_xsd_error(_ctx: &PhaseContext<'_>, log_dir: &Path) -> Option<String> {
+fn get_last_xsd_error(ctx: &PhaseContext<'_>, log_dir: &Path) -> Option<String> {
     let error_file = log_dir.join("xsd_error.txt");
-    if let Ok(content) = fs::read_to_string(&error_file) {
+    if let Ok(content) = ctx.workspace.read(&error_file) {
         if !content.trim().is_empty() {
             return Some(content);
         }
@@ -1020,9 +1036,9 @@ fn get_last_xsd_error(_ctx: &PhaseContext<'_>, log_dir: &Path) -> Option<String>
 }
 
 /// Store XSD error for the next retry attempt.
-fn store_xsd_error_for_retry(log_dir: &Path, error: &str) {
+fn store_xsd_error_for_retry(ctx: &PhaseContext<'_>, log_dir: &Path, error: &str) {
     let error_file = log_dir.join("xsd_error.txt");
-    let _ = fs::write(&error_file, error);
+    let _ = ctx.workspace.write(&error_file, error);
 }
 
 /// Handle post-flight validation after a review pass.
@@ -1094,9 +1110,18 @@ pub fn run_fix_pass(
     update_status("Applying fixes", ctx.config.isolation_mode)?;
 
     // Read PROMPT.md, PLAN.md, and ISSUES.md for context
-    let prompt_content = fs::read_to_string("PROMPT.md").unwrap_or_default();
-    let plan_content = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
-    let issues_content = fs::read_to_string(".agent/ISSUES.md").unwrap_or_default();
+    let prompt_content = ctx
+        .workspace
+        .read(Path::new("PROMPT.md"))
+        .unwrap_or_default();
+    let plan_content = ctx
+        .workspace
+        .read(Path::new(".agent/PLAN.md"))
+        .unwrap_or_default();
+    let issues_content = ctx
+        .workspace
+        .read(Path::new(".agent/ISSUES.md"))
+        .unwrap_or_default();
 
     // Extract file paths from issues for the fix prompt
     let files_to_modify = extract_file_paths_from_issues(&issues_content);
@@ -1235,15 +1260,17 @@ pub fn run_fix_pass(
                     config: ctx.config,
                     executor: ctx.executor,
                     executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+                    workspace: ctx.workspace,
                 };
 
                 // Output validator: checks if fixer produced valid JSON output
                 let validate_output: crate::pipeline::OutputValidator =
-                    |log_dir_path: &Path,
+                    |ws: &dyn crate::workspace::Workspace,
+                     log_dir_path: &Path,
                      _logger: &crate::logger::Logger|
                      -> std::io::Result<bool> {
                         use crate::files::result_extraction::extract_last_result;
-                        match extract_last_result(log_dir_path) {
+                        match extract_last_result(ws, log_dir_path) {
                             Ok(Some(_)) => Ok(true),
                             Ok(None) => Ok(false),
                             Err(_) => Ok(true),
@@ -1271,6 +1298,7 @@ pub fn run_fix_pass(
                     session_info: session_info.as_ref(),
                     retry_num,
                     output_validator: Some(validate_output),
+                    workspace: ctx.workspace,
                 };
                 run_xsd_retry_with_session(&mut xsd_retry_config)
             };
@@ -1285,6 +1313,7 @@ pub fn run_fix_pass(
                         log_dir_path,
                         agent_config.json_parser,
                         Some(ctx.reviewer_agent),
+                        ctx.workspace,
                     );
                 }
             }

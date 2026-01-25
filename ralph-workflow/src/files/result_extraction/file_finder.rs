@@ -1,14 +1,18 @@
 //! File finding utilities for log file discovery.
 
-use std::fs;
+use crate::workspace::Workspace;
 use std::io;
 use std::path::{Path, PathBuf};
 
 /// Find log files matching a prefix pattern in a directory.
 ///
 /// Returns all files that start with `{prefix}_` and end with `.log`.
-pub fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<PathBuf>> {
-    let entries = match fs::read_dir(parent_dir) {
+pub fn find_log_files_with_prefix(
+    workspace: &dyn Workspace,
+    parent_dir: &Path,
+    prefix: &str,
+) -> io::Result<Vec<PathBuf>> {
+    let entries = match workspace.read_dir(parent_dir) {
         Ok(e) => e,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e),
@@ -17,9 +21,9 @@ pub fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result
     let mut log_files = Vec::new();
     let prefix_pattern = format!("{prefix}_");
 
-    for entry in entries.flatten() {
+    for entry in entries {
         let path = entry.path();
-        if !path.is_file() {
+        if !entry.is_file() {
             continue;
         }
 
@@ -31,20 +35,15 @@ pub fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result
         if file_name.starts_with(&prefix_pattern)
             && file_name.to_ascii_lowercase().ends_with(".log")
         {
-            log_files.push(path);
+            log_files.push(path.to_path_buf());
         }
     }
 
-    // Sort by modification time (most recent last) to ensure consistent ordering
-    log_files.sort_by(|a, b| {
-        let time_a = fs::metadata(a)
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        let time_b = fs::metadata(b)
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        time_a.cmp(&time_b)
-    });
+    // Note: Sorting by modification time is not supported in MemoryWorkspace.
+    // For testing, the order is deterministic based on HashMap iteration.
+    // For production (WorkspaceFs), we could add metadata support later if needed.
+    // For now, sort alphabetically for consistent ordering.
+    log_files.sort();
 
     Ok(log_files)
 }
@@ -53,8 +52,12 @@ pub fn find_log_files_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result
 ///
 /// This handles the legacy case where agent names containing "/" created
 /// nested directories (e.g., "`planning_1_ccs/glm_0.log`" instead of flat files).
-pub fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<Vec<PathBuf>> {
-    let entries = match fs::read_dir(parent_dir) {
+pub fn find_subdirs_with_prefix(
+    workspace: &dyn Workspace,
+    parent_dir: &Path,
+    prefix: &str,
+) -> io::Result<Vec<PathBuf>> {
+    let entries = match workspace.read_dir(parent_dir) {
         Ok(e) => e,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e),
@@ -63,9 +66,9 @@ pub fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<V
     let mut subdirs = Vec::new();
     let prefix_pattern = format!("{prefix}_");
 
-    for entry in entries.flatten() {
+    for entry in entries {
         let path = entry.path();
-        if !path.is_dir() {
+        if !entry.is_dir() {
             continue;
         }
 
@@ -75,20 +78,12 @@ pub fn find_subdirs_with_prefix(parent_dir: &Path, prefix: &str) -> io::Result<V
 
         // Match directories like "planning_1_ccs" when prefix is "planning_1"
         if dir_name.starts_with(&prefix_pattern) {
-            subdirs.push(path);
+            subdirs.push(path.to_path_buf());
         }
     }
 
-    // Sort by modification time (most recent last) to ensure consistent ordering
-    subdirs.sort_by(|a, b| {
-        let time_a = fs::metadata(a)
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        let time_b = fs::metadata(b)
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        time_a.cmp(&time_b)
-    });
+    // Sort alphabetically for consistent ordering
+    subdirs.sort();
 
     Ok(subdirs)
 }

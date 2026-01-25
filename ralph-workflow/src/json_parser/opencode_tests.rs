@@ -3,6 +3,7 @@
 use super::*;
 use crate::config::Verbosity;
 use crate::logger::Colors;
+use crate::workspace::MemoryWorkspace;
 use std::io::Cursor;
 
 #[test]
@@ -33,7 +34,8 @@ fn test_opencode_streaming_with_tool_use_events() {
     let reader = Cursor::new(input);
 
     // Verify the parse succeeds
-    let result = parser.parse_stream(reader);
+    let workspace = MemoryWorkspace::new_test();
+    let result = parser.parse_stream(reader, &workspace);
     assert!(
         result.is_ok(),
         "parse_stream should succeed for OpenCode events"

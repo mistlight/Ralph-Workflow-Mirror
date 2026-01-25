@@ -1519,6 +1519,7 @@ fn run_initial_rebase(
                 logger: &ctx.logger,
                 colors: ctx.colors,
                 executor_arc: std::sync::Arc::clone(&ctx.executor),
+                workspace: &*ctx.workspace,
             };
             match try_resolve_conflicts_with_fallback(
                 &conflicted_files,
@@ -1670,6 +1671,7 @@ struct ConflictResolutionContext<'a> {
     logger: &'a Logger,
     colors: Colors,
     executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
+    workspace: &'a dyn crate::workspace::Workspace,
 }
 
 /// Attempt to resolve rebase conflicts with AI fallback.
@@ -1718,6 +1720,7 @@ fn try_resolve_conflicts_with_fallback(
         ctx.logger,
         ctx.colors,
         std::sync::Arc::clone(&ctx.executor_arc),
+        ctx.workspace,
     ) {
         Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
             // Agent provided JSON output - attempt to parse and write files
@@ -1857,6 +1860,7 @@ fn try_resolve_conflicts_without_phase_ctx(
         logger,
         colors,
         executor_arc,
+        workspace: &workspace,
     };
 
     try_resolve_conflicts_with_fallback(
@@ -1928,6 +1932,7 @@ fn run_ai_conflict_resolution(
     logger: &Logger,
     colors: Colors,
     executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> anyhow::Result<ConflictResolutionResult> {
     use crate::agents::AgentRegistry;
     use crate::files::result_extraction::extract_last_result;
@@ -1954,14 +1959,16 @@ fn run_ai_conflict_resolution(
         config,
         executor: executor_ref,
         executor_arc: std::sync::Arc::clone(&executor_arc),
+        workspace,
     };
 
     // Output validator: checks if agent produced valid output OR resolved conflicts
     // Agents may edit files without returning JSON, so we verify conflicts are resolved.
-    let validate_output: OutputValidator = |log_dir_path: &Path,
+    let validate_output: OutputValidator = |ws: &dyn crate::workspace::Workspace,
+                                            log_dir_path: &Path,
                                             validation_logger: &crate::logger::Logger|
      -> io::Result<bool> {
-        match extract_last_result(log_dir_path) {
+        match extract_last_result(ws, log_dir_path) {
             Ok(Some(_)) => {
                 // Valid JSON output exists
                 Ok(true)
@@ -2004,6 +2011,7 @@ fn run_ai_conflict_resolution(
         registry: &registry,
         primary_agent: reviewer_agent,
         output_validator: Some(validate_output),
+        workspace,
     };
 
     let exit_code = run_with_fallback_and_validator(&mut fallback_config)?;
@@ -2018,7 +2026,7 @@ fn run_ai_conflict_resolution(
 
     if remaining_conflicts.is_empty() {
         // Conflicts are resolved - check if agent provided JSON output
-        match extract_last_result(Path::new(log_dir)) {
+        match extract_last_result(workspace, Path::new(log_dir)) {
             Ok(Some(content)) => {
                 logger.info("Agent provided JSON output with resolved files");
                 Ok(ConflictResolutionResult::WithJson(content))

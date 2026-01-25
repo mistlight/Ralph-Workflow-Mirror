@@ -37,6 +37,7 @@ pub use json_extraction::extract_last_result;
 pub use types::ExtractionResult;
 pub use validation::validate_issues_content;
 
+use crate::workspace::Workspace;
 use std::io;
 use std::path::Path;
 
@@ -44,6 +45,7 @@ use std::path::Path;
 ///
 /// # Arguments
 ///
+/// * `workspace` - Workspace for file operations
 /// * `log_dir` - Path to the planning log directory
 ///
 /// # Returns
@@ -53,8 +55,8 @@ use std::path::Path;
 /// - Validation status (whether it looks like a valid plan)
 /// - Warning message (if validation failed)
 #[cfg(any(test, feature = "test-utils"))]
-pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
-    let raw_content = extract_last_result(log_dir)?;
+pub fn extract_plan(workspace: &dyn Workspace, log_dir: &Path) -> io::Result<ExtractionResult> {
+    let raw_content = extract_last_result(workspace, log_dir)?;
 
     raw_content.map_or_else(
         || Ok(ExtractionResult::empty()),
@@ -75,6 +77,7 @@ pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
 ///
 /// # Arguments
 ///
+/// * `workspace` - Workspace for file operations
 /// * `log_dir` - Path to the reviewer log directory
 ///
 /// # Returns
@@ -83,8 +86,8 @@ pub fn extract_plan(log_dir: &Path) -> io::Result<ExtractionResult> {
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like valid issues)
 /// - Warning message (if validation failed)
-pub fn extract_issues(log_dir: &Path) -> io::Result<ExtractionResult> {
-    let raw_content = extract_last_result(log_dir)?;
+pub fn extract_issues(workspace: &dyn Workspace, log_dir: &Path) -> io::Result<ExtractionResult> {
+    let raw_content = extract_last_result(workspace, log_dir)?;
 
     raw_content.map_or_else(
         || Ok(ExtractionResult::empty()),
@@ -105,27 +108,51 @@ mod tests {
     use super::*;
     use crate::files::result_extraction::file_finder::find_log_files_with_prefix;
     use crate::files::result_extraction::json_extraction::extract_result_from_file;
-    use std::fs;
-    use tempfile::TempDir;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
 
-    fn create_log_file(dir: &Path, filename: &str, content: &str) {
-        fs::create_dir_all(dir).unwrap();
-        fs::write(dir.join(filename), content).unwrap();
+    // =========================================================================
+    // JSON log builders - create properly escaped JSON log content
+    // =========================================================================
+
+    /// Create a JSON result event line. Content is properly escaped for JSON.
+    fn result_event(content: &str) -> String {
+        let escaped = content
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n");
+        format!(r#"{{"type": "result", "result": "{escaped}"}}"#)
     }
+
+    /// Create a JSON system event line.
+    fn system_event(message: &str) -> String {
+        format!(r#"{{"type": "system", "message": "{message}"}}"#)
+    }
+
+    /// Create a JSON tool_use event line.
+    fn tool_event(tool: &str) -> String {
+        format!(r#"{{"type": "tool_use", "tool": "{tool}"}}"#)
+    }
+
+    /// Join multiple JSON lines into log file content.
+    fn log_lines(lines: &[&str]) -> String {
+        lines.join("\n")
+    }
+
+    // =========================================================================
+    // Tests
+    // =========================================================================
 
     #[test]
     fn test_extract_valid_plan() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("planning_1");
+        let plan = "# Plan\n\n## Step 1\nImplement the feature\n\n## Step 2\nAdd tests";
+        let log = log_lines(&[&system_event("starting"), &result_event(plan)]);
 
-        let json_log = concat!(
-            r##"{"type": "system", "message": "starting"}"##,
-            "\n",
-            r##"{"type": "result", "result": "# Plan\n\n## Step 1\nImplement the feature\n\n## Step 2\nAdd tests"}"##
-        );
-        create_log_file(&log_dir, "output.log", json_log);
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+        let log_dir = PathBuf::from("/test/repo/planning_1");
 
-        let result = extract_plan(&log_dir).unwrap();
+        let result = extract_plan(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_some());
         assert!(result.is_valid);
         assert!(result.validation_warning.is_none());
@@ -133,14 +160,12 @@ mod tests {
 
     #[test]
     fn test_extract_invalid_but_present_content() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("planning_1");
+        let log = result_event("Hello world");
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+        let log_dir = PathBuf::from("/test/repo/planning_1");
 
-        // Content exists but doesn't look like a plan
-        let json_log = r#"{"type": "result", "result": "Hello world"}"#;
-        create_log_file(&log_dir, "output.log", json_log);
-
-        let result = extract_plan(&log_dir).unwrap();
+        let result = extract_plan(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_some());
         assert!(!result.is_valid);
         assert!(result.validation_warning.is_some());
@@ -149,100 +174,98 @@ mod tests {
 
     #[test]
     fn test_extract_no_result_events() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("planning_1");
+        let log = log_lines(&[&system_event("starting"), &tool_event("read_file")]);
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+        let log_dir = PathBuf::from("/test/repo/planning_1");
 
-        let json_log = r#"{"type": "system", "message": "starting"}
-{"type": "tool_use", "tool": "read_file"}"#;
-        create_log_file(&log_dir, "output.log", json_log);
-
-        let result = extract_plan(&log_dir).unwrap();
+        let result = extract_plan(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_none());
         assert!(!result.is_valid);
     }
 
     #[test]
     fn test_extract_malformed_json() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("planning_1");
+        // Mix of invalid JSON and one valid result event
+        let valid_result = result_event("# Valid Plan\n\nStep 1: Create feature");
+        let log = format!("not json\n{{\"invalid json\n{valid_result}");
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+        let log_dir = PathBuf::from("/test/repo/planning_1");
 
-        let json_log = r##"not json
-{"invalid json
-{"type": "result", "result": "# Valid Plan\n\nStep 1: Create feature"}"##;
-        create_log_file(&log_dir, "output.log", json_log);
-
-        let result = extract_plan(&log_dir).unwrap();
+        let result = extract_plan(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_some());
         // Should still find the valid JSON line
     }
 
     #[test]
     fn test_extract_empty_log_dir() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("nonexistent");
+        let workspace = MemoryWorkspace::new_test();
+        let log_dir = PathBuf::from("/test/repo/nonexistent");
 
-        let result = extract_plan(&log_dir).unwrap();
+        let result = extract_plan(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_none());
     }
 
     #[test]
     fn test_extract_valid_issues() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("reviewer_1");
+        let issues = "# Issues\n\nCritical:\n- [ ] Fix security bug";
+        let log = result_event(issues);
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/reviewer_1/output.log", &log);
+        let log_dir = PathBuf::from("/test/repo/reviewer_1");
 
-        let json_log =
-            r##"{"type": "result", "result": "# Issues\n\nCritical:\n- [ ] Fix security bug"}"##;
-        create_log_file(&log_dir, "output.log", json_log);
-
-        let result = extract_issues(&log_dir).unwrap();
+        let result = extract_issues(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_some());
         assert!(result.is_valid);
     }
 
     #[test]
     fn test_extract_no_issues_found() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("reviewer_1");
+        let log = result_event("No issues found. The code looks good.");
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/reviewer_1/output.log", &log);
+        let log_dir = PathBuf::from("/test/repo/reviewer_1");
 
-        let json_log = r#"{"type": "result", "result": "No issues found. The code looks good."}"#;
-        create_log_file(&log_dir, "output.log", json_log);
-
-        let result = extract_issues(&log_dir).unwrap();
+        let result = extract_issues(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_some());
         assert!(result.is_valid); // "no issues" is valid
     }
 
     #[test]
     fn test_uses_best_result_event() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("planning_1");
-
         // Multiple result events - should use the best (most complete) one
-        let json_log = r##"{"type": "result", "result": "First result"}
-{"type": "result", "result": "# Final Plan\n\nStep 1: Implement feature"}"##;
-        create_log_file(&log_dir, "output.log", json_log);
+        let log = log_lines(&[
+            &result_event("First result"),
+            &result_event("# Final Plan\n\nStep 1: Implement feature"),
+        ]);
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+        let log_dir = PathBuf::from("/test/repo/planning_1");
 
-        let result = extract_plan(&log_dir).unwrap();
+        let result = extract_plan(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_some());
         assert!(result.raw_content.unwrap().contains("Final Plan"));
     }
 
     #[test]
     fn test_best_result_bug_regression() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("planning_1");
-
         // Simulate the exact bug scenario:
         // Multiple result events where first is complete/longest, last is partial/short
-        // Use format! with separate strings to avoid escaping issues
-        let result1 = r##"{"type": "result", "result": "# Complete Plan\n\n## Implementation Steps\n\nStep 1: Create module with functionality.\nStep 2: Add comprehensive tests.\nStep 3: Write documentation.\nStep 4: Integrate and verify."}"##;
-        let result2 =
-            r##"{"type": "result", "result": "# Partial Plan\n\nJust a short summary."}"##;
-        let result3 = r#"{"type": "result", "result": "Last paragraph"}"#;
-        let json_log = format!("{result1}\n{result2}\n{result3}");
-        create_log_file(&log_dir, "output.log", &json_log);
+        let complete = "# Complete Plan\n\n## Implementation Steps\n\nStep 1: Create module with functionality.\nStep 2: Add comprehensive tests.\nStep 3: Write documentation.\nStep 4: Integrate and verify.";
+        let partial = "# Partial Plan\n\nJust a short summary.";
+        let short = "Last paragraph";
 
-        let result = extract_plan(&log_dir).unwrap();
+        let log = log_lines(&[
+            &result_event(complete),
+            &result_event(partial),
+            &result_event(short),
+        ]);
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+        let log_dir = PathBuf::from("/test/repo/planning_1");
+
+        let result = extract_plan(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_some());
         let content = result.raw_content.unwrap();
 
@@ -264,21 +287,19 @@ mod tests {
     }
 
     // =====================================================
-    // PREFIX-BASED FILE MATCHING TESTS (New functionality)
+    // PREFIX-BASED FILE MATCHING TESTS
     // =====================================================
 
     #[test]
     fn test_extract_from_prefix_pattern() {
-        let temp = TempDir::new().unwrap();
+        // Log file matching prefix pattern: planning_1_glm_0.log
+        let plan = "# Plan\n\n## Summary\nTest plan with implementation steps";
+        let log = result_event(plan);
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1_glm_0.log", &log);
 
-        // Create log file matching prefix pattern (not in subdirectory)
-        // This simulates: .agent/logs/planning_1_glm_0.log
-        let json_log = r##"{"type": "result", "result": "# Plan\n\n## Summary\nTest plan with implementation steps"}"##;
-        fs::write(temp.path().join("planning_1_glm_0.log"), json_log).unwrap();
-
-        // Extract using prefix (not directory)
-        let prefix = temp.path().join("planning_1");
-        let result = extract_plan(&prefix).unwrap();
+        let prefix = PathBuf::from("/test/repo/planning_1");
+        let result = extract_plan(&workspace, &prefix).unwrap();
 
         assert!(
             result.raw_content.is_some(),
@@ -289,26 +310,19 @@ mod tests {
 
     #[test]
     fn test_extract_from_prefix_with_multiple_files() {
-        let temp = TempDir::new().unwrap();
+        // Multiple log files simulating fallback/retry scenario
+        let log1 = result_event("First attempt - no plan");
+        let log2 = result_event("# Plan\n\n## Summary\nSuccess with implementation steps!");
 
-        // Create multiple log files simulating fallback/retry scenario
-        let json_log1 = r#"{"type": "result", "result": "First attempt - no plan"}"#;
-        let json_log2 = r##"{"type": "result", "result": "# Plan\n\n## Summary\nSuccess with implementation steps!"}"##;
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("/test/repo/planning_1_agent1_0.log", &log1)
+            .with_file("/test/repo/planning_1_agent2_0.log", &log2);
 
-        fs::write(temp.path().join("planning_1_agent1_0.log"), json_log1).unwrap();
-
-        // Sleep briefly to ensure different modification times
-        std::thread::sleep(std::time::Duration::from_millis(10));
-
-        fs::write(temp.path().join("planning_1_agent2_0.log"), json_log2).unwrap();
-
-        let prefix = temp.path().join("planning_1");
-        let result = extract_plan(&prefix).unwrap();
+        let prefix = PathBuf::from("/test/repo/planning_1");
+        let result = extract_plan(&workspace, &prefix).unwrap();
 
         assert!(result.raw_content.is_some());
-        // Should find content from one of the files (ideally the valid one)
         let content = result.raw_content.unwrap();
-        // We expect the last file (by modification time) to be processed last
         assert!(
             content.contains("Success") || content.contains("First attempt"),
             "Should extract content from one of the files"
@@ -317,14 +331,12 @@ mod tests {
 
     #[test]
     fn test_extract_prefix_no_matching_files() {
-        let temp = TempDir::new().unwrap();
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("/test/repo/other_file.log", "some content")
+            .with_file("/test/repo/planning_2_glm_0.log", "wrong prefix");
 
-        // Create files that don't match the prefix pattern
-        fs::write(temp.path().join("other_file.log"), "some content").unwrap();
-        fs::write(temp.path().join("planning_2_glm_0.log"), "wrong prefix").unwrap();
-
-        let prefix = temp.path().join("planning_1");
-        let result = extract_plan(&prefix).unwrap();
+        let prefix = PathBuf::from("/test/repo/planning_1");
+        let result = extract_plan(&workspace, &prefix).unwrap();
 
         assert!(
             result.raw_content.is_none(),
@@ -334,46 +346,39 @@ mod tests {
 
     #[test]
     fn test_extract_directory_mode_backwards_compatible() {
-        let temp = TempDir::new().unwrap();
-        let log_dir = temp.path().join("planning_1");
-        fs::create_dir(&log_dir).unwrap();
+        let plan = "# Plan\n\n## Summary\nTest from directory";
+        let log = result_event(plan);
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+        let log_dir = PathBuf::from("/test/repo/planning_1");
 
-        let json_log =
-            r##"{"type": "result", "result": "# Plan\n\n## Summary\nTest from directory"}"##;
-        fs::write(log_dir.join("output.log"), json_log).unwrap();
-
-        // Should work with actual directory (backwards compatible)
-        let result = extract_plan(&log_dir).unwrap();
+        let result = extract_plan(&workspace, &log_dir).unwrap();
         assert!(result.raw_content.is_some());
         assert!(result.raw_content.unwrap().contains("Test from directory"));
     }
 
     #[test]
     fn test_extract_prefix_exact_file_fallback() {
-        let temp = TempDir::new().unwrap();
+        let plan = "# Plan\n\n## Summary\nDirect file";
+        let log = result_event(plan);
+        let workspace = MemoryWorkspace::new_test().with_file("/test/repo/planning_1.log", &log);
+        let exact_file = PathBuf::from("/test/repo/planning_1.log");
 
-        // Create an exact file match (no prefix pattern)
-        let json_log = r##"{"type": "result", "result": "# Plan\n\n## Summary\nDirect file"}"##;
-        let exact_file = temp.path().join("planning_1.log");
-        fs::write(&exact_file, json_log).unwrap();
-
-        // This should fall back to reading the exact file
-        let result = extract_last_result(&exact_file).unwrap();
+        let result = extract_last_result(&workspace, &exact_file).unwrap();
         assert!(result.is_some());
         assert!(result.unwrap().contains("Direct file"));
     }
 
     #[test]
     fn test_find_log_files_with_prefix() {
-        let temp = TempDir::new().unwrap();
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("/test/repo/planning_1_glm_0.log", "a")
+            .with_file("/test/repo/planning_1_opus_1.log", "b")
+            .with_file("/test/repo/planning_2_glm_0.log", "c")
+            .with_file("/test/repo/other.txt", "d");
 
-        // Create various files
-        fs::write(temp.path().join("planning_1_glm_0.log"), "a").unwrap();
-        fs::write(temp.path().join("planning_1_opus_1.log"), "b").unwrap();
-        fs::write(temp.path().join("planning_2_glm_0.log"), "c").unwrap();
-        fs::write(temp.path().join("other.txt"), "d").unwrap();
-
-        let files = find_log_files_with_prefix(temp.path(), "planning_1").unwrap();
+        let parent = PathBuf::from("/test/repo");
+        let files = find_log_files_with_prefix(&workspace, &parent, "planning_1").unwrap();
 
         assert_eq!(files.len(), 2, "Should find exactly 2 matching files");
         let names: Vec<_> = files
@@ -391,13 +396,13 @@ mod tests {
 
     #[test]
     fn test_extract_issues_from_prefix_pattern() {
-        let temp = TempDir::new().unwrap();
+        let issues = "# Issues\n\nCritical:\n- [ ] Fix the security vulnerability";
+        let log = result_event(issues);
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/reviewer_review_1_glm_0.log", &log);
 
-        let json_log = r##"{"type": "result", "result": "# Issues\n\nCritical:\n- [ ] Fix the security vulnerability"}"##;
-        fs::write(temp.path().join("reviewer_review_1_glm_0.log"), json_log).unwrap();
-
-        let prefix = temp.path().join("reviewer_review_1");
-        let result = extract_issues(&prefix).unwrap();
+        let prefix = PathBuf::from("/test/repo/reviewer_review_1");
+        let result = extract_issues(&workspace, &prefix).unwrap();
 
         assert!(result.raw_content.is_some());
         assert!(result.is_valid);
@@ -405,13 +410,12 @@ mod tests {
 
     #[test]
     fn test_extract_issues_no_issues_from_prefix() {
-        let temp = TempDir::new().unwrap();
+        let log = result_event("No issues found. The code looks good.");
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/reviewer_1_opus_0.log", &log);
 
-        let json_log = r#"{"type": "result", "result": "No issues found. The code looks good."}"#;
-        fs::write(temp.path().join("reviewer_1_opus_0.log"), json_log).unwrap();
-
-        let prefix = temp.path().join("reviewer_1");
-        let result = extract_issues(&prefix).unwrap();
+        let prefix = PathBuf::from("/test/repo/reviewer_1");
+        let result = extract_issues(&workspace, &prefix).unwrap();
 
         assert!(result.raw_content.is_some());
         assert!(result.is_valid);
@@ -424,19 +428,15 @@ mod tests {
 
     #[test]
     fn test_extract_from_subdirectory_fallback() {
-        let temp = TempDir::new().unwrap();
+        // Nested structure like: planning_1_ccs/glm_0.log
+        // Simulates agent name "ccs/glm"
+        let plan = "# Plan\n\n## Summary\nPlan from nested subdirectory";
+        let log = result_event(plan);
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1_ccs/glm_0.log", &log);
 
-        // Create nested structure like: planning_1_ccs/glm_0.log
-        // This simulates what happens when agent name is "ccs/glm"
-        let subdir = temp.path().join("planning_1_ccs");
-        fs::create_dir(&subdir).unwrap();
-
-        let json_log = r##"{"type": "result", "result": "# Plan\n\n## Summary\nPlan from nested subdirectory"}"##;
-        fs::write(subdir.join("glm_0.log"), json_log).unwrap();
-
-        // Extract using prefix (not the nested path)
-        let prefix = temp.path().join("planning_1");
-        let result = extract_plan(&prefix).unwrap();
+        let prefix = PathBuf::from("/test/repo/planning_1");
+        let result = extract_plan(&workspace, &prefix).unwrap();
 
         assert!(
             result.raw_content.is_some(),
@@ -451,59 +451,57 @@ mod tests {
 
     #[test]
     fn test_extract_empty_prefix() {
-        let temp = TempDir::new().unwrap();
+        let workspace = MemoryWorkspace::new_test();
 
         // Test with path that has no file name component
-        // Use temp directory to avoid permission issues
-        let result = extract_last_result(temp.path()).unwrap();
+        let result = extract_last_result(&workspace, Path::new("/test/repo")).unwrap();
         assert!(result.is_none(), "Empty directory should return None");
     }
 
     #[test]
     fn test_extract_nonexistent_parent_directory() {
-        let result = extract_last_result(Path::new("/nonexistent/path/planning_1")).unwrap();
+        let workspace = MemoryWorkspace::new_test();
+        let result =
+            extract_last_result(&workspace, Path::new("/nonexistent/path/planning_1")).unwrap();
         assert!(result.is_none());
     }
 
     #[test]
     fn test_extract_result_from_single_file() {
-        let temp = TempDir::new().unwrap();
+        let plan = "# Plan\n\n## Summary\nThe plan content";
+        let log = log_lines(&[&system_event("start"), &result_event(plan)]);
+        let workspace = MemoryWorkspace::new_test().with_file("/test/repo/test.log", &log);
+        let file_path = PathBuf::from("/test/repo/test.log");
 
-        let json_log = r##"{"type": "system", "msg": "start"}
-{"type": "result", "result": "# Plan\n\n## Summary\nThe plan content"}"##;
-        let file_path = temp.path().join("test.log");
-        fs::write(&file_path, json_log).unwrap();
-
-        let result = extract_result_from_file(&file_path).unwrap();
+        let result = extract_result_from_file(&workspace, &file_path).unwrap();
         assert!(result.is_some());
         assert!(result.unwrap().contains("## Summary"));
     }
 
     #[test]
     fn test_extract_result_from_file_not_found() {
-        let result = extract_result_from_file(Path::new("/nonexistent/file.log")).unwrap();
+        let workspace = MemoryWorkspace::new_test();
+        let result =
+            extract_result_from_file(&workspace, Path::new("/nonexistent/file.log")).unwrap();
         assert!(result.is_none());
     }
 
     #[test]
     fn test_extract_handles_empty_log_file() {
-        let temp = TempDir::new().unwrap();
+        let workspace = MemoryWorkspace::new_test().with_file("/test/repo/empty.log", "");
+        let file_path = PathBuf::from("/test/repo/empty.log");
 
-        let file_path = temp.path().join("empty.log");
-        fs::write(&file_path, "").unwrap();
-
-        let result = extract_result_from_file(&file_path).unwrap();
+        let result = extract_result_from_file(&workspace, &file_path).unwrap();
         assert!(result.is_none());
     }
 
     #[test]
     fn test_extract_handles_whitespace_only_file() {
-        let temp = TempDir::new().unwrap();
+        let workspace =
+            MemoryWorkspace::new_test().with_file("/test/repo/whitespace.log", "   \n\n   \n");
+        let file_path = PathBuf::from("/test/repo/whitespace.log");
 
-        let file_path = temp.path().join("whitespace.log");
-        fs::write(&file_path, "   \n\n   \n").unwrap();
-
-        let result = extract_result_from_file(&file_path).unwrap();
+        let result = extract_result_from_file(&workspace, &file_path).unwrap();
         assert!(result.is_none());
     }
 }

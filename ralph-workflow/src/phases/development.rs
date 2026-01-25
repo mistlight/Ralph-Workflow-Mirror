@@ -28,7 +28,6 @@ use crate::prompts::{
     prompt_developer_iteration_xsd_retry_with_context, prompt_planning_xml_with_context,
     prompt_planning_xsd_retry_with_context, ContextLevel,
 };
-use std::fs;
 use std::path::Path;
 
 use super::context::PhaseContext;
@@ -268,8 +267,14 @@ pub fn run_development_iteration_with_xml_retry(
     _resume_context: Option<&ResumeContext>,
     _agent: Option<&str>,
 ) -> anyhow::Result<DevIterationResult> {
-    let prompt_md = fs::read_to_string("PROMPT.md").unwrap_or_default();
-    let plan_md = fs::read_to_string(".agent/PLAN.md").unwrap_or_default();
+    let prompt_md = ctx
+        .workspace
+        .read(Path::new("PROMPT.md"))
+        .unwrap_or_default();
+    let plan_md = ctx
+        .workspace
+        .read(Path::new(".agent/PLAN.md"))
+        .unwrap_or_default();
     let log_dir = format!(".agent/logs/developer_{iteration}");
 
     let max_xsd_retries = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize;
@@ -400,6 +405,7 @@ pub fn run_development_iteration_with_xml_retry(
                     config: ctx.config,
                     executor: ctx.executor,
                     executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+                    workspace: ctx.workspace,
                 };
                 let base_label = format!(
                     "run #{}{}",
@@ -421,6 +427,7 @@ pub fn run_development_iteration_with_xml_retry(
                     session_info: session_info.as_ref(),
                     retry_num,
                     output_validator: None,
+                    workspace: ctx.workspace,
                 };
                 run_xsd_retry_with_session(&mut xsd_retry_config)?
             };
@@ -446,6 +453,7 @@ pub fn run_development_iteration_with_xml_retry(
                         log_dir_path,
                         agent_config.json_parser,
                         Some(ctx.developer_agent),
+                        ctx.workspace,
                     );
                     if let Some(ref info) = session_info {
                         ctx.logger.info(&format!(
@@ -596,7 +604,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
     // Read PROMPT.md content to include directly in the planning prompt
     // This prevents agents from discovering PROMPT.md through file exploration,
     // which reduces the risk of accidental deletion.
-    let prompt_md_content = std::fs::read_to_string("PROMPT.md").ok();
+    let prompt_md_content = ctx.workspace.read(Path::new("PROMPT.md")).ok();
 
     // Note: We don't set is_resume for planning since planning runs on each iteration.
     // The resume context is set during the development execution step.
@@ -624,7 +632,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
 
     // Ensure .agent directory exists
     if let Some(parent) = plan_path.parent() {
-        fs::create_dir_all(parent)?;
+        ctx.workspace.create_dir_all(parent)?;
     }
 
     // In-session retry loop with XSD validation feedback
@@ -673,6 +681,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             config: ctx.config,
             executor: ctx.executor,
             executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+            workspace: ctx.workspace,
         };
 
         // Use session continuation for XSD retries (retry_num > 0)
@@ -689,6 +698,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             session_info: session_info.as_ref(),
             retry_num,
             output_validator: None,
+            workspace: ctx.workspace,
         };
 
         let _exit_code = run_xsd_retry_with_session(&mut xsd_retry_config)?;
@@ -705,6 +715,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
                     log_dir_path,
                     agent_config.json_parser,
                     Some(ctx.developer_agent),
+                    ctx.workspace,
                 );
             }
         }
@@ -729,7 +740,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
 
                 // Convert XML to markdown format for PLAN.md
                 let markdown = format_plan_as_markdown(&plan_elements);
-                fs::write(plan_path, &markdown)?;
+                ctx.workspace.write(plan_path, &markdown)?;
 
                 // Archive the XML file for debugging (moves to .xml.processed)
                 archive_xml_file(Path::new(xml_paths::PLAN_XML));
@@ -776,7 +787,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
                         .error("  No more in-session XSD retries remaining");
                     // Write placeholder and fail
                     let placeholder = "# Plan\n\nAgent produced no valid XML output. Only XML format is accepted.\n";
-                    fs::write(plan_path, placeholder)?;
+                    ctx.workspace.write(plan_path, placeholder)?;
                     anyhow::bail!(
                         "Planning agent did not produce valid XML output after {} attempts",
                         max_retries
@@ -1137,9 +1148,10 @@ fn verify_plan_exists(
 ) -> anyhow::Result<bool> {
     let plan_path = Path::new(".agent/PLAN.md");
 
-    let plan_ok = plan_path
-        .exists()
-        .then(|| fs::read_to_string(plan_path).ok())
+    let plan_ok = ctx
+        .workspace
+        .exists(plan_path)
+        .then(|| ctx.workspace.read(plan_path).ok())
         .flatten()
         .is_some_and(|s| !s.trim().is_empty());
 
@@ -1150,9 +1162,10 @@ fn verify_plan_exists(
         run_planning_step(ctx, iteration)?;
 
         // Check again after rerunning - orchestrator guarantees file exists
-        let plan_ok = plan_path
-            .exists()
-            .then(|| fs::read_to_string(plan_path).ok())
+        let plan_ok = ctx
+            .workspace
+            .exists(plan_path)
+            .then(|| ctx.workspace.read(plan_path).ok())
             .flatten()
             .is_some_and(|s| !s.trim().is_empty());
 

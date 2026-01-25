@@ -1178,6 +1178,7 @@ pub fn commit_with_generated_message(
         config: ctx.config,
         executor: ctx.executor,
         executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+        workspace: ctx.workspace,
     };
 
     // Generate commit message using the standard pipeline

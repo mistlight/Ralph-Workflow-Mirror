@@ -325,7 +325,8 @@ pub struct OpenCodeTime {
 pub struct OpenCodeParser {
     colors: Colors,
     verbosity: Verbosity,
-    log_file: Option<String>,
+    /// Relative path to log file (if logging enabled)
+    log_path: Option<std::path::PathBuf>,
     display_name: String,
     /// Unified streaming session for state tracking
     streaming_session: Rc<RefCell<StreamingSession>>,
@@ -367,7 +368,7 @@ impl OpenCodeParser {
         Self {
             colors,
             verbosity,
-            log_file: None,
+            log_path: None,
             display_name: "OpenCode".to_string(),
             streaming_session: Rc::new(RefCell::new(streaming_session)),
             terminal_mode: RefCell::new(TerminalMode::detect()),
@@ -387,7 +388,7 @@ impl OpenCodeParser {
     }
 
     pub(crate) fn with_log_file(mut self, path: &str) -> Self {
-        self.log_file = Some(path.to_string());
+        self.log_path = Some(std::path::PathBuf::from(path));
         self
     }
 
@@ -415,7 +416,7 @@ impl OpenCodeParser {
     /// This allows tests to verify log file content after parsing.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn with_log_file_for_test(mut self, path: &str) -> Self {
-        self.log_file = Some(path.to_string());
+        self.log_path = Some(std::path::PathBuf::from(path));
         self
     }
 
@@ -423,8 +424,12 @@ impl OpenCodeParser {
     ///
     /// This exposes the internal `parse_stream` method for integration tests.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn parse_stream_for_test<R: std::io::BufRead>(&self, reader: R) -> std::io::Result<()> {
-        self.parse_stream(reader)
+    pub fn parse_stream_for_test<R: std::io::BufRead>(
+        &self,
+        reader: R,
+        workspace: &dyn crate::workspace::Workspace,
+    ) -> std::io::Result<()> {
+        self.parse_stream(reader, workspace)
     }
 
     /// Get a shared reference to the printer.
@@ -1066,19 +1071,18 @@ impl OpenCodeParser {
     }
 
     /// Parse a stream of `OpenCode` NDJSON events
-    pub(crate) fn parse_stream<R: BufRead>(&self, mut reader: R) -> io::Result<()> {
+    pub(crate) fn parse_stream<R: BufRead>(
+        &self,
+        mut reader: R,
+        workspace: &dyn crate::workspace::Workspace,
+    ) -> io::Result<()> {
         use super::incremental_parser::IncrementalNdjsonParser;
 
         let c = &self.colors;
         let monitor = HealthMonitor::new("OpenCode");
-        let mut log_writer = self.log_file.as_ref().and_then(|log_path| {
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(log_path)
-                .ok()
-                .map(std::io::BufWriter::new)
-        });
+        // Accumulate log content in memory, write to workspace at the end
+        let logging_enabled = self.log_path.is_some();
+        let mut log_buffer: Vec<u8> = Vec::new();
 
         // Use incremental parser for true real-time streaming
         // This processes JSON as soon as it's complete, not waiting for newlines
@@ -1164,8 +1168,8 @@ impl OpenCodeParser {
                     }
                 }
 
-                if let Some(ref mut file) = log_writer {
-                    writeln!(file, "{line}")?;
+                if logging_enabled {
+                    writeln!(log_buffer, "{line}")?;
                 }
             }
         }
@@ -1185,18 +1189,16 @@ impl OpenCodeParser {
                     write!(printer, "{output}")?;
                     printer.flush()?;
                 }
-                // Write to log file
-                if let Some(ref mut file) = log_writer {
-                    writeln!(file, "{remaining}")?;
+                // Write to log buffer
+                if logging_enabled {
+                    writeln!(log_buffer, "{remaining}")?;
                 }
             }
         }
 
-        if let Some(ref mut file) = log_writer {
-            file.flush()?;
-            // Ensure data is written to disk before continuing
-            // This prevents race conditions where extraction runs before OS commits writes
-            let _ = file.get_mut().sync_all();
+        // Write accumulated log content to workspace
+        if let Some(log_path) = &self.log_path {
+            workspace.append_bytes(log_path, &log_buffer)?;
         }
         if let Some(warning) = monitor.check_and_warn(*c) {
             let mut printer = self.printer.borrow_mut();

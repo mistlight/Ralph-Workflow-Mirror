@@ -6,6 +6,7 @@
 use super::*;
 use crate::config::Verbosity;
 use crate::logger::Colors;
+use crate::workspace::MemoryWorkspace;
 
 #[cfg(test)]
 use super::terminal::TerminalMode;
@@ -476,7 +477,7 @@ fn test_claude_parser_tracks_partial_events_in_health_monitoring() {
     let reader = Cursor::new(input);
 
     // Parse stream - should handle all events without health warnings
-    let result = parser.parse_stream(reader);
+    let result = parser.parse_stream(reader, &MemoryWorkspace::new_test());
     assert!(result.is_ok());
 
     // Verify output contains delta content
@@ -571,7 +572,9 @@ fn test_verbose_mode_streaming_no_duplicate_lines() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -689,7 +692,9 @@ fn test_streaming_accumulation_behavior() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -755,7 +760,7 @@ fn test_streaming_empty_delta_chunk() {
     let reader = Cursor::new(input);
 
     // Should not panic or error
-    let result = parser.parse_stream(reader);
+    let result = parser.parse_stream(reader, &MemoryWorkspace::new_test());
     assert!(
         result.is_ok(),
         "Empty delta chunks should be handled gracefully"
@@ -789,7 +794,9 @@ fn test_streaming_single_chunk() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -837,7 +844,7 @@ fn test_streaming_very_long_text() {
     let reader = Cursor::new(input);
 
     // Should handle long text without errors
-    let result = parser.parse_stream(reader);
+    let result = parser.parse_stream(reader, &MemoryWorkspace::new_test());
     assert!(
         result.is_ok(),
         "Should handle very long text without errors"
@@ -921,7 +928,7 @@ fn test_streaming_rapid_chunks() {
     let reader = Cursor::new(input);
 
     // Should handle rapid chunks without errors
-    let result = parser.parse_stream(reader);
+    let result = parser.parse_stream(reader, &MemoryWorkspace::new_test());
     assert!(result.is_ok(), "Should handle rapid consecutive chunks");
 
     let printer_ref = test_printer.borrow();
@@ -970,7 +977,7 @@ fn test_streaming_whitespace_only_chunks() {
     let reader = Cursor::new(input);
 
     // Should handle whitespace chunks without errors
-    let result = parser.parse_stream(reader);
+    let result = parser.parse_stream(reader, &MemoryWorkspace::new_test());
     assert!(result.is_ok(), "Should handle whitespace-only chunks");
 
     let printer_ref = test_printer.borrow();
@@ -1002,7 +1009,9 @@ fn test_streaming_content_block_reset() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1176,7 +1185,9 @@ fn test_ccs_glm_streaming_no_duplicate_prefix() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1234,7 +1245,9 @@ fn test_ccs_glm_complete_message_deduplication() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
 
     // Get the captured output from TestPrinter
     let printer_ref = test_printer.borrow();
@@ -1328,7 +1341,9 @@ fn test_finalize_without_deltas_no_output() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1391,7 +1406,9 @@ fn test_repeated_content_block_start_no_duplicate_prefix() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1448,7 +1465,9 @@ fn test_multiple_messages_with_proper_separation() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1515,7 +1534,9 @@ fn test_streaming_with_terminal_mode_none() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1574,7 +1595,9 @@ fn test_streaming_with_terminal_mode_basic() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1631,7 +1654,9 @@ fn test_completion_with_terminal_mode_none() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1668,7 +1693,9 @@ fn test_completion_with_terminal_mode_basic() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1706,7 +1733,9 @@ fn test_multiple_deltas_none_mode_produces_multiple_lines() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1755,7 +1784,9 @@ fn test_identical_accumulated_content_skips_rendering() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -1973,7 +2004,9 @@ fn test_identical_deltas_produce_output_once() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2009,7 +2042,9 @@ fn test_different_deltas_produce_output() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2043,7 +2078,7 @@ fn test_empty_deltas_marked_as_processed() {
     let reader = Cursor::new(input);
 
     // Should not panic or cause excessive processing
-    let result = parser.parse_stream(reader);
+    let result = parser.parse_stream(reader, &MemoryWorkspace::new_test());
     assert!(result.is_ok(), "Empty deltas should be handled gracefully");
 
     let printer_ref = test_printer.borrow();
@@ -2093,7 +2128,9 @@ fn test_ccs_glm_duplicate_output_bug_fix() {
 
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2173,7 +2210,9 @@ fn test_ccs_glm_repeated_message_start_preserves_processed_deltas() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2253,7 +2292,9 @@ fn test_consecutive_duplicate_detection_drops_resend_glitch() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2304,7 +2345,9 @@ fn test_consecutive_duplicate_counter_resets_on_different_delta() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2377,7 +2420,9 @@ fn test_consecutive_duplicate_allows_legitimate_repetition() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2418,7 +2463,9 @@ fn test_suppress_duplicate_error_result_after_success() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2474,7 +2521,9 @@ fn test_suppress_error_result_that_arrives_before_success() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2529,7 +2578,9 @@ fn test_do_not_suppress_error_with_actual_errors_array() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
@@ -2581,7 +2632,9 @@ fn test_suppress_error_with_empty_errors_array() {
     let input = input_lines.join("\n");
     let reader = Cursor::new(input);
 
-    parser.parse_stream(reader).unwrap();
+    parser
+        .parse_stream(reader, &MemoryWorkspace::new_test())
+        .unwrap();
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
