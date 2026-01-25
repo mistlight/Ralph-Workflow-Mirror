@@ -1,0 +1,14 @@
+# Cargo configuration for ralph-workflow project
+
+# Integration tests require single-threaded execution for reliability.
+# Tests that change the current working directory use a global mutex (CWD_LOCK)
+# to serialize execution. When tests run in parallel, they contend for this lock,
+# causing timeouts. Single-threaded execution ensures deterministic test behavior.
+
+# Note: Run tests with --test-threads=1 to ensure single-threaded execution.
+# This is required for CI and local development.
+#
+# Example: cargo test --test-threads=1
+
+[build]
+# Use default build settings

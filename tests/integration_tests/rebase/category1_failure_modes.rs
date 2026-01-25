@@ -77,11 +77,12 @@ fn rebase_with_invalid_revision_returns_error() {
 /// Test that rebasing with dirty working tree is handled appropriately.
 ///
 /// This verifies that when there are uncommitted changes, the system
-/// fails with DirtyWorkingTree error or uses autostash if available.
+/// handles the situation gracefully (either fails with DirtyWorkingTree
+/// error or uses autostash if available).
 #[test]
 fn rebase_with_dirty_working_tree_fails() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::{is_dirty_tree_cli, rebase_onto, RebaseResult};
+        use ralph_workflow::git_helpers::{rebase_onto, RebaseResult};
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -91,10 +92,16 @@ fn rebase_with_dirty_working_tree_fails() {
             // Create uncommitted changes
             write_file(dir.path().join("dirty.txt"), "uncommitted content");
 
-            // Verify the working tree is dirty
-            assert!(is_dirty_tree_cli(executor.as_ref()).unwrap_or(false));
+            // Verify dirty state using libgit2 directly (observable state)
+            let mut opts = git2::StatusOptions::new();
+            opts.include_untracked(true).recurse_untracked_dirs(true);
+            let statuses = repo.statuses(Some(&mut opts)).unwrap();
+            assert!(
+                statuses.iter().count() > 0,
+                "Working tree should have uncommitted changes"
+            );
 
-            // Try to rebase - this should fail because the working tree is dirty
+            // Try to rebase - this should handle dirty working tree gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
 
             // The rebase should handle dirty working tree gracefully
@@ -125,11 +132,12 @@ fn rebase_with_dirty_working_tree_fails() {
 /// Test that rebasing with staged changes is handled appropriately.
 ///
 /// This verifies that when there are staged changes, the system
-/// fails with DirtyWorkingTree error or uses autostash if available.
+/// handles the situation gracefully (either fails with DirtyWorkingTree
+/// error or uses autostash if available).
 #[test]
 fn rebase_with_staged_changes_fails() {
     with_default_timeout(|| {
-        use ralph_workflow::git_helpers::{is_dirty_tree_cli, rebase_onto, RebaseResult};
+        use ralph_workflow::git_helpers::{rebase_onto, RebaseResult};
 
         with_temp_cwd(|dir| {
             let repo = init_repo_with_initial_commit(dir);
@@ -143,10 +151,16 @@ fn rebase_with_staged_changes_fails() {
                 .add_path("staged.txt".as_ref())
                 .unwrap();
 
-            // Verify the working tree is dirty (staged counts as dirty)
-            assert!(is_dirty_tree_cli(executor.as_ref()).unwrap_or(false));
+            // Verify staged state using libgit2 directly (observable state)
+            let mut opts = git2::StatusOptions::new();
+            opts.include_untracked(true).recurse_untracked_dirs(true);
+            let statuses = repo.statuses(Some(&mut opts)).unwrap();
+            assert!(
+                statuses.iter().count() > 0,
+                "Working tree should have staged changes"
+            );
 
-            // Try to rebase - this should fail because there are staged changes
+            // Try to rebase - this should handle staged changes gracefully
             let result = rebase_onto(&default_branch, executor.as_ref());
 
             // The rebase should handle staged changes gracefully
