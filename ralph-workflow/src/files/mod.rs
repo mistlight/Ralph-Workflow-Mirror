@@ -47,7 +47,9 @@ pub use io::{
     reset_context_for_isolation, update_status, write_commit_message_file,
 };
 
-pub use protection::{restore_prompt_if_needed, validate_prompt_md};
+pub use protection::{
+    restore_prompt_if_needed, validate_prompt_md, validate_prompt_md_with_workspace,
+};
 pub use result_extraction::extract_issues;
 #[cfg(any(test, feature = "test-utils"))]
 pub use result_extraction::extract_plan;

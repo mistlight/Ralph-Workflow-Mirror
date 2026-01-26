@@ -11,7 +11,9 @@
 //! - [`validation`] - PROMPT.md validation
 
 pub mod monitoring;
-pub(in crate::files) mod validation;
+pub mod validation;
 
 // Core exports (currently used)
-pub use validation::{restore_prompt_if_needed, validate_prompt_md};
+pub use validation::{
+    restore_prompt_if_needed, validate_prompt_md, validate_prompt_md_with_workspace,
+};

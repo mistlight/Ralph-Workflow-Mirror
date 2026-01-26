@@ -47,7 +47,7 @@ use crate::cli::{
 use crate::executor::ProcessExecutor;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::files::{
-    create_prompt_backup, make_prompt_read_only, update_status, validate_prompt_md,
+    create_prompt_backup, make_prompt_read_only, update_status, validate_prompt_md_with_workspace,
 };
 use crate::git_helpers::{
     abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
@@ -1599,8 +1599,11 @@ impl Drop for InterruptContextGuard {
 
 /// Validate PROMPT.md and set up backup/protection.
 fn validate_prompt_and_setup_backup(ctx: &PipelineContext) -> anyhow::Result<()> {
-    let prompt_validation =
-        validate_prompt_md(ctx.config.behavior.strict_validation, ctx.args.interactive);
+    let prompt_validation = validate_prompt_md_with_workspace(
+        &*ctx.workspace,
+        ctx.config.behavior.strict_validation,
+        ctx.args.interactive,
+    );
     for err in &prompt_validation.errors {
         ctx.logger.error(err);
     }

@@ -3,6 +3,7 @@
 //! Validates the structure and content of PROMPT.md files to ensure
 //! they have the required sections for the pipeline to work effectively.
 
+use crate::workspace::Workspace;
 use std::fs;
 use std::io::IsTerminal;
 use std::path::Path;
@@ -331,6 +332,147 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
     result
 }
 
+/// Validate PROMPT.md structure and content using workspace abstraction.
+///
+/// This is the workspace-aware version of [`validate_prompt_md`] for testability.
+/// Uses the provided workspace for all file operations instead of `std::fs`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `strict` - In strict mode, missing sections are errors; otherwise they're warnings.
+/// * `interactive` - If true and PROMPT.md doesn't exist, prompt to create from template.
+///
+/// # Returns
+///
+/// A `PromptValidationResult` containing validation findings.
+pub fn validate_prompt_md_with_workspace(
+    workspace: &dyn Workspace,
+    strict: bool,
+    interactive: bool,
+) -> PromptValidationResult {
+    let prompt_path = Path::new("PROMPT.md");
+    let file_exists = workspace.exists(prompt_path);
+    let mut result = PromptValidationResult {
+        file_state: if file_exists {
+            FileState::Empty
+        } else {
+            FileState::Missing
+        },
+        has_goal: false,
+        has_acceptance: false,
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+
+    if !result.exists() {
+        // Try to restore from backup
+        if let Some(source) = try_restore_from_backup_with_workspace(workspace, prompt_path) {
+            result.file_state = FileState::Empty;
+            result.warnings.push(format!(
+                "PROMPT.md was missing and was automatically restored from {source}"
+            ));
+        } else {
+            // No backup available
+            if interactive && std::io::stdout().is_terminal() {
+                result.errors.push(
+                    "PROMPT.md not found. Use 'ralph --init-prompt <template>' to create one."
+                        .to_string(),
+                );
+            } else {
+                result.errors.push(
+                    "PROMPT.md not found. Run 'ralph --list-work-guides' to see available Work Guides, \
+                     then 'ralph --init <template>' to create one."
+                        .to_string(),
+                );
+            }
+            return result;
+        }
+    }
+
+    let content = match workspace.read(prompt_path) {
+        Ok(c) => c,
+        Err(e) => {
+            result.errors.push(format!("Failed to read PROMPT.md: {e}"));
+            return result;
+        }
+    };
+
+    result.file_state = if content.trim().is_empty() {
+        FileState::Empty
+    } else {
+        FileState::Present
+    };
+
+    if !result.has_content() {
+        result.errors.push("PROMPT.md is empty".to_string());
+        return result;
+    }
+
+    // Check for Goal section
+    result.has_goal = check_goal_section(&content);
+    if !result.has_goal {
+        let msg = "PROMPT.md missing '## Goal' section".to_string();
+        if strict {
+            result.errors.push(msg);
+        } else {
+            result.warnings.push(msg);
+        }
+    }
+
+    // Check for Acceptance section
+    result.has_acceptance = check_acceptance_section(&content);
+    if !result.has_acceptance {
+        let msg = "PROMPT.md missing acceptance checks section".to_string();
+        if strict {
+            result.errors.push(msg);
+        } else {
+            result.warnings.push(msg);
+        }
+    }
+
+    result
+}
+
+/// Attempt to restore PROMPT.md from backup files using workspace.
+fn try_restore_from_backup_with_workspace(
+    workspace: &dyn Workspace,
+    prompt_path: &Path,
+) -> Option<String> {
+    let backup_paths = [
+        (
+            Path::new(".agent/PROMPT.md.backup"),
+            ".agent/PROMPT.md.backup",
+        ),
+        (
+            Path::new(".agent/PROMPT.md.backup.1"),
+            ".agent/PROMPT.md.backup.1",
+        ),
+        (
+            Path::new(".agent/PROMPT.md.backup.2"),
+            ".agent/PROMPT.md.backup.2",
+        ),
+    ];
+
+    for (backup_path, name) in backup_paths {
+        if workspace.exists(backup_path) {
+            let Ok(backup_content) = workspace.read(backup_path) else {
+                continue;
+            };
+
+            if backup_content.trim().is_empty() {
+                continue;
+            }
+
+            if workspace.write(prompt_path, &backup_content).is_ok() {
+                return Some(name.to_string());
+            }
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,5 +662,86 @@ The acceptance tests should pass.
             let result = validate_prompt_md(false, false);
             assert!(result.has_acceptance);
         });
+    }
+}
+
+#[cfg(all(test, feature = "test-utils"))]
+mod workspace_tests {
+    use super::*;
+    use crate::workspace::{MemoryWorkspace, Workspace};
+
+    #[test]
+    fn test_validate_prompt_md_with_workspace_not_exists() {
+        let workspace = MemoryWorkspace::new_test();
+
+        let result = validate_prompt_md_with_workspace(&workspace, false, false);
+
+        assert!(!result.exists());
+        assert!(!result.is_valid());
+        assert!(result.errors.iter().any(|e| e.contains("not found")));
+    }
+
+    #[test]
+    fn test_validate_prompt_md_with_workspace_valid() {
+        let workspace = MemoryWorkspace::new_test().with_file(
+            "PROMPT.md",
+            "# Test\n\n## Goal\nDo something\n\n## Acceptance\n- Pass",
+        );
+
+        let result = validate_prompt_md_with_workspace(&workspace, false, false);
+
+        assert!(result.exists());
+        assert!(result.has_content());
+        assert!(result.has_goal);
+        assert!(result.has_acceptance);
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_prompt_md_with_workspace_restores_from_backup() {
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/PROMPT.md.backup", "## Goal\nRestored");
+
+        let result = validate_prompt_md_with_workspace(&workspace, false, false);
+
+        // Should have restored from backup
+        assert!(result.warnings.iter().any(|w| w.contains("restored from")));
+        assert!(result.has_goal);
+        // PROMPT.md should now exist in workspace
+        assert!(workspace.exists(Path::new("PROMPT.md")));
+    }
+
+    #[test]
+    fn test_validate_prompt_md_with_workspace_empty() {
+        let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "   \n\n  ");
+
+        let result = validate_prompt_md_with_workspace(&workspace, false, false);
+
+        assert!(result.exists());
+        assert!(!result.has_content());
+        assert!(!result.is_valid());
+        assert!(result.errors.iter().any(|e| e.contains("empty")));
+    }
+
+    #[test]
+    fn test_validate_prompt_md_with_workspace_missing_sections_lenient() {
+        let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "Just some content");
+
+        let result = validate_prompt_md_with_workspace(&workspace, false, false);
+
+        assert!(result.is_valid()); // Lenient mode: warnings, not errors
+        assert!(!result.has_goal);
+        assert!(!result.has_acceptance);
+        assert_eq!(result.warnings.len(), 2);
+    }
+
+    #[test]
+    fn test_validate_prompt_md_with_workspace_missing_sections_strict() {
+        let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "Just some content");
+
+        let result = validate_prompt_md_with_workspace(&workspace, true, false);
+
+        assert!(!result.is_valid()); // Strict mode: errors
+        assert_eq!(result.errors.len(), 2);
     }
 }
