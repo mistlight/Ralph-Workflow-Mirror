@@ -167,6 +167,63 @@ pub fn setup_xsd_schemas_at(repo_root: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Ensure required files and directories exist using workspace.
+///
+/// This is the workspace-based version of [`ensure_files_at`].
+/// Creates the `.agent/logs` and `.agent/tmp` directories if they don't exist.
+/// Also writes XSD schemas to `.agent/tmp/` for agent self-validation.
+///
+/// When `isolation_mode` is true (the default), STATUS.md, NOTES.md and ISSUES.md
+/// are NOT created. This prevents context contamination from previous runs.
+pub fn ensure_files_with_workspace(
+    workspace: &dyn Workspace,
+    isolation_mode: bool,
+) -> io::Result<()> {
+    let agent_dir = Path::new(".agent");
+
+    // Best-effort state repair before we start touching `.agent/` contents.
+    // If the state is unrecoverable, fail early with a clear error.
+    if let recovery::RecoveryStatus::Unrecoverable(msg) =
+        recovery::auto_repair_with_workspace(workspace, agent_dir)?
+    {
+        return Err(io::Error::other(format!(
+            "Failed to repair .agent state: {msg}"
+        )));
+    }
+
+    integrity::check_filesystem_ready_with_workspace(workspace, agent_dir)?;
+    workspace.create_dir_all(&agent_dir.join("logs"))?;
+    workspace.create_dir_all(&agent_dir.join("tmp"))?;
+
+    // Clean up any stale XML files from previous runs that might be locked
+    let tmp_dir = agent_dir.join("tmp");
+    let _ = integrity::cleanup_stale_xml_files_with_workspace(workspace, &tmp_dir, false);
+    // Note: cleanup is best-effort, failures are not fatal
+
+    // Write XSD schemas to .agent/tmp/ for agent self-validation
+    setup_xsd_schemas_with_workspace(workspace)?;
+
+    // Only create STATUS.md, NOTES.md and ISSUES.md when NOT in isolation mode
+    if !isolation_mode {
+        // Always overwrite/truncate these files to a single vague sentence to
+        // avoid detailed context persisting across runs.
+        workspace.write_atomic(
+            &agent_dir.join("STATUS.md"),
+            &format!("{VAGUE_STATUS_LINE}\n"),
+        )?;
+        workspace.write_atomic(
+            &agent_dir.join("NOTES.md"),
+            &format!("{VAGUE_NOTES_LINE}\n"),
+        )?;
+        workspace.write_atomic(
+            &agent_dir.join("ISSUES.md"),
+            &format!("{VAGUE_ISSUES_LINE}\n"),
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Delete the PLAN.md file after integration.
 ///
 /// Called after the plan has been integrated into the codebase.
