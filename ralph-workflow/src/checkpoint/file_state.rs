@@ -646,93 +646,117 @@ impl ValidationError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use test_helpers::with_temp_cwd;
 
-    #[test]
-    fn test_file_system_state_new() {
-        let state = FileSystemState::new();
-        assert!(state.files.is_empty());
-        assert!(state.git_head_oid.is_none());
-        assert!(state.git_branch.is_none());
-    }
+    // =========================================================================
+    // Workspace-based tests (for testability without real filesystem)
+    // =========================================================================
 
-    #[test]
-    fn test_file_system_state_capture_file() {
-        with_temp_cwd(|_dir| {
-            fs::write("test.txt", "content").unwrap();
+    #[cfg(feature = "test-utils")]
+    mod workspace_tests {
+        use super::*;
+        use crate::workspace::MemoryWorkspace;
+
+        #[test]
+        fn test_file_system_state_new() {
+            let state = FileSystemState::new();
+            assert!(state.files.is_empty());
+            assert!(state.git_head_oid.is_none());
+            assert!(state.git_branch.is_none());
+        }
+
+        #[test]
+        fn test_capture_file_with_workspace() {
+            let workspace = MemoryWorkspace::new_test().with_file("test.txt", "content");
 
             let mut state = FileSystemState::new();
-            state.capture_file("test.txt");
+            state.capture_file_with_workspace(&workspace, "test.txt");
 
             assert!(state.files.contains_key("test.txt"));
             let snapshot = &state.files["test.txt"];
             assert!(snapshot.exists);
             assert_eq!(snapshot.size, 7);
-        });
-    }
+        }
 
-    #[test]
-    fn test_file_system_state_capture_nonexistent() {
-        let mut state = FileSystemState::new();
-        state.capture_file("nonexistent.txt");
-
-        assert!(state.files.contains_key("nonexistent.txt"));
-        let snapshot = &state.files["nonexistent.txt"];
-        assert!(!snapshot.exists);
-        assert_eq!(snapshot.size, 0);
-    }
-
-    #[test]
-    fn test_file_system_state_validate_success() {
-        with_temp_cwd(|_dir| {
-            fs::write("test.txt", "content").unwrap();
+        #[test]
+        fn test_capture_file_with_workspace_nonexistent() {
+            let workspace = MemoryWorkspace::new_test();
 
             let mut state = FileSystemState::new();
-            state.capture_file("test.txt");
+            state.capture_file_with_workspace(&workspace, "nonexistent.txt");
 
-            let errors = state.validate();
+            assert!(state.files.contains_key("nonexistent.txt"));
+            let snapshot = &state.files["nonexistent.txt"];
+            assert!(!snapshot.exists);
+            assert_eq!(snapshot.size, 0);
+        }
+
+        #[test]
+        fn test_validate_with_workspace_success() {
+            let workspace = MemoryWorkspace::new_test().with_file("test.txt", "content");
+
+            let mut state = FileSystemState::new();
+            state.capture_file_with_workspace(&workspace, "test.txt");
+
+            let errors = state.validate_with_workspace(&workspace, None);
             assert!(errors.is_empty());
-        });
-    }
+        }
 
-    #[test]
-    fn test_file_system_state_validate_file_missing() {
-        with_temp_cwd(|_dir| {
-            // Create a file and capture its state
-            fs::write("test.txt", "content").unwrap();
+        #[test]
+        fn test_validate_with_workspace_file_missing() {
+            // Create workspace with file, capture state
+            let workspace_with_file = MemoryWorkspace::new_test().with_file("test.txt", "content");
             let mut state = FileSystemState::new();
-            state.capture_file("test.txt");
+            state.capture_file_with_workspace(&workspace_with_file, "test.txt");
 
-            // Now delete the file
-            fs::remove_file("test.txt").unwrap();
+            // Create new workspace without the file (simulating file deletion)
+            let workspace_without_file = MemoryWorkspace::new_test();
 
             // Validation should fail because file is missing
-            let errors = state.validate();
+            let errors = state.validate_with_workspace(&workspace_without_file, None);
             assert!(!errors.is_empty());
             assert!(matches!(errors[0], ValidationError::FileMissing { .. }));
-        });
-    }
+        }
 
-    #[test]
-    fn test_file_system_state_validate_file_changed() {
-        with_temp_cwd(|_dir| {
-            fs::write("test.txt", "content").unwrap();
-
+        #[test]
+        fn test_validate_with_workspace_file_changed() {
+            // Create workspace with original file
+            let workspace_original = MemoryWorkspace::new_test().with_file("test.txt", "content");
             let mut state = FileSystemState::new();
-            state.capture_file("test.txt");
+            state.capture_file_with_workspace(&workspace_original, "test.txt");
 
-            // Modify the file
-            fs::write("test.txt", "modified").unwrap();
+            // Create new workspace with modified content
+            let workspace_modified = MemoryWorkspace::new_test().with_file("test.txt", "modified");
 
-            let errors = state.validate();
+            let errors = state.validate_with_workspace(&workspace_modified, None);
             assert!(!errors.is_empty());
             assert!(matches!(
                 errors[0],
                 ValidationError::FileContentChanged { .. }
             ));
-        });
+        }
+
+        #[test]
+        fn test_validate_with_workspace_file_unexpectedly_exists() {
+            // Create state with non-existent file
+            let workspace_empty = MemoryWorkspace::new_test();
+            let mut state = FileSystemState::new();
+            state.capture_file_with_workspace(&workspace_empty, "test.txt");
+
+            // Create new workspace with the file (simulating unexpected file creation)
+            let workspace_with_file = MemoryWorkspace::new_test().with_file("test.txt", "content");
+
+            let errors = state.validate_with_workspace(&workspace_with_file, None);
+            assert!(!errors.is_empty());
+            assert!(matches!(
+                errors[0],
+                ValidationError::FileUnexpectedlyExists { .. }
+            ));
+        }
     }
+
+    // =========================================================================
+    // Pure unit tests (no filesystem access)
+    // =========================================================================
 
     #[test]
     fn test_validation_error_display() {
