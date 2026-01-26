@@ -8,6 +8,10 @@ publish = false
 name = "integration_tests"
 path = "integration_tests/main.rs"
 
+[[test]]
+name = "ralph-workflow-system-tests"
+path = "system_tests/main.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

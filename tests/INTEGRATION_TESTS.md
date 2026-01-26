@@ -2,6 +2,9 @@
 
 **For AI Agents: Read this ENTIRE file before writing or modifying ANY test.**
 
+> **Note:** Tests requiring real filesystem/git operations belong in
+> `tests/system_tests/`. See [SYSTEM_TESTS.md](system_tests/SYSTEM_TESTS.md).
+
 These rules apply to **ALL tests** - both unit tests and integration tests.
 
 ## ABSOLUTE PROHIBITIONS

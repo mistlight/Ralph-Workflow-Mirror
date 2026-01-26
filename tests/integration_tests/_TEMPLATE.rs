@@ -82,15 +82,17 @@
 //! }
 //! ```
 //!
-//! ## Pattern 2: CLI Tests with run_ralph_cli()
+//! ## Pattern 2: CLI Tests with MemoryWorkspace
 //!
-//! Used when testing the CLI as a black box without spawning processes:
+//! Used when testing the CLI without real filesystem operations:
 //!
 //! ```rust
-//! use std::fs;
-//! use tempfile::TempDir;
+//! use std::path::Path;
 //!
-//! use crate::common::{mock_executor_with_success, run_ralph_cli};
+//! use ralph_workflow::workspace::MemoryWorkspace;
+//! use ralph_workflow::executor::MockProcessExecutor;
+//!
+//! use crate::common::run_ralph_cli_injected;
 //! use crate::test_timeout::with_default_timeout;
 //!
 //! /// Test that [CLI SCENARIO] produces [EXPECTED BEHAVIOR].
@@ -99,38 +101,43 @@
 //! #[test]
 //! fn test_cli_scenario_produces_expected_behavior() {
 //!     with_default_timeout(|| {
-//!         // Setup: Create isolated test environment
-//!         let dir = TempDir::new().unwrap();
-//!         let _repo = test_helpers::init_git_repo(&dir);
-//!         std::env::set_current_dir(dir.path()).unwrap();
+//!         // Setup: Create in-memory workspace with test files
+//!         let workspace = MemoryWorkspace::new_test()
+//!             .with_file(".agent/config.toml", "[agent]\nname = \"test\"")
+//!             .with_file("PROMPT.md", "Test prompt content");
 //!
-//!         // Create required files for test scenario
-//!         fs::write(dir.path().join("test.txt"), "content").unwrap();
+//!         // Setup: Create mock executor for process simulation
+//!         let executor = MockProcessExecutor::new()
+//!             .with_output("git", "main")
+//!             .with_agent_result("claude", Ok(AgentCommandResult::success()));
 //!
-//!         // Set test environment to avoid interactive prompts
-//!         std::env::set_var("RALPH_INTERACTIVE", "0");
-//!         std::env::set_var("RALPH_DEVELOPER_ITERS", "0");
-//!         std::env::set_var("RALPH_REVIEWER_REVIEWS", "0");
+//!         // Execute: Run CLI with injected dependencies
+//!         let result = run_ralph_cli_injected(
+//!             &["--some-flag", "value"],
+//!             executor,
+//!             &workspace,
+//!         );
 //!
-//!         // Execute: Run CLI directly via app::run() with mock executor (no process spawning)
-//!         let executor = mock_executor_with_success();
-//!         let result = run_ralph_cli(&["--some-flag", "value"], executor);
-//!
-//!         // Assert: Verify OBSERVABLE behavior (exit code, file side effects)
+//!         // Assert: Verify OBSERVABLE behavior (return value, file side effects)
 //!         assert!(result.is_ok(), "CLI should succeed");
-//!         assert!(dir.path().join("expected_output.txt").exists(),
+//!         assert!(workspace.was_written(".agent/output.txt"),
 //!             "Should create expected output file");
+//!
+//!         // Assert: Verify file content if needed
+//!         let content = workspace.get_file(".agent/output.txt").unwrap();
+//!         assert!(content.contains("expected"), "Output should contain expected content");
 //!     });
 //! }
 //! ```
 //!
-//! ## Pattern 3: File Operation Tests with TempDir
+//! ## Pattern 3: File Operation Tests with MemoryWorkspace
 //!
-//! Used when testing file-based operations without external dependencies:
+//! Used when testing file-based operations without real I/O:
 //!
 //! ```rust
-//! use std::fs;
-//! use tempfile::TempDir;
+//! use std::path::Path;
+//!
+//! use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
 //!
 //! use crate::test_timeout::with_default_timeout;
 //!
@@ -140,29 +147,45 @@
 //! #[test]
 //! fn test_file_operation_produces_expected_behavior() {
 //!     with_default_timeout(|| {
-//!         // Setup: Create isolated test directory
-//!         let dir = TempDir::new().unwrap();
+//!         // Setup: Create in-memory workspace with initial files
+//!         let workspace = MemoryWorkspace::new_test()
+//!             .with_file("input.txt", "initial content");
 //!
-//!         // Execute: Perform file operations directly (no shell commands)
-//!         fs::write(dir.path().join("test.txt"), "content").unwrap();
+//!         // Execute: Perform file operations through workspace trait
+//!         workspace.write(Path::new("output.txt"), "processed content").unwrap();
 //!
 //!         // Assert: Verify OBSERVABLE file system state
-//!         let content = fs::read_to_string(dir.path().join("test.txt")).unwrap();
-//!         assert_eq!(content, "content", "Should write file content correctly");
+//!         assert!(workspace.exists(Path::new("output.txt")));
+//!         let content = workspace.read(Path::new("output.txt")).unwrap();
+//!         assert_eq!(content, "processed content", "Should write file correctly");
+//!
+//!         // Assert: Verify using test helpers
+//!         assert!(workspace.was_written("output.txt"));
 //!     });
 //! }
 //! ```
+//!
+//! ## Pattern 4: For Real Git/Filesystem Tests
+//!
+//! If your test REQUIRES real filesystem or git operations (e.g., testing
+//! actual git rebase behavior, file permissions, symlinks), it belongs in
+//! `tests/system_tests/`. See `tests/system_tests/SYSTEM_TESTS.md`.
+//!
+//! System tests are NOT part of CI and run separately as sanity checks.
 //!
 //! # Anti-Patterns to Avoid
 //!
 //! | Anti-Pattern | Why It's Wrong | Fix |
 //! |--------------|----------------|-----|
-//! | Mocking internal functions | Tests implementation, not behavior | Refactor code or use integration boundary |
-//! | Asserting on log messages | Logs are not part of the behavior contract | Assert on outputs/side effects instead |
+//! | `TempDir` in integration tests | Real I/O, slow, non-deterministic | Use `MemoryWorkspace::new_test()` |
+//! | `std::fs::*` in integration tests | Real I/O, tests affect each other | Use `workspace.read()`/`write()` |
+//! | Mocking internal functions | Tests implementation, not behavior | Use integration boundary mocks |
+//! | Asserting on log messages | Logs are not part of behavior contract | Assert on outputs/side effects |
 //! | Testing private functions | Private = implementation detail | Test through public API |
 //! | Brittle string matching | Ties test to exact formatting | Use semantic assertions |
-//! | Shared mutable state | Tests affect each other | Use `TempDir`, reset state |
+//! | Shared mutable state | Tests affect each other | Use `MemoryWorkspace`, reset state |
 //! | `cfg!(test)` in production | Adds untested code paths | Use dependency injection |
+//! | Test file >1000 lines | Hard to maintain | Split into focused modules |
 //!
 //! # When to Update Tests
 //!
@@ -178,12 +201,16 @@
 //! # Module Organization
 //!
 //! Integration tests are organized by feature/area:
-//! - `workflows/`: End-to-end workflow tests
+//! - `workflows/`: End-to-end workflow tests (mocked)
 //! - `deduplication/`: Parser deduplication tests
-//! - `cli/`: CLI argument and output tests
-//! - `commit/`: Commit-related tests
-//! - `rebase/`: Rebase operation tests
-//! - `git/`: Git operation tests
+//! - `cli/`: CLI argument and output tests (mocked)
+//! - `commit/`: Commit message generation tests
+//! - `logger/`: Logging and event extraction tests
+//!
+//! Tests requiring real git/filesystem operations are in `tests/system_tests/`:
+//! - `system_tests/rebase/`: Rebase operation tests (real git)
+//! - `system_tests/git/`: Git operation tests (real git)
+//! - `system_tests/workspace_fs/`: WorkspaceFs tests (real filesystem)
 //!
 //! Place your test in the appropriate module directory.
 

@@ -1,0 +1,126 @@
+//! Test timeout enforcement for system tests.
+//!
+//! This module provides a mechanism to enforce maximum execution time
+//! for system tests. Tests that take longer than the specified
+//! timeout will be terminated and fail with a clear error message.
+//!
+//! # System Test Guidelines
+//!
+//! System tests MAY use real filesystem and git operations, but still
+//! need timeout protection to prevent indefinite hangs.
+//!
+//! # MANDATORY Usage
+//!
+//! **ALL system tests MUST use either `with_default_timeout()` or `with_timeout()`
+//! to wrap their test code.**
+//!
+//! # Usage
+//!
+//! ```rust,no_run
+//! use crate::test_timeout::with_default_timeout;
+//!
+//! #[test]
+//! fn test_name() {
+//!     with_default_timeout(|| {
+//!         // ALL test code must run inside this closure
+//!         let dir = TempDir::new().unwrap();
+//!         // ... rest of test
+//!     });
+//! }
+//! ```
+//!
+//! # Default Timeout
+//!
+//! The default timeout for system tests is 30 seconds (longer than integration tests
+//! because real git operations can be slower).
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+
+/// Default timeout for system tests (30 seconds).
+///
+/// System tests are allowed to perform real git operations which may take
+/// longer than mocked integration tests.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Error type for timeout failures.
+#[derive(Debug)]
+pub struct TimeoutError {
+    pub timeout: Duration,
+}
+
+impl std::fmt::Display for TimeoutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Test exceeded timeout of {:?}. \
+             System tests should complete within 30 seconds even with real git operations.",
+            self.timeout
+        )
+    }
+}
+
+impl std::error::Error for TimeoutError {}
+
+/// Run a closure with a timeout.
+///
+/// If the closure does not complete within the specified duration,
+/// the test will panic with a timeout error.
+pub fn with_timeout<F>(f: F, timeout: Duration)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let completed = Arc::new(AtomicBool::new(false));
+    let completed_clone = Arc::clone(&completed);
+
+    let handle = thread::spawn(move || {
+        f();
+        completed_clone.store(true, Ordering::Release);
+    });
+
+    let start = std::time::Instant::now();
+    while !completed.load(Ordering::Acquire) {
+        if start.elapsed() >= timeout {
+            panic!("{}", TimeoutError { timeout }.to_string());
+        }
+        // Small sleep to avoid busy-waiting
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    handle.join().unwrap();
+}
+
+/// Run a closure with the default 30-second timeout.
+///
+/// This is a convenience wrapper around `with_timeout` that uses
+/// the standard system test timeout.
+pub fn with_default_timeout<F>(f: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    with_timeout(f, DEFAULT_TIMEOUT);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_with_timeout_success() {
+        with_timeout(
+            || {
+                assert_eq!(2 + 2, 4);
+            },
+            Duration::from_secs(1),
+        );
+    }
+
+    #[test]
+    fn test_with_default_timeout_success() {
+        with_default_timeout(|| {
+            assert_eq!(2 + 2, 4);
+        });
+    }
+}
