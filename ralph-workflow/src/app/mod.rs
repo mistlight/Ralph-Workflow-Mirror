@@ -19,6 +19,7 @@
 pub mod config_init;
 pub mod context;
 pub mod detection;
+pub mod effect;
 pub mod event_loop;
 pub mod finalization;
 pub mod plumbing;
