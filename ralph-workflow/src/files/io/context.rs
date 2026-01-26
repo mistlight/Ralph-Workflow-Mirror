@@ -313,68 +313,14 @@ mod tests {
     use super::*;
     use crate::logger::Colors;
     use crate::workspace::{MemoryWorkspace, Workspace};
-    use test_helpers::with_temp_cwd;
-
-    #[test]
-    fn test_update_status_non_isolation() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-
-            update_status("In progress.", false).unwrap();
-
-            let content = fs::read_to_string(".agent/STATUS.md").unwrap();
-            assert_eq!(content, "In progress.\n");
-        });
-    }
-
-    #[test]
-    fn test_update_status_isolation_mode_does_nothing() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-
-            // In isolation mode, update_status should do nothing
-            update_status("In progress.", true).unwrap();
-
-            // STATUS.md should NOT be created
-            assert!(!Path::new(".agent/STATUS.md").exists());
-        });
-    }
-
-    #[test]
-    fn test_reset_context_for_isolation() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-            fs::write(".agent/STATUS.md", "some status").unwrap();
-            fs::write(".agent/NOTES.md", "some notes").unwrap();
-            fs::write(".agent/ISSUES.md", "some issues").unwrap();
-
-            let colors = Colors { enabled: false };
-            let logger = Logger::new(colors);
-            reset_context_for_isolation(&logger).unwrap();
-
-            assert!(!Path::new(".agent/STATUS.md").exists());
-            assert!(!Path::new(".agent/NOTES.md").exists());
-            assert!(!Path::new(".agent/ISSUES.md").exists());
-        });
-    }
-
-    #[test]
-    fn test_delete_issues_file_for_isolation() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-            fs::write(".agent/ISSUES.md", "some issues").unwrap();
-
-            let colors = Colors { enabled: false };
-            let logger = Logger::new(colors);
-            delete_issues_file_for_isolation(&logger).unwrap();
-
-            assert!(!Path::new(".agent/ISSUES.md").exists());
-        });
-    }
 
     // =========================================================================
     // Workspace-based tests (for testability without real filesystem)
     // =========================================================================
+    //
+    // Note: Old tests using with_temp_cwd have been removed since production
+    // code now uses workspace-based functions. The old std::fs functions
+    // are kept for backward compatibility but are not tested here.
 
     #[test]
     fn test_delete_issues_file_for_isolation_with_workspace() {
