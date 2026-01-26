@@ -16,7 +16,7 @@ use crate::files::llm_output_extraction::{
     extract_xml_with_file_fallback, format_xml_for_display, validate_development_result_xml,
     validate_plan_xml, xml_paths, PlanElements,
 };
-use crate::files::{delete_plan_file, update_status_with_workspace};
+use crate::files::{delete_plan_file_with_workspace, update_status_with_workspace};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
@@ -205,7 +205,7 @@ pub fn run_development_phase(
 
         // Step 3: Delete the PLAN
         ctx.logger.info("Deleting PLAN.md...");
-        if let Err(err) = delete_plan_file() {
+        if let Err(err) = delete_plan_file_with_workspace(ctx.workspace) {
             ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
         }
         ctx.logger.success("PLAN.md deleted");
