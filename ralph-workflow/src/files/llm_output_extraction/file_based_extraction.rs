@@ -10,6 +10,7 @@
 //! - **Cleaner separation**: XML lives in files, not embedded in text responses
 //! - **Better debugging**: XML files persist for inspection
 
+use crate::workspace::Workspace;
 use std::fs;
 use std::path::Path;
 
@@ -116,6 +117,29 @@ pub fn try_extract_from_file(xml_path: &Path) -> Option<String> {
     Some(trimmed.to_string())
 }
 
+/// Workspace-based variant of [`try_extract_from_file`] for testability.
+///
+/// This function uses the workspace abstraction for filesystem access,
+/// enabling unit tests with `MemoryWorkspace` instead of real filesystem operations.
+pub fn try_extract_from_file_with_workspace(
+    workspace: &dyn Workspace,
+    xml_path: &Path,
+) -> Option<String> {
+    if !workspace.exists(xml_path) {
+        return None;
+    }
+
+    let content = workspace.read(xml_path).ok()?;
+    let trimmed = content.trim();
+
+    // Must be non-empty and look like XML
+    if trimmed.is_empty() || !trimmed.starts_with('<') {
+        return None;
+    }
+
+    Some(trimmed.to_string())
+}
+
 /// Combined extraction: try file first, then fall back to response extraction.
 ///
 /// This function implements the two-tier extraction strategy:
@@ -154,6 +178,25 @@ where
     extractor(response_content)
 }
 
+/// Workspace-based variant of [`extract_xml_with_file_fallback`] for testability.
+pub fn extract_xml_with_file_fallback_with_workspace<F>(
+    workspace: &dyn Workspace,
+    xml_path: &Path,
+    response_content: &str,
+    extractor: F,
+) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    // Try file-based extraction first
+    if let Some(xml) = try_extract_from_file_with_workspace(workspace, xml_path) {
+        return Some(xml);
+    }
+
+    // Fall back to response extraction
+    extractor(response_content)
+}
+
 /// Archive an XML output file after successful processing.
 ///
 /// Moves the XML file to a `.processed` suffix so it's preserved for debugging
@@ -170,70 +213,71 @@ pub fn archive_xml_file(xml_path: &Path) {
     }
 }
 
+/// Workspace-based variant of [`archive_xml_file`] for testability.
+pub fn archive_xml_file_with_workspace(workspace: &dyn Workspace, xml_path: &Path) {
+    if workspace.exists(xml_path) {
+        let processed_path = xml_path.with_extension("xml.processed");
+        let _ = workspace.rename(xml_path, &processed_path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::TempDir;
+    use crate::workspace::MemoryWorkspace;
 
     #[test]
     fn test_try_extract_from_file_success() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("test.xml");
-        fs::write(
-            &xml_path,
+        let workspace = MemoryWorkspace::new_test().with_file(
+            "test.xml",
             "<ralph-plan><ralph-summary>Test</ralph-summary></ralph-plan>",
-        )
-        .unwrap();
+        );
 
-        let result = try_extract_from_file(&xml_path);
+        let result = try_extract_from_file_with_workspace(&workspace, Path::new("test.xml"));
         assert!(result.is_some());
         assert!(result.unwrap().contains("<ralph-plan>"));
     }
 
     #[test]
     fn test_try_extract_from_file_not_exists() {
-        let result = try_extract_from_file(Path::new("/nonexistent/file.xml"));
+        let workspace = MemoryWorkspace::new_test();
+
+        let result =
+            try_extract_from_file_with_workspace(&workspace, Path::new("nonexistent/file.xml"));
         assert!(result.is_none());
     }
 
     #[test]
     fn test_try_extract_from_file_empty() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("empty.xml");
-        fs::write(&xml_path, "").unwrap();
+        let workspace = MemoryWorkspace::new_test().with_file("empty.xml", "");
 
-        let result = try_extract_from_file(&xml_path);
+        let result = try_extract_from_file_with_workspace(&workspace, Path::new("empty.xml"));
         assert!(result.is_none());
     }
 
     #[test]
     fn test_try_extract_from_file_whitespace_only() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("whitespace.xml");
-        fs::write(&xml_path, "   \n  \n  ").unwrap();
+        let workspace = MemoryWorkspace::new_test().with_file("whitespace.xml", "   \n  \n  ");
 
-        let result = try_extract_from_file(&xml_path);
+        let result = try_extract_from_file_with_workspace(&workspace, Path::new("whitespace.xml"));
         assert!(result.is_none());
     }
 
     #[test]
     fn test_try_extract_from_file_not_xml() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("not_xml.txt");
-        fs::write(&xml_path, "This is plain text, not XML").unwrap();
+        let workspace =
+            MemoryWorkspace::new_test().with_file("not_xml.txt", "This is plain text, not XML");
 
-        let result = try_extract_from_file(&xml_path);
+        let result = try_extract_from_file_with_workspace(&workspace, Path::new("not_xml.txt"));
         assert!(result.is_none());
     }
 
     #[test]
     fn test_try_extract_from_file_trims_whitespace() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("padded.xml");
-        fs::write(&xml_path, "  \n<ralph-plan>Test</ralph-plan>\n  ").unwrap();
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("padded.xml", "  \n<ralph-plan>Test</ralph-plan>\n  ");
 
-        let result = try_extract_from_file(&xml_path);
+        let result = try_extract_from_file_with_workspace(&workspace, Path::new("padded.xml"));
         assert!(result.is_some());
         let xml = result.unwrap();
         assert!(xml.starts_with('<'));
@@ -242,14 +286,16 @@ mod tests {
 
     #[test]
     fn test_extract_xml_with_file_fallback_prefers_file() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("file.xml");
-        fs::write(&xml_path, "<from-file>content</from-file>").unwrap();
+        let workspace =
+            MemoryWorkspace::new_test().with_file("file.xml", "<from-file>content</from-file>");
 
         let response = "<from-response>other</from-response>";
-        let result = extract_xml_with_file_fallback(&xml_path, response, |_| {
-            Some("<from-extractor>fallback</from-extractor>".to_string())
-        });
+        let result = extract_xml_with_file_fallback_with_workspace(
+            &workspace,
+            Path::new("file.xml"),
+            response,
+            |_| Some("<from-extractor>fallback</from-extractor>".to_string()),
+        );
 
         assert!(result.is_some());
         assert!(result.unwrap().contains("<from-file>"));
@@ -257,17 +303,21 @@ mod tests {
 
     #[test]
     fn test_extract_xml_with_file_fallback_uses_extractor() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("missing.xml");
+        let workspace = MemoryWorkspace::new_test();
 
         let response = "response content";
-        let result = extract_xml_with_file_fallback(&xml_path, response, |content| {
-            if content == "response content" {
-                Some("<extracted>from response</extracted>".to_string())
-            } else {
-                None
-            }
-        });
+        let result = extract_xml_with_file_fallback_with_workspace(
+            &workspace,
+            Path::new("missing.xml"),
+            response,
+            |content| {
+                if content == "response content" {
+                    Some("<extracted>from response</extracted>".to_string())
+                } else {
+                    None
+                }
+            },
+        );
 
         assert!(result.is_some());
         assert!(result.unwrap().contains("<extracted>"));
@@ -275,55 +325,55 @@ mod tests {
 
     #[test]
     fn test_extract_xml_with_file_fallback_returns_none() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("missing.xml");
+        let workspace = MemoryWorkspace::new_test();
 
-        let result = extract_xml_with_file_fallback(&xml_path, "no xml here", |_| None);
+        let result = extract_xml_with_file_fallback_with_workspace(
+            &workspace,
+            Path::new("missing.xml"),
+            "no xml here",
+            |_| None,
+        );
 
         assert!(result.is_none());
     }
 
     #[test]
     fn test_archive_xml_file_moves_file() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("to_archive.xml");
-        let processed_path = dir.path().join("to_archive.xml.processed");
-        fs::write(&xml_path, "<test>content</test>").unwrap();
-        assert!(xml_path.exists());
+        let workspace =
+            MemoryWorkspace::new_test().with_file("to_archive.xml", "<test>content</test>");
 
-        archive_xml_file(&xml_path);
-        assert!(!xml_path.exists());
-        assert!(processed_path.exists());
+        archive_xml_file_with_workspace(&workspace, Path::new("to_archive.xml"));
+
+        assert!(!workspace.exists(Path::new("to_archive.xml")));
+        assert!(workspace.exists(Path::new("to_archive.xml.processed")));
         assert_eq!(
-            fs::read_to_string(&processed_path).unwrap(),
+            workspace
+                .read(Path::new("to_archive.xml.processed"))
+                .unwrap(),
             "<test>content</test>"
         );
     }
 
     #[test]
     fn test_archive_xml_file_handles_missing() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("nonexistent.xml");
+        let workspace = MemoryWorkspace::new_test();
+
         // Should not panic
-        archive_xml_file(&xml_path);
+        archive_xml_file_with_workspace(&workspace, Path::new("nonexistent.xml"));
     }
 
     #[test]
     fn test_archive_xml_file_overwrites_existing_processed() {
-        let dir = TempDir::new().unwrap();
-        let xml_path = dir.path().join("test.xml");
-        let processed_path = dir.path().join("test.xml.processed");
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("test.xml.processed", "<old>data</old>")
+            .with_file("test.xml", "<new>data</new>");
 
-        // Create old processed file
-        fs::write(&processed_path, "<old>data</old>").unwrap();
-        // Create new XML file
-        fs::write(&xml_path, "<new>data</new>").unwrap();
+        archive_xml_file_with_workspace(&workspace, Path::new("test.xml"));
 
-        archive_xml_file(&xml_path);
-        assert!(!xml_path.exists());
-        assert!(processed_path.exists());
+        assert!(!workspace.exists(Path::new("test.xml")));
+        assert!(workspace.exists(Path::new("test.xml.processed")));
         assert_eq!(
-            fs::read_to_string(&processed_path).unwrap(),
+            workspace.read(Path::new("test.xml.processed")).unwrap(),
             "<new>data</new>"
         );
     }
