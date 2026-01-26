@@ -165,7 +165,7 @@ fn test_has_valid_xml_output_handles_leading_whitespace() {
         let workspace = MemoryWorkspace::new_test().with_file(
             paths::ISSUES_XML,
             r#"  
-  <ralph-issues>
+   <ralph-issues>
 <ralph-no-issues-found>No issues</ralph-no-issues-found>
 </ralph-issues>"#,
         );
@@ -175,6 +175,53 @@ fn test_has_valid_xml_output_handles_leading_whitespace() {
         assert!(
             result,
             "XML with leading whitespace should still be detected"
+        );
+    });
+}
+
+/// Test that file-based XML extraction works even without JSON logs.
+///
+/// This is a regression test for the bug where extract_and_validate_review_output_xml
+/// would return "No review output captured" when:
+/// 1. No JSON result events in logs (e.g., opencode parser)
+/// 2. No ISSUES.md file exists
+/// 3. But valid XML exists in .agent/tmp/issues.xml
+///
+/// The fix ensures .agent/tmp/issues.xml is checked FIRST, before JSON/ISSUES.md.
+#[test]
+fn test_file_based_xml_extraction_without_json_logs() {
+    with_default_timeout(|| {
+        use ralph_workflow::files::llm_output_extraction::{
+            has_valid_xml_output, try_extract_from_file_with_workspace,
+        };
+
+        // Setup: Valid XML in issues.xml, NO JSON logs, NO ISSUES.md
+        let valid_xml = r#"<ralph-issues>
+<ralph-no-issues-found>All code conforms to the architecture requirements.</ralph-no-issues-found>
+</ralph-issues>"#;
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(paths::ISSUES_XML, valid_xml)
+            // Explicitly NO .agent/logs/ files
+            // Explicitly NO .agent/ISSUES.md
+            .with_dir(".agent/logs");
+
+        // Assert: XML file should be detected as valid
+        assert!(
+            has_valid_xml_output(&workspace, Path::new(paths::ISSUES_XML)),
+            "Should detect valid XML in issues.xml"
+        );
+
+        // Assert: Direct extraction should work
+        let extracted =
+            try_extract_from_file_with_workspace(&workspace, Path::new(paths::ISSUES_XML));
+        assert!(
+            extracted.is_some(),
+            "Should extract XML from issues.xml without JSON logs"
+        );
+        assert!(
+            extracted.unwrap().contains("<ralph-no-issues-found>"),
+            "Extracted XML should contain the no-issues-found element"
         );
     });
 }

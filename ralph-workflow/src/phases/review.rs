@@ -18,8 +18,9 @@ use crate::files::extract_issues;
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::llm_output_extraction::{
     archive_xml_file_with_workspace, extract_fix_result_xml, extract_issues_xml,
-    extract_xml_with_file_fallback_with_workspace, format_xml_for_display, validate_fix_result_xml,
-    validate_issues_xml, xml_paths, IssuesElements,
+    extract_xml_with_file_fallback_with_workspace, format_xml_for_display,
+    try_extract_from_file_with_workspace, validate_fix_result_xml, validate_issues_xml, xml_paths,
+    IssuesElements,
 };
 use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::files::{
@@ -928,25 +929,41 @@ pub fn run_review_pass(
 ///
 /// Returns a `ParseResult` indicating whether the output was successfully parsed,
 /// explicitly declared no issues, or failed to parse (with an error description).
+///
+/// # Extraction Priority
+///
+/// 1. File-based XML at `.agent/tmp/issues.xml` (preferred for agents that write XML directly)
+/// 2. JSON result events in log files
+/// 3. Legacy ISSUES.md file (fallback)
 fn extract_and_validate_review_output_xml(
     ctx: &mut PhaseContext<'_>,
     log_dir: &str,
     issues_path: &Path,
 ) -> anyhow::Result<ParseResult> {
+    // Priority 1: Check for file-based XML at .agent/tmp/issues.xml
+    // This is the preferred path for agents that write XML directly (e.g., opencode parser)
+    if let Some(xml_content) =
+        try_extract_from_file_with_workspace(ctx.workspace, Path::new(xml_paths::ISSUES_XML))
+    {
+        ctx.logger
+            .info("Found XML in .agent/tmp/issues.xml (file-based mode)");
+        return validate_and_process_issues_xml(ctx, &xml_content, issues_path);
+    }
+
+    // Priority 2: Try JSON log extraction
     let extraction = extract_issues(ctx.workspace, Path::new(log_dir))?;
 
-    // First, try to get content from extraction or legacy file
     let raw_content = if let Some(content) = extraction.raw_content {
         content
     } else {
-        // JSON extraction failed - check for legacy agent-written file
+        // JSON extraction failed - check for legacy agent-written ISSUES.md
         if ctx.config.verbosity.is_debug() {
             ctx.logger
                 .info("No JSON result event found in reviewer logs");
             log_extraction_diagnostics(ctx.logger, ctx.workspace, log_dir);
         }
 
-        // Check if agent wrote the file directly (legacy fallback)
+        // Priority 3: Check for legacy agent-written ISSUES.md
         if ctx.workspace.exists(issues_path) {
             if let Ok(content) = ctx.workspace.read(issues_path) {
                 if !content.trim().is_empty() {
@@ -966,20 +983,17 @@ fn extract_and_validate_review_output_xml(
                 ));
             }
         } else {
+            // All three sources failed
             return Ok(ParseResult::ParseFailed(
-                "No review output captured. The agent did not write ISSUES.md and no JSON result was found in logs."
+                "No review output captured. Agent did not write to .agent/tmp/issues.xml, \
+                 no JSON result found in logs, and no ISSUES.md file exists."
                     .to_string(),
             ));
         }
     };
 
-    // Try file-based extraction first - allows agents to write XML to .agent/tmp/issues.xml
-    let xml_content = match extract_xml_with_file_fallback_with_workspace(
-        ctx.workspace,
-        Path::new(xml_paths::ISSUES_XML),
-        &raw_content,
-        extract_issues_xml,
-    ) {
+    // Extract XML from raw content (handles embedded XML in text)
+    let xml_content = match extract_issues_xml(&raw_content) {
         Some(xml) => xml,
         None => {
             // No XML found - assume entire output is XML and validate to get specific error
@@ -1006,13 +1020,22 @@ fn extract_and_validate_review_output_xml(
         }
     };
 
+    validate_and_process_issues_xml(ctx, &xml_content, issues_path)
+}
+
+/// Helper to validate XML and process the result for issues extraction.
+fn validate_and_process_issues_xml(
+    ctx: &mut PhaseContext<'_>,
+    xml_content: &str,
+    issues_path: &Path,
+) -> anyhow::Result<ParseResult> {
     // Validate the extracted XML against XSD
-    let validated: Result<IssuesElements, XsdValidationError> = validate_issues_xml(&xml_content);
+    let validated: Result<IssuesElements, XsdValidationError> = validate_issues_xml(xml_content);
 
     match validated {
         Ok(elements) => {
             // Write the validated XML to ISSUES.md
-            ctx.workspace.write(issues_path, &xml_content)?;
+            ctx.workspace.write(issues_path, xml_content)?;
 
             // Archive the XML file for debugging (moves to .xml.processed)
             archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::ISSUES_XML));
