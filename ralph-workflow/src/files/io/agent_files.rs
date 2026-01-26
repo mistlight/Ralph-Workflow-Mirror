@@ -531,15 +531,13 @@ pub fn setup_xsd_schemas_with_workspace(workspace: &dyn Workspace) -> io::Result
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // =========================================================================
     // Workspace-based tests (for testability without real filesystem)
     // =========================================================================
 
     #[cfg(feature = "test-utils")]
     mod workspace_tests {
-        use super::*;
+        use super::super::*;
         use crate::workspace::MemoryWorkspace;
 
         #[test]

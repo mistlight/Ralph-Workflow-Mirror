@@ -336,7 +336,7 @@ impl CheckpointBuilder {
 
         // Capture and populate file system state
         let executor_ref = self.executor.as_ref().map(|e| e.as_ref());
-        checkpoint.file_system_state = Some(FileSystemState::capture_with_optional_executor(
+        checkpoint.file_system_state = Some(FileSystemState::capture_with_optional_executor_impl(
             executor_ref,
         ));
 

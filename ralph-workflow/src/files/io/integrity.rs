@@ -30,7 +30,11 @@ pub const MAX_AGENT_FILE_SIZE: u64 = 10 * 1024 * 1024;
 /// On Unix systems, the temp file is created with mode 0600 (owner read/write
 /// only) to prevent other users from reading sensitive content before the
 /// atomic rename completes.
-pub fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
+///
+/// # Note
+///
+/// This is a crate-internal function. For public API, use `write_file_atomic_with_workspace`.
+pub(crate) fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -86,7 +90,11 @@ pub fn write_file_atomic_with_workspace(
 ///
 /// Returns `Ok(true)` if the file appears valid, `Ok(false)` if corrupt, or `Err`
 /// on access error.
-pub fn verify_file_not_corrupted(path: &Path) -> io::Result<bool> {
+///
+/// # Note
+///
+/// This is a crate-internal function. For public API, use `verify_file_not_corrupted_with_workspace`.
+pub(crate) fn verify_file_not_corrupted(path: &Path) -> io::Result<bool> {
     let metadata = fs::metadata(path)?;
 
     if metadata.len() == 0 || metadata.len() > MAX_AGENT_FILE_SIZE {
@@ -139,10 +147,10 @@ pub fn verify_file_not_corrupted_with_workspace(
 /// - Directory exists and is writable
 /// - No obviously stale lock files (best-effort)
 ///
-/// # Deprecated
+/// # Note
 ///
-/// This function uses absolute paths. Prefer `check_filesystem_ready_with_workspace` for new code.
-pub fn check_filesystem_ready(path: &Path) -> io::Result<()> {
+/// This is a crate-internal function. For public API, use `check_filesystem_ready_with_workspace`.
+pub(crate) fn check_filesystem_ready(path: &Path) -> io::Result<()> {
     if !path.exists() {
         fs::create_dir_all(path)?;
     }
@@ -261,7 +269,13 @@ pub fn check_filesystem_ready_with_workspace(
 ///     Err(e) => return Err(e),
 /// }
 /// ```
-pub fn check_xml_file_writable(xml_path: &Path, force_cleanup: bool) -> io::Result<bool> {
+///
+/// Check if a specific XML file is writable and clean up if locked.
+///
+/// # Note
+///
+/// This is a crate-internal function. For public API, use `check_xml_file_writable_with_workspace`.
+pub(crate) fn check_xml_file_writable(xml_path: &Path, force_cleanup: bool) -> io::Result<bool> {
     // If file doesn't exist, it's writable (we can create it)
     if !xml_path.exists() {
         return Ok(false);
@@ -316,69 +330,6 @@ pub fn check_xml_file_writable(xml_path: &Path, force_cleanup: bool) -> io::Resu
     }
 }
 
-/// Check if a specific XML file is writable before agent retry.
-///
-/// This is a convenience function meant to be called before XSD retries
-/// to detect and clean up locked files from previous agent runs.
-///
-/// # Arguments
-///
-/// * `xml_path` - Path to the XML file (e.g., ".agent/tmp/issues.xml")
-/// * `logger` - Logger for diagnostic messages
-///
-/// # Returns
-///
-/// `Ok(())` if file is writable or was successfully cleaned up.
-/// `Err(...)` if cleanup failed.
-pub fn check_and_cleanup_xml_before_retry(
-    xml_path: &Path,
-    logger: &crate::logger::Logger,
-) -> io::Result<()> {
-    // Try to detect if file is locked
-    match check_xml_file_writable(xml_path, false) {
-        Ok(true) => {
-            // File exists and is writable - all good
-            Ok(())
-        }
-        Ok(false) => {
-            // File doesn't exist yet - all good
-            Ok(())
-        }
-        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
-            // File is locked - attempt cleanup
-            logger.warn(&format!(
-                "XML file {} may be locked: {}. Attempting cleanup...",
-                xml_path.display(),
-                e
-            ));
-
-            // Force cleanup
-            match check_xml_file_writable(xml_path, true) {
-                Ok(_) => {
-                    logger.info(&format!(
-                        "Successfully cleaned up locked file: {}",
-                        xml_path.display()
-                    ));
-                    Ok(())
-                }
-                Err(cleanup_err) => {
-                    logger.error(&format!(
-                        "Failed to cleanup locked file {}: {}",
-                        xml_path.display(),
-                        cleanup_err
-                    ));
-                    Err(cleanup_err)
-                }
-            }
-        }
-        Err(e) => {
-            // Other error
-            logger.warn(&format!("Error checking {}: {}", xml_path.display(), e));
-            Err(e)
-        }
-    }
-}
-
 /// Check and clean up all XML files in .agent/tmp/ directory.
 ///
 /// This is useful to run before starting an agent to ensure no stale
@@ -393,10 +344,10 @@ pub fn check_and_cleanup_xml_before_retry(
 ///
 /// A summary of what was found and cleaned up.
 ///
-/// # Deprecated
+/// # Note
 ///
-/// This function uses absolute paths. Prefer `cleanup_stale_xml_files_with_workspace` for new code.
-pub fn cleanup_stale_xml_files(tmp_dir: &Path, force_cleanup: bool) -> io::Result<String> {
+/// This is a crate-internal function. For public API, use `cleanup_stale_xml_files_with_workspace`.
+pub(crate) fn cleanup_stale_xml_files(tmp_dir: &Path, force_cleanup: bool) -> io::Result<String> {
     let mut report = Vec::new();
     let mut cleaned = 0;
     let mut locked = 0;
@@ -488,7 +439,7 @@ pub fn check_xml_file_writable_with_workspace(
 
 /// Check if a specific XML file is writable before agent retry using workspace.
 ///
-/// This is the workspace-based version of `check_and_cleanup_xml_before_retry`.
+/// This function detects and cleans up locked files from previous agent runs.
 ///
 /// # Arguments
 ///
@@ -599,15 +550,13 @@ pub fn cleanup_stale_xml_files_with_workspace(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // =========================================================================
     // Workspace-based tests (for testability without real filesystem)
     // =========================================================================
 
     #[cfg(feature = "test-utils")]
     mod workspace_tests {
-        use super::*;
+        use super::super::*;
         use crate::workspace::{MemoryWorkspace, Workspace};
         use std::path::Path;
 

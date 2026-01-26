@@ -39,10 +39,9 @@ pub use agent_files::{
 };
 
 pub use integrity::{
-    check_and_cleanup_xml_before_retry, check_and_cleanup_xml_before_retry_with_workspace,
-    check_filesystem_ready_with_workspace, check_xml_file_writable_with_workspace,
-    cleanup_stale_xml_files_with_workspace, verify_file_not_corrupted_with_workspace,
-    write_file_atomic_with_workspace,
+    check_and_cleanup_xml_before_retry_with_workspace, check_filesystem_ready_with_workspace,
+    check_xml_file_writable_with_workspace, cleanup_stale_xml_files_with_workspace,
+    verify_file_not_corrupted_with_workspace, write_file_atomic_with_workspace,
 };
 
 pub use backup::{

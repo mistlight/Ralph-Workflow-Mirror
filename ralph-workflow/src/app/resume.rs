@@ -686,7 +686,7 @@ fn validate_file_system_state(
     logger: &Logger,
     strategy: crate::checkpoint::recovery::RecoveryStrategy,
 ) -> ValidationOutcome {
-    let errors = file_system_state.validate();
+    let errors = file_system_state.validate_with_executor_impl(None);
 
     if errors.is_empty() {
         logger.info("File system state validation passed.");

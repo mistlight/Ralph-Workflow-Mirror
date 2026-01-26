@@ -145,6 +145,25 @@ The ONLY acceptable uses of `std::fs` are:
 
 ---
 
+## Absolute rule: no `#[allow(dead_code)]`
+
+This repository **does not permit** suppressing dead code warnings. The same goes for deprecated code
+
+You must **never** introduce `#[allow(dead_code)]`, and you must remove any existing
+occurrences if encountered.
+
+Dead code must be handled by one of the following:
+- Making it used
+- Implement the feature that you will use it on, but just implement it **now** (Remember you have no time constraints or time limit, implement everything fully)
+- Gating it behind a feature flag
+- Moving it to `examples/` or `benches/`
+- Deleting it
+
+Do **not** replace it with other blanket `allow(...)` attributes unless explicitly instructed.
+
+---
+
+
 # DO NOT OVERRIDE UNLESS THE PROMPT IS ABOUT CLIPPY
 ## Build & test expectations
 
