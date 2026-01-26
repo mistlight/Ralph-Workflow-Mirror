@@ -171,6 +171,33 @@ pub trait Workspace: Send + Sync {
     /// For testing, this returns entries from the in-memory filesystem.
     fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>>;
 
+    /// Rename/move a file from one path to another relative to the repository root.
+    ///
+    /// This is used for backup rotation where files are moved to new names.
+    /// Returns an error if the source file doesn't exist.
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
+
+    /// Set a file to read-only permissions.
+    ///
+    /// This is a best-effort operation for protecting files like PROMPT.md backups.
+    /// On Unix, sets permissions to 0o444.
+    /// On Windows, sets the readonly flag.
+    /// In-memory implementations may no-op since permissions aren't relevant for testing.
+    ///
+    /// Returns Ok(()) on success or if the file doesn't exist (nothing to protect).
+    /// Returns Err only if the file exists but permissions cannot be changed.
+    fn set_readonly(&self, relative: &Path) -> io::Result<()>;
+
+    /// Set a file to writable permissions.
+    ///
+    /// Reverses the effect of `set_readonly`.
+    /// On Unix, sets permissions to 0o644.
+    /// On Windows, clears the readonly flag.
+    /// In-memory implementations may no-op since permissions aren't relevant for testing.
+    ///
+    /// Returns Ok(()) on success or if the file doesn't exist.
+    fn set_writable(&self, relative: &Path) -> io::Result<()>;
+
     // =========================================================================
     // Path resolution (default implementations)
     // =========================================================================
@@ -404,6 +431,56 @@ impl Workspace for WorkspaceFs {
             }
         }
         Ok(entries)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        fs::rename(self.root.join(from), self.root.join(to))
+    }
+
+    fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+        let path = self.root.join(relative);
+        if !path.exists() {
+            return Ok(());
+        }
+
+        let metadata = fs::metadata(&path)?;
+        let mut perms = metadata.permissions();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o444);
+        }
+
+        #[cfg(windows)]
+        {
+            perms.set_readonly(true);
+        }
+
+        fs::set_permissions(path, perms)
+    }
+
+    fn set_writable(&self, relative: &Path) -> io::Result<()> {
+        let path = self.root.join(relative);
+        if !path.exists() {
+            return Ok(());
+        }
+
+        let metadata = fs::metadata(&path)?;
+        let mut perms = metadata.permissions();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o644);
+        }
+
+        #[cfg(windows)]
+        {
+            perms.set_readonly(false);
+        }
+
+        fs::set_permissions(path, perms)
     }
 }
 
@@ -800,6 +877,38 @@ impl Workspace for MemoryWorkspace {
 
         Ok(entries)
     }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        let mut files = self.files.write().unwrap();
+        if let Some(file) = files.remove(from) {
+            // Create parent directories for destination
+            if let Some(parent) = to.parent() {
+                let mut dirs = self.directories.write().unwrap();
+                let mut current = PathBuf::new();
+                for component in parent.components() {
+                    current.push(component);
+                    dirs.insert(current.clone());
+                }
+            }
+            files.insert(to.to_path_buf(), file);
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("File not found: {}", from.display()),
+            ))
+        }
+    }
+
+    fn set_readonly(&self, _relative: &Path) -> io::Result<()> {
+        // No-op for in-memory workspace - permissions aren't relevant for testing
+        Ok(())
+    }
+
+    fn set_writable(&self, _relative: &Path) -> io::Result<()> {
+        // No-op for in-memory workspace - permissions aren't relevant for testing
+        Ok(())
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -987,5 +1096,52 @@ mod tests {
         assert!(ws.is_dir(Path::new("a/b")));
         assert!(ws.is_dir(Path::new("a/b/c")));
         assert!(ws.is_file(Path::new("a/b/c/file.txt")));
+    }
+
+    #[test]
+    fn test_memory_workspace_rename() {
+        let ws = MemoryWorkspace::new_test().with_file("old.txt", "content");
+
+        ws.rename(Path::new("old.txt"), Path::new("new.txt"))
+            .unwrap();
+
+        assert!(!ws.exists(Path::new("old.txt")));
+        assert!(ws.exists(Path::new("new.txt")));
+        assert_eq!(ws.read(Path::new("new.txt")).unwrap(), "content");
+    }
+
+    #[test]
+    fn test_memory_workspace_rename_creates_parent_dirs() {
+        let ws = MemoryWorkspace::new_test().with_file("old.txt", "content");
+
+        ws.rename(Path::new("old.txt"), Path::new("a/b/new.txt"))
+            .unwrap();
+
+        assert!(!ws.exists(Path::new("old.txt")));
+        assert!(ws.is_dir(Path::new("a")));
+        assert!(ws.is_dir(Path::new("a/b")));
+        assert!(ws.exists(Path::new("a/b/new.txt")));
+    }
+
+    #[test]
+    fn test_memory_workspace_rename_nonexistent_fails() {
+        let ws = MemoryWorkspace::new_test();
+
+        let result = ws.rename(Path::new("nonexistent.txt"), Path::new("new.txt"));
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn test_memory_workspace_set_readonly_noop() {
+        // In-memory workspace doesn't track permissions, but should succeed
+        let ws = MemoryWorkspace::new_test().with_file("test.txt", "content");
+
+        // Should succeed (no-op)
+        ws.set_readonly(Path::new("test.txt")).unwrap();
+        ws.set_writable(Path::new("test.txt")).unwrap();
+
+        // File should still be readable
+        assert_eq!(ws.read(Path::new("test.txt")).unwrap(), "content");
     }
 }

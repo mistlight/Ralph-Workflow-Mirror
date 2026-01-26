@@ -36,7 +36,11 @@ pub use agent_files::{
 
 pub use integrity::check_and_cleanup_xml_before_retry;
 
-pub use backup::{create_prompt_backup, make_prompt_read_only, make_prompt_writable};
+pub use backup::{
+    create_prompt_backup, create_prompt_backup_with_workspace, make_prompt_read_only,
+    make_prompt_read_only_with_workspace, make_prompt_writable,
+    make_prompt_writable_with_workspace,
+};
 
 pub use context::{
     clean_context_for_reviewer, delete_issues_file_for_isolation, reset_context_for_isolation,

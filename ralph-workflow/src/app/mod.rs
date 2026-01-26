@@ -47,7 +47,8 @@ use crate::cli::{
 use crate::executor::ProcessExecutor;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::files::{
-    create_prompt_backup, make_prompt_read_only, update_status, validate_prompt_md_with_workspace,
+    create_prompt_backup_with_workspace, make_prompt_read_only_with_workspace, update_status,
+    validate_prompt_md_with_workspace,
 };
 use crate::git_helpers::{
     abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
@@ -1615,7 +1616,7 @@ fn validate_prompt_and_setup_backup(ctx: &PipelineContext) -> anyhow::Result<()>
     }
 
     // Create a backup of PROMPT.md to protect against accidental deletion.
-    match create_prompt_backup() {
+    match create_prompt_backup_with_workspace(&*ctx.workspace) {
         Ok(None) => {}
         Ok(Some(warning)) => {
             ctx.logger.warn(&format!(
@@ -1630,7 +1631,7 @@ fn validate_prompt_and_setup_backup(ctx: &PipelineContext) -> anyhow::Result<()>
     }
 
     // Make PROMPT.md read-only to protect against accidental deletion.
-    match make_prompt_read_only() {
+    match make_prompt_read_only_with_workspace(&*ctx.workspace) {
         None => {}
         Some(warning) => {
             ctx.logger.warn(&format!("{warning}. Continuing anyway."));
