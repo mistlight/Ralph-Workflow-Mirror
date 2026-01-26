@@ -2,7 +2,7 @@
 //!
 //! This module provides a trait-based abstraction for executing external processes,
 //! allowing production code to use real processes and test code to use mocks.
-//! This follows the same pattern as GitOps trait for dependency injection.
+//! This follows the same pattern as AppEffectHandler for dependency injection.
 //!
 //! # Purpose
 //!

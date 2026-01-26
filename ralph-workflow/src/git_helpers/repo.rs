@@ -610,8 +610,8 @@ fn git_commit_impl(
 ///
 /// # Note
 ///
-/// This function is part of the test infrastructure (used by `RealGit` which
-/// implements the `GitOps` trait for integration testing).
+/// This function is part of the test infrastructure (used by `RealAppEffectHandler`
+/// to implement the `AppEffect::GitDiffFrom` effect).
 #[cfg(any(test, feature = "test-utils"))]
 pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
@@ -654,8 +654,8 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
 /// This is a helper function for `get_git_diff_from_start` that handles the
 /// case of a repository with no commits yet.
 ///
-/// This function is part of the test infrastructure (used by `RealGit` which
-/// implements the `GitOps` trait for integration testing).
+/// This function is part of the test infrastructure (used by `RealAppEffectHandler`
+/// to implement the `AppEffect::GitDiffFromStart` effect).
 #[cfg(any(test, feature = "test-utils"))]
 fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
     let mut diff_opts = git2::DiffOptions::new();
@@ -688,8 +688,8 @@ fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
 /// - The diff cannot be generated
 /// - The starting commit file exists but is invalid
 ///
-/// This function is part of the test infrastructure (used by `RealGit` which
-/// implements the `GitOps` trait for integration testing).
+/// This function is part of the test infrastructure (used by `RealAppEffectHandler`
+/// to implement the `AppEffect::GitDiffFromStart` effect).
 #[cfg(any(test, feature = "test-utils"))]
 pub fn get_git_diff_from_start() -> io::Result<String> {
     use crate::git_helpers::start_commit::{load_start_point, save_start_commit, StartPoint};

@@ -1,6 +1,6 @@
 //! Integration tests for test trait exports.
 //!
-//! These tests verify that test traits like MockGit and MemoryWorkspace
+//! These tests verify that test traits like MockAppEffectHandler and MemoryWorkspace
 //! are properly exported from the ralph-workflow crate and can be used
 //! in integration tests.
 //!
@@ -15,94 +15,153 @@
 //! - Tests are deterministic and isolated
 
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::git_helpers::{CommitResult, GitOps, MockGit, OpsRebaseResult};
+use ralph_workflow::app::effect::{AppEffect, AppEffectHandler, AppEffectResult};
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
 use std::path::{Path, PathBuf};
 
-/// Test that MockGit can be created and used via GitOps trait.
+// ============================================================================
+// MockAppEffectHandler tests (replaces MockGit tests)
+// ============================================================================
+
+/// Test that MockAppEffectHandler can be created and used.
 ///
-/// This verifies that when a MockGit instance is created, it can be used
-/// through the GitOps trait interface to perform git operations.
+/// This verifies that when a MockAppEffectHandler instance is created, it can be used
+/// to execute effects and capture them for assertion.
 #[test]
-fn test_mock_git_creation() {
+fn test_mock_app_effect_handler_creation() {
     with_default_timeout(|| {
-        let mock = MockGit::new();
-        assert!(GitOps::require_repo(&mock).is_ok());
+        let mut handler = MockAppEffectHandler::new();
+        let result = handler.execute(AppEffect::GitRequireRepo);
+        assert!(matches!(result, AppEffectResult::Ok));
     });
 }
 
-/// Test that MockGit builder pattern works.
+/// Test that MockAppEffectHandler builder pattern works.
 ///
 /// This verifies that when the builder methods are chained, they configure
-/// the MockGit instance with the specified return values for git operations.
+/// the mock handler with the specified return values for effects.
 #[test]
-fn test_mock_git_builder() {
+fn test_mock_app_effect_handler_builder() {
     with_default_timeout(|| {
-        let mock = MockGit::new()
-            .with_repo_root(Ok(PathBuf::from("/test/repo")))
-            .with_diff(Ok("test diff".to_string()))
-            .with_snapshot(Ok("M file.txt".to_string()));
+        let expected_oid = "abc123def456".repeat(4)[..40].to_string();
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid(&expected_oid)
+            .with_file(PathBuf::from("test.txt"), "content");
 
-        assert_eq!(
-            GitOps::repo_root(&mock).unwrap(),
-            PathBuf::from("/test/repo")
-        );
-        assert_eq!(GitOps::diff(&mock).unwrap(), "test diff");
-        assert_eq!(GitOps::snapshot(&mock).unwrap(), "M file.txt");
+        // Test GitGetHeadOid
+        let result = handler.execute(AppEffect::GitGetHeadOid);
+        assert!(matches!(result, AppEffectResult::String(ref s) if s == &expected_oid));
+
+        // Test file exists
+        let result = handler.execute(AppEffect::PathExists {
+            path: PathBuf::from("test.txt"),
+        });
+        assert!(matches!(result, AppEffectResult::Bool(true)));
     });
 }
 
-/// Test that MockGit implements GitOps trait.
+/// Test that MockAppEffectHandler captures effects.
 ///
-/// This verifies that when MockGit is used through the GitOps trait,
-/// it correctly executes trait methods and returns configured results.
+/// This verifies that when effects are executed on MockAppEffectHandler,
+/// they are captured and can be inspected for testing assertions.
 #[test]
-fn test_mock_git_implements_git_ops() {
+fn test_mock_app_effect_handler_captures_effects() {
     with_default_timeout(|| {
-        let mock = MockGit::new()
-            .with_commit(Ok(CommitResult::Success("abc123".to_string())))
-            .with_rebase_onto(Ok(OpsRebaseResult::Success));
+        let mut handler = MockAppEffectHandler::new();
 
-        // Test via GitOps trait
-        let commit_result = GitOps::commit(&mock, "test message", None, None, None).unwrap();
-        assert_eq!(commit_result, CommitResult::Success("abc123".to_string()));
+        handler.execute(AppEffect::GitRequireRepo);
+        handler.execute(AppEffect::GitGetRepoRoot);
+        handler.execute(AppEffect::GitDiff);
 
-        let rebase_result = GitOps::rebase_onto(&mock, "main").unwrap();
-        assert_eq!(rebase_result, OpsRebaseResult::Success);
+        let captured = handler.captured();
+        assert_eq!(captured.len(), 3);
+        assert!(captured
+            .iter()
+            .any(|e| matches!(e, AppEffect::GitRequireRepo)));
+        assert!(captured
+            .iter()
+            .any(|e| matches!(e, AppEffect::GitGetRepoRoot)));
+        assert!(captured.iter().any(|e| matches!(e, AppEffect::GitDiff)));
     });
 }
 
-/// Test that MockGit call capture works.
+/// Test that MockAppEffectHandler was_executed works.
 ///
-/// This verifies that when git operations are called on MockGit,
-/// the call counts and arguments are tracked for assertion.
+/// This verifies that the was_executed method correctly identifies
+/// whether a specific effect was captured.
 #[test]
-fn test_mock_git_call_capture() {
+fn test_mock_app_effect_handler_was_executed() {
     with_default_timeout(|| {
-        let mock = MockGit::new();
+        let mut handler = MockAppEffectHandler::new();
 
-        let _ = GitOps::diff(&mock);
-        let _ = GitOps::diff(&mock);
-        let _ = GitOps::commit(&mock, "first", None, None, None);
-        let _ = GitOps::commit(&mock, "second", None, None, None);
+        handler.execute(AppEffect::GitRequireRepo);
+        handler.execute(AppEffect::GitDiff);
 
-        assert_eq!(mock.diff_count(), 2);
-        assert_eq!(mock.commit_calls().len(), 2);
-        assert_eq!(mock.commit_calls()[0], "first");
-        assert_eq!(mock.commit_calls()[1], "second");
+        assert!(handler.was_executed(&AppEffect::GitRequireRepo));
+        assert!(handler.was_executed(&AppEffect::GitDiff));
+        assert!(!handler.was_executed(&AppEffect::GitSnapshot));
     });
 }
 
-/// Test that mock error variants work.
+/// Test that MockAppEffectHandler without_repo returns error.
 ///
-/// This verifies that when mock instances are created in error mode,
-/// they return errors for all operations to test error handling.
+/// This verifies that when the mock is configured without a repo,
+/// GitRequireRepo returns an error.
 #[test]
-fn test_mock_error_variants() {
+fn test_mock_app_effect_handler_without_repo() {
     with_default_timeout(|| {
-        let mock_git = MockGit::new_error();
-        assert!(GitOps::repo_root(&mock_git).is_err());
-        assert!(GitOps::diff(&mock_git).is_err());
+        let mut handler = MockAppEffectHandler::new().without_repo();
+        let result = handler.execute(AppEffect::GitRequireRepo);
+        assert!(matches!(result, AppEffectResult::Error(_)));
+    });
+}
+
+/// Test that MockAppEffectHandler filesystem operations work.
+///
+/// This verifies that the mock filesystem correctly handles
+/// write, read, and exists operations.
+#[test]
+fn test_mock_app_effect_handler_filesystem() {
+    with_default_timeout(|| {
+        let mut handler = MockAppEffectHandler::new();
+
+        // Write a file
+        let result = handler.execute(AppEffect::WriteFile {
+            path: PathBuf::from(".agent/test.txt"),
+            content: "test content".to_string(),
+        });
+        assert!(matches!(result, AppEffectResult::Ok));
+
+        // Read it back
+        let result = handler.execute(AppEffect::ReadFile {
+            path: PathBuf::from(".agent/test.txt"),
+        });
+        assert!(matches!(result, AppEffectResult::String(ref s) if s == "test content"));
+
+        // Check existence
+        assert!(handler.file_exists(&PathBuf::from(".agent/test.txt")));
+        assert!(!handler.file_exists(&PathBuf::from(".agent/other.txt")));
+    });
+}
+
+/// Test that MockAppEffectHandler GitSaveStartCommit writes to mock filesystem.
+///
+/// This verifies that when GitSaveStartCommit is executed, it writes
+/// the HEAD OID to .agent/start_commit in the mock filesystem.
+#[test]
+fn test_mock_app_effect_handler_save_start_commit() {
+    with_default_timeout(|| {
+        let expected_oid = "a".repeat(40);
+        let mut handler = MockAppEffectHandler::new().with_head_oid(&expected_oid);
+
+        let result = handler.execute(AppEffect::GitSaveStartCommit);
+        assert!(matches!(result, AppEffectResult::String(ref s) if s == &expected_oid));
+
+        // Verify file was written
+        let start_commit_path = PathBuf::from(".agent/start_commit");
+        assert!(handler.file_exists(&start_commit_path));
+        assert_eq!(handler.get_file(&start_commit_path).unwrap(), expected_oid);
     });
 }
 

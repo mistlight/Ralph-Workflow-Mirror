@@ -384,8 +384,8 @@ impl AppEffectHandler for MockAppEffectHandler {
                 let oid = self.head_oid.borrow().clone();
                 self.files
                     .borrow_mut()
-                    .insert(PathBuf::from(".agent/start_commit"), oid);
-                AppEffectResult::Ok
+                    .insert(PathBuf::from(".agent/start_commit"), oid.clone());
+                AppEffectResult::String(oid)
             }
 
             AppEffect::GitResetStartCommit => {
@@ -571,7 +571,7 @@ mod tests {
         let mut handler = MockAppEffectHandler::new().with_head_oid("abc1234");
 
         let result = handler.execute(AppEffect::GitSaveStartCommit);
-        assert!(matches!(result, AppEffectResult::Ok));
+        assert!(matches!(result, AppEffectResult::String(ref s) if s == "abc1234"));
 
         assert_eq!(
             handler.get_file(&PathBuf::from(".agent/start_commit")),

@@ -32,12 +32,6 @@ mod review_baseline;
 mod start_commit;
 mod wrapper;
 
-#[cfg(any(test, feature = "test-utils"))]
-pub mod ops;
-
-#[cfg(any(test, feature = "test-utils"))]
-pub mod test_trait;
-
 pub use branch::{get_default_branch, is_main_or_master_branch};
 #[cfg(any(test, feature = "test-utils"))]
 pub use branch::{get_default_branch_at, is_main_or_master_branch_at};
@@ -85,15 +79,6 @@ pub use wrapper::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
     start_agent_phase, GitHelpers,
 };
-
-#[cfg(any(test, feature = "test-utils"))]
-pub use ops::{CommitResult, GitOps, RealGit};
-
-#[cfg(any(test, feature = "test-utils"))]
-pub use ops::RebaseResult as OpsRebaseResult;
-
-#[cfg(any(test, feature = "test-utils"))]
-pub use test_trait::MockGit;
 
 // Re-export checkpoint and recovery action for tests only
 #[cfg(any(test, feature = "test-utils"))]

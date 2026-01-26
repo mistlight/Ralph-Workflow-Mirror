@@ -353,7 +353,7 @@ fn ralph_diff_shows_correct_range() {
         // Verify the diff from start_commit includes only the new changes
         // by using git2 directly with the repo path (not relying on CWD)
         // Note: run_ralph_cli_with_config restores CWD after completion, so we
-        // cannot use GitOps::diff_from (which discovers repo from CWD)
+        // use git2 directly here instead of git_helpers functions
         let oid = git2::Oid::from_str(&start_commit).expect("Invalid start commit OID");
         let start_commit_obj = repo.find_commit(oid).expect("Failed to find start commit");
         let start_tree = start_commit_obj.tree().expect("Failed to get start tree");

@@ -35,7 +35,7 @@
 //! The `AgentExecutor` trait only handled agent spawning, while the new `ProcessExecutor`
 //! trait provides a unified interface for ALL external process execution (git commands,
 //! clipboard operations, and agent spawning). This follows the same dependency injection
-//! pattern as `GitOps` trait.
+//! pattern as the `AppEffectHandler` trait.
 //!
 //! **Status:** This module is retained for backward compatibility during migration.
 //! Do not add new code using this module.
