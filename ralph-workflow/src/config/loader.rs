@@ -589,12 +589,11 @@ pub fn unified_config_exists() -> bool {
 mod tests {
     use super::*;
     use crate::config::path_resolver::MemoryConfigEnvironment;
+    use serial_test::serial;
     use std::path::Path;
-    use std::sync::Mutex;
-
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
+    #[serial]
     fn test_load_config_with_env_from_custom_path() {
         let toml_str = r#"
 [general]
@@ -617,6 +616,7 @@ review_depth = "standard"
     }
 
     #[test]
+    #[serial]
     fn test_load_config_with_env_missing_file() {
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml");
@@ -632,6 +632,7 @@ review_depth = "standard"
     }
 
     #[test]
+    #[serial]
     fn test_load_config_with_env_from_default_path() {
         let toml_str = r#"
 [general]
@@ -664,9 +665,8 @@ review_depth = "standard"
     }
 
     #[test]
+    #[serial]
     fn test_apply_env_overrides() {
-        let _guard = ENV_MUTEX.lock().unwrap();
-
         // Set some env vars
         env::set_var("RALPH_DEVELOPER_ITERS", "10");
         env::set_var("RALPH_ISOLATION_MODE", "false");
@@ -683,9 +683,8 @@ review_depth = "standard"
     }
 
     #[test]
+    #[serial]
     fn test_unified_config_exists_respects_xdg_config_home() {
-        let _guard = ENV_MUTEX.lock().unwrap();
-
         let dir = tempfile::tempdir().unwrap();
         env::set_var("XDG_CONFIG_HOME", dir.path());
 
@@ -702,9 +701,8 @@ review_depth = "standard"
     }
 
     #[test]
+    #[serial]
     fn test_load_config_returns_defaults_without_file() {
-        let _guard = ENV_MUTEX.lock().unwrap();
-
         // Clear env vars that might affect the test
         env::remove_var("RALPH_DEVELOPER_AGENT");
         env::remove_var("RALPH_REVIEWER_AGENT");
