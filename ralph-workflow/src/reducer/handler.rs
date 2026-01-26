@@ -486,8 +486,6 @@ impl MainEffectHandler {
     }
 
     fn cleanup_context(&mut self, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
-        use crate::files::delete_plan_file;
-        use std::fs;
         use std::path::Path;
 
         ctx.logger
@@ -496,18 +494,21 @@ impl MainEffectHandler {
         let mut cleaned_count = 0;
         let mut failed_count = 0;
 
-        // Delete PLAN.md
-        if let Err(err) = delete_plan_file() {
-            ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
-            failed_count += 1;
-        } else {
-            cleaned_count += 1;
+        // Delete PLAN.md via workspace
+        let plan_path = Path::new(".agent/PLAN.md");
+        if ctx.workspace.exists(plan_path) {
+            if let Err(err) = ctx.workspace.remove(plan_path) {
+                ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
+                failed_count += 1;
+            } else {
+                cleaned_count += 1;
+            }
         }
 
-        // Delete ISSUES.md (may not exist if in isolation mode)
+        // Delete ISSUES.md (may not exist if in isolation mode) via workspace
         let issues_path = Path::new(".agent/ISSUES.md");
-        if issues_path.exists() {
-            if let Err(err) = fs::remove_file(issues_path) {
+        if ctx.workspace.exists(issues_path) {
+            if let Err(err) = ctx.workspace.remove(issues_path) {
                 ctx.logger
                     .warn(&format!("Failed to delete ISSUES.md: {err}"));
                 failed_count += 1;
@@ -516,14 +517,14 @@ impl MainEffectHandler {
             }
         }
 
-        // Delete ALL .xml files in .agent/tmp/ to prevent context pollution
+        // Delete ALL .xml files in .agent/tmp/ to prevent context pollution via workspace
         let tmp_dir = Path::new(".agent/tmp");
-        if tmp_dir.exists() {
-            if let Ok(entries) = fs::read_dir(tmp_dir) {
-                for entry in entries.flatten() {
+        if ctx.workspace.exists(tmp_dir) {
+            if let Ok(entries) = ctx.workspace.read_dir(tmp_dir) {
+                for entry in entries {
                     let path = entry.path();
                     if path.extension().and_then(|s| s.to_str()) == Some("xml") {
-                        if let Err(err) = fs::remove_file(&path) {
+                        if let Err(err) = ctx.workspace.remove(path) {
                             ctx.logger.warn(&format!(
                                 "Failed to delete {}: {}",
                                 path.display(),
@@ -659,6 +660,97 @@ mod tests {
             matches!(event, PipelineEvent::FinalizingStarted),
             "ValidateFinalState should return FinalizingStarted to trigger finalization phase, got: {:?}",
             event
+        );
+    }
+
+    /// Test that cleanup_context uses workspace for file operations.
+    ///
+    /// This verifies that cleanup_context:
+    /// 1. Deletes PLAN.md via workspace
+    /// 2. Deletes ISSUES.md via workspace  
+    /// 3. Deletes .xml files in .agent/tmp/ via workspace
+    #[test]
+    fn test_cleanup_context_uses_workspace() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        use std::path::{Path, PathBuf};
+
+        // Create workspace with files that should be cleaned
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/PLAN.md", "# Plan")
+            .with_file(".agent/ISSUES.md", "# Issues")
+            .with_dir(".agent/tmp")
+            .with_file(".agent/tmp/issues.xml", "<issues/>")
+            .with_file(".agent/tmp/development_result.xml", "<result/>")
+            .with_file(".agent/tmp/keep.txt", "not xml");
+
+        // Set up all the context fields
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
+            as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+        let repo_root = PathBuf::from("/test/repo");
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "test-dev",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor_arc,
+            executor_arc: std::sync::Arc::clone(&executor_arc),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        // Create a real handler and call cleanup_context
+        let state = PipelineState::initial(1, 0);
+        let mut handler = super::MainEffectHandler::new(state);
+        let result = handler.cleanup_context(&mut ctx);
+
+        assert!(result.is_ok(), "cleanup_context should succeed");
+
+        // Verify files were deleted via workspace
+        assert!(
+            !workspace.exists(Path::new(".agent/PLAN.md")),
+            "PLAN.md should be deleted via workspace"
+        );
+        assert!(
+            !workspace.exists(Path::new(".agent/ISSUES.md")),
+            "ISSUES.md should be deleted via workspace"
+        );
+        assert!(
+            !workspace.exists(Path::new(".agent/tmp/issues.xml")),
+            "issues.xml should be deleted via workspace"
+        );
+        assert!(
+            !workspace.exists(Path::new(".agent/tmp/development_result.xml")),
+            "development_result.xml should be deleted via workspace"
+        );
+        // Non-xml files should remain
+        assert!(
+            workspace.exists(Path::new(".agent/tmp/keep.txt")),
+            "non-xml file should not be deleted"
         );
     }
 }
