@@ -67,6 +67,8 @@ pub use rebase_checkpoint::RebasePhase;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub use rebase_state_machine::{RebaseLock, RebaseStateMachine};
+#[cfg(any(test, feature = "test-utils"))]
+pub use repo::{get_git_diff_from_start, git_diff_from};
 pub use repo::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
     CommitResultFallback, DiffReviewContent, DiffTruncationLevel,
