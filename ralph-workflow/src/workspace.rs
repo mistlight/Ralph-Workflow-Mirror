@@ -161,6 +161,15 @@ pub trait Workspace: Send + Sync {
     /// Remove a file if it exists, silently succeeding if it doesn't.
     fn remove_if_exists(&self, relative: &Path) -> io::Result<()>;
 
+    /// Remove a directory and all its contents relative to the repository root.
+    ///
+    /// Similar to `std::fs::remove_dir_all`, this removes a directory and everything inside it.
+    /// Returns an error if the directory doesn't exist.
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()>;
+
+    /// Remove a directory and all its contents if it exists, silently succeeding if it doesn't.
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()>;
+
     /// Create a directory and all parent directories relative to the repository root.
     fn create_dir_all(&self, relative: &Path) -> io::Result<()>;
 
@@ -398,6 +407,18 @@ impl Workspace for WorkspaceFs {
         let path = self.root.join(relative);
         if path.exists() {
             fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+        fs::remove_dir_all(self.root.join(relative))
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+        let path = self.root.join(relative);
+        if path.exists() {
+            fs::remove_dir_all(path)?;
         }
         Ok(())
     }
@@ -816,6 +837,45 @@ impl Workspace for MemoryWorkspace {
 
     fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
         self.files.write().unwrap().remove(relative);
+        Ok(())
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+        // Check if directory exists first
+        if !self.directories.read().unwrap().contains(relative) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Directory not found: {}", relative.display()),
+            ));
+        }
+        self.remove_dir_all_if_exists(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+        // Remove all files under this directory
+        {
+            let mut files = self.files.write().unwrap();
+            let to_remove: Vec<PathBuf> = files
+                .keys()
+                .filter(|path| path.starts_with(relative))
+                .cloned()
+                .collect();
+            for path in to_remove {
+                files.remove(&path);
+            }
+        }
+        // Remove all directories under this directory (including itself)
+        {
+            let mut dirs = self.directories.write().unwrap();
+            let to_remove: Vec<PathBuf> = dirs
+                .iter()
+                .filter(|path| path.starts_with(relative) || *path == relative)
+                .cloned()
+                .collect();
+            for path in to_remove {
+                dirs.remove(&path);
+            }
+        }
         Ok(())
     }
 

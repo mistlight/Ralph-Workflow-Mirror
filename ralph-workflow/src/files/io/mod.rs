@@ -43,6 +43,7 @@ pub use backup::{
 };
 
 pub use context::{
-    clean_context_for_reviewer, delete_issues_file_for_isolation, reset_context_for_isolation,
-    update_status,
+    clean_context_for_reviewer, clean_context_for_reviewer_with_workspace,
+    delete_issues_file_for_isolation, delete_issues_file_for_isolation_with_workspace,
+    reset_context_for_isolation, update_status,
 };

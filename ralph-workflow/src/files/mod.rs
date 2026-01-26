@@ -41,10 +41,11 @@ pub mod result_extraction;
 
 // Re-exports from new domain structure for backward compatibility
 pub use io::{
-    clean_context_for_reviewer, cleanup_generated_files, create_prompt_backup,
-    create_prompt_backup_with_workspace, delete_commit_message_file,
-    delete_issues_file_for_isolation, delete_plan_file, ensure_files, file_contains_marker,
-    make_prompt_read_only, make_prompt_read_only_with_workspace, make_prompt_writable,
+    clean_context_for_reviewer, clean_context_for_reviewer_with_workspace, cleanup_generated_files,
+    create_prompt_backup, create_prompt_backup_with_workspace, delete_commit_message_file,
+    delete_issues_file_for_isolation, delete_issues_file_for_isolation_with_workspace,
+    delete_plan_file, ensure_files, file_contains_marker, make_prompt_read_only,
+    make_prompt_read_only_with_workspace, make_prompt_writable,
     make_prompt_writable_with_workspace, read_commit_message_file, reset_context_for_isolation,
     update_status, write_commit_message_file,
 };

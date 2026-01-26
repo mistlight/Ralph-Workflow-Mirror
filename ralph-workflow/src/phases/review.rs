@@ -22,7 +22,10 @@ use crate::files::llm_output_extraction::{
     IssuesElements,
 };
 use crate::files::result_extraction::extract_file_paths_from_issues;
-use crate::files::{clean_context_for_reviewer, delete_issues_file_for_isolation, update_status};
+use crate::files::{
+    clean_context_for_reviewer_with_workspace, delete_issues_file_for_isolation_with_workspace,
+    update_status,
+};
 use crate::git_helpers::{
     get_baseline_summary, git_snapshot, update_review_baseline, CommitResultFallback,
 };
@@ -92,7 +95,11 @@ pub fn run_review_phase(
 
     // Clean context for reviewer if using minimal context (only if review is enabled)
     if reviewer_context == ContextLevel::Minimal {
-        clean_context_for_reviewer(ctx.logger, ctx.config.isolation_mode)?;
+        clean_context_for_reviewer_with_workspace(
+            ctx.workspace,
+            ctx.logger,
+            ctx.config.isolation_mode,
+        )?;
     }
 
     ctx.logger.info(&format!(
@@ -832,7 +839,7 @@ pub fn run_review_pass(
                     .success(&format!("No issues found after cycle {j} - stopping early"));
                 // Clean up ISSUES.md before early exit in isolation mode
                 if ctx.config.isolation_mode {
-                    delete_issues_file_for_isolation(ctx.logger)?;
+                    delete_issues_file_for_isolation_with_workspace(ctx.workspace, ctx.logger)?;
                 }
 
                 let step = ExecutionStep::new(
