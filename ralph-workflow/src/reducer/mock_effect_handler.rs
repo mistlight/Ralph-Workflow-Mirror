@@ -26,9 +26,11 @@
 
 #![cfg(any(test, feature = "test-utils"))]
 
-use super::effect::Effect;
+use super::effect::{Effect, EffectHandler};
 use super::event::PipelineEvent;
 use super::state::PipelineState;
+use crate::phases::PhaseContext;
+use anyhow::Result;
 use std::cell::RefCell;
 
 /// Mock implementation of EffectHandler for testing.
@@ -160,9 +162,22 @@ impl MockEffectHandler {
     }
 }
 
+/// Implement the EffectHandler trait for MockEffectHandler.
+///
+/// This allows MockEffectHandler to be used as a drop-in replacement for
+/// MainEffectHandler in tests. The PhaseContext is ignored - the mock
+/// simply captures the effect and returns an appropriate mock event.
+impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
+    fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+        // Delegate to execute_mock which ignores the context
+        Ok(self.execute_mock(effect))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reducer::effect::EffectHandler;
     use crate::reducer::event::PipelineEvent;
     use crate::reducer::state::PipelineState;
 
@@ -258,5 +273,84 @@ mod tests {
         assert!(handler.was_effect_executed(|e| matches!(e, Effect::CreateCommit { .. })));
         assert!(handler.was_effect_executed(|e| matches!(e, Effect::GeneratePlan { .. })));
         assert!(!handler.was_effect_executed(|e| matches!(e, Effect::ValidateFinalState)));
+    }
+
+    /// Test that MockEffectHandler properly implements the EffectHandler trait
+    /// with a real PhaseContext. This proves it can be a drop-in replacement
+    /// for MainEffectHandler in tests.
+    #[test]
+    fn mock_effect_handler_trait_execute_with_phase_context() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::phases::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+        use std::sync::Arc;
+
+        // Create test fixtures
+        let config = Config::default();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let registry = AgentRegistry::new().unwrap();
+        let executor = Arc::new(MockProcessExecutor::new());
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace = MemoryWorkspace::new(repo_root.clone());
+
+        // Create PhaseContext
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        // Create handler and execute effect via trait method
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        let effect = Effect::CreateCommit {
+            message: "test via trait".to_string(),
+        };
+
+        // Call the trait method (not execute_mock)
+        let result = handler.execute(effect, &mut ctx);
+
+        // Should succeed
+        assert!(result.is_ok(), "execute should succeed");
+
+        // Should return CommitCreated event
+        let event = result.unwrap();
+        match event {
+            PipelineEvent::CommitCreated { hash, message } => {
+                assert_eq!(hash, "mock_commit_hash_abc123");
+                assert_eq!(message, "test via trait");
+            }
+            other => panic!("Expected CommitCreated, got {:?}", other),
+        }
+
+        // Effect should be captured
+        assert!(handler.was_effect_executed(|e| matches!(e, Effect::CreateCommit { .. })));
+        assert_eq!(handler.effect_count(), 1);
     }
 }
