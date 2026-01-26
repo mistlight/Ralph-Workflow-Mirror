@@ -3,12 +3,14 @@
 //! Prompts for developer agent actions including iteration and planning.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use super::template_context::TemplateContext;
 use super::template_engine::Template;
 #[cfg(any(test, feature = "test-utils"))]
 use super::types::ContextLevel;
 use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
+use crate::workspace::Workspace;
 
 /// The XSD schema for development result validation - included at compile time
 const DEVELOPMENT_RESULT_XSD_SCHEMA: &str =
@@ -202,12 +204,14 @@ pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Optio
 ///
 /// * `context` - Template context containing the template registry
 /// * `prompt_content` - Optional PROMPT.md content to include directly in the prompt.
+/// * `workspace` - Workspace for writing XSD schema files
 pub fn prompt_planning_xml_with_context(
     context: &TemplateContext,
     prompt_content: Option<&str>,
+    workspace: &dyn Workspace,
 ) -> String {
     // Write the XSD schema file so it's available for the agent to reference
-    write_planning_xsd_schema_file();
+    write_planning_xsd_schema_file(workspace);
 
     let template_content = context
         .registry()
@@ -246,41 +250,41 @@ const XSD_RETRY_TMP_DIR: &str = ".agent/tmp";
 /// This is called before the initial planning prompt so the agent can reference
 /// the schema if needed. The schema provides the authoritative definition of
 /// valid XML structure.
-fn write_planning_xsd_schema_file() {
-    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
-    if std::fs::create_dir_all(tmp_dir).is_err() {
+fn write_planning_xsd_schema_file(workspace: &dyn Workspace) {
+    let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
+    if workspace.create_dir_all(tmp_dir).is_err() {
         return;
     }
 
-    let _ = std::fs::write(tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA);
+    let _ = workspace.write(&tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA);
 }
 
 /// Write XSD retry context files to `.agent/tmp/` directory.
 ///
 /// This writes the XSD schema and last output to files so they don't bloat the prompt.
 /// The agent MUST read these files to understand what went wrong and fix it.
-fn write_planning_xsd_retry_files(last_output: &str) {
-    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
-    if std::fs::create_dir_all(tmp_dir).is_err() {
+fn write_planning_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+    let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
+    if workspace.create_dir_all(tmp_dir).is_err() {
         return;
     }
 
-    let _ = std::fs::write(tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA);
-    let _ = std::fs::write(tmp_dir.join("last_output.xml"), last_output);
+    let _ = workspace.write(&tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA);
+    let _ = workspace.write(&tmp_dir.join("last_output.xml"), last_output);
 }
 
 /// Write XSD retry context files for development iteration to `.agent/tmp/` directory.
-fn write_dev_iteration_xsd_retry_files(last_output: &str) {
-    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
-    if std::fs::create_dir_all(tmp_dir).is_err() {
+fn write_dev_iteration_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+    let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
+    if workspace.create_dir_all(tmp_dir).is_err() {
         return;
     }
 
-    let _ = std::fs::write(
-        tmp_dir.join("development_result.xsd"),
+    let _ = workspace.write(
+        &tmp_dir.join("development_result.xsd"),
         DEVELOPMENT_RESULT_XSD_SCHEMA,
     );
-    let _ = std::fs::write(tmp_dir.join("last_output.xml"), last_output);
+    let _ = workspace.write(&tmp_dir.join("last_output.xml"), last_output);
 }
 
 /// Generate XSD validation retry prompt for planning with error feedback.
@@ -295,14 +299,16 @@ fn write_dev_iteration_xsd_retry_files(last_output: &str) {
 /// * `_prompt_content` - Original user requirements (unused - kept for API compatibility)
 /// * `xsd_error` - The XSD validation error message to include in the prompt
 /// * `last_output` - The invalid XML output that failed validation
+/// * `workspace` - Workspace for writing XSD retry context files
 pub fn prompt_planning_xsd_retry_with_context(
     context: &TemplateContext,
     _prompt_content: &str,
     xsd_error: &str,
     last_output: &str,
+    workspace: &dyn Workspace,
 ) -> String {
     // Write context files to .agent/tmp/ for the agent to read
-    write_planning_xsd_retry_files(last_output);
+    write_planning_xsd_retry_files(workspace, last_output);
 
     let template_content = context
         .registry()
@@ -390,15 +396,17 @@ pub fn prompt_developer_iteration_xml_with_context(
 /// * `_plan_content` - The implementation plan (unused - kept for API compatibility)
 /// * `xsd_error` - The XSD validation error message to include in the prompt
 /// * `last_output` - The invalid XML output that failed validation
+/// * `workspace` - Workspace for writing XSD retry context files
 pub fn prompt_developer_iteration_xsd_retry_with_context(
     context: &TemplateContext,
     _prompt_content: &str,
     _plan_content: &str,
     xsd_error: &str,
     last_output: &str,
+    workspace: &dyn Workspace,
 ) -> String {
     // Write context files to .agent/tmp/ for the agent to read
-    write_dev_iteration_xsd_retry_files(last_output);
+    write_dev_iteration_xsd_retry_files(workspace, last_output);
 
     let template_content = context
         .registry()

@@ -1,6 +1,6 @@
 //! Integration tests for test trait exports.
 //!
-//! These tests verify that test traits like MockGit and MockFileOps
+//! These tests verify that test traits like MockGit and MemoryWorkspace
 //! are properly exported from the ralph-workflow crate and can be used
 //! in integration tests.
 //!
@@ -15,8 +15,8 @@
 //! - Tests are deterministic and isolated
 
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::files::{FileOperation, FileOps, MockFileOps};
 use ralph_workflow::git_helpers::{CommitResult, GitOps, MockGit, OpsRebaseResult};
+use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
 use std::path::{Path, PathBuf};
 
 /// Test that MockGit can be created and used via GitOps trait.
@@ -107,155 +107,140 @@ fn test_mock_error_variants() {
 }
 
 // ============================================================================
-// MockFileOps tests
+// MemoryWorkspace tests
 // ============================================================================
 
-/// Test that MockFileOps can be created and used via FileOps trait.
+/// Test that MemoryWorkspace can be created and used via Workspace trait.
 ///
-/// This verifies that when a MockFileOps is created, it can be used
-/// through the FileOps trait to perform filesystem operations.
+/// This verifies that when a MemoryWorkspace is created, it can be used
+/// through the Workspace trait to perform filesystem operations.
 #[test]
-fn test_mock_file_ops_creation() {
+fn test_memory_workspace_creation() {
     with_default_timeout(|| {
-        let mock = MockFileOps::new();
-        assert!(!mock.exists(Path::new("nonexistent.txt")));
+        let workspace = MemoryWorkspace::new_test();
+        assert!(!workspace.exists(Path::new("nonexistent.txt")));
     });
 }
 
-/// Test that MockFileOps builder pattern works for virtual file system.
+/// Test that MemoryWorkspace builder pattern works for virtual file system.
 ///
 /// This verifies that when the builder is used to add files, they exist
-/// in the virtual filesystem and can be read via FileOps trait methods.
+/// in the virtual filesystem and can be read via Workspace trait methods.
 #[test]
-fn test_mock_file_ops_builder() {
+fn test_memory_workspace_builder() {
     with_default_timeout(|| {
-        let mock = MockFileOps::new()
+        let workspace = MemoryWorkspace::new_test()
             .with_file(".agent/PLAN.md", "# Plan\n\nStep 1: Do something")
             .with_file("PROMPT.md", "# Feature Request\n\nAdd a button");
 
         // Check file existence
-        assert!(mock.exists(Path::new(".agent/PLAN.md")));
-        assert!(mock.exists(Path::new("PROMPT.md")));
-        assert!(!mock.exists(Path::new(".agent/ISSUES.md")));
+        assert!(workspace.exists(Path::new(".agent/PLAN.md")));
+        assert!(workspace.exists(Path::new("PROMPT.md")));
+        assert!(!workspace.exists(Path::new(".agent/ISSUES.md")));
 
         // Read file contents
-        let plan = mock.read_to_string(Path::new(".agent/PLAN.md")).unwrap();
+        let plan = workspace.read(Path::new(".agent/PLAN.md")).unwrap();
         assert!(plan.contains("# Plan"));
         assert!(plan.contains("Step 1"));
     });
 }
 
-/// Test that MockFileOps captures write operations.
+/// Test that MemoryWorkspace captures write operations.
 ///
-/// This verifies that when files are written via FileOps trait,
+/// This verifies that when files are written via Workspace trait,
 /// the operations are tracked and written content can be retrieved.
 #[test]
-fn test_mock_file_ops_captures_writes() {
+fn test_memory_workspace_captures_writes() {
     with_default_timeout(|| {
-        let mock = MockFileOps::new();
+        let workspace = MemoryWorkspace::new_test();
 
         // Write a commit message
-        mock.write_file(Path::new(".agent/commit-message.txt"), "feat: add button")
+        workspace
+            .write(Path::new(".agent/commit-message.txt"), "feat: add button")
             .unwrap();
 
         // Write an issues file
-        mock.write_file(Path::new(".agent/ISSUES.md"), "- Issue 1\n- Issue 2")
+        workspace
+            .write(Path::new(".agent/ISSUES.md"), "- Issue 1\n- Issue 2")
             .unwrap();
 
         // Verify writes were captured
-        assert!(mock.was_written(Path::new(".agent/commit-message.txt")));
-        assert!(mock.was_written(Path::new(".agent/ISSUES.md")));
-        assert!(!mock.was_written(Path::new(".agent/PLAN.md")));
+        assert!(workspace.was_written(".agent/commit-message.txt"));
+        assert!(workspace.was_written(".agent/ISSUES.md"));
+        assert!(!workspace.was_written(".agent/PLAN.md"));
 
         // Verify written content
-        let commit_msg = mock
-            .get_written_content(Path::new(".agent/commit-message.txt"))
-            .unwrap();
+        let commit_msg = workspace.get_file(".agent/commit-message.txt").unwrap();
         assert_eq!(commit_msg, "feat: add button");
     });
 }
 
-/// Test that MockFileOps implements FileOps trait with full roundtrip.
+/// Test that MemoryWorkspace implements Workspace trait with full roundtrip.
 ///
-/// This verifies that when FileOps trait methods are used on MockFileOps,
+/// This verifies that when Workspace trait methods are used on MemoryWorkspace,
 /// they correctly implement read, write, exists, and remove operations.
 #[test]
-fn test_mock_file_ops_implements_file_ops_trait() {
+fn test_memory_workspace_implements_workspace_trait() {
     with_default_timeout(|| {
-        let mock = MockFileOps::new();
+        let workspace = MemoryWorkspace::new_test();
 
-        // Write via FileOps trait
-        FileOps::write_file(&mock, Path::new("test.txt"), "content").unwrap();
+        // Write via Workspace trait
+        Workspace::write(&workspace, Path::new("test.txt"), "content").unwrap();
 
-        // Read via FileOps trait
-        let content = FileOps::read_to_string(&mock, Path::new("test.txt")).unwrap();
+        // Read via Workspace trait
+        let content = Workspace::read(&workspace, Path::new("test.txt")).unwrap();
         assert_eq!(content, "content");
 
-        // Check existence via FileOps trait
-        assert!(FileOps::exists(&mock, Path::new("test.txt")));
-        assert!(FileOps::is_file(&mock, Path::new("test.txt")));
+        // Check existence via Workspace trait
+        assert!(Workspace::exists(&workspace, Path::new("test.txt")));
+        assert!(Workspace::is_file(&workspace, Path::new("test.txt")));
 
-        // Remove via FileOps trait
-        FileOps::remove_file(&mock, Path::new("test.txt")).unwrap();
-        assert!(!FileOps::exists(&mock, Path::new("test.txt")));
+        // Remove via Workspace trait
+        Workspace::remove(&workspace, Path::new("test.txt")).unwrap();
+        assert!(!Workspace::exists(&workspace, Path::new("test.txt")));
     });
 }
 
-/// Test that MockFileOps tracks all operations in order.
+/// Test that MemoryWorkspace tracks written files.
 ///
-/// This verifies that when filesystem operations are performed, they
-/// are recorded in order with their operation types for inspection.
+/// This verifies that when filesystem operations are performed,
+/// the written files can be inspected for verification.
 #[test]
-fn test_mock_file_ops_operation_tracking() {
+fn test_memory_workspace_written_files_tracking() {
     with_default_timeout(|| {
-        let mock = MockFileOps::new().with_file("existing.txt", "content");
+        let workspace = MemoryWorkspace::new_test().with_file("existing.txt", "content");
 
-        let _ = mock.read_to_string(Path::new("existing.txt"));
-        let _ = mock.exists(Path::new("other.txt"));
-        let _ = mock.write_file(Path::new("new.txt"), "new content");
+        let _ = workspace.read(Path::new("existing.txt"));
+        let _ = workspace.exists(Path::new("other.txt"));
+        let _ = workspace.write(Path::new("new.txt"), "new content");
 
-        let ops = mock.operations();
-        assert_eq!(ops.len(), 3);
-
-        // Verify operation types
-        assert!(matches!(ops[0], FileOperation::Read(_)));
-        assert!(matches!(ops[1], FileOperation::Exists(_)));
-        assert!(matches!(ops[2], FileOperation::Write(_, _)));
+        // Verify written files tracking
+        let written = workspace.written_files();
+        assert!(written.contains_key(&PathBuf::from("new.txt")));
+        // Note: existing.txt was pre-populated, not written during the test
     });
 }
 
-/// Test that MockFileOps error variants work.
+/// Test that MemoryWorkspace read errors work correctly.
 ///
-/// This verifies that when MockFileOps is configured for errors,
-/// it returns appropriate error results for read and write operations.
+/// This verifies that when reading non-existent files,
+/// appropriate errors are returned.
 #[test]
-fn test_mock_file_ops_error_variants() {
+fn test_memory_workspace_read_errors() {
     with_default_timeout(|| {
-        // Test error mode
-        let mock_error = MockFileOps::new_error();
-        assert!(mock_error.read_to_string(Path::new("any.txt")).is_err());
-        assert!(mock_error.write_file(Path::new("any.txt"), "x").is_err());
-
-        // Test specific path errors
-        let mock_specific = MockFileOps::new()
-            .with_file("readable.txt", "content")
-            .with_read_error(
-                "readable.txt",
-                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no permission"),
-            );
-
-        assert!(mock_specific
-            .read_to_string(Path::new("readable.txt"))
-            .is_err());
+        let workspace = MemoryWorkspace::new_test();
+        let result = workspace.read(Path::new("nonexistent.txt"));
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotFound);
     });
 }
 
-/// Test that MockFileOps can simulate agent file operations.
+/// Test that MemoryWorkspace can simulate agent file operations.
 ///
 /// This verifies that when a typical agent workflow is simulated,
 /// all file operations are correctly tracked and can be verified.
 #[test]
-fn test_mock_file_ops_agent_workflow_scenario() {
+fn test_memory_workspace_agent_workflow_scenario() {
     with_default_timeout(|| {
         // Simulate a workflow where:
         // 1. Check if PLAN.md exists
@@ -264,42 +249,43 @@ fn test_mock_file_ops_agent_workflow_scenario() {
         // 4. Write commit-message.txt
         // 5. Delete PLAN.md after integration
 
-        let mock = MockFileOps::new().with_file("PROMPT.md", "# Feature: Add login button");
+        let workspace =
+            MemoryWorkspace::new_test().with_file("PROMPT.md", "# Feature: Add login button");
 
         // Phase 1: Planning
-        assert!(!mock.exists(Path::new(".agent/PLAN.md")));
-        let prompt = mock.read_to_string(Path::new("PROMPT.md")).unwrap();
+        assert!(!workspace.exists(Path::new(".agent/PLAN.md")));
+        let prompt = workspace.read(Path::new("PROMPT.md")).unwrap();
         assert!(prompt.contains("login button"));
 
         // Phase 2: Agent produces a plan
-        mock.write_file(
-            Path::new(".agent/PLAN.md"),
-            "# Plan\n\n1. Create button component",
-        )
-        .unwrap();
-        assert!(mock.exists(Path::new(".agent/PLAN.md")));
+        workspace
+            .write(
+                Path::new(".agent/PLAN.md"),
+                "# Plan\n\n1. Create button component",
+            )
+            .unwrap();
+        assert!(workspace.exists(Path::new(".agent/PLAN.md")));
+
+        // Verify PLAN.md was written (before removal)
+        assert!(workspace.was_written(".agent/PLAN.md"));
 
         // Phase 3: Commit generation
-        mock.write_file(
-            Path::new(".agent/commit-message.txt"),
-            "feat(ui): add login button",
-        )
-        .unwrap();
+        workspace
+            .write(
+                Path::new(".agent/commit-message.txt"),
+                "feat(ui): add login button",
+            )
+            .unwrap();
 
         // Phase 4: Cleanup
-        mock.remove_file(Path::new(".agent/PLAN.md")).unwrap();
-        assert!(!mock.exists(Path::new(".agent/PLAN.md")));
+        workspace.remove(Path::new(".agent/PLAN.md")).unwrap();
+        assert!(!workspace.exists(Path::new(".agent/PLAN.md")));
 
-        // Verify the workflow operations
-        assert!(mock.was_read(Path::new("PROMPT.md")));
-        assert!(mock.was_written(Path::new(".agent/PLAN.md")));
-        assert!(mock.was_written(Path::new(".agent/commit-message.txt")));
-        assert!(mock.was_removed(Path::new(".agent/PLAN.md")));
+        // Verify commit message was written (still exists after removal of PLAN.md)
+        assert!(workspace.was_written(".agent/commit-message.txt"));
 
-        // Verify final commit message is available
-        let commit_msg = mock
-            .get_written_content(Path::new(".agent/commit-message.txt"))
-            .unwrap();
+        // Verify final commit message content
+        let commit_msg = workspace.get_file(".agent/commit-message.txt").unwrap();
         assert!(commit_msg.contains("login button"));
     });
 }

@@ -51,7 +51,3 @@ pub use protection::{restore_prompt_if_needed, validate_prompt_md};
 pub use result_extraction::extract_issues;
 #[cfg(any(test, feature = "test-utils"))]
 pub use result_extraction::extract_plan;
-
-// File operations trait for testable I/O (requires test-utils feature)
-#[cfg(any(test, feature = "test-utils"))]
-pub use io::{FileOperation, FileOps, MockFileOps, RealFileOps};

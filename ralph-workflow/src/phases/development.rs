@@ -358,6 +358,7 @@ pub fn run_development_iteration_with_xml_retry(
                     &plan_md,
                     xsd_error.as_deref().unwrap_or("Unknown error"),
                     &last_output,
+                    ctx.workspace,
                 )
             } else if !is_retry {
                 // Continuation only (first XSD attempt after continuation)
@@ -391,6 +392,7 @@ pub fn run_development_iteration_with_xml_retry(
                     &plan_md,
                     xsd_error.as_deref().unwrap_or("Unknown error"),
                     &last_output,
+                    ctx.workspace,
                 )
             };
 
@@ -614,7 +616,11 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
     // Use prompt replay if available, otherwise generate new prompt
     let (plan_prompt, was_replayed) =
         get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-            prompt_planning_xml_with_context(ctx.template_context, Some(prompt_md_str))
+            prompt_planning_xml_with_context(
+                ctx.template_context,
+                Some(prompt_md_str),
+                ctx.workspace,
+            )
         });
 
     // Capture the planning prompt for checkpoint/resume (only if newly generated)
@@ -671,6 +677,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
                 prompt_md_str,
                 xsd_error.as_deref().unwrap_or("Unknown error"),
                 &last_output,
+                ctx.workspace,
             )
         };
 
