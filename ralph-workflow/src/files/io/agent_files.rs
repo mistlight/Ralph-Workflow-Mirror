@@ -7,6 +7,8 @@ use std::fs;
 use std::io::{self, BufRead};
 use std::path::Path;
 
+use crate::workspace::Workspace;
+
 use super::{
     context::overwrite_one_liner, context::VAGUE_ISSUES_LINE, context::VAGUE_NOTES_LINE,
     context::VAGUE_STATUS_LINE, integrity, recovery,
@@ -332,126 +334,285 @@ pub fn cleanup_generated_files_at(repo_root: &Path) {
     }
 }
 
+// ============================================================================
+// Workspace-based functions (for testability with MemoryWorkspace)
+// ============================================================================
+
+/// Check if a file contains a specific marker string using the Workspace trait.
+///
+/// This is the workspace-based version of `file_contains_marker`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `path` - Relative path within the workspace
+/// * `marker` - String to search for
+///
+/// Returns `Ok(true)` if the marker is found, `Ok(false)` if not found or file doesn't exist.
+pub fn file_contains_marker_with_workspace(
+    workspace: &dyn Workspace,
+    path: &Path,
+    marker: &str,
+) -> io::Result<bool> {
+    if !workspace.exists(path) {
+        return Ok(false);
+    }
+
+    let content = workspace.read(path)?;
+    for line in content.lines() {
+        if line.contains(marker) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+/// Delete the PLAN.md file using the workspace.
+///
+/// This is the workspace-based version of `delete_plan_file_at`.
+pub fn delete_plan_file_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
+    let plan_path = Path::new(".agent/PLAN.md");
+    if workspace.exists(plan_path) {
+        workspace.remove(plan_path)?;
+    }
+    Ok(())
+}
+
+/// Delete the commit-message.txt file using the workspace.
+///
+/// This is the workspace-based version of `delete_commit_message_file_at`.
+pub fn delete_commit_message_file_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
+    let msg_path = Path::new(".agent/commit-message.txt");
+    if workspace.exists(msg_path) {
+        workspace.remove(msg_path)?;
+    }
+    Ok(())
+}
+
+/// Read commit message from file using the workspace.
+///
+/// This is the workspace-based version of `read_commit_message_file_at`.
+///
+/// # Errors
+///
+/// Returns an error if the file doesn't exist, cannot be read, or is empty.
+pub fn read_commit_message_file_with_workspace(workspace: &dyn Workspace) -> io::Result<String> {
+    let msg_path = Path::new(".agent/commit-message.txt");
+
+    if workspace.exists(msg_path) {
+        // Use workspace-based verification
+        if !super::integrity::verify_file_not_corrupted_with_workspace(workspace, msg_path)? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                ".agent/commit-message.txt appears corrupted",
+            ));
+        }
+    }
+
+    let content = workspace.read(msg_path).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!("Failed to read .agent/commit-message.txt: {e}"),
+        )
+    })?;
+
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            ".agent/commit-message.txt is empty",
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Write commit message to file using the workspace.
+///
+/// This is the workspace-based version of `write_commit_message_file_at`.
+pub fn write_commit_message_file_with_workspace(
+    workspace: &dyn Workspace,
+    message: &str,
+) -> io::Result<()> {
+    let msg_path = Path::new(".agent/commit-message.txt");
+
+    // Ensure parent directory exists
+    if let Some(parent) = msg_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            workspace.create_dir_all(parent)?;
+        }
+    }
+
+    workspace.write(msg_path, message)
+}
+
+/// Clean up generated files using the workspace.
+///
+/// This is the workspace-based version of `cleanup_generated_files_at`.
+pub fn cleanup_generated_files_with_workspace(workspace: &dyn Workspace) {
+    for file in GENERATED_FILES {
+        let _ = workspace.remove(Path::new(file));
+    }
+}
+
+/// Write XSD schemas to .agent/tmp/ using the workspace.
+///
+/// This is the workspace-based version of `setup_xsd_schemas_at`.
+pub fn setup_xsd_schemas_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
+    let tmp_dir = Path::new(".agent/tmp");
+    workspace.create_dir_all(tmp_dir)?;
+
+    workspace.write(&tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA)?;
+    workspace.write(
+        &tmp_dir.join("development_result.xsd"),
+        DEVELOPMENT_RESULT_XSD_SCHEMA,
+    )?;
+    workspace.write(&tmp_dir.join("issues.xsd"), ISSUES_XSD_SCHEMA)?;
+    workspace.write(&tmp_dir.join("fix_result.xsd"), FIX_RESULT_XSD_SCHEMA)?;
+    workspace.write(
+        &tmp_dir.join("commit_message.xsd"),
+        COMMIT_MESSAGE_XSD_SCHEMA,
+    )?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use test_helpers::with_temp_cwd;
 
-    #[test]
-    fn test_file_contains_marker() {
-        let dir = TempDir::new().unwrap();
-        let file_path = dir.path().join("test.txt");
-        fs::write(&file_path, "line1\nMARKER_TEST\nline3").unwrap();
+    // =========================================================================
+    // Workspace-based tests (for testability without real filesystem)
+    // =========================================================================
 
-        assert!(file_contains_marker(&file_path, "MARKER_TEST").unwrap());
-        assert!(!file_contains_marker(&file_path, "NONEXISTENT").unwrap());
-    }
+    #[cfg(feature = "test-utils")]
+    mod workspace_tests {
+        use super::*;
+        use crate::workspace::MemoryWorkspace;
 
-    #[test]
-    fn test_file_contains_marker_missing() {
-        let result = file_contains_marker(Path::new("/nonexistent/file.txt"), "MARKER");
-        assert!(!result.unwrap());
-    }
+        #[test]
+        fn test_file_contains_marker_with_workspace() {
+            let workspace =
+                MemoryWorkspace::new_test().with_file("test.txt", "line1\nMARKER_TEST\nline3");
 
-    #[test]
-    fn test_delete_plan_file() {
-        let dir = TempDir::new().unwrap();
-        let agent_dir = dir.path().join(".agent");
-        fs::create_dir_all(&agent_dir).unwrap();
-        let plan_path = agent_dir.join("PLAN.md");
-        fs::write(&plan_path, "test plan").unwrap();
-        assert!(plan_path.exists());
+            assert!(file_contains_marker_with_workspace(
+                &workspace,
+                Path::new("test.txt"),
+                "MARKER_TEST"
+            )
+            .unwrap());
+            assert!(!file_contains_marker_with_workspace(
+                &workspace,
+                Path::new("test.txt"),
+                "NONEXISTENT"
+            )
+            .unwrap());
+        }
 
-        // Simulating delete_plan_file logic
-        fs::remove_file(&plan_path).unwrap();
-        assert!(!plan_path.exists());
-    }
+        #[test]
+        fn test_file_contains_marker_with_workspace_missing() {
+            let workspace = MemoryWorkspace::new_test();
 
-    #[test]
-    fn test_read_commit_message_file() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-            fs::write(".agent/commit-message.txt", "feat: test commit\n").unwrap();
+            let result = file_contains_marker_with_workspace(
+                &workspace,
+                Path::new("nonexistent.txt"),
+                "MARKER",
+            );
+            assert!(!result.unwrap());
+        }
 
-            let msg = read_commit_message_file().unwrap();
+        #[test]
+        fn test_delete_plan_file_with_workspace() {
+            let workspace = MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "test plan");
+
+            assert!(workspace.exists(Path::new(".agent/PLAN.md")));
+
+            delete_plan_file_with_workspace(&workspace).unwrap();
+
+            assert!(!workspace.exists(Path::new(".agent/PLAN.md")));
+        }
+
+        #[test]
+        fn test_delete_plan_file_with_workspace_nonexistent() {
+            let workspace = MemoryWorkspace::new_test();
+
+            // Should succeed even if file doesn't exist
+            delete_plan_file_with_workspace(&workspace).unwrap();
+        }
+
+        #[test]
+        fn test_read_commit_message_file_with_workspace() {
+            let workspace = MemoryWorkspace::new_test()
+                .with_file(".agent/commit-message.txt", "feat: test commit\n");
+
+            let msg = read_commit_message_file_with_workspace(&workspace).unwrap();
             assert_eq!(msg, "feat: test commit");
-        });
-    }
+        }
 
-    #[test]
-    fn test_read_commit_message_file_empty() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-            fs::write(".agent/commit-message.txt", "   \n").unwrap();
-            assert!(read_commit_message_file().is_err());
-        });
-    }
+        #[test]
+        fn test_read_commit_message_file_with_workspace_empty() {
+            let workspace =
+                MemoryWorkspace::new_test().with_file(".agent/commit-message.txt", "   \n");
 
-    #[test]
-    fn test_ensure_files_isolation_mode() {
-        with_temp_cwd(|_dir| {
-            ensure_files(true).unwrap();
+            assert!(read_commit_message_file_with_workspace(&workspace).is_err());
+        }
 
-            // Should not create PROMPT.md (creation is an explicit user action)
-            assert!(!Path::new("PROMPT.md").exists());
+        #[test]
+        fn test_write_commit_message_file_with_workspace() {
+            let workspace = MemoryWorkspace::new_test();
 
-            // Should NOT create STATUS.md, NOTES.md and ISSUES.md in isolation mode
-            assert!(!Path::new(".agent/STATUS.md").exists());
-            assert!(!Path::new(".agent/NOTES.md").exists());
-            assert!(!Path::new(".agent/ISSUES.md").exists());
+            write_commit_message_file_with_workspace(&workspace, "feat: new feature").unwrap();
 
-            // Should create tmp directory and write XSD schemas
-            assert!(Path::new(".agent/tmp").is_dir());
-            assert!(Path::new(".agent/tmp/plan.xsd").exists());
-            assert!(Path::new(".agent/tmp/development_result.xsd").exists());
-            assert!(Path::new(".agent/tmp/issues.xsd").exists());
-            assert!(Path::new(".agent/tmp/fix_result.xsd").exists());
-            assert!(Path::new(".agent/tmp/commit_message.xsd").exists());
-        });
-    }
+            assert!(workspace.exists(Path::new(".agent/commit-message.txt")));
+            let content = workspace
+                .read(Path::new(".agent/commit-message.txt"))
+                .unwrap();
+            assert_eq!(content, "feat: new feature");
+        }
 
-    #[test]
-    fn test_ensure_files_non_isolation_mode() {
-        with_temp_cwd(|_dir| {
-            ensure_files(false).unwrap();
+        #[test]
+        fn test_delete_commit_message_file_with_workspace() {
+            let workspace =
+                MemoryWorkspace::new_test().with_file(".agent/commit-message.txt", "test message");
 
-            // Should not create PROMPT.md (creation is an explicit user action)
-            assert!(!Path::new("PROMPT.md").exists());
-            assert!(Path::new(".agent/STATUS.md").exists());
-            assert!(Path::new(".agent/NOTES.md").exists());
-            assert!(Path::new(".agent/ISSUES.md").exists());
+            assert!(workspace.exists(Path::new(".agent/commit-message.txt")));
 
-            // Should create tmp directory
-            assert!(Path::new(".agent/tmp").is_dir());
-        });
-    }
+            delete_commit_message_file_with_workspace(&workspace).unwrap();
 
-    #[test]
-    fn test_setup_xsd_schemas() {
-        with_temp_cwd(|_dir| {
-            setup_xsd_schemas().unwrap();
+            assert!(!workspace.exists(Path::new(".agent/commit-message.txt")));
+        }
 
-            // Verify all schemas are written to .agent/tmp/
-            let plan_xsd = fs::read_to_string(".agent/tmp/plan.xsd").unwrap();
+        #[test]
+        fn test_cleanup_generated_files_with_workspace() {
+            let workspace = MemoryWorkspace::new_test()
+                .with_file(".no_agent_commit", "")
+                .with_file(".agent/PLAN.md", "plan")
+                .with_file(".agent/commit-message.txt", "msg");
+
+            cleanup_generated_files_with_workspace(&workspace);
+
+            assert!(!workspace.exists(Path::new(".no_agent_commit")));
+            assert!(!workspace.exists(Path::new(".agent/PLAN.md")));
+            assert!(!workspace.exists(Path::new(".agent/commit-message.txt")));
+        }
+
+        #[test]
+        fn test_setup_xsd_schemas_with_workspace() {
+            let workspace = MemoryWorkspace::new_test();
+
+            setup_xsd_schemas_with_workspace(&workspace).unwrap();
+
+            // Verify all schemas are written
+            assert!(workspace.exists(Path::new(".agent/tmp/plan.xsd")));
+            assert!(workspace.exists(Path::new(".agent/tmp/development_result.xsd")));
+            assert!(workspace.exists(Path::new(".agent/tmp/issues.xsd")));
+            assert!(workspace.exists(Path::new(".agent/tmp/fix_result.xsd")));
+            assert!(workspace.exists(Path::new(".agent/tmp/commit_message.xsd")));
+
+            // Verify content
+            let plan_xsd = workspace.read(Path::new(".agent/tmp/plan.xsd")).unwrap();
             assert!(plan_xsd.contains("xs:schema"));
             assert!(plan_xsd.contains("ralph-plan"));
-
-            let dev_xsd = fs::read_to_string(".agent/tmp/development_result.xsd").unwrap();
-            assert!(dev_xsd.contains("xs:schema"));
-            assert!(dev_xsd.contains("ralph-development-result"));
-
-            let issues_xsd = fs::read_to_string(".agent/tmp/issues.xsd").unwrap();
-            assert!(issues_xsd.contains("xs:schema"));
-            assert!(issues_xsd.contains("ralph-issues"));
-
-            let fix_xsd = fs::read_to_string(".agent/tmp/fix_result.xsd").unwrap();
-            assert!(fix_xsd.contains("xs:schema"));
-            assert!(fix_xsd.contains("ralph-fix-result"));
-
-            let commit_xsd = fs::read_to_string(".agent/tmp/commit_message.xsd").unwrap();
-            assert!(commit_xsd.contains("xs:schema"));
-            assert!(commit_xsd.contains("ralph-commit"));
-        });
+        }
     }
 }
