@@ -11,6 +11,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use crate::workspace::Workspace;
+
 /// Default directory for Ralph's internal files.
 const AGENT_DIR: &str = ".agent";
 
@@ -975,10 +977,338 @@ pub fn checkpoint_exists() -> bool {
     Path::new(&checkpoint_path()).exists()
 }
 
+// ============================================================================
+// Workspace-based checkpoint functions (for testability with MemoryWorkspace)
+// ============================================================================
+
+/// Calculate SHA-256 checksum of a file using the workspace.
+///
+/// This is the workspace-based version of `calculate_file_checksum`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `path` - Relative path within the workspace
+///
+/// Returns `None` if the file doesn't exist or cannot be read.
+pub fn calculate_file_checksum_with_workspace(
+    workspace: &dyn Workspace,
+    path: &Path,
+) -> Option<String> {
+    let content = workspace.read_bytes(path).ok()?;
+    Some(calculate_checksum_from_bytes(&content))
+}
+
+/// Save a pipeline checkpoint using the workspace.
+///
+/// This is the workspace-based version of `save_checkpoint`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `checkpoint` - The checkpoint to save
+///
+/// # Note
+///
+/// Unlike the original `save_checkpoint`, this version does NOT use atomic
+/// writes (temp file + rename) since the Workspace trait doesn't support
+/// rename operations. For production code requiring atomicity, use the
+/// original `save_checkpoint()`.
+pub fn save_checkpoint_with_workspace(
+    workspace: &dyn Workspace,
+    checkpoint: &PipelineCheckpoint,
+) -> io::Result<()> {
+    let json = serde_json::to_string_pretty(checkpoint).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to serialize checkpoint: {e}"),
+        )
+    })?;
+
+    // Ensure the .agent directory exists
+    workspace.create_dir_all(Path::new(AGENT_DIR))?;
+
+    // Write checkpoint file
+    workspace.write(Path::new(&checkpoint_path()), &json)
+}
+
+/// Load an existing checkpoint using the workspace.
+///
+/// This is the workspace-based version of `load_checkpoint`.
+///
+/// Returns `Ok(Some(checkpoint))` if a valid checkpoint was loaded,
+/// `Ok(None)` if no checkpoint file exists, or an error if the file
+/// exists but cannot be parsed.
+pub fn load_checkpoint_with_workspace(
+    workspace: &dyn Workspace,
+) -> io::Result<Option<PipelineCheckpoint>> {
+    let checkpoint_path_str = checkpoint_path();
+    let checkpoint_file = Path::new(&checkpoint_path_str);
+
+    if !workspace.exists(checkpoint_file) {
+        return Ok(None);
+    }
+
+    let content = workspace.read(checkpoint_file)?;
+    let loaded_checkpoint = load_checkpoint_with_fallback(&content).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to parse checkpoint: {e}"),
+        )
+    })?;
+
+    Ok(Some(loaded_checkpoint))
+}
+
+/// Delete the checkpoint file using the workspace.
+///
+/// This is the workspace-based version of `clear_checkpoint`.
+///
+/// Does nothing if the checkpoint file doesn't exist.
+pub fn clear_checkpoint_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
+    let checkpoint_path_str = checkpoint_path();
+    let checkpoint_file = Path::new(&checkpoint_path_str);
+
+    if workspace.exists(checkpoint_file) {
+        workspace.remove(checkpoint_file)?;
+    }
+    Ok(())
+}
+
+/// Check if a checkpoint exists using the workspace.
+///
+/// This is the workspace-based version of `checkpoint_exists`.
+pub fn checkpoint_exists_with_workspace(workspace: &dyn Workspace) -> bool {
+    workspace.exists(Path::new(&checkpoint_path()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_helpers::with_temp_cwd;
+
+    // =========================================================================
+    // Workspace-based tests (for testability without real filesystem)
+    // =========================================================================
+
+    #[cfg(feature = "test-utils")]
+    mod workspace_tests {
+        use super::*;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::Path;
+
+        /// Helper function to create a checkpoint for workspace tests.
+        fn make_test_checkpoint_for_workspace(
+            phase: PipelinePhase,
+            iteration: u32,
+        ) -> PipelineCheckpoint {
+            let cli_args = CliArgsSnapshot::new(
+                5,
+                2,
+                "test commit".to_string(),
+                None,
+                false,
+                true,
+                2,
+                false,
+                None,
+            );
+            let dev_config =
+                AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
+            let rev_config =
+                AgentConfigSnapshot::new("codex".into(), "cmd".into(), "-o".into(), None, true);
+            let run_id = uuid::Uuid::new_v4().to_string();
+            PipelineCheckpoint::from_params(CheckpointParams {
+                phase,
+                iteration,
+                total_iterations: 5,
+                reviewer_pass: 0,
+                total_reviewer_passes: 2,
+                developer_agent: "claude",
+                reviewer_agent: "codex",
+                cli_args,
+                developer_agent_config: dev_config,
+                reviewer_agent_config: rev_config,
+                rebase_state: RebaseState::default(),
+                git_user_name: None,
+                git_user_email: None,
+                run_id: &run_id,
+                parent_run_id: None,
+                resume_count: 0,
+                actual_developer_runs: iteration,
+                actual_reviewer_runs: 0,
+            })
+        }
+
+        #[test]
+        fn test_calculate_file_checksum_with_workspace() {
+            let workspace = MemoryWorkspace::new_test().with_file("test.txt", "test content");
+
+            let checksum =
+                calculate_file_checksum_with_workspace(&workspace, Path::new("test.txt"));
+            assert!(checksum.is_some());
+
+            // Same content should give same checksum
+            let workspace2 = MemoryWorkspace::new_test().with_file("other.txt", "test content");
+            let checksum2 =
+                calculate_file_checksum_with_workspace(&workspace2, Path::new("other.txt"));
+            assert_eq!(checksum, checksum2);
+        }
+
+        #[test]
+        fn test_calculate_file_checksum_with_workspace_different_content() {
+            let workspace1 = MemoryWorkspace::new_test().with_file("test.txt", "content A");
+            let workspace2 = MemoryWorkspace::new_test().with_file("test.txt", "content B");
+
+            let checksum1 =
+                calculate_file_checksum_with_workspace(&workspace1, Path::new("test.txt"));
+            let checksum2 =
+                calculate_file_checksum_with_workspace(&workspace2, Path::new("test.txt"));
+
+            assert!(checksum1.is_some());
+            assert!(checksum2.is_some());
+            assert_ne!(checksum1, checksum2);
+        }
+
+        #[test]
+        fn test_calculate_file_checksum_with_workspace_nonexistent() {
+            let workspace = MemoryWorkspace::new_test();
+
+            let checksum =
+                calculate_file_checksum_with_workspace(&workspace, Path::new("nonexistent.txt"));
+            assert!(checksum.is_none());
+        }
+
+        #[test]
+        fn test_save_checkpoint_with_workspace() {
+            let workspace = MemoryWorkspace::new_test();
+            let checkpoint = make_test_checkpoint_for_workspace(PipelinePhase::Development, 2);
+
+            save_checkpoint_with_workspace(&workspace, &checkpoint).unwrap();
+
+            assert!(workspace.exists(Path::new(".agent/checkpoint.json")));
+        }
+
+        #[test]
+        fn test_checkpoint_exists_with_workspace() {
+            let workspace = MemoryWorkspace::new_test();
+
+            assert!(!checkpoint_exists_with_workspace(&workspace));
+
+            let checkpoint = make_test_checkpoint_for_workspace(PipelinePhase::Development, 1);
+            save_checkpoint_with_workspace(&workspace, &checkpoint).unwrap();
+
+            assert!(checkpoint_exists_with_workspace(&workspace));
+        }
+
+        #[test]
+        fn test_load_checkpoint_with_workspace_nonexistent() {
+            let workspace = MemoryWorkspace::new_test();
+
+            let result = load_checkpoint_with_workspace(&workspace).unwrap();
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_save_and_load_checkpoint_with_workspace() {
+            let workspace = MemoryWorkspace::new_test();
+            let checkpoint = make_test_checkpoint_for_workspace(PipelinePhase::Review, 5);
+
+            save_checkpoint_with_workspace(&workspace, &checkpoint).unwrap();
+
+            let loaded = load_checkpoint_with_workspace(&workspace)
+                .unwrap()
+                .expect("checkpoint should exist");
+
+            assert_eq!(loaded.phase, PipelinePhase::Review);
+            assert_eq!(loaded.iteration, 5);
+            assert_eq!(loaded.developer_agent, "claude");
+            assert_eq!(loaded.reviewer_agent, "codex");
+        }
+
+        #[test]
+        fn test_clear_checkpoint_with_workspace() {
+            let workspace = MemoryWorkspace::new_test();
+            let checkpoint = make_test_checkpoint_for_workspace(PipelinePhase::Development, 1);
+
+            save_checkpoint_with_workspace(&workspace, &checkpoint).unwrap();
+            assert!(checkpoint_exists_with_workspace(&workspace));
+
+            clear_checkpoint_with_workspace(&workspace).unwrap();
+            assert!(!checkpoint_exists_with_workspace(&workspace));
+        }
+
+        #[test]
+        fn test_clear_checkpoint_with_workspace_nonexistent() {
+            let workspace = MemoryWorkspace::new_test();
+
+            // Should not error when checkpoint doesn't exist
+            clear_checkpoint_with_workspace(&workspace).unwrap();
+        }
+
+        #[test]
+        fn test_load_checkpoint_with_workspace_preserves_working_dir() {
+            // Test that loading a v1 checkpoint preserves the working_dir field from JSON
+            let json = r#"{
+                "version": 1,
+                "phase": "Development",
+                "iteration": 1,
+                "total_iterations": 1,
+                "reviewer_pass": 0,
+                "total_reviewer_passes": 0,
+                "timestamp": "2024-01-01 12:00:00",
+                "developer_agent": "test-agent",
+                "reviewer_agent": "test-agent",
+                "cli_args": {
+                    "developer_iters": 1,
+                    "reviewer_reviews": 0,
+                    "commit_msg": "",
+                    "review_depth": null,
+                    "skip_rebase": false
+                },
+                "developer_agent_config": {
+                    "name": "test-agent",
+                    "cmd": "echo",
+                    "output_flag": "",
+                    "yolo_flag": null,
+                    "can_commit": false,
+                    "model_override": null,
+                    "provider_override": null,
+                    "context_level": 1
+                },
+                "reviewer_agent_config": {
+                    "name": "test-agent",
+                    "cmd": "echo",
+                    "output_flag": "",
+                    "yolo_flag": null,
+                    "can_commit": false,
+                    "model_override": null,
+                    "provider_override": null,
+                    "context_level": 1
+                },
+                "rebase_state": "NotStarted",
+                "config_path": null,
+                "config_checksum": null,
+                "working_dir": "/some/other/directory",
+                "prompt_md_checksum": null,
+                "git_user_name": null,
+                "git_user_email": null
+            }"#;
+
+            let workspace = MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", json);
+
+            let loaded = load_checkpoint_with_workspace(&workspace)
+                .unwrap()
+                .expect("should load checkpoint");
+            assert_eq!(
+                loaded.working_dir, "/some/other/directory",
+                "working_dir should be preserved from JSON"
+            );
+        }
+    }
+
+    // =========================================================================
+    // Original tests using real filesystem (kept for backward compatibility)
+    // =========================================================================
 
     /// Helper function to create a checkpoint for testing.
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32) -> PipelineCheckpoint {
@@ -1158,52 +1488,6 @@ mod tests {
     }
 
     #[test]
-    fn test_checkpoint_save_load() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-
-            let checkpoint = make_test_checkpoint(PipelinePhase::Review, 5);
-
-            save_checkpoint(&checkpoint).unwrap();
-            assert!(checkpoint_exists());
-
-            let loaded = load_checkpoint()
-                .unwrap()
-                .expect("checkpoint should exist after save_checkpoint");
-            assert_eq!(loaded.phase, PipelinePhase::Review);
-            assert_eq!(loaded.iteration, 5);
-            assert_eq!(loaded.developer_agent, "claude");
-            assert_eq!(loaded.reviewer_agent, "codex");
-            assert_eq!(loaded.version, CHECKPOINT_VERSION);
-        });
-    }
-
-    #[test]
-    fn test_checkpoint_clear() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-
-            let checkpoint = make_test_checkpoint(PipelinePhase::Development, 1);
-
-            save_checkpoint(&checkpoint).unwrap();
-            assert!(checkpoint_exists());
-
-            clear_checkpoint().unwrap();
-            assert!(!checkpoint_exists());
-        });
-    }
-
-    #[test]
-    fn test_load_checkpoint_nonexistent() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-
-            let result = load_checkpoint().unwrap();
-            assert!(result.is_none());
-        });
-    }
-
-    #[test]
     fn test_checkpoint_serialization() {
         let run_id = uuid::Uuid::new_v4().to_string();
         let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
@@ -1324,93 +1608,5 @@ mod tests {
             error: "conflict".into(),
         };
         assert!(matches!(state, RebaseState::Failed { .. }));
-    }
-
-    #[test]
-    fn test_calculate_file_checksum() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-
-            // Create a test file in current directory (temp cwd)
-            let test_file = Path::new("test.txt");
-            fs::write(&test_file, "test content").unwrap();
-
-            let checksum1 = calculate_file_checksum(test_file);
-            assert!(checksum1.is_some());
-
-            // Same content should give same checksum
-            let checksum2 = calculate_file_checksum(test_file);
-            assert_eq!(checksum1, checksum2);
-
-            // Different content should give different checksum
-            fs::write(&test_file, "different content").unwrap();
-            let checksum3 = calculate_file_checksum(test_file);
-            assert_ne!(checksum1, checksum3);
-
-            // Non-existent file should return None
-            let nonexistent = Path::new("nonexistent.txt");
-            assert!(calculate_file_checksum(nonexistent).is_none());
-        });
-    }
-
-    #[test]
-    fn test_load_checkpoint_preserves_working_dir() {
-        with_temp_cwd(|_dir| {
-            fs::create_dir_all(".agent").unwrap();
-
-            let json = r#"{
-                "version": 1,
-                "phase": "Development",
-                "iteration": 1,
-                "total_iterations": 1,
-                "reviewer_pass": 0,
-                "total_reviewer_passes": 0,
-                "timestamp": "2024-01-01 12:00:00",
-                "developer_agent": "test-agent",
-                "reviewer_agent": "test-agent",
-                "cli_args": {
-                    "developer_iters": 1,
-                    "reviewer_reviews": 0,
-                    "commit_msg": "",
-                    "review_depth": null,
-                    "skip_rebase": false
-                },
-                "developer_agent_config": {
-                    "name": "test-agent",
-                    "cmd": "echo",
-                    "output_flag": "",
-                    "yolo_flag": null,
-                    "can_commit": false,
-                    "model_override": null,
-                    "provider_override": null,
-                    "context_level": 1
-                },
-                "reviewer_agent_config": {
-                    "name": "test-agent",
-                    "cmd": "echo",
-                    "output_flag": "",
-                    "yolo_flag": null,
-                    "can_commit": false,
-                    "model_override": null,
-                    "provider_override": null,
-                    "context_level": 1
-                },
-                "rebase_state": "NotStarted",
-                "config_path": null,
-                "config_checksum": null,
-                "working_dir": "/some/other/directory",
-                "prompt_md_checksum": null,
-                "git_user_name": null,
-                "git_user_email": null
-            }"#;
-
-            fs::write(".agent/checkpoint.json", json).unwrap();
-
-            let loaded = load_checkpoint().unwrap().expect("should load checkpoint");
-            assert_eq!(
-                loaded.working_dir, "/some/other/directory",
-                "working_dir should be preserved from JSON"
-            );
-        });
     }
 }
