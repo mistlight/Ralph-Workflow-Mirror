@@ -9,6 +9,8 @@ use std::io::{self, Read, Write};
 use std::path::Path;
 use tempfile::NamedTempFile;
 
+use crate::workspace::Workspace;
+
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
@@ -58,6 +60,39 @@ pub fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// Write file content using the workspace abstraction.
+///
+/// This is the workspace-based version of `write_file_atomic`. Instead of using
+/// temp file + rename (which provides atomicity on the real filesystem), this
+/// uses `Workspace::write()` which:
+/// - In production (`WorkspaceFs`): writes directly (parent dirs created automatically)
+/// - In tests (`MemoryWorkspace`): writes to in-memory storage
+///
+/// Note: The atomic semantics (temp file + rename) are NOT preserved with this
+/// function since `Workspace::write()` is a simple write. For production code
+/// that needs atomic writes, use the original `write_file_atomic()` function.
+/// This workspace version is primarily for testability.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `path` - Relative path within the workspace
+/// * `content` - Content to write
+pub fn write_file_atomic_with_workspace(
+    workspace: &dyn Workspace,
+    path: &Path,
+    content: &str,
+) -> io::Result<()> {
+    // Ensure parent directories exist
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            workspace.create_dir_all(parent)?;
+        }
+    }
+
+    workspace.write(path, content)
+}
+
 /// Validate that a file is readable UTF-8 text and within size limits.
 ///
 /// Returns `Ok(true)` if the file appears valid, `Ok(false)` if corrupt, or `Err`
@@ -75,6 +110,38 @@ pub fn verify_file_not_corrupted(path: &Path) -> io::Result<bool> {
 
     // Null bytes are a simple indicator of binary corruption.
     Ok(!buf.contains('\0'))
+}
+
+/// Validate that a file is readable UTF-8 text and within size limits using workspace.
+///
+/// This is the workspace-based version of `verify_file_not_corrupted`.
+///
+/// Returns `Ok(true)` if the file appears valid, `Ok(false)` if corrupt, or `Err`
+/// on access error.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `path` - Relative path within the workspace
+pub fn verify_file_not_corrupted_with_workspace(
+    workspace: &dyn Workspace,
+    path: &Path,
+) -> io::Result<bool> {
+    let content = workspace.read_bytes(path)?;
+
+    // Check size limits
+    if content.is_empty() || content.len() as u64 > MAX_AGENT_FILE_SIZE {
+        return Ok(false);
+    }
+
+    // Check if valid UTF-8
+    let text = match String::from_utf8(content) {
+        Ok(s) => s,
+        Err(_) => return Ok(false),
+    };
+
+    // Null bytes are a simple indicator of binary corruption.
+    Ok(!text.contains('\0'))
 }
 
 /// Verify that the filesystem is ready for `.agent/` file operations.
@@ -338,6 +405,86 @@ pub fn cleanup_stale_xml_files(tmp_dir: &Path, force_cleanup: bool) -> io::Resul
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    // =========================================================================
+    // Workspace-based tests (for testability without real filesystem)
+    // =========================================================================
+
+    #[cfg(feature = "test-utils")]
+    mod workspace_tests {
+        use super::*;
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        use std::path::Path;
+
+        #[test]
+        fn test_write_file_atomic_with_workspace() {
+            let workspace = MemoryWorkspace::new_test();
+
+            write_file_atomic_with_workspace(&workspace, Path::new("test.txt"), "content").unwrap();
+
+            assert_eq!(workspace.read(Path::new("test.txt")).unwrap(), "content");
+        }
+
+        #[test]
+        fn test_write_file_atomic_with_workspace_creates_parent_dirs() {
+            let workspace = MemoryWorkspace::new_test();
+
+            write_file_atomic_with_workspace(
+                &workspace,
+                Path::new(".agent/tmp/output.txt"),
+                "nested content",
+            )
+            .unwrap();
+
+            assert!(workspace.exists(Path::new(".agent/tmp/output.txt")));
+            assert_eq!(
+                workspace.read(Path::new(".agent/tmp/output.txt")).unwrap(),
+                "nested content"
+            );
+        }
+
+        #[test]
+        fn test_verify_file_not_corrupted_with_workspace_valid() {
+            let workspace =
+                MemoryWorkspace::new_test().with_file("valid.txt", "valid content\nwith lines");
+
+            let result =
+                verify_file_not_corrupted_with_workspace(&workspace, Path::new("valid.txt"));
+            assert!(result.unwrap());
+        }
+
+        #[test]
+        fn test_verify_file_not_corrupted_with_workspace_empty() {
+            let workspace = MemoryWorkspace::new_test().with_file("empty.txt", "");
+
+            let result =
+                verify_file_not_corrupted_with_workspace(&workspace, Path::new("empty.txt"));
+            assert!(!result.unwrap());
+        }
+
+        #[test]
+        fn test_verify_file_not_corrupted_with_workspace_null_bytes() {
+            let workspace =
+                MemoryWorkspace::new_test().with_file_bytes("binary.txt", b"hello\x00world");
+
+            let result =
+                verify_file_not_corrupted_with_workspace(&workspace, Path::new("binary.txt"));
+            assert!(!result.unwrap());
+        }
+
+        #[test]
+        fn test_verify_file_not_corrupted_with_workspace_not_found() {
+            let workspace = MemoryWorkspace::new_test();
+
+            let result =
+                verify_file_not_corrupted_with_workspace(&workspace, Path::new("nonexistent.txt"));
+            assert!(result.is_err());
+        }
+    }
+
+    // =========================================================================
+    // Original tests using real filesystem (kept for backward compatibility)
+    // =========================================================================
 
     #[test]
     fn test_write_file_atomic() {

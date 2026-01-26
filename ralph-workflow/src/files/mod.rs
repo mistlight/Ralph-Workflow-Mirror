@@ -47,7 +47,8 @@ pub use io::{
     delete_plan_file, ensure_files, file_contains_marker, make_prompt_read_only,
     make_prompt_read_only_with_workspace, make_prompt_writable,
     make_prompt_writable_with_workspace, read_commit_message_file, reset_context_for_isolation,
-    update_status, update_status_with_workspace, write_commit_message_file,
+    update_status, update_status_with_workspace, verify_file_not_corrupted_with_workspace,
+    write_commit_message_file, write_file_atomic_with_workspace,
 };
 
 pub use protection::{

@@ -34,7 +34,10 @@ pub use agent_files::{
     file_contains_marker, read_commit_message_file, write_commit_message_file,
 };
 
-pub use integrity::check_and_cleanup_xml_before_retry;
+pub use integrity::{
+    check_and_cleanup_xml_before_retry, verify_file_not_corrupted_with_workspace,
+    write_file_atomic_with_workspace,
+};
 
 pub use backup::{
     create_prompt_backup, create_prompt_backup_with_workspace, make_prompt_read_only,
