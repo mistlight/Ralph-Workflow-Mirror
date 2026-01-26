@@ -42,6 +42,7 @@ mod reducer_fault_tolerance;
 mod reducer_rebase_state_machine;
 mod reducer_resume_tests;
 mod reducer_state_machine;
+mod review_output_validation;
 mod review_xml_validation;
 mod review_xsd_retry_session;
 mod test_timeout;
