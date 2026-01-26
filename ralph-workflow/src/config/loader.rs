@@ -15,6 +15,7 @@
 //! (`~/.config/ralph/agents.toml` and `.agent/agents.toml`) and emits
 //! deprecation warnings when they are used.
 use super::parser::parse_env_bool;
+use super::path_resolver::ConfigEnvironment;
 use super::types::{Config, ReviewDepth, Verbosity};
 use super::unified::{unified_config_path, UnifiedConfig};
 use std::env;
@@ -44,8 +45,11 @@ pub fn load_config() -> (Config, Option<UnifiedConfig>, Vec<String>) {
 ///
 /// # Returns
 ///
-/// Returns a tuple of `(Config, Vec<String>)` where the second element
+/// Returns a tuple of `(Config, Option<UnifiedConfig>, Vec<String>)` where the last element
 /// contains any deprecation warnings to be displayed to the user.
+///
+/// **Note:** This function uses `std::fs` directly. For testable code,
+/// use [`load_config_from_path_with_env`] with a [`ConfigEnvironment`] instead.
 pub fn load_config_from_path(
     config_path: Option<&std::path::Path>,
 ) -> (Config, Option<UnifiedConfig>, Vec<String>) {
@@ -77,6 +81,64 @@ pub fn load_config_from_path(
     } else {
         // No unified config - check for legacy configs
         check_legacy_configs(&mut warnings);
+        default_config()
+    };
+
+    // Apply environment variable overrides
+    let config = apply_env_overrides(config, &mut warnings);
+
+    (config, unified, warnings)
+}
+
+/// Load configuration from a specific path or the default location using a [`ConfigEnvironment`].
+///
+/// This is the testable version of [`load_config_from_path`]. It uses the provided
+/// environment for all filesystem operations.
+///
+/// # Arguments
+///
+/// * `config_path` - Optional path to a config file. If None, uses the environment's default.
+/// * `env` - The configuration environment to use for filesystem operations.
+///
+/// # Returns
+///
+/// Returns a tuple of `(Config, Option<UnifiedConfig>, Vec<String>)` where the last element
+/// contains any deprecation warnings to be displayed to the user.
+pub fn load_config_from_path_with_env(
+    config_path: Option<&std::path::Path>,
+    env: &dyn ConfigEnvironment,
+) -> (Config, Option<UnifiedConfig>, Vec<String>) {
+    let mut warnings = Vec::new();
+
+    // Try to load unified config from specified path or default
+    let unified = config_path.map_or_else(
+        || UnifiedConfig::load_with_env(env),
+        |path| {
+            if env.file_exists(path) {
+                match UnifiedConfig::load_from_path_with_env(path, env) {
+                    Ok(cfg) => Some(cfg),
+                    Err(e) => {
+                        warnings.push(format!(
+                            "Failed to load config from {}: {}",
+                            path.display(),
+                            e
+                        ));
+                        None
+                    }
+                }
+            } else {
+                warnings.push(format!("Config file not found: {}", path.display()));
+                None
+            }
+        },
+    );
+
+    // Start with defaults, then apply unified config if found
+    let config = if let Some(ref unified_cfg) = unified {
+        config_from_unified(unified_cfg, &mut warnings)
+    } else {
+        // No unified config - check for legacy configs (env-aware version)
+        check_legacy_configs_with_env(&mut warnings, env);
         default_config()
     };
 
@@ -467,6 +529,9 @@ fn parse_env_u8(name: &str, warnings: &mut Vec<String>, max: u8) -> Option<u8> {
 }
 
 /// Check for legacy config files and add deprecation warnings.
+///
+/// **Note:** This function uses `std::fs` directly via `path.exists()`.
+/// For testable code, use [`check_legacy_configs_with_env`] instead.
 fn check_legacy_configs(warnings: &mut Vec<String>) {
     // Check for old global config
     if let Some(config_dir) = dirs::config_dir() {
@@ -491,6 +556,30 @@ fn check_legacy_configs(warnings: &mut Vec<String>) {
     }
 }
 
+/// Check for legacy config files using a [`ConfigEnvironment`].
+///
+/// This is the testable version of [`check_legacy_configs`].
+fn check_legacy_configs_with_env(warnings: &mut Vec<String>, env: &dyn ConfigEnvironment) {
+    // Check for old global config
+    // Note: We can't check dirs::config_dir() with ConfigEnvironment, so we skip that check
+    // in the testable version. The legacy global config check is best tested via integration tests.
+
+    // Check for project-level config
+    let project_config = PathBuf::from(".agent/agents.toml");
+    if env.file_exists(&project_config)
+        && env.unified_config_path().is_some()
+        && !env
+            .unified_config_path()
+            .is_some_and(|p| env.file_exists(&p))
+    {
+        warnings.push(
+            "DEPRECATION: Found legacy per-repo config at .agent/agents.toml. \
+             Please migrate to ~/.config/ralph-workflow.toml."
+                .to_string(),
+        );
+    }
+}
+
 /// Check if the unified config file exists.
 pub fn unified_config_exists() -> bool {
     unified_config_path().is_some_and(|p| p.exists())
@@ -499,9 +588,68 @@ pub fn unified_config_exists() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::path_resolver::MemoryConfigEnvironment;
+    use std::path::Path;
     use std::sync::Mutex;
 
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_load_config_with_env_from_custom_path() {
+        let toml_str = r#"
+[general]
+verbosity = 3
+interactive = false
+developer_iters = 10
+review_depth = "standard"
+"#;
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_file("/custom/config.toml", toml_str);
+
+        let (config, unified, warnings) =
+            load_config_from_path_with_env(Some(Path::new("/custom/config.toml")), &env);
+
+        assert!(warnings.is_empty(), "Unexpected warnings: {:?}", warnings);
+        assert!(unified.is_some());
+        assert_eq!(config.developer_iters, 10);
+        assert!(!config.behavior.interactive);
+    }
+
+    #[test]
+    fn test_load_config_with_env_missing_file() {
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml");
+
+        let (config, unified, warnings) =
+            load_config_from_path_with_env(Some(Path::new("/missing/config.toml")), &env);
+
+        assert!(unified.is_none());
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("not found"));
+        // Should fall back to defaults
+        assert_eq!(config.developer_iters, 5);
+    }
+
+    #[test]
+    fn test_load_config_with_env_from_default_path() {
+        let toml_str = r#"
+[general]
+verbosity = 4
+developer_iters = 8
+review_depth = "standard"
+"#;
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_file("/test/config/ralph-workflow.toml", toml_str);
+
+        let (config, unified, warnings) = load_config_from_path_with_env(None, &env);
+
+        assert!(warnings.is_empty(), "Unexpected warnings: {:?}", warnings);
+        assert!(unified.is_some());
+        assert_eq!(config.developer_iters, 8);
+        assert_eq!(config.verbosity, Verbosity::Debug);
+    }
 
     #[test]
     fn test_default_config() {

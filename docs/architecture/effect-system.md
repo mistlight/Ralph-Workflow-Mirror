@@ -627,32 +627,57 @@ Checkpoints store:
 - `ExecutionHistory` (detailed event log)
 
 ---
-
 ## Where std::fs is Allowed
 
-**TWO FILES ONLY:**
+### Primary Locations (Handler Implementations)
 
 | File | Purpose |
 |------|---------|
 | `app/effect_handler.rs` | `RealAppEffectHandler` - implements `AppEffect` operations |
 | `workspace.rs` | `WorkspaceFs` - implements `Workspace` trait |
 
+### Domain-Specific Abstractions
+
+These files contain "Real*" implementations that wrap `std::fs` behind traits:
+
+| File | Abstraction | Purpose |
+|------|-------------|---------|
+| `config/path_resolver.rs` | `RealConfigEnvironment` | Config file loading |
+| `agents/opencode_api/cache.rs` | `RealCacheEnvironment` | API catalog caching |
+
+### Legitimate Exceptions
+
+| File | Reason |
+|------|--------|
+| `files/protection/monitoring.rs` | Background thread monitoring real filesystem changes |
+
+### Deprecated Methods (Migration In Progress)
+
+The following files have `std::fs` usage that should migrate to workspace abstractions.
+New code should use `_with_workspace` or `_with_env` variants where available:
+
+- `files/io/integrity.rs` - Use `*_with_workspace` variants
+- `git_helpers/*.rs` - Use `*_with_workspace` variants  
+- `logger/output.rs` - Use `with_workspace_log()` method
+- `checkpoint/file_state.rs` - Use `*_with_workspace` variants
+
 **EVERYWHERE ELSE: std::fs is FORBIDDEN**
 
-- Pre-pipeline code → Must use `AppEffect`
+- Pre-pipeline code → Must use `AppEffect` or domain-specific environment trait
 - Pipeline code → Must use `ctx.workspace`  
-- Tests → Must use `MockAppEffectHandler` or `MemoryWorkspace`
+- Tests → Must use `MockAppEffectHandler`, `MemoryWorkspace`, or `Memory*Environment`
 
 ---
+
 
 ## Summary
 
 | Question | Answer |
 |----------|--------|
-| Where is std::fs allowed? | **ONLY** in `RealAppEffectHandler` and `WorkspaceFs` |
+| Where is std::fs allowed? | In handler impls (`RealAppEffectHandler`, `WorkspaceFs`), domain abstractions (`Real*Environment`), and documented exceptions |
 | Can AppEffect use Workspace? | **NO** - Workspace doesn't exist at CLI layer |
 | Can Effect use std::fs? | **NO** - Must use ctx.workspace |
-| Can tests use std::fs? | **NO** - Must use `MockAppEffectHandler` or `MemoryWorkspace` |
+| Can tests use std::fs? | **NO** - Must use `MockAppEffectHandler`, `MemoryWorkspace`, or `Memory*Environment` |
 | Can MockAppEffectHandler and MemoryWorkspace share state? | **NO** - Separate systems |
 | When is TempDir acceptable? | **Only** for tests crossing both layers |
 | When to use Effect/Event vs direct workspace? | Phase boundaries = Effect/Event, within-phase = direct |

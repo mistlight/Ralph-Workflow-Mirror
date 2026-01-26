@@ -14,14 +14,22 @@
 use super::hooks::{install_hooks, uninstall_hooks_silent};
 use super::repo::get_repo_root;
 use crate::logger::Logger;
+#[cfg(any(test, feature = "test-utils"))]
+use crate::workspace::Workspace;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Write};
+#[cfg(any(test, feature = "test-utils"))]
+use std::path::Path;
 use std::path::PathBuf;
 use tempfile::TempDir;
 use which::which;
 
 const WRAPPER_DIR_TRACK_FILE: &str = ".agent/git-wrapper-dir.txt";
+
+/// Marker file path for blocking commits during agent phase.
+#[cfg(any(test, feature = "test-utils"))]
+const MARKER_FILE: &str = ".no_agent_commit";
 
 /// Git helper state.
 pub struct GitHelpers {
@@ -269,4 +277,166 @@ pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+// ============================================================================
+// Workspace-aware variants (for testing with MemoryWorkspace)
+// ============================================================================
+
+/// Create the agent phase marker file using workspace abstraction.
+///
+/// This is a workspace-aware version of the marker file creation that uses
+/// the Workspace trait for file I/O, making it testable with `MemoryWorkspace`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace to write to
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success, or an error if the file cannot be created.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn create_marker_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
+    workspace.write(Path::new(MARKER_FILE), "")
+}
+
+/// Remove the agent phase marker file using workspace abstraction.
+///
+/// This is a workspace-aware version of the marker file removal that uses
+/// the Workspace trait for file I/O, making it testable with `MemoryWorkspace`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace to operate on
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success (including if file doesn't exist).
+#[cfg(any(test, feature = "test-utils"))]
+pub fn remove_marker_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
+    workspace.remove_if_exists(Path::new(MARKER_FILE))
+}
+
+/// Check if the agent phase marker file exists using workspace abstraction.
+///
+/// This is a workspace-aware version that uses the Workspace trait for file I/O,
+/// making it testable with `MemoryWorkspace`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace to check
+///
+/// # Returns
+///
+/// Returns `true` if the marker file exists, `false` otherwise.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn marker_exists_with_workspace(workspace: &dyn Workspace) -> bool {
+    workspace.exists(Path::new(MARKER_FILE))
+}
+
+/// Clean up orphaned marker file using workspace abstraction.
+///
+/// This is a workspace-aware version of `cleanup_orphaned_marker` that uses
+/// the Workspace trait for file I/O, making it testable with `MemoryWorkspace`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace to operate on
+/// * `logger` - Logger for output messages
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn cleanup_orphaned_marker_with_workspace(
+    workspace: &dyn Workspace,
+    logger: &Logger,
+) -> io::Result<()> {
+    let marker_path = Path::new(MARKER_FILE);
+
+    if workspace.exists(marker_path) {
+        workspace.remove(marker_path)?;
+        logger.success("Removed orphaned .no_agent_commit marker");
+    } else {
+        logger.info("No orphaned marker found");
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workspace::MemoryWorkspace;
+
+    #[test]
+    fn test_create_marker_with_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+
+        // Marker should not exist initially
+        assert!(!marker_exists_with_workspace(&workspace));
+
+        // Create marker
+        create_marker_with_workspace(&workspace).unwrap();
+
+        // Marker should now exist
+        assert!(marker_exists_with_workspace(&workspace));
+    }
+
+    #[test]
+    fn test_remove_marker_with_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+
+        // Create marker first
+        create_marker_with_workspace(&workspace).unwrap();
+        assert!(marker_exists_with_workspace(&workspace));
+
+        // Remove marker
+        remove_marker_with_workspace(&workspace).unwrap();
+
+        // Marker should no longer exist
+        assert!(!marker_exists_with_workspace(&workspace));
+    }
+
+    #[test]
+    fn test_remove_marker_with_workspace_nonexistent() {
+        let workspace = MemoryWorkspace::new_test();
+
+        // Removing non-existent marker should succeed silently
+        remove_marker_with_workspace(&workspace).unwrap();
+        assert!(!marker_exists_with_workspace(&workspace));
+    }
+
+    #[test]
+    fn test_cleanup_orphaned_marker_with_workspace_exists() {
+        let workspace = MemoryWorkspace::new_test();
+        let logger = Logger::new(crate::logger::Colors { enabled: false });
+
+        // Create an orphaned marker
+        create_marker_with_workspace(&workspace).unwrap();
+        assert!(marker_exists_with_workspace(&workspace));
+
+        // Clean up should remove it
+        cleanup_orphaned_marker_with_workspace(&workspace, &logger).unwrap();
+        assert!(!marker_exists_with_workspace(&workspace));
+    }
+
+    #[test]
+    fn test_cleanup_orphaned_marker_with_workspace_not_exists() {
+        let workspace = MemoryWorkspace::new_test();
+        let logger = Logger::new(crate::logger::Colors { enabled: false });
+
+        // No marker exists
+        assert!(!marker_exists_with_workspace(&workspace));
+
+        // Clean up should succeed without error
+        cleanup_orphaned_marker_with_workspace(&workspace, &logger).unwrap();
+        assert!(!marker_exists_with_workspace(&workspace));
+    }
+
+    #[test]
+    fn test_marker_file_constant() {
+        // Verify the constant matches expected value
+        assert_eq!(MARKER_FILE, ".no_agent_commit");
+    }
 }

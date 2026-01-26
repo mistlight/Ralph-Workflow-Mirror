@@ -94,9 +94,11 @@ use crate::checkpoint::timestamp;
 use crate::common::truncate_text;
 use crate::config::Verbosity;
 use crate::json_parser::printer::Printable;
+use crate::workspace::Workspace;
 use std::fs::{self, OpenOptions};
 use std::io::{IsTerminal, Write};
 use std::path::Path;
+use std::sync::Arc;
 
 #[cfg(any(test, feature = "test-utils"))]
 use std::cell::RefCell;
@@ -107,7 +109,12 @@ use std::cell::RefCell;
 /// All messages include timestamps and appropriate icons.
 pub struct Logger {
     colors: Colors,
+    /// Path for direct filesystem logging (legacy mode)
     log_file: Option<String>,
+    /// Workspace for abstracted file logging
+    workspace: Option<Arc<dyn Workspace>>,
+    /// Relative path within workspace for log file
+    workspace_log_path: Option<String>,
 }
 
 impl Logger {
@@ -116,6 +123,8 @@ impl Logger {
         Self {
             colors,
             log_file: None,
+            workspace: None,
+            workspace_log_path: None,
         }
     }
 
@@ -127,11 +136,45 @@ impl Logger {
         self
     }
 
+    /// Configure the logger to write logs via a workspace.
+    ///
+    /// This is the preferred method for pipeline code where a workspace exists.
+    /// Log messages will be written using the workspace abstraction, allowing
+    /// for testing with `MemoryWorkspace`.
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace` - The workspace to use for file operations
+    /// * `relative_path` - Path relative to workspace root for the log file
+    pub fn with_workspace_log(
+        mut self,
+        workspace: Arc<dyn Workspace>,
+        relative_path: &str,
+    ) -> Self {
+        self.workspace = Some(workspace);
+        self.workspace_log_path = Some(relative_path.to_string());
+        self
+    }
+
     /// Write a message to the log file (if configured).
     fn log_to_file(&self, msg: &str) {
+        // Strip ANSI codes for file logging
+        let clean_msg = strip_ansi_codes(msg);
+
+        // Try workspace-based logging first
+        if let (Some(workspace), Some(ref path)) = (&self.workspace, &self.workspace_log_path) {
+            let path = std::path::Path::new(path);
+            // Create parent directories if needed
+            if let Some(parent) = path.parent() {
+                let _ = workspace.create_dir_all(parent);
+            }
+            // Append to the log file
+            let _ = workspace.append_bytes(path, format!("{clean_msg}\n").as_bytes());
+            return;
+        }
+
+        // Fall back to direct filesystem logging (legacy mode)
         if let Some(ref path) = self.log_file {
-            // Strip ANSI codes for file logging
-            let clean_msg = strip_ansi_codes(msg);
             if let Some(parent) = Path::new(path).parent() {
                 let _ = fs::create_dir_all(parent);
             }
@@ -618,6 +661,61 @@ impl std::io::Write for TestLogger {
 mod tests {
     use super::*;
 
+    // =========================================================================
+    // Workspace-based logger tests
+    // =========================================================================
+
+    #[cfg(feature = "test-utils")]
+    mod workspace_tests {
+        use super::*;
+        use crate::workspace::MemoryWorkspace;
+        use std::sync::Arc;
+
+        #[test]
+        fn test_logger_with_workspace_writes_to_file() {
+            let workspace = Arc::new(MemoryWorkspace::new_test());
+            let logger = Logger::new(Colors::new())
+                .with_workspace_log(workspace.clone(), ".agent/logs/test.log");
+
+            // Use the Loggable trait to log a message
+            Loggable::info(&logger, "test message");
+
+            // Verify the message was written to the workspace
+            let content = workspace.get_file(".agent/logs/test.log").unwrap();
+            assert!(content.contains("test message"));
+            assert!(content.contains("[INFO]"));
+        }
+
+        #[test]
+        fn test_logger_with_workspace_strips_ansi_codes() {
+            let workspace = Arc::new(MemoryWorkspace::new_test());
+            let logger = Logger::new(Colors::new())
+                .with_workspace_log(workspace.clone(), ".agent/logs/test.log");
+
+            // Log via the internal method that includes ANSI codes
+            logger.log("[INFO] \x1b[31mcolored\x1b[0m message");
+
+            let content = workspace.get_file(".agent/logs/test.log").unwrap();
+            assert!(content.contains("colored message"));
+            assert!(!content.contains("\x1b["));
+        }
+
+        #[test]
+        fn test_logger_with_workspace_creates_parent_dirs() {
+            let workspace = Arc::new(MemoryWorkspace::new_test());
+            let logger = Logger::new(Colors::new())
+                .with_workspace_log(workspace.clone(), ".agent/logs/nested/deep/test.log");
+
+            Loggable::info(&logger, "nested log");
+
+            // Should have created parent directories
+            assert!(workspace.exists(std::path::Path::new(".agent/logs/nested/deep")));
+            let content = workspace
+                .get_file(".agent/logs/nested/deep/test.log")
+                .unwrap();
+            assert!(content.contains("nested log"));
+        }
+    }
     #[test]
     fn test_strip_ansi_codes() {
         let input = "\x1b[31mred\x1b[0m text";

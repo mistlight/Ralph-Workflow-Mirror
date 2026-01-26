@@ -82,6 +82,13 @@ pub use wrapper::{
     start_agent_phase, GitHelpers,
 };
 
+// Workspace-aware variants for testing
+#[cfg(any(test, feature = "test-utils"))]
+pub use wrapper::{
+    cleanup_orphaned_marker_with_workspace, create_marker_with_workspace,
+    marker_exists_with_workspace, remove_marker_with_workspace,
+};
+
 // Re-export checkpoint and recovery action for tests only
 #[cfg(any(test, feature = "test-utils"))]
 pub use rebase_checkpoint::RebaseCheckpoint;

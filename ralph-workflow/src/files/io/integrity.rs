@@ -138,6 +138,10 @@ pub fn verify_file_not_corrupted_with_workspace(
 /// Checks:
 /// - Directory exists and is writable
 /// - No obviously stale lock files (best-effort)
+///
+/// # Deprecated
+///
+/// This function uses absolute paths. Prefer `check_filesystem_ready_with_workspace` for new code.
 pub fn check_filesystem_ready(path: &Path) -> io::Result<()> {
     if !path.exists() {
         fs::create_dir_all(path)?;
@@ -165,6 +169,56 @@ pub fn check_filesystem_ready(path: &Path) -> io::Result<()> {
                         if elapsed > std::time::Duration::from_secs(3600) {
                             return Err(io::Error::other(format!("Stale lock file found: {name}")));
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Verify that the filesystem is ready for `.agent/` file operations using workspace.
+///
+/// This is the workspace-based version of `check_filesystem_ready`.
+///
+/// Checks:
+/// - Directory exists and is writable (creates if needed)
+/// - No obviously stale lock files (best-effort)
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `path` - Relative path within the workspace to check
+pub fn check_filesystem_ready_with_workspace(
+    workspace: &dyn Workspace,
+    path: &Path,
+) -> io::Result<()> {
+    // Create directory if it doesn't exist
+    if !workspace.is_dir(path) {
+        workspace.create_dir_all(path)?;
+    }
+
+    // Check writability using a tiny temp file
+    let test_file = path.join(".write_test");
+    workspace.write(&test_file, "test")?;
+    workspace.remove(&test_file)?;
+
+    // Best-effort stale lock detection: fail only on clear cases.
+    if let Ok(entries) = workspace.read_dir(path) {
+        for entry in entries {
+            let Some(name) = entry.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.to_ascii_lowercase().ends_with(".lock") {
+                continue;
+            }
+
+            // Check modification time
+            if let Some(modified) = entry.modified() {
+                if let Ok(elapsed) = modified.elapsed() {
+                    if elapsed > std::time::Duration::from_secs(3600) {
+                        return Err(io::Error::other(format!("Stale lock file found: {name}")));
                     }
                 }
             }
@@ -338,6 +392,10 @@ pub fn check_and_cleanup_xml_before_retry(
 /// # Returns
 ///
 /// A summary of what was found and cleaned up.
+///
+/// # Deprecated
+///
+/// This function uses absolute paths. Prefer `cleanup_stale_xml_files_with_workspace` for new code.
 pub fn cleanup_stale_xml_files(tmp_dir: &Path, force_cleanup: bool) -> io::Result<String> {
     let mut report = Vec::new();
     let mut cleaned = 0;
@@ -381,6 +439,68 @@ pub fn cleanup_stale_xml_files(tmp_dir: &Path, force_cleanup: bool) -> io::Resul
     let summary = format!(
         "XML file check complete: {} writable, {} locked, {} cleaned",
         writable, locked, cleaned
+    );
+
+    if !report.is_empty() {
+        Ok(format!("{}\n{}", summary, report.join("\n")))
+    } else {
+        Ok(summary)
+    }
+}
+
+/// Check and clean up all XML files in .agent/tmp/ directory using workspace.
+///
+/// This is the workspace-based version of `cleanup_stale_xml_files`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `tmp_dir` - Relative path to .agent/tmp/ directory
+/// * `force_cleanup` - If true, delete files
+///
+/// # Returns
+///
+/// A summary of what was found and cleaned up.
+pub fn cleanup_stale_xml_files_with_workspace(
+    workspace: &dyn Workspace,
+    tmp_dir: &Path,
+    force_cleanup: bool,
+) -> io::Result<String> {
+    let mut report = Vec::new();
+    let mut cleaned = 0;
+    let mut writable = 0;
+
+    if !workspace.is_dir(tmp_dir) {
+        return Ok("Directory doesn't exist yet - nothing to clean".to_string());
+    }
+
+    let entries = workspace.read_dir(tmp_dir)?;
+    for entry in entries {
+        let path = entry.path();
+
+        // Only check .xml files
+        let extension = path.extension().and_then(|s| s.to_str());
+        if extension != Some("xml") {
+            continue;
+        }
+
+        if force_cleanup {
+            // Remove the file
+            if workspace.exists(path) {
+                workspace.remove(path)?;
+                cleaned += 1;
+                report.push(format!("  🗑 Removed file: {}", path.display()));
+            }
+        } else {
+            // Just count it as writable (in memory workspace, everything is writable)
+            writable += 1;
+            report.push(format!("  ✓ {} is writable", path.display()));
+        }
+    }
+
+    let summary = format!(
+        "XML file check complete: {} writable, {} locked, {} cleaned",
+        writable, 0, cleaned
     );
 
     if !report.is_empty() {
@@ -468,6 +588,116 @@ mod tests {
             let result =
                 verify_file_not_corrupted_with_workspace(&workspace, Path::new("nonexistent.txt"));
             assert!(result.is_err());
+        }
+
+        // =====================================================================
+        // Tests for check_filesystem_ready_with_workspace
+        // =====================================================================
+
+        #[test]
+        fn test_check_filesystem_ready_with_workspace_creates_dir() {
+            let workspace = MemoryWorkspace::new_test();
+
+            // Directory doesn't exist yet
+            assert!(!workspace.is_dir(Path::new(".agent")));
+
+            // Should create the directory and succeed
+            check_filesystem_ready_with_workspace(&workspace, Path::new(".agent")).unwrap();
+
+            assert!(workspace.is_dir(Path::new(".agent")));
+        }
+
+        #[test]
+        fn test_check_filesystem_ready_with_workspace_existing_dir() {
+            let workspace = MemoryWorkspace::new_test().with_dir(".agent");
+
+            // Should succeed on existing directory
+            check_filesystem_ready_with_workspace(&workspace, Path::new(".agent")).unwrap();
+        }
+
+        #[test]
+        fn test_check_filesystem_ready_with_workspace_detects_stale_lock() {
+            use std::time::{Duration, SystemTime};
+
+            // Create a workspace with a lock file that has an old modification time
+            let old_time = SystemTime::now() - Duration::from_secs(7200); // 2 hours ago
+            let workspace = MemoryWorkspace::new_test()
+                .with_dir(".agent")
+                .with_file_at_time(".agent/pipeline.lock", "locked", old_time);
+
+            let result = check_filesystem_ready_with_workspace(&workspace, Path::new(".agent"));
+            assert!(result.is_err());
+            let err_msg = result.unwrap_err().to_string();
+            assert!(err_msg.contains("Stale lock file"));
+        }
+
+        #[test]
+        fn test_check_filesystem_ready_with_workspace_ignores_fresh_lock() {
+            // Create a workspace with a fresh lock file
+            let workspace = MemoryWorkspace::new_test()
+                .with_dir(".agent")
+                .with_file(".agent/pipeline.lock", "locked");
+
+            // Fresh lock files should not cause an error
+            check_filesystem_ready_with_workspace(&workspace, Path::new(".agent")).unwrap();
+        }
+
+        // =====================================================================
+        // Tests for cleanup_stale_xml_files_with_workspace
+        // =====================================================================
+
+        #[test]
+        fn test_cleanup_stale_xml_files_with_workspace_nonexistent() {
+            let workspace = MemoryWorkspace::new_test();
+
+            let report =
+                cleanup_stale_xml_files_with_workspace(&workspace, Path::new(".agent/tmp"), false)
+                    .unwrap();
+            assert!(report.contains("doesn't exist"));
+        }
+
+        #[test]
+        fn test_cleanup_stale_xml_files_with_workspace_empty_dir() {
+            let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
+
+            let report =
+                cleanup_stale_xml_files_with_workspace(&workspace, Path::new(".agent/tmp"), false)
+                    .unwrap();
+            assert!(report.contains("0 writable"));
+        }
+
+        #[test]
+        fn test_cleanup_stale_xml_files_with_workspace_finds_xml() {
+            let workspace = MemoryWorkspace::new_test()
+                .with_file(".agent/tmp/issues.xml", "<issues/>")
+                .with_file(".agent/tmp/plan.xml", "<plan/>")
+                .with_file(".agent/tmp/plan.xsd", "schema"); // XSD should be ignored
+
+            let report =
+                cleanup_stale_xml_files_with_workspace(&workspace, Path::new(".agent/tmp"), false)
+                    .unwrap();
+            assert!(
+                report.contains("2 writable"),
+                "Should find 2 XML files, got: {}",
+                report
+            );
+        }
+
+        #[test]
+        fn test_cleanup_stale_xml_files_with_workspace_force_cleanup() {
+            let workspace = MemoryWorkspace::new_test()
+                .with_file(".agent/tmp/issues.xml", "<issues/>")
+                .with_file(".agent/tmp/plan.xml", "<plan/>");
+
+            // With force_cleanup=true, files should be removed
+            let report =
+                cleanup_stale_xml_files_with_workspace(&workspace, Path::new(".agent/tmp"), true)
+                    .unwrap();
+
+            // Files should be removed
+            assert!(!workspace.exists(Path::new(".agent/tmp/issues.xml")));
+            assert!(!workspace.exists(Path::new(".agent/tmp/plan.xml")));
+            assert!(report.contains("cleaned") || report.contains("Removed"));
         }
     }
 

@@ -2,13 +2,18 @@
 //!
 //! Covers hook installation/uninstallation, marker file operations,
 //! and orphaned marker cleanup.
+//!
+//! Note: Many tests in this module require real git repositories and cannot
+//! be converted to use `MemoryWorkspace` because `git2::Repository` requires
+//! actual filesystem access. These tests use `with_temp_cwd` helper for isolation.
 
 use super::hooks::HOOK_MARKER;
 use super::repo::get_hooks_dir;
 use super::*;
 use crate::logger::Logger;
+use crate::workspace::{MemoryWorkspace, Workspace};
 use std::fs::{self, File};
-use tempfile::TempDir;
+use std::path::Path;
 
 // Note: Tests that change working directory need to run serially.
 // Run with: cargo test -- --test-threads=1
@@ -49,17 +54,17 @@ fn test_install_hook() {
 
 #[test]
 fn test_marker_file_operations() {
-    let dir = TempDir::new().unwrap();
-    let dir_path = dir.path();
-    let marker_path = dir_path.join(".no_agent_commit");
+    // Test marker file operations using MemoryWorkspace
+    let workspace = MemoryWorkspace::new_test();
+    let marker_path = Path::new(".no_agent_commit");
 
-    // Create marker.
-    File::create(&marker_path).unwrap();
-    assert!(marker_path.exists());
+    // Create marker using workspace.
+    workspace.write(marker_path, "").unwrap();
+    assert!(workspace.exists(marker_path));
 
-    // Remove marker.
-    fs::remove_file(&marker_path).unwrap();
-    assert!(!marker_path.exists());
+    // Remove marker using workspace.
+    workspace.remove(marker_path).unwrap();
+    assert!(!workspace.exists(marker_path));
 }
 
 #[test]

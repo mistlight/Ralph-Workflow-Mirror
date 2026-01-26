@@ -659,29 +659,9 @@ impl AgentRegistry {
 mod tests {
     use super::*;
     use crate::agents::JsonParserType;
-    use std::sync::Mutex;
-
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     fn default_ccs() -> CcsConfig {
         CcsConfig::default()
-    }
-
-    fn write_stub_executable(dir: &std::path::Path, name: &str) {
-        #[cfg(windows)]
-        {
-            let path = dir.join(format!("{}.cmd", name));
-            std::fs::write(&path, "@echo off\r\nexit /b 0\r\n").unwrap();
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let path = dir.join(name);
-            std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-            let mut perms = std::fs::metadata(&path).unwrap().permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&path, perms).unwrap();
-        }
     }
 
     #[test]
@@ -863,39 +843,85 @@ mod tests {
 
     #[test]
     fn test_registry_available_fallbacks() {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let original_path = std::env::var_os("PATH");
-        let dir = tempfile::tempdir().unwrap();
-
-        write_stub_executable(dir.path(), "claude");
-        write_stub_executable(dir.path(), "codex");
-
-        let mut new_paths = vec![dir.path().to_path_buf()];
-        if let Some(p) = &original_path {
-            new_paths.extend(std::env::split_paths(p));
-        }
-        let joined = std::env::join_paths(new_paths).unwrap();
-        std::env::set_var("PATH", &joined);
-
+        // Test that available_fallbacks filters to only agents with commands in PATH.
+        // Uses system commands (echo, cat) that exist on all systems to avoid
+        // creating real executables or modifying PATH.
         let mut registry = AgentRegistry::new().unwrap();
-        // Use apply_unified_config to set fallback chain (public API)
+
+        // Register agents using commands that exist on all systems
+        registry.register(
+            "echo-agent",
+            AgentConfig {
+                cmd: "echo test".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: None,
+            },
+        );
+        registry.register(
+            "cat-agent",
+            AgentConfig {
+                cmd: "cat --version".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: None,
+            },
+        );
+        registry.register(
+            "nonexistent-agent",
+            AgentConfig {
+                cmd: "this-command-definitely-does-not-exist-xyz123".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: None,
+            },
+        );
+
+        // Set fallback chain using registered agents
         let toml_str = r#"
             [agent_chain]
-            developer = ["claude", "nonexistent", "codex"]
+            developer = ["echo-agent", "nonexistent-agent", "cat-agent"]
         "#;
         let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
         registry.apply_unified_config(&unified);
 
         let fallbacks = registry.available_fallbacks(AgentRole::Developer);
-        assert!(fallbacks.contains(&"claude"));
-        assert!(fallbacks.contains(&"codex"));
-        assert!(!fallbacks.contains(&"nonexistent"));
-
-        if let Some(p) = original_path {
-            std::env::set_var("PATH", p);
-        } else {
-            std::env::remove_var("PATH");
-        }
+        assert!(
+            fallbacks.contains(&"echo-agent"),
+            "echo-agent should be available"
+        );
+        assert!(
+            fallbacks.contains(&"cat-agent"),
+            "cat-agent should be available"
+        );
+        assert!(
+            !fallbacks.contains(&"nonexistent-agent"),
+            "nonexistent-agent should not be available"
+        );
     }
 
     #[test]
@@ -962,56 +988,63 @@ mod tests {
 
     #[test]
     fn test_ccs_in_fallback_chain() {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let original_path = std::env::var_os("PATH");
-        let dir = tempfile::tempdir().unwrap();
-
-        // Create stub for ccs command
-        write_stub_executable(dir.path(), "ccs");
-        write_stub_executable(dir.path(), "claude");
-
-        let mut new_paths = vec![dir.path().to_path_buf()];
-        if let Some(p) = &original_path {
-            new_paths.extend(std::env::split_paths(p));
-        }
-        let joined = std::env::join_paths(new_paths).unwrap();
-        std::env::set_var("PATH", &joined);
-
+        // Test that CCS aliases can be used in fallback chains.
+        // Uses `echo` command which exists on all systems to avoid creating
+        // real executables or modifying PATH.
         let mut registry = AgentRegistry::new().unwrap();
 
-        // Register CCS aliases
+        // Register CCS aliases using echo command (exists on all systems)
         let mut aliases = HashMap::new();
         aliases.insert(
             "work".to_string(),
             CcsAliasConfig {
-                cmd: "ccs work".to_string(),
+                cmd: "echo work".to_string(),
                 ..CcsAliasConfig::default()
             },
         );
         registry.set_ccs_aliases(&aliases, default_ccs());
 
+        // Register a system command agent for comparison
+        registry.register(
+            "echo-agent",
+            AgentConfig {
+                cmd: "echo test".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: None,
+            },
+        );
+
         // Set fallback chain with CCS alias using apply_unified_config (public API)
         let toml_str = r#"
             [agent_chain]
-            developer = ["ccs/work", "claude"]
-            reviewer = ["claude"]
+            developer = ["ccs/work", "echo-agent"]
+            reviewer = ["echo-agent"]
         "#;
         let unified: crate::config::UnifiedConfig = toml::from_str(toml_str).unwrap();
         registry.apply_unified_config(&unified);
 
-        // ccs/work should be in available fallbacks (since ccs is in PATH)
+        // ccs/work should be in available fallbacks (since echo is in PATH)
         let fallbacks = registry.available_fallbacks(AgentRole::Developer);
-        assert!(fallbacks.contains(&"ccs/work"));
-        assert!(fallbacks.contains(&"claude"));
+        assert!(
+            fallbacks.contains(&"ccs/work"),
+            "ccs/work should be available"
+        );
+        assert!(
+            fallbacks.contains(&"echo-agent"),
+            "echo-agent should be available"
+        );
 
         // Validate chains should pass
         assert!(registry.validate_agent_chains().is_ok());
-
-        if let Some(p) = original_path {
-            std::env::set_var("PATH", p);
-        } else {
-            std::env::remove_var("PATH");
-        }
     }
 
     #[test]
