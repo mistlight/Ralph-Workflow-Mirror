@@ -324,12 +324,12 @@ impl AppEffectHandler for MyHandler {
     }
 }
 
-// CORRECT - Use std::fs directly
+// CORRECT - RealAppEffectHandler uses std::fs (this is the ONLY place besides WorkspaceFs)
 impl AppEffectHandler for RealAppEffectHandler {
     fn execute(&mut self, effect: AppEffect) -> AppEffectResult {
         match effect {
             AppEffect::ReadFile { path } => {
-                std::fs::read_to_string(path)  // Direct std::fs
+                std::fs::read_to_string(path)  // Direct std::fs allowed HERE ONLY
             }
         }
     }
@@ -373,30 +373,48 @@ let ctx = create_context(&workspace);
 run_phase(&ctx);
 ```
 
-### 4. TempDir Only for Cross-Layer Integration Tests
+### 4. Tests Must Use Mock Systems (NO raw std::fs)
+
+**Tests MUST use the same effect systems as production code:**
+
+| Test Type | Use This | NOT This |
+|-----------|----------|----------|
+| CLI/Pre-pipeline tests | `MockAppEffectHandler` | `std::fs`, `TempDir` |
+| Pipeline tests | `MemoryWorkspace` | `std::fs`, `TempDir` |
+| Cross-layer integration | `TempDir` acceptable | - |
 
 ```rust
-// CLI-only test: NO TempDir
+// CLI-only test: Use MockAppEffectHandler
 #[test]
 fn test_cli_diagnose() {
-    let mut handler = MockAppEffectHandler::new();
-    // ...
+    let mut handler = MockAppEffectHandler::new()
+        .with_file("PROMPT.md", "content")
+        .with_head_oid("abc123");
+    run_ralph_cli_with_handler(&["--diagnose"], &mut handler);
+    // NO TempDir, NO std::fs
 }
 
-// Pipeline-only test: NO TempDir  
+// Pipeline-only test: Use MemoryWorkspace
 #[test]
 fn test_cleanup_context() {
-    let workspace = MemoryWorkspace::new_test();
-    // ...
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "content");
+    let ctx = create_context(&workspace);
+    // NO TempDir, NO std::fs
 }
 
-// Full integration test: TempDir ALLOWED
+// ONLY for tests that exercise BOTH layers together
 #[test]
 fn test_full_workflow() {
-    let dir = TempDir::new().unwrap();  // Crosses both layers
-    // ...
+    let dir = TempDir::new().unwrap();  // Acceptable - crosses both layers
 }
 ```
+
+**Why no raw std::fs in tests?**
+- Tests should exercise the same code paths as production
+- If production uses `AppEffect`, tests should use `MockAppEffectHandler`
+- If production uses `workspace`, tests should use `MemoryWorkspace`
+- Raw `std::fs` in tests means you're not testing the effect system
 
 ### 5. Phase Boundaries Use Effect/Event
 
@@ -610,12 +628,31 @@ Checkpoints store:
 
 ---
 
+## Where std::fs is Allowed
+
+**TWO FILES ONLY:**
+
+| File | Purpose |
+|------|---------|
+| `app/effect_handler.rs` | `RealAppEffectHandler` - implements `AppEffect` operations |
+| `workspace.rs` | `WorkspaceFs` - implements `Workspace` trait |
+
+**EVERYWHERE ELSE: std::fs is FORBIDDEN**
+
+- Pre-pipeline code → Must use `AppEffect`
+- Pipeline code → Must use `ctx.workspace`  
+- Tests → Must use `MockAppEffectHandler` or `MemoryWorkspace`
+
+---
+
 ## Summary
 
 | Question | Answer |
 |----------|--------|
+| Where is std::fs allowed? | **ONLY** in `RealAppEffectHandler` and `WorkspaceFs` |
 | Can AppEffect use Workspace? | **NO** - Workspace doesn't exist at CLI layer |
 | Can Effect use std::fs? | **NO** - Must use ctx.workspace |
+| Can tests use std::fs? | **NO** - Must use `MockAppEffectHandler` or `MemoryWorkspace` |
 | Can MockAppEffectHandler and MemoryWorkspace share state? | **NO** - Separate systems |
 | When is TempDir acceptable? | **Only** for tests crossing both layers |
 | When to use Effect/Event vs direct workspace? | Phase boundaries = Effect/Event, within-phase = direct |
