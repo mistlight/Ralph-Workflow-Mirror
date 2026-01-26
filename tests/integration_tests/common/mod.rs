@@ -38,6 +38,7 @@
 
 use clap::error::ErrorKind;
 use clap::Parser;
+use ralph_workflow::config::ConfigEnvironment;
 use std::sync::{Arc, Mutex};
 
 /// Global lock for CWD-changing operations.
@@ -100,6 +101,84 @@ pub fn run_ralph_cli_injected(
         parsed_args.working_dir_override = Some(dir.to_path_buf());
     }
 
+    // Use real path resolver by default
+    run_ralph_cli_with_resolver(
+        parsed_args,
+        executor,
+        config,
+        working_dir,
+        &ralph_workflow::config::RealConfigEnvironment,
+    )
+}
+
+/// Run ralph workflow with injected Config and custom path resolver.
+///
+/// This is the same as [`run_ralph_cli_injected`] but accepts a custom
+/// [`ConfigEnvironment`] for testing init commands that need to create
+/// config files at specific paths.
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments to pass to ralph
+/// * `executor` - Process executor for external process execution
+/// * `config` - Pre-built Config struct (bypasses env var loading)
+/// * `working_dir` - Optional working directory override
+/// * `path_resolver` - Custom path resolver for init commands
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_path_resolver};
+///
+/// #[test]
+/// fn test_init_workflow() {
+///     with_default_timeout(|| {
+///         let dir = TempDir::new().unwrap();
+///         let config = create_test_config_struct();
+///         let executor = mock_executor_with_success();
+///         let resolver = TestConfigEnvironment::new()
+///             .with_unified_config_path(dir.path().join("ralph-workflow.toml"))
+///             .with_prompt_path(dir.path().join("PROMPT.md"));
+///         run_ralph_cli_with_path_resolver(&["--init"], executor, config, Some(dir.path()), &resolver).unwrap();
+///     });
+/// }
+/// ```
+pub fn run_ralph_cli_with_path_resolver<P: ConfigEnvironment>(
+    args: &[&str],
+    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+    config: ralph_workflow::config::Config,
+    working_dir: Option<&std::path::Path>,
+    path_resolver: &P,
+) -> anyhow::Result<()> {
+    // Build argv: binary name + args
+    let mut argv: Vec<String> = vec!["ralph".to_string()];
+    argv.extend(args.iter().map(|s| s.to_string()));
+
+    // Parse args using clap directly
+    let mut parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+        Ok(args) => args,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Set working_dir_override if provided
+    if let Some(dir) = working_dir {
+        parsed_args.working_dir_override = Some(dir.to_path_buf());
+    }
+
+    run_ralph_cli_with_resolver(parsed_args, executor, config, working_dir, path_resolver)
+}
+
+/// Internal helper that runs ralph with parsed args and resolver.
+fn run_ralph_cli_with_resolver<P: ConfigEnvironment>(
+    parsed_args: ralph_workflow::cli::Args,
+    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+    config: ralph_workflow::config::Config,
+    working_dir: Option<&std::path::Path>,
+    path_resolver: &P,
+) -> anyhow::Result<()> {
     // Create test registry with built-in agents only
     let registry = create_test_registry();
 
@@ -108,8 +187,14 @@ pub fn run_ralph_cli_injected(
         let _lock = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let original_cwd = std::env::current_dir().ok();
 
-        // Use run_with_config which bypasses env var loading
-        let result = ralph_workflow::app::run_with_config(parsed_args, executor, config, registry);
+        // Use run_with_config_and_resolver which bypasses env var loading
+        let result = ralph_workflow::app::run_with_config_and_resolver(
+            parsed_args,
+            executor,
+            config,
+            registry,
+            path_resolver,
+        );
 
         if let Some(cwd) = original_cwd {
             let _ = std::env::set_current_dir(cwd);
@@ -117,7 +202,13 @@ pub fn run_ralph_cli_injected(
 
         result
     } else {
-        ralph_workflow::app::run_with_config(parsed_args, executor, config, registry)
+        ralph_workflow::app::run_with_config_and_resolver(
+            parsed_args,
+            executor,
+            config,
+            registry,
+            path_resolver,
+        )
     }
 }
 

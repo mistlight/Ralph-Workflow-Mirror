@@ -51,27 +51,8 @@ pub enum StartPoint {
 /// - HEAD is not a commit (e.g., symbolic ref to tag)
 ///
 /// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`get_current_head_oid_at`] instead.
 pub fn get_current_head_oid() -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
-    get_current_head_oid_impl(&repo)
-}
-
-/// Get the current HEAD commit OID at a specific repository path.
-///
-/// Returns the full SHA-1 hash of the current HEAD commit.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - HEAD cannot be resolved (e.g., unborn branch)
-/// - HEAD is not a commit (e.g., symbolic ref to tag)
-pub fn get_current_head_oid_at(repo_root: &Path) -> io::Result<String> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| to_io_error(&e))?;
     get_current_head_oid_impl(&repo)
 }
 
@@ -119,33 +100,11 @@ fn get_current_start_point(repo: &git2::Repository) -> io::Result<StartPoint> {
 /// - The `.agent` directory cannot be created
 /// - The file cannot be written
 ///
-/// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`save_start_commit_at`] instead.
 pub fn save_start_commit() -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     let repo_root = repo
         .workdir()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No workdir for repository"))?;
-    save_start_commit_impl(&repo, repo_root)
-}
-
-/// Save the current HEAD commit as the starting commit at a specific repository path.
-///
-/// Writes the current HEAD OID to `.agent/start_commit` only if it doesn't
-/// already exist.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The current HEAD cannot be determined
-/// - The `.agent` directory cannot be created
-/// - The file cannot be written
-pub fn save_start_commit_at(repo_root: &Path) -> io::Result<()> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| to_io_error(&e))?;
     save_start_commit_impl(&repo, repo_root)
 }
 
@@ -199,8 +158,6 @@ fn write_start_point(repo_root: &Path, start_point: StartPoint) -> io::Result<()
 /// - The file cannot be read
 /// - The file content is invalid
 ///
-/// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`load_start_point_at`] instead.
 pub fn load_start_point() -> io::Result<StartPoint> {
     let repo = git2::Repository::discover(".").map_err(|e| {
         io::Error::new(
@@ -211,30 +168,6 @@ pub fn load_start_point() -> io::Result<StartPoint> {
     let repo_root = repo
         .workdir()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No workdir for repository"))?;
-    load_start_point_impl(&repo, repo_root)
-}
-
-/// Load the starting commit OID from the file at a specific repository path.
-///
-/// Reads the `.agent/start_commit` file and returns the stored OID.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The file does not exist
-/// - The file cannot be read
-/// - The file content is invalid
-pub fn load_start_point_at(repo_root: &Path) -> io::Result<StartPoint> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("Git repository error: {e}. Run 'ralph --reset-start-commit' to fix."),
-        )
-    })?;
     load_start_point_impl(&repo, repo_root)
 }
 
@@ -312,34 +245,11 @@ pub struct ResetStartCommitResult {
 /// - No common ancestor exists between HEAD and the default branch
 /// - The file cannot be written
 ///
-/// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`reset_start_commit_at`] instead.
 pub fn reset_start_commit() -> io::Result<ResetStartCommitResult> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     let repo_root = repo
         .workdir()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No workdir for repository"))?;
-    reset_start_commit_impl(&repo, repo_root)
-}
-
-/// Reset the starting commit to merge-base with the default branch at a specific repository path.
-///
-/// This is a CLI command that updates `.agent/start_commit` to the merge-base
-/// between HEAD and the default branch (main/master).
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The current HEAD cannot be determined
-/// - The default branch cannot be found
-/// - No common ancestor exists between HEAD and the default branch
-/// - The file cannot be written
-pub fn reset_start_commit_at(repo_root: &Path) -> io::Result<ResetStartCommitResult> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| to_io_error(&e))?;
     reset_start_commit_impl(&repo, repo_root)
 }
 
@@ -463,26 +373,11 @@ impl StartCommitSummary {
 /// Returns a `StartCommitSummary` containing information about the current
 /// start commit, commits since start, and staleness status.
 ///
-/// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`get_start_commit_summary_at`] instead.
 pub fn get_start_commit_summary() -> io::Result<StartCommitSummary> {
     let repo = git2::Repository::discover(".").map_err(|e| to_io_error(&e))?;
     let repo_root = repo
         .workdir()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No workdir for repository"))?;
-    get_start_commit_summary_impl(&repo, repo_root)
-}
-
-/// Get a summary of the start commit state for display at a specific repository path.
-///
-/// Returns a `StartCommitSummary` containing information about the current
-/// start commit, commits since start, and staleness status.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-pub fn get_start_commit_summary_at(repo_root: &Path) -> io::Result<StartCommitSummary> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| to_io_error(&e))?;
     get_start_commit_summary_impl(&repo, repo_root)
 }
 

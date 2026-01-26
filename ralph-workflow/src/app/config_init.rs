@@ -6,6 +6,12 @@
 //! - Selecting default agents from fallback chains
 //! - Loading agent registry data from unified config
 //! - Fetching and caching OpenCode API catalog for dynamic provider/model resolution
+//!
+//! # Dependency Injection
+//!
+//! The [`initialize_config_with`] function accepts both a [`CatalogLoader`] and a
+//! [`ConfigEnvironment`] for full dependency injection. This enables testing without
+//! network calls or environment variable dependencies.
 
 use crate::agents::opencode_api::{CatalogLoader, RealCatalogLoader};
 use crate::agents::{
@@ -13,10 +19,13 @@ use crate::agents::{
     ConfigSource,
 };
 use crate::cli::{
-    apply_args_to_config, handle_extended_help, handle_generate_completion, handle_init_global,
-    handle_init_legacy, handle_init_prompt, handle_list_work_guides, handle_smart_init, Args,
+    apply_args_to_config, handle_extended_help, handle_generate_completion,
+    handle_init_global_with, handle_init_legacy, handle_init_prompt_with, handle_list_work_guides,
+    handle_smart_init_with, Args,
 };
-use crate::config::{loader, unified_config_path, Config, UnifiedConfig};
+use crate::config::{
+    loader, unified_config_path, Config, ConfigEnvironment, RealConfigEnvironment, UnifiedConfig,
+};
 use crate::git_helpers::get_repo_root;
 use crate::logger::Colors;
 use crate::logger::Logger;
@@ -59,18 +68,53 @@ pub fn initialize_config(
     colors: Colors,
     logger: &Logger,
 ) -> anyhow::Result<Option<ConfigInitResult>> {
-    initialize_config_with_loader(args, colors, logger, &RealCatalogLoader)
+    initialize_config_with(
+        args,
+        colors,
+        logger,
+        &RealCatalogLoader,
+        &RealConfigEnvironment,
+    )
 }
 
 /// Initializes configuration and agent registry with a custom catalog loader.
 ///
 /// This is the same as [`initialize_config`] but accepts a custom [`CatalogLoader`]
 /// for dependency injection. This is primarily useful for testing.
+#[deprecated(since = "0.6.0", note = "Use initialize_config_with instead")]
 pub fn initialize_config_with_loader<L: CatalogLoader>(
     args: &Args,
     colors: Colors,
     logger: &Logger,
     catalog_loader: &L,
+) -> anyhow::Result<Option<ConfigInitResult>> {
+    initialize_config_with(args, colors, logger, catalog_loader, &RealConfigEnvironment)
+}
+
+/// Initializes configuration and agent registry with full dependency injection.
+///
+/// This is the same as [`initialize_config`] but accepts both a [`CatalogLoader`]
+/// and a [`ConfigEnvironment`] for full dependency injection. This enables testing
+/// without network calls or environment variable dependencies.
+///
+/// # Arguments
+///
+/// * `args` - The parsed CLI arguments
+/// * `colors` - Color configuration for output
+/// * `logger` - Logger for info/warning messages
+/// * `catalog_loader` - Loader for the OpenCode API catalog
+/// * `path_resolver` - Resolver for configuration file paths
+///
+/// # Returns
+///
+/// Returns `Ok(Some(result))` on success, `Ok(None)` if an early exit was triggered
+/// (e.g., --init, --init-prompt, --list-templates), or an error if initialization fails.
+pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
+    args: &Args,
+    colors: Colors,
+    logger: &Logger,
+    catalog_loader: &L,
+    path_resolver: &P,
 ) -> anyhow::Result<Option<ConfigInitResult>> {
     // Load configuration from unified config file (with env overrides)
     let (mut config, unified, warnings) = args
@@ -122,29 +166,35 @@ pub fn initialize_config_with_loader<L: CatalogLoader>(
 
     // Handle --init-prompt flag: create PROMPT.md from template and exit
     if let Some(ref template_name) = args.init_prompt {
-        if handle_init_prompt(template_name, args.unified_init.force_init, colors)? {
+        if handle_init_prompt_with(
+            template_name,
+            args.unified_init.force_init,
+            colors,
+            path_resolver,
+        )? {
             return Ok(None);
         }
     }
 
     // Handle smart --init flag: intelligently determine what to initialize
     if args.unified_init.init.is_some()
-        && handle_smart_init(
+        && handle_smart_init_with(
             args.unified_init.init.as_deref(),
             args.unified_init.force_init,
             colors,
+            path_resolver,
         )?
     {
         return Ok(None);
     }
 
     // Handle --init-config flag: explicit config creation and exit
-    if args.unified_init.init_config && handle_init_global(colors)? {
+    if args.unified_init.init_config && handle_init_global_with(colors, path_resolver)? {
         return Ok(None);
     }
 
     // Handle --init-global flag: create unified config if it doesn't exist and exit
-    if args.unified_init.init_global && handle_init_global(colors)? {
+    if args.unified_init.init_global && handle_init_global_with(colors, path_resolver)? {
         return Ok(None);
     }
 

@@ -10,14 +10,18 @@
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (file creation, config validation)
 //! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
+//! - Uses `MemoryConfigEnvironment` for config path injection (dependency injection)
 //! - Tests are deterministic and isolated
 //! - Uses **dependency injection** via `create_test_config_struct()` instead of env vars
 
 use std::fs;
 use tempfile::TempDir;
 
+use ralph_workflow::config::MemoryConfigEnvironment;
+
 use crate::common::{
     create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+    run_ralph_cli_with_path_resolver,
 };
 use crate::test_timeout::with_default_timeout;
 use test_helpers::init_git_repo;
@@ -30,12 +34,7 @@ use test_helpers::init_git_repo;
 ///
 /// This verifies that when ralph --init-legacy is run, the system
 /// creates .agent/agents.toml with default configuration sections.
-///
-/// NOTE: This test is disabled because --init-legacy is handled in the
-/// config initialization path which reads env vars. The proper fix would
-/// be to inject a ConfigInitializer trait.
 #[test]
-#[ignore = "requires config init path injection - covered by unit tests"]
 fn ralph_init_creates_config_file() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
@@ -68,10 +67,10 @@ fn ralph_init_creates_config_file() {
 /// This verifies that when a config file already exists, the system
 /// reports it exists and does not overwrite the original content.
 ///
-/// NOTE: This test is disabled because --init-legacy is handled in the
-/// config initialization path which reads env vars.
+/// NOTE: --init-legacy uses the repo-relative path (.agent/agents.toml)
+/// and still uses std::fs directly, so this test uses TempDir.
+/// This is an exception because --init-legacy is legacy behavior.
 #[test]
-#[ignore = "requires config init path injection - covered by unit tests"]
 fn ralph_init_reports_existing_config() {
     with_default_timeout(|| {
         let dir = TempDir::new().unwrap();
@@ -101,50 +100,34 @@ reviewer = ["codex"]
 /// Test that ralph --init-global creates unified config file.
 ///
 /// This verifies that when ralph --init-global is run, the system
-/// creates ralph-workflow.toml in the XDG config home directory.
-///
-/// NOTE: This test is disabled because --init-global reads XDG_CONFIG_HOME
-/// from the environment to determine the filesystem path. The proper fix
-/// would be to inject a ConfigPathResolver trait, but that's a larger refactor.
-/// For now, this behavior is covered by unit tests.
+/// creates ralph-workflow.toml using the injected ConfigEnvironment.
 #[test]
-#[ignore = "requires XDG_CONFIG_HOME env var injection - covered by unit tests"]
 fn ralph_first_run_creates_config_and_exits() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let dir_path = dir.path();
-
-        // Initialize git repo but don't create agents.toml
-        let _ = init_git_repo(&dir);
-
-        // Create PROMPT.md (required)
-        fs::write(
-            dir_path.join("PROMPT.md"),
-            r#"## Goal
-
-Test configuration functionality.
-
-## Acceptance
-
-- Tests pass
-"#,
-        )
-        .unwrap();
-
-        // Use a temp config dir so the test doesn't touch the real home directory.
-        let config_home = dir_path.join(".config");
-        fs::create_dir_all(&config_home).unwrap();
-
-        let unified_config_path = config_home.join("ralph-workflow.toml");
-        assert!(!unified_config_path.exists());
+        // Create in-memory environment - no config exists yet
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_prompt_path("/test/repo/PROMPT.md")
+            .with_file("/test/repo/PROMPT.md", "## Goal\n\nTest task\n");
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--init-global"], executor, config, Some(dir_path)).unwrap();
+        run_ralph_cli_with_path_resolver(&["--init-global"], executor, config, None, &env).unwrap();
 
-        // Should exit successfully after creating the config
-        // Unified config file should now exist
-        assert!(unified_config_path.exists());
+        // Should have created the config file
+        assert!(
+            env.was_written(std::path::Path::new("/test/config/ralph-workflow.toml")),
+            "Unified config file should be created"
+        );
+
+        // Verify it contains expected content
+        let content = env
+            .get_file(std::path::Path::new("/test/config/ralph-workflow.toml"))
+            .unwrap();
+        assert!(
+            content.contains("[general]") || content.contains("[agents"),
+            "Config file should contain expected sections"
+        );
     });
 }
 

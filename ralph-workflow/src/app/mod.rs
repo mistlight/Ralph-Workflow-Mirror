@@ -195,12 +195,116 @@ pub fn run_with_config(
     config: crate::config::Config,
     registry: AgentRegistry,
 ) -> anyhow::Result<()> {
+    // Use real path resolver by default for backward compatibility
+    run_with_config_and_resolver(
+        args,
+        executor,
+        config,
+        registry,
+        &crate::config::RealConfigEnvironment,
+    )
+}
+
+/// Test-only entry point that accepts a pre-built Config and a custom path resolver.
+///
+/// This function is for integration testing only. It bypasses environment variable
+/// loading and uses the provided Config and path resolver directly, enabling
+/// deterministic tests that don't rely on process-global state or env vars.
+///
+/// This function handles ALL commands including early-exit commands (--init, --diagnose,
+/// --reset-start-commit, etc.) so that tests can use a single entry point.
+///
+/// # Arguments
+///
+/// * `args` - The parsed CLI arguments
+/// * `executor` - Process executor for external process execution  
+/// * `config` - Pre-built configuration (bypasses env var loading)
+/// * `registry` - Pre-built agent registry
+/// * `path_resolver` - Custom path resolver for init commands
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success or an error if any phase fails.
+#[cfg(feature = "test-utils")]
+pub fn run_with_config_and_resolver<P: crate::config::ConfigEnvironment>(
+    args: Args,
+    executor: std::sync::Arc<dyn ProcessExecutor>,
+    config: crate::config::Config,
+    registry: AgentRegistry,
+    path_resolver: &P,
+) -> anyhow::Result<()> {
+    use crate::cli::{
+        handle_extended_help, handle_init_global_with, handle_init_prompt_with,
+        handle_list_work_guides, handle_smart_init_with,
+    };
+
     let colors = Colors::new();
     let logger = Logger::new(colors);
 
     // Set working directory first if override is provided
     if let Some(ref override_dir) = args.working_dir_override {
         std::env::set_current_dir(override_dir)?;
+    }
+
+    // Handle --extended-help / --man flag: display extended help and exit.
+    if args.recovery.extended_help {
+        handle_extended_help();
+        if args.work_guide_list.list_work_guides {
+            println!();
+            handle_list_work_guides(colors);
+        }
+        return Ok(());
+    }
+
+    // Handle --list-work-guides / --list-templates flag
+    if args.work_guide_list.list_work_guides && handle_list_work_guides(colors) {
+        return Ok(());
+    }
+
+    // Handle --init-prompt flag: create PROMPT.md from template and exit
+    if let Some(ref template_name) = args.init_prompt {
+        if handle_init_prompt_with(
+            template_name,
+            args.unified_init.force_init,
+            colors,
+            path_resolver,
+        )? {
+            return Ok(());
+        }
+    }
+
+    // Handle smart --init flag: intelligently determine what to initialize
+    if args.unified_init.init.is_some()
+        && handle_smart_init_with(
+            args.unified_init.init.as_deref(),
+            args.unified_init.force_init,
+            colors,
+            path_resolver,
+        )?
+    {
+        return Ok(());
+    }
+
+    // Handle --init-config flag: explicit config creation and exit
+    if args.unified_init.init_config && handle_init_global_with(colors, path_resolver)? {
+        return Ok(());
+    }
+
+    // Handle --init-global flag: create unified config if it doesn't exist and exit
+    if args.unified_init.init_global && handle_init_global_with(colors, path_resolver)? {
+        return Ok(());
+    }
+
+    // Handle --init-legacy flag: legacy per-repo agents.toml creation and exit
+    if args.legacy_init.init_legacy {
+        let repo_root = get_repo_root().ok();
+        let legacy_path = repo_root.map_or_else(
+            || std::path::PathBuf::from(".agent/agents.toml"),
+            |root| root.join(".agent/agents.toml"),
+        );
+        if crate::cli::handle_init_legacy(colors, &legacy_path)? {
+            return Ok(());
+        }
     }
 
     // Use provided config directly (no env var loading)

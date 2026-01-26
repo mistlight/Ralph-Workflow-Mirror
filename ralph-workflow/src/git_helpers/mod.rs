@@ -46,11 +46,6 @@ pub use rebase::{
     abort_rebase, continue_rebase, get_conflict_markers_for_file, get_conflicted_files,
     rebase_in_progress, rebase_onto, RebaseResult,
 };
-#[cfg(any(test, feature = "test-utils"))]
-pub use rebase::{
-    abort_rebase_at, continue_rebase_at, get_conflicted_files_at, rebase_in_progress_at,
-    rebase_onto_at,
-};
 
 // Types that are part of the public API but not used in binary
 #[cfg(any(test, feature = "test-utils"))]
@@ -72,8 +67,6 @@ pub use rebase_checkpoint::RebasePhase;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub use rebase_state_machine::{RebaseLock, RebaseStateMachine};
-#[cfg(any(test, feature = "test-utils"))]
-pub use repo::{get_hooks_dir_at, git_add_all_at, git_commit_at, git_diff_at, git_snapshot_at};
 pub use repo::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
     CommitResultFallback, DiffReviewContent, DiffTruncationLevel,
@@ -82,19 +75,9 @@ pub use review_baseline::{
     get_baseline_summary, get_review_baseline_info, load_review_baseline, update_review_baseline,
     ReviewBaseline,
 };
-#[cfg(any(test, feature = "test-utils"))]
-pub use review_baseline::{
-    get_baseline_summary_at, get_review_baseline_info_at, load_review_baseline_at,
-    update_review_baseline_at,
-};
 pub use start_commit::{
     get_current_head_oid, get_start_commit_summary, load_start_point, reset_start_commit,
     save_start_commit, StartPoint,
-};
-#[cfg(any(test, feature = "test-utils"))]
-pub use start_commit::{
-    get_current_head_oid_at, get_start_commit_summary_at, load_start_point_at,
-    reset_start_commit_at, save_start_commit_at,
 };
 pub use wrapper::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,

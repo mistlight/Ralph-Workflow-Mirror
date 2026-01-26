@@ -1502,33 +1502,11 @@ fn check_sparse_checkout_state() -> io::Result<()> {
 /// has limitations and complexity that make it unreliable for production use.
 /// The git CLI is more robust and better tested for rebase operations.
 ///
-/// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`rebase_onto_at`] instead.
 pub fn rebase_onto(
     upstream_branch: &str,
     executor: &dyn crate::executor::ProcessExecutor,
 ) -> io::Result<RebaseResult> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
-    rebase_onto_impl(&repo, upstream_branch, executor)
-}
-
-/// Perform a rebase onto the specified upstream branch at a specific repository path.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-/// * `upstream_branch` - The branch to rebase onto (e.g., "main", "origin/main")
-/// * `executor` - Process executor for dependency injection
-///
-/// # Returns
-///
-/// Returns `Ok(RebaseResult)` indicating the outcome.
-pub fn rebase_onto_at(
-    repo_root: &Path,
-    upstream_branch: &str,
-    executor: &dyn crate::executor::ProcessExecutor,
-) -> io::Result<RebaseResult> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
     rebase_onto_impl(&repo, upstream_branch, executor)
 }
 
@@ -1674,30 +1652,8 @@ fn rebase_onto_impl(
 /// - No rebase is in progress
 /// - The abort operation fails
 ///
-/// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`abort_rebase_at`] instead.
 pub fn abort_rebase(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
-    abort_rebase_impl(&repo, executor)
-}
-
-/// Abort the current rebase operation at a specific repository path.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-/// * `executor` - Process executor for dependency injection
-///
-/// # Returns
-///
-/// Returns `Ok(())` if successful, or an error if:
-/// - No rebase is in progress
-/// - The abort operation fails
-pub fn abort_rebase_at(
-    repo_root: &Path,
-    executor: &dyn crate::executor::ProcessExecutor,
-) -> io::Result<()> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
     abort_rebase_impl(&repo, executor)
 }
 
@@ -1741,24 +1697,8 @@ fn abort_rebase_impl(
 /// Returns `Ok(Vec<String>)` containing the paths of conflicted files,
 /// or an error if the repository cannot be accessed.
 ///
-/// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`get_conflicted_files_at`] instead.
 pub fn get_conflicted_files() -> io::Result<Vec<String>> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
-    get_conflicted_files_impl(&repo)
-}
-
-/// Get a list of files that have merge conflicts at a specific repository path.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-///
-/// # Returns
-///
-/// Returns `Ok(Vec<String>)` containing the paths of conflicted files.
-pub fn get_conflicted_files_at(repo_root: &Path) -> io::Result<Vec<String>> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
     get_conflicted_files_impl(&repo)
 }
 
@@ -2203,30 +2143,8 @@ pub fn validate_post_rebase_with_checks(
 /// - The continue operation fails
 ///
 /// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`continue_rebase_at`] instead.
 pub fn continue_rebase(executor: &dyn crate::executor::ProcessExecutor) -> io::Result<()> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
-    continue_rebase_impl(&repo, executor)
-}
-
-/// Continue a rebase after conflict resolution at a specific repository path.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-/// * `executor` - Process executor for dependency injection
-///
-/// # Returns
-///
-/// Returns `Ok(())` if successful, or an error if:
-/// - No rebase is in progress
-/// - Conflicts remain unresolved
-/// - The continue operation fails
-pub fn continue_rebase_at(
-    repo_root: &Path,
-    executor: &dyn crate::executor::ProcessExecutor,
-) -> io::Result<()> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
     continue_rebase_impl(&repo, executor)
 }
 
@@ -2283,24 +2201,8 @@ fn continue_rebase_impl(
 /// Returns `Ok(true)` if a rebase is in progress, `Ok(false)` otherwise,
 /// or an error if the repository cannot be accessed.
 ///
-/// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`rebase_in_progress_at`] instead.
 pub fn rebase_in_progress() -> io::Result<bool> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
-    rebase_in_progress_impl(&repo)
-}
-
-/// Check if a rebase is currently in progress at a specific repository path.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-///
-/// # Returns
-///
-/// Returns `Ok(true)` if a rebase is in progress, `Ok(false)` otherwise.
-pub fn rebase_in_progress_at(repo_root: &Path) -> io::Result<bool> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
     rebase_in_progress_impl(&repo)
 }
 
