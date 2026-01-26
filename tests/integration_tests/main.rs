@@ -19,11 +19,12 @@
 //!
 //! Key patterns used in these tests:
 //! - **Parser tests:** Use `TestPrinter` from `ralph_workflow::json_parser::printer`
-//! - **File operations:** Use `tempfile::TempDir` for isolation
+//! - **File operations:** Use `MemoryWorkspace` for isolation (NOT `TempDir`)
 //! - **CLI tests:** Use `run_ralph_cli_injected()` which calls `app::run_with_config()` directly
 //! - **Process execution:** Use `MockProcessExecutor` (never spawn real processes in tests)
 //!
-//! See individual test modules for examples of proper integration test structure.
+//! Tests requiring real git/filesystem operations are in `tests/system_tests/`.
+//! See `tests/system_tests/SYSTEM_TESTS.md` for those guidelines.
 
 mod agent_spawn_errors;
 mod cli;
@@ -37,7 +38,6 @@ mod gemini_parser_tests;
 mod git;
 mod logger;
 mod opencode_parser_tests;
-mod rebase;
 mod reducer_fault_tolerance;
 mod reducer_rebase_state_machine;
 mod reducer_resume_tests;

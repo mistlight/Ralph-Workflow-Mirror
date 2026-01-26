@@ -1,16 +1,21 @@
-//! Integration tests for fault-tolerant rebase operations.
+//! System tests for fault-tolerant rebase operations.
 //!
 //! These tests verify that the rebase system handles all documented
 //! Git rebase failure modes and can recover from interruptions.
 //!
-//! # Integration Test Style Guide
+//! # System Test Guidelines
 //!
-//! **CRITICAL:** All tests in this module MUST follow the integration test style guide
-//! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
+//! These tests are in `system_tests` (not `integration_tests`) because they
+//! require **real git operations** that cannot be mocked:
+//! - Real git repository initialization via `git2`
+//! - Real file system operations for conflict simulation
+//! - Real rebase/merge operations to test recovery
+//!
+//! See **[SYSTEM_TESTS.md](../SYSTEM_TESTS.md)** for guidelines.
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (git state, commit history, working directory)
-//! - Uses `TempDir` for filesystem isolation
+//! - Uses `TempDir` for filesystem isolation (allowed in system tests)
 //! - Tests are deterministic and black-box (test rebase as a user would experience it)
 
 pub mod ai_resolution_tests;

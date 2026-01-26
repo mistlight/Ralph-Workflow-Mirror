@@ -30,9 +30,12 @@
 //! - Network calls
 //! - Tests over 1000 lines
 
+mod common;
 mod test_timeout;
 
-// Modules will be added as tests are moved here:
-// mod rebase;
+// Test modules using real filesystem/git operations
+mod rebase;
+
+// Future modules:
 // mod git;
 // mod workspace_fs;
