@@ -282,6 +282,32 @@ pub fn update_status_at(repo_root: &Path, _status: &str, isolation_mode: bool) -
     overwrite_one_liner(&repo_root.join(".agent/STATUS.md"), VAGUE_STATUS_LINE)
 }
 
+/// Update the status file with minimal, vague content using workspace.
+///
+/// This version uses the [`Workspace`] trait for file operations, allowing tests
+/// to use [`MemoryWorkspace`] instead of the real filesystem.
+///
+/// Status is intentionally kept to 1 sentence to prevent context contamination.
+/// When `isolation_mode` is true (the default), this function does nothing
+/// since STATUS.md should not exist in isolation mode.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `_status` - Status string (unused, always writes vague status)
+/// * `isolation_mode` - If true, do nothing since STATUS.md should not exist
+pub fn update_status_with_workspace(
+    workspace: &dyn Workspace,
+    _status: &str,
+    isolation_mode: bool,
+) -> io::Result<()> {
+    if isolation_mode {
+        // In isolation mode, STATUS.md should not exist
+        return Ok(());
+    }
+    overwrite_one_liner_with_workspace(workspace, Path::new(".agent/STATUS.md"), VAGUE_STATUS_LINE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +452,31 @@ mod tests {
         clean_context_for_reviewer_with_workspace(&workspace, &logger, true).unwrap();
 
         // No files should be created
+        assert!(
+            !workspace.exists(Path::new(".agent/STATUS.md")),
+            "STATUS.md should not be created in isolation mode"
+        );
+    }
+
+    #[test]
+    fn test_update_status_with_workspace_non_isolation() {
+        let workspace = MemoryWorkspace::new_test().with_dir(".agent");
+
+        // Non-isolation mode should write vague status
+        update_status_with_workspace(&workspace, "In progress.", false).unwrap();
+
+        let content = workspace.read(Path::new(".agent/STATUS.md")).unwrap();
+        assert_eq!(content, "In progress.\n");
+    }
+
+    #[test]
+    fn test_update_status_with_workspace_isolation_mode() {
+        let workspace = MemoryWorkspace::new_test().with_dir(".agent");
+
+        // Isolation mode should do nothing
+        update_status_with_workspace(&workspace, "In progress.", true).unwrap();
+
+        // STATUS.md should NOT be created
         assert!(
             !workspace.exists(Path::new(".agent/STATUS.md")),
             "STATUS.md should not be created in isolation mode"

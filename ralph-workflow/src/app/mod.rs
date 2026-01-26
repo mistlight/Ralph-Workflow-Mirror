@@ -47,8 +47,8 @@ use crate::cli::{
 use crate::executor::ProcessExecutor;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::files::{
-    create_prompt_backup_with_workspace, make_prompt_read_only_with_workspace, update_status,
-    validate_prompt_md_with_workspace,
+    create_prompt_backup_with_workspace, make_prompt_read_only_with_workspace,
+    update_status_with_workspace, validate_prompt_md_with_workspace,
 };
 use crate::git_helpers::{
     abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
@@ -1268,7 +1268,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
     // Post-pipeline operations
     check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
-    update_status("In progress.", config.isolation_mode)?;
+    update_status_with_workspace(&*ctx.workspace, "In progress.", config.isolation_mode)?;
 
     // Commit phase
     finalize_pipeline(
@@ -1478,7 +1478,7 @@ where
 
     // Post-pipeline operations
     check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
-    update_status("In progress.", config.isolation_mode)?;
+    update_status_with_workspace(&*ctx.workspace, "In progress.", config.isolation_mode)?;
 
     // Commit phase
     finalize_pipeline(

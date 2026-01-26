@@ -16,7 +16,7 @@ use crate::files::llm_output_extraction::{
     extract_xml_with_file_fallback, format_xml_for_display, validate_development_result_xml,
     validate_plan_xml, xml_paths, PlanElements,
 };
-use crate::files::{delete_plan_file, update_status};
+use crate::files::{delete_plan_file, update_status_with_workspace};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
@@ -118,7 +118,11 @@ pub fn run_development_phase(
 
         // Step 2: Execute the PLAN
         ctx.logger.info("Executing plan...");
-        update_status("Starting development iteration", ctx.config.isolation_mode)?;
+        update_status_with_workspace(
+            ctx.workspace,
+            "Starting development iteration",
+            ctx.config.isolation_mode,
+        )?;
 
         // Run development iteration with XML extraction and XSD validation
         let dev_result = run_development_iteration_with_xml_retry(
@@ -157,7 +161,11 @@ pub fn run_development_phase(
                 .with_duration(duration);
             ctx.execution_history.add_step(step);
         }
-        update_status("Completed progress step", ctx.config.isolation_mode)?;
+        update_status_with_workspace(
+            ctx.workspace,
+            "Completed progress step",
+            ctx.config.isolation_mode,
+        )?;
 
         // Log the development result
         if let Some(ref summary) = dev_result.summary {
@@ -601,7 +609,11 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
     }
 
     ctx.logger.info("Creating plan from PROMPT.md...");
-    update_status("Starting planning phase", ctx.config.isolation_mode)?;
+    update_status_with_workspace(
+        ctx.workspace,
+        "Starting planning phase",
+        ctx.config.isolation_mode,
+    )?;
 
     // Read PROMPT.md content to include directly in the planning prompt
     // This prevents agents from discovering PROMPT.md through file exploration,

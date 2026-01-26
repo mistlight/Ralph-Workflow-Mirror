@@ -24,7 +24,7 @@ use crate::files::llm_output_extraction::{
 use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::files::{
     clean_context_for_reviewer_with_workspace, delete_issues_file_for_isolation_with_workspace,
-    update_status,
+    update_status_with_workspace,
 };
 use crate::git_helpers::{
     get_baseline_summary, git_snapshot, update_review_baseline, CommitResultFallback,
@@ -203,7 +203,7 @@ pub fn run_review_phase(
         // This ensures the reviewer sees actual changes rather than an empty diff.
 
         // REVIEW PASS
-        update_status("Reviewing code", ctx.config.isolation_mode)?;
+        update_status_with_workspace(ctx.workspace, "Reviewing code", ctx.config.isolation_mode)?;
 
         let review_label = "review";
 
@@ -1121,7 +1121,7 @@ pub fn run_fix_pass(
 ) -> anyhow::Result<()> {
     let fix_start_time = Instant::now();
 
-    update_status("Applying fixes", ctx.config.isolation_mode)?;
+    update_status_with_workspace(ctx.workspace, "Applying fixes", ctx.config.isolation_mode)?;
 
     // Read PROMPT.md, PLAN.md, and ISSUES.md for context
     let prompt_content = ctx
