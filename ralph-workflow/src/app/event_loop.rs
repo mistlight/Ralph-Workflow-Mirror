@@ -74,6 +74,81 @@ pub fn run_event_loop(
     }
 }
 
+/// Run the event loop with a custom effect handler.
+///
+/// This variant allows injecting a custom effect handler for testing.
+/// The handler must implement `EffectHandler` and `StatefulHandler` traits.
+///
+/// # Arguments
+///
+/// * `ctx` - Phase context for effect handlers
+/// * `initial_state` - Optional initial state (if None, creates a new state)
+/// * `config` - Event loop configuration
+/// * `handler` - Custom effect handler (e.g., MockEffectHandler for testing)
+///
+/// # Returns
+///
+/// Returns the event loop result containing the completion status and final state.
+pub fn run_event_loop_with_handler<'ctx, H>(
+    ctx: &mut PhaseContext<'_>,
+    initial_state: Option<PipelineState>,
+    config: EventLoopConfig,
+    handler: &mut H,
+) -> Result<EventLoopResult>
+where
+    H: EffectHandler<'ctx> + StatefulHandler,
+{
+    let mut state = initial_state.unwrap_or_else(|| {
+        PipelineState::initial(ctx.config.developer_iters, ctx.config.reviewer_reviews)
+    });
+
+    handler.update_state(state.clone());
+    let mut events_processed = 0;
+
+    ctx.logger.info("Starting reducer-based event loop");
+
+    while !state.is_complete() && events_processed < config.max_iterations {
+        let effect = determine_next_effect(&state);
+
+        let event = handler.execute(effect, ctx)?;
+
+        let new_state = reduce(state, event.clone());
+
+        handler.update_state(new_state.clone());
+        state = new_state;
+
+        events_processed += 1;
+
+        if config.enable_checkpointing {
+            let checkpoint_event = PipelineEvent::CheckpointSaved {
+                trigger: CheckpointTrigger::PhaseTransition,
+            };
+            state = reduce(state, checkpoint_event);
+        }
+    }
+
+    if events_processed >= config.max_iterations {
+        ctx.logger.warn(&format!(
+            "Event loop reached max iterations ({}) without completion",
+            config.max_iterations
+        ));
+    }
+
+    Ok(EventLoopResult {
+        completed: state.is_complete(),
+        events_processed,
+    })
+}
+
+/// Trait for handlers that maintain internal state.
+///
+/// This trait allows the event loop to update the handler's internal state
+/// after each event is processed.
+pub trait StatefulHandler {
+    /// Update the handler's internal state.
+    fn update_state(&mut self, state: PipelineState);
+}
+
 fn run_event_loop_internal(
     ctx: &mut PhaseContext<'_>,
     initial_state: Option<PipelineState>,
@@ -133,5 +208,78 @@ mod tests {
         };
         assert_eq!(config.max_iterations, 1000);
         assert!(config.enable_checkpointing);
+    }
+
+    /// TDD test: run_event_loop_with_handler should accept a generic EffectHandler
+    /// allowing MockEffectHandler to be injected for testing.
+    #[cfg(feature = "test-utils")]
+    #[test]
+    fn test_run_event_loop_with_mock_handler() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::phases::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::reducer::mock_effect_handler::MockEffectHandler;
+        use crate::reducer::PipelineState;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+        use std::sync::Arc;
+
+        // Create test fixtures
+        let config = Config::default();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let registry = AgentRegistry::new().unwrap();
+        let executor = Arc::new(MockProcessExecutor::new());
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace = MemoryWorkspace::new(repo_root.clone());
+
+        // Create PhaseContext
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        // Create mock handler
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state.clone());
+
+        let loop_config = EventLoopConfig {
+            max_iterations: 100,
+            enable_checkpointing: false,
+        };
+
+        // This should compile and run with the mock handler
+        let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler);
+
+        assert!(result.is_ok(), "Event loop should complete successfully");
+
+        // Mock handler should have captured effects
+        assert!(
+            handler.effect_count() > 0,
+            "Mock handler should have captured at least one effect"
+        );
     }
 }

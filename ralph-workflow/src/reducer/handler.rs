@@ -47,6 +47,12 @@ impl<'ctx> EffectHandler<'ctx> for MainEffectHandler {
     }
 }
 
+impl crate::app::event_loop::StatefulHandler for MainEffectHandler {
+    fn update_state(&mut self, state: PipelineState) {
+        self.state = state;
+    }
+}
+
 impl MainEffectHandler {
     fn execute_effect(
         &mut self,

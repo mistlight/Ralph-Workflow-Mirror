@@ -174,6 +174,16 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
     }
 }
 
+/// Implement StatefulHandler for MockEffectHandler.
+///
+/// This allows the event loop to update the mock's internal state after
+/// each event is processed.
+impl crate::app::event_loop::StatefulHandler for MockEffectHandler {
+    fn update_state(&mut self, state: PipelineState) {
+        self.state = state;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
