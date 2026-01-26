@@ -1,15 +1,34 @@
 # System Tests
 
+> **WARNING: DO NOT ADD NEW SYSTEM TESTS WITHOUT EXPLICIT APPROVAL**
+>
+> System tests are a **LAST RESORT**, not a dumping ground for tests that are
+> hard to mock. Before adding ANY new system test, you MUST:
+>
+> 1. **Write an RFC** explaining why the test cannot use `MemoryWorkspace` and mocks
+> 2. **Get explicit user approval** for adding the system test
+> 3. **Verify the test is testing a boundary function**, not application logic
+>
+> If you're testing CLI behavior, pipeline logic, or application features, those
+> belong in integration tests with proper mocking. System tests are ONLY for
+> testing the actual boundary implementations (e.g., `WorkspaceFs`, `git2` wrappers).
+
 System tests verify behavior that requires real filesystem and git operations.
 These tests are **NOT** part of the CI pipeline and run separately as sanity checks.
 
 ## When to Use System Tests
 
-Use system tests ONLY for:
-- Real git operations (rebase, merge, conflict resolution)
-- `WorkspaceFs` implementation testing
-- File permission/symlink edge cases
-- Cross-platform filesystem behavior
+System tests are appropriate ONLY for testing **boundary implementations**:
+- `WorkspaceFs` implementation (the real filesystem `Workspace` impl)
+- Direct `git2` wrapper functions that interact with real repos
+- File permission/symlink edge cases that cannot be simulated
+- Cross-platform filesystem behavior differences
+
+System tests are **NOT** appropriate for:
+- CLI behavior testing (use integration tests with `MemoryWorkspace`)
+- Pipeline logic testing (use integration tests with mocks)
+- Application features (use integration tests)
+- Anything that can be tested with `MemoryWorkspace` + `MockProcessExecutor`
 
 ## Allowed Patterns
 
