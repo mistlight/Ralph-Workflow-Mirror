@@ -14,18 +14,44 @@
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
-//! - Tests verify **observable behavior** (exit codes, output)
-//! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
-//! - Tests are deterministic and isolated
-//! - Uses **dependency injection** for configuration (no environment variables)
-
-use tempfile::TempDir;
+//! - Tests verify **observable behavior** via effect capture
+//! - Uses `MockAppEffectHandler` AND `MockEffectHandler` for git/filesystem isolation
+//! - NO `TempDir`, `std::fs`, or real git operations
+//! - Tests are deterministic and verify effects, not real filesystem state
 
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handlers,
 };
 use crate::test_timeout::with_default_timeout;
-use test_helpers::{commit_all, init_git_repo, write_file};
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+use ralph_workflow::reducer::effect::Effect;
+use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
+use ralph_workflow::reducer::PipelineState;
+use std::path::PathBuf;
+
+/// Standard PROMPT.md content for fallback tests.
+const STANDARD_PROMPT: &str = r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#;
+
+/// Create mock handlers with standard setup for fallback tests.
+fn create_fallback_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
+    let app_handler = MockAppEffectHandler::new()
+        .with_head_oid("a".repeat(40))
+        .with_cwd(PathBuf::from("/mock/repo"))
+        .with_file("PROMPT.md", STANDARD_PROMPT)
+        .with_diff("diff --git a/test.txt b/test.txt\n+new content")
+        .with_staged_changes(true);
+
+    let effect_handler = MockEffectHandler::new(PipelineState::initial(0, 0));
+
+    (app_handler, effect_handler)
+}
 
 // ============================================================================
 // Agent Command Execution Tests
@@ -38,29 +64,26 @@ use test_helpers::{commit_all, init_git_repo, write_file};
 /// The pipeline may still create some tracking files (STATUS.md, etc.) for
 /// pipeline state management, but agent execution is skipped.
 #[test]
-fn ralph_skips_phases_with_zero_iterations() {
+fn test_skips_phases_with_zero_iterations() {
     with_default_timeout(|| {
-        // Test that setting iterations to 0 skips the respective phase
-        let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
-
-        // Create initial commit to establish HEAD
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
-
-        // Create a change to commit
-        write_file(dir.path().join("test.txt"), "new content");
-
-        // Config has developer_iters=0 and reviewer_reviews=0
+        let (mut app_handler, mut effect_handler) = create_fallback_test_handlers();
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        // Verify pipeline completed successfully
-        // STATUS.md may be created for pipeline state tracking
-        // ISSUES.md is only created when --no-isolation is used (default is isolation)
+        run_ralph_cli_with_handlers(
+            &[],
+            executor,
+            config,
+            &mut app_handler,
+            &mut effect_handler,
+        )
+        .unwrap();
+
+        // Verify ISSUES.md is not created in isolation mode (default)
         assert!(
-            !dir.path().join(".agent/ISSUES.md").exists(),
+            app_handler
+                .get_file(&PathBuf::from(".agent/ISSUES.md"))
+                .is_none(),
             "ISSUES.md should not exist in isolation mode (default)"
         );
     });
@@ -70,30 +93,30 @@ fn ralph_skips_phases_with_zero_iterations() {
 ///
 /// This verifies that when a user runs ralph with both developer_iters=0
 /// and reviewer_reviews=0, the pipeline completes successfully and a commit
-/// is created with a non-empty commit message.
+/// effect is triggered.
 #[test]
-fn ralph_succeeds_with_zero_iterations() {
+fn test_succeeds_with_zero_iterations() {
     with_default_timeout(|| {
-        // Test that the pipeline can succeed with both developer and review skipped
-        let dir = TempDir::new().unwrap();
-        let repo = init_git_repo(&dir);
-
-        // Create initial commit
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&repo, "initial commit");
-
-        // Create a change
-        write_file(dir.path().join("test.txt"), "new content");
-
-        // Config has developer_iters=0 and reviewer_reviews=0
+        let (mut app_handler, mut effect_handler) = create_fallback_test_handlers();
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        // Verify a commit was created
-        let repo = git2::Repository::open(dir.path()).unwrap();
-        let head = repo.head().unwrap();
-        let commit = head.peel_to_commit().unwrap();
-        assert!(!commit.message().unwrap().is_empty());
+        run_ralph_cli_with_handlers(
+            &[],
+            executor,
+            config,
+            &mut app_handler,
+            &mut effect_handler,
+        )
+        .unwrap();
+
+        // Verify CreateCommit effect was called at the reducer layer
+        let was_commit_created =
+            effect_handler.was_effect_executed(|e| matches!(e, Effect::CreateCommit { .. }));
+
+        assert!(
+            was_commit_created,
+            "CreateCommit effect should be called when phases are skipped"
+        );
     });
 }
