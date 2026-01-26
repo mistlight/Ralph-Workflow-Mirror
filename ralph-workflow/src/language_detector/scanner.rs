@@ -3,12 +3,13 @@
 //! Functions for scanning directories and counting file extensions.
 
 use std::collections::HashMap;
-use std::fs;
 use std::io;
 use std::path::Path;
 
+use crate::workspace::Workspace;
+
 /// Maximum number of files to scan (for performance on large repos)
-pub(super) const MAX_FILES_TO_SCAN: usize = 2000;
+const MAX_FILES_TO_SCAN: usize = 2000;
 
 /// Maximum directory depth to search for signature files
 pub(super) const MAX_SIGNATURE_SEARCH_DEPTH: usize = 6;
@@ -30,57 +31,6 @@ pub(super) fn should_skip_dir_name(name: &str) -> bool {
             | ".venv"
             | "env"
     )
-}
-
-/// Scan directory recursively and count file extensions
-pub(super) fn count_extensions(root: &Path) -> io::Result<HashMap<String, usize>> {
-    // Define inner function first to satisfy clippy::items_after_statements
-    fn scan_dir(
-        dir: &Path,
-        counts: &mut HashMap<String, usize>,
-        files_scanned: &mut usize,
-    ) -> io::Result<()> {
-        if *files_scanned >= MAX_FILES_TO_SCAN {
-            return Ok(());
-        }
-
-        let Ok(entries) = fs::read_dir(dir) else {
-            return Ok(());
-        };
-
-        for entry in entries.flatten() {
-            if *files_scanned >= MAX_FILES_TO_SCAN {
-                return Ok(());
-            }
-
-            let path = entry.path();
-            let file_name = entry.file_name();
-            let file_name_str = file_name.to_string_lossy();
-
-            // Skip hidden directories and common non-source directories
-            let name_lower = file_name_str.to_ascii_lowercase();
-            if should_skip_dir_name(&name_lower) {
-                continue;
-            }
-
-            if path.is_dir() {
-                scan_dir(&path, counts, files_scanned)?;
-            } else if path.is_file() {
-                *files_scanned += 1;
-                if let Some(ext) = path.extension() {
-                    let ext_str = ext.to_string_lossy().to_lowercase();
-                    *counts.entry(ext_str).or_insert(0) += 1;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    let mut files_scanned = 0;
-    scan_dir(root, &mut counts, &mut files_scanned)?;
-    Ok(counts)
 }
 
 /// Check if a file name matches test file patterns for a given language
@@ -121,74 +71,7 @@ fn is_test_file(file_name: &str, primary_lang: &str, path_components: &[String])
     }
 }
 
-/// Detect if tests exist in common test directories
-pub(super) fn detect_tests(root: &Path, primary_lang: &str) -> bool {
-    use std::collections::VecDeque;
-    use std::path::PathBuf;
-
-    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::new();
-    queue.push_back((root.to_path_buf(), 0));
-
-    let mut scanned_files = 0usize;
-
-    while let Some((dir, depth)) = queue.pop_front() {
-        if scanned_files >= MAX_FILES_TO_SCAN {
-            break;
-        }
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-
-        for entry in entries.flatten() {
-            if scanned_files >= MAX_FILES_TO_SCAN {
-                break;
-            }
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
-            let name_lower = name.to_lowercase();
-
-            if path.is_dir() {
-                if should_skip_dir_name(&name_lower) {
-                    continue;
-                }
-                // Common test directories (any language)
-                if matches!(name_lower.as_str(), "tests" | "test" | "spec" | "__tests__") {
-                    return true;
-                }
-                if depth < MAX_SIGNATURE_SEARCH_DEPTH {
-                    queue.push_back((path, depth + 1));
-                }
-                continue;
-            }
-
-            if !path.is_file() {
-                continue;
-            }
-            scanned_files += 1;
-
-            let path_components: Vec<String> = path
-                .components()
-                .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
-                .collect();
-
-            if is_test_file(&name_lower, primary_lang, &path_components) {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
-// =============================================================================
-// Workspace-based variants
-// =============================================================================
-
-#[cfg(any(test, feature = "test-utils"))]
-use crate::workspace::Workspace;
-
 /// Scan directory recursively using workspace and count file extensions
-#[cfg(any(test, feature = "test-utils"))]
 pub(super) fn count_extensions_with_workspace(
     workspace: &dyn Workspace,
     relative_root: &Path,
@@ -245,7 +128,6 @@ pub(super) fn count_extensions_with_workspace(
 }
 
 /// Detect if tests exist using workspace
-#[cfg(any(test, feature = "test-utils"))]
 pub(super) fn detect_tests_with_workspace(
     workspace: &dyn Workspace,
     relative_root: &Path,

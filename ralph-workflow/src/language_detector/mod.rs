@@ -25,10 +25,10 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
+use crate::workspace::{Workspace, WorkspaceFs};
+
 pub use extensions::extension_to_language;
 use extensions::is_non_primary_language;
-use scanner::{count_extensions, detect_tests};
-use signatures::detect_signature_files;
 
 /// Maximum number of secondary languages to include in the stack summary.
 ///
@@ -118,57 +118,13 @@ impl ProjectStack {
     }
 }
 
-/// Detect the project stack for a given repository root
+/// Detect the project stack for a given repository root.
+///
+/// This is a convenience wrapper that creates a [`WorkspaceFs`] and calls
+/// [`detect_stack_with_workspace`].
 pub fn detect_stack(root: &Path) -> io::Result<ProjectStack> {
-    // Count file extensions
-    let extension_counts = count_extensions(root)?;
-
-    // Convert extensions to languages and aggregate
-    let mut language_counts: HashMap<&str, usize> = HashMap::new();
-    for (ext, count) in &extension_counts {
-        if let Some(lang) = extension_to_language(ext) {
-            *language_counts.entry(lang).or_insert(0) += count;
-        }
-    }
-
-    // Sort languages by count (descending)
-    let mut language_vec: Vec<_> = language_counts
-        .into_iter()
-        .filter(|(_, count)| *count >= MIN_FILES_FOR_DETECTION)
-        .collect();
-    language_vec.sort_by(|a, b| b.1.cmp(&a.1));
-
-    // Determine primary and secondary languages.
-    //
-    // Prefer "code" languages as primary when present, even if the repo contains lots of
-    // config/markup files (YAML/JSON/CSS/etc).
-    let primary_language = language_vec
-        .iter()
-        .find(|(lang, _)| !is_non_primary_language(lang))
-        .or_else(|| language_vec.first())
-        .map_or_else(|| "Unknown".to_string(), |(lang, _)| (*lang).to_string());
-
-    let secondary_languages: Vec<String> = language_vec
-        .iter()
-        .filter(|(lang, _)| *lang != primary_language.as_str())
-        .take(MAX_SECONDARY_LANGUAGES)
-        .map(|(lang, _)| (*lang).to_string())
-        .collect();
-
-    // Detect signature files for frameworks and test frameworks
-    let (frameworks, test_framework, package_manager) = detect_signature_files(root);
-
-    // Detect if tests exist
-    let has_tests = test_framework.is_some() || detect_tests(root, &primary_language);
-
-    Ok(ProjectStack {
-        primary_language,
-        secondary_languages,
-        frameworks,
-        has_tests,
-        test_framework,
-        package_manager,
-    })
+    let workspace = WorkspaceFs::new(root.to_path_buf());
+    detect_stack_with_workspace(&workspace, Path::new(""))
 }
 
 /// Detect stack and return a summary string (for display in banner)
@@ -183,14 +139,10 @@ mod tests;
 // Workspace-based variants
 // =============================================================================
 
-#[cfg(any(test, feature = "test-utils"))]
-use crate::workspace::Workspace;
-
 /// Detect project stack using workspace abstraction.
 ///
 /// This is the testable version of [`detect_stack`] that uses workspace
 /// for all filesystem operations.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn detect_stack_with_workspace(
     workspace: &dyn Workspace,
     root: &Path,
@@ -285,6 +237,7 @@ axum = "0.7"
   "dependencies": { "react": "^18.0.0" },
   "devDependencies": { "jest": "^29.0.0" }
 }
+
 "#,
             )
             .with_file("src/index.js", "export default {}")
