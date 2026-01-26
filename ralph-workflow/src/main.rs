@@ -15,38 +15,15 @@
 //! - Optional fast/full checks
 //! - Final `git add -A` + `git commit -m <msg>`
 
-mod agents;
-mod app;
-mod banner;
-mod checkpoint;
-mod cli;
-mod common;
-mod config;
-mod diagnostics;
-mod executor;
-mod files;
-mod git_helpers;
-mod guidelines;
-mod interrupt;
-mod json_parser;
-mod language_detector;
-mod logger;
-mod phases;
-mod pipeline;
-mod platform;
-mod prompts;
-mod reducer;
-mod review_metrics;
-mod templates;
-mod workspace;
-
-use crate::cli::Args;
 use clap::Parser;
-use executor::RealProcessExecutor;
+use ralph_workflow::app;
+use ralph_workflow::cli::Args;
+use ralph_workflow::interrupt;
+use ralph_workflow::RealProcessExecutor;
 
 fn main() -> anyhow::Result<()> {
     // Set up Ctrl+C handler for graceful checkpoint save on interrupt
-    crate::interrupt::setup_interrupt_handler();
+    interrupt::setup_interrupt_handler();
 
     // Create real process executor for production use
     let executor = std::sync::Arc::new(RealProcessExecutor::new());
