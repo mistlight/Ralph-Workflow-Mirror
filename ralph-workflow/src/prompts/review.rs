@@ -5,7 +5,9 @@
 use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
+use crate::workspace::Workspace;
 use std::collections::HashMap;
+use std::path::Path;
 
 /// The XSD schema for issues validation - included at compile time
 const ISSUES_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/issues.xsd");
@@ -17,23 +19,23 @@ const FIX_RESULT_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction
 const XSD_RETRY_TMP_DIR: &str = ".agent/tmp";
 
 /// Write XSD retry context files for review to `.agent/tmp/` directory.
-fn write_review_xsd_retry_files(last_output: &str) {
-    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
-    if std::fs::create_dir_all(tmp_dir).is_err() {
+fn write_review_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+    let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
+    if workspace.create_dir_all(tmp_dir).is_err() {
         return;
     }
-    let _ = std::fs::write(tmp_dir.join("issues.xsd"), ISSUES_XSD_SCHEMA);
-    let _ = std::fs::write(tmp_dir.join("last_output.xml"), last_output);
+    let _ = workspace.write(&tmp_dir.join("issues.xsd"), ISSUES_XSD_SCHEMA);
+    let _ = workspace.write(&tmp_dir.join("last_output.xml"), last_output);
 }
 
 /// Write XSD retry context files for fix result to `.agent/tmp/` directory.
-fn write_fix_xsd_retry_files(last_output: &str) {
-    let tmp_dir = std::path::Path::new(XSD_RETRY_TMP_DIR);
-    if std::fs::create_dir_all(tmp_dir).is_err() {
+fn write_fix_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+    let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
+    if workspace.create_dir_all(tmp_dir).is_err() {
         return;
     }
-    let _ = std::fs::write(tmp_dir.join("fix_result.xsd"), FIX_RESULT_XSD_SCHEMA);
-    let _ = std::fs::write(tmp_dir.join("last_output.xml"), last_output);
+    let _ = workspace.write(&tmp_dir.join("fix_result.xsd"), FIX_RESULT_XSD_SCHEMA);
+    let _ = workspace.write(&tmp_dir.join("last_output.xml"), last_output);
 }
 
 /// Generate XML-based review prompt using template registry.
@@ -94,6 +96,7 @@ pub fn prompt_review_xml_with_context(
 /// * `_changes_content` - Description of changes made (unused - kept for API compatibility)
 /// * `xsd_error` - The XSD validation error message to include in the prompt
 /// * `last_output` - The invalid XML output that failed validation
+/// * `workspace` - Workspace for writing XSD retry context files
 pub fn prompt_review_xsd_retry_with_context(
     context: &TemplateContext,
     _prompt_content: &str,
@@ -101,9 +104,10 @@ pub fn prompt_review_xsd_retry_with_context(
     _changes_content: &str,
     xsd_error: &str,
     last_output: &str,
+    workspace: &dyn Workspace,
 ) -> String {
     // Write context files to .agent/tmp/ for the agent to read
-    write_review_xsd_retry_files(last_output);
+    write_review_xsd_retry_files(workspace, last_output);
 
     let template_content = context
         .registry()
@@ -220,14 +224,16 @@ pub fn prompt_fix_xml_with_context(
 /// * `_issues_content` - Content of ISSUES.md (unused - kept for API compatibility)
 /// * `xsd_error` - The XSD validation error message to include in the prompt
 /// * `last_output` - The invalid XML output that failed validation
+/// * `workspace` - Workspace for writing XSD retry context files
 pub fn prompt_fix_xsd_retry_with_context(
     context: &TemplateContext,
     _issues_content: &str,
     xsd_error: &str,
     last_output: &str,
+    workspace: &dyn Workspace,
 ) -> String {
     // Write context files to .agent/tmp/ for the agent to read
-    write_fix_xsd_retry_files(last_output);
+    write_fix_xsd_retry_files(workspace, last_output);
 
     let template_content = context
         .registry()
@@ -263,6 +269,7 @@ pub fn prompt_fix_xsd_retry_with_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace::MemoryWorkspace;
 
     #[test]
     fn test_prompt_review_xml_with_context() {
@@ -279,6 +286,7 @@ mod tests {
     #[test]
     fn test_prompt_review_xsd_retry_with_context() {
         let context = TemplateContext::default();
+        let workspace = MemoryWorkspace::new_test();
         let result = prompt_review_xsd_retry_with_context(
             &context,
             "test prompt",
@@ -286,10 +294,14 @@ mod tests {
             "test changes",
             "XSD error",
             "last output",
+            &workspace,
         );
         assert!(result.contains("XSD error"));
         assert!(result.contains(".agent/tmp/issues.xml"));
         assert!(result.contains(".agent/tmp/issues.xsd"));
+        // Verify files were written to workspace
+        assert!(workspace.was_written(".agent/tmp/issues.xsd"));
+        assert!(workspace.was_written(".agent/tmp/last_output.xml"));
     }
 
     #[test]
@@ -305,10 +317,19 @@ mod tests {
     #[test]
     fn test_prompt_fix_xsd_retry_with_context() {
         let context = TemplateContext::default();
-        let result =
-            prompt_fix_xsd_retry_with_context(&context, "test issues", "XSD error", "last output");
+        let workspace = MemoryWorkspace::new_test();
+        let result = prompt_fix_xsd_retry_with_context(
+            &context,
+            "test issues",
+            "XSD error",
+            "last output",
+            &workspace,
+        );
         assert!(result.contains("XSD error"));
         assert!(result.contains(".agent/tmp/fix_result.xml"));
         assert!(result.contains(".agent/tmp/fix_result.xsd"));
+        // Verify files were written to workspace
+        assert!(workspace.was_written(".agent/tmp/fix_result.xsd"));
+        assert!(workspace.was_written(".agent/tmp/last_output.xml"));
     }
 }

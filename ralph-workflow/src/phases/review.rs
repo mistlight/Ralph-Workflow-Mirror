@@ -707,6 +707,7 @@ pub fn run_review_pass(
                 &changes_content,
                 xsd_error.as_deref().unwrap_or("Unknown error"),
                 &last_output,
+                ctx.workspace,
             )
         };
 
@@ -1212,6 +1213,7 @@ pub fn run_fix_pass(
                     &issues_content,
                     xsd_error.as_deref().unwrap_or("Unknown error"),
                     &last_output,
+                    ctx.workspace,
                 )
             } else if !is_retry {
                 // Continuation only (first XSD attempt after continuation)
@@ -1246,6 +1248,7 @@ pub fn run_fix_pass(
                     &issues_content,
                     xsd_error.as_deref().unwrap_or("Unknown error"),
                     &last_output,
+                    ctx.workspace,
                 )
             };
 
