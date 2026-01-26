@@ -997,6 +997,7 @@ pub fn attempt_automatic_recovery(
 
     for lock_file in &lock_files {
         let lock_path = git_dir.join(lock_file);
+        // Note: std::fs is acceptable here - operating on .git/ internals, not workspace files
         if lock_path.exists() && std::fs::remove_file(&lock_path).is_ok() {
             removed_any = true;
         }

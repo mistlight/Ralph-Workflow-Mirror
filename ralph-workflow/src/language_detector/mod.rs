@@ -178,3 +178,123 @@ pub fn detect_stack_summary(root: &Path) -> String {
 
 #[cfg(test)]
 mod tests;
+
+// =============================================================================
+// Workspace-based variants
+// =============================================================================
+
+#[cfg(any(test, feature = "test-utils"))]
+use crate::workspace::Workspace;
+
+/// Detect project stack using workspace abstraction.
+///
+/// This is the testable version of [`detect_stack`] that uses workspace
+/// for all filesystem operations.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn detect_stack_with_workspace(
+    workspace: &dyn Workspace,
+    root: &Path,
+) -> io::Result<ProjectStack> {
+    // Count file extensions
+    let extension_counts = scanner::count_extensions_with_workspace(workspace, root)?;
+
+    // Convert extensions to languages and aggregate
+    let mut language_counts: HashMap<&str, usize> = HashMap::new();
+    for (ext, count) in &extension_counts {
+        if let Some(lang) = extension_to_language(ext) {
+            *language_counts.entry(lang).or_insert(0) += count;
+        }
+    }
+
+    // Sort languages by count (descending)
+    let mut language_vec: Vec<_> = language_counts
+        .into_iter()
+        .filter(|(_, count)| *count >= MIN_FILES_FOR_DETECTION)
+        .collect();
+    language_vec.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // Determine primary and secondary languages
+    let primary_language = language_vec
+        .iter()
+        .find(|(lang, _)| !is_non_primary_language(lang))
+        .or_else(|| language_vec.first())
+        .map_or_else(|| "Unknown".to_string(), |(lang, _)| (*lang).to_string());
+
+    let secondary_languages: Vec<String> = language_vec
+        .iter()
+        .filter(|(lang, _)| *lang != primary_language.as_str())
+        .take(MAX_SECONDARY_LANGUAGES)
+        .map(|(lang, _)| (*lang).to_string())
+        .collect();
+
+    // Detect signature files for frameworks and test frameworks
+    let (frameworks, test_framework, package_manager) =
+        signatures::detect_signature_files_with_workspace(workspace, root);
+
+    // Detect if tests exist
+    let has_tests = test_framework.is_some()
+        || scanner::detect_tests_with_workspace(workspace, root, &primary_language);
+
+    Ok(ProjectStack {
+        primary_language,
+        secondary_languages,
+        frameworks,
+        has_tests,
+        test_framework,
+        package_manager,
+    })
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    use super::*;
+    use crate::workspace::MemoryWorkspace;
+
+    #[test]
+    fn test_detect_stack_with_workspace_rust_project() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(
+                "Cargo.toml",
+                r#"
+[package]
+name = "test"
+[dependencies]
+axum = "0.7"
+[dev-dependencies]
+"#,
+            )
+            .with_file("src/main.rs", "fn main() {}")
+            .with_file("src/lib.rs", "pub mod foo;")
+            .with_file("tests/integration.rs", "#[test] fn test() {}");
+
+        let stack = detect_stack_with_workspace(&workspace, Path::new("")).unwrap();
+
+        assert_eq!(stack.primary_language, "Rust");
+        assert!(stack.frameworks.contains(&"Axum".to_string()));
+        assert!(stack.has_tests);
+        assert_eq!(stack.package_manager, Some("Cargo".to_string()));
+    }
+
+    #[test]
+    fn test_detect_stack_with_workspace_js_project() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(
+                "package.json",
+                r#"
+{
+  "dependencies": { "react": "^18.0.0" },
+  "devDependencies": { "jest": "^29.0.0" }
+}
+"#,
+            )
+            .with_file("src/index.js", "export default {}")
+            .with_file("src/App.jsx", "export function App() {}")
+            .with_file("src/utils.js", "export const foo = 1");
+
+        let stack = detect_stack_with_workspace(&workspace, Path::new("")).unwrap();
+
+        assert_eq!(stack.primary_language, "JavaScript");
+        assert!(stack.frameworks.contains(&"React".to_string()));
+        assert_eq!(stack.test_framework, Some("Jest".to_string()));
+    }
+}

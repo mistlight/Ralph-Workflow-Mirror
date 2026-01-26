@@ -482,3 +482,288 @@ pub(super) fn detect_signature_files(root: &Path) -> (Vec<String>, Option<String
 
     results.finish()
 }
+
+// =============================================================================
+// Workspace-based variants
+// =============================================================================
+
+#[cfg(any(test, feature = "test-utils"))]
+use crate::workspace::Workspace;
+
+/// Collect signature files using workspace.
+#[cfg(any(test, feature = "test-utils"))]
+fn collect_signature_files_with_workspace(
+    workspace: &dyn Workspace,
+    root: &Path,
+) -> SignatureFiles {
+    let mut targets: HashSet<String> = HashSet::new();
+    for name in [
+        "cargo.toml",
+        "pyproject.toml",
+        "requirements.txt",
+        "setup.py",
+        "package.json",
+        "go.mod",
+        "pom.xml",
+        "build.gradle",
+        "gemfile",
+        "composer.json",
+        "mix.exs",
+        "project.clj",
+        "deno.json",
+        "bun.lockb",
+        ".eslintrc",
+        ".prettierrc",
+        "jest.config",
+        "vite.config",
+        "webpack.config",
+        "tsconfig.json",
+        "angular.json",
+        "next.config",
+        "nuxt.config",
+        "svelte.config",
+        "astro.config",
+        "tailwind.config",
+        "postcss.config",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+    ] {
+        targets.insert(name.to_string());
+    }
+
+    let extensions: HashSet<&str> = ["toml", "json", "yaml", "yml", "js", "ts", "mjs"]
+        .into_iter()
+        .collect();
+
+    let mut result = SignatureFiles::default();
+    let mut total_collected = 0usize;
+    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::new();
+    queue.push_back((root.to_path_buf(), 0));
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        if total_collected >= MAX_SIGNATURE_FILES {
+            break;
+        }
+        let Ok(entries) = workspace.read_dir(&dir) else {
+            continue;
+        };
+
+        for entry in entries {
+            if total_collected >= MAX_SIGNATURE_FILES {
+                break;
+            }
+            let path = entry.path().to_path_buf();
+            let Some(name_os) = entry.file_name() else {
+                continue;
+            };
+            let name = name_os.to_string_lossy().to_string();
+            let name_lower = name.to_lowercase();
+
+            if entry.is_dir() {
+                if should_skip_dir_name(&name_lower) {
+                    continue;
+                }
+                if depth < MAX_SIGNATURE_SEARCH_DEPTH {
+                    queue.push_back((path, depth + 1));
+                }
+                continue;
+            }
+
+            if !entry.is_file() {
+                continue;
+            }
+
+            // Check if this is a target signature file
+            if targets.contains(&name_lower) {
+                result
+                    .by_name_lower
+                    .entry(name_lower.clone())
+                    .or_default()
+                    .push(path.clone());
+                total_collected += 1;
+            }
+
+            // Check extension
+            if let Some(ext) = path.extension() {
+                let ext_lower = ext.to_string_lossy().to_lowercase();
+                if extensions.contains(ext_lower.as_str()) {
+                    result
+                        .by_extension_lower
+                        .entry(ext_lower)
+                        .or_default()
+                        .push(path);
+                    total_collected += 1;
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Detect Rust frameworks using workspace.
+#[cfg(any(test, feature = "test-utils"))]
+fn detect_rust_with_workspace(
+    workspace: &dyn Workspace,
+    signatures: &SignatureFiles,
+    results: &mut DetectionResults,
+) {
+    let Some(cargo_files) = signatures.by_name_lower.get("cargo.toml") else {
+        return;
+    };
+
+    for path in cargo_files {
+        let Ok(content) = workspace.read(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
+
+        // Frameworks
+        if content_lower.contains("actix-web") {
+            push_unique(&mut results.frameworks, "Actix");
+        }
+        if content_lower.contains("axum") {
+            push_unique(&mut results.frameworks, "Axum");
+        }
+        if content_lower.contains("rocket") {
+            push_unique(&mut results.frameworks, "Rocket");
+        }
+        if content_lower.contains("tokio") {
+            push_unique(&mut results.frameworks, "Tokio");
+        }
+
+        // Test framework
+        if results.test_frameworks.is_empty() && content_lower.contains("[dev-dependencies]") {
+            results.push_test_framework("cargo test");
+        }
+
+        // Package manager
+        if results.package_managers.is_empty() {
+            results.push_package_manager("Cargo");
+        }
+    }
+}
+
+/// Detect JavaScript/TypeScript frameworks using workspace.
+#[cfg(any(test, feature = "test-utils"))]
+fn detect_javascript_with_workspace(
+    workspace: &dyn Workspace,
+    signatures: &SignatureFiles,
+    results: &mut DetectionResults,
+) {
+    let Some(package_files) = signatures.by_name_lower.get("package.json") else {
+        return;
+    };
+
+    for path in package_files {
+        let Ok(content) = workspace.read(path) else {
+            continue;
+        };
+        let content_lower = content.to_lowercase();
+
+        // Frameworks
+        if content_lower.contains("\"react\"") {
+            push_unique(&mut results.frameworks, "React");
+        }
+        if content_lower.contains("\"vue\"") {
+            push_unique(&mut results.frameworks, "Vue");
+        }
+        if content_lower.contains("\"next\"") {
+            push_unique(&mut results.frameworks, "Next.js");
+        }
+        if content_lower.contains("\"express\"") {
+            push_unique(&mut results.frameworks, "Express");
+        }
+
+        // Test framework
+        if results.test_frameworks.is_empty() {
+            if content_lower.contains("\"jest\"") {
+                results.push_test_framework("Jest");
+            } else if content_lower.contains("\"vitest\"") {
+                results.push_test_framework("Vitest");
+            }
+        }
+
+        // Package manager
+        if results.package_managers.is_empty() {
+            results.push_package_manager("npm");
+        }
+    }
+
+    // Check for pnpm/yarn lock files
+    if signatures.by_name_lower.contains_key("pnpm-lock.yaml") {
+        results.package_managers.clear();
+        results.push_package_manager("pnpm");
+    } else if signatures.by_name_lower.contains_key("yarn.lock") {
+        results.package_managers.clear();
+        results.push_package_manager("Yarn");
+    } else if signatures.by_name_lower.contains_key("bun.lockb") {
+        results.package_managers.clear();
+        results.push_package_manager("Bun");
+    }
+}
+
+/// Detect signature files and return frameworks, test framework, package manager.
+#[cfg(any(test, feature = "test-utils"))]
+pub(super) fn detect_signature_files_with_workspace(
+    workspace: &dyn Workspace,
+    root: &Path,
+) -> (Vec<String>, Option<String>, Option<String>) {
+    let signatures = collect_signature_files_with_workspace(workspace, root);
+    let mut results = DetectionResults::new();
+
+    detect_rust_with_workspace(workspace, &signatures, &mut results);
+    detect_javascript_with_workspace(workspace, &signatures, &mut results);
+
+    results.finish()
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    use super::*;
+    use crate::workspace::MemoryWorkspace;
+
+    #[test]
+    fn test_detect_rust_with_workspace() {
+        let workspace = MemoryWorkspace::new_test().with_file(
+            "Cargo.toml",
+            r#"
+[package]
+name = "test"
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+[dev-dependencies]
+"#,
+        );
+
+        let (frameworks, test_fw, pkg_mgr) =
+            detect_signature_files_with_workspace(&workspace, Path::new(""));
+
+        assert!(frameworks.contains(&"Axum".to_string()));
+        assert!(frameworks.contains(&"Tokio".to_string()));
+        assert_eq!(test_fw, Some("cargo test".to_string()));
+        assert_eq!(pkg_mgr, Some("Cargo".to_string()));
+    }
+
+    #[test]
+    fn test_detect_javascript_with_workspace() {
+        let workspace = MemoryWorkspace::new_test().with_file(
+            "package.json",
+            r#"
+{
+  "dependencies": { "react": "^18.0.0", "next": "^14.0.0" },
+  "devDependencies": { "jest": "^29.0.0" }
+}
+"#,
+        );
+
+        let (frameworks, test_fw, pkg_mgr) =
+            detect_signature_files_with_workspace(&workspace, Path::new(""));
+
+        assert!(frameworks.contains(&"React".to_string()));
+        assert!(frameworks.contains(&"Next.js".to_string()));
+        assert_eq!(test_fw, Some("Jest".to_string()));
+        assert_eq!(pkg_mgr, Some("npm".to_string()));
+    }
+}
