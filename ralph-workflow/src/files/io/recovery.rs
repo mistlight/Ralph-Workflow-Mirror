@@ -8,6 +8,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use crate::workspace::Workspace;
+
 /// Status of a recovery operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryStatus {
@@ -25,6 +27,126 @@ pub struct StateValidation {
     pub issues: Vec<String>,
 }
 
+// =============================================================================
+// Workspace-based implementation (primary, for pipeline layer)
+// =============================================================================
+
+fn validate_agent_state_with_workspace(
+    workspace: &dyn Workspace,
+    agent_dir: &Path,
+) -> io::Result<StateValidation> {
+    let mut issues = Vec::new();
+
+    if !workspace.exists(agent_dir) {
+        return Ok(StateValidation {
+            is_valid: false,
+            issues: vec![".agent/ directory does not exist".to_string()],
+        });
+    }
+
+    // Detect unreadable files in the `.agent/` directory.
+    if let Ok(entries) = workspace.read_dir(agent_dir) {
+        for entry in entries {
+            let path = entry.path();
+            if !entry.is_file() {
+                continue;
+            }
+            if workspace.read(path).is_err() {
+                issues.push(format!("Corrupted file: {}", path.display()));
+            }
+        }
+    }
+
+    // Zero-length files are a common interruption artifact.
+    for filename in [
+        "PLAN.md",
+        "ISSUES.md",
+        "STATUS.md",
+        "NOTES.md",
+        "commit-message.txt",
+    ] {
+        let file_path = agent_dir.join(filename);
+        if !workspace.exists(&file_path) {
+            continue;
+        }
+        if let Ok(content) = workspace.read(&file_path) {
+            if content.is_empty() {
+                issues.push(format!("Zero-length file: {filename}"));
+            }
+        }
+    }
+
+    Ok(StateValidation {
+        is_valid: issues.is_empty(),
+        issues,
+    })
+}
+
+fn remove_zero_length_files_with_workspace(
+    workspace: &dyn Workspace,
+    agent_dir: &Path,
+) -> io::Result<usize> {
+    let mut removed = 0;
+
+    for filename in [
+        "PLAN.md",
+        "ISSUES.md",
+        "STATUS.md",
+        "NOTES.md",
+        "commit-message.txt",
+    ] {
+        let file_path = agent_dir.join(filename);
+        if !workspace.exists(&file_path) {
+            continue;
+        }
+        if let Ok(content) = workspace.read(&file_path) {
+            if content.is_empty() {
+                workspace.remove(&file_path)?;
+                removed += 1;
+            }
+        }
+    }
+
+    Ok(removed)
+}
+
+/// Best-effort repair of common `.agent/` state issues using workspace.
+///
+/// This is the workspace-based version for pipeline layer usage.
+pub fn auto_repair_with_workspace(
+    workspace: &dyn Workspace,
+    agent_dir: &Path,
+) -> io::Result<RecoveryStatus> {
+    if !workspace.exists(agent_dir) {
+        workspace.create_dir_all(&agent_dir.join("logs"))?;
+        return Ok(RecoveryStatus::Recovered);
+    }
+
+    let validation = validate_agent_state_with_workspace(workspace, agent_dir)?;
+    if validation.is_valid {
+        workspace.create_dir_all(&agent_dir.join("logs"))?;
+        return Ok(RecoveryStatus::Valid);
+    }
+
+    // Attempt repairs.
+    remove_zero_length_files_with_workspace(workspace, agent_dir)?;
+    workspace.create_dir_all(&agent_dir.join("logs"))?;
+
+    let post_validation = validate_agent_state_with_workspace(workspace, agent_dir)?;
+    if post_validation.is_valid {
+        Ok(RecoveryStatus::Recovered)
+    } else {
+        Ok(RecoveryStatus::Unrecoverable(format!(
+            "Unresolved .agent issues: {}",
+            post_validation.issues.join(", ")
+        )))
+    }
+}
+
+// =============================================================================
+// std::fs wrapper (for CLI/AppEffect layer only)
+// =============================================================================
+
 fn validate_agent_state(agent_dir: &Path) -> io::Result<StateValidation> {
     let mut issues = Vec::new();
 
@@ -35,7 +157,6 @@ fn validate_agent_state(agent_dir: &Path) -> io::Result<StateValidation> {
         });
     }
 
-    // Detect unreadable (non-UTF8) files in the top-level `.agent/` directory.
     if let Ok(entries) = fs::read_dir(agent_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -48,7 +169,6 @@ fn validate_agent_state(agent_dir: &Path) -> io::Result<StateValidation> {
         }
     }
 
-    // Zero-length files are a common interruption artifact.
     for filename in [
         "PLAN.md",
         "ISSUES.md",
@@ -123,20 +243,13 @@ fn remove_zero_length_files(agent_dir: &Path) -> io::Result<usize> {
 /// # Security
 ///
 /// This function canonicalizes the input path to prevent path traversal attacks.
-/// While Ralph is a developer tool where `agent_dir` is typically constructed
-/// internally (not from untrusted input), we still validate the path as a
-/// defense-in-depth measure.
 pub fn auto_repair(agent_dir: &Path) -> io::Result<RecoveryStatus> {
-    // Canonicalize the path to resolve any ".." or symlinks
     let agent_dir = agent_dir
         .canonicalize()
         .unwrap_or_else(|_| agent_dir.to_path_buf());
 
-    // Additional safety check: ensure we're not escaping the current directory
-    // This is a defense-in-depth measure; in normal Ralph usage this shouldn't trigger.
     if let Ok(cwd) = std::env::current_dir() {
         if let Ok(rel_path) = agent_dir.strip_prefix(&cwd) {
-            // Check if the relative path starts with ".." which would indicate escaping
             let rel_str = rel_path.to_string_lossy();
             if rel_str.starts_with("..") || rel_str.contains("/..") || rel_str.contains("\\..") {
                 return Ok(RecoveryStatus::Unrecoverable(
@@ -157,7 +270,6 @@ pub fn auto_repair(agent_dir: &Path) -> io::Result<RecoveryStatus> {
         return Ok(RecoveryStatus::Valid);
     }
 
-    // Attempt repairs.
     remove_corrupted_files(&agent_dir)?;
     remove_zero_length_files(&agent_dir)?;
     fs::create_dir_all(agent_dir.join("logs"))?;
@@ -176,27 +288,60 @@ pub fn auto_repair(agent_dir: &Path) -> io::Result<RecoveryStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::Path;
 
     #[test]
-    fn auto_repair_creates_missing_directory() {
-        let temp = TempDir::new().unwrap();
-        let agent_dir = temp.path().join(".agent");
+    fn auto_repair_with_workspace_creates_missing_directory() {
+        let workspace = MemoryWorkspace::new_test();
+        let agent_dir = Path::new(".agent");
 
-        let status = auto_repair(&agent_dir).unwrap();
+        let status = auto_repair_with_workspace(&workspace, agent_dir).unwrap();
+
         assert_eq!(status, RecoveryStatus::Recovered);
-        assert!(agent_dir.join("logs").exists());
+        assert!(workspace.exists(&agent_dir.join("logs")));
     }
 
     #[test]
-    fn auto_repair_removes_zero_length_files() {
-        let temp = TempDir::new().unwrap();
-        let agent_dir = temp.path().join(".agent");
-        fs::create_dir_all(agent_dir.join("logs")).unwrap();
-        fs::write(agent_dir.join("PLAN.md"), "").unwrap();
+    fn auto_repair_with_workspace_removes_zero_length_files() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/logs/.keep", "")
+            .with_file(".agent/PLAN.md", ""); // Empty file
 
-        let status = auto_repair(&agent_dir).unwrap();
+        let agent_dir = Path::new(".agent");
+        let status = auto_repair_with_workspace(&workspace, agent_dir).unwrap();
+
         assert_eq!(status, RecoveryStatus::Recovered);
-        assert!(!agent_dir.join("PLAN.md").exists());
+        assert!(!workspace.exists(&agent_dir.join("PLAN.md")));
+    }
+
+    #[test]
+    fn auto_repair_with_workspace_valid_state() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/logs/.keep", "")
+            .with_file(".agent/PLAN.md", "# Plan\nSome content");
+
+        let agent_dir = Path::new(".agent");
+        let status = auto_repair_with_workspace(&workspace, agent_dir).unwrap();
+
+        assert_eq!(status, RecoveryStatus::Valid);
+        assert!(workspace.exists(&agent_dir.join("PLAN.md")));
+    }
+
+    #[test]
+    fn auto_repair_with_workspace_multiple_zero_length_files() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/logs/.keep", "")
+            .with_file(".agent/PLAN.md", "")
+            .with_file(".agent/ISSUES.md", "")
+            .with_file(".agent/STATUS.md", "valid content");
+
+        let agent_dir = Path::new(".agent");
+        let status = auto_repair_with_workspace(&workspace, agent_dir).unwrap();
+
+        assert_eq!(status, RecoveryStatus::Recovered);
+        assert!(!workspace.exists(&agent_dir.join("PLAN.md")));
+        assert!(!workspace.exists(&agent_dir.join("ISSUES.md")));
+        assert!(workspace.exists(&agent_dir.join("STATUS.md")));
     }
 }

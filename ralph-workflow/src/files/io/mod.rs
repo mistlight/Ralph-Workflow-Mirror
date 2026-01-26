@@ -55,3 +55,5 @@ pub use context::{
     delete_issues_file_for_isolation, delete_issues_file_for_isolation_with_workspace,
     reset_context_for_isolation, update_status, update_status_with_workspace,
 };
+
+pub use recovery::{auto_repair, auto_repair_with_workspace, RecoveryStatus, StateValidation};
