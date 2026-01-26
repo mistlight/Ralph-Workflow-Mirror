@@ -51,16 +51,9 @@ pub use file_based_extraction::{
     paths as xml_paths, try_extract_from_file_with_workspace,
 };
 
-// Re-export deprecated functions for backward compatibility (CLI layer use only).
-// ARCHITECTURE NOTE: These functions use std::fs directly and are deprecated for
-// pipeline layer code. They are kept for CLI layer backward compatibility.
-// The #[allow(deprecated)] is required by Rust to re-export deprecated items.
-// Users of these functions will still receive deprecation warnings - this only
-// silences the warning in this module's re-export statement.
-#[allow(deprecated)]
-pub use file_based_extraction::{
-    archive_xml_file, extract_xml_with_file_fallback, try_extract_from_file,
-};
+// NOTE: The deprecated std::fs functions (archive_xml_file, extract_xml_with_file_fallback,
+// try_extract_from_file) are NOT re-exported. All callers should use the _with_workspace variants.
+// The deprecated functions remain in file_based_extraction.rs for reference but are pub(crate) only.
 
 // Import clean_plain_text for tests
 #[cfg(test)]

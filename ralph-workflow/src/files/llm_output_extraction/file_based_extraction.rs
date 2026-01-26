@@ -11,7 +11,6 @@
 //! - **Better debugging**: XML files persist for inspection
 
 use crate::workspace::Workspace;
-use std::fs;
 use std::path::Path;
 
 /// XML file paths by phase.
@@ -85,54 +84,7 @@ pub fn resolve_absolute_path_at(repo_root: &std::path::Path, relative_path: &str
     repo_root.join(relative_path).display().to_string()
 }
 
-/// Internal implementation for try_extract_from_file (non-deprecated for internal use)
-fn try_extract_from_file_impl(xml_path: &Path) -> Option<String> {
-    if !xml_path.exists() {
-        return None;
-    }
-
-    let content = fs::read_to_string(xml_path).ok()?;
-    let trimmed = content.trim();
-
-    // Must be non-empty and look like XML
-    if trimmed.is_empty() || !trimmed.starts_with('<') {
-        return None;
-    }
-
-    Some(trimmed.to_string())
-}
-
-/// Try to read XML from a designated file location.
-///
-/// Returns `Some(xml_content)` if the file exists and contains non-empty XML-like content.
-/// Returns `None` if the file doesn't exist, is empty, or doesn't look like XML.
-///
-/// # Deprecated
-///
-/// This function uses `std::fs` directly. For pipeline layer code, use
-/// [`try_extract_from_file_with_workspace`] instead which accepts a `Workspace`
-/// parameter for proper effect system conformance.
-///
-/// # Arguments
-///
-/// * `xml_path` - Path to the XML file
-///
-/// # Example
-///
-/// ```ignore
-/// if let Some(xml) = try_extract_from_file(Path::new(".agent/tmp/plan.xml")) {
-///     // Use the extracted XML
-/// }
-/// ```
-#[deprecated(
-    since = "0.6.0",
-    note = "Use try_extract_from_file_with_workspace for pipeline layer code"
-)]
-pub fn try_extract_from_file(xml_path: &Path) -> Option<String> {
-    try_extract_from_file_impl(xml_path)
-}
-
-/// Workspace-based variant of [`try_extract_from_file`] for testability.
+/// Try to read XML from a designated file location using workspace abstraction.
 ///
 /// This function uses the workspace abstraction for filesystem access,
 /// enabling unit tests with `MemoryWorkspace` instead of real filesystem operations.
@@ -161,49 +113,12 @@ pub fn try_extract_from_file_with_workspace(
 /// 1. First, check if XML was written to the designated file
 /// 2. If not found, fall back to extracting XML from the response content
 ///
-/// # Deprecated
-///
-/// This function uses `std::fs` directly via [`try_extract_from_file`].
-/// For pipeline layer code, use [`extract_xml_with_file_fallback_with_workspace`]
-/// instead which accepts a `Workspace` parameter for proper effect system conformance.
-///
 /// # Arguments
 ///
+/// * `workspace` - Workspace abstraction for filesystem access
 /// * `xml_path` - Path to check for file-based XML
 /// * `response_content` - The response content to fall back to
 /// * `extractor` - Function to extract XML from response content
-///
-/// # Example
-///
-/// ```ignore
-/// let xml = extract_xml_with_file_fallback(
-///     Path::new(".agent/tmp/plan.xml"),
-///     response_content,
-///     |content| extract_plan_xml(content),
-/// );
-/// ```
-#[deprecated(
-    since = "0.6.0",
-    note = "Use extract_xml_with_file_fallback_with_workspace for pipeline layer code"
-)]
-pub fn extract_xml_with_file_fallback<F>(
-    xml_path: &Path,
-    response_content: &str,
-    extractor: F,
-) -> Option<String>
-where
-    F: Fn(&str) -> Option<String>,
-{
-    // Try file-based extraction first (using internal impl to avoid deprecation warning)
-    if let Some(xml) = try_extract_from_file_impl(xml_path) {
-        return Some(xml);
-    }
-
-    // Fall back to response extraction
-    extractor(response_content)
-}
-
-/// Workspace-based variant of [`extract_xml_with_file_fallback`] for testability.
 pub fn extract_xml_with_file_fallback_with_workspace<F>(
     workspace: &dyn Workspace,
     xml_path: &Path,
@@ -228,27 +143,10 @@ where
 /// but clearly marked as already processed. If a `.processed` file already exists,
 /// it is overwritten.
 ///
-/// # Deprecated
-///
-/// This function uses `std::fs` directly. For pipeline layer code, use
-/// [`archive_xml_file_with_workspace`] instead which accepts a `Workspace`
-/// parameter for proper effect system conformance.
-///
 /// # Arguments
 ///
+/// * `workspace` - Workspace abstraction for filesystem access
 /// * `xml_path` - Path to the XML file to archive
-#[deprecated(
-    since = "0.6.0",
-    note = "Use archive_xml_file_with_workspace for pipeline layer code"
-)]
-pub fn archive_xml_file(xml_path: &Path) {
-    if xml_path.exists() {
-        let processed_path = xml_path.with_extension("xml.processed");
-        let _ = fs::rename(xml_path, processed_path);
-    }
-}
-
-/// Workspace-based variant of [`archive_xml_file`] for testability.
 pub fn archive_xml_file_with_workspace(workspace: &dyn Workspace, xml_path: &Path) {
     if workspace.exists(xml_path) {
         let processed_path = xml_path.with_extension("xml.processed");
