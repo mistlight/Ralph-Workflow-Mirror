@@ -41,9 +41,17 @@ fn checkpoint_path() -> String {
 /// Returns None if the file doesn't exist or cannot be read.
 pub(crate) fn calculate_file_checksum(path: &Path) -> Option<String> {
     let content = fs::read(path).ok()?;
+    Some(calculate_checksum_from_bytes(&content))
+}
+
+/// Calculate SHA-256 checksum from bytes.
+///
+/// This is the core checksum calculation used by both file-based and
+/// workspace-based checksum functions.
+pub(crate) fn calculate_checksum_from_bytes(content: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(&content);
-    Some(format!("{:x}", hasher.finalize()))
+    hasher.update(content);
+    format!("{:x}", hasher.finalize())
 }
 
 /// Snapshot of CLI arguments for exact restoration.

@@ -890,7 +890,7 @@ pub fn generate_commit_message(
     let log_dir = ".agent/logs/commit_generation";
     let log_file = format!("{log_dir}/final.log");
 
-    fs::create_dir_all(log_dir)?;
+    workspace.create_dir_all(Path::new(log_dir))?;
 
     // Check if diff is empty before proceeding
     if diff.trim().is_empty() {

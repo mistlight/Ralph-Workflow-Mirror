@@ -5,6 +5,7 @@
 
 use crate::checkpoint::execution_history::FileSnapshot;
 use crate::executor::{ProcessExecutor, RealProcessExecutor};
+use crate::workspace::Workspace;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -42,6 +43,10 @@ impl FileSystemState {
     /// This function requires an explicit executor parameter to enable proper
     /// dependency injection for testing. For production code, pass
     /// `Some(&RealProcessExecutor::new())`.
+    ///
+    /// # Deprecated
+    ///
+    /// This function uses CWD-relative paths. Prefer `capture_with_workspace` for new code.
     pub fn capture_with_optional_executor(executor: Option<&dyn ProcessExecutor>) -> Self {
         match executor {
             Some(exec) => Self::capture_current_with_executor(exec),
@@ -54,6 +59,61 @@ impl FileSystemState {
         }
     }
 
+    /// Capture the current state of key files using a workspace.
+    ///
+    /// This includes files that are critical for pipeline execution:
+    /// - PROMPT.md: The primary task description
+    /// - .agent/PLAN.md: The implementation plan (if exists)
+    /// - .agent/ISSUES.md: Review findings (if exists)
+    /// - .agent/config.toml: Agent configuration (if exists)
+    /// - .agent/start_commit: Baseline commit reference (if exists)
+    /// - .agent/NOTES.md: Development notes (if exists)
+    /// - .agent/status: Pipeline status file (if exists)
+    pub fn capture_with_workspace(
+        workspace: &dyn Workspace,
+        executor: &dyn ProcessExecutor,
+    ) -> Self {
+        let mut state = Self::new();
+
+        // Always capture PROMPT.md
+        state.capture_file_with_workspace(workspace, "PROMPT.md");
+
+        // Capture .agent/PLAN.md if it exists
+        if workspace.exists(Path::new(".agent/PLAN.md")) {
+            state.capture_file_with_workspace(workspace, ".agent/PLAN.md");
+        }
+
+        // Capture .agent/ISSUES.md if it exists
+        if workspace.exists(Path::new(".agent/ISSUES.md")) {
+            state.capture_file_with_workspace(workspace, ".agent/ISSUES.md");
+        }
+
+        // Capture .agent/config.toml if it exists
+        if workspace.exists(Path::new(".agent/config.toml")) {
+            state.capture_file_with_workspace(workspace, ".agent/config.toml");
+        }
+
+        // Capture .agent/start_commit if it exists
+        if workspace.exists(Path::new(".agent/start_commit")) {
+            state.capture_file_with_workspace(workspace, ".agent/start_commit");
+        }
+
+        // Capture .agent/NOTES.md if it exists
+        if workspace.exists(Path::new(".agent/NOTES.md")) {
+            state.capture_file_with_workspace(workspace, ".agent/NOTES.md");
+        }
+
+        // Capture .agent/status if it exists
+        if workspace.exists(Path::new(".agent/status")) {
+            state.capture_file_with_workspace(workspace, ".agent/status");
+        }
+
+        // Try to capture git state
+        state.capture_git_state(executor);
+
+        state
+    }
+
     /// Capture the current state of key files with a provided process executor.
     ///
     /// This includes files that are critical for pipeline execution:
@@ -64,6 +124,10 @@ impl FileSystemState {
     /// - .agent/start_commit: Baseline commit reference (if exists)
     /// - .agent/NOTES.md: Development notes (if exists)
     /// - .agent/status: Pipeline status file (if exists)
+    ///
+    /// # Deprecated
+    ///
+    /// This function uses CWD-relative paths. Prefer `capture_with_workspace` for new code.
     pub fn capture_current_with_executor(executor: &dyn ProcessExecutor) -> Self {
         let mut state = Self::new();
 
@@ -106,7 +170,29 @@ impl FileSystemState {
         state
     }
 
+    /// Capture a single file's state using a workspace.
+    pub fn capture_file_with_workspace(&mut self, workspace: &dyn Workspace, path: &str) {
+        let path_ref = Path::new(path);
+        let snapshot = if workspace.exists(path_ref) {
+            if let Ok(content) = workspace.read_bytes(path_ref) {
+                let checksum = crate::checkpoint::state::calculate_checksum_from_bytes(&content);
+                let size = content.len() as u64;
+                FileSnapshot::new(path, checksum, size, true)
+            } else {
+                FileSnapshot::not_found(path)
+            }
+        } else {
+            FileSnapshot::not_found(path)
+        };
+
+        self.files.insert(path.to_string(), snapshot);
+    }
+
     /// Capture a single file's state.
+    ///
+    /// # Deprecated
+    ///
+    /// This function uses CWD-relative paths. Prefer `capture_file_with_workspace` for new code.
     pub fn capture_file(&mut self, path: &str) {
         let path_obj = Path::new(path);
         let snapshot = if path_obj.exists() {
@@ -175,13 +261,48 @@ impl FileSystemState {
     /// Validate the current file system state against this snapshot.
     ///
     /// Returns a list of validation errors. Empty list means all checks passed.
+    ///
+    /// # Deprecated
+    ///
+    /// This function uses CWD-relative paths. Prefer `validate_with_workspace` for new code.
     pub fn validate(&self) -> Vec<ValidationError> {
         self.validate_with_executor(None)
+    }
+
+    /// Validate the current file system state against this snapshot using a workspace.
+    ///
+    /// Returns a list of validation errors. Empty list means all checks passed.
+    pub fn validate_with_workspace(
+        &self,
+        workspace: &dyn Workspace,
+        executor: Option<&dyn ProcessExecutor>,
+    ) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+
+        // Validate each tracked file
+        for (path, snapshot) in &self.files {
+            if let Err(e) = self.validate_file_with_workspace(workspace, path, snapshot) {
+                errors.push(e);
+            }
+        }
+
+        // Validate git state if we captured it and executor was provided
+        if let Some(exec) = executor {
+            if let Err(e) = self.validate_git_state_with_executor(exec) {
+                errors.push(e);
+            }
+        }
+
+        errors
     }
 
     /// Validate the current file system state against this snapshot with a provided executor.
     ///
     /// Returns a list of validation errors. Empty list means all checks passed.
+    ///
+    /// # Deprecated
+    ///
+    /// This function uses CWD-relative paths. Prefer `validate_with_workspace` for new code.
     pub fn validate_with_executor(
         &self,
         executor: Option<&dyn ProcessExecutor>,
@@ -205,7 +326,43 @@ impl FileSystemState {
         errors
     }
 
+    /// Validate a single file against its snapshot using a workspace.
+    fn validate_file_with_workspace(
+        &self,
+        workspace: &dyn Workspace,
+        path: &str,
+        snapshot: &FileSnapshot,
+    ) -> Result<(), ValidationError> {
+        let path_ref = Path::new(path);
+
+        // Check existence
+        if snapshot.exists && !workspace.exists(path_ref) {
+            return Err(ValidationError::FileMissing {
+                path: path.to_string(),
+            });
+        }
+
+        if !snapshot.exists && workspace.exists(path_ref) {
+            return Err(ValidationError::FileUnexpectedlyExists {
+                path: path.to_string(),
+            });
+        }
+
+        // Verify checksum for existing files
+        if snapshot.exists && !snapshot.verify_with_workspace(workspace) {
+            return Err(ValidationError::FileContentChanged {
+                path: path.to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
     /// Validate a single file against its snapshot.
+    ///
+    /// # Deprecated
+    ///
+    /// This function uses CWD-relative paths. Prefer `validate_file_with_workspace` for new code.
     fn validate_file(&self, path: &str, snapshot: &FileSnapshot) -> Result<(), ValidationError> {
         let path_obj = Path::new(path);
 
@@ -222,11 +379,28 @@ impl FileSystemState {
             });
         }
 
-        // Verify checksum for existing files
-        if snapshot.exists && !snapshot.verify() {
-            return Err(ValidationError::FileContentChanged {
-                path: path.to_string(),
-            });
+        // Verify checksum for existing files - use old verify method that reads from CWD
+        // This is deprecated but kept for backward compatibility
+        if snapshot.exists {
+            // Read file and verify checksum manually since we don't have workspace
+            let content = std::fs::read(path_obj);
+            let matches = match content {
+                Ok(bytes) => {
+                    if bytes.len() as u64 != snapshot.size {
+                        false
+                    } else {
+                        let checksum =
+                            crate::checkpoint::state::calculate_checksum_from_bytes(&bytes);
+                        checksum == snapshot.checksum
+                    }
+                }
+                Err(_) => false,
+            };
+            if !matches {
+                return Err(ValidationError::FileContentChanged {
+                    path: path.to_string(),
+                });
+            }
         }
 
         Ok(())

@@ -4,8 +4,10 @@
 //! enabling idempotent recovery and validation of state.
 
 use crate::checkpoint::timestamp;
+use crate::workspace::Workspace;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Outcome of an execution step.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -216,16 +218,49 @@ pub struct FileSnapshot {
 
 impl FileSnapshot {
     /// Create a new file snapshot with the default content threshold (10KB).
+    ///
+    /// This version does not capture file content (content and compressed_content will be None).
+    /// Use `from_workspace` to create a snapshot with content from a workspace.
     pub fn new(path: &str, checksum: String, size: u64, exists: bool) -> Self {
-        Self::with_max_size(path, checksum, size, exists, DEFAULT_CONTENT_THRESHOLD)
+        Self {
+            path: path.to_string(),
+            checksum,
+            size,
+            content: None,
+            compressed_content: None,
+            exists,
+        }
     }
 
-    /// Create a new file snapshot with a custom content threshold.
+    /// Create a file snapshot from a workspace using the default content threshold (10KB).
+    ///
+    /// Files smaller than 10KB will have their content stored.
+    /// Key files (PROMPT.md, PLAN.md, ISSUES.md, NOTES.md) may be compressed if they
+    /// are between 10KB and 100KB.
+    pub fn from_workspace_default(
+        workspace: &dyn Workspace,
+        path: &str,
+        checksum: String,
+        size: u64,
+        exists: bool,
+    ) -> Self {
+        Self::from_workspace(
+            workspace,
+            path,
+            checksum,
+            size,
+            exists,
+            DEFAULT_CONTENT_THRESHOLD,
+        )
+    }
+
+    /// Create a file snapshot from a workspace, optionally capturing content.
     ///
     /// Files smaller than `max_size` bytes will have their content stored.
-    /// Key files (PROMPT.md, PLAN.md, ISSUES.md) may be compressed if they
+    /// Key files (PROMPT.md, PLAN.md, ISSUES.md, NOTES.md) may be compressed if they
     /// are between max_size and MAX_COMPRESS_SIZE.
-    pub fn with_max_size(
+    pub fn from_workspace(
+        workspace: &dyn Workspace,
         path: &str,
         checksum: String,
         size: u64,
@@ -241,12 +276,14 @@ impl FileSnapshot {
                 || path.contains("ISSUES.md")
                 || path.contains("NOTES.md");
 
+            let path_ref = Path::new(path);
+
             if size < max_size {
                 // For small files, read and store content directly
-                content = std::fs::read_to_string(path).ok();
+                content = workspace.read(path_ref).ok();
             } else if is_key_file && size < MAX_COMPRESS_SIZE {
                 // For larger key files, compress the content
-                if let Ok(data) = std::fs::read(path) {
+                if let Ok(data) = workspace.read_bytes(path_ref) {
                     compressed_content = compress_data(&data).ok();
                 }
             }
@@ -285,13 +322,15 @@ impl FileSnapshot {
         }
     }
 
-    /// Verify that the current file state matches this snapshot.
-    pub fn verify(&self) -> bool {
+    /// Verify that the current file state matches this snapshot using a workspace.
+    pub fn verify_with_workspace(&self, workspace: &dyn Workspace) -> bool {
+        let path = Path::new(&self.path);
+
         if !self.exists {
-            return !std::path::Path::new(&self.path).exists();
+            return !workspace.exists(path);
         }
 
-        let Ok(content) = std::fs::read(&self.path) else {
+        let Ok(content) = workspace.read_bytes(path) else {
             return false;
         };
 
@@ -299,13 +338,8 @@ impl FileSnapshot {
             return false;
         }
 
-        let checksum =
-            crate::checkpoint::state::calculate_file_checksum(std::path::Path::new(&self.path));
-
-        match checksum {
-            Some(actual) => actual == self.checksum,
-            None => false,
-        }
+        let checksum = crate::checkpoint::state::calculate_checksum_from_bytes(&content);
+        checksum == self.checksum
     }
 }
 

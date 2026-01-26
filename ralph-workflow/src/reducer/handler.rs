@@ -163,9 +163,9 @@ impl MainEffectHandler {
             Ok(_) => {
                 // Validate plan was created
                 let plan_path = Path::new(".agent/PLAN.md");
-                let plan_exists = plan_path.exists();
+                let plan_exists = ctx.workspace.exists(plan_path);
                 let plan_content = if plan_exists {
-                    std::fs::read_to_string(plan_path).ok().unwrap_or_default()
+                    ctx.workspace.read(plan_path).ok().unwrap_or_default()
                 } else {
                     String::new()
                 };
