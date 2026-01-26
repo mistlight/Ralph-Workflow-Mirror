@@ -249,6 +249,17 @@ impl MockAppEffectHandler {
         self.files.borrow().contains_key(path)
     }
 
+    /// Get all files in the in-memory filesystem.
+    ///
+    /// Returns a vector of (path, content) tuples for all files.
+    pub fn get_all_files(&self) -> Vec<(PathBuf, String)> {
+        self.files
+            .borrow()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
     /// Get the current simulated working directory.
     pub fn get_cwd(&self) -> PathBuf {
         self.cwd.borrow().clone()

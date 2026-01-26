@@ -162,6 +162,10 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
         return Ok(());
     };
 
+    // Create workspace for explicit path resolution
+    let workspace: std::sync::Arc<dyn crate::workspace::Workspace> =
+        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()));
+
     // Prepare pipeline context or exit early
     (prepare_pipeline_or_exit(PipelinePreparationParams {
         args,
@@ -174,6 +178,7 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
         colors,
         executor,
         handler: &mut handler,
+        workspace,
     })?)
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
 }
@@ -213,6 +218,7 @@ pub fn run_with_config(
         registry,
         &crate::config::RealConfigEnvironment,
         &mut handler,
+        None, // Use default WorkspaceFs
     )
 }
 
@@ -228,11 +234,12 @@ pub fn run_with_config(
 /// # Arguments
 ///
 /// * `args` - The parsed CLI arguments
-/// * `executor` - Process executor for external process execution  
+/// * `executor` - Process executor for external process execution
 /// * `config` - Pre-built configuration (bypasses env var loading)
 /// * `registry` - Pre-built agent registry
 /// * `path_resolver` - Custom path resolver for init commands
 /// * `handler` - Effect handler for git/filesystem operations
+/// * `workspace` - Optional workspace for file operations (if `None`, uses `WorkspaceFs`)
 ///
 /// # Returns
 ///
@@ -248,6 +255,7 @@ pub fn run_with_config_and_resolver<
     registry: AgentRegistry,
     path_resolver: &P,
     handler: &mut H,
+    workspace: Option<std::sync::Arc<dyn crate::workspace::Workspace>>,
 ) -> anyhow::Result<()> {
     use crate::cli::{
         handle_extended_help, handle_init_global_with, handle_init_prompt_with,
@@ -368,6 +376,11 @@ pub fn run_with_config_and_resolver<
         return Ok(());
     };
 
+    // Create workspace for explicit path resolution, or use injected workspace
+    let workspace = workspace.unwrap_or_else(|| {
+        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()))
+    });
+
     // Prepare pipeline context or exit early
     (prepare_pipeline_or_exit(PipelinePreparationParams {
         args,
@@ -380,8 +393,31 @@ pub fn run_with_config_and_resolver<
         colors,
         executor,
         handler,
+        workspace,
     })?)
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
+}
+
+/// Parameters for `run_with_config_and_handlers`.
+///
+/// Groups related parameters to reduce function argument count.
+#[cfg(feature = "test-utils")]
+pub struct RunWithHandlersParams<'a, 'ctx, P, A, E>
+where
+    P: crate::config::ConfigEnvironment,
+    A: effect::AppEffectHandler,
+    E: crate::reducer::EffectHandler<'ctx> + crate::app::event_loop::StatefulHandler,
+{
+    pub args: Args,
+    pub executor: std::sync::Arc<dyn ProcessExecutor>,
+    pub config: crate::config::Config,
+    pub registry: AgentRegistry,
+    pub path_resolver: &'a P,
+    pub app_handler: &'a mut A,
+    pub effect_handler: &'a mut E,
+    pub workspace: Option<std::sync::Arc<dyn crate::workspace::Workspace>>,
+    /// Phantom data to bind the `'ctx` lifetime from `EffectHandler<'ctx>`.
+    pub _marker: std::marker::PhantomData<&'ctx ()>,
 }
 
 /// Run with both AppEffectHandler AND EffectHandler for full isolation.
@@ -401,30 +437,36 @@ pub fn run_with_config_and_resolver<
 /// let mut app_handler = MockAppEffectHandler::new().with_head_oid("abc123");
 /// let mut effect_handler = MockEffectHandler::new(PipelineState::initial(1, 0));
 ///
-/// run_with_config_and_handlers(
-///     args, executor, config, registry, &env,
-///     &mut app_handler, &mut effect_handler
-/// )?;
+/// run_with_config_and_handlers(RunWithHandlersParams {
+///     args, executor, config, registry, path_resolver: &env,
+///     app_handler: &mut app_handler, effect_handler: &mut effect_handler,
+///     workspace: None,
+/// })?;
 ///
 /// // Verify no real git operations at either layer
 /// assert!(app_handler.captured().iter().any(|e| matches!(e, AppEffect::GitRequireRepo)));
 /// assert!(effect_handler.captured_effects().iter().any(|e| matches!(e, Effect::CreateCommit { .. })));
 /// ```
 #[cfg(feature = "test-utils")]
-pub fn run_with_config_and_handlers<'ctx, P, A, E>(
-    args: Args,
-    executor: std::sync::Arc<dyn ProcessExecutor>,
-    config: crate::config::Config,
-    registry: AgentRegistry,
-    path_resolver: &P,
-    app_handler: &mut A,
-    effect_handler: &mut E,
+pub fn run_with_config_and_handlers<'a, 'ctx, P, A, E>(
+    params: RunWithHandlersParams<'a, 'ctx, P, A, E>,
 ) -> anyhow::Result<()>
 where
     P: crate::config::ConfigEnvironment,
     A: effect::AppEffectHandler,
     E: crate::reducer::EffectHandler<'ctx> + crate::app::event_loop::StatefulHandler,
 {
+    let RunWithHandlersParams {
+        args,
+        executor,
+        config,
+        registry,
+        path_resolver,
+        app_handler,
+        effect_handler,
+        workspace,
+        ..
+    } = params;
     use crate::cli::{
         handle_extended_help, handle_init_global_with, handle_init_prompt_with,
         handle_list_work_guides, handle_smart_init_with,
@@ -544,6 +586,11 @@ where
         return Ok(());
     };
 
+    // Create workspace for explicit path resolution, or use injected workspace
+    let workspace = workspace.unwrap_or_else(|| {
+        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()))
+    });
+
     // Prepare pipeline context or exit early
     let ctx = prepare_pipeline_or_exit(PipelinePreparationParams {
         args,
@@ -556,6 +603,7 @@ where
         colors,
         executor,
         handler: app_handler,
+        workspace,
     })?;
 
     // Run pipeline with the injected effect_handler
@@ -742,6 +790,11 @@ struct PipelinePreparationParams<'a, H: effect::AppEffectHandler> {
     colors: Colors,
     executor: std::sync::Arc<dyn ProcessExecutor>,
     handler: &'a mut H,
+    /// Workspace for explicit path resolution.
+    ///
+    /// Production code passes `Arc::new(WorkspaceFs::new(...))`.
+    /// Tests can pass `Arc::new(MemoryWorkspace::new(...))`.
+    workspace: std::sync::Arc<dyn crate::workspace::Workspace>,
 }
 
 /// Prepares the pipeline context after agent validation.
@@ -761,10 +814,8 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         colors,
         executor,
         handler,
+        workspace,
     } = params;
-
-    // Create workspace filesystem for explicit path resolution
-    let workspace = crate::workspace::WorkspaceFs::new(repo_root.clone());
 
     // Ensure required files and directories exist via effects
     effectful::ensure_files_effectful(handler, config.isolation_mode)
@@ -816,7 +867,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         handle_generate_commit_msg(plumbing::CommitGenerationConfig {
             config: &config,
             template_context: &template_context,
-            workspace: &workspace,
+            workspace: &*workspace,
             registry: &registry,
             logger: &logger,
             colors,
@@ -831,9 +882,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
     let developer_display = registry.display_name(&developer_agent);
     let reviewer_display = registry.display_name(&reviewer_agent);
 
-    // Build pipeline context
-    let workspace: std::sync::Arc<dyn crate::workspace::Workspace> =
-        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()));
+    // Build pipeline context (workspace was injected via params)
     let ctx = PipelineContext {
         args,
         config,

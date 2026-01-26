@@ -2,13 +2,13 @@
 //!
 //! These tests verify that:
 //! - Commit messages are generated when developer_iters=0
-//! - Commits are created successfully
+//! - GitCommit effect is called correctly
 //! - The commit message fallback system works
 //!
 //! Note: Tests that specifically test LLM commit message generation behavior
 //! require the commit agent to run and cannot be properly tested without the
 //! AgentExecutor trait infrastructure. These tests focus on the observable
-//! behavior of commit creation.
+//! behavior of commit effect creation.
 //!
 //! # Integration Test Style Guide
 //!
@@ -16,157 +16,187 @@
 //! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
-//! - Tests verify **observable behavior** (commit creation, commit messages)
-//! - Uses `TempDir` for filesystem isolation
-//! - Tests are deterministic and black-box (test commit as a user would experience it)
-
-use tempfile::TempDir;
+//! - Tests verify **observable behavior** via effect capture
+//! - Uses `MockAppEffectHandler` for git/filesystem isolation
+//! - NO `TempDir`, `std::fs`, or real git operations
+//! - Tests are deterministic and verify effects, not real filesystem state
 
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handler,
 };
 use crate::test_timeout::with_default_timeout;
-use test_helpers::{commit_all, init_git_repo, write_file};
+use ralph_workflow::app::effect::AppEffect;
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+use std::path::PathBuf;
 
-fn init_repo_with_initial_commit(dir: &TempDir) -> git2::Repository {
-    let repo = init_git_repo(dir);
-    write_file(dir.path().join("initial.txt"), "initial content");
-    let _ = commit_all(&repo, "initial commit");
-    repo
+/// Standard PROMPT.md content for commit tests.
+const STANDARD_PROMPT: &str = r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#;
+
+/// Create a mock handler with standard setup for commit tests.
+///
+/// Returns a handler configured with:
+/// - Git repo context (valid HEAD OID)
+/// - Working directory set to /mock/repo
+/// - PROMPT.md file with standard content
+/// - A diff to trigger commit (changes from start commit)
+fn create_commit_test_handler() -> MockAppEffectHandler {
+    MockAppEffectHandler::new()
+        .with_head_oid("a".repeat(40))
+        .with_cwd(PathBuf::from("/mock/repo"))
+        .with_file("PROMPT.md", STANDARD_PROMPT)
+        // Simulate a diff exists (changes to commit)
+        .with_diff("diff --git a/test.txt b/test.txt\n+new content")
+        // Ensure git add stages changes
+        .with_staged_changes(true)
 }
 
-/// Get the most recent commit message from a repository
-fn get_last_commit_message(repo: &git2::Repository) -> String {
-    let head = repo.head().unwrap();
-    let commit = head.peel_to_commit().unwrap();
-    commit.message().unwrap().to_string()
-}
-
-/// Test that a commit message is generated when there is a simple change.
+/// Test that GitCommit effect is called when there is a simple change.
 ///
 /// This verifies that when a user has uncommitted changes and runs ralph
-/// with developer_iters=0 to skip agent execution, a commit is created
-/// with a non-empty commit message.
+/// with developer_iters=0 to skip agent execution, the GitCommit effect
+/// is called with a non-empty commit message.
 #[test]
 fn test_commit_message_generated_with_simple_diff() {
     with_default_timeout(|| {
-        // Test that commit message is generated with a simple change
-        let dir = TempDir::new().unwrap();
+        let mut handler = create_commit_test_handler();
         let config = create_test_config_struct();
-        let repo = init_repo_with_initial_commit(&dir);
-
-        // Make a simple change
-        write_file(dir.path().join("test.txt"), "new content");
-
-        // Run ralph with developer_iters=0 (skip to commit)
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        // Verify a commit was created with a non-empty message
-        let message = get_last_commit_message(&repo);
+        run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
+
+        // Verify GitCommit effect was called
+        let effects = handler.captured();
+        let commit_effect = effects.iter().find(|e| matches!(e, AppEffect::GitCommit { .. }));
+
         assert!(
-            !message.trim().is_empty(),
-            "Commit message should not be empty"
+            commit_effect.is_some(),
+            "GitCommit effect should be called when there are changes"
         );
+
+        // Verify the commit message is not empty
+        if let Some(AppEffect::GitCommit { message, .. }) = commit_effect {
+            assert!(
+                !message.trim().is_empty(),
+                "Commit message should not be empty"
+            );
+        }
     });
 }
 
-/// Test that a commit message is generated when there are changes to multiple files.
+/// Test that GitCommit effect is called when there are changes to multiple files.
 ///
 /// This verifies that when a user has uncommitted changes across multiple files
 /// and runs ralph with developer_iters=0 to skip agent execution,
-/// a commit is created with a non-empty commit message.
+/// the GitCommit effect is called with a non-empty commit message.
 #[test]
 fn test_commit_message_generated_with_multiple_files() {
     with_default_timeout(|| {
-        // Test commit message generation with multiple file changes
-        let dir = TempDir::new().unwrap();
+        // Create handler with multiple file changes in the diff
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
+            .with_diff(
+                "diff --git a/file1.txt b/file1.txt\n+content 1\n\
+                 diff --git a/file2.txt b/file2.txt\n+content 2\n\
+                 diff --git a/file3.rs b/file3.rs\n+fn main() {}",
+            )
+            .with_staged_changes(true);
+
         let config = create_test_config_struct();
-        let repo = init_repo_with_initial_commit(&dir);
-
-        // Make changes to multiple files
-        write_file(dir.path().join("file1.txt"), "content 1");
-        write_file(dir.path().join("file2.txt"), "content 2");
-        write_file(dir.path().join("file3.rs"), "fn main() {}");
-
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        let message = get_last_commit_message(&repo);
-        assert!(!message.trim().is_empty());
+        run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
+
+        // Verify GitCommit effect was called with a non-empty message
+        let effects = handler.captured();
+        let commit_effect = effects.iter().find(|e| matches!(e, AppEffect::GitCommit { .. }));
+
+        assert!(commit_effect.is_some(), "GitCommit effect should be called");
+
+        if let Some(AppEffect::GitCommit { message, .. }) = commit_effect {
+            assert!(!message.trim().is_empty());
+        }
     });
 }
 
-/// Test that a commit captures the diff content correctly.
+/// Test that GitCommit effect captures diff content correctly.
 ///
 /// This verifies that when a user has uncommitted changes including modifications
 /// deep within a large file and runs ralph with developer_iters=0,
-/// a commit is created with a non-empty commit message.
+/// the GitCommit effect is called with a non-empty commit message.
 #[test]
 fn test_commit_created_with_diff_content() {
     with_default_timeout(|| {
-        // Test that commit captures the diff content
-        let dir = TempDir::new().unwrap();
+        // Create handler with a diff showing changes deep in a file
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
+            .with_diff(
+                "diff --git a/large_file.txt b/large_file.txt\n\
+                 @@ -148,7 +148,7 @@\n\
+                  line 148\n\
+                  line 149\n\
+                 -line 150\n\
+                 +line 150 modified\n\
+                  line 151\n\
+                  line 152",
+            )
+            .with_staged_changes(true);
+
         let config = create_test_config_struct();
-        let repo = init_repo_with_initial_commit(&dir);
-
-        // Create a file with many lines and modify a line deep in the file
-        let mut content = String::new();
-        for i in 0..200 {
-            content.push_str(&format!("line {}\n", i));
-        }
-        write_file(dir.path().join("large_file.txt"), &content);
-
-        // Commit the initial large file
-        let _ = commit_all(&repo, "add large file");
-
-        // Modify a line deep in the file (line 150)
-        content.clear();
-        for i in 0..200 {
-            if i == 150 {
-                content.push_str("line 150 modified\n");
-            } else {
-                content.push_str(&format!("line {}\n", i));
-            }
-        }
-        write_file(dir.path().join("large_file.txt"), &content);
-
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        // Verify commit was created
-        let message = get_last_commit_message(&repo);
-        assert!(!message.trim().is_empty());
+        run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
+
+        // Verify GitCommit effect was called
+        let effects = handler.captured();
+        let commit_effect = effects.iter().find(|e| matches!(e, AppEffect::GitCommit { .. }));
+
+        assert!(commit_effect.is_some());
+
+        if let Some(AppEffect::GitCommit { message, .. }) = commit_effect {
+            assert!(!message.trim().is_empty());
+        }
     });
 }
 
-/// Test that a commit succeeds when both developer and review phases are skipped.
+/// Test that GitCommit effect is called when both developer and review phases are skipped.
 ///
 /// This verifies that when a user runs ralph with both developer_iters=0
-/// and reviewer_reviews=0 to skip agent execution, a commit is still created
-/// with a non-empty commit message.
+/// and reviewer_reviews=0 to skip agent execution, the GitCommit effect is still
+/// called with a non-empty commit message.
 #[test]
 fn test_commit_succeeds_without_developer_or_review() {
     with_default_timeout(|| {
-        // Test that commits work when both development and review are skipped
-        let dir = TempDir::new().unwrap();
+        let mut handler = create_commit_test_handler();
         let config = create_test_config_struct();
-        let _repo = init_repo_with_initial_commit(&dir);
-
-        // Create a change to commit
-        write_file(dir.path().join("test.txt"), "new content");
-
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        // Verify a commit was created (we should have 2 commits now)
-        let repo = git2::Repository::open(dir.path()).unwrap();
-        let head = repo.head().unwrap();
-        let commit = head.peel_to_commit().unwrap();
-        let message = commit.message().unwrap();
+        run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
+
+        // Verify GitCommit effect was called
+        let effects = handler.captured();
+        let commit_effect = effects.iter().find(|e| matches!(e, AppEffect::GitCommit { .. }));
+
         assert!(
-            !message.trim().is_empty(),
-            "Commit message should not be empty"
+            commit_effect.is_some(),
+            "GitCommit effect should be called"
         );
+
+        if let Some(AppEffect::GitCommit { message, .. }) = commit_effect {
+            assert!(
+                !message.trim().is_empty(),
+                "Commit message should not be empty"
+            );
+        }
     });
 }
