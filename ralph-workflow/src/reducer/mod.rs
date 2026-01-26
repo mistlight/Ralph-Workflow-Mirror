@@ -115,6 +115,8 @@ pub mod event;
 pub mod fault_tolerant_executor;
 pub mod handler;
 pub mod migration;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mock_effect_handler;
 pub mod orchestration;
 pub mod state;
 pub mod state_reduction;
