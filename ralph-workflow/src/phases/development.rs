@@ -9,7 +9,7 @@
 
 use crate::agents::AgentRole;
 use crate::checkpoint::restore::ResumeContext;
-use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase};
+use crate::checkpoint::{save_checkpoint_with_workspace, CheckpointBuilder, PipelinePhase};
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::llm_output_extraction::{
     archive_xml_file, extract_development_result_xml, extract_plan_xml,
@@ -109,7 +109,7 @@ pub fn run_development_phase(
                 .with_prompt_history(ctx.clone_prompt_history());
 
             if let Some(checkpoint) = builder.build() {
-                let _ = save_checkpoint(&checkpoint);
+                let _ = save_checkpoint_with_workspace(ctx.workspace, &checkpoint);
             }
         }
 
@@ -234,7 +234,7 @@ pub fn run_development_phase(
                 .with_prompt_history(ctx.clone_prompt_history());
 
             if let Some(checkpoint) = builder.build() {
-                let _ = save_checkpoint(&checkpoint);
+                let _ = save_checkpoint_with_workspace(ctx.workspace, &checkpoint);
             }
         }
     }
@@ -604,7 +604,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             .with_prompt_history(ctx.clone_prompt_history());
 
         if let Some(checkpoint) = builder.build() {
-            let _ = save_checkpoint(&checkpoint);
+            let _ = save_checkpoint_with_workspace(ctx.workspace, &checkpoint);
         }
     }
 

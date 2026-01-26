@@ -36,7 +36,8 @@ use crate::banner::print_welcome_banner;
 use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
 
 use crate::checkpoint::{
-    save_checkpoint, CheckpointBuilder, PipelineCheckpoint, PipelinePhase, RebaseState,
+    save_checkpoint_with_workspace, CheckpointBuilder, PipelineCheckpoint, PipelinePhase,
+    RebaseState,
 };
 use crate::cli::{
     create_prompt_from_template, handle_diagnose, handle_dry_run, handle_list_agents,
@@ -1174,7 +1175,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
                 .with_prompt_history(phase_ctx.clone_prompt_history());
 
             if let Some(checkpoint) = builder.build() {
-                let _ = save_checkpoint(&checkpoint);
+                let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
             }
         }
         // Update interrupt context after initial checkpoint
@@ -1262,7 +1263,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             .with_prompt_history(prompt_history_before);
 
         if let Some(checkpoint) = builder.build() {
-            let _ = save_checkpoint(&checkpoint);
+            let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
         }
     }
 
@@ -1472,7 +1473,7 @@ where
             .with_prompt_history(prompt_history_before);
 
         if let Some(checkpoint) = builder.build() {
-            let _ = save_checkpoint(&checkpoint);
+            let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
         }
     }
 
@@ -1984,7 +1985,7 @@ fn run_initial_rebase(
             checkpoint.rebase_state = RebaseState::PreRebaseInProgress {
                 upstream_branch: default_branch,
             };
-            let _ = save_checkpoint(&checkpoint);
+            let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
         }
     }
 
@@ -2019,7 +2020,7 @@ fn run_initial_rebase(
                     .with_prompt_history(phase_ctx.clone_prompt_history());
 
                 if let Some(checkpoint) = builder.build() {
-                    let _ = save_checkpoint(&checkpoint);
+                    let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
                 }
             }
 
@@ -2055,7 +2056,7 @@ fn run_initial_rebase(
                     .with_prompt_history(phase_ctx.clone_prompt_history());
 
                 if let Some(checkpoint) = builder.build() {
-                    let _ = save_checkpoint(&checkpoint);
+                    let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
                 }
             }
 
@@ -2111,7 +2112,7 @@ fn run_initial_rebase(
                     checkpoint.rebase_state = RebaseState::HasConflicts {
                         files: conflicted_files.clone(),
                     };
-                    let _ = save_checkpoint(&checkpoint);
+                    let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
                 }
             }
 
@@ -2174,7 +2175,10 @@ fn run_initial_rebase(
                                     .with_prompt_history(phase_ctx.clone_prompt_history());
 
                                 if let Some(checkpoint) = builder.build() {
-                                    let _ = save_checkpoint(&checkpoint);
+                                    let _ = save_checkpoint_with_workspace(
+                                        &*ctx.workspace,
+                                        &checkpoint,
+                                    );
                                 }
                             }
 

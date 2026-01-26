@@ -5,7 +5,9 @@
 //! invocation, git operations, file I/O) and emit events.
 
 use crate::agents::AgentRole;
-use crate::checkpoint::{save_checkpoint, CheckpointBuilder, PipelinePhase as CheckpointPhase};
+use crate::checkpoint::{
+    save_checkpoint_with_workspace, CheckpointBuilder, PipelinePhase as CheckpointPhase,
+};
 use crate::phases::{commit, development, get_primary_commit_agent, review, PhaseContext};
 use crate::pipeline::PipelineRuntime;
 use crate::prompts::ContextLevel;
@@ -595,7 +597,7 @@ fn save_checkpoint_from_state(
         .with_prompt_history(ctx.clone_prompt_history());
 
     if let Some(checkpoint) = builder.build() {
-        let _ = save_checkpoint(&checkpoint);
+        let _ = save_checkpoint_with_workspace(ctx.workspace, &checkpoint);
     }
 
     Ok(())
@@ -751,6 +753,95 @@ mod tests {
         assert!(
             workspace.exists(Path::new(".agent/tmp/keep.txt")),
             "non-xml file should not be deleted"
+        );
+    }
+
+    /// Test that save_checkpoint uses workspace for file operations.
+    ///
+    /// This verifies that save_checkpoint writes to .agent/checkpoint.json
+    /// via the workspace abstraction, not std::fs.
+    #[test]
+    fn test_save_checkpoint_uses_workspace() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        use std::path::{Path, PathBuf};
+
+        // Create an empty workspace - no checkpoint should exist initially
+        let workspace = MemoryWorkspace::new_test();
+
+        // Verify no checkpoint exists before
+        assert!(
+            !workspace.exists(Path::new(".agent/checkpoint.json")),
+            "checkpoint should not exist initially"
+        );
+
+        // Set up all the context fields - use real agent names from the registry
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
+            as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+        let repo_root = PathBuf::from("/test/repo");
+
+        // Use "claude" which should exist in the default registry
+        let developer_agent = "claude";
+        let reviewer_agent = "claude";
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent,
+            reviewer_agent,
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor_arc,
+            executor_arc: std::sync::Arc::clone(&executor_arc),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        // Create state and handler
+        let state = PipelineState::initial(1, 0);
+        let mut handler = super::MainEffectHandler::new(state);
+
+        // Execute save checkpoint effect
+        let result = handler.save_checkpoint(&mut ctx, CheckpointTrigger::PhaseTransition);
+
+        assert!(result.is_ok(), "save_checkpoint should succeed");
+
+        // Verify checkpoint was written via workspace
+        assert!(
+            workspace.exists(Path::new(".agent/checkpoint.json")),
+            "checkpoint should be written via workspace"
+        );
+
+        // Verify the content is valid JSON
+        let content = workspace.read(Path::new(".agent/checkpoint.json")).unwrap();
+        assert!(
+            content.contains("\"phase\""),
+            "checkpoint should contain phase field"
+        );
+        assert!(
+            content.contains("\"version\""),
+            "checkpoint should contain version field"
         );
     }
 }
