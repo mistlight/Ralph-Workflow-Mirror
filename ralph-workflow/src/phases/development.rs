@@ -12,9 +12,9 @@ use crate::checkpoint::restore::ResumeContext;
 use crate::checkpoint::{save_checkpoint_with_workspace, CheckpointBuilder, PipelinePhase};
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::llm_output_extraction::{
-    archive_xml_file, extract_development_result_xml, extract_plan_xml,
-    extract_xml_with_file_fallback, format_xml_for_display, validate_development_result_xml,
-    validate_plan_xml, xml_paths, PlanElements,
+    archive_xml_file_with_workspace, extract_development_result_xml, extract_plan_xml,
+    extract_xml_with_file_fallback_with_workspace, format_xml_for_display,
+    validate_development_result_xml, validate_plan_xml, xml_paths, PlanElements,
 };
 use crate::files::{delete_plan_file_with_workspace, update_status_with_workspace};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
@@ -313,13 +313,16 @@ pub fn run_development_iteration_with_xml_retry(
             // Before each retry, check if the XML file is writable and clean up if locked
             // This prevents "permission denied" errors from stale file handles
             if is_retry {
-                use crate::files::io::check_and_cleanup_xml_before_retry;
-                use std::path::Path;
+                use crate::files::io::check_and_cleanup_xml_before_retry_with_workspace;
 
                 let xml_path = Path::new(
                     crate::files::llm_output_extraction::xml_paths::DEVELOPMENT_RESULT_XML,
                 );
-                let _ = check_and_cleanup_xml_before_retry(xml_path, ctx.logger);
+                let _ = check_and_cleanup_xml_before_retry_with_workspace(
+                    ctx.workspace,
+                    xml_path,
+                    ctx.logger,
+                );
             }
 
             // For initial attempt, use XML prompt
@@ -479,7 +482,8 @@ pub fn run_development_iteration_with_xml_retry(
             }
 
             // Try file-based extraction first - allows agents to write XML to .agent/tmp/development_result.xml
-            let xml_to_validate = extract_xml_with_file_fallback(
+            let xml_to_validate = extract_xml_with_file_fallback_with_workspace(
+                ctx.workspace,
                 Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
                 &dev_content,
                 extract_development_result_xml,
@@ -497,7 +501,10 @@ pub fn run_development_iteration_with_xml_retry(
                     let formatted_xml = format_xml_for_display(&xml_to_validate);
 
                     // Archive the XML file for debugging (moves to .xml.processed)
-                    archive_xml_file(Path::new(xml_paths::DEVELOPMENT_RESULT_XML));
+                    archive_xml_file_with_workspace(
+                        ctx.workspace,
+                        Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+                    );
 
                     if is_retry {
                         ctx.logger
@@ -662,9 +669,13 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
     for retry_num in 0..max_retries {
         // Before each retry, check if the XML file is writable and clean up if locked
         if retry_num > 0 {
-            use crate::files::io::check_and_cleanup_xml_before_retry;
+            use crate::files::io::check_and_cleanup_xml_before_retry_with_workspace;
             let xml_path = Path::new(crate::files::llm_output_extraction::xml_paths::PLAN_XML);
-            let _ = check_and_cleanup_xml_before_retry(xml_path, ctx.logger);
+            let _ = check_and_cleanup_xml_before_retry_with_workspace(
+                ctx.workspace,
+                xml_path,
+                ctx.logger,
+            );
         }
 
         // For initial attempt, use XML prompt
@@ -740,7 +751,8 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
         }
 
         // Try file-based extraction first - allows agents to write XML to .agent/tmp/plan.xml
-        let xml_to_validate = extract_xml_with_file_fallback(
+        let xml_to_validate = extract_xml_with_file_fallback_with_workspace(
+            ctx.workspace,
             Path::new(xml_paths::PLAN_XML),
             &plan_content,
             extract_plan_xml,
@@ -762,7 +774,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
                 ctx.workspace.write(plan_path, &markdown)?;
 
                 // Archive the XML file for debugging (moves to .xml.processed)
-                archive_xml_file(Path::new(xml_paths::PLAN_XML));
+                archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::PLAN_XML));
 
                 if retry_num > 0 {
                     ctx.logger

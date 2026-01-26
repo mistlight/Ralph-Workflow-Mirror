@@ -448,6 +448,93 @@ pub fn cleanup_stale_xml_files(tmp_dir: &Path, force_cleanup: bool) -> io::Resul
     }
 }
 
+/// Check if a specific XML file is writable using workspace abstraction.
+///
+/// This is the workspace-based version of `check_xml_file_writable`.
+///
+/// Note: In `MemoryWorkspace`, files are always considered writable since there's
+/// no concept of file locking. This function is primarily for testability.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `xml_path` - Relative path to the XML file
+/// * `force_cleanup` - If true, delete the file
+///
+/// # Returns
+///
+/// - `Ok(true)` - File exists and is writable
+/// - `Ok(false)` - File doesn't exist (not an error)
+/// - `Err(...)` - File access error
+pub fn check_xml_file_writable_with_workspace(
+    workspace: &dyn Workspace,
+    xml_path: &Path,
+    force_cleanup: bool,
+) -> io::Result<bool> {
+    // If file doesn't exist, it's writable (we can create it)
+    if !workspace.exists(xml_path) {
+        return Ok(false);
+    }
+
+    if force_cleanup {
+        workspace.remove(xml_path)?;
+        return Ok(false);
+    }
+
+    // In workspace context, files are always writable
+    // (MemoryWorkspace doesn't track file locks)
+    Ok(true)
+}
+
+/// Check if a specific XML file is writable before agent retry using workspace.
+///
+/// This is the workspace-based version of `check_and_cleanup_xml_before_retry`.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `xml_path` - Relative path to the XML file
+/// * `logger` - Logger for diagnostic messages
+///
+/// # Returns
+///
+/// `Ok(())` if file is writable or was successfully cleaned up.
+/// `Err(...)` if cleanup failed.
+pub fn check_and_cleanup_xml_before_retry_with_workspace(
+    workspace: &dyn Workspace,
+    xml_path: &Path,
+    logger: &crate::logger::Logger,
+) -> io::Result<()> {
+    match check_xml_file_writable_with_workspace(workspace, xml_path, false) {
+        Ok(true) | Ok(false) => Ok(()),
+        Err(e) => {
+            logger.warn(&format!(
+                "XML file {} error: {}. Attempting cleanup...",
+                xml_path.display(),
+                e
+            ));
+
+            match check_xml_file_writable_with_workspace(workspace, xml_path, true) {
+                Ok(_) => {
+                    logger.info(&format!(
+                        "Successfully cleaned up file: {}",
+                        xml_path.display()
+                    ));
+                    Ok(())
+                }
+                Err(cleanup_err) => {
+                    logger.error(&format!(
+                        "Failed to cleanup file {}: {}",
+                        xml_path.display(),
+                        cleanup_err
+                    ));
+                    Err(cleanup_err)
+                }
+            }
+        }
+    }
+}
+
 /// Check and clean up all XML files in .agent/tmp/ directory using workspace.
 ///
 /// This is the workspace-based version of `cleanup_stale_xml_files`.

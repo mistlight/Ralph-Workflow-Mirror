@@ -17,7 +17,7 @@ use super::context::PhaseContext;
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
 use crate::files::llm_output_extraction::{
-    archive_xml_file, preprocess_raw_content, try_extract_from_file,
+    archive_xml_file_with_workspace, preprocess_raw_content, try_extract_from_file_with_workspace,
     try_extract_xml_commit_with_trace, xml_paths, CommitExtractionResult,
 };
 use crate::git_helpers::{git_add_all, git_commit, CommitResultFallback};
@@ -617,11 +617,15 @@ fn run_commit_attempt_with_agent(
     for retry_num in 0..max_retries {
         // Before each retry, check if the XML file is writable and clean up if locked
         if retry_num > 0 {
-            use crate::files::io::check_and_cleanup_xml_before_retry;
+            use crate::files::io::check_and_cleanup_xml_before_retry_with_workspace;
             use std::path::Path;
             let xml_path =
                 Path::new(crate::files::llm_output_extraction::xml_paths::COMMIT_MESSAGE_XML);
-            let _ = check_and_cleanup_xml_before_retry(xml_path, runtime.logger);
+            let _ = check_and_cleanup_xml_before_retry_with_workspace(
+                ctx.workspace,
+                xml_path,
+                runtime.logger,
+            );
         }
 
         // For initial attempt, xsd_error is None
@@ -1322,15 +1326,16 @@ fn try_xml_extraction_traced(
 ) -> Option<CommitExtractionResult> {
     // Try file-based extraction first - allows agents to write XML to .agent/tmp/commit_message.xml
     let xml_file_path = Path::new(xml_paths::COMMIT_MESSAGE_XML);
-    let (xml_result, xml_detail) = if let Some(file_xml) = try_extract_from_file(xml_file_path) {
-        // Found XML in file - validate it
-        let (validated, detail) = try_extract_xml_commit_with_trace(&file_xml);
-        let detail = format!("file-based: {}", detail);
-        (validated, detail)
-    } else {
-        // Fall back to log content extraction
-        try_extract_xml_commit_with_trace(content)
-    };
+    let (xml_result, xml_detail) =
+        if let Some(file_xml) = try_extract_from_file_with_workspace(workspace, xml_file_path) {
+            // Found XML in file - validate it
+            let (validated, detail) = try_extract_xml_commit_with_trace(&file_xml);
+            let detail = format!("file-based: {}", detail);
+            (validated, detail)
+        } else {
+            // Fall back to log content extraction
+            try_extract_xml_commit_with_trace(content)
+        };
     logger.info(&format!("  ✓ XML extraction: {xml_detail}"));
 
     parsing_trace.add_step(
@@ -1345,7 +1350,7 @@ fn try_xml_extraction_traced(
     if let Some(message) = xml_result {
         // XSD validation already passed inside try_extract_xml_commit_with_trace
         // Archive the XML file now that it's been successfully processed
-        archive_xml_file(xml_file_path);
+        archive_xml_file_with_workspace(workspace, xml_file_path);
 
         attempt_log.add_extraction_attempt(ExtractionAttempt::success("XML", xml_detail));
         parsing_trace.set_final_message(&message);

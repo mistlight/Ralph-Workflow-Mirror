@@ -128,9 +128,15 @@ impl Logger {
         }
     }
 
-    /// Configure the logger to also write to a file.
+    /// Configure the logger to also write to a file using direct filesystem access.
     ///
     /// Log messages written to the file will have ANSI codes stripped.
+    ///
+    /// # Note
+    ///
+    /// For pipeline code where a workspace exists, prefer [`with_workspace_log`]
+    /// instead. This method uses `std::fs` directly and is intended for CLI layer
+    /// code or legacy compatibility.
     pub fn with_log_file(mut self, path: &str) -> Self {
         self.log_file = Some(path.to_string());
         self

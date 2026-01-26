@@ -17,9 +17,9 @@ use crate::checkpoint::{save_checkpoint_with_workspace, CheckpointBuilder, Pipel
 use crate::files::extract_issues;
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::llm_output_extraction::{
-    archive_xml_file, extract_fix_result_xml, extract_issues_xml, extract_xml_with_file_fallback,
-    format_xml_for_display, validate_fix_result_xml, validate_issues_xml, xml_paths,
-    IssuesElements,
+    archive_xml_file_with_workspace, extract_fix_result_xml, extract_issues_xml,
+    extract_xml_with_file_fallback_with_workspace, format_xml_for_display, validate_fix_result_xml,
+    validate_issues_xml, xml_paths, IssuesElements,
 };
 use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::files::{
@@ -654,10 +654,14 @@ pub fn run_review_pass(
 
         // Before each retry, check if the XML file is writable and clean up if locked
         if is_retry {
-            use crate::files::io::check_and_cleanup_xml_before_retry;
+            use crate::files::io::check_and_cleanup_xml_before_retry_with_workspace;
             use std::path::Path;
             let xml_path = Path::new(crate::files::llm_output_extraction::xml_paths::ISSUES_XML);
-            let _ = check_and_cleanup_xml_before_retry(xml_path, ctx.logger);
+            let _ = check_and_cleanup_xml_before_retry_with_workspace(
+                ctx.workspace,
+                xml_path,
+                ctx.logger,
+            );
         }
 
         // For initial attempt, use XML prompt
@@ -960,7 +964,8 @@ fn extract_and_validate_review_output_xml(
     };
 
     // Try file-based extraction first - allows agents to write XML to .agent/tmp/issues.xml
-    let xml_content = match extract_xml_with_file_fallback(
+    let xml_content = match extract_xml_with_file_fallback_with_workspace(
+        ctx.workspace,
         Path::new(xml_paths::ISSUES_XML),
         &raw_content,
         extract_issues_xml,
@@ -1000,7 +1005,7 @@ fn extract_and_validate_review_output_xml(
             ctx.workspace.write(issues_path, &xml_content)?;
 
             // Archive the XML file for debugging (moves to .xml.processed)
-            archive_xml_file(Path::new(xml_paths::ISSUES_XML));
+            archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::ISSUES_XML));
 
             if elements.no_issues_found.is_some() {
                 return Ok(ParseResult::NoIssuesExplicit);
@@ -1168,11 +1173,15 @@ pub fn run_fix_pass(
 
             // Before each retry, check if the XML file is writable and clean up if locked
             if is_retry {
-                use crate::files::io::check_and_cleanup_xml_before_retry;
+                use crate::files::io::check_and_cleanup_xml_before_retry_with_workspace;
                 use std::path::Path;
                 let xml_path =
                     Path::new(crate::files::llm_output_extraction::xml_paths::FIX_RESULT_XML);
-                let _ = check_and_cleanup_xml_before_retry(xml_path, ctx.logger);
+                let _ = check_and_cleanup_xml_before_retry_with_workspace(
+                    ctx.workspace,
+                    xml_path,
+                    ctx.logger,
+                );
             }
 
             // For initial attempt, use XML prompt
@@ -1341,7 +1350,8 @@ pub fn run_fix_pass(
             let fix_content = read_last_fix_output(log_dir_path, ctx.workspace);
 
             // Try file-based extraction first - allows agents to write XML to .agent/tmp/fix_result.xml
-            let xml_to_validate = extract_xml_with_file_fallback(
+            let xml_to_validate = extract_xml_with_file_fallback_with_workspace(
+                ctx.workspace,
                 Path::new(xml_paths::FIX_RESULT_XML),
                 &fix_content,
                 extract_fix_result_xml,
@@ -1359,7 +1369,10 @@ pub fn run_fix_pass(
                     let formatted_xml = format_xml_for_display(&xml_to_validate);
 
                     // Archive the XML file for debugging (moves to .xml.processed)
-                    archive_xml_file(Path::new(xml_paths::FIX_RESULT_XML));
+                    archive_xml_file_with_workspace(
+                        ctx.workspace,
+                        Path::new(xml_paths::FIX_RESULT_XML),
+                    );
 
                     if is_retry {
                         ctx.logger

@@ -44,8 +44,22 @@ mod types;
 pub use cleaning::preprocess_raw_content;
 
 // Re-export file-based extraction utilities
+// Note: Non-workspace variants are deprecated for pipeline layer code.
+// Use the _with_workspace variants instead.
 pub use file_based_extraction::{
-    archive_xml_file, extract_xml_with_file_fallback, paths as xml_paths, try_extract_from_file,
+    archive_xml_file_with_workspace, extract_xml_with_file_fallback_with_workspace,
+    paths as xml_paths, try_extract_from_file_with_workspace,
+};
+
+// Re-export deprecated functions for backward compatibility (CLI layer use only).
+// ARCHITECTURE NOTE: These functions use std::fs directly and are deprecated for
+// pipeline layer code. They are kept for CLI layer backward compatibility.
+// The #[allow(deprecated)] is required by Rust to re-export deprecated items.
+// Users of these functions will still receive deprecation warnings - this only
+// silences the warning in this module's re-export statement.
+#[allow(deprecated)]
+pub use file_based_extraction::{
+    archive_xml_file, extract_xml_with_file_fallback, try_extract_from_file,
 };
 
 // Import clean_plain_text for tests

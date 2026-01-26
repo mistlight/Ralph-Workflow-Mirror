@@ -4,6 +4,20 @@
 //! on PROMPT.md immediately, rather than waiting for periodic checks.
 //! It uses the `notify` crate for cross-platform file system events.
 //!
+//! # Effect System Exception
+//!
+//! This module uses `std::fs` directly rather than the `Workspace` trait.
+//! This is a documented exception to the effect system architecture because:
+//!
+//! 1. **Real-time filesystem monitoring**: The `notify` crate requires watching
+//!    the actual filesystem for events (inotify, FSEvents, ReadDirectoryChangesW).
+//! 2. **Background thread operation**: The monitor runs in a separate thread
+//!    that cannot share `PhaseContext` or workspace references.
+//! 3. **OS-level event handling**: File system events are inherently tied to
+//!    the real filesystem, not an abstraction layer.
+//!
+//! This exception is documented in `docs/architecture/effect-system.md`.
+//!
 //! # Design
 //!
 //! The monitor runs in a background thread and watches for deletion events
