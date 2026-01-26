@@ -181,6 +181,9 @@ fn run_ralph_cli_with_resolver<P: ConfigEnvironment>(
     // Create test registry with built-in agents only
     let registry = create_test_registry();
 
+    // Create effect handler for git/filesystem operations
+    let mut handler = ralph_workflow::app::effect_handler::RealAppEffectHandler::new();
+
     // If working_dir is provided, we need to lock CWD and restore it after
     if working_dir.is_some() {
         let _lock = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -193,6 +196,7 @@ fn run_ralph_cli_with_resolver<P: ConfigEnvironment>(
             config,
             registry,
             path_resolver,
+            &mut handler,
         );
 
         if let Some(cwd) = original_cwd {
@@ -207,6 +211,7 @@ fn run_ralph_cli_with_resolver<P: ConfigEnvironment>(
             config,
             registry,
             path_resolver,
+            &mut handler,
         )
     }
 }

@@ -200,13 +200,15 @@ pub fn run_with_config(
     config: crate::config::Config,
     registry: AgentRegistry,
 ) -> anyhow::Result<()> {
-    // Use real path resolver by default for backward compatibility
+    // Use real path resolver and effect handler by default for backward compatibility
+    let mut handler = effect_handler::RealAppEffectHandler::new();
     run_with_config_and_resolver(
         args,
         executor,
         config,
         registry,
         &crate::config::RealConfigEnvironment,
+        &mut handler,
     )
 }
 
@@ -226,17 +228,22 @@ pub fn run_with_config(
 /// * `config` - Pre-built configuration (bypasses env var loading)
 /// * `registry` - Pre-built agent registry
 /// * `path_resolver` - Custom path resolver for init commands
+/// * `handler` - Effect handler for git/filesystem operations
 ///
 /// # Returns
 ///
 /// Returns `Ok(())` on success or an error if any phase fails.
 #[cfg(feature = "test-utils")]
-pub fn run_with_config_and_resolver<P: crate::config::ConfigEnvironment>(
+pub fn run_with_config_and_resolver<
+    P: crate::config::ConfigEnvironment,
+    H: effect::AppEffectHandler,
+>(
     args: Args,
     executor: std::sync::Arc<dyn ProcessExecutor>,
     config: crate::config::Config,
     registry: AgentRegistry,
     path_resolver: &P,
+    handler: &mut H,
 ) -> anyhow::Result<()> {
     use crate::cli::{
         handle_extended_help, handle_init_global_with, handle_init_prompt_with,
