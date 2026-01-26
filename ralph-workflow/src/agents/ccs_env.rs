@@ -15,6 +15,83 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+// ============================================================================
+// Environment and Filesystem Traits for Testability
+// ============================================================================
+
+/// Trait for accessing CCS-related environment variables.
+///
+/// This trait enables dependency injection for testing without global state pollution.
+pub trait CcsEnvironment {
+    /// Get an environment variable by name.
+    fn get_var(&self, name: &str) -> Option<String>;
+
+    /// Get the home directory.
+    fn home_dir(&self) -> Option<PathBuf>;
+}
+
+/// Production implementation that reads from actual environment.
+pub struct RealCcsEnvironment;
+
+impl CcsEnvironment for RealCcsEnvironment {
+    fn get_var(&self, name: &str) -> Option<String> {
+        env::var(name).ok()
+    }
+
+    fn home_dir(&self) -> Option<PathBuf> {
+        dirs::home_dir()
+    }
+}
+
+/// Trait for CCS filesystem operations.
+///
+/// This trait abstracts filesystem access for testability.
+pub trait CcsFilesystem {
+    /// Check if a path exists.
+    fn exists(&self, path: &Path) -> bool;
+
+    /// Read a file to string.
+    fn read_to_string(&self, path: &Path) -> io::Result<String>;
+
+    /// Read directory entries.
+    fn read_dir(&self, path: &Path) -> io::Result<Vec<CcsDirEntry>>;
+}
+
+/// Directory entry for CcsFilesystem.
+pub struct CcsDirEntry {
+    pub path: PathBuf,
+    pub file_name: String,
+    pub is_file: bool,
+}
+
+/// Production implementation that uses real filesystem.
+pub struct RealCcsFilesystem;
+
+impl CcsFilesystem for RealCcsFilesystem {
+    fn exists(&self, path: &Path) -> bool {
+        path.exists()
+    }
+
+    fn read_to_string(&self, path: &Path) -> io::Result<String> {
+        fs::read_to_string(path)
+    }
+
+    fn read_dir(&self, path: &Path) -> io::Result<Vec<CcsDirEntry>> {
+        let entries = fs::read_dir(path)?;
+        let mut result = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            let ft = entry.file_type()?;
+            result.push(CcsDirEntry {
+                path: entry.path(),
+                file_name: entry.file_name().to_string_lossy().into_owned(),
+                is_file: ft.is_file(),
+            });
+        }
+        Ok(result)
+    }
+}
+
 /// Subset of CCS' legacy `~/.ccs/config.json` format.
 ///
 /// Source (CCS): `dist/types/config.d.ts` and `dist/utils/config-manager.js`.
@@ -136,58 +213,62 @@ fn is_safe_profile_filename_stem(stem: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
 
-fn list_ccs_json_files(ccs_dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
-    let entries = fs::read_dir(ccs_dir)?;
+fn list_ccs_json_files_with_fs(
+    fs: &dyn CcsFilesystem,
+    ccs_dir: &Path,
+) -> Result<Vec<PathBuf>, io::Error> {
+    let entries = fs.read_dir(ccs_dir)?;
     let mut files = Vec::new();
     for entry in entries {
-        let entry = entry?;
-        let ft = entry.file_type()?;
-        if !ft.is_file() {
+        if !entry.is_file {
             continue;
         }
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if name_str.ends_with(".json") {
-            files.push(entry.path());
+        if entry.file_name.ends_with(".json") {
+            files.push(entry.path);
         }
     }
     Ok(files)
 }
 
-fn ccs_home_dir() -> Option<PathBuf> {
+fn ccs_home_dir_with_env(env: &dyn CcsEnvironment) -> Option<PathBuf> {
     // Matches CCS behavior: respects CCS_HOME env var for test isolation.
-    env::var_os("CCS_HOME")
+    env.get_var("CCS_HOME")
         .map(PathBuf::from)
-        .or_else(dirs::home_dir)
+        .or_else(|| env.home_dir())
 }
 
-fn ccs_dir() -> Option<PathBuf> {
-    ccs_home_dir().map(|home| home.join(".ccs"))
+fn ccs_dir_with_env(env: &dyn CcsEnvironment) -> Option<PathBuf> {
+    ccs_home_dir_with_env(env).map(|home| home.join(".ccs"))
 }
 
-fn ccs_config_json_path() -> Option<PathBuf> {
+fn ccs_config_json_path_with_env(env: &dyn CcsEnvironment) -> Option<PathBuf> {
     // Matches CCS behavior: CCS_CONFIG overrides config.json path.
     // Source (CCS): `dist/utils/config-manager.js` getConfigPath().
-    env::var_os("CCS_CONFIG")
+    env.get_var("CCS_CONFIG")
         .map(PathBuf::from)
-        .or_else(|| ccs_dir().map(|d| d.join("config.json")))
+        .or_else(|| ccs_dir_with_env(env).map(|d| d.join("config.json")))
 }
 
-fn ccs_config_yaml_path() -> Option<PathBuf> {
-    ccs_dir().map(|d| d.join("config.yaml"))
+fn ccs_config_yaml_path_with_env(env: &dyn CcsEnvironment) -> Option<PathBuf> {
+    ccs_dir_with_env(env).map(|d| d.join("config.yaml"))
 }
 
-fn load_ccs_profiles_from_config_json() -> Result<HashMap<String, String>, CcsEnvVarsError> {
-    let Some(path) = ccs_config_json_path() else {
+fn load_ccs_profiles_from_config_json_with_deps(
+    env: &dyn CcsEnvironment,
+    fs: &dyn CcsFilesystem,
+) -> Result<HashMap<String, String>, CcsEnvVarsError> {
+    let Some(path) = ccs_config_json_path_with_env(env) else {
         return Err(CcsEnvVarsError::MissingHomeDir);
     };
-    if !path.exists() {
+    if !fs.exists(&path) {
         return Ok(HashMap::new());
     }
-    let content = fs::read_to_string(&path).map_err(|source| CcsEnvVarsError::ReadConfig {
-        path: path.clone(),
-        source,
-    })?;
+    let content = fs
+        .read_to_string(&path)
+        .map_err(|source| CcsEnvVarsError::ReadConfig {
+            path: path.clone(),
+            source,
+        })?;
     let parsed: CcsConfigJson =
         serde_json::from_str(&content).map_err(|source| CcsEnvVarsError::ParseConfigJson {
             path: path.clone(),
@@ -309,27 +390,36 @@ fn unquote_yaml_scalar(value: &str) -> String {
     }
 }
 
-fn load_ccs_profiles_from_config_yaml() -> Result<HashMap<String, String>, CcsEnvVarsError> {
-    let Some(path) = ccs_config_yaml_path() else {
+fn load_ccs_profiles_from_config_yaml_with_deps(
+    env: &dyn CcsEnvironment,
+    fs: &dyn CcsFilesystem,
+) -> Result<HashMap<String, String>, CcsEnvVarsError> {
+    let Some(path) = ccs_config_yaml_path_with_env(env) else {
         return Err(CcsEnvVarsError::MissingHomeDir);
     };
-    if !path.exists() {
+    if !fs.exists(&path) {
         return Ok(HashMap::new());
     }
-    let content = fs::read_to_string(&path).map_err(|source| CcsEnvVarsError::ReadConfig {
-        path: path.clone(),
-        source,
-    })?;
+    let content = fs
+        .read_to_string(&path)
+        .map_err(|source| CcsEnvVarsError::ReadConfig {
+            path: path.clone(),
+            source,
+        })?;
     Ok(parse_ccs_profiles_from_config_yaml(&content))
 }
 
-fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> {
-    let Some(ccs_dir) = ccs_dir() else {
+fn resolve_ccs_settings_path_with_deps(
+    env: &dyn CcsEnvironment,
+    fs: &dyn CcsFilesystem,
+    profile: &str,
+) -> Result<PathBuf, CcsEnvVarsError> {
+    let Some(ccs_dir) = ccs_dir_with_env(env) else {
         return Err(CcsEnvVarsError::MissingHomeDir);
     };
 
     // 1) Unified YAML config (preferred by CCS when present).
-    let yaml_profiles = load_ccs_profiles_from_config_yaml()?;
+    let yaml_profiles = load_ccs_profiles_from_config_yaml_with_deps(env, fs)?;
     if let Some(settings) = yaml_profiles.get(profile) {
         // Validate path doesn't use traversal or absolute paths
         if !is_path_safe_for_resolution(settings) {
@@ -338,11 +428,11 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
                 settings_path: settings.clone(),
             });
         }
-        return Ok(expand_user_path(settings));
+        return Ok(expand_user_path_with_env(env, settings));
     }
 
     // 2) Legacy config.json.
-    let json_profiles = load_ccs_profiles_from_config_json()?;
+    let json_profiles = load_ccs_profiles_from_config_json_with_deps(env, fs)?;
     if let Some(settings) = json_profiles.get(profile) {
         // Validate path doesn't use traversal or absolute paths
         if !is_path_safe_for_resolution(settings) {
@@ -351,7 +441,7 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
                 settings_path: settings.clone(),
             });
         }
-        return Ok(expand_user_path(settings));
+        return Ok(expand_user_path_with_env(env, settings));
     }
 
     // 3) Fallback: direct profile settings file in ~/.ccs/ (common default path).
@@ -362,7 +452,7 @@ fn resolve_ccs_settings_path(profile: &str) -> Result<PathBuf, CcsEnvVarsError> 
             ccs_dir.join(format!("{profile}.setting.json")),
         ];
         for candidate in candidates {
-            if candidate.exists() {
+            if fs.exists(&candidate) {
                 return Ok(candidate);
             }
         }
@@ -410,14 +500,14 @@ fn is_path_safe_for_resolution(path: &str) -> bool {
     true
 }
 
-fn expand_user_path(path: &str) -> PathBuf {
+fn expand_user_path_with_env(env: &dyn CcsEnvironment, path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = ccs_home_dir() {
+        if let Some(home) = ccs_home_dir_with_env(env) {
             return home.join(rest);
         }
     }
     // Relative paths are resolved relative to the CCS directory
-    if let Some(ccs_dir) = ccs_dir() {
+    if let Some(ccs_dir) = ccs_dir_with_env(env) {
         // If path is not absolute and doesn't start with ~, it's a relative path
         if !is_absolute_path(path) {
             return ccs_dir.join(path);
@@ -438,22 +528,30 @@ fn find_env_object(json: &JsonValue) -> Option<&serde_json::Map<String, JsonValu
 /// Returns a Vec of profile names (derived from file names like
 /// `{profile}.settings.json`, `{profile}.setting.json`, or `{profile}.json`).
 /// Returns an empty Vec if the .ccs directory doesn't exist or cannot be read.
-pub fn list_available_ccs_profiles() -> Vec<String> {
-    let Some(ccs_dir) = ccs_dir() else {
+/// List all available CCS profile names from JSON files under `~/.ccs/`.
+///
+/// Returns a Vec of profile names (derived from file names like
+/// `{profile}.settings.json`, `{profile}.setting.json`, or `{profile}.json`).
+/// Returns an empty Vec if the .ccs directory doesn't exist or cannot be read.
+fn list_available_ccs_profiles_with_deps(
+    env: &dyn CcsEnvironment,
+    fs: &dyn CcsFilesystem,
+) -> Vec<String> {
+    let Some(ccs_dir) = ccs_dir_with_env(env) else {
         return Vec::new();
     };
 
     let mut unique = std::collections::HashSet::new();
 
-    if let Ok(yaml_profiles) = load_ccs_profiles_from_config_yaml() {
+    if let Ok(yaml_profiles) = load_ccs_profiles_from_config_yaml_with_deps(env, fs) {
         unique.extend(yaml_profiles.keys().cloned());
     }
-    if let Ok(json_profiles) = load_ccs_profiles_from_config_json() {
+    if let Ok(json_profiles) = load_ccs_profiles_from_config_json_with_deps(env, fs) {
         unique.extend(json_profiles.keys().cloned());
     }
 
     // Also include any *.settings.json files in ~/.ccs (common default path).
-    if let Ok(files) = list_ccs_json_files(&ccs_dir) {
+    if let Ok(files) = list_ccs_json_files_with_fs(fs, &ccs_dir) {
         for path in files {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if is_ccs_settings_filename(name) {
@@ -482,8 +580,20 @@ pub fn list_available_ccs_profiles() -> Vec<String> {
 /// # Returns
 ///
 /// A Vec of suggested profile names. Empty if no matches found.
-pub fn find_ccs_profile_suggestions(input: &str) -> Vec<String> {
-    let available = list_available_ccs_profiles();
+/// Find suggestions for a CCS profile name using case-insensitive matching.
+///
+/// Returns profile names from ~/.ccs that match the input case-insensitively,
+/// or contain the input as a substring.
+pub(crate) fn find_ccs_profile_suggestions(input: &str) -> Vec<String> {
+    find_ccs_profile_suggestions_with_deps(&RealCcsEnvironment, &RealCcsFilesystem, input)
+}
+
+fn find_ccs_profile_suggestions_with_deps(
+    env: &dyn CcsEnvironment,
+    fs: &dyn CcsFilesystem,
+    input: &str,
+) -> Vec<String> {
+    let available = list_available_ccs_profiles_with_deps(env, fs);
     let input_lower = input.to_lowercase();
 
     available
@@ -529,21 +639,33 @@ pub fn find_ccs_profile_suggestions(input: &str) -> Vec<String> {
 /// //   "ANTHROPIC_MODEL": "glm-4.7",
 /// // }
 /// ```
-pub fn load_ccs_env_vars(profile: &str) -> Result<HashMap<String, String>, CcsEnvVarsError> {
+pub(crate) fn load_ccs_env_vars(profile: &str) -> Result<HashMap<String, String>, CcsEnvVarsError> {
+    load_ccs_env_vars_with_deps(&RealCcsEnvironment, &RealCcsFilesystem, profile)
+}
+
+/// Testable variant of [`load_ccs_env_vars`] for dependency injection.
+///
+/// This allows tests to mock both environment variables and filesystem access.
+pub fn load_ccs_env_vars_with_deps(
+    env: &dyn CcsEnvironment,
+    fs: &dyn CcsFilesystem,
+    profile: &str,
+) -> Result<HashMap<String, String>, CcsEnvVarsError> {
     if profile.is_empty() {
         return Err(CcsEnvVarsError::InvalidProfile {
             profile: profile.to_string(),
         });
     }
 
-    let settings_path = resolve_ccs_settings_path(profile)?;
+    let settings_path = resolve_ccs_settings_path_with_deps(env, fs, profile)?;
 
     // Read and parse the settings file
     let content =
-        fs::read_to_string(&settings_path).map_err(|source| CcsEnvVarsError::ReadFile {
-            path: settings_path.clone(),
-            source,
-        })?;
+        fs.read_to_string(&settings_path)
+            .map_err(|source| CcsEnvVarsError::ReadFile {
+                path: settings_path.clone(),
+                source,
+            })?;
 
     // Parse JSON
     let json: JsonValue =
@@ -1021,5 +1143,186 @@ profiles:
             "https://work-api.example.com"
         );
         assert!(!work_env2.contains_key("MODIFIED"));
+    }
+
+    // =========================================================================
+    // Mock-based tests using dependency injection
+    // =========================================================================
+
+    /// Mock environment for testing.
+    struct MockCcsEnv {
+        vars: HashMap<String, String>,
+        home: Option<PathBuf>,
+    }
+
+    impl MockCcsEnv {
+        fn new() -> Self {
+            Self {
+                vars: HashMap::new(),
+                home: None,
+            }
+        }
+
+        fn with_home(mut self, home: PathBuf) -> Self {
+            self.home = Some(home);
+            self
+        }
+    }
+
+    impl CcsEnvironment for MockCcsEnv {
+        fn get_var(&self, name: &str) -> Option<String> {
+            self.vars.get(name).cloned()
+        }
+
+        fn home_dir(&self) -> Option<PathBuf> {
+            self.home.clone()
+        }
+    }
+
+    /// Mock filesystem for testing.
+    struct MockCcsFs {
+        files: HashMap<PathBuf, String>,
+    }
+
+    impl MockCcsFs {
+        fn new() -> Self {
+            Self {
+                files: HashMap::new(),
+            }
+        }
+
+        fn with_file(mut self, path: &str, content: &str) -> Self {
+            self.files.insert(PathBuf::from(path), content.to_string());
+            self
+        }
+    }
+
+    impl CcsFilesystem for MockCcsFs {
+        fn exists(&self, path: &Path) -> bool {
+            self.files.contains_key(path)
+        }
+
+        fn read_to_string(&self, path: &Path) -> io::Result<String> {
+            self.files
+                .get(path)
+                .cloned()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))
+        }
+
+        fn read_dir(&self, path: &Path) -> io::Result<Vec<CcsDirEntry>> {
+            let mut entries = Vec::new();
+            for (file_path, _) in &self.files {
+                if file_path.parent() == Some(path) {
+                    entries.push(CcsDirEntry {
+                        path: file_path.clone(),
+                        file_name: file_path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned(),
+                        is_file: true,
+                    });
+                }
+            }
+            Ok(entries)
+        }
+    }
+
+    #[test]
+    fn test_load_ccs_env_vars_with_mock_deps() {
+        let env = MockCcsEnv::new().with_home(PathBuf::from("/mock/home"));
+        let fs = MockCcsFs::new()
+            .with_file(
+                "/mock/home/.ccs/config.json",
+                r#"{"profiles":{"test":"test.settings.json"}}"#,
+            )
+            .with_file(
+                "/mock/home/.ccs/test.settings.json",
+                r#"{"env":{"API_KEY":"secret123","API_URL":"https://test.api"}}"#,
+            );
+
+        let result = load_ccs_env_vars_with_deps(&env, &fs, "test").unwrap();
+        assert_eq!(result.get("API_KEY").unwrap(), "secret123");
+        assert_eq!(result.get("API_URL").unwrap(), "https://test.api");
+    }
+
+    #[test]
+    fn test_load_ccs_env_vars_with_mock_yaml_config() {
+        let env = MockCcsEnv::new().with_home(PathBuf::from("/mock/home"));
+        let fs = MockCcsFs::new()
+            .with_file(
+                "/mock/home/.ccs/config.yaml",
+                r#"version: 7
+profiles:
+  yaml-profile:
+    type: api
+    settings: "yaml-profile.settings.json"
+"#,
+            )
+            .with_file(
+                "/mock/home/.ccs/yaml-profile.settings.json",
+                r#"{"env":{"FROM_YAML":"yes"}}"#,
+            );
+
+        let result = load_ccs_env_vars_with_deps(&env, &fs, "yaml-profile").unwrap();
+        assert_eq!(result.get("FROM_YAML").unwrap(), "yes");
+    }
+
+    #[test]
+    fn test_load_ccs_env_vars_with_mock_profile_not_found() {
+        let env = MockCcsEnv::new().with_home(PathBuf::from("/mock/home"));
+        let fs = MockCcsFs::new(); // Empty filesystem
+
+        let result = load_ccs_env_vars_with_deps(&env, &fs, "nonexistent");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CcsEnvVarsError::ProfileNotFound { profile, .. } => {
+                assert_eq!(profile, "nonexistent");
+            }
+            other => panic!("Expected ProfileNotFound, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_load_ccs_env_vars_with_mock_missing_home() {
+        let env = MockCcsEnv::new(); // No home directory
+        let fs = MockCcsFs::new();
+
+        let result = load_ccs_env_vars_with_deps(&env, &fs, "any");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CcsEnvVarsError::MissingHomeDir => {}
+            other => panic!("Expected MissingHomeDir, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_load_ccs_env_vars_with_mock_direct_settings_file() {
+        let env = MockCcsEnv::new().with_home(PathBuf::from("/mock/home"));
+        let fs = MockCcsFs::new().with_file(
+            "/mock/home/.ccs/direct.settings.json",
+            r#"{"env":{"DIRECT_KEY":"direct_value"}}"#,
+        );
+
+        let result = load_ccs_env_vars_with_deps(&env, &fs, "direct").unwrap();
+        assert_eq!(result.get("DIRECT_KEY").unwrap(), "direct_value");
+    }
+
+    #[test]
+    fn test_list_profiles_with_mock() {
+        let env = MockCcsEnv::new().with_home(PathBuf::from("/mock/home"));
+        let fs = MockCcsFs::new()
+            .with_file(
+                "/mock/home/.ccs/config.json",
+                r#"{"profiles":{"profile1":"p1.settings.json","profile2":"p2.settings.json"}}"#,
+            )
+            .with_file("/mock/home/.ccs/p1.settings.json", r#"{"env":{}}"#)
+            .with_file("/mock/home/.ccs/p2.settings.json", r#"{"env":{}}"#)
+            .with_file("/mock/home/.ccs/extra.settings.json", r#"{"env":{}}"#);
+
+        let profiles = list_available_ccs_profiles_with_deps(&env, &fs);
+        assert!(profiles.contains(&"profile1".to_string()));
+        assert!(profiles.contains(&"profile2".to_string()));
+        assert!(profiles.contains(&"extra".to_string()));
     }
 }
