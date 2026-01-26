@@ -3,6 +3,7 @@
 //! These tests verify that:
 //! - start_commit file tracking works
 //! - The --reset-start-commit flag works
+//! - ALL git operations go through AppEffectHandler (no real git calls in tests)
 //!
 //! # Integration Test Style Guide
 //!
@@ -13,6 +14,7 @@
 //! - Tests verify **observable behavior** (effect execution, state changes)
 //! - Uses `MockAppEffectHandler` for git/filesystem isolation
 //! - Tests are deterministic and verify effect sequences
+//! - **NO REAL GIT CALLS** - all git operations must go through handler
 
 use ralph_workflow::app::effect::AppEffect;
 use ralph_workflow::app::effectful::{
@@ -339,6 +341,86 @@ fn cli_reset_start_commit_uses_effect_handler() {
         assert!(
             handler.file_exists(&start_commit_path),
             ".agent/start_commit should be created via handler"
+        );
+    });
+}
+
+/// Test that the full pipeline uses handler for ALL git operations.
+///
+/// **CRITICAL TDD TEST**: This test verifies that when running the full ralph pipeline,
+/// ALL git operations go through the AppEffectHandler. If this test passes with an
+/// empty effects list, it means real git calls are being made instead of going through
+/// the handler - which is a BUG that causes real commits during tests.
+///
+/// The test should capture at minimum:
+/// - GitRequireRepo (validate we're in a git repo)
+/// - GitGetRepoRoot (get repo root for setup)
+/// - SetCurrentDir (change to repo root)
+///
+/// If additional pipeline operations occur, they should also be captured:
+/// - GitSaveStartCommit (save start commit for diff tracking)
+/// - GitAddAll / GitCommit (if committing changes)
+#[test]
+fn full_pipeline_uses_handler_for_all_git_operations() {
+    with_default_timeout(|| {
+        let expected_oid = "a".repeat(40);
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid(&expected_oid)
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file(
+                "PROMPT.md",
+                "# Test\n\n## Goal\nTest goal\n\n## Acceptance Criteria\n- Test criterion",
+            )
+            .with_file(".agent/PLAN.md", "# Plan\nTest plan");
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
+
+        // Run the full pipeline (no special flags)
+        let _ = crate::common::run_ralph_cli_with_handler(&[], executor, config, &mut handler);
+
+        let effects = handler.captured();
+
+        // CRITICAL: If effects is empty, real git calls are being made!
+        assert!(
+            !effects.is_empty(),
+            "CRITICAL: Effects list is empty! This means real git calls are being made \
+             instead of going through the handler. All git operations MUST use the handler \
+             to prevent real commits during tests. Effects: {:?}",
+            effects
+        );
+
+        // Validate setup phase used handler
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, AppEffect::GitRequireRepo)),
+            "validate_and_setup_agents should emit GitRequireRepo. Effects: {:?}",
+            effects
+        );
+
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, AppEffect::GitGetRepoRoot)),
+            "validate_and_setup_agents should emit GitGetRepoRoot. Effects: {:?}",
+            effects
+        );
+
+        // If pipeline runs, it should save start commit via handler
+        // (This may not trigger if pipeline exits early, but if it does run, it must use handler)
+        let has_save_start = effects
+            .iter()
+            .any(|e| matches!(e, AppEffect::GitSaveStartCommit));
+        let has_set_dir = effects
+            .iter()
+            .any(|e| matches!(e, AppEffect::SetCurrentDir { .. }));
+
+        // At minimum, setup phase should set current dir
+        assert!(
+            has_set_dir || has_save_start,
+            "Pipeline should emit SetCurrentDir or GitSaveStartCommit. Effects: {:?}",
+            effects
         );
     });
 }

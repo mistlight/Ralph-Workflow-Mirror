@@ -52,16 +52,14 @@ use crate::files::{
 };
 use crate::git_helpers::{
     abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
-    get_default_branch, get_repo_root, get_start_commit_summary, is_main_or_master_branch,
-    rebase_onto, require_git_repo, reset_start_commit, save_start_commit, start_agent_phase,
-    RebaseResult,
+    get_default_branch, get_start_commit_summary, is_main_or_master_branch, rebase_onto,
+    reset_start_commit, save_start_commit, start_agent_phase, RebaseResult,
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::PhaseContext;
 use crate::pipeline::{AgentPhaseGuard, Stats, Timer};
 use crate::prompts::{get_stored_or_generate_prompt, template_context::TemplateContext};
-use std::env;
 
 use config_init::initialize_config;
 use context::PipelineContext;
@@ -146,16 +144,19 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     }
 
     // Validate agents and set up git repo and PROMPT.md
-    let Some(repo_root) = validate_and_setup_agents(AgentSetupParams {
-        config: &config,
-        registry: &registry,
-        developer_agent: &developer_agent,
-        reviewer_agent: &reviewer_agent,
-        config_path: &config_path,
-        colors,
-        logger: &logger,
-        working_dir_override: args.working_dir_override.as_deref(),
-    })?
+    let Some(repo_root) = validate_and_setup_agents(
+        AgentSetupParams {
+            config: &config,
+            registry: &registry,
+            developer_agent: &developer_agent,
+            reviewer_agent: &reviewer_agent,
+            config_path: &config_path,
+            colors,
+            logger: &logger,
+            working_dir_override: args.working_dir_override.as_deref(),
+        },
+        &mut handler,
+    )?
     else {
         return Ok(());
     };
@@ -310,7 +311,10 @@ pub fn run_with_config_and_resolver<
 
     // Handle --init-legacy flag: legacy per-repo agents.toml creation and exit
     if args.legacy_init.init_legacy {
-        let repo_root = get_repo_root().ok();
+        let repo_root = match handler.execute(effect::AppEffect::GitGetRepoRoot) {
+            effect::AppEffectResult::Path(p) => Some(p),
+            _ => None,
+        };
         let legacy_path = repo_root.map_or_else(
             || std::path::PathBuf::from(".agent/agents.toml"),
             |root| root.join(".agent/agents.toml"),
@@ -345,16 +349,19 @@ pub fn run_with_config_and_resolver<
     }
 
     // Validate agents and set up git repo and PROMPT.md
-    let Some(repo_root) = validate_and_setup_agents(AgentSetupParams {
-        config: &config,
-        registry: &registry,
-        developer_agent: &developer_agent,
-        reviewer_agent: &reviewer_agent,
-        config_path: &config_path,
-        colors,
-        logger: &logger,
-        working_dir_override: args.working_dir_override.as_deref(),
-    })?
+    let Some(repo_root) = validate_and_setup_agents(
+        AgentSetupParams {
+            config: &config,
+            registry: &registry,
+            developer_agent: &developer_agent,
+            reviewer_agent: &reviewer_agent,
+            config_path: &config_path,
+            colors,
+            logger: &logger,
+            working_dir_override: args.working_dir_override.as_deref(),
+        },
+        handler,
+    )?
     else {
         return Ok(());
     };
@@ -674,8 +681,9 @@ struct AgentSetupParams<'a> {
 ///
 /// Returns `Some(repo_root)` if setup succeeded and should continue.
 /// Returns `None` if the user declined PROMPT.md creation (to exit early).
-fn validate_and_setup_agents(
+fn validate_and_setup_agents<H: effect::AppEffectHandler>(
     params: AgentSetupParams<'_>,
+    handler: &mut H,
 ) -> anyhow::Result<Option<std::path::PathBuf>> {
     let AgentSetupParams {
         config,
@@ -707,15 +715,28 @@ fn validate_and_setup_agents(
 
     // Determine repo root - use override if provided (for testing), otherwise discover
     let repo_root = if let Some(override_dir) = working_dir_override {
-        // Testing mode: use provided directory and change CWD to it
-        // The rest of the pipeline uses relative paths, so CWD must be set
-        env::set_current_dir(override_dir)?;
+        // Testing mode: use provided directory and change CWD to it via handler
+        handler.execute(effect::AppEffect::SetCurrentDir {
+            path: override_dir.to_path_buf(),
+        });
         override_dir.to_path_buf()
     } else {
-        // Production mode: discover repo root and change CWD
-        require_git_repo()?;
-        let root = get_repo_root()?;
-        env::set_current_dir(&root)?;
+        // Production mode: discover repo root and change CWD via handler
+        let require_result = handler.execute(effect::AppEffect::GitRequireRepo);
+        if let effect::AppEffectResult::Error(e) = require_result {
+            anyhow::bail!("Not in a git repository: {}", e);
+        }
+
+        let root_result = handler.execute(effect::AppEffect::GitGetRepoRoot);
+        let root = match root_result {
+            effect::AppEffectResult::Path(p) => p,
+            effect::AppEffectResult::Error(e) => {
+                anyhow::bail!("Failed to get repo root: {}", e);
+            }
+            _ => anyhow::bail!("Unexpected result from GitGetRepoRoot"),
+        };
+
+        handler.execute(effect::AppEffect::SetCurrentDir { path: root.clone() });
         root
     };
 
