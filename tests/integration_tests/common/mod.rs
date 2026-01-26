@@ -21,7 +21,6 @@
 //! - `run_ralph_cli_injected()`: Run ralph CLI via app::run_with_config() with injected Config
 //! - `create_test_config_struct()`: Create a Config struct directly for dependency injection
 //! - `mock_executor_with_success()`: Mock executor for successful agent execution
-//! - `mock_executor_for_git_success()`: Mock executor for git command success
 //!
 //! # Configuration via Dependency Injection
 //!
@@ -336,76 +335,4 @@ pub fn create_test_config_struct_with_isolation(
 /// Returns a registry with built-in agents only (no config file loading).
 pub fn create_test_registry() -> ralph_workflow::agents::AgentRegistry {
     ralph_workflow::agents::AgentRegistry::with_builtins_only()
-}
-
-/// Create a MockProcessExecutor configured for git command success.
-///
-/// This helper provides mock responses for common git commands used in
-/// rebase and other git operations, preventing real git subprocess spawning.
-///
-/// # Returns
-///
-/// Returns an Arc-wrapped MockProcessExecutor that returns successful outputs
-/// for common git commands (status, branch, rebase) and all agent types.
-///
-/// # Usage
-///
-/// ```ignore
-/// use crate::common::mock_executor_for_git_success;
-///
-/// #[test]
-/// fn test_rebase_success() {
-///     with_default_timeout(|| {
-///         let executor = mock_executor_for_git_success();
-///         let result = rebase_onto("main", &executor);
-///         // Git commands are mocked - no real git subprocess spawned
-///     });
-/// }
-/// ```
-///
-/// # Integration Test Style Guide Compliance
-///
-/// This helper enforces the style guide rule: **NO Process Spawning in Tests**.
-/// Git CLI commands are an external dependency that must be mocked in tests.
-///
-/// # Command Mocking
-///
-/// This executor mocks common external commands to prevent real subprocess spawning:
-/// - git commands (status, branch, rev-parse, rebase, etc.) - return empty success
-/// - whoami - returns "testuser"
-/// - hostname - returns "localhost"
-/// - cargo commands - return empty success
-pub fn mock_executor_for_git_success() -> Arc<dyn ralph_workflow::executor::ProcessExecutor> {
-    Arc::new(
-        ralph_workflow::executor::MockProcessExecutor::new()
-            // git status --porcelain (clean working tree)
-            .with_output("git", "")
-            // whoami - fallback for git identity
-            .with_output("whoami", "testuser")
-            // hostname - fallback for git identity email
-            .with_output("hostname", "localhost")
-            // cargo - build/test commands in rebase validation
-            .with_output("cargo", "")
-            // Agent commands also return success
-            .with_agent_result(
-                "claude",
-                Ok(ralph_workflow::executor::AgentCommandResult::success()),
-            )
-            .with_agent_result(
-                "codex",
-                Ok(ralph_workflow::executor::AgentCommandResult::success()),
-            )
-            .with_agent_result(
-                "opencode",
-                Ok(ralph_workflow::executor::AgentCommandResult::success()),
-            )
-            .with_agent_result(
-                "glm",
-                Ok(ralph_workflow::executor::AgentCommandResult::success()),
-            )
-            .with_agent_result(
-                "aider",
-                Ok(ralph_workflow::executor::AgentCommandResult::success()),
-            ),
-    )
 }

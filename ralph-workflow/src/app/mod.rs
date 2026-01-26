@@ -23,6 +23,8 @@ pub mod effect;
 pub mod effect_handler;
 pub mod event_loop;
 pub mod finalization;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mock_effect_handler;
 pub mod plumbing;
 pub mod resume;
 pub mod validation;
