@@ -216,6 +216,66 @@ fn run_ralph_cli_with_resolver<P: ConfigEnvironment>(
     }
 }
 
+/// Run ralph workflow with a custom MockAppEffectHandler.
+///
+/// This function allows tests to inject a mock effect handler to verify
+/// that the CLI properly delegates git/filesystem operations to the handler
+/// instead of calling git_helpers directly.
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments to pass to ralph
+/// * `executor` - Process executor for external process execution
+/// * `config` - Pre-built Config struct (bypasses env var loading)
+/// * `handler` - Mock effect handler to capture effects
+///
+/// # Example
+///
+/// ```ignore
+/// use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+///
+/// let mut handler = MockAppEffectHandler::new().with_head_oid("abc123");
+/// let config = create_test_config_struct();
+/// let executor = mock_executor_with_success();
+///
+/// run_ralph_cli_with_handler(&["--reset-start-commit"], executor, config, &mut handler).unwrap();
+///
+/// // Verify effects were captured
+/// assert!(handler.captured().iter().any(|e| matches!(e, AppEffect::GitResetStartCommit)));
+/// ```
+pub fn run_ralph_cli_with_handler(
+    args: &[&str],
+    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+    config: ralph_workflow::config::Config,
+    handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
+) -> anyhow::Result<()> {
+    // Build argv: binary name + args
+    let mut argv: Vec<String> = vec!["ralph".to_string()];
+    argv.extend(args.iter().map(|s| s.to_string()));
+
+    // Parse args using clap directly
+    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+        Ok(args) => args,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Create test registry with built-in agents only
+    let registry = create_test_registry();
+
+    // Use run_with_config_and_resolver with the provided handler
+    ralph_workflow::app::run_with_config_and_resolver(
+        parsed_args,
+        executor,
+        config,
+        registry,
+        &ralph_workflow::config::RealConfigEnvironment,
+        handler,
+    )
+}
+
 /// Create a MockProcessExecutor configured for successful agent execution.
 ///
 /// This helper prevents tests from spawning real AI agent processes by

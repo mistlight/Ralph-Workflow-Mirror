@@ -140,7 +140,8 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     validate_agent_chains(&registry, colors);
 
     // Handle plumbing commands
-    if handle_plumbing_commands(&args, &logger, colors)? {
+    let mut handler = effect_handler::RealAppEffectHandler::new();
+    if handle_plumbing_commands(&args, &logger, colors, &mut handler)? {
         return Ok(());
     }
 
@@ -339,7 +340,7 @@ pub fn run_with_config_and_resolver<
     }
 
     // Handle plumbing commands (--reset-start-commit, --show-commit-msg, etc.)
-    if handle_plumbing_commands(&args, &logger, colors)? {
+    if handle_plumbing_commands(&args, &logger, colors, handler)? {
         return Ok(());
     }
 
@@ -411,66 +412,118 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
 ///
 /// Returns `Ok(true)` if a plumbing command was handled and we should exit.
 /// Returns `Ok(false)` if we should continue to the main pipeline.
-fn handle_plumbing_commands(args: &Args, logger: &Logger, colors: Colors) -> anyhow::Result<bool> {
-    // Helper to set up working directory for plumbing commands
-    let setup_working_dir = |override_dir: Option<&std::path::Path>| -> anyhow::Result<()> {
+fn handle_plumbing_commands<H: effect::AppEffectHandler>(
+    args: &Args,
+    logger: &Logger,
+    colors: Colors,
+    handler: &mut H,
+) -> anyhow::Result<bool> {
+    // Helper to set up working directory for plumbing commands using the effect handler
+    fn setup_working_dir_via_handler<H: effect::AppEffectHandler>(
+        override_dir: Option<&std::path::Path>,
+        handler: &mut H,
+    ) -> anyhow::Result<()> {
+        use effect::{AppEffect, AppEffectResult};
+
         if let Some(dir) = override_dir {
-            env::set_current_dir(dir)?;
+            match handler.execute(AppEffect::SetCurrentDir {
+                path: dir.to_path_buf(),
+            }) {
+                AppEffectResult::Ok => Ok(()),
+                AppEffectResult::Error(e) => anyhow::bail!(e),
+                other => anyhow::bail!("unexpected result from SetCurrentDir: {:?}", other),
+            }
         } else {
-            require_git_repo()?;
-            let repo_root = get_repo_root()?;
-            env::set_current_dir(&repo_root)?;
+            // Require git repo
+            match handler.execute(AppEffect::GitRequireRepo) {
+                AppEffectResult::Ok => {}
+                AppEffectResult::Error(e) => anyhow::bail!(e),
+                other => anyhow::bail!("unexpected result from GitRequireRepo: {:?}", other),
+            }
+            // Get repo root
+            let repo_root = match handler.execute(AppEffect::GitGetRepoRoot) {
+                AppEffectResult::Path(p) => p,
+                AppEffectResult::Error(e) => anyhow::bail!(e),
+                other => anyhow::bail!("unexpected result from GitGetRepoRoot: {:?}", other),
+            };
+            // Set current dir to repo root
+            match handler.execute(AppEffect::SetCurrentDir { path: repo_root }) {
+                AppEffectResult::Ok => Ok(()),
+                AppEffectResult::Error(e) => anyhow::bail!(e),
+                other => anyhow::bail!("unexpected result from SetCurrentDir: {:?}", other),
+            }
         }
-        Ok(())
-    };
+    }
 
     // Show commit message
     if args.commit_display.show_commit_msg {
-        setup_working_dir(args.working_dir_override.as_deref())?;
+        setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
         return handle_show_commit_msg().map(|()| true);
     }
 
     // Apply commit
     if args.commit_plumbing.apply_commit {
-        setup_working_dir(args.working_dir_override.as_deref())?;
+        setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
         return handle_apply_commit(logger, colors).map(|()| true);
     }
 
     // Reset start commit
     if args.commit_display.reset_start_commit {
-        setup_working_dir(args.working_dir_override.as_deref())?;
+        setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
 
-        return match reset_start_commit() {
-            Ok(result) => {
-                let short_oid = &result.oid[..8.min(result.oid.len())];
-                if result.fell_back_to_head {
-                    logger.success(&format!(
-                        "Starting commit reference reset to current HEAD ({})",
-                        short_oid
-                    ));
-                    logger.info("On main/master branch - using HEAD as baseline");
-                } else if let Some(ref branch) = result.default_branch {
-                    logger.success(&format!(
-                        "Starting commit reference reset to merge-base with '{}' ({})",
-                        branch, short_oid
-                    ));
-                    logger.info("Baseline set to common ancestor with default branch");
-                } else {
-                    logger.success(&format!("Starting commit reference reset ({})", short_oid));
-                }
+        // Use the effect handler for reset_start_commit
+        return match handler.execute(effect::AppEffect::GitResetStartCommit) {
+            effect::AppEffectResult::String(oid) => {
+                // Simple case - just got the OID back
+                let short_oid = &oid[..8.min(oid.len())];
+                logger.success(&format!("Starting commit reference reset ({})", short_oid));
                 logger.info(".agent/start_commit has been updated");
                 Ok(true)
             }
-            Err(e) => {
+            effect::AppEffectResult::Error(e) => {
                 logger.error(&format!("Failed to reset starting commit: {e}"));
                 anyhow::bail!("Failed to reset starting commit");
+            }
+            other => {
+                // Fallback to old implementation for other result types
+                // This allows gradual migration
+                drop(other);
+                match reset_start_commit() {
+                    Ok(result) => {
+                        let short_oid = &result.oid[..8.min(result.oid.len())];
+                        if result.fell_back_to_head {
+                            logger.success(&format!(
+                                "Starting commit reference reset to current HEAD ({})",
+                                short_oid
+                            ));
+                            logger.info("On main/master branch - using HEAD as baseline");
+                        } else if let Some(ref branch) = result.default_branch {
+                            logger.success(&format!(
+                                "Starting commit reference reset to merge-base with '{}' ({})",
+                                branch, short_oid
+                            ));
+                            logger.info("Baseline set to common ancestor with default branch");
+                        } else {
+                            logger.success(&format!(
+                                "Starting commit reference reset ({})",
+                                short_oid
+                            ));
+                        }
+                        logger.info(".agent/start_commit has been updated");
+                        Ok(true)
+                    }
+                    Err(e) => {
+                        logger.error(&format!("Failed to reset starting commit: {e}"));
+                        anyhow::bail!("Failed to reset starting commit");
+                    }
+                }
             }
         };
     }
 
     // Show baseline state
     if args.commit_display.show_baseline {
-        setup_working_dir(args.working_dir_override.as_deref())?;
+        setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
 
         return match handle_show_baseline() {
             Ok(()) => Ok(true),

@@ -21,6 +21,7 @@ use ralph_workflow::app::effectful::{
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 use std::path::PathBuf;
 
+use crate::common::{create_test_config_struct, mock_executor_with_success};
 use crate::test_timeout::with_default_timeout;
 
 /// Test that the `--reset-start-commit` command updates `.agent/start_commit` on main branch.
@@ -274,6 +275,70 @@ fn ralph_reset_start_commit_with_working_dir_override() {
         assert!(
             handler.file_exists(&start_commit_path),
             ".agent/start_commit should be created"
+        );
+    });
+}
+
+// ============================================================================
+// CLI Flow Tests with MockAppEffectHandler
+// ============================================================================
+// These tests verify that the full CLI (run_with_config_and_resolver) uses
+// the AppEffectHandler for git operations instead of calling git_helpers directly.
+
+/// Test that --reset-start-commit CLI flag uses the effect handler.
+///
+/// This is the key test that drives the refactor of app/mod.rs to use
+/// AppEffectHandler throughout. When this test passes, the CLI properly
+/// delegates git operations to the handler.
+#[test]
+fn cli_reset_start_commit_uses_effect_handler() {
+    with_default_timeout(|| {
+        let expected_oid = "f".repeat(40);
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid(&expected_oid)
+            .on_main_branch();
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
+
+        // Call the CLI entry point with --reset-start-commit
+        // This should use the handler instead of real git operations
+        let result = crate::common::run_ralph_cli_with_handler(
+            &["--reset-start-commit"],
+            executor,
+            config,
+            &mut handler,
+        );
+
+        assert!(result.is_ok(), "CLI should succeed: {:?}", result);
+
+        // Verify the handler captured the expected effects
+        let effects = handler.captured();
+
+        // Should have called GitRequireRepo or SetCurrentDir
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, AppEffect::GitRequireRepo))
+                || effects
+                    .iter()
+                    .any(|e| matches!(e, AppEffect::SetCurrentDir { .. })),
+            "should emit GitRequireRepo or SetCurrentDir effect"
+        );
+
+        // Should have called GitResetStartCommit
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, AppEffect::GitResetStartCommit)),
+            "should emit GitResetStartCommit effect"
+        );
+
+        // The start_commit file should be created via the handler
+        let start_commit_path = PathBuf::from(".agent/start_commit");
+        assert!(
+            handler.file_exists(&start_commit_path),
+            ".agent/start_commit should be created via handler"
         );
     });
 }
