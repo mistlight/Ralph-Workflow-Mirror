@@ -186,6 +186,32 @@ pub trait Workspace: Send + Sync {
     /// Returns an error if the source file doesn't exist.
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
 
+    /// Write content to a file atomically using temp file + rename pattern.
+    ///
+    /// This ensures the file is either fully written or not written at all,
+    /// preventing partial writes or corruption from crashes/interruptions.
+    ///
+    /// # Implementation details
+    ///
+    /// - `WorkspaceFs`: Uses `tempfile::NamedTempFile` in the same directory,
+    ///   writes content, syncs to disk, then atomically renames to target.
+    ///   On Unix, temp file has mode 0600 for security.
+    /// - `MemoryWorkspace`: Just calls `write()` since in-memory operations
+    ///   are inherently atomic (no partial state possible).
+    ///
+    /// # When to use
+    ///
+    /// Use `write_atomic()` for critical files where corruption would be problematic:
+    /// - XML outputs (issues.xml, plan.xml, commit_message.xml)
+    /// - Agent artifacts (PLAN.md, commit-message.txt)
+    /// - Any file that must not have partial content
+    ///
+    /// Use regular `write()` for:
+    /// - Log files (append-only, partial is acceptable)
+    /// - Temporary/debug files
+    /// - Files where performance matters more than atomicity
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()>;
+
     /// Set a file to read-only permissions.
     ///
     /// This is a best-effort operation for protecting files like PROMPT.md backups.
@@ -456,6 +482,43 @@ impl Workspace for WorkspaceFs {
 
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
         fs::rename(self.root.join(from), self.root.join(to))
+    }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let path = self.root.join(relative);
+
+        // Create parent directories if needed
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Create a NamedTempFile in the same directory as the target file.
+        // This ensures atomic rename works (same filesystem).
+        let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
+        let mut temp_file = NamedTempFile::new_in(parent_dir)?;
+
+        // Set restrictive permissions on temp file (0600 = owner read/write only)
+        // This prevents other users from reading the temp file before rename
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(temp_file.path())?.permissions();
+            perms.set_mode(0o600);
+            fs::set_permissions(temp_file.path(), perms)?;
+        }
+
+        // Write content to the temp file
+        temp_file.write_all(content.as_bytes())?;
+        temp_file.flush()?;
+        temp_file.as_file().sync_all()?;
+
+        // Persist the temp file to the target location (atomic rename)
+        temp_file.persist(&path).map_err(|e| e.error)?;
+
+        Ok(())
     }
 
     fn set_readonly(&self, relative: &Path) -> io::Result<()> {
@@ -969,6 +1032,12 @@ impl Workspace for MemoryWorkspace {
         // No-op for in-memory workspace - permissions aren't relevant for testing
         Ok(())
     }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+        // In-memory operations are inherently atomic - no partial state possible.
+        // Just delegate to regular write().
+        self.write(relative, content)
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -1203,5 +1272,41 @@ mod tests {
 
         // File should still be readable
         assert_eq!(ws.read(Path::new("test.txt")).unwrap(), "content");
+    }
+
+    #[test]
+    fn test_memory_workspace_write_atomic() {
+        let ws = MemoryWorkspace::new_test();
+
+        ws.write_atomic(Path::new("atomic.txt"), "atomic content")
+            .unwrap();
+
+        assert_eq!(ws.read(Path::new("atomic.txt")).unwrap(), "atomic content");
+    }
+
+    #[test]
+    fn test_memory_workspace_write_atomic_creates_parent_dirs() {
+        let ws = MemoryWorkspace::new_test();
+
+        ws.write_atomic(Path::new("a/b/c/atomic.txt"), "nested atomic")
+            .unwrap();
+
+        assert!(ws.is_dir(Path::new("a")));
+        assert!(ws.is_dir(Path::new("a/b")));
+        assert!(ws.is_dir(Path::new("a/b/c")));
+        assert_eq!(
+            ws.read(Path::new("a/b/c/atomic.txt")).unwrap(),
+            "nested atomic"
+        );
+    }
+
+    #[test]
+    fn test_memory_workspace_write_atomic_overwrites() {
+        let ws = MemoryWorkspace::new_test().with_file("existing.txt", "old content");
+
+        ws.write_atomic(Path::new("existing.txt"), "new content")
+            .unwrap();
+
+        assert_eq!(ws.read(Path::new("existing.txt")).unwrap(), "new content");
     }
 }

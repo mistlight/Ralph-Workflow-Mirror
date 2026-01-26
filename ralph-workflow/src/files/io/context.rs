@@ -187,6 +187,7 @@ pub fn delete_issues_file_for_isolation_with_workspace(
 /// Overwrite a file with a single-line content using workspace.
 ///
 /// Enforces "1 sentence, 1 line" semantics by taking only the first line.
+/// Uses atomic write to ensure file integrity.
 fn overwrite_one_liner_with_workspace(
     workspace: &dyn Workspace,
     path: &Path,
@@ -198,7 +199,7 @@ fn overwrite_one_liner_with_workspace(
     } else {
         format!("{first_line}\n")
     };
-    workspace.write(path, &content)
+    workspace.write_atomic(path, &content)
 }
 
 /// Clean context before reviewer phase using workspace.

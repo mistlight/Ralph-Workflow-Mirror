@@ -60,18 +60,14 @@ pub fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// Write file content using the workspace abstraction.
+/// Write file content atomically using the workspace abstraction.
 ///
-/// This is the workspace-based version of `write_file_atomic`. Instead of using
-/// temp file + rename (which provides atomicity on the real filesystem), this
-/// uses `Workspace::write()` which:
-/// - In production (`WorkspaceFs`): writes directly (parent dirs created automatically)
-/// - In tests (`MemoryWorkspace`): writes to in-memory storage
+/// This delegates to `Workspace::write_atomic()` which:
+/// - In production (`WorkspaceFs`): Uses temp file + rename for true atomicity
+/// - In tests (`MemoryWorkspace`): Simple write (in-memory is inherently atomic)
 ///
-/// Note: The atomic semantics (temp file + rename) are NOT preserved with this
-/// function since `Workspace::write()` is a simple write. For production code
-/// that needs atomic writes, use the original `write_file_atomic()` function.
-/// This workspace version is primarily for testability.
+/// This ensures the file is either fully written or not written at all,
+/// preventing partial writes or corruption from crashes/interruptions.
 ///
 /// # Arguments
 ///
@@ -83,14 +79,7 @@ pub fn write_file_atomic_with_workspace(
     path: &Path,
     content: &str,
 ) -> io::Result<()> {
-    // Ensure parent directories exist
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            workspace.create_dir_all(parent)?;
-        }
-    }
-
-    workspace.write(path, content)
+    workspace.write_atomic(path, content)
 }
 
 /// Validate that a file is readable UTF-8 text and within size limits.

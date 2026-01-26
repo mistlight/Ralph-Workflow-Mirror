@@ -429,21 +429,16 @@ pub fn read_commit_message_file_with_workspace(workspace: &dyn Workspace) -> io:
 
 /// Write commit message to file using the workspace.
 ///
+/// Uses atomic write to ensure the file is either fully written or not written
+/// at all, preventing partial writes on crash/interruption.
+///
 /// This is the workspace-based version of `write_commit_message_file_at`.
 pub fn write_commit_message_file_with_workspace(
     workspace: &dyn Workspace,
     message: &str,
 ) -> io::Result<()> {
     let msg_path = Path::new(".agent/commit-message.txt");
-
-    // Ensure parent directory exists
-    if let Some(parent) = msg_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            workspace.create_dir_all(parent)?;
-        }
-    }
-
-    workspace.write(msg_path, message)
+    workspace.write_atomic(msg_path, message)
 }
 
 /// Clean up generated files using the workspace.

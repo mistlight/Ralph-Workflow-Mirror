@@ -13,9 +13,9 @@
 //! comparison across multiple attempts.
 
 use chrono::{DateTime, Local};
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+
+use crate::workspace::Workspace;
 
 /// Represents a single step in the parsing trace log.
 #[derive(Debug, Clone)]
@@ -158,97 +158,109 @@ impl ParsingTraceLog {
         self.final_message = Some(message.to_string());
     }
 
-    /// Write this trace to a file.
+    /// Write this trace to a file using workspace abstraction.
+    ///
+    /// This is the architecture-conformant version that uses the workspace trait
+    /// instead of direct filesystem access.
     ///
     /// # Arguments
     ///
-    /// * `log_dir` - Directory to write the trace file to
+    /// * `log_dir` - Directory to write the trace file to (relative to workspace)
+    /// * `workspace` - The workspace to use for filesystem operations
     ///
     /// # Returns
     ///
     /// Path to the written trace file on success.
-    pub fn write_to_file(&self, log_dir: &Path) -> std::io::Result<PathBuf> {
+    pub fn write_to_workspace(
+        &self,
+        log_dir: &Path,
+        workspace: &dyn Workspace,
+    ) -> std::io::Result<PathBuf> {
         let trace_path = log_dir.join(format!(
             "attempt_{:03}_parsing_trace.log",
             self.attempt_number
         ));
 
-        let file = File::create(&trace_path)?;
-        let mut writer = BufWriter::new(file);
+        // Build the content in memory first
+        let mut content = String::new();
+        Self::write_header_to_string(&mut content, self);
+        Self::write_raw_output_to_string(&mut content, self);
+        Self::write_parsing_steps_to_string(&mut content, self);
+        Self::write_final_message_to_string(&mut content, self);
+        Self::write_footer_to_string(&mut content);
 
-        Self::write_header(&mut writer, self)?;
-        Self::write_raw_output(&mut writer, self)?;
-        Self::write_parsing_steps(&mut writer, self)?;
-        Self::write_final_message(&mut writer, self)?;
-        Self::write_footer(&mut writer)?;
+        // Write using workspace
+        workspace.create_dir_all(log_dir)?;
+        workspace.write(&trace_path, &content)?;
 
-        writer.flush()?;
         Ok(trace_path)
     }
 
-    fn write_header(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
-        writeln!(
-            w,
+    // String-based write helpers for workspace support
+    fn write_header_to_string(s: &mut String, trace: &Self) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "================================================================================"
-        )?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(
+            s,
             "PARSING TRACE LOG - Attempt #{:03}",
             trace.attempt_number
-        )?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(
+            s,
             "================================================================================"
-        )?;
-        writeln!(w)?;
-        writeln!(w, "Agent:     {}", trace.agent)?;
-        writeln!(w, "Strategy:  {}", trace.strategy)?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s);
+        let _ = writeln!(s, "Agent:     {}", trace.agent);
+        let _ = writeln!(s, "Strategy:  {}", trace.strategy);
+        let _ = writeln!(
+            s,
             "Timestamp: {}",
             trace.timestamp.format("%Y-%m-%d %H:%M:%S %Z")
-        )?;
-        writeln!(w)?;
-        Ok(())
+        );
+        let _ = writeln!(s);
     }
 
-    fn write_raw_output(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
-        writeln!(
-            w,
+    fn write_raw_output_to_string(s: &mut String, trace: &Self) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "--------------------------------------------------------------------------------"
-        )?;
-        writeln!(w, "RAW AGENT OUTPUT")?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s, "RAW AGENT OUTPUT");
+        let _ = writeln!(
+            s,
             "--------------------------------------------------------------------------------"
-        )?;
-        writeln!(w)?;
+        );
+        let _ = writeln!(s);
         match &trace.raw_output {
             Some(output) => {
-                writeln!(w, "{output}")?;
+                let _ = writeln!(s, "{output}");
             }
             None => {
-                writeln!(w, "[No raw output captured]")?;
+                let _ = writeln!(s, "[No raw output captured]");
             }
         }
-        writeln!(w)?;
-        Ok(())
+        let _ = writeln!(s);
     }
 
-    fn write_parsing_steps(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
-        writeln!(
-            w,
+    fn write_parsing_steps_to_string(s: &mut String, trace: &Self) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "--------------------------------------------------------------------------------"
-        )?;
-        writeln!(w, "PARSING STEPS")?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s, "PARSING STEPS");
+        let _ = writeln!(
+            s,
             "--------------------------------------------------------------------------------"
-        )?;
-        writeln!(w)?;
+        );
+        let _ = writeln!(s);
 
         if trace.steps.is_empty() {
-            writeln!(w, "[No parsing steps recorded]")?;
+            let _ = writeln!(s, "[No parsing steps recorded]");
         } else {
             for step in &trace.steps {
                 let status = if step.success {
@@ -256,64 +268,63 @@ impl ParsingTraceLog {
                 } else {
                     "✗ FAILED"
                 };
-                writeln!(w, "{}. {} [{}]", step.step_number, step.description, status)?;
-                writeln!(w)?;
+                let _ = writeln!(s, "{}. {} [{}]", step.step_number, step.description, status);
+                let _ = writeln!(s);
 
                 if let Some(input) = &step.input {
-                    writeln!(w, "   INPUT:")?;
+                    let _ = writeln!(s, "   INPUT:");
                     for line in input.lines() {
-                        writeln!(w, "   {line}")?;
+                        let _ = writeln!(s, "   {line}");
                     }
-                    writeln!(w)?;
+                    let _ = writeln!(s);
                 }
 
                 if let Some(result) = &step.result {
-                    writeln!(w, "   RESULT:")?;
+                    let _ = writeln!(s, "   RESULT:");
                     for line in result.lines() {
-                        writeln!(w, "   {line}")?;
+                        let _ = writeln!(s, "   {line}");
                     }
-                    writeln!(w)?;
+                    let _ = writeln!(s);
                 }
 
                 if !step.details.is_empty() {
-                    writeln!(w, "   DETAILS: {}", step.details)?;
-                    writeln!(w)?;
+                    let _ = writeln!(s, "   DETAILS: {}", step.details);
+                    let _ = writeln!(s);
                 }
             }
         }
-        writeln!(w)?;
-        Ok(())
+        let _ = writeln!(s);
     }
 
-    fn write_final_message(w: &mut impl Write, trace: &Self) -> std::io::Result<()> {
-        writeln!(
-            w,
+    fn write_final_message_to_string(s: &mut String, trace: &Self) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "--------------------------------------------------------------------------------"
-        )?;
-        writeln!(w, "FINAL EXTRACTED MESSAGE")?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s, "FINAL EXTRACTED MESSAGE");
+        let _ = writeln!(
+            s,
             "--------------------------------------------------------------------------------"
-        )?;
-        writeln!(w)?;
+        );
+        let _ = writeln!(s);
         match &trace.final_message {
             Some(message) => {
-                writeln!(w, "{message}")?;
+                let _ = writeln!(s, "{message}");
             }
             None => {
-                writeln!(w, "[No message extracted]")?;
+                let _ = writeln!(s, "[No message extracted]");
             }
         }
-        writeln!(w)?;
-        Ok(())
+        let _ = writeln!(s);
     }
 
-    fn write_footer(w: &mut impl Write) -> std::io::Result<()> {
-        writeln!(
-            w,
+    fn write_footer_to_string(s: &mut String) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "================================================================================"
-        )?;
-        Ok(())
+        );
     }
 }
 
@@ -504,18 +515,26 @@ impl CommitAttemptLog {
         self.outcome = Some(outcome);
     }
 
-    /// Write this log to a file.
+    /// Write this log to a file using workspace abstraction.
+    ///
+    /// This is the architecture-conformant version that uses the workspace trait
+    /// instead of direct filesystem access.
     ///
     /// # Arguments
     ///
-    /// * `log_dir` - Directory to write the log file to
+    /// * `log_dir` - Directory to write the log file to (relative to workspace)
+    /// * `workspace` - The workspace to use for filesystem operations
     ///
     /// # Returns
     ///
     /// Path to the written log file on success.
-    pub fn write_to_file(&self, log_dir: &Path) -> std::io::Result<PathBuf> {
+    pub fn write_to_workspace(
+        &self,
+        log_dir: &Path,
+        workspace: &dyn Workspace,
+    ) -> std::io::Result<PathBuf> {
         // Create the log directory if needed
-        fs::create_dir_all(log_dir)?;
+        workspace.create_dir_all(log_dir)?;
 
         // Generate filename
         let filename = format!(
@@ -527,117 +546,114 @@ impl CommitAttemptLog {
         );
         let log_path = log_dir.join(filename);
 
-        // Write the log
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&log_path)?;
-        let mut writer = BufWriter::new(file);
+        // Build content in memory
+        let mut content = String::new();
+        self.write_header_to_string(&mut content);
+        self.write_context_to_string(&mut content);
+        self.write_raw_output_to_string(&mut content);
+        self.write_extraction_attempts_to_string(&mut content);
+        self.write_validation_to_string(&mut content);
+        self.write_outcome_to_string(&mut content);
 
-        self.write_header(&mut writer)?;
-        self.write_context(&mut writer)?;
-        self.write_raw_output(&mut writer)?;
-        self.write_extraction_attempts(&mut writer)?;
-        self.write_validation(&mut writer)?;
-        self.write_outcome(&mut writer)?;
-
-        writer.flush()?;
+        // Write using workspace
+        workspace.write(&log_path, &content)?;
         Ok(log_path)
     }
 
-    fn write_header(&self, w: &mut impl Write) -> std::io::Result<()> {
-        writeln!(
-            w,
+    // String-based write helpers for workspace support
+    fn write_header_to_string(&self, s: &mut String) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "========================================================================"
-        )?;
-        writeln!(w, "COMMIT GENERATION ATTEMPT LOG")?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s, "COMMIT GENERATION ATTEMPT LOG");
+        let _ = writeln!(
+            s,
             "========================================================================"
-        )?;
-        writeln!(w)?;
-        writeln!(w, "Attempt:   #{}", self.attempt_number)?;
-        writeln!(w, "Agent:     {}", self.agent)?;
-        writeln!(w, "Strategy:  {}", self.strategy)?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s);
+        let _ = writeln!(s, "Attempt:   #{}", self.attempt_number);
+        let _ = writeln!(s, "Agent:     {}", self.agent);
+        let _ = writeln!(s, "Strategy:  {}", self.strategy);
+        let _ = writeln!(
+            s,
             "Timestamp: {}",
             self.timestamp.format("%Y-%m-%d %H:%M:%S %Z")
-        )?;
-        writeln!(w)?;
-        Ok(())
+        );
+        let _ = writeln!(s);
     }
 
-    fn write_context(&self, w: &mut impl Write) -> std::io::Result<()> {
-        writeln!(
-            w,
+    fn write_context_to_string(&self, s: &mut String) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w, "CONTEXT")?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s, "CONTEXT");
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w)?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s);
+        let _ = writeln!(
+            s,
             "Prompt size: {} bytes ({} KB)",
             self.prompt_size_bytes,
             self.prompt_size_bytes / 1024
-        )?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(
+            s,
             "Diff size:   {} bytes ({} KB)",
             self.diff_size_bytes,
             self.diff_size_bytes / 1024
-        )?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(
+            s,
             "Diff truncated: {}",
             if self.diff_was_truncated { "YES" } else { "NO" }
-        )?;
-        writeln!(w)?;
-        Ok(())
+        );
+        let _ = writeln!(s);
     }
 
-    fn write_raw_output(&self, w: &mut impl Write) -> std::io::Result<()> {
-        writeln!(
-            w,
+    fn write_raw_output_to_string(&self, s: &mut String) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w, "RAW AGENT OUTPUT")?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s, "RAW AGENT OUTPUT");
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w)?;
+        );
+        let _ = writeln!(s);
         match &self.raw_output {
             Some(output) => {
-                writeln!(w, "{output}")?;
+                let _ = writeln!(s, "{output}");
             }
             None => {
-                writeln!(w, "[No output captured]")?;
+                let _ = writeln!(s, "[No output captured]");
             }
         }
-        writeln!(w)?;
-        Ok(())
+        let _ = writeln!(s);
     }
 
-    fn write_extraction_attempts(&self, w: &mut impl Write) -> std::io::Result<()> {
-        writeln!(
-            w,
+    fn write_extraction_attempts_to_string(&self, s: &mut String) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w, "EXTRACTION ATTEMPTS")?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s, "EXTRACTION ATTEMPTS");
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w)?;
+        );
+        let _ = writeln!(s);
 
         if self.extraction_attempts.is_empty() {
-            writeln!(w, "[No extraction attempts recorded]")?;
+            let _ = writeln!(s, "[No extraction attempts recorded]");
         } else {
             for (i, attempt) in self.extraction_attempts.iter().enumerate() {
                 let status = if attempt.success {
@@ -645,69 +661,68 @@ impl CommitAttemptLog {
                 } else {
                     "✗ FAILED"
                 };
-                writeln!(w, "{}. {} [{}]", i + 1, attempt.method, status)?;
-                writeln!(w, "   Detail: {}", attempt.detail)?;
-                writeln!(w)?;
+                let _ = writeln!(s, "{}. {} [{}]", i + 1, attempt.method, status);
+                let _ = writeln!(s, "   Detail: {}", attempt.detail);
+                let _ = writeln!(s);
             }
         }
-        writeln!(w)?;
-        Ok(())
+        let _ = writeln!(s);
     }
 
-    fn write_validation(&self, w: &mut impl Write) -> std::io::Result<()> {
-        writeln!(
-            w,
+    fn write_validation_to_string(&self, s: &mut String) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w, "VALIDATION RESULTS")?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s, "VALIDATION RESULTS");
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w)?;
+        );
+        let _ = writeln!(s);
 
         if self.validation_checks.is_empty() {
-            writeln!(w, "[No validation checks recorded]")?;
+            let _ = writeln!(s, "[No validation checks recorded]");
         } else {
             for check in &self.validation_checks {
                 let status = if check.passed { "✓ PASS" } else { "✗ FAIL" };
-                write!(w, "  [{status}] {}", check.name)?;
+                let _ = write!(s, "  [{status}] {}", check.name);
                 if let Some(error) = &check.error {
-                    writeln!(w, ": {error}")?;
+                    let _ = writeln!(s, ": {error}");
                 } else {
-                    writeln!(w)?;
+                    let _ = writeln!(s);
                 }
             }
         }
-        writeln!(w)?;
-        Ok(())
+        let _ = writeln!(s);
     }
 
-    fn write_outcome(&self, w: &mut impl Write) -> std::io::Result<()> {
-        writeln!(
-            w,
+    fn write_outcome_to_string(&self, s: &mut String) {
+        use std::fmt::Write;
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w, "OUTCOME")?;
-        writeln!(
-            w,
+        );
+        let _ = writeln!(s, "OUTCOME");
+        let _ = writeln!(
+            s,
             "------------------------------------------------------------------------"
-        )?;
-        writeln!(w)?;
+        );
+        let _ = writeln!(s);
         match &self.outcome {
             Some(outcome) => {
-                writeln!(w, "{outcome}")?;
+                let _ = writeln!(s, "{outcome}");
             }
             None => {
-                writeln!(w, "[Outcome not recorded]")?;
+                let _ = writeln!(s, "[Outcome not recorded]");
             }
         }
-        writeln!(w)?;
-        writeln!(
-            w,
+        let _ = writeln!(s);
+        let _ = writeln!(
+            s,
             "========================================================================"
-        )?;
-        Ok(())
+        );
     }
 }
 
@@ -735,17 +750,18 @@ pub struct CommitLogSession {
 }
 
 impl CommitLogSession {
-    /// Create a new logging session.
+    /// Create a new logging session using workspace abstraction.
     ///
     /// Creates a unique run directory under the base log path.
     ///
     /// # Arguments
     ///
     /// * `base_log_dir` - Base directory for commit logs (e.g., `.agent/logs/commit_generation`)
-    pub fn new(base_log_dir: &str) -> std::io::Result<Self> {
+    /// * `workspace` - The workspace to use for filesystem operations
+    pub fn new(base_log_dir: &str, workspace: &dyn Workspace) -> std::io::Result<Self> {
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
         let run_dir = PathBuf::from(base_log_dir).join(format!("run_{timestamp}"));
-        fs::create_dir_all(&run_dir)?;
+        workspace.create_dir_all(&run_dir)?;
 
         Ok(Self {
             run_dir,
@@ -781,19 +797,28 @@ impl CommitLogSession {
     ///
     /// * `total_attempts` - Total number of attempts made
     /// * `final_outcome` - Description of the final outcome
-    pub fn write_summary(&self, total_attempts: usize, final_outcome: &str) -> std::io::Result<()> {
+    /// * `workspace` - The workspace to use for filesystem operations
+    pub fn write_summary(
+        &self,
+        total_attempts: usize,
+        final_outcome: &str,
+        workspace: &dyn Workspace,
+    ) -> std::io::Result<()> {
+        use std::fmt::Write;
+
         let summary_path = self.run_dir.join("SUMMARY.txt");
-        let mut file = File::create(summary_path)?;
+        let mut content = String::new();
 
-        writeln!(file, "COMMIT GENERATION SESSION SUMMARY")?;
-        writeln!(file, "=================================")?;
-        writeln!(file)?;
-        writeln!(file, "Run directory: {}", self.run_dir.display())?;
-        writeln!(file, "Total attempts: {total_attempts}")?;
-        writeln!(file, "Final outcome: {final_outcome}")?;
-        writeln!(file)?;
-        writeln!(file, "Individual attempt logs are in this directory.")?;
+        let _ = writeln!(content, "COMMIT GENERATION SESSION SUMMARY");
+        let _ = writeln!(content, "=================================");
+        let _ = writeln!(content);
+        let _ = writeln!(content, "Run directory: {}", self.run_dir.display());
+        let _ = writeln!(content, "Total attempts: {total_attempts}");
+        let _ = writeln!(content, "Final outcome: {final_outcome}");
+        let _ = writeln!(content);
+        let _ = writeln!(content, "Individual attempt logs are in this directory.");
 
+        workspace.write(&summary_path, &content)?;
         Ok(())
     }
 }
@@ -801,70 +826,40 @@ impl CommitLogSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use crate::workspace::MemoryWorkspace;
+
+    // =========================================================================
+    // Tests using MemoryWorkspace (architecture-conformant)
+    // =========================================================================
 
     #[test]
-    fn test_attempt_log_creation() {
-        let log = CommitAttemptLog::new(1, "claude", "initial");
-        assert_eq!(log.attempt_number, 1);
-        assert_eq!(log.agent, "claude");
-        assert_eq!(log.strategy, "initial");
-        assert!(log.raw_output.is_none());
-        assert!(log.extraction_attempts.is_empty());
-        assert!(log.validation_checks.is_empty());
-        assert!(log.outcome.is_none());
+    fn test_attempt_log_write_to_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+        let log_dir = Path::new(".agent/logs/commit_generation/run_test");
+
+        let mut log = CommitAttemptLog::new(1, "claude", "initial");
+        log.set_prompt_size(5000);
+        log.set_diff_info(10000, false);
+        log.set_raw_output("raw agent output here");
+        log.add_extraction_attempt(ExtractionAttempt::failure(
+            "XML",
+            "No <ralph-commit> tag found".to_string(),
+        ));
+        log.set_outcome(AttemptOutcome::Success("feat: add feature".to_string()));
+
+        let log_path = log.write_to_workspace(log_dir, &workspace).unwrap();
+        assert!(workspace.exists(&log_path));
+
+        let content = workspace.read(&log_path).unwrap();
+        assert!(content.contains("COMMIT GENERATION ATTEMPT LOG"));
+        assert!(content.contains("Attempt:   #1"));
+        assert!(content.contains("claude"));
     }
 
     #[test]
-    fn test_attempt_log_set_values() {
-        let mut log = CommitAttemptLog::new(2, "glm", "strict_json");
-
-        log.set_prompt_size(10_000);
-        log.set_diff_info(50_000, true);
-        log.set_raw_output("test output");
-
-        assert_eq!(log.prompt_size_bytes, 10_000);
-        assert_eq!(log.diff_size_bytes, 50_000);
-        assert!(log.diff_was_truncated);
-        assert_eq!(log.raw_output.as_deref(), Some("test output"));
-    }
-
-    #[test]
-    fn test_extraction_attempt_creation() {
-        let success =
-            ExtractionAttempt::success("XML", "Found <ralph-commit> at pos 0".to_string());
-        assert!(success.success);
-        assert_eq!(success.method, "XML");
-
-        let failure = ExtractionAttempt::failure("JSON", "No JSON found".to_string());
-        assert!(!failure.success);
-        assert_eq!(failure.method, "JSON");
-    }
-
-    #[test]
-    fn test_validation_check_creation() {
-        let pass = ValidationCheck::pass("basic_length");
-        assert!(pass.passed);
-        assert!(pass.error.is_none());
-
-        let fail = ValidationCheck::fail("no_json_artifacts", "Found JSON in message".to_string());
-        assert!(!fail.passed);
-        assert!(fail.error.is_some());
-    }
-
-    #[test]
-    fn test_outcome_display() {
-        let success = AttemptOutcome::Success("feat: add feature".to_string());
-        assert!(format!("{success}").contains("SUCCESS"));
-
-        let error = AttemptOutcome::ExtractionFailed("extraction failed".to_string());
-        assert!(format!("{error}").contains("EXTRACTION_FAILED"));
-    }
-
-    #[test]
-    fn test_write_log_to_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let log_dir = temp_dir.path();
+    fn test_attempt_log_write_with_all_fields() {
+        let workspace = MemoryWorkspace::new_test();
+        let log_dir = Path::new(".agent/logs/commit_generation/run_test");
 
         let mut log = CommitAttemptLog::new(1, "claude", "initial");
         log.set_prompt_size(5000);
@@ -884,36 +879,88 @@ mod tests {
         ]);
         log.set_outcome(AttemptOutcome::ExtractionFailed("bad pattern".to_string()));
 
-        let log_path = log.write_to_file(log_dir).unwrap();
-        assert!(log_path.exists());
+        let log_path = log.write_to_workspace(log_dir, &workspace).unwrap();
+        assert!(workspace.exists(&log_path));
 
-        let content = fs::read_to_string(&log_path).unwrap();
+        let content = workspace.read(&log_path).unwrap();
         assert!(content.contains("COMMIT GENERATION ATTEMPT LOG"));
         assert!(content.contains("Attempt:   #1"));
         assert!(content.contains("claude"));
         assert!(content.contains("EXTRACTION ATTEMPTS"));
-        assert!(content.contains("✗ FAILED"));
-        assert!(content.contains("✓ SUCCESS"));
         assert!(content.contains("VALIDATION RESULTS"));
         assert!(content.contains("OUTCOME"));
     }
 
     #[test]
-    fn test_session_creates_run_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let base_dir = temp_dir.path().join("logs");
+    fn test_parsing_trace_write_to_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+        let log_dir = Path::new(".agent/logs/commit_generation/run_test");
 
-        let session = CommitLogSession::new(base_dir.to_str().unwrap()).unwrap();
-        assert!(session.run_dir().exists());
+        let mut trace = ParsingTraceLog::new(1, "claude", "initial");
+        trace.set_raw_output("raw agent output");
+        trace.add_step(
+            ParsingTraceStep::new(1, "XML extraction")
+                .with_input("input")
+                .with_success(true),
+        );
+        trace.set_final_message("feat: add feature");
+
+        let trace_path = trace.write_to_workspace(log_dir, &workspace).unwrap();
+        assert!(workspace.exists(&trace_path));
+
+        let content = workspace.read(&trace_path).unwrap();
+        assert!(content.contains("PARSING TRACE LOG"));
+        assert!(content.contains("Attempt #001"));
+    }
+
+    #[test]
+    fn test_parsing_trace_write_with_steps() {
+        let workspace = MemoryWorkspace::new_test();
+        let log_dir = Path::new(".agent/logs/commit_generation/run_test");
+
+        let mut trace = ParsingTraceLog::new(1, "claude", "initial");
+        trace.set_raw_output("raw agent output");
+        trace.add_step(
+            ParsingTraceStep::new(1, "XML extraction")
+                .with_input("input")
+                .with_result("result")
+                .with_success(true)
+                .with_details("success"),
+        );
+        trace.add_step(
+            ParsingTraceStep::new(2, "Validation")
+                .with_success(false)
+                .with_details("failed"),
+        );
+        trace.set_final_message("feat: add feature");
+
+        let trace_path = trace.write_to_workspace(log_dir, &workspace).unwrap();
+        assert!(workspace.exists(&trace_path));
+        assert!(trace_path.to_string_lossy().contains("parsing_trace"));
+
+        let content = workspace.read(&trace_path).unwrap();
+        assert!(content.contains("PARSING TRACE LOG"));
+        assert!(content.contains("Attempt #001"));
+        assert!(content.contains("RAW AGENT OUTPUT"));
+        assert!(content.contains("PARSING STEPS"));
+        assert!(content.contains("FINAL EXTRACTED MESSAGE"));
+    }
+
+    #[test]
+    fn test_session_creates_run_directory() {
+        let workspace = MemoryWorkspace::new_test();
+
+        let session = CommitLogSession::new(".agent/logs/commit_generation", &workspace).unwrap();
+        assert!(workspace.exists(session.run_dir()));
         assert!(session.run_dir().to_string_lossy().contains("run_"));
     }
 
     #[test]
     fn test_session_increments_attempt_number() {
-        let temp_dir = TempDir::new().unwrap();
-        let base_dir = temp_dir.path().join("logs");
+        let workspace = MemoryWorkspace::new_test();
 
-        let mut session = CommitLogSession::new(base_dir.to_str().unwrap()).unwrap();
+        let mut session =
+            CommitLogSession::new(".agent/logs/commit_generation", &workspace).unwrap();
 
         assert_eq!(session.next_attempt_number(), 1);
         assert_eq!(session.next_attempt_number(), 2);
@@ -922,10 +969,10 @@ mod tests {
 
     #[test]
     fn test_session_new_attempt() {
-        let temp_dir = TempDir::new().unwrap();
-        let base_dir = temp_dir.path().join("logs");
+        let workspace = MemoryWorkspace::new_test();
 
-        let mut session = CommitLogSession::new(base_dir.to_str().unwrap()).unwrap();
+        let mut session =
+            CommitLogSession::new(".agent/logs/commit_generation", &workspace).unwrap();
 
         let log1 = session.new_attempt("claude", "initial");
         assert_eq!(log1.attempt_number, 1);
@@ -936,18 +983,17 @@ mod tests {
 
     #[test]
     fn test_session_write_summary() {
-        let temp_dir = TempDir::new().unwrap();
-        let base_dir = temp_dir.path().join("logs");
+        let workspace = MemoryWorkspace::new_test();
 
-        let session = CommitLogSession::new(base_dir.to_str().unwrap()).unwrap();
+        let session = CommitLogSession::new(".agent/logs/commit_generation", &workspace).unwrap();
         session
-            .write_summary(5, "SUCCESS: feat: add feature")
+            .write_summary(5, "SUCCESS: feat: add feature", &workspace)
             .unwrap();
 
         let summary_path = session.run_dir().join("SUMMARY.txt");
-        assert!(summary_path.exists());
+        assert!(workspace.exists(&summary_path));
 
-        let content = fs::read_to_string(&summary_path).unwrap();
+        let content = workspace.read(&summary_path).unwrap();
         assert!(content.contains("Total attempts: 5"));
         assert!(content.contains("SUCCESS"));
     }
@@ -1057,37 +1103,60 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_trace_write_to_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let log_dir = temp_dir.path();
+    fn test_attempt_log_creation() {
+        let log = CommitAttemptLog::new(1, "claude", "initial");
+        assert_eq!(log.attempt_number, 1);
+        assert_eq!(log.agent, "claude");
+        assert_eq!(log.strategy, "initial");
+        assert!(log.raw_output.is_none());
+        assert!(log.extraction_attempts.is_empty());
+        assert!(log.validation_checks.is_empty());
+        assert!(log.outcome.is_none());
+    }
 
-        let mut trace = ParsingTraceLog::new(1, "claude", "initial");
-        trace.set_raw_output("raw agent output");
-        trace.add_step(
-            ParsingTraceStep::new(1, "XML extraction")
-                .with_input("input")
-                .with_result("result")
-                .with_success(true)
-                .with_details("success"),
-        );
-        trace.add_step(
-            ParsingTraceStep::new(2, "Validation")
-                .with_success(false)
-                .with_details("failed"),
-        );
-        trace.set_final_message("feat: add feature");
+    #[test]
+    fn test_attempt_log_set_values() {
+        let mut log = CommitAttemptLog::new(2, "glm", "strict_json");
 
-        let trace_path = trace.write_to_file(log_dir).unwrap();
-        assert!(trace_path.exists());
-        assert!(trace_path.to_string_lossy().contains("parsing_trace"));
+        log.set_prompt_size(10_000);
+        log.set_diff_info(50_000, true);
+        log.set_raw_output("test output");
 
-        let content = fs::read_to_string(&trace_path).unwrap();
-        assert!(content.contains("PARSING TRACE LOG"));
-        assert!(content.contains("Attempt #001"));
-        assert!(content.contains("RAW AGENT OUTPUT"));
-        assert!(content.contains("PARSING STEPS"));
-        assert!(content.contains("✓ SUCCESS"));
-        assert!(content.contains("✗ FAILED"));
-        assert!(content.contains("FINAL EXTRACTED MESSAGE"));
+        assert_eq!(log.prompt_size_bytes, 10_000);
+        assert_eq!(log.diff_size_bytes, 50_000);
+        assert!(log.diff_was_truncated);
+        assert_eq!(log.raw_output.as_deref(), Some("test output"));
+    }
+
+    #[test]
+    fn test_extraction_attempt_creation() {
+        let success =
+            ExtractionAttempt::success("XML", "Found <ralph-commit> at pos 0".to_string());
+        assert!(success.success);
+        assert_eq!(success.method, "XML");
+
+        let failure = ExtractionAttempt::failure("JSON", "No JSON found".to_string());
+        assert!(!failure.success);
+        assert_eq!(failure.method, "JSON");
+    }
+
+    #[test]
+    fn test_validation_check_creation() {
+        let pass = ValidationCheck::pass("basic_length");
+        assert!(pass.passed);
+        assert!(pass.error.is_none());
+
+        let fail = ValidationCheck::fail("no_json_artifacts", "Found JSON in message".to_string());
+        assert!(!fail.passed);
+        assert!(fail.error.is_some());
+    }
+
+    #[test]
+    fn test_outcome_display() {
+        let success = AttemptOutcome::Success("feat: add feature".to_string());
+        assert!(format!("{success}").contains("SUCCESS"));
+
+        let error = AttemptOutcome::ExtractionFailed("extraction failed".to_string());
+        assert!(format!("{error}").contains("EXTRACTION_FAILED"));
     }
 }

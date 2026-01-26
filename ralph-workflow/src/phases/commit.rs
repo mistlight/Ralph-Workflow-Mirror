@@ -29,8 +29,6 @@ use crate::prompts::{
 };
 use std::collections::HashMap;
 use std::fmt;
-use std::fs::{self, File};
-use std::io::Read;
 use std::path::Path;
 
 /// Preview a commit message for display (first line, truncated if needed).
@@ -604,7 +602,7 @@ fn run_commit_attempt_with_agent(
         attempt_log.set_outcome(AttemptOutcome::ExtractionFailed(format!(
             "Agent '{agent}' not found in registry"
         )));
-        let _ = attempt_log.write_to_file(session.run_dir());
+        let _ = attempt_log.write_to_workspace(session.run_dir(), ctx.workspace);
         return None;
     };
 
@@ -691,7 +689,7 @@ fn run_commit_attempt_with_agent(
                 attempt_log.set_outcome(AttemptOutcome::ExtractionFailed(format!(
                     "Agent execution failed: {e}"
                 )));
-                let _ = attempt_log.write_to_file(session.run_dir());
+                let _ = attempt_log.write_to_workspace(session.run_dir(), ctx.workspace);
                 return None;
             }
         };
@@ -708,6 +706,7 @@ fn run_commit_attempt_with_agent(
             agent,
             runtime.logger,
             &mut attempt_log,
+            ctx.workspace,
         );
 
         // Check if we got a valid commit message or need to retry for XSD errors
@@ -723,7 +722,7 @@ fn run_commit_attempt_with_agent(
                     &mut attempt_log,
                 );
 
-                if let Err(e) = attempt_log.write_to_file(session.run_dir()) {
+                if let Err(e) = attempt_log.write_to_workspace(session.run_dir(), ctx.workspace) {
                     runtime
                         .logger
                         .warn(&format!("Failed to write attempt log: {e}"));
@@ -759,7 +758,7 @@ fn run_commit_attempt_with_agent(
 
                 // Write attempt log but don't return yet
                 attempt_log.set_outcome(AttemptOutcome::XsdValidationFailed(error.to_string()));
-                let _ = attempt_log.write_to_file(session.run_dir());
+                let _ = attempt_log.write_to_workspace(session.run_dir(), ctx.workspace);
 
                 // Continue to next retry iteration
                 continue;
@@ -782,7 +781,7 @@ fn run_commit_attempt_with_agent(
         );
 
         // Write the attempt log
-        if let Err(e) = attempt_log.write_to_file(session.run_dir()) {
+        if let Err(e) = attempt_log.write_to_workspace(session.run_dir(), ctx.workspace) {
             runtime
                 .logger
                 .warn(&format!("Failed to write attempt log: {e}"));
@@ -908,7 +907,7 @@ pub fn generate_commit_message(
     runtime.logger.info("Generating commit message...");
 
     // Create a logging session for this commit generation run
-    let mut session = create_commit_log_session(log_dir, runtime);
+    let mut session = create_commit_log_session(log_dir, runtime, workspace);
     let (working_diff, diff_was_pre_truncated) =
         check_and_pre_truncate_diff(diff, commit_agent, runtime);
 
@@ -952,7 +951,7 @@ pub fn generate_commit_message(
         &mut session,
         &mut total_attempts,
     ) {
-        log_completion(runtime, &session, total_attempts, &result);
+        log_completion(runtime, &session, total_attempts, &result, workspace);
         // Include generated prompts in the result
         return result.map(|mut r| {
             r.generated_prompts = generated_prompts;
@@ -971,12 +970,17 @@ pub fn generate_commit_message(
         total_attempts,
         last_extraction.as_ref(),
         generated_prompts,
+        workspace,
     )
 }
 
 /// Create a commit log session, with fallback.
-fn create_commit_log_session(log_dir: &str, runtime: &mut PipelineRuntime) -> CommitLogSession {
-    match CommitLogSession::new(log_dir) {
+fn create_commit_log_session(
+    log_dir: &str,
+    runtime: &mut PipelineRuntime,
+    workspace: &dyn crate::workspace::Workspace,
+) -> CommitLogSession {
+    match CommitLogSession::new(log_dir, workspace) {
         Ok(s) => {
             runtime.logger.info(&format!(
                 "Commit logs will be written to: {}",
@@ -988,8 +992,9 @@ fn create_commit_log_session(log_dir: &str, runtime: &mut PipelineRuntime) -> Co
             runtime
                 .logger
                 .warn(&format!("Failed to create log session: {e}"));
-            CommitLogSession::new(log_dir).unwrap_or_else(|_| {
-                CommitLogSession::new("/tmp/ralph-commit-logs").expect("fallback session")
+            CommitLogSession::new(log_dir, workspace).unwrap_or_else(|_| {
+                CommitLogSession::new("/tmp/ralph-commit-logs", workspace)
+                    .expect("fallback session")
             })
         }
     }
@@ -1062,6 +1067,7 @@ fn log_completion(
     session: &CommitLogSession,
     total_attempts: usize,
     result: &anyhow::Result<CommitMessageResult>,
+    workspace: &dyn crate::workspace::Workspace,
 ) {
     if let Ok(ref commit_result) = result {
         let _ = session.write_summary(
@@ -1070,6 +1076,7 @@ fn log_completion(
                 "SUCCESS: {}",
                 preview_commit_message(&commit_result.message)
             ),
+            workspace,
         );
     }
     runtime.logger.info(&format!(
@@ -1095,6 +1102,7 @@ fn handle_commit_fallbacks(
     total_attempts: usize,
     last_extraction: Option<&CommitExtractionResult>,
     generated_prompts: std::collections::HashMap<String, String>,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> anyhow::Result<CommitMessageResult> {
     // Use message from last extraction if available
     // (XSD validation already passed if we have an extraction)
@@ -1103,6 +1111,7 @@ fn handle_commit_fallbacks(
         let _ = session.write_summary(
             total_attempts,
             &format!("LAST_EXTRACTION: {}", preview_commit_message(&message)),
+            workspace,
         );
         runtime.logger.info(&format!(
             "Commit generation complete after {total_attempts} attempts. Logs: {}",
@@ -1120,6 +1129,7 @@ fn handle_commit_fallbacks(
     let _ = session.write_summary(
         total_attempts,
         &format!("HARDCODED_FALLBACK: {HARDCODED_FALLBACK_COMMIT}"),
+        workspace,
     );
     runtime.logger.info(&format!(
         "Commit generation complete after {total_attempts} attempts (hardcoded fallback). Logs: {}",
@@ -1292,8 +1302,9 @@ fn write_parsing_trace_with_logging(
     parsing_trace: &ParsingTraceLog,
     log_dir: &str,
     logger: &Logger,
+    workspace: &dyn crate::workspace::Workspace,
 ) {
-    if let Err(e) = parsing_trace.write_to_file(std::path::Path::new(log_dir)) {
+    if let Err(e) = parsing_trace.write_to_workspace(Path::new(log_dir), workspace) {
         logger.warn(&format!("Failed to write parsing trace log: {e}"));
     }
 }
@@ -1307,6 +1318,7 @@ fn try_xml_extraction_traced(
     logger: &Logger,
     attempt_log: &mut CommitAttemptLog,
     log_dir: &str,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> Option<CommitExtractionResult> {
     // Try file-based extraction first - allows agents to write XML to .agent/tmp/commit_message.xml
     let xml_file_path = Path::new(xml_paths::COMMIT_MESSAGE_XML);
@@ -1337,7 +1349,7 @@ fn try_xml_extraction_traced(
 
         attempt_log.add_extraction_attempt(ExtractionAttempt::success("XML", xml_detail));
         parsing_trace.set_final_message(&message);
-        write_parsing_trace_with_logging(parsing_trace, log_dir, logger);
+        write_parsing_trace_with_logging(parsing_trace, log_dir, logger, workspace);
         return Some(CommitExtractionResult::new(message));
     }
 
@@ -1360,6 +1372,7 @@ fn extract_commit_message_from_logs_with_trace(
     _agent_cmd: &str,
     logger: &Logger,
     attempt_log: &mut CommitAttemptLog,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> anyhow::Result<Option<CommitExtractionResult>> {
     // Create parsing trace log
     let mut parsing_trace = ParsingTraceLog::new(
@@ -1368,8 +1381,9 @@ fn extract_commit_message_from_logs_with_trace(
         &attempt_log.strategy,
     );
 
-    // Read and preprocess log content
-    let Some(content) = read_log_content_with_trace(log_dir, logger, attempt_log)? else {
+    // Read and preprocess log content using workspace abstraction
+    let Some(content) = read_log_content_with_trace(log_dir, logger, attempt_log, workspace)?
+    else {
         return Ok(None);
     };
 
@@ -1388,6 +1402,7 @@ fn extract_commit_message_from_logs_with_trace(
         logger,
         attempt_log,
         log_dir,
+        workspace,
     ) {
         return Ok(Some(result));
     }
@@ -1400,7 +1415,7 @@ fn extract_commit_message_from_logs_with_trace(
             .with_details("No valid XML found or XSD validation failed"),
     );
 
-    write_parsing_trace_with_logging(&parsing_trace, log_dir, logger);
+    write_parsing_trace_with_logging(&parsing_trace, log_dir, logger, workspace);
 
     // Return None to trigger next strategy/agent fallback
     // The in-session retry loop will have already attempted XSD validation retries
@@ -1413,8 +1428,10 @@ fn read_log_content_with_trace(
     log_dir: &str,
     logger: &Logger,
     attempt_log: &mut CommitAttemptLog,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> anyhow::Result<Option<String>> {
-    let log_path = find_most_recent_log(log_dir)?;
+    let log_dir_path = Path::new(log_dir);
+    let log_path = find_most_recent_log_in_workspace(log_dir_path, workspace)?;
     let Some(log_file) = log_path else {
         logger.warn("No log files found in commit generation directory");
         attempt_log.add_extraction_attempt(ExtractionAttempt::failure(
@@ -1429,9 +1446,7 @@ fn read_log_content_with_trace(
         log_file.display()
     ));
 
-    let mut content = String::new();
-    let mut file = File::open(&log_file)?;
-    file.read_to_string(&mut content)?;
+    let content = workspace.read(&log_file)?;
     attempt_log.set_raw_output(&content);
 
     if content.trim().is_empty() {
@@ -1447,85 +1462,72 @@ fn read_log_content_with_trace(
     Ok(Some(preprocess_raw_content(&content)))
 }
 
-/// Find the most recently modified log file in a directory or matching a prefix pattern.
+/// Find the most recent log file in a directory using workspace abstraction.
 ///
-/// Supports two modes:
-/// 1. **Directory mode**: If `log_path` is a directory, find the most recent `.log` file in it
-/// 2. **Prefix mode**: If `log_path` is not a directory, treat it as a prefix pattern and
-///    search for files matching `{prefix}*.log` in the parent directory
+/// This function uses the workspace trait for filesystem operations, making it
+/// testable with `MemoryWorkspace` and ensuring proper architecture conformance.
 ///
 /// # Arguments
 ///
-/// * `log_path` - Either a directory path or a prefix pattern for log files
+/// * `log_dir` - The directory to search for log files
+/// * `workspace` - The workspace to use for filesystem operations
 ///
 /// # Returns
 ///
 /// * `Ok(Some(path))` - Path to the most recent log file
 /// * `Ok(None)` - No log files found
 /// * `Err(e)` - Error reading directory
-fn find_most_recent_log(log_path: &str) -> anyhow::Result<Option<std::path::PathBuf>> {
-    let path = std::path::PathBuf::from(log_path);
+fn find_most_recent_log_in_workspace(
+    log_dir: &Path,
+    workspace: &dyn crate::workspace::Workspace,
+) -> anyhow::Result<Option<std::path::PathBuf>> {
+    // Use the pipeline::logfile module's workspace-based implementation
+    // That module already has the proper workspace-based find_most_recent_logfile function
+    // We need to adapt from directory search to prefix-based search
 
-    // Mode 1: If path is a directory, search for .log files with empty prefix (matches all)
-    if path.is_dir() {
-        return find_most_recent_log_with_prefix(&path, "");
+    // If directory doesn't exist in workspace, return None
+    if !workspace.exists(log_dir) {
+        return Ok(None);
     }
 
-    // Mode 2: Prefix pattern mode - search parent directory for files starting with the prefix
-    let parent_dir = match path.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
-        _ => std::path::PathBuf::from("."),
+    let entries = match workspace.read_dir(log_dir) {
+        Ok(e) => e,
+        Err(_) => return Ok(None),
     };
 
-    if !parent_dir.exists() {
-        return Ok(None);
-    }
-
-    let base_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-
-    find_most_recent_log_with_prefix(&parent_dir, base_name)
-}
-
-/// Find the most recently modified log file matching a prefix pattern.
-///
-/// Only matches `.log` files that start with `prefix`. If `prefix` is empty,
-/// matches any `.log` file in the directory.
-fn find_most_recent_log_with_prefix(
-    dir: &std::path::Path,
-    prefix: &str,
-) -> anyhow::Result<Option<std::path::PathBuf>> {
-    if !dir.exists() {
-        return Ok(None);
-    }
-
-    let entries = fs::read_dir(dir)?;
     let mut most_recent: Option<(std::path::PathBuf, std::time::SystemTime)> = None;
 
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for entry in entries {
+        if !entry.is_file() {
+            continue;
+        }
 
-        // Only look at .log files that start with the prefix (or any .log file if prefix is empty)
-        if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-            if !file_name.starts_with(prefix)
-                || path.extension().and_then(|s| s.to_str()) != Some("log")
-            {
+        // Only look at .log files
+        if let Some(filename) = entry.file_name().and_then(|s| s.to_str()) {
+            if !filename.ends_with(".log") {
                 continue;
             }
         } else {
             continue;
         }
 
-        if let Ok(metadata) = entry.metadata() {
-            if let Ok(modified) = metadata.modified() {
-                match &most_recent {
-                    None => {
-                        most_recent = Some((path, modified));
-                    }
-                    Some((_, prev_modified)) if modified > *prev_modified => {
-                        most_recent = Some((path, modified));
-                    }
-                    _ => {}
+        if let Some(modified) = entry.modified() {
+            match &most_recent {
+                None => {
+                    most_recent = Some((entry.path().to_path_buf(), modified));
                 }
+                Some((_, prev_modified)) if modified > *prev_modified => {
+                    most_recent = Some((entry.path().to_path_buf(), modified));
+                }
+                _ => {}
+            }
+        } else {
+            // No modification time available, use this if we have no best yet
+            if most_recent.is_none() {
+                most_recent = Some((
+                    entry.path().to_path_buf(),
+                    std::time::SystemTime::UNIX_EPOCH,
+                ));
             }
         }
     }
@@ -1536,12 +1538,98 @@ fn find_most_recent_log_with_prefix(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::Path;
+    use std::time::{Duration, SystemTime};
+
+    /// Read log content using workspace abstraction (test helper).
+    ///
+    /// This function finds the most recent log file in the given directory and reads
+    /// its content using the workspace trait, making it testable with `MemoryWorkspace`.
+    fn read_log_content_with_workspace(
+        log_dir: &Path,
+        workspace: &dyn crate::workspace::Workspace,
+    ) -> anyhow::Result<Option<String>> {
+        let log_path = find_most_recent_log_in_workspace(log_dir, workspace)?;
+        let Some(log_file) = log_path else {
+            return Ok(None);
+        };
+
+        let content = workspace.read(&log_file)?;
+
+        if content.trim().is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(content))
+    }
 
     #[test]
-    fn test_find_most_recent_log() {
-        // Test with non-existent directory
-        let result = find_most_recent_log("/nonexistent/path");
+    fn test_find_most_recent_log_uses_workspace() {
+        // Create workspace with log files at different modification times
+        let time1 = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        let time2 = SystemTime::UNIX_EPOCH + Duration::from_secs(2000);
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_file_at_time(
+                ".agent/logs/commit_generation/old_agent_0.log",
+                "old content",
+                time1,
+            )
+            .with_file_at_time(
+                ".agent/logs/commit_generation/new_agent_0.log",
+                "new content with XML",
+                time2,
+            );
+
+        // Test that find_most_recent_log works with workspace
+        let log_dir = Path::new(".agent/logs/commit_generation");
+        let result = find_most_recent_log_in_workspace(log_dir, &workspace);
         assert!(result.is_ok());
+        let log_path = result.unwrap();
+        assert!(log_path.is_some());
+        // Should find the most recent log file
+        let path = log_path.unwrap();
+        assert!(path.to_string_lossy().contains("new_agent"));
+    }
+
+    #[test]
+    fn test_find_most_recent_log_empty_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+
+        let log_dir = Path::new(".agent/logs/commit_generation");
+        let result = find_most_recent_log_in_workspace(log_dir, &workspace);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_read_log_content_uses_workspace() {
+        // Create workspace with a log file
+        let workspace = MemoryWorkspace::new_test().with_file(
+            ".agent/logs/commit_generation/test_agent_0.log",
+            "test log content for extraction",
+        );
+
+        let log_dir = Path::new(".agent/logs/commit_generation");
+
+        // read_log_content_with_workspace should read from workspace, not std::fs
+        let result = read_log_content_with_workspace(log_dir, &workspace);
+        assert!(result.is_ok());
+        let content = result.unwrap();
+        assert!(content.is_some());
+        assert_eq!(content.unwrap(), "test log content for extraction");
+    }
+
+    #[test]
+    fn test_read_log_content_empty_log() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/logs/commit_generation/empty_agent_0.log", "");
+
+        let log_dir = Path::new(".agent/logs/commit_generation");
+        let result = read_log_content_with_workspace(log_dir, &workspace);
+        assert!(result.is_ok());
+        // Empty log should return None
         assert!(result.unwrap().is_none());
     }
 

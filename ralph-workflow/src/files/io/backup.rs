@@ -380,9 +380,9 @@ pub fn create_prompt_backup_with_workspace(
         let _ = workspace.rename(backup_base, backup_1);
     }
 
-    // Write new backup
+    // Write new backup atomically to prevent corruption
     workspace
-        .write(backup_base, &content)
+        .write_atomic(backup_base, &content)
         .map_err(|e| io::Error::new(e.kind(), format!("Failed to write PROMPT.md backup: {e}")))?;
 
     // Set read-only permissions on all backups (best-effort)
