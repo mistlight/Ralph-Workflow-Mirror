@@ -17,6 +17,12 @@ pub enum PipelinePhase {
     Review,
     CommitMessage,
     FinalValidation,
+    /// Finalizing phase for cleanup operations before completion.
+    ///
+    /// This phase handles:
+    /// - Restoring PROMPT.md write permissions
+    /// - Any other cleanup that must go through the effect system
+    Finalizing,
     Complete,
     Interrupted,
 }
@@ -29,6 +35,7 @@ impl std::fmt::Display for PipelinePhase {
             Self::Review => write!(f, "Review"),
             Self::CommitMessage => write!(f, "Commit Message"),
             Self::FinalValidation => write!(f, "Final Validation"),
+            Self::Finalizing => write!(f, "Finalizing"),
             Self::Complete => write!(f, "Complete"),
             Self::Interrupted => write!(f, "Interrupted"),
         }
@@ -179,6 +186,15 @@ pub enum PipelineEvent {
     CheckpointSaved {
         trigger: CheckpointTrigger,
     },
+
+    /// Finalization phase started.
+    FinalizingStarted,
+
+    /// PROMPT.md write permissions have been restored.
+    ///
+    /// This event is emitted after the RestorePromptPermissions effect
+    /// successfully restores write permissions on PROMPT.md.
+    PromptPermissionsRestored,
 }
 
 /// Rebase phase (initial or post-review).
@@ -235,6 +251,7 @@ mod tests {
             format!("{}", PipelinePhase::FinalValidation),
             "Final Validation"
         );
+        assert_eq!(format!("{}", PipelinePhase::Finalizing), "Finalizing");
         assert_eq!(format!("{}", PipelinePhase::Complete), "Complete");
         assert_eq!(format!("{}", PipelinePhase::Interrupted), "Interrupted");
     }

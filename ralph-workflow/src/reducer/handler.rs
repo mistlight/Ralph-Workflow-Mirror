@@ -99,6 +99,8 @@ impl MainEffectHandler {
             Effect::SaveCheckpoint { trigger } => self.save_checkpoint(ctx, trigger),
 
             Effect::CleanupContext => self.cleanup_context(ctx),
+
+            Effect::RestorePromptPermissions => self.restore_prompt_permissions(ctx),
         }
     }
 
@@ -437,7 +439,9 @@ impl MainEffectHandler {
     }
 
     fn validate_final_state(&mut self, _ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
-        Ok(PipelineEvent::PipelineCompleted)
+        // Transition to Finalizing phase to restore PROMPT.md permissions
+        // via the effect system before marking the pipeline complete
+        Ok(PipelineEvent::FinalizingStarted)
     }
 
     fn save_checkpoint(
@@ -550,6 +554,19 @@ impl MainEffectHandler {
 
         Ok(PipelineEvent::ContextCleaned)
     }
+
+    fn restore_prompt_permissions(&mut self, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+        use crate::files::make_prompt_writable_with_workspace;
+
+        ctx.logger.info("Restoring PROMPT.md write permissions...");
+
+        // Use workspace-based function for testability
+        if let Some(warning) = make_prompt_writable_with_workspace(ctx.workspace) {
+            ctx.logger.warn(&warning);
+        }
+
+        Ok(PipelineEvent::PromptPermissionsRestored)
+    }
 }
 
 /// Save checkpoint from current pipeline state.
@@ -591,7 +608,57 @@ fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> Check
         crate::reducer::event::PipelinePhase::Review => CheckpointPhase::Review,
         crate::reducer::event::PipelinePhase::CommitMessage => CheckpointPhase::CommitMessage,
         crate::reducer::event::PipelinePhase::FinalValidation => CheckpointPhase::FinalValidation,
+        crate::reducer::event::PipelinePhase::Finalizing => CheckpointPhase::FinalValidation,
         crate::reducer::event::PipelinePhase::Complete => CheckpointPhase::Complete,
         crate::reducer::event::PipelinePhase::Interrupted => CheckpointPhase::Complete,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that RestorePromptPermissions effect returns the correct event.
+    ///
+    /// The actual workspace interaction is tested via integration tests.
+    /// This unit test verifies the mock handler returns the expected event.
+    #[test]
+    fn test_mock_handler_restore_prompt_permissions() {
+        use crate::reducer::mock_effect_handler::MockEffectHandler;
+
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        let event = handler.execute_mock(Effect::RestorePromptPermissions);
+
+        assert!(
+            matches!(event, PipelineEvent::PromptPermissionsRestored),
+            "RestorePromptPermissions effect should return PromptPermissionsRestored event"
+        );
+
+        assert!(
+            handler.was_effect_executed(|e| matches!(e, Effect::RestorePromptPermissions)),
+            "Effect should be captured"
+        );
+    }
+
+    /// Test that ValidateFinalState transitions to Finalizing phase, not Complete.
+    ///
+    /// This ensures that the reducer goes through Finalizing phase to restore
+    /// PROMPT.md permissions before marking the pipeline complete.
+    #[test]
+    fn test_mock_handler_validate_final_state_goes_to_finalizing() {
+        use crate::reducer::mock_effect_handler::MockEffectHandler;
+
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        let event = handler.execute_mock(Effect::ValidateFinalState);
+
+        assert!(
+            matches!(event, PipelineEvent::FinalizingStarted),
+            "ValidateFinalState should return FinalizingStarted to trigger finalization phase, got: {:?}",
+            event
+        );
     }
 }

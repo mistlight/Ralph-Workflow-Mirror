@@ -411,4 +411,28 @@ mod tests {
         };
         assert!(state.is_terminal());
     }
+
+    #[test]
+    fn test_is_complete_during_finalizing() {
+        // Finalizing phase should NOT be complete - event loop must continue
+        // to execute the RestorePromptPermissions effect
+        let state = PipelineState {
+            phase: PipelinePhase::Finalizing,
+            ..PipelineState::initial(5, 2)
+        };
+        assert!(
+            !state.is_complete(),
+            "Finalizing phase should not be complete - event loop must continue"
+        );
+    }
+
+    #[test]
+    fn test_is_complete_after_finalization() {
+        // Complete phase IS complete
+        let state = PipelineState {
+            phase: PipelinePhase::Complete,
+            ..PipelineState::initial(5, 2)
+        };
+        assert!(state.is_complete(), "Complete phase should be complete");
+    }
 }

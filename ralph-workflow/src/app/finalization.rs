@@ -2,11 +2,14 @@
 //!
 //! This module handles the final phase of the pipeline including cleanup,
 //! final summary, and checkpoint clearing.
+//!
+//! Note: PROMPT.md permission restoration is now handled by the reducer's
+//! `Effect::RestorePromptPermissions` during the `Finalizing` phase, ensuring
+//! it goes through the effect system for proper testability.
 
 use crate::banner::{print_final_summary, PipelineSummary};
 use crate::checkpoint::clear_checkpoint;
 use crate::config::Config;
-use crate::files::make_prompt_writable;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::logger::Colors;
 use crate::logger::Logger;
@@ -60,14 +63,9 @@ pub fn finalize_pipeline(
         }
     }
 
-    // Restore PROMPT.md write permissions so users can edit it normally
-    // This is important to ensure users can edit PROMPT.md after pipeline completion
-    if let Some(warning) = make_prompt_writable() {
-        // Make this visible even if stdout is redirected or logger filtering is enabled.
-        eprintln!("{warning}");
-        eprintln!("If PROMPT.md is still read-only, run: chmod u+w PROMPT.md");
-        logger.warn(&warning);
-    }
+    // Note: PROMPT.md write permissions are now restored via the reducer's
+    // Effect::RestorePromptPermissions during the Finalizing phase.
+    // This ensures the operation goes through the effect system for testability.
 
     agent_phase_guard.disarm();
 }

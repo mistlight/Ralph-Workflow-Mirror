@@ -153,11 +153,13 @@ impl MockEffectHandler {
 
             Effect::SkipCommit { reason } => PipelineEvent::CommitSkipped { reason },
 
-            Effect::ValidateFinalState => PipelineEvent::PipelineCompleted,
+            Effect::ValidateFinalState => PipelineEvent::FinalizingStarted,
 
             Effect::SaveCheckpoint { trigger } => PipelineEvent::CheckpointSaved { trigger },
 
             Effect::CleanupContext => PipelineEvent::ContextCleaned,
+
+            Effect::RestorePromptPermissions => PipelineEvent::PromptPermissionsRestored,
         }
     }
 }

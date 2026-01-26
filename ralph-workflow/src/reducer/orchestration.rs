@@ -99,6 +99,8 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 
         PipelinePhase::FinalValidation => Effect::ValidateFinalState,
 
+        PipelinePhase::Finalizing => Effect::RestorePromptPermissions,
+
         PipelinePhase::Complete | PipelinePhase::Interrupted => Effect::SaveCheckpoint {
             trigger: CheckpointTrigger::Interrupt,
         },

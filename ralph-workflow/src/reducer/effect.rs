@@ -69,6 +69,13 @@ pub enum Effect {
     },
 
     CleanupContext,
+
+    /// Restore PROMPT.md write permissions after pipeline completion.
+    ///
+    /// This effect is emitted during the Finalizing phase to restore
+    /// write permissions on PROMPT.md so users can edit it normally
+    /// after Ralph exits.
+    RestorePromptPermissions,
 }
 
 /// Trait for executing effects.
