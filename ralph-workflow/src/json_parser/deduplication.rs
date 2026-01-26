@@ -60,6 +60,27 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 // ============================================================================
+// Environment Trait for Testability
+// ============================================================================
+
+/// Trait for accessing environment variables.
+///
+/// This trait enables dependency injection for testing without global state pollution.
+pub trait ThresholdEnvironment {
+    /// Get an environment variable by name.
+    fn get_var(&self, name: &str) -> Option<String>;
+}
+
+/// Production implementation that reads from actual environment.
+pub struct RealThresholdEnvironment;
+
+impl ThresholdEnvironment for RealThresholdEnvironment {
+    fn get_var(&self, name: &str) -> Option<String> {
+        std::env::var(name).ok()
+    }
+}
+
+// ============================================================================
 // Configuration Constants for Strong Overlap Detection
 // ============================================================================
 
@@ -128,64 +149,63 @@ impl Default for OverlapThresholds {
     }
 }
 
-/// Get the overlap thresholds from environment variables or use defaults.
+/// Testable variant that accepts an environment trait for dependency injection.
+///
+/// This allows tests to mock environment variables without global state pollution.
 ///
 /// Reads the following environment variables:
 /// - `RALPH_STREAMING_MIN_OVERLAP_CHARS`: Minimum overlap characters (default: 30, range: 10-100)
-/// - `RALPH_STREAMING_MIN_OVERLAP_RATIO`: Minimum overlap ratio (default: 0.5, range: 0.1-0.9)
 /// - `RALPH_STREAMING_SHORT_CHUNK_THRESHOLD`: Short chunk threshold (default: 20, range: 5-50)
 /// - `RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD`: Consecutive duplicate threshold (default: 3, range: 2-10)
-///
-/// # Returns
-/// The configured overlap thresholds.
+pub fn get_overlap_thresholds_with_env(env: &dyn ThresholdEnvironment) -> OverlapThresholds {
+    let min_overlap_chars = env
+        .get_var("RALPH_STREAMING_MIN_OVERLAP_CHARS")
+        .and_then(|s| s.parse::<usize>().ok())
+        .and_then(|v| {
+            if (MIN_MIN_OVERLAP_CHARS..=MAX_MIN_OVERLAP_CHARS).contains(&v) {
+                Some(v)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(DEFAULT_MIN_OVERLAP_CHARS);
+
+    let short_chunk_threshold = env
+        .get_var("RALPH_STREAMING_SHORT_CHUNK_THRESHOLD")
+        .and_then(|s| s.parse::<usize>().ok())
+        .and_then(|v| {
+            if (MIN_SHORT_CHUNK_THRESHOLD..=MAX_SHORT_CHUNK_THRESHOLD).contains(&v) {
+                Some(v)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(DEFAULT_SHORT_CHUNK_THRESHOLD);
+
+    let consecutive_duplicate_threshold = env
+        .get_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD")
+        .and_then(|s| s.parse::<usize>().ok())
+        .and_then(|v| {
+            if (MIN_CONSECUTIVE_DUPLICATE_THRESHOLD..=MAX_CONSECUTIVE_DUPLICATE_THRESHOLD)
+                .contains(&v)
+            {
+                Some(v)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(DEFAULT_CONSECUTIVE_DUPLICATE_THRESHOLD);
+
+    OverlapThresholds {
+        min_overlap_chars,
+        short_chunk_threshold,
+        consecutive_duplicate_threshold,
+    }
+}
+
 pub fn get_overlap_thresholds() -> OverlapThresholds {
     static THRESHOLDS: OnceLock<OverlapThresholds> = OnceLock::new();
-    *THRESHOLDS.get_or_init(|| {
-        let min_overlap_chars = std::env::var("RALPH_STREAMING_MIN_OVERLAP_CHARS")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .and_then(|v| {
-                if (MIN_MIN_OVERLAP_CHARS..=MAX_MIN_OVERLAP_CHARS).contains(&v) {
-                    Some(v)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(DEFAULT_MIN_OVERLAP_CHARS);
-
-        let short_chunk_threshold = std::env::var("RALPH_STREAMING_SHORT_CHUNK_THRESHOLD")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .and_then(|v| {
-                if (MIN_SHORT_CHUNK_THRESHOLD..=MAX_SHORT_CHUNK_THRESHOLD).contains(&v) {
-                    Some(v)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(DEFAULT_SHORT_CHUNK_THRESHOLD);
-
-        let consecutive_duplicate_threshold =
-            std::env::var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD")
-                .ok()
-                .and_then(|s| s.parse::<usize>().ok())
-                .and_then(|v| {
-                    if (MIN_CONSECUTIVE_DUPLICATE_THRESHOLD..=MAX_CONSECUTIVE_DUPLICATE_THRESHOLD)
-                        .contains(&v)
-                    {
-                        Some(v)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(DEFAULT_CONSECUTIVE_DUPLICATE_THRESHOLD);
-
-        OverlapThresholds {
-            min_overlap_chars,
-            short_chunk_threshold,
-            consecutive_duplicate_threshold,
-        }
-    })
+    *THRESHOLDS.get_or_init(|| get_overlap_thresholds_with_env(&RealThresholdEnvironment))
 }
 
 // ============================================================================
@@ -1629,22 +1649,126 @@ mod tests {
         );
     }
 
+    /// Mock environment for testing threshold parsing.
+    struct MockThresholdEnv {
+        vars: std::collections::HashMap<String, String>,
+    }
+
+    impl MockThresholdEnv {
+        fn new() -> Self {
+            Self {
+                vars: std::collections::HashMap::new(),
+            }
+        }
+
+        fn with_var(mut self, key: &str, value: &str) -> Self {
+            self.vars.insert(key.to_string(), value.to_string());
+            self
+        }
+    }
+
+    impl ThresholdEnvironment for MockThresholdEnv {
+        fn get_var(&self, name: &str) -> Option<String> {
+            self.vars.get(name).cloned()
+        }
+    }
+
     #[test]
-    fn test_consecutive_duplicate_threshold_bounds() {
-        // Test minimum allowed value
-        let min_env = "2";
-        std::env::set_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD", min_env);
-        // Note: OnceLock caches the value, so we can't test this in the same process
-        // This test documents the expected behavior
+    fn test_threshold_env_parsing_min_overlap_chars() {
+        // Test valid custom value
+        let env = MockThresholdEnv::new().with_var("RALPH_STREAMING_MIN_OVERLAP_CHARS", "50");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.min_overlap_chars, 50);
 
-        // Test maximum allowed value
-        let max_env = "10";
-        std::env::set_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD", max_env);
+        // Test out of range (too low) - should use default
+        let env = MockThresholdEnv::new().with_var("RALPH_STREAMING_MIN_OVERLAP_CHARS", "5");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.min_overlap_chars, DEFAULT_MIN_OVERLAP_CHARS);
 
-        // Clean up
-        std::env::remove_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD");
+        // Test out of range (too high) - should use default
+        let env = MockThresholdEnv::new().with_var("RALPH_STREAMING_MIN_OVERLAP_CHARS", "200");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.min_overlap_chars, DEFAULT_MIN_OVERLAP_CHARS);
 
-        // Verify bounds constants are correct
+        // Test invalid value - should use default
+        let env = MockThresholdEnv::new().with_var("RALPH_STREAMING_MIN_OVERLAP_CHARS", "invalid");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.min_overlap_chars, DEFAULT_MIN_OVERLAP_CHARS);
+    }
+
+    #[test]
+    fn test_threshold_env_parsing_short_chunk_threshold() {
+        // Test valid custom value
+        let env = MockThresholdEnv::new().with_var("RALPH_STREAMING_SHORT_CHUNK_THRESHOLD", "10");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.short_chunk_threshold, 10);
+
+        // Test boundary values
+        let env = MockThresholdEnv::new().with_var("RALPH_STREAMING_SHORT_CHUNK_THRESHOLD", "5");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.short_chunk_threshold, 5); // Min boundary
+
+        let env = MockThresholdEnv::new().with_var("RALPH_STREAMING_SHORT_CHUNK_THRESHOLD", "50");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.short_chunk_threshold, 50); // Max boundary
+    }
+
+    #[test]
+    fn test_threshold_env_parsing_consecutive_duplicate() {
+        // Test valid custom value
+        let env = MockThresholdEnv::new()
+            .with_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD", "5");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.consecutive_duplicate_threshold, 5);
+
+        // Test min boundary
+        let env = MockThresholdEnv::new()
+            .with_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD", "2");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.consecutive_duplicate_threshold, 2);
+
+        // Test max boundary
+        let env = MockThresholdEnv::new()
+            .with_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD", "10");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.consecutive_duplicate_threshold, 10);
+
+        // Test out of range - should use default
+        let env = MockThresholdEnv::new()
+            .with_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD", "1");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(
+            thresholds.consecutive_duplicate_threshold,
+            DEFAULT_CONSECUTIVE_DUPLICATE_THRESHOLD
+        );
+
+        let env = MockThresholdEnv::new()
+            .with_var("RALPH_STREAMING_CONSECUTIVE_DUPLICATE_THRESHOLD", "15");
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(
+            thresholds.consecutive_duplicate_threshold,
+            DEFAULT_CONSECUTIVE_DUPLICATE_THRESHOLD
+        );
+    }
+
+    #[test]
+    fn test_threshold_env_empty_returns_defaults() {
+        let env = MockThresholdEnv::new();
+        let thresholds = get_overlap_thresholds_with_env(&env);
+        assert_eq!(thresholds.min_overlap_chars, DEFAULT_MIN_OVERLAP_CHARS);
+        assert_eq!(
+            thresholds.short_chunk_threshold,
+            DEFAULT_SHORT_CHUNK_THRESHOLD
+        );
+        assert_eq!(
+            thresholds.consecutive_duplicate_threshold,
+            DEFAULT_CONSECUTIVE_DUPLICATE_THRESHOLD
+        );
+    }
+
+    #[test]
+    fn test_threshold_bounds_constants() {
+        // Verify bounds constants are correct (pure constant tests, no env var manipulation)
         assert_eq!(
             MIN_CONSECUTIVE_DUPLICATE_THRESHOLD, 2,
             "Minimum threshold should be 2"
@@ -1653,5 +1777,9 @@ mod tests {
             MAX_CONSECUTIVE_DUPLICATE_THRESHOLD, 10,
             "Maximum threshold should be 10"
         );
+        assert_eq!(MIN_MIN_OVERLAP_CHARS, 10);
+        assert_eq!(MAX_MIN_OVERLAP_CHARS, 100);
+        assert_eq!(MIN_SHORT_CHUNK_THRESHOLD, 5);
+        assert_eq!(MAX_SHORT_CHUNK_THRESHOLD, 50);
     }
 }
