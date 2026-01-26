@@ -51,6 +51,8 @@ pub struct MockEffectHandler {
     pub state: PipelineState,
     /// All effects that have been executed, in order.
     captured_effects: RefCell<Vec<Effect>>,
+    /// When true, GenerateCommitMessage returns CommitSkipped instead of CommitMessageGenerated.
+    simulate_empty_diff: bool,
 }
 
 impl MockEffectHandler {
@@ -59,7 +61,18 @@ impl MockEffectHandler {
         Self {
             state,
             captured_effects: RefCell::new(Vec::new()),
+            simulate_empty_diff: false,
         }
+    }
+
+    /// Configure the mock to simulate empty diff scenario.
+    ///
+    /// When enabled, GenerateCommitMessage returns CommitSkipped instead of
+    /// CommitMessageGenerated, simulating the case where there are no changes
+    /// to commit.
+    pub fn with_empty_diff(mut self) -> Self {
+        self.simulate_empty_diff = true;
+        self
     }
 
     /// Get all captured effects in execution order.
@@ -141,10 +154,18 @@ impl MockEffectHandler {
                 PipelineEvent::RebaseConflictResolved { files: vec![] }
             }
 
-            Effect::GenerateCommitMessage => PipelineEvent::CommitMessageGenerated {
-                message: "mock commit message".to_string(),
-                attempt: 1,
-            },
+            Effect::GenerateCommitMessage => {
+                if self.simulate_empty_diff {
+                    PipelineEvent::CommitSkipped {
+                        reason: "No changes to commit (empty diff)".to_string(),
+                    }
+                } else {
+                    PipelineEvent::CommitMessageGenerated {
+                        message: "mock commit message".to_string(),
+                        attempt: 1,
+                    }
+                }
+            }
 
             Effect::CreateCommit { message } => PipelineEvent::CommitCreated {
                 hash: "mock_commit_hash_abc123".to_string(),
@@ -201,6 +222,45 @@ mod tests {
         // Should start with no captured effects
         let captured = handler.captured_effects();
         assert!(captured.is_empty(), "Should start with no captured effects");
+    }
+
+    #[test]
+    fn mock_effect_handler_simulates_empty_diff() {
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state).with_empty_diff();
+
+        // GenerateCommitMessage should return CommitSkipped when empty diff is simulated
+        let event = handler.execute_mock(Effect::GenerateCommitMessage);
+
+        assert!(
+            matches!(event, PipelineEvent::CommitSkipped { .. }),
+            "Should return CommitSkipped when empty diff is simulated, got: {:?}",
+            event
+        );
+
+        // Verify the reason message
+        if let PipelineEvent::CommitSkipped { reason } = event {
+            assert!(
+                reason.contains("empty diff"),
+                "Reason should mention empty diff: {}",
+                reason
+            );
+        }
+    }
+
+    #[test]
+    fn mock_effect_handler_normal_commit_generation() {
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state); // No with_empty_diff()
+
+        // GenerateCommitMessage should return CommitMessageGenerated normally
+        let event = handler.execute_mock(Effect::GenerateCommitMessage);
+
+        assert!(
+            matches!(event, PipelineEvent::CommitMessageGenerated { .. }),
+            "Should return CommitMessageGenerated when empty diff is not simulated, got: {:?}",
+            event
+        );
     }
 
     /// TDD test: MockEffectHandler must implement EffectHandler trait

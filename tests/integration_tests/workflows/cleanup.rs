@@ -30,7 +30,8 @@ use test_helpers::{commit_all, head_oid, init_git_repo, write_file};
 /// Test that the pipeline completes cleanly with 0 iterations.
 ///
 /// This verifies that when pipeline runs with developer_iters=0 and reviewer_reviews=0,
-/// system completes successfully and leaves repository in a clean state.
+/// system completes successfully. With 0 iterations, no agent work is done, so
+/// the pipeline should skip the commit phase when there are no staged changes.
 #[test]
 fn ralph_cleans_up_on_early_error() {
     with_default_timeout(|| {
@@ -38,30 +39,30 @@ fn ralph_cleans_up_on_early_error() {
         let config = create_test_config_struct();
         let repo = init_git_repo(&dir);
 
-        // Create an initial commit so we can verify no unexpected commits were made
+        // Create an initial commit
         write_file(dir.path().join("initial.txt"), "initial content");
         let initial_oid = commit_all(&repo, "initial commit").to_string();
 
-        // Create a change to commit
+        // Create an untracked file (NOT staged)
+        // With 0 iterations, no agent work is done, so the pipeline should
+        // skip the commit when there's an empty diff (nothing staged)
         write_file(dir.path().join("test.txt"), "new content");
 
         let executor = mock_executor_with_success();
         run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        // Verify a commit was made (pipeline should create one)
+        // With 0 iterations, no work is done by any agent, so the pipeline should
+        // skip the commit (empty diff detection). HEAD should remain unchanged.
         let final_oid = head_oid(&repo);
-        assert_ne!(initial_oid, final_oid, "A commit should have been made");
+        assert_eq!(
+            initial_oid, final_oid,
+            "With 0 iterations, no commit should be made (empty diff)"
+        );
 
-        // Verify repository is in a clean state (no uncommitted changes)
-        let mut status_opts = git2::StatusOptions::new();
-        status_opts
-            .include_untracked(true)
-            .recurse_untracked_dirs(true);
-        let statuses = repo.statuses(Some(&mut status_opts)).unwrap();
+        // The untracked file should still exist (not committed)
         assert!(
-            statuses.is_empty(),
-            "Repository should be clean (no uncommitted changes), found {} status entries",
-            statuses.len()
+            dir.path().join("test.txt").exists(),
+            "Untracked file should still exist"
         );
     });
 }
