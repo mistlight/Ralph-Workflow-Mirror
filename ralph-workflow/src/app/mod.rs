@@ -21,6 +21,7 @@ pub mod context;
 pub mod detection;
 pub mod effect;
 pub mod effect_handler;
+pub mod effectful;
 pub mod event_loop;
 pub mod finalization;
 #[cfg(any(test, feature = "test-utils"))]
