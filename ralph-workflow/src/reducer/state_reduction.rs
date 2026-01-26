@@ -283,11 +283,65 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             ..state
         },
 
-        PipelineEvent::CommitSkipped { .. } => PipelineState {
-            commit: CommitState::Skipped,
-            phase: super::event::PipelinePhase::FinalValidation,
-            ..state
-        },
+        PipelineEvent::CommitSkipped { .. } => {
+            // Same logic as CommitCreated - respect previous_phase for proper flow
+            let (next_phase, next_iter, next_reviewer_pass) = match state.previous_phase {
+                Some(super::event::PipelinePhase::Development) => {
+                    let next_iter = state.iteration + 1;
+                    if next_iter >= state.total_iterations {
+                        // All dev iterations done, go to Review
+                        (
+                            super::event::PipelinePhase::Review,
+                            next_iter,
+                            state.reviewer_pass,
+                        )
+                    } else {
+                        // More iterations, go back to Planning for next iteration
+                        (
+                            super::event::PipelinePhase::Planning,
+                            next_iter,
+                            state.reviewer_pass,
+                        )
+                    }
+                }
+                Some(super::event::PipelinePhase::Review) => {
+                    let next_pass = state.reviewer_pass + 1;
+                    if next_pass >= state.total_reviewer_passes {
+                        // All review passes done, go to FinalValidation
+                        (
+                            super::event::PipelinePhase::FinalValidation,
+                            state.iteration,
+                            next_pass,
+                        )
+                    } else {
+                        // More review passes, stay in Review
+                        (
+                            super::event::PipelinePhase::Review,
+                            state.iteration,
+                            next_pass,
+                        )
+                    }
+                }
+                _ => {
+                    // Final commit (no previous phase), go to FinalValidation
+                    (
+                        super::event::PipelinePhase::FinalValidation,
+                        state.iteration,
+                        state.reviewer_pass,
+                    )
+                }
+            };
+
+            PipelineState {
+                commit: CommitState::Skipped,
+                phase: next_phase,
+                previous_phase: None,
+                iteration: next_iter,
+                reviewer_pass: next_reviewer_pass,
+                context_cleaned: false, // Reset so cleanup runs before next phase
+                ..state
+            }
+        }
 
         PipelineEvent::ContextCleaned => PipelineState {
             context_cleaned: true,

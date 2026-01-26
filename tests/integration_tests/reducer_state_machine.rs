@@ -540,3 +540,129 @@ fn test_event_replay_reproduces_final_state() {
         assert_eq!(final_state.iteration, 3);
     });
 }
+
+// ============================================================================
+// CommitSkipped with previous_phase context tests
+// ============================================================================
+// These integration tests verify that CommitSkipped respects previous_phase
+// for proper phase transitions, matching the behavior of CommitCreated.
+
+/// Test that CommitSkipped after development iteration goes to Planning for next iteration.
+///
+/// When commit is skipped after a development iteration (not the last one),
+/// the pipeline should go back to Planning for the next iteration, not FinalValidation.
+#[test]
+fn test_commit_skipped_respects_previous_phase_from_development() {
+    with_default_timeout(|| {
+        // Setup state as if we just completed a development iteration
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            previous_phase: Some(PipelinePhase::Development),
+            iteration: 0,
+            total_iterations: 3,
+            ..create_initial_state()
+        };
+
+        // Simulate commit being skipped (empty diff)
+        let new_state = reduce(
+            state,
+            PipelineEvent::CommitSkipped {
+                reason: "No changes to commit (empty diff)".to_string(),
+            },
+        );
+
+        // Should go back to Planning for next iteration, NOT FinalValidation
+        assert_eq!(new_state.phase, PipelinePhase::Planning);
+        assert_eq!(new_state.iteration, 1);
+        assert!(new_state.previous_phase.is_none());
+    });
+}
+
+/// Test that CommitSkipped after last development iteration goes to Review.
+///
+/// When commit is skipped after the last development iteration,
+/// the pipeline should go to Review, not FinalValidation.
+#[test]
+fn test_commit_skipped_after_last_dev_iteration_goes_to_review() {
+    with_default_timeout(|| {
+        // Setup state as if we just completed the last development iteration
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            previous_phase: Some(PipelinePhase::Development),
+            iteration: 2, // 0-indexed, this is the 3rd of 3 iterations
+            total_iterations: 3,
+            ..create_initial_state()
+        };
+
+        // Simulate commit being skipped
+        let new_state = reduce(
+            state,
+            PipelineEvent::CommitSkipped {
+                reason: "No changes to commit".to_string(),
+            },
+        );
+
+        // Should go to Review after all dev iterations done
+        assert_eq!(new_state.phase, PipelinePhase::Review);
+        assert_eq!(new_state.iteration, 3);
+    });
+}
+
+/// Test that CommitSkipped after fix attempt stays in Review for next pass.
+///
+/// When commit is skipped after a fix attempt (not the last review pass),
+/// the pipeline should stay in Review for the next pass.
+#[test]
+fn test_commit_skipped_respects_previous_phase_from_review() {
+    with_default_timeout(|| {
+        // Setup state as if we just completed a fix attempt
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            previous_phase: Some(PipelinePhase::Review),
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            ..create_initial_state()
+        };
+
+        // Simulate commit being skipped
+        let new_state = reduce(
+            state,
+            PipelineEvent::CommitSkipped {
+                reason: "No changes to commit".to_string(),
+            },
+        );
+
+        // Should stay in Review for next pass
+        assert_eq!(new_state.phase, PipelinePhase::Review);
+        assert_eq!(new_state.reviewer_pass, 1);
+    });
+}
+
+/// Test that CommitSkipped after last review pass goes to FinalValidation.
+///
+/// When commit is skipped after the last review pass,
+/// the pipeline should go to FinalValidation.
+#[test]
+fn test_commit_skipped_after_last_review_goes_to_final_validation() {
+    with_default_timeout(|| {
+        // Setup state as if we just completed the last review pass
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            previous_phase: Some(PipelinePhase::Review),
+            reviewer_pass: 1, // 0-indexed, this is the 2nd of 2 passes
+            total_reviewer_passes: 2,
+            ..create_initial_state()
+        };
+
+        // Simulate commit being skipped
+        let new_state = reduce(
+            state,
+            PipelineEvent::CommitSkipped {
+                reason: "No changes to commit".to_string(),
+            },
+        );
+
+        // Should go to FinalValidation after all review passes done
+        assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
+    });
+}

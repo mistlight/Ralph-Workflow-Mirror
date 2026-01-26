@@ -368,3 +368,125 @@ fn test_commit_message_generated_increments_attempt() {
         assert_eq!(message, "second");
     }
 }
+
+// ============================================================================
+// CommitSkipped with previous_phase context tests
+// ============================================================================
+// These tests verify that CommitSkipped respects previous_phase for proper
+// phase transitions, matching the behavior of CommitCreated.
+
+#[test]
+fn test_commit_skipped_returns_to_planning_after_development() {
+    // When commit is skipped after development iteration,
+    // should go back to Planning for next iteration (not FinalValidation)
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: Some(PipelinePhase::Development),
+        iteration: 0,
+        total_iterations: 3,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::CommitSkipped {
+            reason: "No changes to commit".to_string(),
+        },
+    );
+
+    // Should go to Planning for next iteration, not FinalValidation
+    assert_eq!(new_state.phase, PipelinePhase::Planning);
+    assert_eq!(new_state.iteration, 1); // Incremented
+    assert!(new_state.previous_phase.is_none());
+}
+
+#[test]
+fn test_commit_skipped_goes_to_review_after_last_development_iteration() {
+    // When commit is skipped after last development iteration,
+    // should go to Review (not FinalValidation)
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: Some(PipelinePhase::Development),
+        iteration: 2, // 0-indexed, this is the 3rd of 3 iterations
+        total_iterations: 3,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::CommitSkipped {
+            reason: "No changes to commit".to_string(),
+        },
+    );
+
+    // Should go to Review after all dev iterations done
+    assert_eq!(new_state.phase, PipelinePhase::Review);
+    assert_eq!(new_state.iteration, 3);
+}
+
+#[test]
+fn test_commit_skipped_returns_to_review_after_fix_attempt() {
+    // When commit is skipped after fix attempt,
+    // should stay in Review for next pass
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: Some(PipelinePhase::Review),
+        reviewer_pass: 0,
+        total_reviewer_passes: 2,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::CommitSkipped {
+            reason: "No changes to commit".to_string(),
+        },
+    );
+
+    // Should go to Review for next pass
+    assert_eq!(new_state.phase, PipelinePhase::Review);
+    assert_eq!(new_state.reviewer_pass, 1); // Incremented
+}
+
+#[test]
+fn test_commit_skipped_goes_to_final_validation_after_last_review() {
+    // When commit is skipped after last review pass,
+    // should go to FinalValidation
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: Some(PipelinePhase::Review),
+        reviewer_pass: 1, // 0-indexed, this is the 2nd of 2 passes
+        total_reviewer_passes: 2,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::CommitSkipped {
+            reason: "No changes to commit".to_string(),
+        },
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
+}
+
+#[test]
+fn test_commit_skipped_no_previous_phase_goes_to_final_validation() {
+    // When commit is skipped with no previous phase context,
+    // should go to FinalValidation (final commit scenario)
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: None,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::CommitSkipped {
+            reason: "No changes to commit".to_string(),
+        },
+    );
+
+    // Should go to FinalValidation since no previous_phase indicates final commit
+    assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
+}

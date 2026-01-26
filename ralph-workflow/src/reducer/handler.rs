@@ -369,9 +369,18 @@ impl MainEffectHandler {
         // Get git diff for commit message generation
         let diff = crate::git_helpers::git_diff().unwrap_or_default();
 
+        // Check if diff is empty BEFORE attempting to generate commit message
+        // This prevents the "Empty diff provided to generate_commit_message" warning
+        if diff.trim().is_empty() {
+            ctx.logger
+                .info("No changes to commit (empty diff), skipping commit");
+            return Ok(PipelineEvent::CommitSkipped {
+                reason: "No changes to commit (empty diff)".to_string(),
+            });
+        }
+
         // Get commit agent first to avoid borrow conflicts
-        let commit_agent =
-            crate::phases::get_primary_commit_agent(ctx).unwrap_or_else(|| "commit".to_string());
+        let commit_agent = get_primary_commit_agent(ctx).unwrap_or_else(|| "commit".to_string());
 
         let mut runtime = PipelineRuntime {
             timer: ctx.timer,
