@@ -47,8 +47,7 @@ use crate::cli::{
 use crate::executor::ProcessExecutor;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::files::{
-    create_prompt_backup, ensure_files, make_prompt_read_only, reset_context_for_isolation,
-    update_status, validate_prompt_md,
+    create_prompt_backup, make_prompt_read_only, update_status, validate_prompt_md,
 };
 use crate::git_helpers::{
     abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
@@ -172,6 +171,7 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
         logger,
         colors,
         executor,
+        handler: &mut handler,
     })?)
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
 }
@@ -377,6 +377,7 @@ pub fn run_with_config_and_resolver<
         logger,
         colors,
         executor,
+        handler,
     })?)
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
 }
@@ -552,6 +553,7 @@ where
         logger,
         colors,
         executor,
+        handler: app_handler,
     })?;
 
     // Run pipeline with the injected effect_handler
@@ -727,7 +729,7 @@ fn handle_plumbing_commands<H: effect::AppEffectHandler>(
 /// Parameters for preparing the pipeline context.
 ///
 /// Groups related parameters to avoid too many function arguments.
-struct PipelinePreparationParams {
+struct PipelinePreparationParams<'a, H: effect::AppEffectHandler> {
     args: Args,
     config: crate::config::Config,
     registry: AgentRegistry,
@@ -737,13 +739,14 @@ struct PipelinePreparationParams {
     logger: Logger,
     colors: Colors,
     executor: std::sync::Arc<dyn ProcessExecutor>,
+    handler: &'a mut H,
 }
 
 /// Prepares the pipeline context after agent validation.
 ///
 /// Returns `Some(ctx)` if pipeline should run, or `None` if we should exit early.
-fn prepare_pipeline_or_exit(
-    params: PipelinePreparationParams,
+fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
+    params: PipelinePreparationParams<'_, H>,
 ) -> anyhow::Result<Option<PipelineContext>> {
     let PipelinePreparationParams {
         args,
@@ -755,16 +758,20 @@ fn prepare_pipeline_or_exit(
         mut logger,
         colors,
         executor,
+        handler,
     } = params;
 
     // Create workspace filesystem for explicit path resolution
     let workspace = crate::workspace::WorkspaceFs::new(repo_root.clone());
 
-    ensure_files(config.isolation_mode)?;
+    // Ensure required files and directories exist via effects
+    effectful::ensure_files_effectful(handler, config.isolation_mode)
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    // Reset context for isolation mode
+    // Reset context for isolation mode via effects
     if config.isolation_mode {
-        reset_context_for_isolation(&logger)?;
+        effectful::reset_context_for_isolation_effectful(handler)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
     }
 
     logger = logger.with_log_file(".agent/logs/pipeline.log");
@@ -921,7 +928,7 @@ fn validate_and_setup_agents<H: effect::AppEffectHandler>(
     };
 
     // Set up PROMPT.md if needed (may return None to exit early)
-    let should_continue = setup_git_and_prompt_file(config, colors, logger)?;
+    let should_continue = setup_git_and_prompt_file(config, colors, logger, handler)?;
     if should_continue.is_none() {
         return Ok(None);
     }
@@ -933,12 +940,14 @@ fn validate_and_setup_agents<H: effect::AppEffectHandler>(
 ///
 /// Returns `Ok(Some(()))` if setup succeeded and should continue.
 /// Returns `Ok(None)` if the user declined PROMPT.md creation (to exit early).
-fn setup_git_and_prompt_file(
+fn setup_git_and_prompt_file<H: effect::AppEffectHandler>(
     config: &crate::config::Config,
     colors: Colors,
     logger: &Logger,
+    handler: &mut H,
 ) -> anyhow::Result<Option<()>> {
-    let prompt_exists = std::path::Path::new("PROMPT.md").exists();
+    let prompt_exists =
+        effectful::check_prompt_exists_effectful(handler).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // In interactive mode, prompt to create PROMPT.md from a template BEFORE ensure_files().
     // If the user declines (or we can't prompt), exit without creating a placeholder PROMPT.md.

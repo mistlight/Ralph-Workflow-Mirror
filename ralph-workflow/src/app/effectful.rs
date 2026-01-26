@@ -30,6 +30,18 @@
 use super::effect::{AppEffect, AppEffectHandler, AppEffectResult};
 use std::path::PathBuf;
 
+/// XSD schemas for XML validation - included at compile time.
+const PLAN_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/plan.xsd");
+const DEVELOPMENT_RESULT_XSD_SCHEMA: &str =
+    include_str!("../files/llm_output_extraction/development_result.xsd");
+const ISSUES_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/issues.xsd");
+const FIX_RESULT_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/fix_result.xsd");
+const COMMIT_MESSAGE_XSD_SCHEMA: &str =
+    include_str!("../files/llm_output_extraction/commit_message.xsd");
+
+// Re-use the canonical vague line constants from context module
+use crate::files::io::context::{VAGUE_ISSUES_LINE, VAGUE_NOTES_LINE, VAGUE_STATUS_LINE};
+
 /// Handle the `--reset-start-commit` command using effects.
 ///
 /// This function resets the `.agent/start_commit` file to track the
@@ -167,6 +179,190 @@ pub fn get_repo_root<H: AppEffectHandler>(handler: &mut H) -> Result<PathBuf, St
     }
 }
 
+/// Ensure required files and directories exist using effects.
+///
+/// Creates the `.agent/logs` and `.agent/tmp` directories if they don't exist.
+/// Also writes XSD schemas to `.agent/tmp/` for agent self-validation.
+///
+/// When `isolation_mode` is true (the default), STATUS.md, NOTES.md and ISSUES.md
+/// are NOT created. This prevents context contamination from previous runs.
+///
+/// # Arguments
+///
+/// * `handler` - The effect handler to execute operations through
+/// * `isolation_mode` - If true, skip creating STATUS.md, NOTES.md, ISSUES.md
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success or an error message.
+///
+/// # Effects Emitted
+///
+/// 1. `CreateDir` - Creates `.agent/logs` directory
+/// 2. `CreateDir` - Creates `.agent/tmp` directory
+/// 3. `WriteFile` - Writes XSD schemas to `.agent/tmp/`
+/// 4. `WriteFile` - Creates STATUS.md, NOTES.md, ISSUES.md (if not isolation mode)
+pub fn ensure_files_effectful<H: AppEffectHandler>(
+    handler: &mut H,
+    isolation_mode: bool,
+) -> Result<(), String> {
+    // Create .agent/logs directory
+    match handler.execute(AppEffect::CreateDir {
+        path: PathBuf::from(".agent/logs"),
+    }) {
+        AppEffectResult::Ok => {}
+        AppEffectResult::Error(e) => return Err(format!("Failed to create .agent/logs: {e}")),
+        other => return Err(format!("Unexpected result from CreateDir: {other:?}")),
+    }
+
+    // Create .agent/tmp directory
+    match handler.execute(AppEffect::CreateDir {
+        path: PathBuf::from(".agent/tmp"),
+    }) {
+        AppEffectResult::Ok => {}
+        AppEffectResult::Error(e) => return Err(format!("Failed to create .agent/tmp: {e}")),
+        other => return Err(format!("Unexpected result from CreateDir: {other:?}")),
+    }
+
+    // Write XSD schemas
+    let schemas = [
+        (".agent/tmp/plan.xsd", PLAN_XSD_SCHEMA),
+        (
+            ".agent/tmp/development_result.xsd",
+            DEVELOPMENT_RESULT_XSD_SCHEMA,
+        ),
+        (".agent/tmp/issues.xsd", ISSUES_XSD_SCHEMA),
+        (".agent/tmp/fix_result.xsd", FIX_RESULT_XSD_SCHEMA),
+        (".agent/tmp/commit_message.xsd", COMMIT_MESSAGE_XSD_SCHEMA),
+    ];
+
+    for (path, content) in schemas {
+        match handler.execute(AppEffect::WriteFile {
+            path: PathBuf::from(path),
+            content: content.to_string(),
+        }) {
+            AppEffectResult::Ok => {}
+            AppEffectResult::Error(e) => return Err(format!("Failed to write {path}: {e}")),
+            other => return Err(format!("Unexpected result from WriteFile: {other:?}")),
+        }
+    }
+
+    // Only create context files in non-isolation mode
+    if !isolation_mode {
+        let context_files = [
+            (".agent/STATUS.md", VAGUE_STATUS_LINE),
+            (".agent/NOTES.md", VAGUE_NOTES_LINE),
+            (".agent/ISSUES.md", VAGUE_ISSUES_LINE),
+        ];
+
+        for (path, line) in context_files {
+            // Match overwrite_one_liner behavior: add trailing newline
+            let content = format!("{}\n", line.lines().next().unwrap_or_default().trim());
+            match handler.execute(AppEffect::WriteFile {
+                path: PathBuf::from(path),
+                content,
+            }) {
+                AppEffectResult::Ok => {}
+                AppEffectResult::Error(e) => return Err(format!("Failed to write {path}: {e}")),
+                other => return Err(format!("Unexpected result from WriteFile: {other:?}")),
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Reset context for isolation mode by deleting STATUS.md, NOTES.md, ISSUES.md.
+///
+/// This function is called at the start of each Ralph run when isolation mode
+/// is enabled (the default). It prevents context contamination by removing
+/// any stale status, notes, or issues from previous runs.
+///
+/// # Arguments
+///
+/// * `handler` - The effect handler to execute operations through
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success or an error message.
+///
+/// # Effects Emitted
+///
+/// 1. `PathExists` - Checks if each context file exists
+/// 2. `DeleteFile` - Deletes each existing context file
+pub fn reset_context_for_isolation_effectful<H: AppEffectHandler>(
+    handler: &mut H,
+) -> Result<(), String> {
+    let context_files = [
+        PathBuf::from(".agent/STATUS.md"),
+        PathBuf::from(".agent/NOTES.md"),
+        PathBuf::from(".agent/ISSUES.md"),
+    ];
+
+    for path in context_files {
+        // Check if file exists
+        let exists = match handler.execute(AppEffect::PathExists { path: path.clone() }) {
+            AppEffectResult::Bool(b) => b,
+            AppEffectResult::Error(e) => {
+                return Err(format!(
+                    "Failed to check if {} exists: {}",
+                    path.display(),
+                    e
+                ))
+            }
+            other => {
+                return Err(format!(
+                    "Unexpected result from PathExists for {}: {:?}",
+                    path.display(),
+                    other
+                ))
+            }
+        };
+
+        // Delete if exists
+        if exists {
+            match handler.execute(AppEffect::DeleteFile { path: path.clone() }) {
+                AppEffectResult::Ok => {}
+                AppEffectResult::Error(e) => {
+                    return Err(format!("Failed to delete {}: {}", path.display(), e))
+                }
+                other => {
+                    return Err(format!(
+                        "Unexpected result from DeleteFile for {}: {:?}",
+                        path.display(),
+                        other
+                    ))
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Check if PROMPT.md exists using effects.
+///
+/// # Arguments
+///
+/// * `handler` - The effect handler to execute operations through
+///
+/// # Returns
+///
+/// Returns `Ok(true)` if PROMPT.md exists, `Ok(false)` otherwise.
+///
+/// # Effects Emitted
+///
+/// 1. `PathExists` - Checks if PROMPT.md exists
+pub fn check_prompt_exists_effectful<H: AppEffectHandler>(handler: &mut H) -> Result<bool, String> {
+    match handler.execute(AppEffect::PathExists {
+        path: PathBuf::from("PROMPT.md"),
+    }) {
+        AppEffectResult::Bool(exists) => Ok(exists),
+        AppEffectResult::Error(e) => Err(format!("Failed to check PROMPT.md: {}", e)),
+        other => Err(format!("Unexpected result from PathExists: {:?}", other)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,5 +492,195 @@ mod tests {
         assert!(result.is_ok());
         // Default mock CWD is "/"
         assert_eq!(result.unwrap(), PathBuf::from("/"));
+    }
+
+    #[test]
+    fn test_ensure_files_creates_directories() {
+        let mut handler = MockAppEffectHandler::new();
+
+        let result = ensure_files_effectful(&mut handler, true);
+
+        assert!(result.is_ok());
+
+        // Verify directories were created via effects
+        let captured = handler.captured();
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::CreateDir { path } if path.ends_with(".agent/logs"))
+            ),
+            "should create .agent/logs directory"
+        );
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::CreateDir { path } if path.ends_with(".agent/tmp"))
+            ),
+            "should create .agent/tmp directory"
+        );
+    }
+
+    #[test]
+    fn test_ensure_files_writes_xsd_schemas() {
+        let mut handler = MockAppEffectHandler::new();
+
+        let result = ensure_files_effectful(&mut handler, true);
+
+        assert!(result.is_ok());
+
+        // Verify XSD schemas were written via effects
+        let captured = handler.captured();
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("plan.xsd"))
+            ),
+            "should write plan.xsd"
+        );
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("issues.xsd"))
+            ),
+            "should write issues.xsd"
+        );
+    }
+
+    #[test]
+    fn test_ensure_files_non_isolation_creates_context_files() {
+        let mut handler = MockAppEffectHandler::new();
+
+        // isolation_mode = false should create STATUS.md, NOTES.md, ISSUES.md
+        let result = ensure_files_effectful(&mut handler, false);
+
+        assert!(result.is_ok());
+
+        let captured = handler.captured();
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("STATUS.md"))
+            ),
+            "should create STATUS.md in non-isolation mode"
+        );
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("NOTES.md"))
+            ),
+            "should create NOTES.md in non-isolation mode"
+        );
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("ISSUES.md"))
+            ),
+            "should create ISSUES.md in non-isolation mode"
+        );
+    }
+
+    #[test]
+    fn test_ensure_files_isolation_skips_context_files() {
+        let mut handler = MockAppEffectHandler::new();
+
+        // isolation_mode = true should NOT create STATUS.md, NOTES.md, ISSUES.md
+        let result = ensure_files_effectful(&mut handler, true);
+
+        assert!(result.is_ok());
+
+        let captured = handler.captured();
+        assert!(
+            !captured.iter().any(
+                |e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("STATUS.md"))
+            ),
+            "should NOT create STATUS.md in isolation mode"
+        );
+        assert!(
+            !captured.iter().any(
+                |e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("NOTES.md"))
+            ),
+            "should NOT create NOTES.md in isolation mode"
+        );
+        assert!(
+            !captured.iter().any(
+                |e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("ISSUES.md"))
+            ),
+            "should NOT create ISSUES.md in isolation mode"
+        );
+    }
+
+    #[test]
+    fn test_reset_context_for_isolation_deletes_existing_files() {
+        // Files exist - should emit delete effects
+        let mut handler = MockAppEffectHandler::new()
+            .with_file(".agent/STATUS.md", "old status")
+            .with_file(".agent/NOTES.md", "old notes")
+            .with_file(".agent/ISSUES.md", "old issues");
+
+        let result = reset_context_for_isolation_effectful(&mut handler);
+
+        assert!(result.is_ok());
+
+        let captured = handler.captured();
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::DeleteFile { path } if path.ends_with("STATUS.md"))
+            ),
+            "should delete STATUS.md"
+        );
+        assert!(
+            captured
+                .iter()
+                .any(|e| matches!(e, AppEffect::DeleteFile { path } if path.ends_with("NOTES.md"))),
+            "should delete NOTES.md"
+        );
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::DeleteFile { path } if path.ends_with("ISSUES.md"))
+            ),
+            "should delete ISSUES.md"
+        );
+    }
+
+    #[test]
+    fn test_reset_context_for_isolation_skips_nonexistent_files() {
+        // No files exist - should check PathExists but not emit DeleteFile
+        let mut handler = MockAppEffectHandler::new();
+
+        let result = reset_context_for_isolation_effectful(&mut handler);
+
+        assert!(result.is_ok());
+
+        let captured = handler.captured();
+        // Should check if files exist
+        assert!(
+            captured.iter().any(
+                |e| matches!(e, AppEffect::PathExists { path } if path.ends_with("STATUS.md"))
+            ),
+            "should check if STATUS.md exists"
+        );
+        // Should NOT try to delete non-existent files
+        assert!(
+            !captured.iter().any(
+                |e| matches!(e, AppEffect::DeleteFile { path } if path.ends_with("STATUS.md"))
+            ),
+            "should NOT delete non-existent STATUS.md"
+        );
+    }
+
+    #[test]
+    fn test_check_prompt_exists_returns_true_when_file_exists() {
+        let mut handler = MockAppEffectHandler::new().with_file("PROMPT.md", "# Goal\nTest");
+
+        let result = check_prompt_exists_effectful(&mut handler);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap(), "should return true when PROMPT.md exists");
+    }
+
+    #[test]
+    fn test_check_prompt_exists_returns_false_when_file_missing() {
+        let mut handler = MockAppEffectHandler::new();
+
+        let result = check_prompt_exists_effectful(&mut handler);
+
+        assert!(result.is_ok());
+        assert!(
+            !result.unwrap(),
+            "should return false when PROMPT.md doesn't exist"
+        );
     }
 }
