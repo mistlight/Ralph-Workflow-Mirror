@@ -744,16 +744,26 @@ pub fn run_review_pass(
                 workspace: ctx.workspace,
             };
 
-            // Output validator: checks if reviewer produced valid JSON output
+            // Output validator: checks if reviewer produced valid output
+            // Priority: 1) File-based XML at .agent/tmp/issues.xml
+            //           2) JSON result events in log files
             let validate_output: crate::pipeline::OutputValidator =
                 |ws: &dyn crate::workspace::Workspace,
                  log_dir_path: &Path,
                  _logger: &crate::logger::Logger|
                  -> std::io::Result<bool> {
+                    use crate::files::llm_output_extraction::{has_valid_xml_output, xml_paths};
+
+                    // First, check if XML file was written directly (file-based mode)
+                    if has_valid_xml_output(ws, Path::new(xml_paths::ISSUES_XML)) {
+                        return Ok(true); // Valid XML file exists
+                    }
+
+                    // Fall back to JSON log extraction (legacy/streaming mode)
                     use crate::files::result_extraction::extract_last_result;
                     match extract_last_result(ws, log_dir_path) {
                         Ok(Some(_)) => Ok(true), // Valid JSON output exists
-                        Ok(None) => Ok(false),   // No JSON output found
+                        Ok(None) => Ok(false),   // No valid output found
                         Err(_) => Ok(true), // On error, assume success (let extraction handle validation)
                     }
                 };
@@ -1288,17 +1298,29 @@ pub fn run_fix_pass(
                     workspace: ctx.workspace,
                 };
 
-                // Output validator: checks if fixer produced valid JSON output
+                // Output validator: checks if fixer produced valid output
+                // Priority: 1) File-based XML at .agent/tmp/fix_result.xml
+                //           2) JSON result events in log files
                 let validate_output: crate::pipeline::OutputValidator =
                     |ws: &dyn crate::workspace::Workspace,
                      log_dir_path: &Path,
                      _logger: &crate::logger::Logger|
                      -> std::io::Result<bool> {
+                        use crate::files::llm_output_extraction::{
+                            has_valid_xml_output, xml_paths,
+                        };
+
+                        // First, check if XML file was written directly (file-based mode)
+                        if has_valid_xml_output(ws, Path::new(xml_paths::FIX_RESULT_XML)) {
+                            return Ok(true); // Valid XML file exists
+                        }
+
+                        // Fall back to JSON log extraction (legacy/streaming mode)
                         use crate::files::result_extraction::extract_last_result;
                         match extract_last_result(ws, log_dir_path) {
-                            Ok(Some(_)) => Ok(true),
-                            Ok(None) => Ok(false),
-                            Err(_) => Ok(true),
+                            Ok(Some(_)) => Ok(true), // Valid JSON output exists
+                            Ok(None) => Ok(false),   // No valid output found
+                            Err(_) => Ok(true), // On error, assume success (let extraction handle validation)
                         }
                     };
 

@@ -137,6 +137,43 @@ where
     extractor(response_content)
 }
 
+/// Check if a file contains valid XML output.
+///
+/// Returns `true` if the file exists, is non-empty, and starts with '<'.
+/// This is a quick check without full XSD validation - full validation
+/// happens later in the extraction flow.
+///
+/// # Arguments
+///
+/// * `workspace` - Workspace abstraction for filesystem access
+/// * `xml_path` - Path to the XML file to check
+///
+/// # Returns
+///
+/// `true` if the file exists and appears to contain XML content,
+/// `false` otherwise (missing, empty, or not XML).
+///
+/// # Example
+///
+/// ```ignore
+/// let workspace = MemoryWorkspace::new_test()
+///     .with_file(".agent/tmp/issues.xml", "<ralph-issues>...</ralph-issues>");
+/// assert!(has_valid_xml_output(&workspace, Path::new(".agent/tmp/issues.xml")));
+/// ```
+pub fn has_valid_xml_output(workspace: &dyn Workspace, xml_path: &Path) -> bool {
+    if !workspace.exists(xml_path) {
+        return false;
+    }
+
+    match workspace.read(xml_path) {
+        Ok(content) => {
+            let trimmed = content.trim();
+            !trimmed.is_empty() && trimmed.starts_with('<')
+        }
+        Err(_) => false,
+    }
+}
+
 /// Archive an XML output file after successful processing.
 ///
 /// Moves the XML file to a `.processed` suffix so it's preserved for debugging

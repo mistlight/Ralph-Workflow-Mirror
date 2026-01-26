@@ -48,7 +48,7 @@ pub use cleaning::preprocess_raw_content;
 // Use the _with_workspace variants instead.
 pub use file_based_extraction::{
     archive_xml_file_with_workspace, extract_xml_with_file_fallback_with_workspace,
-    paths as xml_paths, try_extract_from_file_with_workspace,
+    has_valid_xml_output, paths as xml_paths, try_extract_from_file_with_workspace,
 };
 
 // NOTE: The deprecated std::fs functions (archive_xml_file, extract_xml_with_file_fallback,
