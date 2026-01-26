@@ -276,6 +276,81 @@ pub fn run_ralph_cli_with_handler(
     )
 }
 
+/// Run ralph workflow with BOTH handlers for full isolation.
+///
+/// This is the ultimate test entry point that injects:
+/// - `MockAppEffectHandler` for CLI-layer operations (git require repo, set cwd, etc.)
+/// - `MockEffectHandler` for reducer-layer operations (create commit, run rebase, etc.)
+///
+/// Using both handlers ensures tests make **ZERO real git calls at any layer**.
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments to pass to ralph
+/// * `executor` - Process executor (use `mock_executor_with_success()`)
+/// * `config` - Pre-built Config struct
+/// * `app_handler` - Mock handler for CLI-layer operations
+/// * `effect_handler` - Mock handler for reducer-layer operations
+///
+/// # Example
+///
+/// ```ignore
+/// use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+/// use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
+/// use ralph_workflow::reducer::PipelineState;
+///
+/// let mut app_handler = MockAppEffectHandler::new()
+///     .with_head_oid("abc123")
+///     .with_file("PROMPT.md", "# Test");
+/// let mut effect_handler = MockEffectHandler::new(PipelineState::initial(1, 0));
+///
+/// run_ralph_cli_with_handlers(
+///     &[],
+///     executor,
+///     config,
+///     &mut app_handler,
+///     &mut effect_handler,
+/// )?;
+///
+/// // Verify NO real git operations at either layer
+/// assert!(app_handler.captured().iter().any(|e| matches!(e, AppEffect::GitRequireRepo)));
+/// assert!(effect_handler.captured_effects().iter().any(|e| matches!(e, Effect::CreateCommit { .. })));
+/// ```
+pub fn run_ralph_cli_with_handlers(
+    args: &[&str],
+    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+    config: ralph_workflow::config::Config,
+    app_handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
+    effect_handler: &mut ralph_workflow::reducer::mock_effect_handler::MockEffectHandler,
+) -> anyhow::Result<()> {
+    // Build argv: binary name + args
+    let mut argv: Vec<String> = vec!["ralph".to_string()];
+    argv.extend(args.iter().map(|s| s.to_string()));
+
+    // Parse args using clap directly
+    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+        Ok(args) => args,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Create test registry with built-in agents only
+    let registry = create_test_registry();
+
+    // Use run_with_config_and_handlers with both handlers
+    ralph_workflow::app::run_with_config_and_handlers(
+        parsed_args,
+        executor,
+        config,
+        registry,
+        &ralph_workflow::config::RealConfigEnvironment,
+        app_handler,
+        effect_handler,
+    )
+}
+
 /// Create a MockProcessExecutor configured for successful agent execution.
 ///
 /// This helper prevents tests from spawning real AI agent processes by
