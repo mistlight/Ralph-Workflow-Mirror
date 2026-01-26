@@ -381,6 +381,186 @@ pub fn run_with_config_and_resolver<
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
 }
 
+/// Run with both AppEffectHandler AND EffectHandler for full isolation.
+///
+/// This function is the ultimate test entry point that allows injecting BOTH:
+/// - `AppEffectHandler` for CLI-layer operations (git require repo, set cwd, etc.)
+/// - `EffectHandler` for reducer-layer operations (create commit, run rebase, etc.)
+///
+/// Using both handlers ensures tests make ZERO real git calls at any layer.
+///
+/// # Example
+///
+/// ```ignore
+/// use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+/// use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
+///
+/// let mut app_handler = MockAppEffectHandler::new().with_head_oid("abc123");
+/// let mut effect_handler = MockEffectHandler::new(PipelineState::initial(1, 0));
+///
+/// run_with_config_and_handlers(
+///     args, executor, config, registry, &env,
+///     &mut app_handler, &mut effect_handler
+/// )?;
+///
+/// // Verify no real git operations at either layer
+/// assert!(app_handler.captured().iter().any(|e| matches!(e, AppEffect::GitRequireRepo)));
+/// assert!(effect_handler.captured_effects().iter().any(|e| matches!(e, Effect::CreateCommit { .. })));
+/// ```
+#[cfg(feature = "test-utils")]
+pub fn run_with_config_and_handlers<'ctx, P, A, E>(
+    args: Args,
+    executor: std::sync::Arc<dyn ProcessExecutor>,
+    config: crate::config::Config,
+    registry: AgentRegistry,
+    path_resolver: &P,
+    app_handler: &mut A,
+    effect_handler: &mut E,
+) -> anyhow::Result<()>
+where
+    P: crate::config::ConfigEnvironment,
+    A: effect::AppEffectHandler,
+    E: crate::reducer::EffectHandler<'ctx> + crate::app::event_loop::StatefulHandler,
+{
+    use crate::cli::{
+        handle_extended_help, handle_init_global_with, handle_init_prompt_with,
+        handle_list_work_guides, handle_smart_init_with,
+    };
+
+    let colors = Colors::new();
+    let logger = Logger::new(colors);
+
+    // Set working directory first if override is provided
+    if let Some(ref override_dir) = args.working_dir_override {
+        std::env::set_current_dir(override_dir)?;
+    }
+
+    // Handle --extended-help / --man flag
+    if args.recovery.extended_help {
+        handle_extended_help();
+        if args.work_guide_list.list_work_guides {
+            println!();
+            handle_list_work_guides(colors);
+        }
+        return Ok(());
+    }
+
+    // Handle --list-work-guides / --list-templates flag
+    if args.work_guide_list.list_work_guides && handle_list_work_guides(colors) {
+        return Ok(());
+    }
+
+    // Handle --init-prompt flag
+    if let Some(ref template_name) = args.init_prompt {
+        if handle_init_prompt_with(
+            template_name,
+            args.unified_init.force_init,
+            colors,
+            path_resolver,
+        )? {
+            return Ok(());
+        }
+    }
+
+    // Handle smart --init flag
+    if args.unified_init.init.is_some()
+        && handle_smart_init_with(
+            args.unified_init.init.as_deref(),
+            args.unified_init.force_init,
+            colors,
+            path_resolver,
+        )?
+    {
+        return Ok(());
+    }
+
+    // Handle --init-config flag
+    if args.unified_init.init_config && handle_init_global_with(colors, path_resolver)? {
+        return Ok(());
+    }
+
+    // Handle --init-global flag
+    if args.unified_init.init_global && handle_init_global_with(colors, path_resolver)? {
+        return Ok(());
+    }
+
+    // Handle --init-legacy flag
+    if args.legacy_init.init_legacy {
+        let repo_root = match app_handler.execute(effect::AppEffect::GitGetRepoRoot) {
+            effect::AppEffectResult::Path(p) => Some(p),
+            _ => None,
+        };
+        let legacy_path = repo_root.map_or_else(
+            || std::path::PathBuf::from(".agent/agents.toml"),
+            |root| root.join(".agent/agents.toml"),
+        );
+        if crate::cli::handle_init_legacy(colors, &legacy_path)? {
+            return Ok(());
+        }
+    }
+
+    // Use provided config directly
+    let config_path = std::path::PathBuf::from("test-config");
+
+    // Resolve required agent names
+    let validated = resolve_required_agents(&config)?;
+    let developer_agent = validated.developer_agent;
+    let reviewer_agent = validated.reviewer_agent;
+
+    // Handle listing commands
+    if handle_listing_commands(&args, &registry, colors) {
+        return Ok(());
+    }
+
+    // Handle --diagnose
+    if args.recovery.diagnose {
+        handle_diagnose(colors, &config, &registry, &config_path, &[], &*executor);
+        return Ok(());
+    }
+
+    // Handle plumbing commands with app_handler
+    if handle_plumbing_commands(&args, &logger, colors, app_handler)? {
+        return Ok(());
+    }
+
+    // Validate agents and set up git repo with app_handler
+    let Some(repo_root) = validate_and_setup_agents(
+        AgentSetupParams {
+            config: &config,
+            registry: &registry,
+            developer_agent: &developer_agent,
+            reviewer_agent: &reviewer_agent,
+            config_path: &config_path,
+            colors,
+            logger: &logger,
+            working_dir_override: args.working_dir_override.as_deref(),
+        },
+        app_handler,
+    )?
+    else {
+        return Ok(());
+    };
+
+    // Prepare pipeline context or exit early
+    let ctx = prepare_pipeline_or_exit(PipelinePreparationParams {
+        args,
+        config,
+        registry,
+        developer_agent,
+        reviewer_agent,
+        repo_root,
+        logger,
+        colors,
+        executor,
+    })?;
+
+    // Run pipeline with the injected effect_handler
+    match ctx {
+        Some(ctx) => run_pipeline_with_effect_handler(&ctx, effect_handler),
+        None => Ok(()),
+    }
+}
+
 /// Handles listing commands that don't require the full pipeline.
 ///
 /// Returns `true` if a listing command was handled and we should exit.
@@ -807,8 +987,16 @@ fn setup_git_and_prompt_file(
 
 /// Runs the full development/review/commit pipeline using reducer-based event loop.
 fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
-    use crate::app::event_loop::{run_event_loop, EventLoopConfig};
-    use crate::reducer::PipelineState;
+    // Use MainEffectHandler for production
+    run_pipeline_with_default_handler(ctx)
+}
+
+/// Runs the pipeline with the default MainEffectHandler.
+///
+/// This is the production entry point - it creates a MainEffectHandler internally.
+fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()> {
+    use crate::app::event_loop::EventLoopConfig;
+    use crate::reducer::{MainEffectHandler, PipelineState};
 
     // First, offer interactive resume if checkpoint exists without --resume flag
     let resume_result = offer_resume_if_checkpoint_exists(
@@ -1012,10 +1200,227 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
     let execution_history_before = phase_ctx.execution_history.clone();
     let prompt_history_before = phase_ctx.clone_prompt_history();
 
-    // Run event loop in separate scope to release mutable borrow
+    // Create effect handler and run event loop
+    let mut handler = MainEffectHandler::new(initial_state.clone());
     let loop_result = {
+        use crate::app::event_loop::run_event_loop_with_handler;
         let phase_ctx_ref = &mut phase_ctx;
-        run_event_loop(phase_ctx_ref, Some(initial_state), event_loop_config)
+        run_event_loop_with_handler(
+            phase_ctx_ref,
+            Some(initial_state),
+            event_loop_config,
+            &mut handler,
+        )
+    };
+
+    // Handle event loop result
+    let loop_result = loop_result?;
+    if loop_result.completed {
+        ctx.logger
+            .success("Pipeline completed successfully via reducer event loop");
+        ctx.logger.info(&format!(
+            "Total events processed: {}",
+            loop_result.events_processed
+        ));
+    } else {
+        ctx.logger.warn("Pipeline exited without completion marker");
+    }
+
+    // Save Complete checkpoint before clearing (for idempotent resume)
+    if config.features.checkpoint_enabled {
+        let skip_rebase = !ctx.args.rebase_flags.with_rebase;
+        let builder = CheckpointBuilder::new()
+            .phase(
+                PipelinePhase::Complete,
+                config.developer_iters,
+                config.developer_iters,
+            )
+            .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
+            .skip_rebase(skip_rebase)
+            .capture_from_context(
+                &config,
+                &ctx.registry,
+                &ctx.developer_agent,
+                &ctx.reviewer_agent,
+                &ctx.logger,
+                &run_context,
+            )
+            .with_executor_from_context(std::sync::Arc::clone(&ctx.executor));
+
+        let builder = builder
+            .with_execution_history(execution_history_before)
+            .with_prompt_history(prompt_history_before);
+
+        if let Some(checkpoint) = builder.build() {
+            let _ = save_checkpoint(&checkpoint);
+        }
+    }
+
+    // Post-pipeline operations
+    check_prompt_restoration(ctx, &mut prompt_monitor, "event loop");
+    update_status("In progress.", config.isolation_mode)?;
+
+    // Commit phase
+    finalize_pipeline(
+        &mut agent_phase_guard,
+        &ctx.logger,
+        ctx.colors,
+        &config,
+        &timer,
+        &stats,
+        prompt_monitor,
+    );
+    Ok(())
+}
+
+/// Runs the pipeline with a custom effect handler for testing.
+///
+/// This function is only available with the `test-utils` feature and allows
+/// injecting a `MockEffectHandler` to prevent real git operations during tests.
+///
+/// # Arguments
+///
+/// * `ctx` - Pipeline context
+/// * `effect_handler` - Custom effect handler (e.g., `MockEffectHandler`)
+///
+/// # Type Parameters
+///
+/// * `H` - Effect handler type that implements `EffectHandler` and `StatefulHandler`
+#[cfg(feature = "test-utils")]
+pub fn run_pipeline_with_effect_handler<'ctx, H>(
+    ctx: &PipelineContext,
+    effect_handler: &mut H,
+) -> anyhow::Result<()>
+where
+    H: crate::reducer::EffectHandler<'ctx> + crate::app::event_loop::StatefulHandler,
+{
+    use crate::app::event_loop::EventLoopConfig;
+    use crate::reducer::PipelineState;
+
+    // First, offer interactive resume if checkpoint exists without --resume flag
+    let resume_result = offer_resume_if_checkpoint_exists(
+        &ctx.args,
+        &ctx.config,
+        &ctx.registry,
+        &ctx.logger,
+        &ctx.developer_agent,
+        &ctx.reviewer_agent,
+    );
+
+    // If interactive resume didn't happen, check for --resume flag
+    let resume_result = match resume_result {
+        Some(result) => Some(result),
+        None => handle_resume_with_validation(
+            &ctx.args,
+            &ctx.config,
+            &ctx.registry,
+            &ctx.logger,
+            &ctx.developer_display,
+            &ctx.reviewer_display,
+        ),
+    };
+
+    let resume_checkpoint = resume_result.map(|r| r.checkpoint);
+
+    // Create run context - either new or from checkpoint
+    let run_context = if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::RunContext;
+        RunContext::from_checkpoint(checkpoint)
+    } else {
+        use crate::checkpoint::RunContext;
+        RunContext::new()
+    };
+
+    // Apply checkpoint configuration restoration if resuming
+    let config = if let Some(ref checkpoint) = resume_checkpoint {
+        use crate::checkpoint::apply_checkpoint_to_config;
+        let mut restored_config = ctx.config.clone();
+        apply_checkpoint_to_config(&mut restored_config, checkpoint);
+        restored_config
+    } else {
+        ctx.config.clone()
+    };
+
+    // Set up git helpers and agent phase
+    let mut git_helpers = crate::git_helpers::GitHelpers::new();
+    cleanup_orphaned_marker(&ctx.logger)?;
+    start_agent_phase(&mut git_helpers)?;
+    let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &ctx.logger);
+
+    // Print welcome banner and validate PROMPT.md
+    print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
+    print_pipeline_info_with_config(ctx, &config);
+    validate_prompt_and_setup_backup(ctx)?;
+
+    // Set up PROMPT.md monitoring
+    let mut prompt_monitor = setup_prompt_monitor(ctx);
+
+    // Detect project stack and review guidelines
+    let (_project_stack, review_guidelines) =
+        detect_project_stack(&config, &ctx.repo_root, &ctx.logger, ctx.colors);
+
+    print_review_guidelines(ctx, review_guidelines.as_ref());
+    println!();
+
+    // Create phase context and save starting commit
+    let (mut timer, mut stats) = (Timer::new(), Stats::new());
+    let mut phase_ctx = create_phase_context_with_config(
+        ctx,
+        &config,
+        &mut timer,
+        &mut stats,
+        review_guidelines.as_ref(),
+        &run_context,
+        resume_checkpoint.as_ref(),
+    );
+    save_start_commit_or_warn(ctx);
+
+    // Set up interrupt context for checkpoint saving on Ctrl+C
+    let initial_phase = if let Some(ref checkpoint) = resume_checkpoint {
+        checkpoint.phase
+    } else {
+        PipelinePhase::Planning
+    };
+    setup_interrupt_context_for_pipeline(
+        initial_phase,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &phase_ctx.execution_history,
+        &phase_ctx.prompt_history,
+        &run_context,
+    );
+
+    // Ensure interrupt context is cleared on completion
+    let _interrupt_guard = defer_clear_interrupt_context();
+
+    // Initialize pipeline state
+    let initial_state = if let Some(ref checkpoint) = resume_checkpoint {
+        PipelineState::from(checkpoint.clone())
+    } else {
+        PipelineState::initial(config.developer_iters, config.reviewer_reviews)
+    };
+
+    // Configure event loop
+    let event_loop_config = EventLoopConfig {
+        max_iterations: 1000,
+        enable_checkpointing: config.features.checkpoint_enabled,
+    };
+
+    // Clone execution_history and prompt_history BEFORE running event loop
+    let execution_history_before = phase_ctx.execution_history.clone();
+    let prompt_history_before = phase_ctx.clone_prompt_history();
+
+    // Run event loop with the provided handler
+    effect_handler.update_state(initial_state.clone());
+    let loop_result = {
+        use crate::app::event_loop::run_event_loop_with_handler;
+        let phase_ctx_ref = &mut phase_ctx;
+        run_event_loop_with_handler(
+            phase_ctx_ref,
+            Some(initial_state),
+            event_loop_config,
+            effect_handler,
+        )
     };
 
     // Handle event loop result
