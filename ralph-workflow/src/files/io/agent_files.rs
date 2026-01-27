@@ -71,6 +71,10 @@ pub fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result<bool> 
 ///
 /// **Note:** This function uses the current working directory for paths.
 /// For explicit path control, use [`ensure_files_at`] instead.
+#[deprecated(
+    since = "0.7.0",
+    note = "Use ensure_files_with_workspace for testability"
+)]
 pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
     ensure_files_at(Path::new("."), isolation_mode)
 }
@@ -87,6 +91,10 @@ pub fn ensure_files(isolation_mode: bool) -> io::Result<()> {
 ///
 /// * `repo_root` - Path to the repository root
 /// * `isolation_mode` - If true, skip creating STATUS.md, NOTES.md, ISSUES.md
+#[deprecated(
+    since = "0.7.0",
+    note = "Use ensure_files_with_workspace for testability"
+)]
 pub fn ensure_files_at(repo_root: &Path, isolation_mode: bool) -> io::Result<()> {
     let agent_dir = repo_root.join(".agent");
 
@@ -139,6 +147,10 @@ pub fn ensure_files_at(repo_root: &Path, isolation_mode: bool) -> io::Result<()>
 ///
 /// **Note:** This function uses the current working directory for paths.
 /// For explicit path control, use [`setup_xsd_schemas_at`] instead.
+#[deprecated(
+    since = "0.7.0",
+    note = "Use setup_xsd_schemas_with_workspace for testability"
+)]
 pub fn setup_xsd_schemas() -> io::Result<()> {
     setup_xsd_schemas_at(Path::new("."))
 }
@@ -148,6 +160,10 @@ pub fn setup_xsd_schemas() -> io::Result<()> {
 /// # Arguments
 ///
 /// * `repo_root` - Path to the repository root
+#[deprecated(
+    since = "0.7.0",
+    note = "Use setup_xsd_schemas_with_workspace for testability"
+)]
 pub fn setup_xsd_schemas_at(repo_root: &Path) -> io::Result<()> {
     let tmp_dir = repo_root.join(".agent/tmp");
     fs::create_dir_all(&tmp_dir)?;
@@ -231,6 +247,10 @@ pub fn ensure_files_with_workspace(
 ///
 /// **Note:** This function uses the current working directory for paths.
 /// For explicit path control, use [`delete_plan_file_at`] instead.
+#[deprecated(
+    since = "0.7.0",
+    note = "Use delete_plan_file_with_workspace for testability"
+)]
 pub fn delete_plan_file() -> io::Result<()> {
     delete_plan_file_at(Path::new("."))
 }
@@ -240,6 +260,10 @@ pub fn delete_plan_file() -> io::Result<()> {
 /// # Arguments
 ///
 /// * `repo_root` - Path to the repository root
+#[deprecated(
+    since = "0.7.0",
+    note = "Use delete_plan_file_with_workspace for testability"
+)]
 pub fn delete_plan_file_at(repo_root: &Path) -> io::Result<()> {
     let plan_path = repo_root.join(".agent/PLAN.md");
     if plan_path.exists() {
@@ -255,6 +279,10 @@ pub fn delete_plan_file_at(repo_root: &Path) -> io::Result<()> {
 ///
 /// **Note:** This function uses the current working directory for paths.
 /// For explicit path control, use [`delete_commit_message_file_at`] instead.
+#[deprecated(
+    since = "0.7.0",
+    note = "Use delete_commit_message_file_with_workspace for testability"
+)]
 pub fn delete_commit_message_file() -> io::Result<()> {
     delete_commit_message_file_at(Path::new("."))
 }
@@ -264,6 +292,10 @@ pub fn delete_commit_message_file() -> io::Result<()> {
 /// # Arguments
 ///
 /// * `repo_root` - Path to the repository root
+#[deprecated(
+    since = "0.7.0",
+    note = "Use delete_commit_message_file_with_workspace for testability"
+)]
 pub fn delete_commit_message_file_at(repo_root: &Path) -> io::Result<()> {
     let msg_path = repo_root.join(".agent/commit-message.txt");
     if msg_path.exists() {
@@ -280,6 +312,10 @@ pub fn delete_commit_message_file_at(repo_root: &Path) -> io::Result<()> {
 ///
 /// **Note:** This function uses the current working directory for paths.
 /// For explicit path control, use [`read_commit_message_file_at`] instead.
+#[deprecated(
+    since = "0.7.0",
+    note = "Use read_commit_message_file_with_workspace for testability"
+)]
 pub fn read_commit_message_file() -> io::Result<String> {
     read_commit_message_file_at(Path::new("."))
 }
@@ -293,6 +329,10 @@ pub fn read_commit_message_file() -> io::Result<String> {
 /// # Errors
 ///
 /// Returns an error if the file doesn't exist, cannot be read, or is empty.
+#[deprecated(
+    since = "0.7.0",
+    note = "Use read_commit_message_file_with_workspace for testability"
+)]
 pub fn read_commit_message_file_at(repo_root: &Path) -> io::Result<String> {
     let msg_path = repo_root.join(".agent/commit-message.txt");
     if msg_path.exists() && !integrity::verify_file_not_corrupted(&msg_path)? {
@@ -332,6 +372,10 @@ pub fn read_commit_message_file_at(repo_root: &Path) -> io::Result<String> {
 ///
 /// **Note:** This function uses the current working directory for paths.
 /// For explicit path control, use [`write_commit_message_file_at`] instead.
+#[deprecated(
+    since = "0.7.0",
+    note = "Use write_commit_message_file_with_workspace for testability"
+)]
 pub fn write_commit_message_file(message: &str) -> io::Result<()> {
     write_commit_message_file_at(Path::new("."), message)
 }
@@ -349,6 +393,10 @@ pub fn write_commit_message_file(message: &str) -> io::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the file cannot be created or written.
+#[deprecated(
+    since = "0.7.0",
+    note = "Use write_commit_message_file_with_workspace for testability"
+)]
 pub fn write_commit_message_file_at(repo_root: &Path, message: &str) -> io::Result<()> {
     let msg_path = repo_root.join(".agent/commit-message.txt");
     if let Some(parent) = msg_path.parent() {
@@ -369,6 +417,10 @@ pub fn write_commit_message_file_at(repo_root: &Path, message: &str) -> io::Resu
 ///
 /// **Note:** This function uses the current working directory for paths.
 /// For explicit path control, use [`cleanup_generated_files_at`] instead.
+#[deprecated(
+    since = "0.7.0",
+    note = "Use cleanup_generated_files_with_workspace for testability"
+)]
 pub fn cleanup_generated_files() {
     cleanup_generated_files_at(Path::new("."))
 }
@@ -385,6 +437,10 @@ pub fn cleanup_generated_files() {
 /// # Arguments
 ///
 /// * `repo_root` - Path to the repository root
+#[deprecated(
+    since = "0.7.0",
+    note = "Use cleanup_generated_files_with_workspace for testability"
+)]
 pub fn cleanup_generated_files_at(repo_root: &Path) {
     for file in GENERATED_FILES {
         let _ = fs::remove_file(repo_root.join(file));
