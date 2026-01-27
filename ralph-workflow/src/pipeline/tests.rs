@@ -1272,3 +1272,247 @@ fn test_resolve_from_logfile_name_opencode() {
         "Unregistered OpenCode agent should resolve via pattern matching"
     );
 }
+
+/// Test that stderr with multi-byte UTF-8 characters doesn't cause panic.
+///
+/// This is a regression test for the bug where `&stderr[..500]` panicked
+/// when byte 500 fell in the middle of a multi-byte UTF-8 character.
+/// The error message from the original crash was:
+///   "byte index 500 is not a char boundary; it is inside '\u{95}' (bytes 499..501)"
+#[test]
+fn test_handle_agent_error_with_utf8_stderr() {
+    let registry = setup_mock_registry_with_fallback();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let prompt_dir = std::env::temp_dir().join("ralph-test-utf8-stderr");
+    let config = Config {
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
+        verbosity: Verbosity::Quiet,
+        prompt_path: prompt_dir.join("prompt.txt"),
+        ..Config::default()
+    };
+
+    // Create stderr with multi-byte UTF-8 characters that would panic
+    // if we used byte-slicing at position 500.
+    // Each '日' character is 3 bytes in UTF-8, so 200 of them = 600 bytes.
+    // With the "Error: " prefix (7 bytes), total is 607 bytes.
+    // The old code would slice at byte 500, which could land in the middle
+    // of a multi-byte character, causing a panic.
+    let stderr_content = "Error: ".to_string() + &"日".repeat(200);
+    assert!(
+        stderr_content.len() > 500,
+        "stderr should be longer than 500 bytes for this test"
+    );
+
+    let mock_executor = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "")
+        .with_agent_result(
+            "mock-glm-agent",
+            Ok(crate::executor::AgentCommandResult::failure(
+                1,
+                &stderr_content,
+            )),
+        )
+        .with_agent_result(
+            "mock-ok-agent",
+            Ok(crate::executor::AgentCommandResult::success()),
+        );
+
+    let executor_arc =
+        std::sync::Arc::new(mock_executor) as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+    let workspace = MemoryWorkspace::new_test();
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
+        workspace: &workspace,
+    };
+
+    let mut fallback_config = super::runner::FallbackConfig {
+        role: crate::agents::AgentRole::Reviewer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: "/test/logs",
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/glm",
+        output_validator: None,
+        workspace: &workspace,
+    };
+
+    // Should NOT panic, should fallback to ok agent
+    let exit = super::runner::run_with_fallback_and_validator(&mut fallback_config).unwrap();
+    assert_eq!(exit, 0, "Should fallback successfully without panic");
+}
+
+/// Test that stderr with mixed multi-byte content is handled correctly.
+///
+/// Tests various edge cases for UTF-8 handling in error messages:
+/// - CJK characters (3 bytes each)
+/// - Emoji characters (4 bytes each)
+/// - Mixed ASCII and multi-byte
+#[test]
+fn test_handle_agent_error_with_mixed_utf8_stderr() {
+    let registry = setup_mock_registry_with_fallback();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let prompt_dir = std::env::temp_dir().join("ralph-test-mixed-utf8-stderr");
+    let config = Config {
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
+        verbosity: Verbosity::Quiet,
+        prompt_path: prompt_dir.join("prompt.txt"),
+        ..Config::default()
+    };
+
+    // Create stderr with mixed content: ASCII + CJK + emoji
+    // This tests that truncation works correctly regardless of where
+    // the byte boundary falls.
+    let stderr_content = format!(
+        "ERROR: 日本語のエラーメッセージ 🚨 {}\nDetails: {}",
+        "あ".repeat(100),
+        "い".repeat(100)
+    );
+    assert!(
+        stderr_content.len() > 500,
+        "stderr should be longer than 500 bytes for this test"
+    );
+
+    let mock_executor = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "")
+        .with_agent_result(
+            "mock-glm-agent",
+            Ok(crate::executor::AgentCommandResult::failure(
+                1,
+                &stderr_content,
+            )),
+        )
+        .with_agent_result(
+            "mock-ok-agent",
+            Ok(crate::executor::AgentCommandResult::success()),
+        );
+
+    let executor_arc =
+        std::sync::Arc::new(mock_executor) as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+    let workspace = MemoryWorkspace::new_test();
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
+        workspace: &workspace,
+    };
+
+    let mut fallback_config = super::runner::FallbackConfig {
+        role: crate::agents::AgentRole::Reviewer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: "/test/logs",
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/glm",
+        output_validator: None,
+        workspace: &workspace,
+    };
+
+    // Should NOT panic, should fallback to ok agent
+    let exit = super::runner::run_with_fallback_and_validator(&mut fallback_config).unwrap();
+    assert_eq!(exit, 0, "Should fallback successfully with mixed UTF-8");
+}
+
+/// Test that panics during error handling don't crash the pipeline.
+///
+/// This is a defense-in-depth test ensuring that even if error classification
+/// code has bugs that cause panics, the fallback chain continues.
+/// The catch_unwind in try_agent_with_retries provides additional protection.
+///
+/// Note: With the UTF-8 fix in place, this specific panic source is eliminated,
+/// but we test with replacement characters to verify the defense-in-depth
+/// protection works correctly.
+#[test]
+fn test_error_handling_with_replacement_characters() {
+    let registry = setup_mock_registry_with_fallback();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let prompt_dir = std::env::temp_dir().join("ralph-test-replacement-chars");
+    let config = Config {
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
+        verbosity: Verbosity::Quiet,
+        prompt_path: prompt_dir.join("prompt.txt"),
+        ..Config::default()
+    };
+
+    // Use String::from_utf8_lossy to create a string with replacement characters.
+    // Invalid UTF-8 bytes are replaced with U+FFFD (3 bytes each in UTF-8).
+    // This simulates what happens when stderr contains binary data.
+    let problematic_data: Vec<u8> = (0..600).map(|i| (i % 256) as u8).collect();
+    let problematic_stderr = String::from_utf8_lossy(&problematic_data).to_string();
+
+    let mock_executor = crate::executor::MockProcessExecutor::new()
+        .with_output("git", "")
+        .with_output("cargo", "")
+        .with_agent_result(
+            "mock-glm-agent",
+            Ok(crate::executor::AgentCommandResult::failure(
+                1,
+                &problematic_stderr,
+            )),
+        )
+        .with_agent_result(
+            "mock-ok-agent",
+            Ok(crate::executor::AgentCommandResult::success()),
+        );
+
+    let executor_arc =
+        std::sync::Arc::new(mock_executor) as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+    let workspace = MemoryWorkspace::new_test();
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
+        workspace: &workspace,
+    };
+
+    let mut fallback_config = super::runner::FallbackConfig {
+        role: crate::agents::AgentRole::Reviewer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: "/test/logs",
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/glm",
+        output_validator: None,
+        workspace: &workspace,
+    };
+
+    // Should NOT panic, should recover and fallback
+    let result = super::runner::run_with_fallback_and_validator(&mut fallback_config);
+    assert!(
+        result.is_ok(),
+        "Should complete with replacement characters"
+    );
+}

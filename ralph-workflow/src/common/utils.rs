@@ -260,4 +260,71 @@ mod tests {
         assert_eq!(truncate_text("ab", 1), "a");
         assert_eq!(truncate_text("", 5), "");
     }
+
+    #[test]
+    fn test_truncate_text_cjk_characters() {
+        // Each CJK character is 3 bytes in UTF-8
+        // This test ensures we truncate by character count, not byte count
+        let text = "日本語テスト"; // 6 CJK characters (18 bytes)
+                                   // limit=4 means 1 char + "..." (can't fit more)
+        assert_eq!(truncate_text(text, 4), "日...");
+        // Verify the original 6 char string fits in limit=6
+        assert_eq!(truncate_text(text, 6), "日本語テスト");
+    }
+
+    #[test]
+    fn test_truncate_text_mixed_multibyte() {
+        // Mix of single-byte ASCII and multi-byte characters
+        let text = "Hello 世界 test"; // 13 chars: "Hello " (6) + "世界" (2) + " test" (5)
+        assert_eq!(truncate_text(text, 20), "Hello 世界 test");
+        // limit=10: 7 chars + "..."
+        assert_eq!(truncate_text(text, 10), "Hello 世...");
+    }
+
+    #[test]
+    fn test_truncate_text_exact_boundary() {
+        // Truncation right at a multi-byte char boundary
+        let text = "ab日cd"; // 5 chars: 'a'(1) + 'b'(1) + '日'(3bytes, 1char) + 'c'(1) + 'd'(1)
+                             // limit=5: fits exactly 5 chars, no truncation
+        assert_eq!(truncate_text(text, 5), "ab日cd");
+        // limit=4: 1 char + "..." = "a..."
+        assert_eq!(truncate_text(text, 4), "a...");
+    }
+
+    #[test]
+    fn test_truncate_text_error_message_style() {
+        // Test style used in stderr preview (simulating 500 char limit for long content)
+        let text = "Error: ".to_string() + &"日".repeat(200);
+        let result = truncate_text(&text, 50);
+        assert!(result.ends_with("..."), "Result should end with '...'");
+        // Character count should be <= 50
+        assert!(
+            result.chars().count() <= 50,
+            "Result char count {} exceeds limit 50",
+            result.chars().count()
+        );
+    }
+
+    #[test]
+    fn test_truncate_text_4byte_emoji() {
+        // Emoji like 🎉 is 4 bytes in UTF-8 but 1 character
+        let text = "🎉🎊🎈"; // 3 emojis = 3 chars (12 bytes total)
+        assert_eq!(truncate_text(text, 3), "🎉🎊🎈"); // fits exactly in 3 chars
+        assert_eq!(truncate_text(text, 4), "🎉🎊🎈"); // 4 chars > 3 chars, no truncation
+                                                      // truncate_text uses chars not bytes, so 3 emojis = 3 chars
+                                                      // limit=5 means no truncation for 3 chars
+        assert_eq!(truncate_text(text, 5), "🎉🎊🎈");
+        // For truncation: need limit < char_count
+        // 3 chars, limit 2: can fit 0 chars + "..." (limit too small), so no ellipsis
+        assert_eq!(truncate_text(text, 2), "🎉🎊");
+    }
+
+    #[test]
+    fn test_truncate_text_combining_characters() {
+        // Test with combining characters (e.g., é as e + combining accent)
+        // Note: "é" can be 1 char (precomposed) or 2 chars (decomposed)
+        let text = "cafe\u{0301}"; // café with combining accent (5 chars including combiner)
+        let result = truncate_text(text, 10);
+        assert_eq!(result, "cafe\u{0301}"); // should fit without truncation
+    }
 }

@@ -6,8 +6,8 @@
 //! Uses quick_xml for robust XML parsing with proper whitespace handling.
 
 use crate::files::llm_output_extraction::xml_helpers::{
-    create_reader, duplicate_element_error, malformed_xml_error, read_text_until_end, skip_to_end,
-    text_outside_tags_error, unexpected_element_error,
+    create_reader, duplicate_element_error, format_content_preview, malformed_xml_error,
+    read_text_until_end, skip_to_end, text_outside_tags_error, unexpected_element_error,
 };
 use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValidationError};
 use quick_xml::events::Event;
@@ -81,13 +81,7 @@ pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValid
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-issues".to_string(),
                     expected: "<ralph-issues> as root element".to_string(),
-                    found: if content.is_empty() {
-                        "empty content".to_string()
-                    } else if content.len() <= 60 {
-                        content.to_string()
-                    } else {
-                        format!("{}...", &content[..60])
-                    },
+                    found: format_content_preview(content),
                     suggestion: "Wrap your issues in <ralph-issues>...</ralph-issues> tags."
                         .to_string(),
                     example: Some(EXAMPLE_ISSUES_XML.into()),

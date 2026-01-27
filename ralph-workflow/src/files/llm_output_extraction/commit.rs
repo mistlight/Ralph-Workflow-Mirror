@@ -6,6 +6,7 @@
 use super::cleaning::{final_escape_sequence_cleanup, unescape_json_strings_aggressive};
 use super::xml_extraction::extract_xml_commit;
 use super::xsd_validation::validate_xml_against_xsd;
+use crate::common::truncate_text;
 
 /// Result of commit message extraction.
 ///
@@ -118,17 +119,19 @@ pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, Stri
     // Determine body presence for logging
     let has_body = message.lines().count() > 1;
 
+    // Use character-based truncation for UTF-8 safety
+    let message_preview = {
+        let escaped = message.replace('\n', "\\n");
+        truncate_text(&escaped, 83) // ~80 chars + "..."
+    };
+
     (
         Some(message.clone()),
         format!(
             "Found <ralph-commit> via {}, XSD validation passed, body={}, message: '{}'",
             extraction_pattern,
             if has_body { "present" } else { "absent" },
-            if message.len() > 80 {
-                format!("{}...", &message[..80].replace('\n', "\\n"))
-            } else {
-                message.replace('\n', "\\n")
-            }
+            message_preview
         ),
     )
 }

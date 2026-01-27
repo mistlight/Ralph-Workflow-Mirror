@@ -17,6 +17,7 @@
 //!
 //! The parser handles CDATA correctly - content is preserved exactly as written.
 
+use crate::common::truncate_text;
 use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValidationError};
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -176,11 +177,8 @@ pub fn duplicate_element_error(element_name: &str, parent_element: &str) -> XsdV
 
 /// Create an error for text content outside of tags.
 pub fn text_outside_tags_error(text: &str, parent_element: &str) -> XsdValidationError {
-    let display_text = if text.len() > 50 {
-        format!("{}...", &text[..50])
-    } else {
-        text.to_string()
-    };
+    // Use truncate_text for UTF-8 safe truncation (53 chars = ~50 visible + "...")
+    let display_text = truncate_text(text, 53);
 
     XsdValidationError {
         error_type: XsdErrorType::InvalidContent,
@@ -189,6 +187,19 @@ pub fn text_outside_tags_error(text: &str, parent_element: &str) -> XsdValidatio
         found: format!("text content: {:?}", display_text),
         suggestion: "Remove any text that is not inside a child element tag.".to_string(),
         example: None,
+    }
+}
+
+/// Format content for display in error messages (UTF-8 safe truncation).
+///
+/// Returns "empty content" for empty strings, the full content if <= 60 chars,
+/// or a truncated preview with "..." for longer content.
+pub fn format_content_preview(content: &str) -> String {
+    if content.is_empty() {
+        "empty content".to_string()
+    } else {
+        // truncate_text handles the ellipsis and UTF-8 char boundaries
+        truncate_text(content, 63)
     }
 }
 

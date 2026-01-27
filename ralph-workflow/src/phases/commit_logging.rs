@@ -15,6 +15,7 @@
 use chrono::{DateTime, Local};
 use std::path::{Path, PathBuf};
 
+use crate::common::truncate_text;
 use crate::workspace::Workspace;
 
 /// Represents a single step in the parsing trace log.
@@ -414,13 +415,12 @@ impl std::fmt::Display for AttemptOutcome {
 }
 
 /// Preview a message, truncating if too long.
+///
+/// Uses character-based truncation to avoid panics on UTF-8 multi-byte characters.
 fn preview_message(msg: &str) -> String {
     let first_line = msg.lines().next().unwrap_or(msg);
-    if first_line.len() > 60 {
-        format!("{}...", &first_line[..60])
-    } else {
-        first_line.to_string()
-    }
+    // truncate_text handles the ellipsis, so we use 63 to get ~60 chars + "..."
+    truncate_text(first_line, 63)
 }
 
 /// Per-attempt log for commit message generation.
