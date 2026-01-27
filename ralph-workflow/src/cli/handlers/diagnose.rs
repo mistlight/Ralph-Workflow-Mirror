@@ -2,6 +2,13 @@
 //!
 //! This module provides comprehensive diagnostic output for troubleshooting
 //! Ralph configuration and environment issues.
+//!
+//! # Architecture Note
+//!
+//! This module operates at the CLI layer (pre-pipeline) and uses `std::fs` directly
+//! for diagnostic file reads. This is acceptable per the effect-system architecture
+//! because it runs before the pipeline context exists and performs read-only
+//! diagnostic operations that don't modify state.
 
 use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
 use crate::checkpoint::load_checkpoint;

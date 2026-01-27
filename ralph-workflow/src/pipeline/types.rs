@@ -1,8 +1,9 @@
 //! Core pipeline types (stats and cleanup guards).
 
-use crate::files::cleanup_generated_files;
+use crate::files::cleanup_generated_files_with_workspace;
 use crate::git_helpers::{disable_git_wrapper, end_agent_phase, uninstall_hooks, GitHelpers};
 use crate::logger::Logger;
+use crate::workspace::Workspace;
 
 /// Statistics tracking for pipeline execution.
 pub struct Stats {
@@ -51,15 +52,21 @@ pub struct AgentPhaseGuard<'a> {
     /// Mutable reference to git helpers for cleanup operations
     pub git_helpers: &'a mut GitHelpers,
     logger: &'a Logger,
+    workspace: &'a dyn Workspace,
     active: bool,
 }
 
 impl<'a> AgentPhaseGuard<'a> {
     /// Create a new guard that will clean up on drop unless disarmed.
-    pub const fn new(git_helpers: &'a mut GitHelpers, logger: &'a Logger) -> Self {
+    pub fn new(
+        git_helpers: &'a mut GitHelpers,
+        logger: &'a Logger,
+        workspace: &'a dyn Workspace,
+    ) -> Self {
         Self {
             git_helpers,
             logger,
+            workspace,
             active: true,
         }
     }
@@ -81,6 +88,6 @@ impl Drop for AgentPhaseGuard<'_> {
         end_agent_phase();
         disable_git_wrapper(self.git_helpers);
         let _ = uninstall_hooks(self.logger);
-        cleanup_generated_files();
+        cleanup_generated_files_with_workspace(self.workspace);
     }
 }

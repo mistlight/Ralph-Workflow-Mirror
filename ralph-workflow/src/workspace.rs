@@ -37,6 +37,58 @@
 //! let content = ws.read(".agent/test.txt")?;
 //! ```
 
+// ============================================================================
+// Well-known path constants
+// ============================================================================
+
+/// The `.agent` directory where Ralph stores all artifacts.
+pub const AGENT_DIR: &str = ".agent";
+
+/// The `.agent/tmp` directory for temporary files.
+pub const AGENT_TMP: &str = ".agent/tmp";
+
+/// The `.agent/logs` directory for agent logs.
+pub const AGENT_LOGS: &str = ".agent/logs";
+
+/// Path to the implementation plan file.
+pub const PLAN_MD: &str = ".agent/PLAN.md";
+
+/// Path to the issues file from code review.
+pub const ISSUES_MD: &str = ".agent/ISSUES.md";
+
+/// Path to the status file.
+pub const STATUS_MD: &str = ".agent/STATUS.md";
+
+/// Path to the notes file.
+pub const NOTES_MD: &str = ".agent/NOTES.md";
+
+/// Path to the commit message file.
+pub const COMMIT_MESSAGE_TXT: &str = ".agent/commit-message.txt";
+
+/// Path to the checkpoint file for resume support.
+pub const CHECKPOINT_JSON: &str = ".agent/checkpoint.json";
+
+/// Path to the start commit tracking file.
+pub const START_COMMIT: &str = ".agent/start_commit";
+
+/// Path to the review baseline tracking file.
+pub const REVIEW_BASELINE_TXT: &str = ".agent/review_baseline.txt";
+
+/// Path to the prompt file in repository root.
+pub const PROMPT_MD: &str = "PROMPT.md";
+
+/// Path to the prompt backup file.
+pub const PROMPT_BACKUP: &str = ".agent/PROMPT.md.backup";
+
+/// Path to the agent config file.
+pub const AGENT_CONFIG_TOML: &str = ".agent/config.toml";
+
+/// Path to the agents registry file.
+pub const AGENTS_TOML: &str = ".agent/agents.toml";
+
+/// Path to the pipeline log file.
+pub const PIPELINE_LOG: &str = ".agent/logs/pipeline.log";
+
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -253,82 +305,82 @@ pub trait Workspace: Send + Sync {
 
     /// Path to the `.agent` directory.
     fn agent_dir(&self) -> PathBuf {
-        self.root().join(".agent")
+        self.root().join(AGENT_DIR)
     }
 
     /// Path to the `.agent/logs` directory.
     fn agent_logs(&self) -> PathBuf {
-        self.root().join(".agent/logs")
+        self.root().join(AGENT_LOGS)
     }
 
     /// Path to the `.agent/tmp` directory.
     fn agent_tmp(&self) -> PathBuf {
-        self.root().join(".agent/tmp")
+        self.root().join(AGENT_TMP)
     }
 
     /// Path to `.agent/PLAN.md`.
     fn plan_md(&self) -> PathBuf {
-        self.root().join(".agent/PLAN.md")
+        self.root().join(PLAN_MD)
     }
 
     /// Path to `.agent/ISSUES.md`.
     fn issues_md(&self) -> PathBuf {
-        self.root().join(".agent/ISSUES.md")
+        self.root().join(ISSUES_MD)
     }
 
     /// Path to `.agent/STATUS.md`.
     fn status_md(&self) -> PathBuf {
-        self.root().join(".agent/STATUS.md")
+        self.root().join(STATUS_MD)
     }
 
     /// Path to `.agent/NOTES.md`.
     fn notes_md(&self) -> PathBuf {
-        self.root().join(".agent/NOTES.md")
+        self.root().join(NOTES_MD)
     }
 
     /// Path to `.agent/commit-message.txt`.
     fn commit_message(&self) -> PathBuf {
-        self.root().join(".agent/commit-message.txt")
+        self.root().join(COMMIT_MESSAGE_TXT)
     }
 
     /// Path to `.agent/checkpoint.json`.
     fn checkpoint(&self) -> PathBuf {
-        self.root().join(".agent/checkpoint.json")
+        self.root().join(CHECKPOINT_JSON)
     }
 
     /// Path to `.agent/start_commit`.
     fn start_commit(&self) -> PathBuf {
-        self.root().join(".agent/start_commit")
+        self.root().join(START_COMMIT)
     }
 
     /// Path to `.agent/review_baseline.txt`.
     fn review_baseline(&self) -> PathBuf {
-        self.root().join(".agent/review_baseline.txt")
+        self.root().join(REVIEW_BASELINE_TXT)
     }
 
     /// Path to `PROMPT.md` in the repository root.
     fn prompt_md(&self) -> PathBuf {
-        self.root().join("PROMPT.md")
+        self.root().join(PROMPT_MD)
     }
 
     /// Path to `.agent/PROMPT.md.backup`.
     fn prompt_backup(&self) -> PathBuf {
-        self.root().join(".agent/PROMPT.md.backup")
+        self.root().join(PROMPT_BACKUP)
     }
 
     /// Path to `.agent/config.toml`.
     fn agent_config(&self) -> PathBuf {
-        self.root().join(".agent/config.toml")
+        self.root().join(AGENT_CONFIG_TOML)
     }
 
     /// Path to `.agent/agents.toml`.
     fn agents_toml(&self) -> PathBuf {
-        self.root().join(".agent/agents.toml")
+        self.root().join(AGENTS_TOML)
     }
 
     /// Path to `.agent/logs/pipeline.log`.
     fn pipeline_log(&self) -> PathBuf {
-        self.root().join(".agent/logs/pipeline.log")
+        self.root().join(PIPELINE_LOG)
     }
 
     /// Path to an XSD schema file in `.agent/tmp/`.
@@ -627,13 +679,14 @@ impl MemoryWorkspace {
         Self::new(PathBuf::from("/test/repo"))
     }
 
-    /// Pre-populate a file with content for testing.
+    /// Ensure all parent directories exist for the given path.
     ///
-    /// Also creates parent directories automatically.
-    pub fn with_file(self, path: &str, content: &str) -> Self {
-        let path_buf = PathBuf::from(path);
-        // Create parent directories
-        if let Some(parent) = path_buf.parent() {
+    /// This is a helper to reduce duplication in file/directory creation methods.
+    fn ensure_parent_dirs(&self, path: &Path) {
+        if let Some(parent) = path.parent() {
+            if parent.as_os_str().is_empty() {
+                return;
+            }
             let mut dirs = self.directories.write().unwrap();
             let mut current = PathBuf::new();
             for component in parent.components() {
@@ -641,6 +694,26 @@ impl MemoryWorkspace {
                 dirs.insert(current.clone());
             }
         }
+    }
+
+    /// Ensure all components of the path exist as directories.
+    ///
+    /// Used for creating directories themselves (not just parents).
+    fn ensure_dir_path(&self, path: &Path) {
+        let mut dirs = self.directories.write().unwrap();
+        let mut current = PathBuf::new();
+        for component in path.components() {
+            current.push(component);
+            dirs.insert(current.clone());
+        }
+    }
+
+    /// Pre-populate a file with content for testing.
+    ///
+    /// Also creates parent directories automatically.
+    pub fn with_file(self, path: &str, content: &str) -> Self {
+        let path_buf = PathBuf::from(path);
+        self.ensure_parent_dirs(&path_buf);
         self.files
             .write()
             .unwrap()
@@ -658,15 +731,7 @@ impl MemoryWorkspace {
         modified: std::time::SystemTime,
     ) -> Self {
         let path_buf = PathBuf::from(path);
-        // Create parent directories
-        if let Some(parent) = path_buf.parent() {
-            let mut dirs = self.directories.write().unwrap();
-            let mut current = PathBuf::new();
-            for component in parent.components() {
-                current.push(component);
-                dirs.insert(current.clone());
-            }
-        }
+        self.ensure_parent_dirs(&path_buf);
         self.files.write().unwrap().insert(
             path_buf,
             MemoryFile::with_modified(content.as_bytes().to_vec(), modified),
@@ -679,15 +744,7 @@ impl MemoryWorkspace {
     /// Also creates parent directories automatically.
     pub fn with_file_bytes(self, path: &str, content: &[u8]) -> Self {
         let path_buf = PathBuf::from(path);
-        // Create parent directories
-        if let Some(parent) = path_buf.parent() {
-            let mut dirs = self.directories.write().unwrap();
-            let mut current = PathBuf::new();
-            for component in parent.components() {
-                current.push(component);
-                dirs.insert(current.clone());
-            }
-        }
+        self.ensure_parent_dirs(&path_buf);
         self.files
             .write()
             .unwrap()
@@ -698,14 +755,7 @@ impl MemoryWorkspace {
     /// Pre-populate a directory for testing.
     pub fn with_dir(self, path: &str) -> Self {
         let path_buf = PathBuf::from(path);
-        {
-            let mut dirs = self.directories.write().unwrap();
-            let mut current = PathBuf::new();
-            for component in path_buf.components() {
-                current.push(component);
-                dirs.insert(current.clone());
-            }
-        }
+        self.ensure_dir_path(&path_buf);
         self
     }
 
@@ -819,15 +869,7 @@ impl Workspace for MemoryWorkspace {
     }
 
     fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
-        // Create parent directories
-        if let Some(parent) = relative.parent() {
-            let mut dirs = self.directories.write().unwrap();
-            let mut current = PathBuf::new();
-            for component in parent.components() {
-                current.push(component);
-                dirs.insert(current.clone());
-            }
-        }
+        self.ensure_parent_dirs(relative);
         self.files.write().unwrap().insert(
             relative.to_path_buf(),
             MemoryFile::new(content.as_bytes().to_vec()),
@@ -836,15 +878,7 @@ impl Workspace for MemoryWorkspace {
     }
 
     fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
-        // Create parent directories
-        if let Some(parent) = relative.parent() {
-            let mut dirs = self.directories.write().unwrap();
-            let mut current = PathBuf::new();
-            for component in parent.components() {
-                current.push(component);
-                dirs.insert(current.clone());
-            }
-        }
+        self.ensure_parent_dirs(relative);
         self.files
             .write()
             .unwrap()
@@ -853,15 +887,7 @@ impl Workspace for MemoryWorkspace {
     }
 
     fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
-        // Create parent directories
-        if let Some(parent) = relative.parent() {
-            let mut dirs = self.directories.write().unwrap();
-            let mut current = PathBuf::new();
-            for component in parent.components() {
-                current.push(component);
-                dirs.insert(current.clone());
-            }
-        }
+        self.ensure_parent_dirs(relative);
         let mut files = self.files.write().unwrap();
         let entry = files
             .entry(relative.to_path_buf())
@@ -943,12 +969,7 @@ impl Workspace for MemoryWorkspace {
     }
 
     fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
-        let mut dirs = self.directories.write().unwrap();
-        let mut current = PathBuf::new();
-        for component in relative.components() {
-            current.push(component);
-            dirs.insert(current.clone());
-        }
+        self.ensure_dir_path(relative);
         Ok(())
     }
 
@@ -1002,17 +1023,10 @@ impl Workspace for MemoryWorkspace {
     }
 
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        // Create parent directories for destination first (before taking files lock)
+        self.ensure_parent_dirs(to);
         let mut files = self.files.write().unwrap();
         if let Some(file) = files.remove(from) {
-            // Create parent directories for destination
-            if let Some(parent) = to.parent() {
-                let mut dirs = self.directories.write().unwrap();
-                let mut current = PathBuf::new();
-                for component in parent.components() {
-                    current.push(component);
-                    dirs.insert(current.clone());
-                }
-            }
             files.insert(to.to_path_buf(), file);
             Ok(())
         } else {

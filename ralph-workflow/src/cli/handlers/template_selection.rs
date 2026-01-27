@@ -2,6 +2,14 @@
 //!
 //! Provides functionality for prompting users to select a PROMPT.md template
 //! when one doesn't exist and interactive mode is enabled.
+//!
+//! # Architecture Note
+//!
+//! This module operates at the CLI layer (pre-pipeline) and uses `std::fs` directly
+//! for file operations. This is acceptable per the effect-system architecture because:
+//! - It runs before the repository root is discovered and `Workspace` can be created
+//! - It performs simple, user-initiated file creation (not complex pipeline operations)
+//! - The operation is a one-shot template creation, not part of the main pipeline flow
 
 use std::fs;
 use std::io::{self, IsTerminal, Write};

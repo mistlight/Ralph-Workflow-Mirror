@@ -16,6 +16,13 @@
 
 #![deny(unsafe_code)]
 
+use std::io;
+
+/// Convert git2 errors to std::io errors for consistent error handling.
+pub(crate) fn git2_to_io_error(err: &git2::Error) -> io::Error {
+    io::Error::other(err.to_string())
+}
+
 pub mod branch;
 mod hooks;
 pub mod identity;
@@ -54,7 +61,6 @@ pub use rebase::{
     verify_rebase_completed,
 };
 
-#[cfg(any(test, feature = "test-utils"))]
 pub use rebase::RebaseErrorKind;
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -70,6 +76,7 @@ pub use repo::{
 };
 #[cfg(any(test, feature = "test-utils"))]
 pub use review_baseline::load_review_baseline_with_workspace;
+pub use review_baseline::update_review_baseline_with_workspace;
 pub use review_baseline::{
     get_baseline_summary, get_review_baseline_info, load_review_baseline, update_review_baseline,
     ReviewBaseline,
@@ -78,7 +85,7 @@ pub use review_baseline::{
 pub use start_commit::load_start_point_with_workspace;
 pub use start_commit::{
     get_current_head_oid, get_start_commit_summary, load_start_point, reset_start_commit,
-    save_start_commit, StartPoint,
+    save_start_commit, save_start_commit_with_workspace, StartPoint,
 };
 pub use wrapper::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,

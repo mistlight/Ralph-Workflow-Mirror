@@ -25,6 +25,11 @@ use crate::agents::opencode_api::ApiCatalog;
 use crate::agents::parser::JsonParserType;
 use strsim::levenshtein;
 
+/// Maximum Levenshtein distance for typo suggestions.
+///
+/// Strings with edit distance <= this value are considered potential typos.
+const MAX_TYPO_DISTANCE: usize = 3;
+
 /// OpenCode agent resolver for dynamic provider/model configuration.
 ///
 /// Validates provider/model combinations against the OpenCode API catalog
@@ -176,11 +181,15 @@ impl OpenCodeResolver {
                 let distance = levenshtein(provider, &p);
                 (p, distance)
             })
-            .filter(|(_, d)| *d <= 3)
+            .filter(|(_, d)| *d <= MAX_TYPO_DISTANCE)
             .collect();
 
         suggestions.sort_by_key(|(_, d)| *d);
-        suggestions.into_iter().map(|(p, _)| p).take(3).collect()
+        suggestions
+            .into_iter()
+            .map(|(p, _)| p)
+            .take(MAX_TYPO_DISTANCE)
+            .collect()
     }
 
     /// Suggest similar model names for a typo.
@@ -193,11 +202,15 @@ impl OpenCodeResolver {
                 let distance = levenshtein(model, &m);
                 (m, distance)
             })
-            .filter(|(_, d)| *d <= 3)
+            .filter(|(_, d)| *d <= MAX_TYPO_DISTANCE)
             .collect();
 
         suggestions.sort_by_key(|(_, d)| *d);
-        suggestions.into_iter().map(|(m, _)| m).take(3).collect()
+        suggestions
+            .into_iter()
+            .map(|(m, _)| m)
+            .take(MAX_TYPO_DISTANCE)
+            .collect()
     }
 
     /// Get a user-friendly error message for a validation error.

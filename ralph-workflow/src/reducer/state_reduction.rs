@@ -1,6 +1,21 @@
 //! Reducer function for state transitions.
 //!
 //! Implements pure state reduction - no side effects, exhaustive pattern matching.
+//!
+//! # Architecture
+//!
+//! The main `reduce` function delegates to category-specific handlers for
+//! better organization and maintainability:
+//!
+//! - `reduce_pipeline_lifecycle` - Pipeline start/stop/completion events
+//! - `reduce_planning_event` - Planning phase events
+//! - `reduce_development_event` - Development iteration events
+//! - `reduce_review_event` - Review pass and fix events
+//! - `reduce_agent_event` - Agent invocation and chain events
+//! - `reduce_rebase_event` - Rebase operation events
+//! - `reduce_commit_event` - Commit generation and creation events
+//!
+//! Each handler is a pure function that takes state and returns new state.
 
 use super::event::PipelineEvent;
 use super::state::{CommitState, PipelineState, RebaseState};
@@ -9,56 +24,138 @@ use super::state::{CommitState, PipelineState, RebaseState};
 ///
 /// Computes new state by applying an event to current state.
 /// This function has zero side effects - all state mutations are explicit.
+///
+/// Delegates to category-specific handlers for better organization.
 pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
+    match &event {
+        // Pipeline lifecycle events
+        PipelineEvent::PipelineStarted
+        | PipelineEvent::PipelineResumed { .. }
+        | PipelineEvent::PipelineCompleted
+        | PipelineEvent::PipelineAborted { .. } => reduce_pipeline_lifecycle(state, event),
+
+        // Planning events
+        PipelineEvent::PlanningPhaseStarted
+        | PipelineEvent::PlanningPhaseCompleted
+        | PipelineEvent::PlanGenerationStarted { .. }
+        | PipelineEvent::PlanGenerationCompleted { .. } => reduce_planning_event(state, event),
+
+        // Development events
+        PipelineEvent::DevelopmentPhaseStarted
+        | PipelineEvent::DevelopmentIterationStarted { .. }
+        | PipelineEvent::DevelopmentIterationCompleted { .. }
+        | PipelineEvent::DevelopmentPhaseCompleted => reduce_development_event(state, event),
+
+        // Review events
+        PipelineEvent::ReviewPhaseStarted
+        | PipelineEvent::ReviewPassStarted { .. }
+        | PipelineEvent::ReviewCompleted { .. }
+        | PipelineEvent::FixAttemptStarted { .. }
+        | PipelineEvent::FixAttemptCompleted { .. }
+        | PipelineEvent::ReviewPhaseCompleted { .. } => reduce_review_event(state, event),
+
+        // Agent events
+        PipelineEvent::AgentInvocationStarted { .. }
+        | PipelineEvent::AgentInvocationSucceeded { .. }
+        | PipelineEvent::AgentInvocationFailed { .. }
+        | PipelineEvent::AgentFallbackTriggered { .. }
+        | PipelineEvent::AgentChainExhausted { .. }
+        | PipelineEvent::AgentModelFallbackTriggered { .. }
+        | PipelineEvent::AgentRetryCycleStarted { .. }
+        | PipelineEvent::AgentChainInitialized { .. } => reduce_agent_event(state, event),
+
+        // Rebase events
+        PipelineEvent::RebaseStarted { .. }
+        | PipelineEvent::RebaseConflictDetected { .. }
+        | PipelineEvent::RebaseConflictResolved { .. }
+        | PipelineEvent::RebaseSucceeded { .. }
+        | PipelineEvent::RebaseFailed { .. }
+        | PipelineEvent::RebaseSkipped { .. }
+        | PipelineEvent::RebaseAborted { .. } => reduce_rebase_event(state, event),
+
+        // Commit events
+        PipelineEvent::CommitGenerationStarted
+        | PipelineEvent::CommitMessageGenerated { .. }
+        | PipelineEvent::CommitCreated { .. }
+        | PipelineEvent::CommitGenerationFailed { .. }
+        | PipelineEvent::CommitSkipped { .. }
+        | PipelineEvent::CommitMessageValidationFailed { .. } => reduce_commit_event(state, event),
+
+        // Miscellaneous events
+        PipelineEvent::ContextCleaned => PipelineState {
+            context_cleaned: true,
+            ..state
+        },
+        PipelineEvent::CheckpointSaved { .. } => state,
+        PipelineEvent::FinalizingStarted => PipelineState {
+            phase: super::event::PipelinePhase::Finalizing,
+            ..state
+        },
+        PipelineEvent::PromptPermissionsRestored => PipelineState {
+            phase: super::event::PipelinePhase::Complete,
+            ..state
+        },
+    }
+}
+
+// ============================================================================
+// Category-specific reducers
+// ============================================================================
+
+/// Handle pipeline lifecycle events.
+fn reduce_pipeline_lifecycle(state: PipelineState, event: PipelineEvent) -> PipelineState {
     match event {
         PipelineEvent::PipelineStarted => state,
-
         PipelineEvent::PipelineResumed { .. } => state,
-
         PipelineEvent::PipelineCompleted => PipelineState {
             phase: super::event::PipelinePhase::Complete,
             ..state
         },
-
         PipelineEvent::PipelineAborted { .. } => PipelineState {
             phase: super::event::PipelinePhase::Interrupted,
             ..state
         },
+        _ => state,
+    }
+}
 
+/// Handle planning phase events.
+fn reduce_planning_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+    match event {
         PipelineEvent::PlanningPhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Planning,
             ..state
         },
-
         PipelineEvent::PlanningPhaseCompleted => PipelineState {
             phase: super::event::PipelinePhase::Development,
             ..state
         },
+        PipelineEvent::PlanGenerationStarted { .. } => state,
+        PipelineEvent::PlanGenerationCompleted { .. } => PipelineState {
+            phase: super::event::PipelinePhase::Development,
+            ..state
+        },
+        _ => state,
+    }
+}
 
+/// Handle development phase events.
+fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+    match event {
         PipelineEvent::DevelopmentPhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Development,
             ..state
         },
-
         PipelineEvent::DevelopmentIterationStarted { iteration } => PipelineState {
             iteration,
             agent_chain: state.agent_chain.reset(),
             ..state
         },
-
-        PipelineEvent::PlanGenerationStarted { .. } => state,
-
-        PipelineEvent::PlanGenerationCompleted { .. } => PipelineState {
-            phase: super::event::PipelinePhase::Development,
-            ..state
-        },
-
         PipelineEvent::DevelopmentIterationCompleted {
             iteration,
-            output_valid: _output_valid,
+            output_valid: _,
         } => {
             // After dev iteration, go to CommitMessage phase to create a commit
-            // Store current phase so we can return after commit
             PipelineState {
                 phase: super::event::PipelinePhase::CommitMessage,
                 previous_phase: Some(super::event::PipelinePhase::Development),
@@ -68,38 +165,36 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
                 ..state
             }
         }
-
         PipelineEvent::DevelopmentPhaseCompleted => PipelineState {
             phase: super::event::PipelinePhase::Review,
             ..state
         },
+        _ => state,
+    }
+}
 
+/// Handle review phase events.
+fn reduce_review_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+    match event {
         PipelineEvent::ReviewPhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Review,
             reviewer_pass: 0,
             review_issues_found: false,
             ..state
         },
-
         PipelineEvent::ReviewPassStarted { pass } => PipelineState {
             reviewer_pass: pass,
-            review_issues_found: false, // Reset at start of new review pass
+            review_issues_found: false,
             agent_chain: state.agent_chain.reset(),
             ..state
         },
-
         PipelineEvent::ReviewCompleted { pass, issues_found } => {
-            // If no issues found, increment to next pass
-            // If issues found, stay on same pass for fix attempt
             let next_pass = if issues_found { pass } else { pass + 1 };
-
-            // If this was the last review pass and no issues, transition to CommitMessage
             let next_phase = if !issues_found && next_pass >= state.total_reviewer_passes {
                 super::event::PipelinePhase::CommitMessage
             } else {
                 state.phase
             };
-
             PipelineState {
                 phase: next_phase,
                 reviewer_pass: next_pass,
@@ -107,47 +202,73 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
                 ..state
             }
         }
-
         PipelineEvent::FixAttemptStarted { .. } => PipelineState {
             agent_chain: state.agent_chain.reset(),
             ..state
         },
-
-        PipelineEvent::FixAttemptCompleted { pass, .. } => {
-            // After fix attempt, go to CommitMessage phase to create a commit
-            // Store current phase so we can return after commit
-            PipelineState {
-                phase: super::event::PipelinePhase::CommitMessage,
-                previous_phase: Some(super::event::PipelinePhase::Review),
-                reviewer_pass: pass,
-                review_issues_found: false, // Reset flag after fix attempt
-                commit: super::state::CommitState::NotStarted,
-                ..state
-            }
-        }
-
+        PipelineEvent::FixAttemptCompleted { pass, .. } => PipelineState {
+            phase: super::event::PipelinePhase::CommitMessage,
+            previous_phase: Some(super::event::PipelinePhase::Review),
+            reviewer_pass: pass,
+            review_issues_found: false,
+            commit: super::state::CommitState::NotStarted,
+            ..state
+        },
         PipelineEvent::ReviewPhaseCompleted { .. } => PipelineState {
             phase: super::event::PipelinePhase::CommitMessage,
             ..state
         },
+        _ => state,
+    }
+}
 
+/// Handle agent-related events.
+fn reduce_agent_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+    match event {
+        PipelineEvent::AgentInvocationStarted { .. } => state,
+        PipelineEvent::AgentInvocationSucceeded { .. } => state,
         PipelineEvent::AgentInvocationFailed {
             retriable: true, ..
         } => PipelineState {
             agent_chain: state.agent_chain.advance_to_next_model(),
             ..state
         },
-
-        PipelineEvent::AgentFallbackTriggered { to_agent: _, .. } => PipelineState {
+        PipelineEvent::AgentInvocationFailed {
+            retriable: false, ..
+        } => PipelineState {
             agent_chain: state.agent_chain.switch_to_next_agent(),
             ..state
         },
-
+        PipelineEvent::AgentFallbackTriggered { .. } => PipelineState {
+            agent_chain: state.agent_chain.switch_to_next_agent(),
+            ..state
+        },
         PipelineEvent::AgentChainExhausted { .. } => PipelineState {
             agent_chain: state.agent_chain.start_retry_cycle(),
             ..state
         },
+        PipelineEvent::AgentModelFallbackTriggered { .. } => PipelineState {
+            agent_chain: state.agent_chain.advance_to_next_model(),
+            ..state
+        },
+        PipelineEvent::AgentRetryCycleStarted { .. } => state,
+        PipelineEvent::AgentChainInitialized { role, agents } => {
+            let models_per_agent = agents.iter().map(|_| vec![]).collect();
+            PipelineState {
+                agent_chain: state
+                    .agent_chain
+                    .with_agents(agents, models_per_agent, role)
+                    .reset_for_role(role),
+                ..state
+            }
+        }
+        _ => state,
+    }
+}
 
+/// Handle rebase-related events.
+fn reduce_rebase_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+    match event {
         PipelineEvent::RebaseStarted {
             target_branch,
             phase: _,
@@ -158,7 +279,6 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             },
             ..state
         },
-
         PipelineEvent::RebaseConflictDetected { files } => PipelineState {
             rebase: match &state.rebase {
                 RebaseState::InProgress {
@@ -174,8 +294,7 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             },
             ..state
         },
-
-        PipelineEvent::RebaseConflictResolved { files: _ } => PipelineState {
+        PipelineEvent::RebaseConflictResolved { .. } => PipelineState {
             rebase: match &state.rebase {
                 RebaseState::Conflicted {
                     original_head,
@@ -189,22 +308,26 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             },
             ..state
         },
-
-        PipelineEvent::RebaseSucceeded { new_head, phase: _ } => PipelineState {
+        PipelineEvent::RebaseSucceeded { new_head, .. } => PipelineState {
             rebase: RebaseState::Completed { new_head },
             ..state
         },
-
-        PipelineEvent::RebaseFailed { phase: _, .. } => PipelineState {
+        PipelineEvent::RebaseFailed { .. } => PipelineState {
             rebase: RebaseState::NotStarted,
             ..state
         },
-
-        PipelineEvent::RebaseSkipped { phase: _, .. } => PipelineState {
+        PipelineEvent::RebaseSkipped { .. } => PipelineState {
             rebase: RebaseState::Skipped,
             ..state
         },
+        PipelineEvent::RebaseAborted { .. } => state,
+        _ => state,
+    }
+}
 
+/// Handle commit-related events.
+fn reduce_commit_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+    match event {
         PipelineEvent::CommitGenerationStarted => PipelineState {
             commit: CommitState::Generating {
                 attempt: 1,
@@ -212,227 +335,132 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             },
             ..state
         },
-
         PipelineEvent::CommitMessageGenerated { message, .. } => PipelineState {
             commit: CommitState::Generated { message },
             ..state
         },
-
         PipelineEvent::CommitCreated { hash, .. } => {
-            // After commit, return to Planning (next iteration) or Review, or FinalValidation
-            let (next_phase, next_iter, next_reviewer_pass) = match state.previous_phase {
-                Some(super::event::PipelinePhase::Development) => {
-                    let next_iter = state.iteration + 1;
-                    if next_iter >= state.total_iterations {
-                        // All dev iterations done, go to Review
-                        (
-                            super::event::PipelinePhase::Review,
-                            next_iter,
-                            state.reviewer_pass,
-                        )
-                    } else {
-                        // More iterations, go back to Planning for next iteration
-                        (
-                            super::event::PipelinePhase::Planning,
-                            next_iter,
-                            state.reviewer_pass,
-                        )
-                    }
-                }
-                Some(super::event::PipelinePhase::Review) => {
-                    let next_pass = state.reviewer_pass + 1;
-                    if next_pass >= state.total_reviewer_passes {
-                        // All review passes done, go to FinalValidation
-                        (
-                            super::event::PipelinePhase::FinalValidation,
-                            state.iteration,
-                            next_pass,
-                        )
-                    } else {
-                        // More review passes, stay in Review
-                        (
-                            super::event::PipelinePhase::Review,
-                            state.iteration,
-                            next_pass,
-                        )
-                    }
-                }
-                _ => {
-                    // Final commit (no previous phase), go to FinalValidation
-                    (
-                        super::event::PipelinePhase::FinalValidation,
-                        state.iteration,
-                        state.reviewer_pass,
-                    )
-                }
-            };
-
+            let (next_phase, next_iter, next_reviewer_pass) =
+                compute_post_commit_transition(&state);
             PipelineState {
                 commit: CommitState::Committed { hash },
                 phase: next_phase,
                 previous_phase: None,
                 iteration: next_iter,
                 reviewer_pass: next_reviewer_pass,
-                context_cleaned: false, // Reset so cleanup runs before next Planning/Review phase
+                context_cleaned: false,
                 ..state
             }
         }
-
         PipelineEvent::CommitGenerationFailed { .. } => PipelineState {
             commit: CommitState::NotStarted,
             ..state
         },
-
         PipelineEvent::CommitSkipped { .. } => {
-            // Same logic as CommitCreated - respect previous_phase for proper flow
-            let (next_phase, next_iter, next_reviewer_pass) = match state.previous_phase {
-                Some(super::event::PipelinePhase::Development) => {
-                    let next_iter = state.iteration + 1;
-                    if next_iter >= state.total_iterations {
-                        // All dev iterations done, go to Review
-                        (
-                            super::event::PipelinePhase::Review,
-                            next_iter,
-                            state.reviewer_pass,
-                        )
-                    } else {
-                        // More iterations, go back to Planning for next iteration
-                        (
-                            super::event::PipelinePhase::Planning,
-                            next_iter,
-                            state.reviewer_pass,
-                        )
-                    }
-                }
-                Some(super::event::PipelinePhase::Review) => {
-                    let next_pass = state.reviewer_pass + 1;
-                    if next_pass >= state.total_reviewer_passes {
-                        // All review passes done, go to FinalValidation
-                        (
-                            super::event::PipelinePhase::FinalValidation,
-                            state.iteration,
-                            next_pass,
-                        )
-                    } else {
-                        // More review passes, stay in Review
-                        (
-                            super::event::PipelinePhase::Review,
-                            state.iteration,
-                            next_pass,
-                        )
-                    }
-                }
-                _ => {
-                    // Final commit (no previous phase), go to FinalValidation
-                    (
-                        super::event::PipelinePhase::FinalValidation,
-                        state.iteration,
-                        state.reviewer_pass,
-                    )
-                }
-            };
-
+            let (next_phase, next_iter, next_reviewer_pass) =
+                compute_post_commit_transition(&state);
             PipelineState {
                 commit: CommitState::Skipped,
                 phase: next_phase,
                 previous_phase: None,
                 iteration: next_iter,
                 reviewer_pass: next_reviewer_pass,
-                context_cleaned: false, // Reset so cleanup runs before next phase
+                context_cleaned: false,
                 ..state
             }
         }
-
-        PipelineEvent::ContextCleaned => PipelineState {
-            context_cleaned: true,
-            ..state
-        },
-
-        PipelineEvent::CheckpointSaved { .. } => state,
-
-        PipelineEvent::AgentInvocationStarted { .. } => state,
-        PipelineEvent::AgentInvocationSucceeded { .. } => state,
-        PipelineEvent::AgentInvocationFailed {
-            retriable: false, ..
-        } => PipelineState {
-            agent_chain: state.agent_chain.switch_to_next_agent(),
-            ..state
-        },
-        PipelineEvent::AgentModelFallbackTriggered { .. } => PipelineState {
-            agent_chain: state.agent_chain.advance_to_next_model(),
-            ..state
-        },
-        PipelineEvent::AgentRetryCycleStarted { .. } => state,
-        PipelineEvent::AgentChainInitialized { role, agents } => {
-            let models_per_agent = agents.iter().map(|_| vec![]).collect();
-
-            PipelineState {
-                agent_chain: state
-                    .agent_chain
-                    .with_agents(agents, models_per_agent, role)
-                    .reset_for_role(role),
-                ..state
-            }
-        }
-        PipelineEvent::RebaseAborted { .. } => state,
-
         PipelineEvent::CommitMessageValidationFailed { attempt, .. } => {
-            // If we haven't exceeded max attempts, retry with same agent
-            let next_attempt = attempt + 1;
-            let max_attempts = super::state::MAX_VALIDATION_RETRY_ATTEMPTS;
+            reduce_commit_validation_failed(state, attempt)
+        }
+        _ => state,
+    }
+}
 
-            if next_attempt <= max_attempts {
-                PipelineState {
-                    commit: CommitState::Generating {
-                        attempt: next_attempt,
-                        max_attempts,
-                    },
-                    ..state
-                }
+/// Compute phase transition after a commit (used by CommitCreated and CommitSkipped).
+fn compute_post_commit_transition(
+    state: &PipelineState,
+) -> (super::event::PipelinePhase, u32, u32) {
+    match state.previous_phase {
+        Some(super::event::PipelinePhase::Development) => {
+            let next_iter = state.iteration + 1;
+            if next_iter >= state.total_iterations {
+                (
+                    super::event::PipelinePhase::Review,
+                    next_iter,
+                    state.reviewer_pass,
+                )
             } else {
-                // Exceeded max attempts with current agent - try next agent
-                let old_agent_index = state.agent_chain.current_agent_index;
-                let old_retry_cycle = state.agent_chain.retry_cycle;
-                let new_agent_chain = state.agent_chain.switch_to_next_agent();
-
-                // Check if we wrapped around (retry_cycle incremented = all agents exhausted)
-                let wrapped_around = new_agent_chain.retry_cycle > old_retry_cycle;
-
-                // Check if we're on a different agent (advanced successfully)
-                let advanced_to_next =
-                    new_agent_chain.current_agent_index != old_agent_index && !wrapped_around;
-
-                if advanced_to_next {
-                    // Reset to attempt 1 with next agent
-                    PipelineState {
-                        agent_chain: new_agent_chain,
-                        commit: CommitState::Generating {
-                            attempt: 1,
-                            max_attempts,
-                        },
-                        ..state
-                    }
-                } else {
-                    // All agents exhausted (wrapped around) - give up
-                    // Reset to NotStarted so orchestration can handle agent chain exhaustion
-                    PipelineState {
-                        agent_chain: new_agent_chain,
-                        commit: CommitState::NotStarted,
-                        ..state
-                    }
-                }
+                (
+                    super::event::PipelinePhase::Planning,
+                    next_iter,
+                    state.reviewer_pass,
+                )
             }
         }
+        Some(super::event::PipelinePhase::Review) => {
+            let next_pass = state.reviewer_pass + 1;
+            if next_pass >= state.total_reviewer_passes {
+                (
+                    super::event::PipelinePhase::FinalValidation,
+                    state.iteration,
+                    next_pass,
+                )
+            } else {
+                (
+                    super::event::PipelinePhase::Review,
+                    state.iteration,
+                    next_pass,
+                )
+            }
+        }
+        _ => (
+            super::event::PipelinePhase::FinalValidation,
+            state.iteration,
+            state.reviewer_pass,
+        ),
+    }
+}
 
-        PipelineEvent::FinalizingStarted => PipelineState {
-            phase: super::event::PipelinePhase::Finalizing,
-            ..state
-        },
+/// Handle commit message validation failure with retry logic.
+fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> PipelineState {
+    let next_attempt = attempt + 1;
+    let max_attempts = super::state::MAX_VALIDATION_RETRY_ATTEMPTS;
 
-        PipelineEvent::PromptPermissionsRestored => PipelineState {
-            phase: super::event::PipelinePhase::Complete,
+    if next_attempt <= max_attempts {
+        PipelineState {
+            commit: CommitState::Generating {
+                attempt: next_attempt,
+                max_attempts,
+            },
             ..state
-        },
+        }
+    } else {
+        // Exceeded max attempts with current agent - try next agent
+        let old_agent_index = state.agent_chain.current_agent_index;
+        let old_retry_cycle = state.agent_chain.retry_cycle;
+        let new_agent_chain = state.agent_chain.switch_to_next_agent();
+
+        let wrapped_around = new_agent_chain.retry_cycle > old_retry_cycle;
+        let advanced_to_next =
+            new_agent_chain.current_agent_index != old_agent_index && !wrapped_around;
+
+        if advanced_to_next {
+            PipelineState {
+                agent_chain: new_agent_chain,
+                commit: CommitState::Generating {
+                    attempt: 1,
+                    max_attempts,
+                },
+                ..state
+            }
+        } else {
+            // All agents exhausted - reset so orchestration can handle
+            PipelineState {
+                agent_chain: new_agent_chain,
+                commit: CommitState::NotStarted,
+                ..state
+            }
+        }
     }
 }
 

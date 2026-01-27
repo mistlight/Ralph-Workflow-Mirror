@@ -32,6 +32,9 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
+/// Maximum length for commit message preview in logs.
+const COMMIT_PREVIEW_MAX_LENGTH: usize = 60;
+
 /// Preview a commit message for display (first line, truncated if needed).
 ///
 /// Uses character-based truncation to avoid panics on UTF-8 multi-byte characters.
@@ -52,6 +55,12 @@ fn preview_commit_message(msg: &str) -> String {
 /// We use 200KB as a safe middle ground that works for most agents while still
 /// allowing substantial diffs to be processed without truncation.
 const MAX_SAFE_PROMPT_SIZE: usize = 200_000;
+
+/// Maximum prompt size for GLM-like agents (GLM, Zhipu, Qwen, DeepSeek).
+const GLM_MAX_PROMPT_SIZE: usize = 100_000;
+
+/// Maximum prompt size for Claude-based agents.
+const CLAUDE_MAX_PROMPT_SIZE: usize = 300_000;
 
 /// Absolute last resort fallback commit message.
 ///
@@ -87,14 +96,14 @@ fn max_prompt_size_for_agent(commit_agent: &str) -> usize {
         || agent_lower.contains("qwen")
         || agent_lower.contains("deepseek")
     {
-        100_000 // 100KB for GLM-like agents
+        GLM_MAX_PROMPT_SIZE
     } else if agent_lower.contains("claude")
         || agent_lower.contains("ccs")
         || agent_lower.contains("anthropic")
     {
-        300_000 // 300KB for Claude-based agents
+        CLAUDE_MAX_PROMPT_SIZE
     } else {
-        MAX_SAFE_PROMPT_SIZE // Default 200KB
+        MAX_SAFE_PROMPT_SIZE
     }
 }
 
@@ -289,6 +298,24 @@ struct DiffFile {
     lines: Vec<String>,
 }
 
+/// File prioritization weights for diff truncation.
+///
+/// Higher priority files are kept first when truncating large diffs.
+mod file_priority {
+    /// Rust source in src/ (highest priority).
+    pub const SRC_RUST: i32 = 100;
+    /// Other src/ files.
+    pub const SRC_OTHER: i32 = 80;
+    /// Config files (Cargo.toml, package.json).
+    pub const CONFIG: i32 = 60;
+    /// Default priority for unknown files.
+    pub const DEFAULT: i32 = 50;
+    /// Test files.
+    pub const TESTS: i32 = 40;
+    /// Documentation (lowest priority).
+    pub const DOCS: i32 = 20;
+}
+
 /// Assign a priority score to a file path for truncation selection.
 ///
 /// Higher priority files are kept first when truncating:
@@ -320,13 +347,13 @@ fn prioritize_file_path(path: &str) -> i32 {
 
     // Source code files (highest priority)
     if path_lower.contains("src/") && has_ext_lower("rs") {
-        100
+        file_priority::SRC_RUST
     } else if path_lower.contains("src/") {
-        80
+        file_priority::SRC_OTHER
     }
     // Test files
     else if path_lower.contains("test") {
-        40
+        file_priority::TESTS
     }
     // Config files - use case-insensitive extension check
     else if has_ext("toml")
@@ -335,15 +362,15 @@ fn prioritize_file_path(path: &str) -> i32 {
         || path_lower.ends_with("package.json")
         || path_lower.ends_with("tsconfig.json")
     {
-        60
+        file_priority::CONFIG
     }
     // Documentation files (lowest priority)
     else if path_lower.contains("doc") || has_ext("md") {
-        20
+        file_priority::DOCS
     }
     // Default priority
     else {
-        50
+        file_priority::DEFAULT
     }
 }
 
@@ -996,9 +1023,23 @@ fn create_commit_log_session(
             runtime
                 .logger
                 .warn(&format!("Failed to create log session: {e}"));
+            // Try the original directory again, then fallback to /tmp, then noop
             CommitLogSession::new(log_dir, workspace).unwrap_or_else(|_| {
-                CommitLogSession::new("/tmp/ralph-commit-logs", workspace)
-                    .expect("fallback session")
+                match CommitLogSession::new("/tmp/ralph-commit-logs", workspace) {
+                    Ok(s) => {
+                        runtime.logger.warn(&format!(
+                            "Using fallback log directory: {}",
+                            s.run_dir().display()
+                        ));
+                        s
+                    }
+                    Err(e2) => {
+                        runtime.logger.warn(&format!(
+                            "All log directories failed (original: {e}, fallback: {e2}). Using no-op session."
+                        ));
+                        CommitLogSession::noop()
+                    }
+                }
             })
         }
     }

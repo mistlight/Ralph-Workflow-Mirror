@@ -9,6 +9,9 @@ use crate::review_metrics::ReviewMetrics;
 use crate::workspace::Workspace;
 use std::path::Path;
 
+/// Maximum number of files in .agent directory before warning about cleanup.
+const MAX_AGENT_DIR_ENTRY_COUNT: usize = 1000;
+
 /// Result of pre-flight validation
 #[derive(Debug)]
 pub enum PreflightResult {
@@ -123,7 +126,7 @@ pub fn pre_flight_review_check(
     // (workspace read_dir gives us entry count without needing metadata)
     if let Ok(entries) = workspace.read_dir(agent_dir) {
         let entry_count = entries.len();
-        if entry_count > 1000 {
+        if entry_count > MAX_AGENT_DIR_ENTRY_COUNT {
             logger.warn(&format!(
                 ".agent directory has {entry_count} files. Consider cleaning up old logs."
             ));

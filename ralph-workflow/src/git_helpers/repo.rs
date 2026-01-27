@@ -14,6 +14,7 @@
 use std::io;
 use std::path::PathBuf;
 
+use super::git2_to_io_error;
 use super::identity::GitIdentity;
 
 /// The level of truncation applied to a diff for review.
@@ -115,11 +116,6 @@ impl DiffReviewContent {
             format!("{}\n", lines.join("\n"))
         }
     }
-}
-
-/// Convert git2 error to `io::Error`.
-fn git2_to_io_error(err: &git2::Error) -> io::Error {
-    io::Error::other(err.to_string())
 }
 
 /// Check if we're in a git repository.

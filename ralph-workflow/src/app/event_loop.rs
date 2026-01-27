@@ -11,6 +11,13 @@ use crate::reducer::{
 };
 use anyhow::Result;
 
+/// Maximum iterations for the main event loop to prevent infinite loops.
+///
+/// This is a safety limit - the pipeline should complete well before this limit
+/// under normal circumstances. If reached, it indicates either a bug in the
+/// reducer logic or an extremely complex project.
+pub const MAX_EVENT_LOOP_ITERATIONS: usize = 1000;
+
 /// Configuration for event loop.
 #[derive(Clone, Debug)]
 pub struct EventLoopConfig {

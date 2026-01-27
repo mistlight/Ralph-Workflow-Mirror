@@ -3,6 +3,9 @@
 //! This module handles the --resume flag and checkpoint loading logic,
 //! including validation and state restoration.
 
+/// Length for shortened git OID display (e.g., "a1b2c3d4").
+const SHORT_OID_LENGTH: usize = 8;
+
 use crate::agents::AgentRegistry;
 use crate::checkpoint::file_state::{FileSystemState, ValidationError};
 use crate::checkpoint::{
@@ -333,7 +336,11 @@ fn display_user_friendly_checkpoint_summary(checkpoint: &PipelineCheckpoint, log
 
                 // Add git commit if available (shortened)
                 if let Some(ref oid) = step.git_commit_oid {
-                    let short_oid = if oid.len() > 8 { &oid[..8] } else { oid };
+                    let short_oid = if oid.len() > SHORT_OID_LENGTH {
+                        &oid[..SHORT_OID_LENGTH]
+                    } else {
+                        oid
+                    };
                     logger.info(&format!("    Commit: {}", short_oid));
                 }
             }

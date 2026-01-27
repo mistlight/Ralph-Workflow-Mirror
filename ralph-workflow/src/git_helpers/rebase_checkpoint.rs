@@ -2,9 +2,16 @@
 //!
 //! This module provides types and persistence for rebase state,
 //! allowing recovery from interrupted or failed rebase operations.
+//!
+//! # Workspace Support
+//!
+//! This module provides two sets of functions:
+//! - Standard functions using `std::fs` for production use
+//! - `_with_workspace` variants for testability with `MemoryWorkspace`
 
 #![deny(unsafe_code)]
 
+use crate::workspace::Workspace;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -417,6 +424,201 @@ fn restore_from_backup() -> io::Result<Option<RebaseCheckpoint>> {
     Ok(Some(checkpoint))
 }
 
+// =============================================================================
+// Workspace-aware variants for testability
+// =============================================================================
+
+/// Save a rebase checkpoint using workspace abstraction.
+///
+/// This is the architecture-conformant version that uses the Workspace trait
+/// instead of direct filesystem access, allowing for proper testing with
+/// MemoryWorkspace.
+///
+/// Writes the checkpoint atomically by writing to a temp file first,
+/// then renaming to the final path.
+///
+/// # Arguments
+///
+/// * `checkpoint` - The checkpoint to save
+/// * `workspace` - The workspace to use for filesystem operations
+///
+/// # Errors
+///
+/// Returns an error if serialization fails or the file cannot be written.
+pub fn save_rebase_checkpoint_with_workspace(
+    checkpoint: &RebaseCheckpoint,
+    workspace: &dyn Workspace,
+) -> io::Result<()> {
+    let json = serde_json::to_string_pretty(checkpoint).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to serialize rebase checkpoint: {e}"),
+        )
+    })?;
+
+    let agent_dir = Path::new(AGENT_DIR);
+    let checkpoint_path = Path::new(AGENT_DIR).join(REBASE_CHECKPOINT_FILE);
+    let backup_path = Path::new(AGENT_DIR).join(format!("{REBASE_CHECKPOINT_FILE}.bak"));
+
+    // Ensure the .agent directory exists
+    workspace.create_dir_all(agent_dir)?;
+
+    // Check if a checkpoint already exists
+    let checkpoint_existed = workspace.exists(&checkpoint_path);
+
+    // Create backup before overwriting existing checkpoint
+    if checkpoint_existed {
+        let _ = backup_checkpoint_with_workspace(workspace);
+    }
+
+    // Write the checkpoint (workspace.write_atomic handles atomicity)
+    workspace.write_atomic(&checkpoint_path, &json)?;
+
+    // If this was the first save, create a backup now
+    if !checkpoint_existed {
+        let _ = backup_checkpoint_with_workspace(workspace);
+    }
+
+    // Also clean up backup path if it exists and is empty
+    if workspace.exists(&backup_path) {
+        if let Ok(content) = workspace.read(&backup_path) {
+            if content.trim().is_empty() {
+                let _ = workspace.remove(&backup_path);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Load an existing rebase checkpoint using workspace abstraction.
+///
+/// This is the architecture-conformant version that uses the Workspace trait
+/// instead of direct filesystem access, allowing for proper testing with
+/// MemoryWorkspace.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace to use for filesystem operations
+///
+/// # Returns
+///
+/// Returns `Ok(Some(checkpoint))` if a valid checkpoint was loaded,
+/// `Ok(None)` if no checkpoint file exists, or an error if the file
+/// exists but cannot be parsed and no valid backup exists.
+pub fn load_rebase_checkpoint_with_workspace(
+    workspace: &dyn Workspace,
+) -> io::Result<Option<RebaseCheckpoint>> {
+    let checkpoint_path = Path::new(AGENT_DIR).join(REBASE_CHECKPOINT_FILE);
+
+    if !workspace.exists(&checkpoint_path) {
+        return Ok(None);
+    }
+
+    let content = workspace.read(&checkpoint_path)?;
+    let loaded_checkpoint: RebaseCheckpoint = match serde_json::from_str(&content) {
+        Ok(cp) => cp,
+        Err(e) => {
+            // Checkpoint is corrupted - try to restore from backup
+            eprintln!("Checkpoint corrupted, attempting restore from backup: {e}");
+            return restore_from_backup_with_workspace(workspace);
+        }
+    };
+
+    // Validate the loaded checkpoint
+    if let Err(e) = validate_checkpoint_impl(&loaded_checkpoint) {
+        eprintln!("Checkpoint validation failed, attempting restore from backup: {e}");
+        return restore_from_backup_with_workspace(workspace);
+    }
+
+    Ok(Some(loaded_checkpoint))
+}
+
+/// Delete the rebase checkpoint file using workspace abstraction.
+///
+/// This is the architecture-conformant version that uses the Workspace trait
+/// instead of direct filesystem access, allowing for proper testing with
+/// MemoryWorkspace.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace to use for filesystem operations
+///
+/// # Errors
+///
+/// Returns an error if the file exists but cannot be deleted.
+pub fn clear_rebase_checkpoint_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
+    let checkpoint_path = Path::new(AGENT_DIR).join(REBASE_CHECKPOINT_FILE);
+
+    if workspace.exists(&checkpoint_path) {
+        workspace.remove(&checkpoint_path)?;
+    }
+    Ok(())
+}
+
+/// Check if a rebase checkpoint exists using workspace abstraction.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace to use for filesystem operations
+///
+/// # Returns
+///
+/// Returns `true` if a checkpoint file exists, `false` otherwise.
+pub fn rebase_checkpoint_exists_with_workspace(workspace: &dyn Workspace) -> bool {
+    let checkpoint_path = Path::new(AGENT_DIR).join(REBASE_CHECKPOINT_FILE);
+    workspace.exists(&checkpoint_path)
+}
+
+/// Create a backup of the current checkpoint using workspace abstraction.
+fn backup_checkpoint_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
+    let checkpoint_path = Path::new(AGENT_DIR).join(REBASE_CHECKPOINT_FILE);
+    let backup_path = Path::new(AGENT_DIR).join(format!("{REBASE_CHECKPOINT_FILE}.bak"));
+
+    if !workspace.exists(&checkpoint_path) {
+        return Ok(());
+    }
+
+    // Remove existing backup if it exists
+    if workspace.exists(&backup_path) {
+        workspace.remove(&backup_path)?;
+    }
+
+    // Copy checkpoint to backup (read + write since workspace doesn't have copy)
+    let content = workspace.read(&checkpoint_path)?;
+    workspace.write(&backup_path, &content)?;
+
+    Ok(())
+}
+
+/// Restore a checkpoint from backup using workspace abstraction.
+fn restore_from_backup_with_workspace(
+    workspace: &dyn Workspace,
+) -> io::Result<Option<RebaseCheckpoint>> {
+    let checkpoint_path = Path::new(AGENT_DIR).join(REBASE_CHECKPOINT_FILE);
+    let backup_path = Path::new(AGENT_DIR).join(format!("{REBASE_CHECKPOINT_FILE}.bak"));
+
+    if !workspace.exists(&backup_path) {
+        return Ok(None);
+    }
+
+    let content = workspace.read(&backup_path)?;
+    let checkpoint: RebaseCheckpoint = serde_json::from_str(&content).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Failed to parse backup checkpoint: {e}"),
+        )
+    })?;
+
+    // Validate the restored checkpoint
+    validate_checkpoint_impl(&checkpoint)?;
+
+    // If valid, copy backup back to main checkpoint
+    workspace.write(&checkpoint_path, &content)?;
+
+    Ok(Some(checkpoint))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -731,5 +933,104 @@ mod tests {
                 .resolved_files
                 .contains(&"not_in_conflicted.rs".to_string()));
         });
+    }
+}
+
+#[cfg(all(test, feature = "test-utils"))]
+mod workspace_tests {
+    use super::*;
+    use crate::workspace::MemoryWorkspace;
+
+    #[test]
+    fn test_save_and_load_checkpoint_with_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+
+        let checkpoint = RebaseCheckpoint::new("main".to_string())
+            .with_phase(RebasePhase::ConflictDetected)
+            .with_conflicted_file("file1.rs".to_string());
+
+        // Save checkpoint
+        save_rebase_checkpoint_with_workspace(&checkpoint, &workspace).unwrap();
+
+        // Verify it exists
+        assert!(rebase_checkpoint_exists_with_workspace(&workspace));
+
+        // Load it back
+        let loaded = load_rebase_checkpoint_with_workspace(&workspace)
+            .unwrap()
+            .expect("checkpoint should exist after save");
+
+        assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
+        assert_eq!(loaded.upstream_branch, "main");
+        assert_eq!(loaded.conflicted_files.len(), 1);
+    }
+
+    #[test]
+    fn test_clear_checkpoint_with_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+
+        let checkpoint = RebaseCheckpoint::new("main".to_string());
+        save_rebase_checkpoint_with_workspace(&checkpoint, &workspace).unwrap();
+        assert!(rebase_checkpoint_exists_with_workspace(&workspace));
+
+        clear_rebase_checkpoint_with_workspace(&workspace).unwrap();
+        assert!(!rebase_checkpoint_exists_with_workspace(&workspace));
+    }
+
+    #[test]
+    fn test_load_nonexistent_checkpoint_with_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+
+        let result = load_rebase_checkpoint_with_workspace(&workspace).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_checkpoint_backup_with_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+
+        // Create and save first checkpoint
+        let checkpoint1 =
+            RebaseCheckpoint::new("main".to_string()).with_phase(RebasePhase::RebaseInProgress);
+        save_rebase_checkpoint_with_workspace(&checkpoint1, &workspace).unwrap();
+
+        // Save another checkpoint (should create backup of first)
+        let checkpoint2 =
+            RebaseCheckpoint::new("main".to_string()).with_phase(RebasePhase::RebaseComplete);
+        save_rebase_checkpoint_with_workspace(&checkpoint2, &workspace).unwrap();
+
+        // Load should return the latest checkpoint
+        let loaded = load_rebase_checkpoint_with_workspace(&workspace)
+            .unwrap()
+            .expect("checkpoint should exist");
+        assert_eq!(loaded.phase, RebasePhase::RebaseComplete);
+    }
+
+    #[test]
+    fn test_corrupted_checkpoint_restores_from_backup_with_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+        let checkpoint_path = Path::new(AGENT_DIR).join(REBASE_CHECKPOINT_FILE);
+        let backup_path = Path::new(AGENT_DIR).join(format!("{REBASE_CHECKPOINT_FILE}.bak"));
+
+        // Create and save a valid checkpoint
+        let checkpoint = RebaseCheckpoint::new("main".to_string())
+            .with_phase(RebasePhase::ConflictDetected)
+            .with_conflicted_file("file.rs".to_string());
+        save_rebase_checkpoint_with_workspace(&checkpoint, &workspace).unwrap();
+
+        // Verify backup exists
+        assert!(workspace.exists(&backup_path));
+
+        // Corrupt the main checkpoint
+        workspace
+            .write(&checkpoint_path, "corrupted data {{{")
+            .unwrap();
+
+        // Loading should restore from backup
+        let loaded = load_rebase_checkpoint_with_workspace(&workspace)
+            .unwrap()
+            .expect("should restore from backup");
+
+        assert_eq!(loaded.phase, RebasePhase::ConflictDetected);
     }
 }

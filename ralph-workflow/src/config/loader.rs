@@ -583,6 +583,23 @@ pub fn unified_config_exists() -> bool {
     unified_config_path().is_some_and(|p| p.exists())
 }
 
+/// Check if the unified config file exists using a [`ConfigEnvironment`].
+///
+/// This is the testable version of [`unified_config_exists`]. It uses the provided
+/// environment for path resolution and filesystem operations.
+///
+/// # Arguments
+///
+/// * `env` - The configuration environment to use for path resolution and file existence checks.
+///
+/// # Returns
+///
+/// Returns `true` if the unified config path can be determined and the file exists at that path.
+pub fn unified_config_exists_with_env(env: &dyn ConfigEnvironment) -> bool {
+    env.unified_config_path()
+        .is_some_and(|p| env.file_exists(&p))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -681,21 +698,27 @@ review_depth = "standard"
     }
 
     #[test]
-    #[serial]
-    fn test_unified_config_exists_respects_xdg_config_home() {
-        let dir = tempfile::tempdir().unwrap();
-        env::set_var("XDG_CONFIG_HOME", dir.path());
+    fn test_unified_config_exists_with_env_returns_false_when_no_path() {
+        // Test when there's no unified config path configured
+        let env = MemoryConfigEnvironment::new();
+        assert!(!unified_config_exists_with_env(&env));
+    }
 
-        let path = unified_config_path().unwrap();
-        if path.exists() {
-            std::fs::remove_file(&path).unwrap();
-        }
-        assert!(!unified_config_exists());
+    #[test]
+    fn test_unified_config_exists_with_env_returns_false_when_file_missing() {
+        // Test when path is configured but file doesn't exist
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml");
+        assert!(!unified_config_exists_with_env(&env));
+    }
 
-        std::fs::write(&path, "").unwrap();
-        assert!(unified_config_exists());
-
-        env::remove_var("XDG_CONFIG_HOME");
+    #[test]
+    fn test_unified_config_exists_with_env_returns_true_when_file_exists() {
+        // Test when path is configured and file exists
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_file("/test/config/ralph-workflow.toml", "[general]");
+        assert!(unified_config_exists_with_env(&env));
     }
 
     #[test]

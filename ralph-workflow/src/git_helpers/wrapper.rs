@@ -241,11 +241,21 @@ pub fn start_agent_phase(helpers: &mut GitHelpers) -> io::Result<()> {
 
 /// End agent phase (removes marker file).
 pub fn end_agent_phase() {
-    let _ = fs::remove_file(".no_agent_commit");
+    let repo_root = match crate::git_helpers::get_repo_root() {
+        Ok(root) => root,
+        Err(_) => return,
+    };
+    let marker_path = repo_root.join(".no_agent_commit");
+    let _ = fs::remove_file(marker_path);
 }
 
 fn cleanup_git_wrapper_dir_silent() {
-    let wrapper_dir = match fs::read_to_string(WRAPPER_DIR_TRACK_FILE) {
+    let repo_root = match crate::git_helpers::get_repo_root() {
+        Ok(root) => root,
+        Err(_) => return,
+    };
+    let track_file = repo_root.join(WRAPPER_DIR_TRACK_FILE);
+    let wrapper_dir = match fs::read_to_string(&track_file) {
         Ok(path) => PathBuf::from(path.trim()),
         Err(_) => return,
     };
@@ -253,7 +263,7 @@ fn cleanup_git_wrapper_dir_silent() {
     if !wrapper_dir.as_os_str().is_empty() {
         let _ = fs::remove_dir_all(&wrapper_dir);
     }
-    let _ = fs::remove_file(WRAPPER_DIR_TRACK_FILE);
+    let _ = fs::remove_file(track_file);
 }
 
 /// Best-effort cleanup for unexpected exits (Ctrl+C, early-return, panics).
@@ -261,7 +271,23 @@ pub fn cleanup_agent_phase_silent() {
     end_agent_phase();
     cleanup_git_wrapper_dir_silent();
     uninstall_hooks_silent();
-    crate::files::cleanup_generated_files();
+    cleanup_generated_files_silent();
+}
+
+/// Cleanup generated files silently without workspace.
+///
+/// This is a minimal implementation for cleanup in signal handlers where
+/// workspace context is not available. Uses std::fs directly which is
+/// acceptable for this emergency cleanup scenario.
+fn cleanup_generated_files_silent() {
+    let repo_root = match crate::git_helpers::get_repo_root() {
+        Ok(root) => root,
+        Err(_) => return,
+    };
+    for file in crate::files::io::agent_files::GENERATED_FILES {
+        let absolute_path = repo_root.join(file);
+        let _ = std::fs::remove_file(absolute_path);
+    }
 }
 
 /// Clean up orphaned .`no_agent_commit` marker.
