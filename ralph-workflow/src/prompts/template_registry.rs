@@ -244,7 +244,7 @@ mod tests {
     fn test_all_template_names() {
         let names = TemplateRegistry::all_template_names();
         assert!(!names.is_empty());
-        assert!(names.len() >= 20); // At least 20 templates
+        assert!(names.len() >= 10); // At least 10 templates (reduced after removing unused reviewer templates)
         assert!(names.contains(&"developer_iteration_xml".to_string()));
         assert!(names.contains(&"commit_message_xml".to_string()));
     }
@@ -272,17 +272,14 @@ mod tests {
     }
 
     #[test]
-    fn test_get_reviewer_template() {
+    fn test_get_review_xml_template() {
         let registry = TemplateRegistry::new(None);
-        // Test consolidated template
-        let result = registry.get_template("standard_review");
+        // The review phase uses review_xml template
+        let result = registry.get_template("review_xml");
         assert!(result.is_ok());
         let content = result.unwrap();
         assert!(!content.is_empty());
-
-        // Legacy template should also work (backward compatibility)
-        let result_legacy = registry.get_template("standard_review_normal");
-        assert!(result_legacy.is_ok());
+        assert!(content.contains("REVIEW MODE"));
     }
 
     #[test]
