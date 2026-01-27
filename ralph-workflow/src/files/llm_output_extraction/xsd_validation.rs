@@ -7,8 +7,9 @@
 
 use crate::files::llm_output_extraction::commit::is_conventional_commit_subject;
 use crate::files::llm_output_extraction::xml_helpers::{
-    create_reader, duplicate_element_error, malformed_xml_error, missing_required_error,
-    read_text_until_end, skip_to_end, text_outside_tags_error, unexpected_element_error,
+    create_reader, duplicate_element_error, format_content_preview, malformed_xml_error,
+    missing_required_error, read_text_until_end, skip_to_end, text_outside_tags_error,
+    unexpected_element_error,
 };
 use quick_xml::events::Event;
 
@@ -85,13 +86,7 @@ pub(crate) fn validate_xml_against_xsd(
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-commit".to_string(),
                     expected: "<ralph-commit> as root element".to_string(),
-                    found: if content.is_empty() {
-                        "empty content".to_string()
-                    } else if content.len() <= 60 {
-                        content.to_string()
-                    } else {
-                        format!("{}...", &content[..60])
-                    },
+                    found: format_content_preview(content),
                     suggestion:
                         "Wrap your commit message in <ralph-commit>...</ralph-commit> tags."
                             .to_string(),

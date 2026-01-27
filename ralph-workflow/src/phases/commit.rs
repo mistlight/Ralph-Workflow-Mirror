@@ -16,6 +16,7 @@ use super::commit_logging::{
 use super::context::PhaseContext;
 use crate::agents::{AgentRegistry, AgentRole};
 use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
+use crate::common::truncate_text;
 use crate::files::llm_output_extraction::{
     archive_xml_file_with_workspace, preprocess_raw_content, try_extract_from_file_with_workspace,
     try_extract_xml_commit_with_trace, xml_paths, CommitExtractionResult,
@@ -32,13 +33,12 @@ use std::fmt;
 use std::path::Path;
 
 /// Preview a commit message for display (first line, truncated if needed).
+///
+/// Uses character-based truncation to avoid panics on UTF-8 multi-byte characters.
 fn preview_commit_message(msg: &str) -> String {
     let first_line = msg.lines().next().unwrap_or(msg);
-    if first_line.len() > 60 {
-        format!("{}...", &first_line[..60])
-    } else {
-        first_line.to_string()
-    }
+    // truncate_text handles the ellipsis, so we use 63 to get ~60 chars + "..."
+    truncate_text(first_line, 63)
 }
 
 /// Maximum safe prompt size in bytes before pre-truncation.

@@ -135,8 +135,13 @@ fn handle_agent_error(
 
     // Log stderr content for debugging (truncated for readability)
     if !stderr.is_empty() {
+        // Use truncate_text for UTF-8 safe truncation (avoids panic on multi-byte char boundaries)
         let stderr_preview = if stderr.len() > 500 {
-            format!("{}... ({} bytes total)", &stderr[..500], stderr.len())
+            format!(
+                "{}... ({} bytes total)",
+                truncate_text(stderr, 500),
+                stderr.len()
+            )
         } else {
             stderr.to_string()
         };
@@ -423,16 +428,27 @@ pub fn try_agent_with_retries(
             }
         }
 
-        // Handle error classification, logging, and user guidance
-        let error_kind = handle_agent_error(
-            result.exit_code,
-            &result.stderr,
-            config.agent_name,
-            config.model_flag,
-            config.cmd_str,
-            is_glm_agent,
-            runtime,
-        );
+        // Handle error classification, logging, and user guidance.
+        // Defense-in-depth: wrap in catch_unwind to prevent panics in error handling
+        // from crashing the pipeline. If error handling panics, treat as transient
+        // error and continue with fallback chain.
+        let error_kind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            handle_agent_error(
+                result.exit_code,
+                &result.stderr,
+                config.agent_name,
+                config.model_flag,
+                config.cmd_str,
+                is_glm_agent,
+                runtime,
+            )
+        }))
+        .unwrap_or_else(|_| {
+            runtime
+                .logger
+                .warn("Error handling panicked, treating as transient error");
+            AgentErrorKind::Transient
+        });
 
         // Check for unrecoverable errors - abort immediately
         if error_kind.is_unrecoverable() {
