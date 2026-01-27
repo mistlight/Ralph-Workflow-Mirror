@@ -4,8 +4,8 @@
 //! corruption (e.g. zero-length or binary files) in small, text-based agent
 //! artifacts like `PLAN.md` and `commit-message.txt`.
 
-use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::fs;
+use std::io::{self, Write};
 use std::path::Path;
 use tempfile::NamedTempFile;
 
@@ -86,29 +86,6 @@ pub fn write_file_atomic_with_workspace(
     workspace.write_atomic(path, content)
 }
 
-/// Validate that a file is readable UTF-8 text and within size limits.
-///
-/// Returns `Ok(true)` if the file appears valid, `Ok(false)` if corrupt, or `Err`
-/// on access error.
-///
-/// # Note
-///
-/// This is a crate-internal function. For public API, use `verify_file_not_corrupted_with_workspace`.
-pub(crate) fn verify_file_not_corrupted(path: &Path) -> io::Result<bool> {
-    let metadata = fs::metadata(path)?;
-
-    if metadata.len() == 0 || metadata.len() > MAX_AGENT_FILE_SIZE {
-        return Ok(false);
-    }
-
-    let mut file = File::open(path)?;
-    let mut buf = String::new();
-    file.read_to_string(&mut buf)?;
-
-    // Null bytes are a simple indicator of binary corruption.
-    Ok(!buf.contains('\0'))
-}
-
 /// Validate that a file is readable UTF-8 text and within size limits using workspace.
 ///
 /// This is the workspace-based version of `verify_file_not_corrupted`.
@@ -147,45 +124,6 @@ pub fn verify_file_not_corrupted_with_workspace(
 /// - Directory exists and is writable
 /// - No obviously stale lock files (best-effort)
 ///
-/// # Note
-///
-/// This is a crate-internal function. For public API, use `check_filesystem_ready_with_workspace`.
-pub(crate) fn check_filesystem_ready(path: &Path) -> io::Result<()> {
-    if !path.exists() {
-        fs::create_dir_all(path)?;
-    }
-
-    // Check writability using a tiny temp file.
-    let test_file = path.join(".write_test");
-    fs::write(&test_file, b"test")?;
-    fs::remove_file(&test_file)?;
-
-    // Best-effort stale lock detection: fail only on clear cases.
-    if let Ok(entries) = fs::read_dir(path) {
-        for entry in entries.flatten() {
-            let file_name = entry.file_name();
-            let Some(name) = file_name.to_str() else {
-                continue;
-            };
-            if !name.to_ascii_lowercase().ends_with(".lock") {
-                continue;
-            }
-
-            if let Ok(metadata) = entry.metadata() {
-                if let Ok(modified) = metadata.modified() {
-                    if let Ok(elapsed) = modified.elapsed() {
-                        if elapsed > std::time::Duration::from_secs(3600) {
-                            return Err(io::Error::other(format!("Stale lock file found: {name}")));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
 /// Verify that the filesystem is ready for `.agent/` file operations using workspace.
 ///
 /// This is the workspace-based version of `check_filesystem_ready`.
@@ -261,75 +199,6 @@ pub fn check_filesystem_ready_with_workspace(
 /// // Check if issues.xml is writable before agent runs
 /// match check_xml_file_writable(Path::new(".agent/tmp/issues.xml"), false) {
 ///     Ok(true) => println!("File is writable"),
-///     Ok(false) => println!("File doesn't exist yet"),
-///     Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
-///         // File is locked - attempt cleanup
-///         check_xml_file_writable(Path::new(".agent/tmp/issues.xml"), true)?;
-///     }
-///     Err(e) => return Err(e),
-/// }
-/// ```
-///
-/// Check if a specific XML file is writable and clean up if locked.
-///
-/// # Note
-///
-/// This is a crate-internal function. For public API, use `check_xml_file_writable_with_workspace`.
-pub(crate) fn check_xml_file_writable(xml_path: &Path, force_cleanup: bool) -> io::Result<bool> {
-    // If file doesn't exist, it's writable (we can create it)
-    if !xml_path.exists() {
-        return Ok(false);
-    }
-
-    // Try to open the file in append mode to test if it's locked
-    match fs::OpenOptions::new().append(true).open(xml_path) {
-        Ok(mut file) => {
-            // File is writable - verify by writing and removing a blank line
-            use std::io::Write;
-
-            // Get current file size
-            let original_size = file.metadata()?.len();
-
-            // Try to append a blank line
-            if let Err(e) = writeln!(file) {
-                if force_cleanup {
-                    drop(file); // Close file handle before deleting
-                    fs::remove_file(xml_path)?;
-                    return Ok(false);
-                }
-                return Err(e);
-            }
-
-            // Flush to ensure write succeeded
-            file.flush()?;
-
-            // Truncate back to original size (removes the blank line we added)
-            file.set_len(original_size)?;
-
-            Ok(true)
-        }
-        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
-            // File is locked or not writable
-            if force_cleanup {
-                // Try to forcefully remove the locked file
-                // On Windows, this may still fail if another process has it open
-                fs::remove_file(xml_path)?;
-                Ok(false)
-            } else {
-                Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!(
-                        "File {} is locked or not writable. This may indicate a stale process \
-                         is holding the file open. Consider restarting or using force_cleanup.",
-                        xml_path.display()
-                    ),
-                ))
-            }
-        }
-        Err(e) => Err(e),
-    }
-}
-
 /// Check and clean up all XML files in .agent/tmp/ directory.
 ///
 /// This is useful to run before starting an agent to ensure no stale
@@ -342,64 +211,6 @@ pub(crate) fn check_xml_file_writable(xml_path: &Path, force_cleanup: bool) -> i
 ///
 /// # Returns
 ///
-/// A summary of what was found and cleaned up.
-///
-/// # Note
-///
-/// This is a crate-internal function. For public API, use `cleanup_stale_xml_files_with_workspace`.
-pub(crate) fn cleanup_stale_xml_files(tmp_dir: &Path, force_cleanup: bool) -> io::Result<String> {
-    let mut report = Vec::new();
-    let mut cleaned = 0;
-    let mut locked = 0;
-    let mut writable = 0;
-
-    if !tmp_dir.exists() {
-        return Ok("Directory doesn't exist yet - nothing to clean".to_string());
-    }
-
-    for entry in fs::read_dir(tmp_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        // Only check .xml files
-        if path.extension().and_then(|s| s.to_str()) != Some("xml") {
-            continue;
-        }
-
-        match check_xml_file_writable(&path, force_cleanup) {
-            Ok(true) => {
-                writable += 1;
-                report.push(format!("  ✓ {} is writable", path.display()));
-            }
-            Ok(false) => {
-                if force_cleanup {
-                    cleaned += 1;
-                    report.push(format!("  🗑 Removed locked file: {}", path.display()));
-                }
-            }
-            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
-                locked += 1;
-                report.push(format!("  ⚠ LOCKED: {} - {}", path.display(), e));
-            }
-            Err(e) => {
-                report.push(format!("  ✗ Error checking {}: {}", path.display(), e));
-            }
-        }
-    }
-
-    let summary = format!(
-        "XML file check complete: {} writable, {} locked, {} cleaned",
-        writable, locked, cleaned
-    );
-
-    if !report.is_empty() {
-        Ok(format!("{}\n{}", summary, report.join("\n")))
-    } else {
-        Ok(summary)
-    }
-}
-
-/// Check if a specific XML file is writable using workspace abstraction.
 ///
 /// This is the workspace-based version of `check_xml_file_writable`.
 ///

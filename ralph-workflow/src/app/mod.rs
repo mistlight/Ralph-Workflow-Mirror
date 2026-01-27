@@ -66,7 +66,7 @@ use crate::prompts::template_context::TemplateContext;
 use config_init::initialize_config;
 use context::PipelineContext;
 use detection::detect_project_stack;
-use plumbing::{handle_apply_commit, handle_generate_commit_msg, handle_show_commit_msg};
+use plumbing::handle_generate_commit_msg;
 use rebase::{run_initial_rebase, run_rebase_to_default, try_resolve_conflicts_without_phase_ctx};
 use resume::{handle_resume_with_validation, offer_resume_if_checkpoint_exists};
 use validation::{
@@ -724,19 +724,23 @@ fn handle_plumbing_commands<H: effect::AppEffectHandler>(
     // Show commit message
     if args.commit_display.show_commit_msg {
         setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
-        if let Some(ws) = workspace {
-            return handle_show_commit_msg_with_workspace(ws).map(|()| true);
-        }
-        return handle_show_commit_msg().map(|()| true);
+        let ws = workspace.ok_or_else(|| {
+            anyhow::anyhow!(
+                "--show-commit-msg requires workspace context. Run this command after the pipeline has initialized."
+            )
+        })?;
+        return handle_show_commit_msg_with_workspace(ws).map(|()| true);
     }
 
     // Apply commit
     if args.commit_plumbing.apply_commit {
         setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
-        if let Some(ws) = workspace {
-            return handle_apply_commit_with_handler(ws, handler, logger, colors).map(|()| true);
-        }
-        return handle_apply_commit(logger, colors).map(|()| true);
+        let ws = workspace.ok_or_else(|| {
+            anyhow::anyhow!(
+                "--apply-commit requires workspace context. Run this command after the pipeline has initialized."
+            )
+        })?;
+        return handle_apply_commit_with_handler(ws, handler, logger, colors).map(|()| true);
     }
 
     // Reset start commit
@@ -1179,7 +1183,8 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         cleanup_orphaned_marker(&ctx.logger)?;
         start_agent_phase(&mut git_helpers)?;
     }
-    let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &ctx.logger);
+    let mut agent_phase_guard =
+        AgentPhaseGuard::new(&mut git_helpers, &ctx.logger, &*ctx.workspace);
 
     // Print welcome banner and validate PROMPT.md
     print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);
@@ -1487,7 +1492,8 @@ where
         cleanup_orphaned_marker(&ctx.logger)?;
         start_agent_phase(&mut git_helpers)?;
     }
-    let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &ctx.logger);
+    let mut agent_phase_guard =
+        AgentPhaseGuard::new(&mut git_helpers, &ctx.logger, &*ctx.workspace);
 
     // Print welcome banner and validate PROMPT.md
     print_welcome_banner(ctx.colors, &ctx.developer_display, &ctx.reviewer_display);

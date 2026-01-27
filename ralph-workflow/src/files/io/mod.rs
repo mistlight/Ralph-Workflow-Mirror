@@ -30,12 +30,10 @@ pub mod context;
 
 // Re-exports for backward compatibility
 pub use agent_files::{
-    cleanup_generated_files, cleanup_generated_files_with_workspace, delete_commit_message_file,
-    delete_commit_message_file_with_workspace, delete_plan_file, delete_plan_file_with_workspace,
-    ensure_files, ensure_files_with_workspace, file_contains_marker,
-    file_contains_marker_with_workspace, read_commit_message_file,
-    read_commit_message_file_with_workspace, setup_xsd_schemas_with_workspace,
-    write_commit_message_file, write_commit_message_file_with_workspace,
+    cleanup_generated_files_with_workspace, delete_commit_message_file_with_workspace,
+    delete_plan_file_with_workspace, ensure_files_with_workspace, file_contains_marker,
+    file_contains_marker_with_workspace, read_commit_message_file_with_workspace,
+    setup_xsd_schemas_with_workspace, write_commit_message_file_with_workspace, GENERATED_FILES,
 };
 
 pub use integrity::{

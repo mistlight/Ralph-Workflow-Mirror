@@ -19,13 +19,10 @@ use crate::app::effect::{AppEffect, AppEffectHandler, AppEffectResult};
 use crate::config::Config;
 use crate::executor::ProcessExecutor;
 use crate::files::{
-    delete_commit_message_file, delete_commit_message_file_with_workspace,
-    read_commit_message_file, read_commit_message_file_with_workspace,
+    delete_commit_message_file_with_workspace, read_commit_message_file_with_workspace,
     write_commit_message_file_with_workspace,
 };
-use crate::git_helpers::{
-    get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
-};
+use crate::git_helpers::git_diff;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::phases::generate_commit_message;
@@ -33,7 +30,6 @@ use crate::pipeline::PipelineRuntime;
 use crate::pipeline::Timer;
 use crate::prompts::TemplateContext;
 use crate::workspace::Workspace;
-use std::env;
 use std::sync::Arc;
 
 /// Configuration for commit message generation in plumbing commands.
@@ -61,29 +57,6 @@ pub struct CommitGenerationConfig<'a> {
     pub executor: Arc<dyn ProcessExecutor>,
 }
 
-/// Handles the `--show-commit-msg` command.
-///
-/// Reads and displays the commit message from `.agent/commit-message.txt`.
-///
-/// # Returns
-///
-/// Returns `Ok(())` on success or an error if the file cannot be read.
-pub fn handle_show_commit_msg() -> anyhow::Result<()> {
-    require_git_repo()?;
-    let repo_root = get_repo_root()?;
-    env::set_current_dir(&repo_root)?;
-
-    match read_commit_message_file() {
-        Ok(msg) => {
-            println!("{msg}");
-            Ok(())
-        }
-        Err(e) => {
-            anyhow::bail!("Failed to read commit message: {e}");
-        }
-    }
-}
-
 /// Handles the `--show-commit-msg` command using workspace abstraction.
 ///
 /// This is a testable version that uses `Workspace` for file I/O,
@@ -106,64 +79,6 @@ pub fn handle_show_commit_msg_with_workspace(workspace: &dyn Workspace) -> anyho
             anyhow::bail!("Failed to read commit message: {e}");
         }
     }
-}
-
-/// Handles the `--apply-commit` command.
-///
-/// Stages all changes and creates a commit using the stored commit message.
-/// After successful commit, deletes the commit message file.
-///
-/// # Arguments
-///
-/// * `logger` - Logger for info/warning messages
-/// * `colors` - Color configuration for output
-///
-/// # Returns
-///
-/// Returns `Ok(())` on success or an error if commit fails.
-pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()> {
-    require_git_repo()?;
-    let repo_root = get_repo_root()?;
-    env::set_current_dir(&repo_root)?;
-
-    let commit_msg = read_commit_message_file()?;
-
-    logger.info("Staging all changes...");
-    git_add_all()?;
-
-    // Show what we're committing (using libgit2 via git_snapshot)
-    if let Ok(status) = git_snapshot() {
-        if !status.is_empty() {
-            println!("{}Changes to commit:{}", colors.bold(), colors.reset());
-            for line in status.lines().take(20) {
-                println!("  {}{}{}", colors.dim(), line, colors.reset());
-            }
-            println!();
-        }
-    }
-
-    logger.info(&format!(
-        "Commit message: {}{}{}",
-        colors.cyan(),
-        commit_msg,
-        colors.reset()
-    ));
-
-    logger.info("Creating commit...");
-    // Note: Plumbing commands don't have access to config, so we use None
-    // for git identity and executor, falling back to git config (via repo.signature())
-    // and environment variables for identity fallback.
-    if let Some(oid) = git_commit(&commit_msg, None, None, None)? {
-        logger.success(&format!("Commit created successfully: {oid}"));
-        // Clean up the commit message file
-        if let Err(err) = delete_commit_message_file() {
-            logger.warn(&format!("Failed to delete commit-message.txt: {err}"));
-        }
-    } else {
-        logger.warn("Nothing to commit (working tree clean)");
-    }
-
-    Ok(())
 }
 
 /// Handles the `--apply-commit` command using effect handler abstraction.

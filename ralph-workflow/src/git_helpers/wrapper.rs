@@ -261,7 +261,18 @@ pub fn cleanup_agent_phase_silent() {
     end_agent_phase();
     cleanup_git_wrapper_dir_silent();
     uninstall_hooks_silent();
-    crate::files::cleanup_generated_files();
+    cleanup_generated_files_silent();
+}
+
+/// Cleanup generated files silently without workspace.
+///
+/// This is a minimal implementation for cleanup in signal handlers where
+/// workspace context is not available. Uses std::fs directly which is
+/// acceptable for this emergency cleanup scenario.
+fn cleanup_generated_files_silent() {
+    for file in crate::files::io::agent_files::GENERATED_FILES {
+        let _ = std::fs::remove_file(file);
+    }
 }
 
 /// Clean up orphaned .`no_agent_commit` marker.
