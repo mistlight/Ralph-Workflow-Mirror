@@ -26,6 +26,8 @@
 {# ============================================================================ #}
 {{> shared/_safety_no_execute}}
 
+{{> shared/_unattended_mode}}
+
 Generate a commit message for the following diff.
 
 ## Instructions

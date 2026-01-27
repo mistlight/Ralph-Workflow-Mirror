@@ -33,6 +33,8 @@
 
 You are in IMPLEMENTATION MODE. Execute the plan and make progress.
 
+{{> shared/_unattended_mode}}
+
 ═══════════════════════════════════════════════════════════════════════════════
 IMPORTANT: EXECUTION CONTEXT
 ═══════════════════════════════════════════════════════════════════════════════

@@ -47,6 +47,8 @@
 
 You are in PLANNING MODE. Create a detailed, structured implementation plan.
 
+{{> shared/_unattended_mode}}
+
 CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
 - Creating, modifying, or deleting any files
 - Running any commands that modify system state

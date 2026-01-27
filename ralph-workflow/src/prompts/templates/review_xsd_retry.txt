@@ -18,6 +18,8 @@
 {#   Valid <ralph-issues> XML conforming to the XSD schema                     #}
 {# ============================================================================ #}
 
+{{> shared/_unattended_mode}}
+
 Your XML at `{{ISSUES_XML_PATH}}` failed validation.
 
 ERROR: {{XSD_ERROR}}

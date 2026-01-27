@@ -18,6 +18,8 @@
 {#   Valid <ralph-development-result> XML conforming to the XSD schema         #}
 {# ============================================================================ #}
 
+{{> shared/_unattended_mode}}
+
 Your XML at `{{DEVELOPMENT_RESULT_XML_PATH}}` failed validation.
 
 ERROR: {{XSD_ERROR}}
