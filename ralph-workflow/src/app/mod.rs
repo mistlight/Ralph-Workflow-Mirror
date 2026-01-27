@@ -52,9 +52,12 @@ use crate::files::{
     update_status_with_workspace, validate_prompt_md_with_workspace,
 };
 use crate::git_helpers::{
-    abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
-    get_default_branch, get_start_commit_summary, is_main_or_master_branch, rebase_onto,
-    reset_start_commit, save_start_commit, start_agent_phase, RebaseResult,
+    abort_rebase, continue_rebase, get_conflicted_files, get_default_branch,
+    is_main_or_master_branch, rebase_onto, reset_start_commit, RebaseResult,
+};
+#[cfg(not(feature = "test-utils"))]
+use crate::git_helpers::{
+    cleanup_orphaned_marker, get_start_commit_summary, save_start_commit, start_agent_phase,
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
@@ -1087,7 +1090,9 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 /// This is the production entry point - it creates a MainEffectHandler internally.
 fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()> {
     use crate::app::event_loop::EventLoopConfig;
-    use crate::reducer::{MainEffectHandler, PipelineState};
+    #[cfg(not(feature = "test-utils"))]
+    use crate::reducer::MainEffectHandler;
+    use crate::reducer::PipelineState;
 
     // First, offer interactive resume if checkpoint exists without --resume flag
     let resume_result = offer_resume_if_checkpoint_exists(
@@ -1307,10 +1312,25 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     let execution_history_before = phase_ctx.execution_history.clone();
     let prompt_history_before = phase_ctx.clone_prompt_history();
 
-    // Create effect handler and run event loop
-    let mut handler = MainEffectHandler::new(initial_state.clone());
+    // Create effect handler and run event loop.
+    // Under test-utils feature, use MockEffectHandler to avoid real git operations.
+    #[cfg(feature = "test-utils")]
     let loop_result = {
         use crate::app::event_loop::run_event_loop_with_handler;
+        use crate::reducer::mock_effect_handler::MockEffectHandler;
+        let mut handler = MockEffectHandler::new(initial_state.clone());
+        let phase_ctx_ref = &mut phase_ctx;
+        run_event_loop_with_handler(
+            phase_ctx_ref,
+            Some(initial_state),
+            event_loop_config,
+            &mut handler,
+        )
+    };
+    #[cfg(not(feature = "test-utils"))]
+    let loop_result = {
+        use crate::app::event_loop::run_event_loop_with_handler;
+        let mut handler = MainEffectHandler::new(initial_state.clone());
         let phase_ctx_ref = &mut phase_ctx;
         run_event_loop_with_handler(
             phase_ctx_ref,
@@ -1373,8 +1393,10 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         &ctx.logger,
         ctx.colors,
         &config,
-        &timer,
-        &stats,
+        finalization::RuntimeStats {
+            timer: &timer,
+            stats: &stats,
+        },
         prompt_monitor,
         Some(&*ctx.workspace),
     );
@@ -1600,8 +1622,10 @@ where
         &ctx.logger,
         ctx.colors,
         &config,
-        &timer,
-        &stats,
+        finalization::RuntimeStats {
+            timer: &timer,
+            stats: &stats,
+        },
         prompt_monitor,
         Some(&*ctx.workspace),
     );
@@ -1872,7 +1896,6 @@ fn save_start_commit_or_warn(ctx: &PipelineContext) {
         }
         ctx.logger
             .warn("Start commit is stale. Consider running: ralph --reset-start-commit");
-        return;
     }
 
     #[cfg(not(feature = "test-utils"))]

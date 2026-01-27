@@ -17,6 +17,12 @@ use crate::pipeline::Timer;
 use crate::pipeline::{AgentPhaseGuard, Stats};
 use crate::workspace::Workspace;
 
+/// Runtime statistics collected during pipeline execution.
+pub struct RuntimeStats<'a> {
+    pub timer: &'a Timer,
+    pub stats: &'a Stats,
+}
+
 /// Finalizes the pipeline: cleans up and prints summary.
 ///
 /// Commits now happen per-iteration during development and per-cycle during review,
@@ -30,8 +36,7 @@ pub fn finalize_pipeline(
     logger: &Logger,
     colors: Colors,
     config: &Config,
-    timer: &Timer,
-    stats: &Stats,
+    runtime: RuntimeStats<'_>,
     prompt_monitor: Option<PromptMonitor>,
     workspace: Option<&dyn Workspace>,
 ) {
@@ -52,11 +57,11 @@ pub fn finalize_pipeline(
 
     // Final summary
     let summary = PipelineSummary {
-        total_time: timer.elapsed_formatted(),
-        dev_runs_completed: stats.developer_runs_completed as usize,
+        total_time: runtime.timer.elapsed_formatted(),
+        dev_runs_completed: runtime.stats.developer_runs_completed as usize,
         dev_runs_total: config.developer_iters as usize,
-        review_runs: stats.reviewer_runs_completed as usize,
-        changes_detected: stats.changes_detected as usize,
+        review_runs: runtime.stats.reviewer_runs_completed as usize,
+        changes_detected: runtime.stats.changes_detected as usize,
         isolation_mode: config.isolation_mode,
         verbose: config.verbosity.is_verbose(),
         review_summary: None,
