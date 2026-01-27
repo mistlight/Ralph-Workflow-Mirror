@@ -57,21 +57,28 @@ use std::sync::Arc;
 /// from the handler's in-memory filesystem. This allows the pipeline
 /// to use MemoryWorkspace for file operations while the handler remains
 /// the source of truth for effect handling.
+///
+/// Returns both the workspace and a set of initial file paths for tracking deletions.
 fn create_workspace_from_handler(
     handler: &ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
-) -> Arc<ralph_workflow::workspace::MemoryWorkspace> {
+) -> (
+    Arc<ralph_workflow::workspace::MemoryWorkspace>,
+    std::collections::HashSet<std::path::PathBuf>,
+) {
     let cwd = handler.get_cwd();
     let mut workspace = ralph_workflow::workspace::MemoryWorkspace::new(cwd);
+    let mut initial_paths = std::collections::HashSet::new();
 
     // Copy all files from the handler to the workspace
     for (path, content) in handler.get_all_files() {
         // MemoryWorkspace stores files relative to root, so convert PathBuf to &str
         if let Some(path_str) = path.to_str() {
             workspace = workspace.with_file(path_str, &content);
+            initial_paths.insert(path.clone());
         }
     }
 
-    Arc::new(workspace)
+    (Arc::new(workspace), initial_paths)
 }
 
 /// Sync files from a MemoryWorkspace back to a MockAppEffectHandler.
@@ -79,7 +86,7 @@ fn create_workspace_from_handler(
 /// After the pipeline runs, the workspace contains newly created/modified files
 /// and may have deleted some files. This function:
 /// 1. Adds new files created by the workspace to the handler
-/// 2. Removes files from handler that were deleted from workspace during execution
+/// 2. Removes files from handler that were in the initial workspace but are now deleted
 ///
 /// **Important for existing files**: Files that exist in BOTH the workspace and
 /// handler are NOT overwritten, since they may have been updated by AppEffects
@@ -87,15 +94,18 @@ fn create_workspace_from_handler(
 ///
 /// This design means:
 /// - New files created by workspace (backups, logs) -> synced to handler
-/// - Deleted files (checkpoints after success) -> removed from handler
-/// - Existing files updated by effects -> preserved in handler
+/// - Deleted files (from initial set) -> removed from handler
+/// - Effect-created files (not in initial set) -> preserved in handler
 /// - Existing files updated by workspace ONLY -> NOT synced (handler keeps effect value)
 fn sync_workspace_to_handler(
     workspace: &ralph_workflow::workspace::MemoryWorkspace,
     handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
+    initial_workspace_files: &std::collections::HashSet<std::path::PathBuf>,
 ) {
-    // Get files in workspace after execution
+    // Get current files in workspace after execution
     let workspace_files = workspace.written_files();
+    let current_workspace_paths: std::collections::HashSet<_> =
+        workspace_files.keys().cloned().collect();
 
     // Get files in handler (original + effect-updated files)
     let handler_files_snapshot: Vec<_> = handler
@@ -115,23 +125,18 @@ fn sync_workspace_to_handler(
         }
     }
 
-    // NOTE: We intentionally do NOT remove files from the handler that are missing
-    // from the workspace. This is because:
+    // Remove files that:
+    // 1. Were in the initial workspace (when copied from handler)
+    // 2. Are no longer in the workspace (were deleted during execution)
     //
-    // 1. Effect-created files (like `.agent/start_commit` from GitResetStartCommit)
-    //    are added directly to the handler's files map, NOT through the workspace.
-    //    Removing them would break tests that verify effect behavior.
-    //
-    // 2. The workspace only tracks files written through Workspace trait methods.
-    //    Files created by AppEffects bypass the workspace entirely.
-    //
-    // Tests that need to verify file deletion should:
-    // - Check `workspace.was_deleted()` for workspace-level deletions
-    // - Check `!handler.file_exists()` for effect-level deletions
-    //
-    // If a test needs checkpoint clearing behavior, it should use
-    // `run_ralph_cli_with_handlers` (plural) which uses MockEffectHandler
-    // for reducer-level operations including checkpoint management.
+    // This preserves effect-created files (like .agent/start_commit) which
+    // are NOT in the initial set because they're created via effects.
+    for path in initial_workspace_files {
+        if !current_workspace_paths.contains(path) {
+            // File was in initial workspace but is now deleted - remove from handler
+            handler.remove_file(path);
+        }
+    }
 }
 
 /// Run ralph workflow with a custom MockAppEffectHandler.
@@ -199,7 +204,8 @@ pub fn run_ralph_cli_with_handler(
 
     // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
     // This ensures file operations use the handler's in-memory filesystem.
-    let workspace = create_workspace_from_handler(handler);
+    // We also track the initial files so we can detect deletions during execution.
+    let (workspace, initial_files) = create_workspace_from_handler(handler);
 
     // Use run_with_config_and_resolver with the provided handler, memory config env, and memory workspace
     let result = ralph_workflow::app::run_with_config_and_resolver(
@@ -213,7 +219,7 @@ pub fn run_ralph_cli_with_handler(
     );
 
     // Sync workspace files back to handler so tests can verify file side effects
-    sync_workspace_to_handler(&workspace, handler);
+    sync_workspace_to_handler(&workspace, handler, &initial_files);
 
     result
 }
@@ -291,7 +297,8 @@ pub fn run_ralph_cli_with_handlers(
         .with_unified_config_path(cwd.join(".config/ralph-workflow.toml"));
 
     // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
-    let workspace = create_workspace_from_handler(app_handler);
+    // Track initial files so we can detect deletions during execution.
+    let (workspace, initial_files) = create_workspace_from_handler(app_handler);
 
     // Use run_with_config_and_handlers with both handlers and memory workspace
     let result = ralph_workflow::app::run_with_config_and_handlers(
@@ -309,7 +316,7 @@ pub fn run_ralph_cli_with_handlers(
     );
 
     // Sync workspace files back to handler so tests can verify file side effects
-    sync_workspace_to_handler(&workspace, app_handler);
+    sync_workspace_to_handler(&workspace, app_handler, &initial_files);
 
     result
 }
@@ -370,7 +377,8 @@ pub fn run_ralph_cli_with_env(
     let registry = create_test_registry();
 
     // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
-    let workspace = create_workspace_from_handler(handler);
+    // Track initial files so we can detect deletions during execution.
+    let (workspace, initial_files) = create_workspace_from_handler(handler);
 
     // Use run_with_config_and_resolver with the provided handler and custom config env
     let result = ralph_workflow::app::run_with_config_and_resolver(
@@ -384,7 +392,7 @@ pub fn run_ralph_cli_with_env(
     );
 
     // Sync workspace files back to handler so tests can verify file side effects
-    sync_workspace_to_handler(&workspace, handler);
+    sync_workspace_to_handler(&workspace, handler, &initial_files);
 
     result
 }

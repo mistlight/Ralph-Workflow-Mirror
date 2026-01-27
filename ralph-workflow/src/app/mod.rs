@@ -139,8 +139,10 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     validate_agent_chains(&registry, colors);
 
     // Handle plumbing commands
+    // In production mode, no workspace is available for plumbing commands
+    // (they use real filesystem operations)
     let mut handler = effect_handler::RealAppEffectHandler::new();
-    if handle_plumbing_commands(&args, &logger, colors, &mut handler)? {
+    if handle_plumbing_commands(&args, &logger, colors, &mut handler, None)? {
         return Ok(());
     }
 
@@ -354,7 +356,14 @@ pub fn run_with_config_and_resolver<
     }
 
     // Handle plumbing commands (--reset-start-commit, --show-commit-msg, etc.)
-    if handle_plumbing_commands(&args, &logger, colors, handler)? {
+    // Pass workspace reference for testability with MemoryWorkspace
+    if handle_plumbing_commands(
+        &args,
+        &logger,
+        colors,
+        handler,
+        workspace.as_ref().map(|w| w.as_ref()),
+    )? {
         return Ok(());
     }
 
@@ -564,7 +573,14 @@ where
     }
 
     // Handle plumbing commands with app_handler
-    if handle_plumbing_commands(&args, &logger, colors, app_handler)? {
+    // Pass workspace reference for testability with MemoryWorkspace
+    if handle_plumbing_commands(
+        &args,
+        &logger,
+        colors,
+        app_handler,
+        workspace.as_ref().map(|w| w.as_ref()),
+    )? {
         return Ok(());
     }
 
@@ -651,12 +667,21 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
 ///
 /// Returns `Ok(true)` if a plumbing command was handled and we should exit.
 /// Returns `Ok(false)` if we should continue to the main pipeline.
+///
+/// # Workspace Support
+///
+/// When `workspace` is `Some`, the workspace-aware versions of plumbing commands
+/// are used, enabling testing with `MemoryWorkspace`. When `None`, the direct
+/// filesystem versions are used (production behavior).
 fn handle_plumbing_commands<H: effect::AppEffectHandler>(
     args: &Args,
     logger: &Logger,
     colors: Colors,
     handler: &mut H,
+    workspace: Option<&dyn crate::workspace::Workspace>,
 ) -> anyhow::Result<bool> {
+    use plumbing::{handle_apply_commit_with_handler, handle_show_commit_msg_with_workspace};
+
     // Helper to set up working directory for plumbing commands using the effect handler
     fn setup_working_dir_via_handler<H: effect::AppEffectHandler>(
         override_dir: Option<&std::path::Path>,
@@ -697,12 +722,18 @@ fn handle_plumbing_commands<H: effect::AppEffectHandler>(
     // Show commit message
     if args.commit_display.show_commit_msg {
         setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
+        if let Some(ws) = workspace {
+            return handle_show_commit_msg_with_workspace(ws).map(|()| true);
+        }
         return handle_show_commit_msg().map(|()| true);
     }
 
     // Apply commit
     if args.commit_plumbing.apply_commit {
         setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
+        if let Some(ws) = workspace {
+            return handle_apply_commit_with_handler(ws, handler, logger, colors).map(|()| true);
+        }
         return handle_apply_commit(logger, colors).map(|()| true);
     }
 
