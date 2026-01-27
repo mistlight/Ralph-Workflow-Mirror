@@ -235,8 +235,7 @@ mod tests {
     use crate::checkpoint::state::{CheckpointParams, CliArgsSnapshot, PipelinePhase, RebaseState};
 
     fn make_test_checkpoint() -> PipelineCheckpoint {
-        let cli_args =
-            CliArgsSnapshot::new(5, 2, "test".to_string(), None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "claude".into(), "-p".into(), None, true);
         let rev_config =

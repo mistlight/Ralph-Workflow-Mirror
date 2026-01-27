@@ -145,7 +145,6 @@ mod tests {
             developer_context: 1,
             reviewer_context: 0,
             verbosity: Verbosity::Verbose,
-            commit_msg: "test".to_string(),
             review_depth: ReviewDepth::Standard,
             isolation_mode: true,
             git_user_name: None,

@@ -493,7 +493,7 @@ pub struct RebaseFlags {
 #[command(after_help = "GETTING STARTED:\n\
     ralph --init                 Smart init (infers what you need)\n\
     ralph --init <work-guide>    Create PROMPT.md from a Work Guide\n\
-    ralph \"fix: my bug\"         Run the orchestrator\n\
+    ralph                        Run the orchestrator\n\
 \n\
 More help: ralph --extended-help  (shell completion, all presets, troubleshooting)")]
 // CLI arguments naturally use many boolean flags. These represent independent
@@ -558,13 +558,6 @@ pub struct Args {
     /// Rebase control flags
     #[command(flatten)]
     pub rebase_flags: RebaseFlags,
-
-    /// Commit message for the final commit
-    #[arg(
-        default_value = "chore: apply PROMPT loop + review/fix/review",
-        help = "Commit message for the final commit"
-    )]
-    pub commit_msg: String,
 
     /// Number of developer iterations (default: 5)
     #[arg(

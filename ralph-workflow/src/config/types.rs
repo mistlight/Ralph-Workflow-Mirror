@@ -225,8 +225,6 @@ pub struct Config {
     pub(crate) reviewer_context: u8,
     /// Verbosity level
     pub(crate) verbosity: Verbosity,
-    /// Commit message
-    pub(crate) commit_msg: String,
     /// Review depth level (standard, comprehensive, security, incremental)
     pub(crate) review_depth: ReviewDepth,
     /// Isolation mode: when true, NOTES.md and ISSUES.md are not generated and
@@ -249,12 +247,6 @@ pub struct Config {
 }
 
 impl Config {
-    /// Set the commit message.
-    pub(crate) fn with_commit_msg(mut self, msg: String) -> Self {
-        self.commit_msg = msg;
-        self
-    }
-
     /// Get the user templates directory.
     #[must_use]
     pub const fn user_templates_dir(&self) -> Option<&std::path::PathBuf> {
@@ -302,7 +294,6 @@ impl Config {
             developer_context: 0,
             reviewer_context: 0,
             verbosity: Verbosity::Quiet,
-            commit_msg: "chore: apply PROMPT loop + review/fix/review".to_string(),
             review_depth: ReviewDepth::Standard,
             isolation_mode: true,
             git_user_name: Some("Test".to_string()),

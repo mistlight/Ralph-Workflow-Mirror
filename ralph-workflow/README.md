@@ -92,7 +92,7 @@ ralph --init feature-spec
 # Edit PROMPT.md with detailed requirements
 
 # Run Ralph and walk away
-ralph "feat: your commit message"
+ralph
 ```
 
 ### Work Guides
@@ -147,33 +147,33 @@ Refactor the authentication module to use OAuth2 instead of basic auth.
 ### Preset Modes (control thoroughness)
 
 ```bash
-ralph -Q "fix: small bug"              # Quick: 1 dev + 1 review
-ralph -U "feat: minor change"          # Rapid: 2 dev + 1 review
-ralph -S "feat: add feature"           # Standard: 5 dev + 2 reviews (default)
-ralph -T "refactor: optimize"          # Thorough: 10 dev + 5 reviews
-ralph -L "feat: complex feature"       # Long: 15 dev + 10 reviews
+ralph -Q              # Quick: 1 dev + 1 review
+ralph -U              # Rapid: 2 dev + 1 review
+ralph -S              # Standard: 5 dev + 2 reviews (default)
+ralph -T              # Thorough: 10 dev + 5 reviews
+ralph -L              # Long: 15 dev + 10 reviews
 ```
 
 ### Custom Iterations
 
 ```bash
-ralph -D 3 -R 2 "feat: implement feature"  # 3 dev iterations, 2 review cycles
-ralph -D 10 -R 0 "feat: no review"         # Skip review phase entirely
+ralph -D 3 -R 2       # 3 dev iterations, 2 review cycles
+ralph -D 10 -R 0      # Skip review phase entirely
 ```
 
 ### Choose Agents
 
 ```bash
-ralph -a claude -r codex "feat: change"    # Claude for dev, Codex for review
-ralph -a opencode "feat: change"           # Use OpenCode for development
+ralph -a claude -r codex    # Claude for dev, Codex for review
+ralph -a opencode           # Use OpenCode for development
 ```
 
 ### Verbosity Control
 
 ```bash
-ralph -q "fix: typo"                   # Quiet mode
-ralph -f "feat: complex change"        # Full output (no truncation)
-ralph -d                               # Diagnose: show system info
+ralph -q              # Quiet mode
+ralph -f              # Full output (no truncation)
+ralph -d              # Diagnose: show system info
 ```
 
 ### Recovery

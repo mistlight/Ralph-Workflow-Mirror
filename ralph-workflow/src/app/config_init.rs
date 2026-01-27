@@ -118,9 +118,6 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
         .or_else(unified_config_path)
         .unwrap_or_else(|| PathBuf::from("~/.config/ralph-workflow.toml"));
 
-    // Set commit message from CLI
-    config = config.with_commit_msg(args.commit_msg.clone());
-
     // Apply CLI arguments to config
     apply_args_to_config(args, &mut config, colors);
 
