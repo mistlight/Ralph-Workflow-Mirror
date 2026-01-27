@@ -6,7 +6,7 @@
 
 use crate::agents::{contains_glm_model, is_glm_like_agent};
 use crate::review_metrics::ReviewMetrics;
-use std::fs;
+use crate::workspace::Workspace;
 use std::path::Path;
 
 /// Result of pre-flight validation
@@ -35,7 +35,11 @@ pub enum PostflightResult {
 ///
 /// These checks verify that the environment is suitable for running
 /// the review agent and help diagnose issues early.
+///
+/// Uses workspace abstraction for file operations, enabling testing with
+/// `MemoryWorkspace`.
 pub fn pre_flight_review_check(
+    workspace: &dyn Workspace,
     logger: &crate::logger::Logger,
     cycle: u32,
     reviewer_agent: &str,
@@ -70,12 +74,13 @@ pub fn pre_flight_review_check(
     }
 
     // Check 0.5: Check for existing ISSUES.md from previous failed run
-    if issues_path.exists() {
-        match fs::metadata(issues_path) {
-            Ok(metadata) if metadata.len() > 0 => {
+    if workspace.exists(issues_path) {
+        // Try to read to check if it has content
+        match workspace.read(issues_path) {
+            Ok(content) if !content.is_empty() => {
                 logger.warn(&format!(
                     "ISSUES.md already exists from a previous run (size: {} bytes).",
-                    metadata.len()
+                    content.len()
                 ));
                 logger
                     .info("The review agent will overwrite this file. If the previous run failed,");
@@ -86,15 +91,15 @@ pub fn pre_flight_review_check(
                 logger.warn("Found empty ISSUES.md from previous run. Will be overwritten.");
             }
             Err(e) => {
-                logger.warn(&format!("Cannot check ISSUES.md metadata: {e}"));
+                logger.warn(&format!("Cannot read ISSUES.md: {e}"));
             }
         }
     }
 
     // Check 1: Verify .agent directory is writable
-    if !agent_dir.exists() {
+    if !workspace.is_dir(agent_dir) {
         // Try to create it
-        if let Err(e) = fs::create_dir_all(agent_dir) {
+        if let Err(e) = workspace.create_dir_all(agent_dir) {
             return PreflightResult::Error(format!(
                 "Cannot create .agent directory: {e}. Check directory permissions."
             ));
@@ -103,9 +108,9 @@ pub fn pre_flight_review_check(
 
     // Test write by touching a temp file
     let test_file = agent_dir.join(format!(".write_test_{cycle}"));
-    match fs::write(&test_file, b"test") {
+    match workspace.write(&test_file, "test") {
         Ok(()) => {
-            let _ = fs::remove_file(&test_file);
+            let _ = workspace.remove(&test_file);
         }
         Err(e) => {
             return PreflightResult::Error(format!(
@@ -114,20 +119,17 @@ pub fn pre_flight_review_check(
         }
     }
 
-    // Check 2: Verify available disk space (at least 10MB free)
-    if let Ok(_metadata) = fs::metadata(agent_dir) {
-        // We can't easily get disk space on all platforms, so we'll
-        // just log a reminder if the directory seems unusually large
-        if let Ok(mut entries) = fs::read_dir(agent_dir) {
-            let entry_count = entries.by_ref().count();
-            if entry_count > 1000 {
-                logger.warn(&format!(
-                    ".agent directory has {entry_count} files. Consider cleaning up old logs."
-                ));
-                return PreflightResult::Warning(
-                    "Large .agent directory detected. Review may be slow.".to_string(),
-                );
-            }
+    // Check 2: Check number of files in .agent directory
+    // (workspace read_dir gives us entry count without needing metadata)
+    if let Ok(entries) = workspace.read_dir(agent_dir) {
+        let entry_count = entries.len();
+        if entry_count > 1000 {
+            logger.warn(&format!(
+                ".agent directory has {entry_count} files. Consider cleaning up old logs."
+            ));
+            return PreflightResult::Warning(
+                "Large .agent directory detected. Review may be slow.".to_string(),
+            );
         }
     }
 
@@ -137,11 +139,18 @@ pub fn pre_flight_review_check(
 /// Run post-flight validation after a review pass completes.
 ///
 /// These checks verify that the review agent produced expected output.
-pub fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> PostflightResult {
+///
+/// Uses workspace abstraction for file operations, enabling testing with
+/// `MemoryWorkspace`.
+pub fn post_flight_review_check(
+    workspace: &dyn Workspace,
+    logger: &crate::logger::Logger,
+    cycle: u32,
+) -> PostflightResult {
     let issues_path = Path::new(".agent/ISSUES.md");
 
     // Check 1: Verify ISSUES.md exists
-    if !issues_path.exists() {
+    if !workspace.exists(issues_path) {
         logger.warn(&format!(
             "Review cycle {cycle} completed but ISSUES.md was not created. \
              The agent may have failed or used a different output format."
@@ -156,8 +165,8 @@ pub fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> P
     }
 
     // Check 2: Verify ISSUES.md is not empty and log its size
-    let file_size = match fs::metadata(issues_path) {
-        Ok(metadata) if metadata.len() == 0 => {
+    let file_size = match workspace.read(issues_path) {
+        Ok(content) if content.is_empty() => {
             logger.warn(&format!("Review cycle {cycle} created an empty ISSUES.md."));
             logger.info("Possible causes:");
             logger.info("  - Agent reviewed but found no issues (should write 'No issues found.')");
@@ -165,19 +174,20 @@ pub fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> P
             logger.info("  - Agent doesn't understand the expected output format");
             return PostflightResult::Missing("ISSUES.md is empty".to_string());
         }
-        Ok(metadata) => {
+        Ok(content) => {
             // Log the file size for debugging
-            logger.info(&format!("ISSUES.md created ({} bytes)", metadata.len()));
-            metadata.len()
+            let size = content.len() as u64;
+            logger.info(&format!("ISSUES.md created ({} bytes)", size));
+            size
         }
         Err(e) => {
-            logger.warn(&format!("Cannot read ISSUES.md metadata: {e}"));
+            logger.warn(&format!("Cannot read ISSUES.md: {e}"));
             return PostflightResult::Missing(format!("Cannot read ISSUES.md: {e}"));
         }
     };
 
     // Check 3: Verify ISSUES.md has valid structure
-    match ReviewMetrics::from_issues_file() {
+    match ReviewMetrics::from_issues_file_with_workspace(workspace) {
         Ok(metrics) => {
             // Check if metrics indicate reasonable content
             if metrics.total_issues == 0 && !metrics.no_issues_declared {
@@ -222,7 +232,7 @@ pub fn post_flight_review_check(logger: &crate::logger::Logger, cycle: u32) -> P
             );
 
             // Try to read first few lines to give user a hint
-            if let Ok(content) = fs::read_to_string(issues_path) {
+            if let Ok(content) = workspace.read(issues_path) {
                 let preview: String = content.lines().take(5).collect::<Vec<_>>().join("\n");
                 if !preview.is_empty() {
                     logger.info("ISSUES.md preview (first 5 lines):");

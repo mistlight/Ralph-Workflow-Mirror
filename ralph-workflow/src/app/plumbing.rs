@@ -20,7 +20,8 @@ use crate::config::Config;
 use crate::executor::ProcessExecutor;
 use crate::files::{
     delete_commit_message_file, delete_commit_message_file_with_workspace,
-    read_commit_message_file, read_commit_message_file_with_workspace, write_commit_message_file,
+    read_commit_message_file, read_commit_message_file_with_workspace,
+    write_commit_message_file_with_workspace,
 };
 use crate::git_helpers::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
@@ -322,8 +323,8 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
     );
     println!();
 
-    // Write the message to file for use with --apply-commit
-    write_commit_message_file(&commit_message)?;
+    // Write the message to file for use with --apply-commit (using workspace)
+    write_commit_message_file_with_workspace(config.workspace, &commit_message)?;
 
     config
         .logger

@@ -19,7 +19,7 @@
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (file changes, CLI output, git state)
-//! - Uses `TempDir` for filesystem isolation
+//! - Uses `MockAppEffectHandler` for git/filesystem isolation
 //! - Tests are deterministic and black-box (test the workflow as a user would run it)
 
 pub mod backup;
