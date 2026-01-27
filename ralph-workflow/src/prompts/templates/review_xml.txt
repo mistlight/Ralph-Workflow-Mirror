@@ -1,6 +1,6 @@
 {# ============================================================================ #}
 {# Template: review_xml.txt                                                     #}
-{# Version: 1.0                                                                 #}
+{# Version: 2.0                                                                 #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
@@ -16,7 +16,7 @@
 {#   <ralph-issues>                                                             #}
 {#     <ralph-issue>Issue description</ralph-issue> (one or more)               #}
 {#     OR                                                                       #}
-##     <ralph-no-issues-found>No issues found</ralph-no-issues-found>          #}
+{#     <ralph-no-issues-found>No issues found</ralph-no-issues-found>          #}
 {#   </ralph-issues>                                                            #}
 {#                                                                             #}
 {# EXTRACTION:                                                                 #}
@@ -24,7 +24,17 @@
 {#   Validated by validate_issues_xml() in xsd_validation_issues.rs            #}
 {# ============================================================================ #}
 
-You are in REVIEW MODE. Identify issues in the implementation.
+You are in REVIEW MODE. Your ONLY task is to identify issues - DO NOT modify any code.
+
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL CONSTRAINTS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. DO NOT MODIFY ANY CODE - You are a reviewer, not a developer
+2. DO NOT create commits or stage changes
+3. DO NOT run the implementation - only analyze the code
+4. If you have code review skills/tools available, USE THEM
+5. Focus ONLY on the changed files shown in the diff below
 
 ═══════════════════════════════════════════════════════════════════════════════
 CONTEXT
@@ -36,51 +46,66 @@ ORIGINAL USER REQUIREMENTS:
 IMPLEMENTATION PLAN:
 {{PLAN}}
 
-CHANGES MADE:
+CHANGES MADE (diff):
 {{CHANGES}}
 
 ═══════════════════════════════════════════════════════════════════════════════
 REVIEW TASK
 ═══════════════════════════════════════════════════════════════════════════════
 
-Review the implementation against the requirements and plan. Your goal is to
-identify real issues that would cause problems - not to nitpick style preferences.
+Review the implementation against the requirements and plan.
 
-Focus on finding:
+STEP 1: Read the changed files for full context
+- For each file in the diff, read the complete file to understand the context
+- DO NOT explore beyond the changed files and their direct imports
 
-1. **Correctness issues**: Bugs, logic errors, incorrect behavior
+STEP 2: Identify real issues that would cause problems
+Your goal is to find actual bugs and problems - not to nitpick style preferences.
+
+Focus on finding (in priority order):
+
+1. **Correctness issues** (Critical/High priority):
+   - Bugs, logic errors, incorrect behavior
+   - Off-by-one errors, null/nil risks, race conditions
    - Does the code do what it's supposed to do?
-   - Are there off-by-one errors, null pointer risks, or race conditions?
 
-2. **Missing functionality**: Requirements not implemented
+2. **Missing functionality** (High priority):
+   - Requirements from PROMPT not implemented
+   - Edge cases that aren't handled
    - Does the implementation satisfy ALL acceptance criteria?
-   - Are there edge cases that aren't handled?
 
-3. **Code quality issues**: Violations of project patterns or poor practices
-   - Does the code follow the project's existing conventions?
-   - Are there obvious violations of DRY, separation of concerns, etc.?
+3. **Error handling gaps** (High priority):
+   - Unhandled error conditions
+   - Errors swallowed without logging
+   - Missing validation of inputs
 
-4. **Error handling gaps**: Unhandled error conditions
-   - What happens when things go wrong?
-   - Are errors properly propagated or swallowed?
+4. **Security issues** (Critical priority):
+   - Input validation gaps, injection risks
+   - Exposed secrets, hardcoded credentials
+   - Authentication/authorization bypasses
 
-5. **Security issues**: Potential vulnerabilities
-   - Input validation, injection risks, exposed secrets?
+5. **Testing gaps** (Medium priority):
+   - New code paths without tests
+   - Missing edge case coverage
+   - Tests that don't actually verify behavior
 
-6. **Testing gaps**: Missing or inadequate tests
-   - Are the new code paths tested?
-   - Do tests cover edge cases and error conditions?
+6. **Code quality issues** (Low priority - only report if egregious):
+   - Clear violations of project patterns
+   - Obvious duplication that will cause maintenance issues
+
+STEP 3: Write your findings as XML
 
 For each issue found, provide:
 - File and line reference (e.g., `src/file.rs:42`)
-- Severity level (Critical, High, Medium, Low)
+- Severity level: Critical, High, Medium, or Low
 - Clear description of the problem
 - Suggested fix or approach
 
 Do NOT report:
 - Style preferences that don't affect correctness
 - Issues in code that wasn't changed (unless the changes broke it)
-- Hypothetical issues without evidence
+- Hypothetical issues without concrete evidence in the diff
+- Nitpicks about naming, formatting, or documentation
 
 ═══════════════════════════════════════════════════════════════════════════════
 OUTPUT FORMAT
@@ -98,9 +123,9 @@ Suggested fix: How to address it.</ralph-issue>
 <ralph-issue>Additional issues as needed...</ralph-issue>
 </ralph-issues>
 
-If no issues:
+If no issues found (implementation is correct):
 <ralph-issues>
-<ralph-no-issues-found>Explanation of why the implementation is correct.</ralph-no-issues-found>
+<ralph-no-issues-found>Brief explanation of why the implementation correctly satisfies the requirements.</ralph-no-issues-found>
 </ralph-issues>
 
-Document all issues found - be thorough in your analysis.
+REMEMBER: Your job is to IDENTIFY issues, not to FIX them. Do not modify any files.

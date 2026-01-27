@@ -237,181 +237,16 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         // ============================================================================
-        // Reviewer Templates (Consolidated - 4 primary templates)
+        // NOTE: Reviewer Templates Removed
         // ============================================================================
         //
-        // CONSOLIDATION: Templates have been consolidated from 12 (6 types × 2 context levels)
-        // to 4 primary templates. The "minimal context" concept has been deprecated as it
-        // provided no real value - reviewers should read changed files for context.
+        // The following templates have been REMOVED as they were never used in production:
+        // - standard_review, comprehensive_review, security_review, universal_review
+        // - All *_minimal and *_normal variants
         //
-        // Primary templates:
-        // - standard_review: Default balanced review (most common)
-        // - comprehensive_review: Priority-ordered thorough review
-        // - security_review: OWASP Top 10 focused review
-        // - universal_review: Simplified prompt for problematic agents (GLM, ZhipuAI)
-
-        // Primary consolidated templates
-        m.insert(
-            "standard_review",
-            EmbeddedTemplate {
-                name: "standard_review",
-                content: include_str!("reviewer/templates/standard_review.txt"),
-                description: "Standard balanced review with comprehensive checklist (DEFAULT)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "comprehensive_review",
-            EmbeddedTemplate {
-                name: "comprehensive_review",
-                content: include_str!("reviewer/templates/comprehensive_review.txt"),
-                description: "Comprehensive priority-ordered review (12 categories)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "security_review",
-            EmbeddedTemplate {
-                name: "security_review",
-                content: include_str!("reviewer/templates/security_review.txt"),
-                description: "Security-focused review (OWASP Top 10)",
-                deprecated: false,
-            },
-        );
-
-        m.insert(
-            "universal_review",
-            EmbeddedTemplate {
-                name: "universal_review",
-                content: include_str!("reviewer/templates/universal_review.txt"),
-                description: "Simplified review for maximum agent compatibility",
-                deprecated: false,
-            },
-        );
-
-        // Legacy aliases - deprecated templates point to consolidated versions
-        // These exist for backward compatibility with user template overrides
-        m.insert(
-            "detailed_review_minimal",
-            EmbeddedTemplate {
-                name: "detailed_review_minimal",
-                content: include_str!("reviewer/templates/standard_review.txt"),
-                description: "[DEPRECATED] Use standard_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "detailed_review_normal",
-            EmbeddedTemplate {
-                name: "detailed_review_normal",
-                content: include_str!("reviewer/templates/standard_review.txt"),
-                description: "[DEPRECATED] Use standard_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "incremental_review_minimal",
-            EmbeddedTemplate {
-                name: "incremental_review_minimal",
-                content: include_str!("reviewer/templates/standard_review.txt"),
-                description: "[DEPRECATED] Use standard_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "incremental_review_normal",
-            EmbeddedTemplate {
-                name: "incremental_review_normal",
-                content: include_str!("reviewer/templates/standard_review.txt"),
-                description: "[DEPRECATED] Use standard_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "universal_review_minimal",
-            EmbeddedTemplate {
-                name: "universal_review_minimal",
-                content: include_str!("reviewer/templates/universal_review.txt"),
-                description: "[DEPRECATED] Use universal_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "universal_review_normal",
-            EmbeddedTemplate {
-                name: "universal_review_normal",
-                content: include_str!("reviewer/templates/universal_review.txt"),
-                description: "[DEPRECATED] Use universal_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "standard_review_minimal",
-            EmbeddedTemplate {
-                name: "standard_review_minimal",
-                content: include_str!("reviewer/templates/standard_review.txt"),
-                description: "[DEPRECATED] Use standard_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "standard_review_normal",
-            EmbeddedTemplate {
-                name: "standard_review_normal",
-                content: include_str!("reviewer/templates/standard_review.txt"),
-                description: "[DEPRECATED] Use standard_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "comprehensive_review_minimal",
-            EmbeddedTemplate {
-                name: "comprehensive_review_minimal",
-                content: include_str!("reviewer/templates/comprehensive_review.txt"),
-                description: "[DEPRECATED] Use comprehensive_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "comprehensive_review_normal",
-            EmbeddedTemplate {
-                name: "comprehensive_review_normal",
-                content: include_str!("reviewer/templates/comprehensive_review.txt"),
-                description: "[DEPRECATED] Use comprehensive_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "security_review_minimal",
-            EmbeddedTemplate {
-                name: "security_review_minimal",
-                content: include_str!("reviewer/templates/security_review.txt"),
-                description: "[DEPRECATED] Use security_review instead",
-                deprecated: true,
-            },
-        );
-
-        m.insert(
-            "security_review_normal",
-            EmbeddedTemplate {
-                name: "security_review_normal",
-                content: include_str!("reviewer/templates/security_review.txt"),
-                description: "[DEPRECATED] Use security_review instead",
-                deprecated: true,
-            },
-        );
+        // The review phase uses `review_xml.txt` template via `prompt_review_xml_with_context()`
+        // in `src/prompts/review.rs`. The removed templates were registered here but never
+        // actually requested by any production code path.
 
         m
     });
@@ -448,7 +283,7 @@ mod tests {
     fn test_list_all_templates() {
         let templates = list_all_templates();
         assert!(!templates.is_empty());
-        assert!(templates.len() >= 20); // At least 20 templates
+        assert!(templates.len() >= 10); // At least 10 templates (reduced after removing unused reviewer templates)
 
         // Verify sorted by name
         for window in templates.windows(2) {
@@ -511,52 +346,26 @@ mod tests {
     }
 
     #[test]
-    fn test_consolidated_reviewer_templates_exist() {
-        // Verify the 4 consolidated reviewer templates exist
-        assert!(get_embedded_template("standard_review").is_some());
-        assert!(get_embedded_template("comprehensive_review").is_some());
-        assert!(get_embedded_template("security_review").is_some());
-        assert!(get_embedded_template("universal_review").is_some());
+    fn test_unused_reviewer_templates_removed() {
+        // Verify the unused reviewer templates have been removed
+        // These templates were registered but never used in production code
+        assert!(get_embedded_template("standard_review").is_none());
+        assert!(get_embedded_template("comprehensive_review").is_none());
+        assert!(get_embedded_template("security_review").is_none());
+        assert!(get_embedded_template("universal_review").is_none());
+        assert!(get_embedded_template("standard_review_minimal").is_none());
+        assert!(get_embedded_template("standard_review_normal").is_none());
+        // Note: The review phase uses review_xml template via prompt_review_xml_with_context()
     }
 
     #[test]
-    fn test_consolidated_reviewer_templates_have_review_checklist() {
-        // Standard review should have the review coverage checklist
-        let standard = get_embedded_template("standard_review").unwrap();
+    fn test_review_xml_template_exists() {
+        // Verify the actually-used review template exists
+        assert!(get_embedded_template("review_xml").is_some());
+        let content = get_embedded_template("review_xml").unwrap();
         assert!(
-            standard.contains("REVIEW COVERAGE CHECKLIST"),
-            "Standard review template should have review checklist"
-        );
-
-        // Comprehensive review should have review categories
-        let comprehensive = get_embedded_template("comprehensive_review").unwrap();
-        assert!(
-            comprehensive.contains("REVIEW CATEGORIES"),
-            "Comprehensive review template should have review categories"
-        );
-
-        // Security review should have OWASP categories
-        let security = get_embedded_template("security_review").unwrap();
-        assert!(
-            security.contains("OWASP TOP 10"),
-            "Security review template should have OWASP Top 10"
-        );
-    }
-
-    #[test]
-    fn test_deprecated_templates_point_to_consolidated() {
-        // Legacy templates should have same content as consolidated versions
-        let standard = get_embedded_template("standard_review").unwrap();
-        let standard_minimal = get_embedded_template("standard_review_minimal").unwrap();
-        let standard_normal = get_embedded_template("standard_review_normal").unwrap();
-
-        assert_eq!(
-            standard, standard_minimal,
-            "standard_review_minimal should point to standard_review"
-        );
-        assert_eq!(
-            standard, standard_normal,
-            "standard_review_normal should point to standard_review"
+            content.contains("REVIEW MODE"),
+            "review_xml should contain REVIEW MODE"
         );
     }
 }

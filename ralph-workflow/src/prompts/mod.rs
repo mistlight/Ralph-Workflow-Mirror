@@ -493,9 +493,6 @@ mod tests {
     use super::*;
     use crate::prompts::template_context::TemplateContext;
 
-    // Import non-context variants for test compatibility
-    use crate::prompts::reviewer::prompt_detailed_review_without_guidelines_with_diff;
-
     #[test]
     fn test_prompt_for_agent_developer() {
         let template_context = TemplateContext::default();
@@ -516,16 +513,17 @@ mod tests {
 
     #[test]
     fn test_prompt_for_agent_reviewer() {
-        let result = prompt_detailed_review_without_guidelines_with_diff(
-            ContextLevel::Minimal,
+        // Use the actual review prompt function that's used in production
+        let result = prompt_review_xml_with_context(
+            &TemplateContext::default(),
+            "sample prompt",
+            "sample plan",
             "sample diff",
-            "",
-            "",
         );
-        // NOTE: The detailed_review template has been deprecated and now uses standard_review
-        // The test should verify the new template behavior
+        // Verify the review_xml template behavior
         assert!(result.contains("REVIEW MODE"));
         assert!(result.contains("CRITICAL CONSTRAINTS"));
+        assert!(result.contains("DO NOT MODIFY"));
     }
 
     #[test]
@@ -553,21 +551,11 @@ mod tests {
             // Note: "continue" is excluded as it's also a common English verb
         ];
 
+        let template_context = TemplateContext::default();
         let prompts_to_check: Vec<String> = vec![
             prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
             prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
-            prompt_detailed_review_without_guidelines_with_diff(
-                ContextLevel::Normal,
-                "sample diff",
-                "",
-                "",
-            ),
-            prompt_detailed_review_without_guidelines_with_diff(
-                ContextLevel::Minimal,
-                "sample diff",
-                "",
-                "",
-            ),
+            prompt_review_xml_with_context(&template_context, "", "", "sample diff"),
             prompt_fix("", "", ""),
             prompt_plan(None),
             prompt_generate_commit_message_with_diff("diff --git a/a b/b"),
@@ -716,21 +704,11 @@ mod tests {
         // when issue descriptions lack file context - the fixer needs to find the relevant code
         // This is part of the recovery mechanism for vague issues
 
+        let template_context = TemplateContext::default();
         let prompts_to_check: Vec<String> = vec![
             prompt_developer_iteration(1, 5, ContextLevel::Normal, "", ""),
             prompt_developer_iteration(1, 5, ContextLevel::Minimal, "", ""),
-            prompt_detailed_review_without_guidelines_with_diff(
-                ContextLevel::Normal,
-                "sample diff",
-                "",
-                "",
-            ),
-            prompt_detailed_review_without_guidelines_with_diff(
-                ContextLevel::Minimal,
-                "sample diff",
-                "",
-                "",
-            ),
+            prompt_review_xml_with_context(&template_context, "", "", "sample diff"),
             // Note: fix_mode_xml.txt is intentionally excluded from "Use git" check
             // because it contains "Use git grep/rg ONLY when issue descriptions lack file context"
             // which is part of the fault tolerance design

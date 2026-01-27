@@ -2,12 +2,6 @@
 //!
 //! These tests verify the review workflow functionality.
 //!
-//! Note: Tests that require agent execution (reviewer_reviews > 0) cannot be
-//! properly tested without the AgentExecutor trait infrastructure. Those tests
-//! should be unit tests with mocked executors at the code level.
-//!
-//! These integration tests focus on behavior that doesn't require agent execution.
-//!
 //! # Integration Test Style Guide
 //!
 //! **CRITICAL:** All tests in this module MUST follow the integration test style guide
@@ -15,7 +9,8 @@
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (exit codes, output)
-//! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
+//! - Uses `tempfile::TempDir` for tests requiring real git operations
+//! - Uses `MemoryWorkspace` + `MockProcessExecutor` for tests verifying agent prompts
 //! - Uses **dependency injection** for configuration (no env vars)
 //! - Tests are deterministic and isolated
 
@@ -118,5 +113,136 @@ fn ralph_commit_created_when_review_skipped() {
         let head = repo.head().unwrap();
         let commit = head.peel_to_commit().unwrap();
         assert!(!commit.message().unwrap().is_empty());
+    });
+}
+
+// ============================================================================
+// Review Prompt Construction Tests
+//
+// These tests verify that the review prompt is correctly constructed with
+// the expected content. They test prompt_review_xml_with_context directly.
+// ============================================================================
+
+/// Test that review prompt is constructed with all required components.
+///
+/// This verifies that `prompt_review_xml_with_context` produces a prompt that includes:
+/// - "REVIEW MODE" marker
+/// - The original user requirements (PROMPT content)
+/// - The implementation plan (PLAN content)
+/// - Changes made (git diff content)
+/// - XML output format instructions with <ralph-issues> tags
+#[test]
+fn review_prompt_construction_includes_all_required_components() {
+    use ralph_workflow::prompts::prompt_review_xml_with_context;
+    use ralph_workflow::prompts::template_context::TemplateContext;
+
+    with_default_timeout(|| {
+        let template_context = TemplateContext::default();
+
+        // Test inputs
+        let prompt_content = "# Test Requirements\n\nImplement feature X with validation";
+        let plan_content = "# Implementation Plan\n\n1. Create module\n2. Add tests";
+        let changes_content = "diff --git a/src/lib.rs b/src/lib.rs\n+fn new_function() {}";
+
+        // Build the review prompt
+        let review_prompt = prompt_review_xml_with_context(
+            &template_context,
+            prompt_content,
+            plan_content,
+            changes_content,
+        );
+
+        // Verify the prompt contains all required components
+        assert!(
+            review_prompt.contains("REVIEW MODE"),
+            "Review prompt must contain 'REVIEW MODE' marker. Got:\n{}",
+            &review_prompt[..500.min(review_prompt.len())]
+        );
+
+        assert!(
+            review_prompt.contains(prompt_content),
+            "Review prompt must contain the original user requirements"
+        );
+
+        assert!(
+            review_prompt.contains(plan_content),
+            "Review prompt must contain the implementation plan"
+        );
+
+        assert!(
+            review_prompt.contains(changes_content),
+            "Review prompt must contain the changes/diff content"
+        );
+
+        assert!(
+            review_prompt.contains("<ralph-issues>"),
+            "Review prompt must contain XML output format instructions with <ralph-issues> tag"
+        );
+
+        assert!(
+            review_prompt.contains("issues.xml"),
+            "Review prompt must reference the issues.xml output file path"
+        );
+    });
+}
+
+/// Test that review prompt includes severity levels and file references in format instructions.
+///
+/// This verifies the prompt guides the reviewer to provide actionable output
+/// with severity levels and file:line references.
+#[test]
+fn review_prompt_includes_output_format_guidance() {
+    use ralph_workflow::prompts::prompt_review_xml_with_context;
+    use ralph_workflow::prompts::template_context::TemplateContext;
+
+    with_default_timeout(|| {
+        let template_context = TemplateContext::default();
+
+        let review_prompt =
+            prompt_review_xml_with_context(&template_context, "requirements", "plan", "changes");
+
+        // Verify format guidance
+        assert!(
+            review_prompt.contains("Severity")
+                || review_prompt.contains("severity")
+                || review_prompt.contains("Critical")
+                || review_prompt.contains("High")
+                || review_prompt.contains("Medium")
+                || review_prompt.contains("Low"),
+            "Review prompt must mention severity levels for issues"
+        );
+
+        assert!(
+            review_prompt.contains("file")
+                && (review_prompt.contains("line") || review_prompt.contains(":")),
+            "Review prompt must mention file:line references"
+        );
+    });
+}
+
+/// Test that review prompt handles empty inputs gracefully.
+///
+/// This verifies the prompt construction doesn't crash or produce invalid
+/// output when given empty prompt, plan, or changes content.
+#[test]
+fn review_prompt_handles_empty_inputs() {
+    use ralph_workflow::prompts::prompt_review_xml_with_context;
+    use ralph_workflow::prompts::template_context::TemplateContext;
+
+    with_default_timeout(|| {
+        let template_context = TemplateContext::default();
+
+        // All empty inputs
+        let review_prompt = prompt_review_xml_with_context(&template_context, "", "", "");
+
+        // Should still produce a valid prompt structure
+        assert!(
+            review_prompt.contains("REVIEW MODE"),
+            "Review prompt must contain 'REVIEW MODE' even with empty inputs"
+        );
+        assert!(
+            review_prompt.contains("<ralph-issues>"),
+            "Review prompt must contain XML format instructions even with empty inputs"
+        );
     });
 }
