@@ -1159,6 +1159,8 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     }
 
     // Set up git helpers and agent phase
+    // Note: This function uses real git calls since it's the production path
+    // (run_pipeline_with_effect_handler uses workspace-aware versions for tests)
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
     cleanup_orphaned_marker(&ctx.logger)?;
     start_agent_phase(&mut git_helpers)?;
@@ -1433,9 +1435,25 @@ where
     };
 
     // Set up git helpers and agent phase
+    // Use workspace-aware versions when test-utils feature is enabled
+    // to avoid real git operations that would cause test failures.
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
-    cleanup_orphaned_marker(&ctx.logger)?;
-    start_agent_phase(&mut git_helpers)?;
+
+    #[cfg(feature = "test-utils")]
+    {
+        use crate::git_helpers::{
+            cleanup_orphaned_marker_with_workspace, create_marker_with_workspace,
+        };
+        // Use workspace-based operations that don't require real git
+        cleanup_orphaned_marker_with_workspace(&*ctx.workspace, &ctx.logger)?;
+        create_marker_with_workspace(&*ctx.workspace)?;
+        // Skip hook installation and git wrapper in test mode
+    }
+    #[cfg(not(feature = "test-utils"))]
+    {
+        cleanup_orphaned_marker(&ctx.logger)?;
+        start_agent_phase(&mut git_helpers)?;
+    }
     let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &ctx.logger);
 
     // Print welcome banner and validate PROMPT.md
