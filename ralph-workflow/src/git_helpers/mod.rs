@@ -32,9 +32,9 @@ mod review_baseline;
 mod start_commit;
 mod wrapper;
 
-pub use branch::{get_default_branch, is_main_or_master_branch};
 #[cfg(any(test, feature = "test-utils"))]
-pub use branch::{get_default_branch_at, is_main_or_master_branch_at};
+pub use branch::get_default_branch_at;
+pub use branch::{get_default_branch, is_main_or_master_branch};
 pub use hooks::uninstall_hooks;
 #[cfg(any(test, feature = "test-utils"))]
 pub use hooks::{file_contains_marker_with_workspace, verify_hook_integrity_with_workspace};
@@ -50,9 +50,8 @@ pub use rebase::{CleanupResult, ConcurrentOperation};
 #[cfg(any(test, feature = "test-utils"))]
 pub use rebase::{
     attempt_automatic_recovery, cleanup_stale_rebase_state, detect_concurrent_git_operations,
-    is_dirty_tree_cli, rebase_in_progress_cli, restore_from_reflog,
-    validate_post_rebase_with_checks, validate_rebase_preconditions, verify_rebase_completed,
-    PostRebaseValidationResult,
+    is_dirty_tree_cli, rebase_in_progress_cli, validate_rebase_preconditions,
+    verify_rebase_completed,
 };
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -69,20 +68,18 @@ pub use repo::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
     CommitResultFallback, DiffReviewContent, DiffTruncationLevel,
 };
+#[cfg(any(test, feature = "test-utils"))]
+pub use review_baseline::load_review_baseline_with_workspace;
 pub use review_baseline::{
     get_baseline_summary, get_review_baseline_info, load_review_baseline, update_review_baseline,
     ReviewBaseline,
 };
 #[cfg(any(test, feature = "test-utils"))]
-pub use review_baseline::{
-    load_review_baseline_with_workspace, update_review_baseline_with_workspace,
-};
+pub use start_commit::load_start_point_with_workspace;
 pub use start_commit::{
     get_current_head_oid, get_start_commit_summary, load_start_point, reset_start_commit,
     save_start_commit, StartPoint,
 };
-#[cfg(any(test, feature = "test-utils"))]
-pub use start_commit::{load_start_point_with_workspace, save_start_commit_with_workspace};
 pub use wrapper::{
     cleanup_agent_phase_silent, cleanup_orphaned_marker, disable_git_wrapper, end_agent_phase,
     start_agent_phase, GitHelpers,

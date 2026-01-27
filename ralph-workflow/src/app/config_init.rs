@@ -77,20 +77,6 @@ pub fn initialize_config(
     )
 }
 
-/// Initializes configuration and agent registry with a custom catalog loader.
-///
-/// This is the same as [`initialize_config`] but accepts a custom [`CatalogLoader`]
-/// for dependency injection. This is primarily useful for testing.
-#[deprecated(since = "0.6.0", note = "Use initialize_config_with instead")]
-pub fn initialize_config_with_loader<L: CatalogLoader>(
-    args: &Args,
-    colors: Colors,
-    logger: &Logger,
-    catalog_loader: &L,
-) -> anyhow::Result<Option<ConfigInitResult>> {
-    initialize_config_with(args, colors, logger, catalog_loader, &RealConfigEnvironment)
-}
-
 /// Initializes configuration and agent registry with full dependency injection.
 ///
 /// This is the same as [`initialize_config`] but accepts both a [`CatalogLoader`]

@@ -5,48 +5,6 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
-/// Standard plan content that the orchestrator can extract from agent stdout.
-///
-/// Tests using `RALPH_DEVELOPER_ITERS > 0` need to output plan content that
-/// the orchestrator can extract. This constant provides a standard plan format
-/// with proper markdown markers (`## Summary`, `## Implementation Steps`)
-/// and sufficient content length for text-based extraction.
-///
-/// # Minimum length requirement
-///
-/// The content must be >50 characters for the text-based extractor to identify
-/// it as plan content. This minimum length prevents false positives where short
-/// snippets of text are incorrectly extracted as "plans". The constant below
-/// is approximately 180 characters, well above the threshold.
-///
-/// # Usage in shell scripts
-///
-/// ```bash
-/// cat <<'PLAN_EOF'
-/// ## Summary
-///
-/// Execute the test plan.
-///
-/// ## Implementation Steps
-///
-/// Step 1: Create the required files.
-/// Step 2: Verify the changes are correct.
-/// Step 3: Complete the test iteration.
-/// PLAN_EOF
-/// ```
-///
-/// This should be printed to stdout (not written to a file) so the orchestrator
-/// can capture it in the log file and extract it.
-pub const STANDARD_PLAN_OUTPUT: &str = r#"## Summary
-
-Execute the test plan.
-
-## Implementation Steps
-
-Step 1: Create the required files.
-Step 2: Verify the changes are correct.
-Step 3: Complete the test iteration."#;
-
 /// Create an isolated config file in the test directory.
 /// This prevents user config from interfering with tests.
 ///
@@ -205,83 +163,6 @@ pub fn stage_all(repo: &Repository) {
         .add_all(["."], IndexAddOption::DEFAULT, None)
         .expect("add_all");
     index.write().expect("write index");
-}
-
-/// Checkout a commit, updating HEAD, index, and working directory.
-///
-/// This function properly checks out a commit, ensuring:
-/// - HEAD is updated to point to the commit
-/// - The index is updated with the commit's tree
-/// - The working directory is updated to match the commit
-///
-/// # Arguments
-///
-/// * `repo` - The git repository
-/// * `commit_oid` - The OID of the commit to checkout
-///
-/// # Panics
-///
-/// - If the commit cannot be found
-/// - If checkout fails
-/// - If setting HEAD fails
-pub fn checkout_commit(repo: &Repository, commit_oid: Oid) {
-    let commit = repo
-        .find_commit(commit_oid)
-        .expect("find commit for checkout");
-
-    // Create a checkout builder that forces update and removes untracked files
-    let mut checkout_builder = CheckoutBuilder::new();
-    checkout_builder
-        .force()
-        .remove_untracked(true)
-        .remove_ignored(true);
-
-    repo.checkout_tree(commit.as_object(), Some(&mut checkout_builder))
-        .expect("checkout tree");
-
-    repo.set_head(&detached_head(commit_oid)).expect("set HEAD");
-}
-
-/// Checkout a branch by name, updating HEAD, index, and working directory.
-///
-/// This function properly checks out a branch, ensuring:
-/// - HEAD is updated to point to the branch
-/// - The index is updated with the branch's tree
-/// - The working directory is updated to match the branch
-///
-/// # Arguments
-///
-/// * `repo` - The git repository
-/// * `branch_name` - The name of the branch to checkout (e.g., "main", "feature")
-///
-/// # Panics
-///
-/// - If the branch cannot be found
-/// - If checkout fails
-/// - If setting HEAD fails
-pub fn checkout_branch(repo: &Repository, branch_name: &str) {
-    let branch_ref = format!("refs/heads/{}", branch_name);
-    let obj = repo
-        .revparse_single(&branch_ref)
-        .expect("find branch for checkout");
-    let commit = obj.peel_to_commit().expect("peel to commit");
-
-    // Create a checkout builder that forces update and removes untracked files
-    let mut checkout_builder = CheckoutBuilder::new();
-    checkout_builder
-        .force()
-        .remove_untracked(true)
-        .remove_ignored(true);
-
-    repo.checkout_tree(commit.as_object(), Some(&mut checkout_builder))
-        .expect("checkout tree");
-
-    repo.set_head(&branch_ref).expect("set HEAD");
-}
-
-/// Get the detached HEAD reference for an OID.
-fn detached_head(oid: Oid) -> String {
-    format!("{}", oid)
 }
 
 /// Commit all changes using git2 library (no subprocess spawning).

@@ -143,14 +143,6 @@ fn write_review_baseline_cwd(oid: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// Write the review baseline using workspace abstraction.
-///
-/// This is the workspace-aware version for pipeline code.
-#[cfg(any(test, feature = "test-utils"))]
-fn write_review_baseline_with_workspace(workspace: &dyn Workspace, oid: &str) -> io::Result<()> {
-    workspace.write(Path::new(REVIEW_BASELINE_FILE), oid)
-}
-
 /// Load the review baseline using workspace abstraction.
 ///
 /// This is the workspace-aware version for pipeline code.
@@ -184,15 +176,6 @@ pub fn load_review_baseline_with_workspace(
     })?;
 
     Ok(ReviewBaseline::Commit(oid))
-}
-
-/// Update the review baseline to current HEAD using workspace abstraction.
-///
-/// This should be called AFTER each fix pass to update the baseline.
-#[cfg(any(test, feature = "test-utils"))]
-pub fn update_review_baseline_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
-    let oid = get_current_head_oid()?;
-    write_review_baseline_with_workspace(workspace, &oid)
 }
 
 /// Count commits since a given baseline.
@@ -588,17 +571,5 @@ mod tests {
         let result = load_review_baseline_with_workspace(&workspace);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
-    }
-
-    #[test]
-    fn test_write_review_baseline_with_workspace() {
-        use crate::workspace::MemoryWorkspace;
-
-        let workspace = MemoryWorkspace::new_test();
-
-        write_review_baseline_with_workspace(&workspace, "abc123").unwrap();
-
-        let content = workspace.get_file(".agent/review_baseline.txt").unwrap();
-        assert_eq!(content, "abc123");
     }
 }

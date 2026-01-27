@@ -56,9 +56,9 @@ pub use io::{
     write_commit_message_file_with_workspace, write_file_atomic_with_workspace,
 };
 
-pub use protection::{
-    restore_prompt_if_needed, validate_prompt_md, validate_prompt_md_with_workspace,
-};
+#[cfg(test)]
+pub use protection::restore_prompt_if_needed;
+pub use protection::{validate_prompt_md, validate_prompt_md_with_workspace};
 pub use result_extraction::extract_issues;
 #[cfg(any(test, feature = "test-utils"))]
 pub use result_extraction::extract_plan;
