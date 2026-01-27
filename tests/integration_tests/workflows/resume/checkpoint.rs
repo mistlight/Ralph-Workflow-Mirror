@@ -14,6 +14,16 @@ use crate::test_timeout::with_default_timeout;
 
 use super::{make_checkpoint_json, MOCK_REPO_PATH};
 
+/// Standard PROMPT.md content for tests - matches the required format.
+const STANDARD_PROMPT: &str = r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#;
+
 // ============================================================================
 // Checkpoint Creation Tests
 // ============================================================================
@@ -24,6 +34,7 @@ fn ralph_creates_checkpoint_during_development() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/commit-message.txt", "feat: test commit\n");
 
@@ -40,7 +51,8 @@ fn ralph_creates_checkpoint_during_review() {
     with_default_timeout(|| {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
-            .with_cwd(PathBuf::from(MOCK_REPO_PATH));
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT);
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
@@ -63,6 +75,7 @@ fn ralph_checkpoint_contains_iteration_info() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
@@ -89,6 +102,7 @@ fn ralph_checkpoint_contains_cli_args_snapshot() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
@@ -109,6 +123,7 @@ fn ralph_checkpoint_contains_agent_config_snapshot() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
@@ -133,6 +148,7 @@ fn ralph_clears_checkpoint_on_success() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();

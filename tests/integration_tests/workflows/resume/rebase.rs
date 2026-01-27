@@ -14,6 +14,16 @@ use crate::test_timeout::with_default_timeout;
 
 use super::MOCK_REPO_PATH;
 
+/// Standard PROMPT.md content for tests - matches the required format.
+const STANDARD_PROMPT: &str = r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#;
+
 // ============================================================================
 // Rebase State Preservation Tests
 // ============================================================================
@@ -27,6 +37,7 @@ fn ralph_checkpoint_records_rebase_state() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
@@ -50,6 +61,7 @@ fn ralph_resume_from_prerebase_phase_preserves_full_config() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
@@ -69,6 +81,7 @@ fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
@@ -88,6 +101,7 @@ fn ralph_resume_from_postrebase_phase_preserves_full_config() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
@@ -107,6 +121,7 @@ fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
@@ -130,6 +145,7 @@ fn ralph_resume_is_idempotent_from_prerebase() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
@@ -159,6 +175,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
@@ -181,6 +198,7 @@ fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
