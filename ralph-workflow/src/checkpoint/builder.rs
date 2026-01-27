@@ -168,7 +168,6 @@ impl CheckpointBuilder {
         let snapshot = crate::checkpoint::state::CliArgsSnapshotBuilder::new(
             config.developer_iters,
             config.reviewer_reviews,
-            config.commit_msg.clone(),
             review_depth_str,
             skip_rebase,
             config.isolation_mode,
@@ -403,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_builder_basic() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -455,7 +454,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_prompt_history() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -490,7 +489,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_prompt_history_multiple() {
-        let cli_args = CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -542,8 +541,7 @@ mod tests {
             let workspace =
                 MemoryWorkspace::new_test().with_file("PROMPT.md", "# Test prompt content");
 
-            let cli_args =
-                CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
+            let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
             let dev_config =
                 AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
             let rev_config =
@@ -578,8 +576,7 @@ mod tests {
                 .with_file(".agent/PLAN.md", "# Plan")
                 .with_file(".agent/ISSUES.md", "# Issues");
 
-            let cli_args =
-                CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
+            let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
             let dev_config =
                 AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
             let rev_config =

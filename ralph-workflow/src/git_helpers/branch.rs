@@ -24,26 +24,8 @@ use super::git2_to_io_error;
 ///
 /// Returns `Ok(true)` if on main/master, `Ok(false)` if on another branch,
 /// or an error if the branch cannot be determined.
-///
-/// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`is_main_or_master_branch_at`] instead.
 pub fn is_main_or_master_branch() -> io::Result<bool> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
-    is_main_or_master_branch_impl(&repo)
-}
-
-/// Check if the current branch is "main" or "master" at a specific repository path.
-///
-/// # Arguments
-///
-/// * `repo_root` - Path to the repository root
-///
-/// # Returns
-///
-/// Returns `Ok(true)` if on main/master, `Ok(false)` if on another branch,
-/// or an error if the branch cannot be determined.
-pub fn is_main_or_master_branch_at(repo_root: &Path) -> io::Result<bool> {
-    let repo = git2::Repository::open(repo_root).map_err(|e| git2_to_io_error(&e))?;
     is_main_or_master_branch_impl(&repo)
 }
 

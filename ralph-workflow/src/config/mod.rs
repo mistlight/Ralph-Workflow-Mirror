@@ -54,10 +54,6 @@ pub type MemoryConfigPathResolver = MemoryConfigEnvironment;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
-    use std::sync::Mutex;
-
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_verbosity_from_u8() {
@@ -192,17 +188,5 @@ mod tests {
             .contains("In-depth"));
         assert!(ReviewDepth::Security.description().contains("OWASP"));
         assert!(ReviewDepth::Incremental.description().contains("git diff"));
-    }
-
-    #[test]
-    fn test_with_commit_msg() {
-        let _guard = ENV_MUTEX.lock().unwrap();
-
-        // Clear any environment variables that might affect the test
-        env::remove_var("RALPH_DEVELOPER_AGENT");
-        env::remove_var("RALPH_DRIVER_AGENT");
-
-        let config = Config::default().with_commit_msg("custom message".to_string());
-        assert_eq!(config.commit_msg, "custom message");
     }
 }

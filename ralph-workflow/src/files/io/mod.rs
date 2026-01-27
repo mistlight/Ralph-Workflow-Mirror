@@ -47,7 +47,7 @@ pub use integrity::{
 pub use backup::{
     create_prompt_backup, create_prompt_backup_with_workspace, make_prompt_read_only,
     make_prompt_read_only_with_workspace, make_prompt_writable,
-    make_prompt_writable_with_workspace,
+    make_prompt_writable_with_workspace, write_diff_backup_with_workspace,
 };
 
 pub use context::{

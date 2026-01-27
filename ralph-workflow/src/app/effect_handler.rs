@@ -4,7 +4,7 @@
 //! It provides concrete implementations for all [`AppEffect`] variants
 //! by delegating to the appropriate system calls or internal modules.
 
-use super::effect::{AppEffect, AppEffectHandler, AppEffectResult, CommitResult, RebaseResult};
+use super::effect::{AppEffect, AppEffectHandler, AppEffectResult, CommitResult};
 use std::path::{Path, PathBuf};
 
 /// Real effect handler that executes actual side effects.
@@ -346,88 +346,6 @@ impl AppEffectHandler for RealAppEffectHandler {
             | AppEffect::LogSuccess { message: _ }
             | AppEffect::LogWarn { message: _ }
             | AppEffect::LogError { message: _ } => AppEffectResult::Ok,
-        }
-    }
-}
-
-/// A variant of `RealAppEffectHandler` that can execute rebase operations.
-///
-/// This handler extends `RealAppEffectHandler` with the ability to execute
-/// git rebase operations that require a process executor.
-pub struct RealAppEffectHandlerWithExecutor<'a> {
-    /// The underlying handler for non-executor effects.
-    inner: RealAppEffectHandler,
-    /// Process executor for operations that require spawning processes.
-    executor: &'a dyn crate::executor::ProcessExecutor,
-}
-
-impl<'a> RealAppEffectHandlerWithExecutor<'a> {
-    /// Create a new handler with a process executor.
-    ///
-    /// # Arguments
-    ///
-    /// * `executor` - The process executor for rebase operations.
-    pub fn new(executor: &'a dyn crate::executor::ProcessExecutor) -> Self {
-        Self {
-            inner: RealAppEffectHandler::new(),
-            executor,
-        }
-    }
-
-    /// Create a new handler with a workspace root and process executor.
-    ///
-    /// # Arguments
-    ///
-    /// * `root` - The workspace root directory for path resolution.
-    /// * `executor` - The process executor for rebase operations.
-    pub fn with_workspace_root(
-        root: PathBuf,
-        executor: &'a dyn crate::executor::ProcessExecutor,
-    ) -> Self {
-        Self {
-            inner: RealAppEffectHandler::with_workspace_root(root),
-            executor,
-        }
-    }
-}
-
-impl AppEffectHandler for RealAppEffectHandlerWithExecutor<'_> {
-    fn execute(&mut self, effect: AppEffect) -> AppEffectResult {
-        match &effect {
-            AppEffect::GitRebaseOnto { upstream_branch } => {
-                match crate::git_helpers::rebase_onto(upstream_branch, self.executor) {
-                    Ok(result) => match result {
-                        crate::git_helpers::RebaseResult::Success => {
-                            AppEffectResult::Rebase(RebaseResult::Success)
-                        }
-                        crate::git_helpers::RebaseResult::Conflicts(files) => {
-                            AppEffectResult::Rebase(RebaseResult::Conflicts(files))
-                        }
-                        crate::git_helpers::RebaseResult::NoOp { reason } => {
-                            AppEffectResult::Rebase(RebaseResult::NoOp { reason })
-                        }
-                        crate::git_helpers::RebaseResult::Failed(kind) => {
-                            AppEffectResult::Rebase(RebaseResult::Failed(kind.to_string()))
-                        }
-                    },
-                    Err(e) => AppEffectResult::Error(format!("Rebase failed: {}", e)),
-                }
-            }
-
-            AppEffect::GitContinueRebase => {
-                match crate::git_helpers::continue_rebase(self.executor) {
-                    Ok(()) => AppEffectResult::Ok,
-                    Err(e) => AppEffectResult::Error(format!("Failed to continue rebase: {}", e)),
-                }
-            }
-
-            AppEffect::GitAbortRebase => match crate::git_helpers::abort_rebase(self.executor) {
-                Ok(()) => AppEffectResult::Ok,
-                Err(e) => AppEffectResult::Error(format!("Failed to abort rebase: {}", e)),
-            },
-
-            // Delegate all other effects to the inner handler
-            _ => self.inner.execute(effect),
         }
     }
 }

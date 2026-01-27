@@ -66,8 +66,6 @@ pub struct CliArgsSnapshot {
     pub developer_iters: u32,
     /// Number of reviewer reviews (-R flag)
     pub reviewer_reviews: u32,
-    /// Commit message for the final commit
-    pub commit_msg: String,
     /// Review depth level (if specified)
     pub review_depth: Option<String>,
     /// Whether to skip automatic rebase
@@ -106,7 +104,6 @@ fn default_verbosity() -> u8 {
 pub struct CliArgsSnapshotBuilder {
     developer_iters: u32,
     reviewer_reviews: u32,
-    commit_msg: String,
     review_depth: Option<String>,
     skip_rebase: bool,
     isolation_mode: bool,
@@ -120,7 +117,6 @@ impl CliArgsSnapshotBuilder {
     pub fn new(
         developer_iters: u32,
         reviewer_reviews: u32,
-        commit_msg: String,
         review_depth: Option<String>,
         skip_rebase: bool,
         isolation_mode: bool,
@@ -128,7 +124,6 @@ impl CliArgsSnapshotBuilder {
         Self {
             developer_iters,
             reviewer_reviews,
-            commit_msg,
             review_depth,
             skip_rebase,
             isolation_mode,
@@ -161,7 +156,6 @@ impl CliArgsSnapshotBuilder {
         CliArgsSnapshot {
             developer_iters: self.developer_iters,
             reviewer_reviews: self.reviewer_reviews,
-            commit_msg: self.commit_msg,
             review_depth: self.review_depth,
             skip_rebase: self.skip_rebase,
             isolation_mode: self.isolation_mode,
@@ -181,7 +175,6 @@ impl CliArgsSnapshot {
     pub fn new(
         developer_iters: u32,
         reviewer_reviews: u32,
-        commit_msg: String,
         review_depth: Option<String>,
         skip_rebase: bool,
         isolation_mode: bool,
@@ -192,7 +185,6 @@ impl CliArgsSnapshot {
         CliArgsSnapshotBuilder::new(
             developer_iters,
             reviewer_reviews,
-            commit_msg,
             review_depth,
             skip_rebase,
             isolation_mode,
@@ -836,7 +828,7 @@ fn load_checkpoint_with_fallback(
             timestamp: legacy.timestamp,
             developer_agent: legacy.developer_agent.clone(),
             reviewer_agent: legacy.reviewer_agent.clone(),
-            cli_args: CliArgsSnapshotBuilder::new(0, 0, String::new(), None, false, true).build(),
+            cli_args: CliArgsSnapshotBuilder::new(0, 0, None, false, true).build(),
             developer_agent_config: AgentConfigSnapshot::new(
                 legacy.developer_agent.clone(),
                 String::new(),
@@ -1101,17 +1093,7 @@ mod tests {
             phase: PipelinePhase,
             iteration: u32,
         ) -> PipelineCheckpoint {
-            let cli_args = CliArgsSnapshot::new(
-                5,
-                2,
-                "test commit".to_string(),
-                None,
-                false,
-                true,
-                2,
-                false,
-                None,
-            );
+            let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
             let dev_config =
                 AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
             let rev_config =
@@ -1312,17 +1294,7 @@ mod tests {
 
     /// Helper function to create a checkpoint for testing.
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32) -> PipelineCheckpoint {
-        let cli_args = CliArgsSnapshot::new(
-            5,
-            2,
-            "test commit".to_string(),
-            None,
-            false,
-            true,
-            2,
-            false,
-            None,
-        );
+        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -1393,8 +1365,7 @@ mod tests {
 
     #[test]
     fn test_checkpoint_from_params() {
-        let cli_args =
-            CliArgsSnapshot::new(5, 2, "test".to_string(), None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -1450,17 +1421,7 @@ mod tests {
             total_reviewer_passes: 3,
             developer_agent: "claude",
             reviewer_agent: "codex",
-            cli_args: CliArgsSnapshot::new(
-                5,
-                3,
-                "test".to_string(),
-                None,
-                false,
-                true,
-                2,
-                false,
-                None,
-            ),
+            cli_args: CliArgsSnapshot::new(5, 3, None, false, true, 2, false, None),
             developer_agent_config: AgentConfigSnapshot::new(
                 "claude".into(),
                 "cmd".into(),
@@ -1501,7 +1462,6 @@ mod tests {
             cli_args: CliArgsSnapshot::new(
                 5,
                 2,
-                "fix".to_string(),
                 Some("standard".into()),
                 false,
                 true,
@@ -1545,7 +1505,6 @@ mod tests {
         assert_eq!(deserialized.phase, checkpoint.phase);
         assert_eq!(deserialized.iteration, checkpoint.iteration);
         assert_eq!(deserialized.cli_args.developer_iters, 5);
-        assert_eq!(deserialized.cli_args.commit_msg, "fix");
         assert!(matches!(
             deserialized.rebase_state,
             RebaseState::PreRebaseCompleted { .. }
@@ -1560,7 +1519,6 @@ mod tests {
         let snapshot = CliArgsSnapshot::new(
             10,
             3,
-            "feat: new feature".to_string(),
             Some("comprehensive".into()),
             true,
             true,
@@ -1571,7 +1529,6 @@ mod tests {
 
         assert_eq!(snapshot.developer_iters, 10);
         assert_eq!(snapshot.reviewer_reviews, 3);
-        assert_eq!(snapshot.commit_msg, "feat: new feature");
         assert_eq!(snapshot.review_depth, Some("comprehensive".to_string()));
         assert!(snapshot.skip_rebase);
         assert!(snapshot.isolation_mode);

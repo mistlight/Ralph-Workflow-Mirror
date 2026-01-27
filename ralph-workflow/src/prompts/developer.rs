@@ -239,6 +239,48 @@ pub fn prompt_planning_xml_with_context(
     })
 }
 
+/// Generate planning prompt with size-aware content references.
+///
+/// This version uses [`PromptContentReference`] which automatically handles
+/// oversized PROMPT content by referencing the backup file path.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `prompt_ref` - Content reference for PROMPT.md content
+/// * `workspace` - Workspace for writing XSD schema files
+pub fn prompt_planning_xml_with_references(
+    context: &TemplateContext,
+    prompt_ref: &super::content_reference::PromptContentReference,
+    workspace: &dyn Workspace,
+) -> String {
+    // Write the XSD schema file so it's available for the agent to reference
+    write_planning_xsd_schema_file(workspace);
+
+    let template_content = context
+        .registry()
+        .get_template("planning_xml")
+        .unwrap_or_else(|_| include_str!("templates/planning_xml.txt").to_string());
+    let template = Template::new(&template_content);
+
+    let variables = HashMap::from([
+        ("PROMPT", prompt_ref.render_for_template()),
+        (
+            "PLAN_XML_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xml"),
+        ),
+        (
+            "PLAN_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/plan.xsd"),
+        ),
+    ]);
+
+    template.render(&variables).unwrap_or_else(|_| {
+        let prompt = prompt_ref.render_for_template();
+        format!("PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt}\n")
+    })
+}
+
 /// The XSD schema for plan validation - included at compile time
 const PLAN_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction/plan.xsd");
 
@@ -379,6 +421,49 @@ pub fn prompt_developer_iteration_xml_with_context(
             "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\n\
              IMPLEMENTATION PLAN:\n{plan_content}\n\n\
              Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n"
+        )
+    })
+}
+
+/// Generate developer iteration prompt with size-aware content references.
+///
+/// This version uses [`PromptContentReferences`] which automatically handles
+/// oversized content by referencing file paths instead of embedding inline.
+/// Use this when content may exceed CLI argument limits.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `refs` - Content references for PROMPT and PLAN
+pub fn prompt_developer_iteration_xml_with_references(
+    context: &TemplateContext,
+    refs: &super::content_builder::PromptContentReferences,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration_xml")
+        .unwrap_or_else(|_| include_str!("templates/developer_iteration_xml.txt").to_string());
+    let template = Template::new(&template_content);
+    let variables = HashMap::from([
+        ("PROMPT", refs.prompt_for_template()),
+        ("PLAN", refs.plan_for_template()),
+        (
+            "DEVELOPMENT_RESULT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/development_result.xml"),
+        ),
+        (
+            "DEVELOPMENT_RESULT_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+        ),
+    ]);
+
+    template.render(&variables).unwrap_or_else(|_| {
+        let prompt = refs.prompt_for_template();
+        let plan = refs.plan_for_template();
+        format!(
+            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt}\n\n\
+             IMPLEMENTATION PLAN:\n{plan}\n\n\
+             Output format: <ralph-development-result>...</ralph-development-result>\n"
         )
     })
 }
@@ -664,5 +749,140 @@ mod tests {
         let regular_plan = prompt_plan(None);
         let with_context_plan = prompt_plan_with_context(&context, None);
         assert_eq!(regular_plan, with_context_plan);
+    }
+
+    // =========================================================================
+    // Tests for _with_references variants
+    // =========================================================================
+
+    #[test]
+    fn test_prompt_developer_iteration_xml_with_references_small_content() {
+        use crate::prompts::content_builder::PromptContentBuilder;
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test();
+        let context = TemplateContext::default();
+
+        let refs = PromptContentBuilder::new(&workspace)
+            .with_prompt("Small prompt content".to_string())
+            .with_plan("Small plan content".to_string())
+            .build();
+
+        let result = prompt_developer_iteration_xml_with_references(&context, &refs);
+
+        // Should embed content inline
+        assert!(result.contains("Small prompt content"));
+        assert!(result.contains("Small plan content"));
+        assert!(result.contains("IMPLEMENTATION MODE"));
+    }
+
+    #[test]
+    fn test_prompt_developer_iteration_xml_with_references_large_prompt() {
+        use crate::prompts::content_builder::PromptContentBuilder;
+        use crate::prompts::content_reference::MAX_INLINE_CONTENT_SIZE;
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test().with_file(".agent/PROMPT.md.backup", "backup");
+
+        let context = TemplateContext::default();
+        let large_prompt = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+
+        let refs = PromptContentBuilder::new(&workspace)
+            .with_prompt(large_prompt)
+            .with_plan("Small plan".to_string())
+            .build();
+
+        let result = prompt_developer_iteration_xml_with_references(&context, &refs);
+
+        // Should reference backup file, not embed content
+        assert!(result.contains("PROMPT.md.backup"));
+        assert!(result.contains("Read from"));
+        assert!(result.contains("Small plan"));
+    }
+
+    #[test]
+    fn test_prompt_developer_iteration_xml_with_references_large_plan() {
+        use crate::prompts::content_builder::PromptContentBuilder;
+        use crate::prompts::content_reference::MAX_INLINE_CONTENT_SIZE;
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test();
+        let context = TemplateContext::default();
+        let large_plan = "p".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+
+        let refs = PromptContentBuilder::new(&workspace)
+            .with_prompt("Small prompt".to_string())
+            .with_plan(large_plan)
+            .build();
+
+        let result = prompt_developer_iteration_xml_with_references(&context, &refs);
+
+        // Should reference PLAN.md file, not embed content
+        assert!(result.contains(".agent/PLAN.md"));
+        assert!(result.contains("plan.xml"));
+        assert!(result.contains("Small prompt"));
+    }
+
+    #[test]
+    fn test_prompt_planning_xml_with_references_small_content() {
+        use crate::prompts::content_reference::PromptContentReference;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::Path;
+
+        let workspace = MemoryWorkspace::new_test();
+        let context = TemplateContext::default();
+
+        let prompt_ref = PromptContentReference::from_content(
+            "Small requirements".to_string(),
+            Path::new(".agent/PROMPT.md.backup"),
+            "User requirements",
+        );
+
+        let result = prompt_planning_xml_with_references(&context, &prompt_ref, &workspace);
+
+        // Should embed content inline
+        assert!(result.contains("Small requirements"));
+        assert!(result.contains("PLANNING MODE"));
+    }
+
+    #[test]
+    fn test_prompt_planning_xml_with_references_large_content() {
+        use crate::prompts::content_reference::{PromptContentReference, MAX_INLINE_CONTENT_SIZE};
+        use crate::workspace::MemoryWorkspace;
+        use std::path::Path;
+
+        let workspace = MemoryWorkspace::new_test().with_file(".agent/PROMPT.md.backup", "backup");
+        let context = TemplateContext::default();
+        let large_content = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+
+        let prompt_ref = PromptContentReference::from_content(
+            large_content,
+            Path::new(".agent/PROMPT.md.backup"),
+            "User requirements",
+        );
+
+        let result = prompt_planning_xml_with_references(&context, &prompt_ref, &workspace);
+
+        // Should reference backup file, not embed content
+        assert!(result.contains("PROMPT.md.backup"));
+        assert!(result.contains("Read from"));
+        assert!(result.contains("PLANNING MODE"));
+    }
+
+    #[test]
+    fn test_prompt_planning_xml_with_references_writes_xsd() {
+        use crate::prompts::content_reference::PromptContentReference;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::Path;
+
+        let workspace = MemoryWorkspace::new_test();
+        let context = TemplateContext::default();
+
+        let prompt_ref = PromptContentReference::inline("Test requirements".to_string());
+
+        let _result = prompt_planning_xml_with_references(&context, &prompt_ref, &workspace);
+
+        // Should have written the XSD schema file
+        assert!(workspace.exists(Path::new(".agent/tmp/plan.xsd")));
     }
 }

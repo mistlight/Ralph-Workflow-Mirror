@@ -15,6 +15,8 @@
 //! - [`partials`] - Shared template partials for composition
 
 mod commit;
+pub mod content_builder;
+pub mod content_reference;
 mod developer;
 pub mod partials;
 mod rebase;
@@ -42,15 +44,16 @@ pub use commit::{
 #[cfg(any(test, feature = "test-utils"))]
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
 pub use developer::{
-    prompt_developer_iteration_xml_with_context, prompt_developer_iteration_xsd_retry_with_context,
-    prompt_planning_xml_with_context, prompt_planning_xsd_retry_with_context,
+    prompt_developer_iteration_xml_with_context, prompt_developer_iteration_xml_with_references,
+    prompt_developer_iteration_xsd_retry_with_context, prompt_planning_xml_with_context,
+    prompt_planning_xml_with_references, prompt_planning_xsd_retry_with_context,
 };
 pub use rebase::{
     build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict,
 };
 pub use review::{
     prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context, prompt_review_xml_with_context,
-    prompt_review_xsd_retry_with_context,
+    prompt_review_xml_with_references, prompt_review_xsd_retry_with_context,
 };
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -74,6 +77,12 @@ pub use template_validator::{
 pub use types::ContextLevel;
 #[cfg(any(test, feature = "test-utils"))]
 pub use types::{Action, Role};
+
+// Content reference types for oversized prompt handling
+pub use content_builder::{PromptContentBuilder, PromptContentReferences};
+pub use content_reference::{
+    DiffContentReference, PlanContentReference, PromptContentReference, MAX_INLINE_CONTENT_SIZE,
+};
 
 /// Configuration for prompt generation.
 ///

@@ -1042,10 +1042,7 @@ fn setup_git_and_prompt_file<H: effect::AppEffectHandler>(
             logger.info(
                 "PROMPT.md created. Please edit it with your task details, then run ralph again.",
             );
-            logger.info(&format!(
-                "Tip: Edit PROMPT.md, then run: ralph \"{}\"",
-                config.commit_msg
-            ));
+            logger.info("Tip: Edit PROMPT.md, then run: ralph");
             return Ok(None);
         }
         println!();
@@ -1866,17 +1863,11 @@ fn create_phase_context_with_config<'ctx>(
 }
 
 /// Print pipeline info with a specific config.
-fn print_pipeline_info_with_config(ctx: &PipelineContext, config: &crate::config::Config) {
+fn print_pipeline_info_with_config(ctx: &PipelineContext, _config: &crate::config::Config) {
     ctx.logger.info(&format!(
         "Working directory: {}{}{}",
         ctx.colors.cyan(),
         ctx.repo_root.display(),
-        ctx.colors.reset()
-    ));
-    ctx.logger.info(&format!(
-        "Commit message: {}{}{}",
-        ctx.colors.cyan(),
-        config.commit_msg,
         ctx.colors.reset()
     ));
 }

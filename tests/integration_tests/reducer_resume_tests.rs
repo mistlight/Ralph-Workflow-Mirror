@@ -28,7 +28,6 @@ fn create_minimal_cli_args() -> CliArgsSnapshot {
     CliArgsSnapshot {
         developer_iters: 1,
         reviewer_reviews: 1,
-        commit_msg: "test".to_string(),
         review_depth: None,
         skip_rebase: false,
         isolation_mode: true,

@@ -18,6 +18,8 @@
 {#   Valid <ralph-plan> XML conforming to the XSD schema                       #}
 {# ============================================================================ #}
 
+{{> shared/_unattended_mode}}
+
 Your XML at `{{PLAN_XML_PATH}}` failed validation.
 
 ERROR: {{XSD_ERROR}}

@@ -30,6 +30,7 @@ pub mod config;
 pub mod config_test;
 pub mod development_xml;
 pub mod fallback;
+pub mod oversize_prompt;
 pub mod plan;
 pub mod resume;
 pub mod review;

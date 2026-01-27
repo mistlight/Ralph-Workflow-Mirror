@@ -111,14 +111,6 @@ pub fn fallback_username(executor: Option<&dyn ProcessExecutor>) -> String {
     "Unknown User".to_string()
 }
 
-/// Get the system username with a real process executor (convenience function).
-///
-/// This function requires an explicit executor parameter to enable proper
-/// dependency injection for testing.
-pub fn fallback_username_with_real(executor: &dyn ProcessExecutor) -> String {
-    fallback_username(Some(executor))
-}
-
 /// Get a fallback email based on the username.
 ///
 /// Format: `{username}@{hostname}` or `{username}@localhost`
@@ -130,14 +122,6 @@ pub fn fallback_email(username: &str, executor: Option<&dyn ProcessExecutor>) ->
     };
 
     format!("{username}@{hostname}")
-}
-
-/// Get a fallback email with a real process executor (convenience function).
-///
-/// This function requires an explicit executor parameter to enable proper
-/// dependency injection for testing.
-pub fn fallback_email_with_real(username: &str, executor: &dyn ProcessExecutor) -> String {
-    fallback_email(username, Some(executor))
 }
 
 /// Get the system hostname.
@@ -227,7 +211,7 @@ mod tests {
     #[test]
     fn test_fallback_username_not_empty() {
         let executor = RealProcessExecutor::new();
-        let username = fallback_username_with_real(&executor);
+        let username = fallback_username(Some(&executor));
         assert!(!username.is_empty());
     }
 
@@ -235,7 +219,7 @@ mod tests {
     fn test_fallback_email_format() {
         let username = "testuser";
         let executor = RealProcessExecutor::new();
-        let email = fallback_email_with_real(username, &executor);
+        let email = fallback_email(username, Some(&executor));
         assert!(email.contains('@'));
         assert!(email.starts_with(username));
     }

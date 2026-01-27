@@ -25,6 +25,8 @@
 
 You are in REVIEW MODE. Your ONLY task is to identify issues - DO NOT modify any code.
 
+{{> shared/_unattended_mode}}
+
 ═══════════════════════════════════════════════════════════════════════════════
 CRITICAL CONSTRAINTS
 ═══════════════════════════════════════════════════════════════════════════════

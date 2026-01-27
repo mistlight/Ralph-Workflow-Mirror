@@ -378,11 +378,6 @@ fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
         parts.push(format!("-R {}", cli.reviewer_reviews));
     }
 
-    // Add --commit-msg if specified
-    if !cli.commit_msg.is_empty() {
-        parts.push(format!("--commit-msg \"{}\"", cli.commit_msg));
-    }
-
     // Add --review-depth if specified
     if let Some(ref depth) = cli.review_depth {
         parts.push(format!("--review-depth {}", depth));

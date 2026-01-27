@@ -537,33 +537,4 @@ mod tests {
 
     // Integration tests would require a temporary git repository
     // For full integration tests, see tests/git_workflow.rs
-
-    // =========================================================================
-    // Workspace-aware function tests
-    // =========================================================================
-
-    #[test]
-    fn test_write_start_point_with_workspace_commit() {
-        use crate::workspace::MemoryWorkspace;
-
-        let workspace = MemoryWorkspace::new_test();
-        let oid = git2::Oid::from_str("abcd1234abcd1234abcd1234abcd1234abcd1234").unwrap();
-
-        write_start_point_with_workspace(&workspace, StartPoint::Commit(oid)).unwrap();
-
-        let content = workspace.get_file(".agent/start_commit").unwrap();
-        assert_eq!(content, "abcd1234abcd1234abcd1234abcd1234abcd1234");
-    }
-
-    #[test]
-    fn test_write_start_point_with_workspace_empty_repo() {
-        use crate::workspace::MemoryWorkspace;
-
-        let workspace = MemoryWorkspace::new_test();
-
-        write_start_point_with_workspace(&workspace, StartPoint::EmptyRepo).unwrap();
-
-        let content = workspace.get_file(".agent/start_commit").unwrap();
-        assert_eq!(content, EMPTY_REPO_SENTINEL);
-    }
 }

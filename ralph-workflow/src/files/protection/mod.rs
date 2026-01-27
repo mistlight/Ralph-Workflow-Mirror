@@ -14,6 +14,6 @@ pub mod monitoring;
 pub mod validation;
 
 // Core exports (currently used)
-pub use validation::{
-    restore_prompt_if_needed, validate_prompt_md, validate_prompt_md_with_workspace,
-};
+#[cfg(test)]
+pub use validation::restore_prompt_if_needed;
+pub use validation::{validate_prompt_md, validate_prompt_md_with_workspace};

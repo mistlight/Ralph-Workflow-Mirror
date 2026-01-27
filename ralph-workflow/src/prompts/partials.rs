@@ -20,6 +20,8 @@
 //! - `shared/_context_section` - PROMPT and PLAN context variables
 //! - `shared/_diff_section` - DIFF display in code block
 //! - `shared/_output_checklist` - Prioritized checklist output format
+//! - `shared/_safety_no_execute` - No command execution, read-only mode
+//! - `shared/_unattended_mode` - Automated pipeline, no user interaction
 
 use std::collections::HashMap;
 
@@ -46,6 +48,14 @@ pub fn get_shared_partials() -> HashMap<String, String> {
             "shared/_output_checklist".to_string(),
             include_str!("templates/shared/_output_checklist.txt").to_string(),
         ),
+        (
+            "shared/_safety_no_execute".to_string(),
+            include_str!("templates/shared/_safety_no_execute.txt").to_string(),
+        ),
+        (
+            "shared/_unattended_mode".to_string(),
+            include_str!("templates/shared/_unattended_mode.txt").to_string(),
+        ),
     ])
 }
 
@@ -60,6 +70,8 @@ mod tests {
         assert!(partials.contains_key("shared/_context_section"));
         assert!(partials.contains_key("shared/_diff_section"));
         assert!(partials.contains_key("shared/_output_checklist"));
+        assert!(partials.contains_key("shared/_safety_no_execute"));
+        assert!(partials.contains_key("shared/_unattended_mode"));
     }
 
     #[test]

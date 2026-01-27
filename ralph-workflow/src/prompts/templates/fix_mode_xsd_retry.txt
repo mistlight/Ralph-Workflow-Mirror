@@ -18,6 +18,8 @@
 {#   Valid <ralph-fix-result> XML conforming to the XSD schema                 #}
 {# ============================================================================ #}
 
+{{> shared/_unattended_mode}}
+
 Your XML at `{{FIX_RESULT_XML_PATH}}` failed validation.
 
 ERROR: {{XSD_ERROR}}

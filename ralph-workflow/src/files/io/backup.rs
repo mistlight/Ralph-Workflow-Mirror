@@ -453,6 +453,41 @@ pub fn make_prompt_writable_with_workspace(workspace: &dyn Workspace) -> Option<
     }
 }
 
+// ============================================================================
+// Diff backup functions for oversized content
+// ============================================================================
+
+/// Path for diff backup file.
+const DIFF_BACKUP_PATH: &str = ".agent/DIFF.backup";
+
+/// Write oversized diff content to a backup file.
+///
+/// When a diff exceeds the inline size limit, this function writes it
+/// to `.agent/DIFF.backup` so agents can read it if needed.
+///
+/// # Arguments
+///
+/// * `workspace` - Workspace for file operations
+/// * `diff_content` - The diff content to write
+///
+/// # Returns
+///
+/// Returns `Ok(PathBuf)` with the backup path on success, or an error.
+pub fn write_diff_backup_with_workspace(
+    workspace: &dyn Workspace,
+    diff_content: &str,
+) -> io::Result<std::path::PathBuf> {
+    let backup_path = Path::new(DIFF_BACKUP_PATH);
+
+    // Ensure .agent directory exists
+    workspace.create_dir_all(Path::new(".agent"))?;
+
+    // Write the diff content
+    workspace.write(backup_path, diff_content)?;
+
+    Ok(backup_path.to_path_buf())
+}
+
 // Note: Old tests using with_temp_cwd have been removed since production
 // code now uses workspace-based functions (_with_workspace variants).
 // The old std::fs functions are kept for backward compatibility but are
@@ -598,5 +633,45 @@ mod workspace_tests {
 
         let result = make_prompt_writable_with_workspace(&workspace);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_write_diff_backup_with_workspace() {
+        let workspace = MemoryWorkspace::new_test();
+        let diff = "+added\n-removed";
+
+        let result = write_diff_backup_with_workspace(&workspace, diff);
+        assert!(result.is_ok());
+
+        let path = result.unwrap();
+        assert_eq!(path, Path::new(".agent/DIFF.backup"));
+        assert_eq!(workspace.get_file(".agent/DIFF.backup").unwrap(), diff);
+    }
+
+    #[test]
+    fn test_write_diff_backup_creates_agent_dir() {
+        let workspace = MemoryWorkspace::new_test();
+        // No .agent directory exists
+
+        let diff = "some diff content";
+        let result = write_diff_backup_with_workspace(&workspace, diff);
+        assert!(result.is_ok());
+
+        // Verify .agent directory was created and file exists
+        assert!(workspace.exists(Path::new(".agent")));
+        assert!(workspace.exists(Path::new(".agent/DIFF.backup")));
+        assert_eq!(workspace.get_file(".agent/DIFF.backup").unwrap(), diff);
+    }
+
+    #[test]
+    fn test_write_diff_backup_overwrites_existing() {
+        let workspace = MemoryWorkspace::new_test().with_file(".agent/DIFF.backup", "old content");
+
+        let new_diff = "new diff content";
+        let result = write_diff_backup_with_workspace(&workspace, new_diff);
+        assert!(result.is_ok());
+
+        // Should have overwritten the old content
+        assert_eq!(workspace.get_file(".agent/DIFF.backup").unwrap(), new_diff);
     }
 }

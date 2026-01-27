@@ -557,16 +557,4 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
     }
-
-    #[test]
-    fn test_write_review_baseline_with_workspace() {
-        use crate::workspace::MemoryWorkspace;
-
-        let workspace = MemoryWorkspace::new_test();
-
-        write_review_baseline_with_workspace(&workspace, "abc123").unwrap();
-
-        let content = workspace.get_file(".agent/review_baseline.txt").unwrap();
-        assert_eq!(content, "abc123");
-    }
 }

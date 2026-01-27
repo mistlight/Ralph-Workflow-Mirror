@@ -117,7 +117,10 @@ impl AgentChainState {
         self
     }
 
-    #[doc(hidden)]
+    /// Builder method to set the maximum number of retry cycles.
+    ///
+    /// A retry cycle is when all agents have been exhausted and we start
+    /// over with exponential backoff.
     pub fn with_max_cycles(mut self, max_cycles: u32) -> Self {
         self.max_cycles = max_cycles;
         self
@@ -127,7 +130,12 @@ impl AgentChainState {
         self.agents.get(self.current_agent_index)
     }
 
-    #[doc(hidden)]
+    /// Get the currently selected model for the current agent.
+    ///
+    /// Returns `None` if:
+    /// - No models are configured
+    /// - The current agent index is out of bounds
+    /// - The current model index is out of bounds
     pub fn current_model(&self) -> Option<&String> {
         self.models_per_agent
             .get(self.current_agent_index)

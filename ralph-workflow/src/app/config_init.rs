@@ -77,20 +77,6 @@ pub fn initialize_config(
     )
 }
 
-/// Initializes configuration and agent registry with a custom catalog loader.
-///
-/// This is the same as [`initialize_config`] but accepts a custom [`CatalogLoader`]
-/// for dependency injection. This is primarily useful for testing.
-#[deprecated(since = "0.6.0", note = "Use initialize_config_with instead")]
-pub fn initialize_config_with_loader<L: CatalogLoader>(
-    args: &Args,
-    colors: Colors,
-    logger: &Logger,
-    catalog_loader: &L,
-) -> anyhow::Result<Option<ConfigInitResult>> {
-    initialize_config_with(args, colors, logger, catalog_loader, &RealConfigEnvironment)
-}
-
 /// Initializes configuration and agent registry with full dependency injection.
 ///
 /// This is the same as [`initialize_config`] but accepts both a [`CatalogLoader`]
@@ -131,9 +117,6 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
         .clone()
         .or_else(unified_config_path)
         .unwrap_or_else(|| PathBuf::from("~/.config/ralph-workflow.toml"));
-
-    // Set commit message from CLI
-    config = config.with_commit_msg(args.commit_msg.clone());
 
     // Apply CLI arguments to config
     apply_args_to_config(args, &mut config, colors);
