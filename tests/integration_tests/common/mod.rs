@@ -96,7 +96,6 @@ fn sync_workspace_to_handler(
 ) {
     // Get files in workspace after execution
     let workspace_files = workspace.written_files();
-    let workspace_paths: std::collections::HashSet<_> = workspace_files.keys().cloned().collect();
 
     // Get files in handler (original + effect-updated files)
     let handler_files_snapshot: Vec<_> = handler
@@ -116,13 +115,23 @@ fn sync_workspace_to_handler(
         }
     }
 
-    // Remove files that were in handler but no longer exist in workspace
-    // This handles checkpoint deletion on successful completion
-    for path in &handler_files_snapshot {
-        if !workspace_paths.contains(path) {
-            handler.remove_file(path);
-        }
-    }
+    // NOTE: We intentionally do NOT remove files from the handler that are missing
+    // from the workspace. This is because:
+    //
+    // 1. Effect-created files (like `.agent/start_commit` from GitResetStartCommit)
+    //    are added directly to the handler's files map, NOT through the workspace.
+    //    Removing them would break tests that verify effect behavior.
+    //
+    // 2. The workspace only tracks files written through Workspace trait methods.
+    //    Files created by AppEffects bypass the workspace entirely.
+    //
+    // Tests that need to verify file deletion should:
+    // - Check `workspace.was_deleted()` for workspace-level deletions
+    // - Check `!handler.file_exists()` for effect-level deletions
+    //
+    // If a test needs checkpoint clearing behavior, it should use
+    // `run_ralph_cli_with_handlers` (plural) which uses MockEffectHandler
+    // for reducer-level operations including checkpoint management.
 }
 
 /// Run ralph workflow with a custom MockAppEffectHandler.
