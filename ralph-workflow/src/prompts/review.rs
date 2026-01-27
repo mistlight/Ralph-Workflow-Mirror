@@ -85,6 +85,49 @@ pub fn prompt_review_xml_with_context(
         })
 }
 
+/// Generate review prompt with size-aware content references.
+///
+/// This version uses [`PromptContentReferences`] which automatically handles
+/// oversized PLAN and DIFF content by referencing file paths or git commands.
+///
+/// Note: The reviewer is still instructed to read `.agent/PROMPT.md.backup` directly
+/// for the original requirements.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `refs` - Content references for PLAN and CHANGES (DIFF)
+pub fn prompt_review_xml_with_references(
+    context: &TemplateContext,
+    refs: &crate::prompts::content_builder::PromptContentReferences,
+) -> String {
+    let template_content = context
+        .registry()
+        .get_template("review_xml")
+        .unwrap_or_else(|_| include_str!("templates/review_xml.txt").to_string());
+
+    let variables = HashMap::from([
+        ("PLAN", refs.plan_for_template()),
+        ("CHANGES", refs.diff_for_template()),
+        (
+            "ISSUES_XML_PATH",
+            resolve_absolute_path(".agent/tmp/issues.xml"),
+        ),
+        (
+            "ISSUES_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/issues.xsd"),
+        ),
+    ]);
+
+    Template::new(&template_content)
+        .render(&variables)
+        .unwrap_or_else(|_| {
+            let plan = refs.plan_for_template();
+            let changes = refs.diff_for_template();
+            format!("REVIEW MODE\n\nPLAN:\n{plan}\n\nCHANGES:\n{changes}\n")
+        })
+}
+
 /// Generate XSD validation retry prompt for review with error feedback.
 ///
 /// This prompt is used when an AI agent produces review XML that fails XSD validation.
@@ -336,5 +379,97 @@ mod tests {
         // Verify files were written to workspace
         assert!(workspace.was_written(".agent/tmp/fix_result.xsd"));
         assert!(workspace.was_written(".agent/tmp/last_output.xml"));
+    }
+
+    // =========================================================================
+    // Tests for _with_references variants
+    // =========================================================================
+
+    #[test]
+    fn test_prompt_review_xml_with_references_small_content() {
+        use crate::prompts::content_builder::PromptContentBuilder;
+
+        let workspace = MemoryWorkspace::new_test();
+        let context = TemplateContext::default();
+
+        let refs = PromptContentBuilder::new(&workspace)
+            .with_plan("Small plan content".to_string())
+            .with_diff("Small diff content".to_string(), "abc123")
+            .build();
+
+        let result = prompt_review_xml_with_references(&context, &refs);
+
+        // Should embed content inline
+        assert!(result.contains("Small plan content"));
+        assert!(result.contains("Small diff content"));
+        assert!(result.contains("REVIEW MODE"));
+    }
+
+    #[test]
+    fn test_prompt_review_xml_with_references_large_plan() {
+        use crate::prompts::content_builder::PromptContentBuilder;
+        use crate::prompts::content_reference::MAX_INLINE_CONTENT_SIZE;
+
+        let workspace = MemoryWorkspace::new_test();
+        let context = TemplateContext::default();
+        let large_plan = "p".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+
+        let refs = PromptContentBuilder::new(&workspace)
+            .with_plan(large_plan)
+            .with_diff("Small diff".to_string(), "abc123")
+            .build();
+
+        let result = prompt_review_xml_with_references(&context, &refs);
+
+        // Should reference PLAN.md file, not embed content
+        assert!(result.contains(".agent/PLAN.md"));
+        assert!(result.contains("plan.xml"));
+        assert!(result.contains("Small diff"));
+    }
+
+    #[test]
+    fn test_prompt_review_xml_with_references_large_diff() {
+        use crate::prompts::content_builder::PromptContentBuilder;
+        use crate::prompts::content_reference::MAX_INLINE_CONTENT_SIZE;
+
+        let workspace = MemoryWorkspace::new_test();
+        let context = TemplateContext::default();
+        let large_diff = "d".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+
+        let refs = PromptContentBuilder::new(&workspace)
+            .with_plan("Small plan".to_string())
+            .with_diff(large_diff, "abc123def")
+            .build();
+
+        let result = prompt_review_xml_with_references(&context, &refs);
+
+        // Should instruct to use git diff, not embed content
+        assert!(result.contains("git diff abc123def..HEAD"));
+        assert!(result.contains("Small plan"));
+    }
+
+    #[test]
+    fn test_prompt_review_xml_with_references_both_large() {
+        use crate::prompts::content_builder::PromptContentBuilder;
+        use crate::prompts::content_reference::MAX_INLINE_CONTENT_SIZE;
+
+        let workspace = MemoryWorkspace::new_test();
+        let context = TemplateContext::default();
+        let large_plan = "p".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+        let large_diff = "d".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+
+        let refs = PromptContentBuilder::new(&workspace)
+            .with_plan(large_plan)
+            .with_diff(large_diff, "start123")
+            .build();
+
+        let result = prompt_review_xml_with_references(&context, &refs);
+
+        // Both should be referenced by file/git command
+        assert!(result.contains(".agent/PLAN.md"));
+        assert!(result.contains("git diff start123..HEAD"));
+        // Should not contain the large content
+        let pppp = "p".repeat(100);
+        assert!(!result.contains(&pppp));
     }
 }

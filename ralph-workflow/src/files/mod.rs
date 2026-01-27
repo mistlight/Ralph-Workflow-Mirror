@@ -53,7 +53,8 @@ pub use io::{
     read_commit_message_file_with_workspace, reset_context_for_isolation,
     setup_xsd_schemas_with_workspace, update_status, update_status_with_workspace,
     verify_file_not_corrupted_with_workspace, write_commit_message_file,
-    write_commit_message_file_with_workspace, write_file_atomic_with_workspace,
+    write_commit_message_file_with_workspace, write_diff_backup_with_workspace,
+    write_file_atomic_with_workspace,
 };
 
 #[cfg(test)]
