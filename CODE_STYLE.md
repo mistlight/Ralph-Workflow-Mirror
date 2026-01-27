@@ -1,159 +1,128 @@
 # Code Style Guide
 
-This document defines the design principles, coding standards, and testing philosophy for this project.
+## Architecture
+
+Ralph uses an **event-sourced reducer architecture**. See [effect-system.md](docs/architecture/effect-system.md).
+
+```
+State → Orchestrator → Effect → Handler → Event → Reducer → State
+```
+
+| Component | Pure? | Role |
+|-----------|-------|------|
+| `PipelineState` | Yes | Immutable progress snapshot |
+| `reduce()` | Yes | `(State, Event) → State` |
+| `determine_next_effect()` | Yes | `State → Effect` |
+| `EffectHandler` | No | Executes effects, produces events |
+
+**Business logic → reducers/orchestration (pure). I/O → handlers (impure).**
+
+### Two Effect Layers
+
+| Layer | When | Filesystem |
+|-------|------|------------|
+| `AppEffect` | Before repo root known | `std::fs` directly |
+| `Effect` | After repo root known | `ctx.workspace` |
+
+Never mix. AppEffect cannot use Workspace; Effect cannot use `std::fs`.
 
 ---
 
 ## Design Principles
 
-### High cohesion, low coupling
-
-Group code by *reason to change*. Code that changes together should live together.
-
-### Single Responsibility Principle (SRP)
-
-Each module/type should have one primary responsibility and one primary reason to change.
-
-### Clear boundaries
-
-Isolate:
-- Domain logic
-- Application orchestration
-- Infrastructure (I/O, persistence, networking)
-- Framework/UI concerns
-
-### Explicit, safe APIs
-
-Public APIs should be hard to misuse and easy to understand. Prefer types that encode invariants and prevent invalid states.
-
-### Minimize surface area
-
-Keep modules private by default; only expose what is truly part of the public contract.
+- **High cohesion**: Code that changes together lives together
+- **Single responsibility**: One job per module/type
+- **Explicit boundaries**: Separate domain, orchestration, I/O, CLI
+- **Safe APIs**: Types encode invariants, hard to misuse
+- **Minimal surface**: Private by default
 
 ---
 
-## Clean Code Guidelines
+## Code Guidelines
 
-### Size and structure
+| Aspect | Rule |
+|--------|------|
+| Function size | < 30 lines |
+| Module size | < 300 lines |
+| Test file size | < 1000 lines |
+| Nesting depth | Max 3 levels |
+| Magic numbers | Extract to named constants |
+| Abbreviations | Only universal (`ctx`, `cfg`) |
 
-- Functions should be small: aim for < 30 lines
-- Modules/classes should be focused: aim for < 300 lines
-- If a unit is too large, it likely has multiple responsibilities
+- Early returns over nested conditionals
+- `Result` + `?` with context; no `unwrap()`/`expect()` in production
+- DRY, but duplication beats wrong abstraction
 
-### Naming
+---
 
-- Names should reveal intent
-- Avoid abbreviations unless universally understood
-- Functions should describe what they do, not how
+## Comments
 
-### Control flow
+**Comments explain *why*, not *what*.**
 
-- Use early returns to reduce nesting depth
-- Avoid deep nesting (> 3 levels is a smell)
-- Prefer guard clauses over nested conditionals
+| Required | Forbidden |
+|----------|-----------|
+| Module-level `//!`: purpose, when to use | Restating code |
+| Public items `///`: what, params, errors | Commented-out code |
+| Non-obvious logic: why this approach | TODO without issue number |
+| Workarounds: link to issue | |
 
-### Error handling
+```rust
+/// Executes the next pipeline effect based on current state.
+///
+/// # Errors
+/// Returns error if effect execution fails (agent crash, I/O error).
+pub fn execute_next(state: &PipelineState, handler: &mut impl EffectHandler) -> Result<PipelineEvent>
+```
 
-- Explicit error handling; no silent failures
-- Use `Result` + `?` with meaningful error context
-- Avoid `unwrap()` and `expect()` in production paths
-
-### Constants and magic values
-
-- No magic numbers; extract named constants
-- Group related constants together
-
-### Duplication
-
-- DRY: extract duplicated logic into shared functions
-- But avoid premature abstraction — duplication is better than the wrong abstraction
-
-### Validation
-
-- Validate at system boundaries (user input, external APIs)
-- Trust internal data; don't re-validate everywhere
+Comments must stand alone without external docs.
 
 ---
 
 ## Dead Code
 
-Dead code is a form of design debt and must be aggressively removed.
+Dead code = not referenced by production, only by tests, "for future use", unused feature flags.
 
-### Definition
+Handle by: delete it, implement the feature now, gate behind active feature flag, move to `examples/`.
 
-Code is considered **dead** if any of the following are true:
-
-- It is not referenced by production code
-- It is only referenced by tests
-- It is not part of a documented, externally observable public API
-- It does not contribute to observable runtime behavior
-- It exists "for future use" without an active requirement
-
-> **Critical rule:**
-> If the only references to a piece of production code are from tests, that code is **dead and must be removed**, not preserved.
-
-Tests must adapt to real behavior — production code must never be kept solely to satisfy tests.
-
-### Removal requirements
-
-- Remove unused modules, functions, types, traits, and constants
-- Remove unused feature flags and conditional compilation paths
-- Remove unused dependencies and unused dependency features
-- Remove redundant abstractions with no clear responsibility
-- Prefer deleting code over deprecating it unless external compatibility is explicitly required
+**Never `#[allow(dead_code)]`** - see [AGENTS.md](AGENTS.md).
 
 ---
 
-## Testing Philosophy
+## Testing
 
-For integration test guidance (behavior-based testing, mocking strategy, when to update tests), see **[tests/INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md)**.
-This **MUST** be followed when dealing with integration tests
+Three tiers with strict boundaries:
 
-### Black-box testing only
+| Tier | Command | What | Mocks? |
+|------|---------|------|--------|
+| Unit | `cargo test -p ralph-workflow --lib` | Pure logic | None needed |
+| Integration | `cargo test -p ralph-workflow-tests` | Component interactions | `MemoryWorkspace`, `MockProcessExecutor` |
+| System | `cargo test -p ralph-workflow-tests --test ralph-workflow-system-tests` | Real filesystem/git | None (real I/O) |
 
-Tests must:
-- Interact through public APIs or externally observable integration points
-- Assert inputs → outputs, side effects, invariants, and error guarantees
-- Be resilient to internal refactors
+See [INTEGRATION_TESTS.md](tests/INTEGRATION_TESTS.md), [SYSTEM_TESTS.md](tests/system_tests/SYSTEM_TESTS.md).
 
-Tests must not:
-- Inspect private fields or internal module structure
-- Assert internal call order or helper invocation
-- Mirror internal algorithms
+### Rules
 
-If a test breaks due to internal refactoring without a behavior change, the test is incorrect.
+- **Black-box**: Test through public APIs, assert observable outcomes
+- **Behavior over implementation**: Tests survive internal refactors
+- **Mock at boundaries only**: Filesystem, network, processes - never domain logic
+- **Fix implementation, not tests**: Unless expected behavior intentionally changed
 
-### Behavior over implementation
+### Workspace Abstraction
 
-Tests should assert:
-- Observable outcomes
-- Domain rules and constraints
-- Error conditions that callers must handle
+| Forbidden | Required |
+|-----------|----------|
+| `std::fs::read_to_string()` | `workspace.read()` |
+| `std::fs::write()` | `workspace.write()` |
+| `path.exists()` | `workspace.exists()` |
 
-Tests must not:
-- Assert internal types unless explicitly part of the public contract
-- Lock in exact error strings unless guaranteed by API
-- Encode timing, ordering, or concurrency assumptions unless guaranteed
-
-### Mocking discipline
-
-Mocking is allowed **only at true architectural boundaries**:
-- External services
-- Filesystem, OS, clock, randomness
-- Databases, queues, message brokers
-
-Mocking is **not allowed** for:
-- Domain logic
-- Internal collaborators within the same conceptual unit
-- Pure or deterministic logic
-
-If heavy mocking exists, treat it as evidence of poor boundaries.
+Exceptions: `WorkspaceFs` impl, `RealAppEffectHandler`, bootstrap code.
 
 ---
 
-## Guiding Principles
+## Principles
 
-- **Tests do not legitimize production code.** If code exists only for tests, delete both.
-- **Good tests protect behavior, not implementation.**
-- **Dead code is a liability, not an asset.**
-- **Prefer deletion over suppression.**
+- Tests don't legitimize production code - if code exists only for tests, delete both
+- Good tests protect behavior, not implementation
+- Dead code is liability, not asset
+- Prefer deletion over suppression
+- Pure logic is testable logic - push I/O to boundaries
