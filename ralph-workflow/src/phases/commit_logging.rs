@@ -775,6 +775,29 @@ impl CommitLogSession {
         })
     }
 
+    /// Create a no-op logging session that discards all writes.
+    ///
+    /// This is used as a fallback when all log directories fail to be created.
+    /// The session will still track attempt numbers and provide a dummy run_dir,
+    /// but writes will silently succeed without actually writing anything.
+    ///
+    /// # Returns
+    ///
+    /// A `CommitLogSession` that uses `/dev/null` equivalent as its run directory.
+    pub fn noop() -> Self {
+        // Use a path that indicates this is a noop session
+        // The path won't be created or written to by noop session
+        Self {
+            run_dir: PathBuf::from("/dev/null/ralph-noop-session"),
+            attempt_counter: 0,
+        }
+    }
+
+    /// Check if this is a no-op session.
+    pub fn is_noop(&self) -> bool {
+        self.run_dir.starts_with("/dev/null")
+    }
+
     /// Get the path to the run directory.
     pub fn run_dir(&self) -> &Path {
         &self.run_dir
@@ -799,6 +822,8 @@ impl CommitLogSession {
 
     /// Write summary file at end of session.
     ///
+    /// For noop sessions, this silently succeeds without writing anything.
+    ///
     /// # Arguments
     ///
     /// * `total_attempts` - Total number of attempts made
@@ -810,6 +835,11 @@ impl CommitLogSession {
         final_outcome: &str,
         workspace: &dyn Workspace,
     ) -> std::io::Result<()> {
+        // Skip writing for noop sessions
+        if self.is_noop() {
+            return Ok(());
+        }
+
         use std::fmt::Write;
 
         let summary_path = self.run_dir.join("SUMMARY.txt");
@@ -1002,6 +1032,36 @@ mod tests {
         let content = workspace.read(&summary_path).unwrap();
         assert!(content.contains("Total attempts: 5"));
         assert!(content.contains("SUCCESS"));
+    }
+
+    #[test]
+    fn test_noop_session_creation() {
+        let session = CommitLogSession::noop();
+        assert!(session.is_noop());
+        assert!(session.run_dir().starts_with("/dev/null"));
+    }
+
+    #[test]
+    fn test_noop_session_write_summary_succeeds_silently() {
+        let workspace = MemoryWorkspace::new_test();
+        let session = CommitLogSession::noop();
+
+        // Should succeed without error
+        session
+            .write_summary(5, "SUCCESS: feat: add feature", &workspace)
+            .unwrap();
+
+        // Should not create any files
+        let summary_path = session.run_dir().join("SUMMARY.txt");
+        assert!(!workspace.exists(&summary_path));
+    }
+
+    #[test]
+    fn test_noop_session_attempt_counter() {
+        let mut session = CommitLogSession::noop();
+        assert_eq!(session.next_attempt_number(), 1);
+        assert_eq!(session.next_attempt_number(), 2);
+        assert_eq!(session.next_attempt_number(), 3);
     }
 
     #[test]

@@ -487,6 +487,36 @@ impl AgentsConfigFile {
         Ok(Some(config))
     }
 
+    /// Load agents config from a file using workspace abstraction.
+    ///
+    /// This is the architecture-conformant version that uses the Workspace trait
+    /// instead of direct filesystem access, allowing for proper testing with
+    /// MemoryWorkspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the config file (relative to workspace root)
+    /// * `workspace` - The workspace to use for filesystem operations
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Some(config))` if file exists and parses successfully,
+    /// `Ok(None)` if file doesn't exist, or an error if parsing fails.
+    pub fn load_from_file_with_workspace(
+        path: &Path,
+        workspace: &dyn crate::workspace::Workspace,
+    ) -> Result<Option<Self>, AgentConfigError> {
+        if !workspace.exists(path) {
+            return Ok(None);
+        }
+
+        let contents = workspace
+            .read(path)
+            .map_err(|e| AgentConfigError::Io(io::Error::other(e)))?;
+        let config: Self = toml::from_str(&contents)?;
+        Ok(Some(config))
+    }
+
     /// Ensure agents config file exists, creating it from template if needed.
     pub fn ensure_config_exists<P: AsRef<Path>>(path: P) -> io::Result<ConfigInitResult> {
         let path = path.as_ref();
@@ -502,6 +532,41 @@ impl AgentsConfigFile {
 
         // Write the default template
         fs::write(path, DEFAULT_AGENTS_TOML)?;
+
+        Ok(ConfigInitResult::Created)
+    }
+
+    /// Ensure agents config file exists using workspace abstraction.
+    ///
+    /// This is the architecture-conformant version that uses the Workspace trait
+    /// instead of direct filesystem access, allowing for proper testing with
+    /// MemoryWorkspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the config file (relative to workspace root)
+    /// * `workspace` - The workspace to use for filesystem operations
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(ConfigInitResult::AlreadyExists)` if file exists,
+    /// `Ok(ConfigInitResult::Created)` if file was created from template,
+    /// or an error if creation fails.
+    pub fn ensure_config_exists_with_workspace(
+        path: &Path,
+        workspace: &dyn crate::workspace::Workspace,
+    ) -> io::Result<ConfigInitResult> {
+        if workspace.exists(path) {
+            return Ok(ConfigInitResult::AlreadyExists);
+        }
+
+        // Create parent directories if they don't exist
+        if let Some(parent) = path.parent() {
+            workspace.create_dir_all(parent)?;
+        }
+
+        // Write the default template
+        workspace.write(path, DEFAULT_AGENTS_TOML)?;
 
         Ok(ConfigInitResult::Created)
     }
@@ -715,5 +780,64 @@ mod tests {
             display_name: None,
         };
         assert!(!without_support.supports_session_continuation());
+    }
+
+    // =========================================================================
+    // Workspace-aware function tests (architecture-conformant)
+    // =========================================================================
+
+    #[test]
+    fn test_load_from_file_with_workspace_nonexistent() {
+        use crate::workspace::MemoryWorkspace;
+        let workspace = MemoryWorkspace::new_test();
+        let path = Path::new(".agent/agents.toml");
+
+        let result = AgentsConfigFile::load_from_file_with_workspace(path, &workspace).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_load_from_file_with_workspace_valid_config() {
+        use crate::workspace::MemoryWorkspace;
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/agents.toml", DEFAULT_AGENTS_TOML);
+        let path = Path::new(".agent/agents.toml");
+
+        let result = AgentsConfigFile::load_from_file_with_workspace(path, &workspace).unwrap();
+        assert!(result.is_some());
+        let config = result.unwrap();
+        assert!(config.agents.contains_key("claude"));
+    }
+
+    #[test]
+    fn test_ensure_config_exists_with_workspace_creates_file() {
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        let workspace = MemoryWorkspace::new_test();
+        let path = Path::new(".agent/agents.toml");
+
+        let result =
+            AgentsConfigFile::ensure_config_exists_with_workspace(path, &workspace).unwrap();
+        assert!(matches!(result, ConfigInitResult::Created));
+        assert!(workspace.exists(path));
+
+        // Verify the content is the default template
+        let content = workspace.read(path).unwrap();
+        assert_eq!(content, DEFAULT_AGENTS_TOML);
+    }
+
+    #[test]
+    fn test_ensure_config_exists_with_workspace_already_exists() {
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/agents.toml", "# custom config");
+        let path = Path::new(".agent/agents.toml");
+
+        let result =
+            AgentsConfigFile::ensure_config_exists_with_workspace(path, &workspace).unwrap();
+        assert!(matches!(result, ConfigInitResult::AlreadyExists));
+
+        // Verify the content was not overwritten
+        let content = workspace.read(path).unwrap();
+        assert_eq!(content, "# custom config");
     }
 }

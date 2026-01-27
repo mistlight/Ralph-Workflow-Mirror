@@ -23,6 +23,20 @@
 
 #![deny(unsafe_code)]
 
+/// Git directory name for rebase-apply state (for `git am`-style rebases).
+///
+/// Used by `detect_concurrent_git_operations` and `cleanup_stale_rebase_state`
+/// functions which are only available with the test-utils feature.
+#[cfg(any(test, feature = "test-utils"))]
+const REBASE_APPLY_DIR: &str = "rebase-apply";
+
+/// Git directory name for rebase-merge state (for interactive rebases).
+///
+/// Used by `detect_concurrent_git_operations` and `cleanup_stale_rebase_state`
+/// functions which are only available with the test-utils feature.
+#[cfg(any(test, feature = "test-utils"))]
+const REBASE_MERGE_DIR: &str = "rebase-merge";
+
 use std::io;
 use std::path::Path;
 
@@ -701,8 +715,8 @@ pub fn detect_concurrent_git_operations() -> io::Result<Option<ConcurrentOperati
     let git_dir = repo.path();
 
     // Check for rebase in progress (multiple possible state directories)
-    let rebase_merge = git_dir.join("rebase-merge");
-    let rebase_apply = git_dir.join("rebase-apply");
+    let rebase_merge = git_dir.join(REBASE_MERGE_DIR);
+    let rebase_apply = git_dir.join(REBASE_APPLY_DIR);
     if rebase_merge.exists() || rebase_apply.exists() {
         return Ok(Some(ConcurrentOperation::Rebase));
     }
@@ -824,8 +838,8 @@ pub fn cleanup_stale_rebase_state() -> io::Result<CleanupResult> {
 
     // List of possible stale rebase state files/directories
     let stale_paths = [
-        ("rebase-apply", "rebase-apply directory"),
-        ("rebase-merge", "rebase-merge directory"),
+        (REBASE_APPLY_DIR, "rebase-apply directory"),
+        (REBASE_MERGE_DIR, "rebase-merge directory"),
         ("MERGE_HEAD", "merge state"),
         ("MERGE_MSG", "merge message"),
         ("CHERRY_PICK_HEAD", "cherry-pick state"),

@@ -1023,9 +1023,23 @@ fn create_commit_log_session(
             runtime
                 .logger
                 .warn(&format!("Failed to create log session: {e}"));
+            // Try the original directory again, then fallback to /tmp, then noop
             CommitLogSession::new(log_dir, workspace).unwrap_or_else(|_| {
-                CommitLogSession::new("/tmp/ralph-commit-logs", workspace)
-                    .expect("fallback session")
+                match CommitLogSession::new("/tmp/ralph-commit-logs", workspace) {
+                    Ok(s) => {
+                        runtime.logger.warn(&format!(
+                            "Using fallback log directory: {}",
+                            s.run_dir().display()
+                        ));
+                        s
+                    }
+                    Err(e2) => {
+                        runtime.logger.warn(&format!(
+                            "All log directories failed (original: {e}, fallback: {e2}). Using no-op session."
+                        ));
+                        CommitLogSession::noop()
+                    }
+                }
             })
         }
     }

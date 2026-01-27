@@ -10,6 +10,13 @@
 //!
 //! - [`validation`] - Pre-flight and post-flight validation checks
 
+/// Maximum continuation attempts for fix passes to prevent infinite loops.
+///
+/// This is a safety limit for the outer loop that continues while
+/// status != "all_issues_addressed". The fix agent should complete
+/// well before reaching this limit under normal circumstances.
+const MAX_CONTINUATION_ATTEMPTS: usize = 100;
+
 use crate::agents::AgentRole;
 use crate::checkpoint::restore::ResumeContext;
 use crate::checkpoint::{save_checkpoint_with_workspace, CheckpointBuilder, PipelinePhase};
@@ -697,10 +704,13 @@ pub fn run_review_pass(
             ));
 
             // Read from PREVIOUS attempt's directory (the one that just failed)
-            // prev_log_dir is guaranteed to be Some because is_retry means retry_num > 0
-            let prev_dir = prev_log_dir
-                .as_ref()
-                .expect("Previous log directory should exist on retry");
+            // prev_log_dir should be Some because is_retry means retry_num > 0
+            let prev_dir = prev_log_dir.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Internal error: prev_log_dir missing on retry (iteration {})",
+                    retry_num
+                )
+            })?;
             let last_output = read_last_review_output(Path::new(prev_dir), ctx.workspace);
 
             // Get XSD error from previous iteration
@@ -1179,7 +1189,7 @@ pub fn run_fix_pass(
     let log_dir = format!(".agent/logs/reviewer_fix_{j}");
 
     let max_xsd_retries = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize;
-    let max_continuations = 100; // Safety limit to prevent infinite loops
+    let max_continuations = MAX_CONTINUATION_ATTEMPTS;
     let mut _had_any_error = false; // Tracked for potential future use
 
     // Session info for potential session continuation on XSD retries
