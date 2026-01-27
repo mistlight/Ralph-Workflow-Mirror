@@ -26,9 +26,10 @@
 
 #![cfg(any(test, feature = "test-utils"))]
 
-use super::effect::{Effect, EffectHandler};
-use super::event::PipelineEvent;
+use super::effect::{Effect, EffectHandler, EffectResult};
+use super::event::{PipelineEvent, PipelinePhase};
 use super::state::PipelineState;
+use super::ui_event::UIEvent;
 use crate::phases::PhaseContext;
 use anyhow::Result;
 use std::cell::RefCell;
@@ -51,6 +52,8 @@ pub struct MockEffectHandler {
     pub state: PipelineState,
     /// All effects that have been executed, in order.
     captured_effects: RefCell<Vec<Effect>>,
+    /// All UI events that have been emitted, in order.
+    captured_ui_events: RefCell<Vec<UIEvent>>,
     /// When true, GenerateCommitMessage returns CommitSkipped instead of CommitMessageGenerated.
     simulate_empty_diff: bool,
 }
@@ -61,6 +64,7 @@ impl MockEffectHandler {
         Self {
             state,
             captured_effects: RefCell::new(Vec::new()),
+            captured_ui_events: RefCell::new(Vec::new()),
             simulate_empty_diff: false,
         }
     }
@@ -80,6 +84,11 @@ impl MockEffectHandler {
         self.captured_effects.borrow().clone()
     }
 
+    /// Get all captured UI events in emission order.
+    pub fn captured_ui_events(&self) -> Vec<UIEvent> {
+        self.captured_ui_events.borrow().clone()
+    }
+
     /// Check if a specific effect type was captured.
     pub fn was_effect_executed<F>(&self, predicate: F) -> bool
     where
@@ -88,9 +97,18 @@ impl MockEffectHandler {
         self.captured_effects.borrow().iter().any(predicate)
     }
 
-    /// Clear all captured effects.
+    /// Check if a specific UI event was emitted.
+    pub fn was_ui_event_emitted<F>(&self, predicate: F) -> bool
+    where
+        F: Fn(&UIEvent) -> bool,
+    {
+        self.captured_ui_events.borrow().iter().any(predicate)
+    }
+
+    /// Clear all captured effects and UI events.
     pub fn clear_captured(&self) {
         self.captured_effects.borrow_mut().clear();
+        self.captured_ui_events.borrow_mut().clear();
     }
 
     /// Get the number of captured effects.
@@ -98,90 +116,170 @@ impl MockEffectHandler {
         self.captured_effects.borrow().len()
     }
 
+    /// Get the number of captured UI events.
+    pub fn ui_event_count(&self) -> usize {
+        self.captured_ui_events.borrow().len()
+    }
+
     /// Execute an effect without requiring PhaseContext.
     ///
     /// This is used for testing when you don't have a full PhaseContext.
-    /// It captures the effect and returns an appropriate mock PipelineEvent.
-    pub fn execute_mock(&mut self, effect: Effect) -> PipelineEvent {
+    /// It captures the effect and returns an appropriate mock EffectResult.
+    pub fn execute_mock(&mut self, effect: Effect) -> EffectResult {
         // Capture the effect
         self.captured_effects.borrow_mut().push(effect.clone());
 
-        // Return appropriate mock event based on effect type
-        match effect {
+        // Generate appropriate mock events based on effect type
+        let (event, ui_events) = match effect {
             Effect::AgentInvocation {
                 role,
                 agent,
                 model: _,
                 prompt: _,
-            } => PipelineEvent::AgentInvocationSucceeded { role, agent },
-
-            Effect::InitializeAgentChain { role } => PipelineEvent::AgentChainInitialized {
-                role,
-                agents: vec!["mock_agent".to_string()],
-            },
-
-            Effect::GeneratePlan { iteration } => PipelineEvent::PlanGenerationCompleted {
-                iteration,
-                valid: true,
-            },
-
-            Effect::RunDevelopmentIteration { iteration } => {
-                PipelineEvent::DevelopmentIterationCompleted {
-                    iteration,
-                    output_valid: true,
-                }
+            } => {
+                let ui = vec![UIEvent::AgentActivity {
+                    agent: agent.clone(),
+                    message: format!("Completed {} task", role),
+                }];
+                (PipelineEvent::AgentInvocationSucceeded { role, agent }, ui)
             }
 
-            Effect::RunReviewPass { pass } => PipelineEvent::ReviewCompleted {
-                pass,
-                issues_found: false,
-            },
+            Effect::InitializeAgentChain { role } => (
+                PipelineEvent::AgentChainInitialized {
+                    role,
+                    agents: vec!["mock_agent".to_string()],
+                },
+                vec![],
+            ),
 
-            Effect::RunFixAttempt { pass } => PipelineEvent::FixAttemptCompleted {
-                pass,
-                changes_made: true,
-            },
+            Effect::GeneratePlan { iteration } => {
+                let ui = vec![UIEvent::PhaseTransition {
+                    from: Some(self.state.phase),
+                    to: PipelinePhase::Development,
+                }];
+                (
+                    PipelineEvent::PlanGenerationCompleted {
+                        iteration,
+                        valid: true,
+                    },
+                    ui,
+                )
+            }
+
+            Effect::RunDevelopmentIteration { iteration } => {
+                let ui = vec![UIEvent::IterationProgress {
+                    current: iteration,
+                    total: self.state.total_iterations,
+                }];
+                (
+                    PipelineEvent::DevelopmentIterationCompleted {
+                        iteration,
+                        output_valid: true,
+                    },
+                    ui,
+                )
+            }
+
+            Effect::RunReviewPass { pass } => {
+                let ui = vec![UIEvent::ReviewProgress {
+                    pass,
+                    total: self.state.total_reviewer_passes,
+                }];
+                (
+                    PipelineEvent::ReviewCompleted {
+                        pass,
+                        issues_found: false,
+                    },
+                    ui,
+                )
+            }
+
+            Effect::RunFixAttempt { pass } => (
+                PipelineEvent::FixAttemptCompleted {
+                    pass,
+                    changes_made: true,
+                },
+                vec![],
+            ),
 
             Effect::RunRebase {
                 phase,
                 target_branch: _,
-            } => PipelineEvent::RebaseSucceeded {
-                phase,
-                new_head: "mock_head_abc123".to_string(),
-            },
+            } => (
+                PipelineEvent::RebaseSucceeded {
+                    phase,
+                    new_head: "mock_head_abc123".to_string(),
+                },
+                vec![],
+            ),
 
-            Effect::ResolveRebaseConflicts { strategy: _ } => {
-                PipelineEvent::RebaseConflictResolved { files: vec![] }
-            }
+            Effect::ResolveRebaseConflicts { strategy: _ } => (
+                PipelineEvent::RebaseConflictResolved { files: vec![] },
+                vec![],
+            ),
 
             Effect::GenerateCommitMessage => {
                 if self.simulate_empty_diff {
-                    PipelineEvent::CommitSkipped {
-                        reason: "No changes to commit (empty diff)".to_string(),
-                    }
+                    (
+                        PipelineEvent::CommitSkipped {
+                            reason: "No changes to commit (empty diff)".to_string(),
+                        },
+                        vec![],
+                    )
                 } else {
-                    PipelineEvent::CommitMessageGenerated {
-                        message: "mock commit message".to_string(),
-                        attempt: 1,
-                    }
+                    let ui = vec![UIEvent::PhaseTransition {
+                        from: Some(self.state.phase),
+                        to: PipelinePhase::CommitMessage,
+                    }];
+                    (
+                        PipelineEvent::CommitMessageGenerated {
+                            message: "mock commit message".to_string(),
+                            attempt: 1,
+                        },
+                        ui,
+                    )
                 }
             }
 
-            Effect::CreateCommit { message } => PipelineEvent::CommitCreated {
-                hash: "mock_commit_hash_abc123".to_string(),
-                message,
-            },
+            Effect::CreateCommit { message } => (
+                PipelineEvent::CommitCreated {
+                    hash: "mock_commit_hash_abc123".to_string(),
+                    message,
+                },
+                vec![],
+            ),
 
-            Effect::SkipCommit { reason } => PipelineEvent::CommitSkipped { reason },
+            Effect::SkipCommit { reason } => (PipelineEvent::CommitSkipped { reason }, vec![]),
 
-            Effect::ValidateFinalState => PipelineEvent::FinalizingStarted,
+            Effect::ValidateFinalState => {
+                let ui = vec![UIEvent::PhaseTransition {
+                    from: Some(self.state.phase),
+                    to: PipelinePhase::Finalizing,
+                }];
+                (PipelineEvent::FinalizingStarted, ui)
+            }
 
-            Effect::SaveCheckpoint { trigger } => PipelineEvent::CheckpointSaved { trigger },
+            Effect::SaveCheckpoint { trigger } => {
+                (PipelineEvent::CheckpointSaved { trigger }, vec![])
+            }
 
-            Effect::CleanupContext => PipelineEvent::ContextCleaned,
+            Effect::CleanupContext => (PipelineEvent::ContextCleaned, vec![]),
 
-            Effect::RestorePromptPermissions => PipelineEvent::PromptPermissionsRestored,
-        }
+            Effect::RestorePromptPermissions => {
+                let ui = vec![UIEvent::PhaseTransition {
+                    from: Some(self.state.phase),
+                    to: PipelinePhase::Complete,
+                }];
+                (PipelineEvent::PromptPermissionsRestored, ui)
+            }
+        };
+
+        // Capture UI events
+        self.captured_ui_events
+            .borrow_mut()
+            .extend(ui_events.clone());
+
+        EffectResult::with_ui(event, ui_events)
     }
 }
 
@@ -191,7 +289,7 @@ impl MockEffectHandler {
 /// MainEffectHandler in tests. The PhaseContext is ignored - the mock
 /// simply captures the effect and returns an appropriate mock event.
 impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
-    fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+    fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         // Delegate to execute_mock which ignores the context
         Ok(self.execute_mock(effect))
     }
@@ -230,16 +328,16 @@ mod tests {
         let mut handler = MockEffectHandler::new(state).with_empty_diff();
 
         // GenerateCommitMessage should return CommitSkipped when empty diff is simulated
-        let event = handler.execute_mock(Effect::GenerateCommitMessage);
+        let result = handler.execute_mock(Effect::GenerateCommitMessage);
 
         assert!(
-            matches!(event, PipelineEvent::CommitSkipped { .. }),
+            matches!(result.event, PipelineEvent::CommitSkipped { .. }),
             "Should return CommitSkipped when empty diff is simulated, got: {:?}",
-            event
+            result.event
         );
 
         // Verify the reason message
-        if let PipelineEvent::CommitSkipped { reason } = event {
+        if let PipelineEvent::CommitSkipped { reason } = result.event {
             assert!(
                 reason.contains("empty diff"),
                 "Reason should mention empty diff: {}",
@@ -254,12 +352,12 @@ mod tests {
         let mut handler = MockEffectHandler::new(state); // No with_empty_diff()
 
         // GenerateCommitMessage should return CommitMessageGenerated normally
-        let event = handler.execute_mock(Effect::GenerateCommitMessage);
+        let result = handler.execute_mock(Effect::GenerateCommitMessage);
 
         assert!(
-            matches!(event, PipelineEvent::CommitMessageGenerated { .. }),
+            matches!(result.event, PipelineEvent::CommitMessageGenerated { .. }),
             "Should return CommitMessageGenerated when empty diff is not simulated, got: {:?}",
-            event
+            result.event
         );
     }
 
@@ -278,7 +376,7 @@ mod tests {
 
         // Create a minimal mock PhaseContext - this requires test-utils
         // For now we test that the handler implements the trait by calling execute_mock
-        let event = handler.execute_mock(effect.clone());
+        let result = handler.execute_mock(effect.clone());
 
         // Effect should be captured
         assert!(
@@ -288,9 +386,9 @@ mod tests {
 
         // Event should be CommitCreated (no real git call)
         assert!(
-            matches!(event, PipelineEvent::CommitCreated { .. }),
+            matches!(result.event, PipelineEvent::CommitCreated { .. }),
             "Should return CommitCreated event, got: {:?}",
-            event
+            result.event
         );
     }
 
@@ -412,8 +510,8 @@ mod tests {
         assert!(result.is_ok(), "execute should succeed");
 
         // Should return CommitCreated event
-        let event = result.unwrap();
-        match event {
+        let effect_result = result.unwrap();
+        match effect_result.event {
             PipelineEvent::CommitCreated { hash, message } => {
                 assert_eq!(hash, "mock_commit_hash_abc123");
                 assert_eq!(message, "test via trait");
@@ -424,5 +522,66 @@ mod tests {
         // Effect should be captured
         assert!(handler.was_effect_executed(|e| matches!(e, Effect::CreateCommit { .. })));
         assert_eq!(handler.effect_count(), 1);
+    }
+
+    /// Test that MockEffectHandler captures UI events for development iteration.
+    #[test]
+    fn mock_effect_handler_captures_iteration_progress_ui() {
+        let state = PipelineState::initial(3, 1);
+        let mut handler = MockEffectHandler::new(state);
+
+        // Simulate development iteration
+        let _result = handler.execute_mock(Effect::RunDevelopmentIteration { iteration: 1 });
+
+        // Verify UI event was emitted
+        assert!(handler.was_ui_event_emitted(|e| {
+            matches!(
+                e,
+                UIEvent::IterationProgress {
+                    current: 1,
+                    total: 3
+                }
+            )
+        }));
+    }
+
+    /// Test that MockEffectHandler captures phase transition UI events.
+    #[test]
+    fn mock_effect_handler_captures_phase_transition_ui() {
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        // ValidateFinalState should emit phase transition to Finalizing
+        let _result = handler.execute_mock(Effect::ValidateFinalState);
+
+        // Verify UI event was emitted
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::PhaseTransition {
+                    to: PipelinePhase::Finalizing,
+                    ..
+                }
+            )),
+            "Should emit phase transition UI event to Finalizing"
+        );
+    }
+
+    /// Test that UIEvents do not affect pipeline state.
+    #[test]
+    fn ui_events_do_not_affect_state() {
+        // This test verifies that UIEvents are purely display-only
+        // and do not cause any state mutations
+        let state = PipelineState::initial(1, 0);
+        let state_clone = state.clone();
+
+        // UIEvent exists but reducer never sees it
+        let _ui_event = UIEvent::PhaseTransition {
+            from: None,
+            to: PipelinePhase::Development,
+        };
+
+        // State should be unchanged
+        assert_eq!(state.phase, state_clone.phase);
     }
 }

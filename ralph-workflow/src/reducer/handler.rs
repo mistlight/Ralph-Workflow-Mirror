@@ -11,12 +11,15 @@ use crate::checkpoint::{
 use crate::phases::{commit, development, get_primary_commit_agent, review, PhaseContext};
 use crate::pipeline::PipelineRuntime;
 use crate::prompts::ContextLevel;
-use crate::reducer::effect::{Effect, EffectHandler};
-use crate::reducer::event::{CheckpointTrigger, ConflictStrategy, PipelineEvent, RebasePhase};
+use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+use crate::reducer::event::{
+    CheckpointTrigger, ConflictStrategy, PipelineEvent, PipelinePhase, RebasePhase,
+};
 use crate::reducer::fault_tolerant_executor::{
     execute_agent_fault_tolerantly, AgentExecutionConfig,
 };
 use crate::reducer::state::PipelineState;
+use crate::reducer::ui_event::UIEvent;
 use anyhow::Result;
 use std::path::Path;
 
@@ -42,10 +45,10 @@ impl MainEffectHandler {
 }
 
 impl<'ctx> EffectHandler<'ctx> for MainEffectHandler {
-    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
-        let event = self.execute_effect(effect, ctx)?;
-        self.event_log.push(event.clone());
-        Ok(event)
+    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+        let result = self.execute_effect(effect, ctx)?;
+        self.event_log.push(result.event.clone());
+        Ok(result)
     }
 }
 
@@ -56,11 +59,19 @@ impl crate::app::event_loop::StatefulHandler for MainEffectHandler {
 }
 
 impl MainEffectHandler {
+    /// Helper to create phase transition UI event.
+    fn phase_transition_ui(&self, to: PipelinePhase) -> UIEvent {
+        UIEvent::PhaseTransition {
+            from: Some(self.state.phase),
+            to,
+        }
+    }
+
     fn execute_effect(
         &mut self,
         effect: Effect,
         ctx: &mut PhaseContext<'_>,
-    ) -> Result<PipelineEvent> {
+    ) -> Result<EffectResult> {
         match effect {
             Effect::AgentInvocation {
                 role,
@@ -113,7 +124,7 @@ impl MainEffectHandler {
         agent: String,
         _model: Option<String>,
         prompt: String,
-    ) -> Result<PipelineEvent> {
+    ) -> Result<EffectResult> {
         // Use agent from state.agent_chain if available
         let effective_agent = self
             .state
@@ -161,14 +172,22 @@ impl MainEffectHandler {
             logfile: &logfile,
         };
 
-        execute_agent_fault_tolerantly(config, &mut runtime)
+        let event = execute_agent_fault_tolerantly(config, &mut runtime)?;
+
+        // Emit UI event for agent activity
+        let ui_event = UIEvent::AgentActivity {
+            agent: effective_agent.clone(),
+            message: format!("Completed {} task", role),
+        };
+
+        Ok(EffectResult::with_ui(event, vec![ui_event]))
     }
 
     fn generate_plan(
         &mut self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<PipelineEvent> {
+    ) -> Result<EffectResult> {
         match development::run_planning_step(ctx, iteration) {
             Ok(_) => {
                 // Validate plan was created
@@ -182,15 +201,26 @@ impl MainEffectHandler {
 
                 let is_valid = plan_exists && !plan_content.trim().is_empty();
 
-                Ok(PipelineEvent::PlanGenerationCompleted {
+                let event = PipelineEvent::PlanGenerationCompleted {
                     iteration,
                     valid: is_valid,
-                })
+                };
+
+                // Emit phase transition UI event when plan is valid
+                let ui_events = if is_valid {
+                    vec![self.phase_transition_ui(PipelinePhase::Development)]
+                } else {
+                    vec![]
+                };
+
+                Ok(EffectResult::with_ui(event, ui_events))
             }
-            Err(_) => Ok(PipelineEvent::PlanGenerationCompleted {
-                iteration,
-                valid: false,
-            }),
+            Err(_) => Ok(EffectResult::event(
+                PipelineEvent::PlanGenerationCompleted {
+                    iteration,
+                    valid: false,
+                },
+            )),
         }
     }
 
@@ -198,7 +228,7 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
-    ) -> Result<PipelineEvent> {
+    ) -> Result<EffectResult> {
         use crate::checkpoint::restore::ResumeContext;
         let developer_context = ContextLevel::from(ctx.config.developer_context);
 
@@ -216,36 +246,58 @@ impl MainEffectHandler {
         );
 
         match result {
-            Ok(_dev_result) => Ok(PipelineEvent::DevelopmentIterationCompleted {
-                iteration,
-                output_valid: true,
-            }),
-            Err(_) => Ok(PipelineEvent::DevelopmentIterationCompleted {
-                iteration,
-                output_valid: false,
-            }),
+            Ok(_dev_result) => {
+                let event = PipelineEvent::DevelopmentIterationCompleted {
+                    iteration,
+                    output_valid: true,
+                };
+
+                // Emit UI event for iteration progress
+                let ui_event = UIEvent::IterationProgress {
+                    current: iteration,
+                    total: self.state.total_iterations,
+                };
+
+                Ok(EffectResult::with_ui(event, vec![ui_event]))
+            }
+            Err(_) => Ok(EffectResult::event(
+                PipelineEvent::DevelopmentIterationCompleted {
+                    iteration,
+                    output_valid: false,
+                },
+            )),
         }
     }
 
-    fn run_review_pass(&mut self, ctx: &mut PhaseContext<'_>, pass: u32) -> Result<PipelineEvent> {
+    fn run_review_pass(&mut self, ctx: &mut PhaseContext<'_>, pass: u32) -> Result<EffectResult> {
         let review_label = format!("review_{}", pass);
 
         // Get current reviewer agent from agent chain
         let review_agent = self.state.agent_chain.current_agent().cloned();
 
         match review::run_review_pass(ctx, pass, &review_label, "", review_agent.as_deref()) {
-            Ok(result) => Ok(PipelineEvent::ReviewCompleted {
-                pass,
-                issues_found: !result.early_exit,
-            }),
-            Err(_) => Ok(PipelineEvent::ReviewCompleted {
+            Ok(result) => {
+                let event = PipelineEvent::ReviewCompleted {
+                    pass,
+                    issues_found: !result.early_exit,
+                };
+
+                // Emit UI event for review progress
+                let ui_event = UIEvent::ReviewProgress {
+                    pass,
+                    total: self.state.total_reviewer_passes,
+                };
+
+                Ok(EffectResult::with_ui(event, vec![ui_event]))
+            }
+            Err(_) => Ok(EffectResult::event(PipelineEvent::ReviewCompleted {
                 pass,
                 issues_found: false,
-            }),
+            })),
         }
     }
 
-    fn run_fix_attempt(&mut self, ctx: &mut PhaseContext<'_>, pass: u32) -> Result<PipelineEvent> {
+    fn run_fix_attempt(&mut self, ctx: &mut PhaseContext<'_>, pass: u32) -> Result<EffectResult> {
         use crate::checkpoint::restore::ResumeContext;
         let reviewer_context = ContextLevel::from(ctx.config.reviewer_context);
 
@@ -259,14 +311,14 @@ impl MainEffectHandler {
             None::<&ResumeContext>,
             fix_agent.as_deref(),
         ) {
-            Ok(_) => Ok(PipelineEvent::FixAttemptCompleted {
+            Ok(_) => Ok(EffectResult::event(PipelineEvent::FixAttemptCompleted {
                 pass,
                 changes_made: true,
-            }),
-            Err(_) => Ok(PipelineEvent::FixAttemptCompleted {
+            })),
+            Err(_) => Ok(EffectResult::event(PipelineEvent::FixAttemptCompleted {
                 pass,
                 changes_made: false,
-            }),
+            })),
         }
     }
 
@@ -275,7 +327,7 @@ impl MainEffectHandler {
         _ctx: &mut PhaseContext<'_>,
         phase: RebasePhase,
         target_branch: String,
-    ) -> Result<PipelineEvent> {
+    ) -> Result<EffectResult> {
         use crate::git_helpers::{get_conflicted_files, rebase_onto};
 
         match rebase_onto(&target_branch, _ctx.executor) {
@@ -286,7 +338,9 @@ impl MainEffectHandler {
                 if !conflicted_files.is_empty() {
                     let files = conflicted_files.into_iter().map(|s| s.into()).collect();
 
-                    Ok(PipelineEvent::RebaseConflictDetected { files })
+                    Ok(EffectResult::event(PipelineEvent::RebaseConflictDetected {
+                        files,
+                    }))
                 } else {
                     // Get current head for success case
                     let new_head = match git2::Repository::open(".") {
@@ -299,13 +353,16 @@ impl MainEffectHandler {
                         Err(_) => "unknown".to_string(),
                     };
 
-                    Ok(PipelineEvent::RebaseSucceeded { phase, new_head })
+                    Ok(EffectResult::event(PipelineEvent::RebaseSucceeded {
+                        phase,
+                        new_head,
+                    }))
                 }
             }
-            Err(e) => Ok(PipelineEvent::RebaseFailed {
+            Err(e) => Ok(EffectResult::event(PipelineEvent::RebaseFailed {
                 phase,
                 reason: e.to_string(),
-            }),
+            })),
         }
     }
 
@@ -313,7 +370,7 @@ impl MainEffectHandler {
         &mut self,
         _ctx: &mut PhaseContext<'_>,
         strategy: ConflictStrategy,
-    ) -> Result<PipelineEvent> {
+    ) -> Result<EffectResult> {
         use crate::git_helpers::{abort_rebase, continue_rebase, get_conflicted_files};
 
         match strategy {
@@ -325,12 +382,14 @@ impl MainEffectHandler {
                         .map(|s| s.into())
                         .collect();
 
-                    Ok(PipelineEvent::RebaseConflictResolved { files })
+                    Ok(EffectResult::event(PipelineEvent::RebaseConflictResolved {
+                        files,
+                    }))
                 }
-                Err(e) => Ok(PipelineEvent::RebaseFailed {
+                Err(e) => Ok(EffectResult::event(PipelineEvent::RebaseFailed {
                     phase: RebasePhase::PostReview,
                     reason: e.to_string(),
-                }),
+                })),
             },
             ConflictStrategy::Abort => match abort_rebase(_ctx.executor) {
                 Ok(_) => {
@@ -344,23 +403,25 @@ impl MainEffectHandler {
                         Err(_) => "HEAD".to_string(),
                     };
 
-                    Ok(PipelineEvent::RebaseAborted {
+                    Ok(EffectResult::event(PipelineEvent::RebaseAborted {
                         phase: RebasePhase::PostReview,
                         restored_to,
-                    })
+                    }))
                 }
-                Err(e) => Ok(PipelineEvent::RebaseFailed {
+                Err(e) => Ok(EffectResult::event(PipelineEvent::RebaseFailed {
                     phase: RebasePhase::PostReview,
                     reason: e.to_string(),
-                }),
+                })),
             },
             ConflictStrategy::Skip => {
-                Ok(PipelineEvent::RebaseConflictResolved { files: Vec::new() })
+                Ok(EffectResult::event(PipelineEvent::RebaseConflictResolved {
+                    files: Vec::new(),
+                }))
             }
         }
     }
 
-    fn generate_commit_message(&mut self, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+    fn generate_commit_message(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         let attempt = match &self.state.commit {
             crate::reducer::state::CommitState::Generating { attempt, .. } => *attempt,
             _ => 1,
@@ -374,9 +435,9 @@ impl MainEffectHandler {
         if diff.trim().is_empty() {
             ctx.logger
                 .info("No changes to commit (empty diff), skipping commit");
-            return Ok(PipelineEvent::CommitSkipped {
+            return Ok(EffectResult::event(PipelineEvent::CommitSkipped {
                 reason: "No changes to commit (empty diff)".to_string(),
-            });
+            }));
         }
 
         // Get commit agent first to avoid borrow conflicts
@@ -401,14 +462,21 @@ impl MainEffectHandler {
             ctx.workspace,
             &ctx.prompt_history,
         ) {
-            Ok(result) => Ok(PipelineEvent::CommitMessageGenerated {
-                message: result.message.clone(),
-                attempt,
-            }),
-            Err(_) => Ok(PipelineEvent::CommitMessageGenerated {
+            Ok(result) => {
+                let event = PipelineEvent::CommitMessageGenerated {
+                    message: result.message.clone(),
+                    attempt,
+                };
+
+                // Emit phase transition UI event
+                let ui_event = self.phase_transition_ui(PipelinePhase::CommitMessage);
+
+                Ok(EffectResult::with_ui(event, vec![ui_event]))
+            }
+            Err(_) => Ok(EffectResult::event(PipelineEvent::CommitMessageGenerated {
                 message: "chore: automated commit".to_string(),
                 attempt,
-            }),
+            })),
         }
     }
 
@@ -416,7 +484,7 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
         message: String,
-    ) -> Result<PipelineEvent> {
+    ) -> Result<EffectResult> {
         use crate::git_helpers::{git_add_all, git_commit};
 
         // Stage all changes
@@ -424,54 +492,57 @@ impl MainEffectHandler {
 
         // Create commit
         match git_commit(&message, None, None, Some(ctx.executor)) {
-            Ok(Some(hash)) => Ok(PipelineEvent::CommitCreated {
+            Ok(Some(hash)) => Ok(EffectResult::event(PipelineEvent::CommitCreated {
                 hash: hash.to_string(),
                 message,
-            }),
+            })),
             Ok(None) => {
                 // No changes to commit - skip to FinalValidation instead of failing
                 // This prevents infinite loop when there are no changes
-                Ok(PipelineEvent::CommitSkipped {
+                Ok(EffectResult::event(PipelineEvent::CommitSkipped {
                     reason: "No changes to commit".to_string(),
-                })
+                }))
             }
-            Err(e) => Ok(PipelineEvent::CommitGenerationFailed {
+            Err(e) => Ok(EffectResult::event(PipelineEvent::CommitGenerationFailed {
                 reason: e.to_string(),
-            }),
+            })),
         }
     }
 
-    fn skip_commit(
-        &mut self,
-        _ctx: &mut PhaseContext<'_>,
-        reason: String,
-    ) -> Result<PipelineEvent> {
-        Ok(PipelineEvent::CommitSkipped { reason })
+    fn skip_commit(&mut self, _ctx: &mut PhaseContext<'_>, reason: String) -> Result<EffectResult> {
+        Ok(EffectResult::event(PipelineEvent::CommitSkipped { reason }))
     }
 
-    fn validate_final_state(&mut self, _ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+    fn validate_final_state(&mut self, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         // Transition to Finalizing phase to restore PROMPT.md permissions
         // via the effect system before marking the pipeline complete
-        Ok(PipelineEvent::FinalizingStarted)
+        let event = PipelineEvent::FinalizingStarted;
+
+        // Emit phase transition UI event
+        let ui_event = self.phase_transition_ui(PipelinePhase::Finalizing);
+
+        Ok(EffectResult::with_ui(event, vec![ui_event]))
     }
 
     fn save_checkpoint(
         &mut self,
         ctx: &mut PhaseContext<'_>,
         trigger: CheckpointTrigger,
-    ) -> Result<PipelineEvent> {
+    ) -> Result<EffectResult> {
         if ctx.config.features.checkpoint_enabled {
             let _ = save_checkpoint_from_state(&self.state, ctx);
         }
 
-        Ok(PipelineEvent::CheckpointSaved { trigger })
+        Ok(EffectResult::event(PipelineEvent::CheckpointSaved {
+            trigger,
+        }))
     }
 
     fn initialize_agent_chain(
         &mut self,
         ctx: &mut PhaseContext<'_>,
         role: AgentRole,
-    ) -> Result<PipelineEvent> {
+    ) -> Result<EffectResult> {
         let agents = match role {
             AgentRole::Developer => vec![ctx.developer_agent.to_string()],
             AgentRole::Reviewer => vec![ctx.reviewer_agent.to_string()],
@@ -493,10 +564,13 @@ impl MainEffectHandler {
             max_cycles
         ));
 
-        Ok(PipelineEvent::AgentChainInitialized { role, agents })
+        Ok(EffectResult::event(PipelineEvent::AgentChainInitialized {
+            role,
+            agents,
+        }))
     }
 
-    fn cleanup_context(&mut self, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+    fn cleanup_context(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         use std::path::Path;
 
         ctx.logger
@@ -564,10 +638,10 @@ impl MainEffectHandler {
             ctx.logger.info("No context files to clean up");
         }
 
-        Ok(PipelineEvent::ContextCleaned)
+        Ok(EffectResult::event(PipelineEvent::ContextCleaned))
     }
 
-    fn restore_prompt_permissions(&mut self, ctx: &mut PhaseContext<'_>) -> Result<PipelineEvent> {
+    fn restore_prompt_permissions(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         use crate::files::make_prompt_writable_with_workspace;
 
         ctx.logger.info("Restoring PROMPT.md write permissions...");
@@ -577,7 +651,12 @@ impl MainEffectHandler {
             ctx.logger.warn(&warning);
         }
 
-        Ok(PipelineEvent::PromptPermissionsRestored)
+        let event = PipelineEvent::PromptPermissionsRestored;
+
+        // Emit phase transition UI event to Complete
+        let ui_event = self.phase_transition_ui(PipelinePhase::Complete);
+
+        Ok(EffectResult::with_ui(event, vec![ui_event]))
     }
 }
 
@@ -641,10 +720,10 @@ mod tests {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        let event = handler.execute_mock(Effect::RestorePromptPermissions);
+        let result = handler.execute_mock(Effect::RestorePromptPermissions);
 
         assert!(
-            matches!(event, PipelineEvent::PromptPermissionsRestored),
+            matches!(result.event, PipelineEvent::PromptPermissionsRestored),
             "RestorePromptPermissions effect should return PromptPermissionsRestored event"
         );
 
@@ -665,12 +744,12 @@ mod tests {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        let event = handler.execute_mock(Effect::ValidateFinalState);
+        let result = handler.execute_mock(Effect::ValidateFinalState);
 
         assert!(
-            matches!(event, PipelineEvent::FinalizingStarted),
+            matches!(result.event, PipelineEvent::FinalizingStarted),
             "ValidateFinalState should return FinalizingStarted to trigger finalization phase, got: {:?}",
-            event
+            result.event
         );
     }
 

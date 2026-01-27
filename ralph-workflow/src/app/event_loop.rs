@@ -117,9 +117,16 @@ where
     while !state.is_complete() && events_processed < config.max_iterations {
         let effect = determine_next_effect(&state);
 
-        let event = handler.execute(effect, ctx)?;
+        // Execute returns EffectResult with both PipelineEvent and UIEvents
+        let result = handler.execute(effect, ctx)?;
 
-        let new_state = reduce(state, event.clone());
+        // Display UI events (does not affect state)
+        for ui_event in &result.ui_events {
+            ctx.logger.info(&ui_event.format_for_display());
+        }
+
+        // Apply pipeline event to state (reducer remains pure)
+        let new_state = reduce(state, result.event.clone());
 
         handler.update_state(new_state.clone());
         state = new_state;
@@ -173,9 +180,16 @@ fn run_event_loop_internal(
     while !state.is_complete() && events_processed < config.max_iterations {
         let effect = determine_next_effect(&state);
 
-        let event = handler.execute(effect, ctx)?;
+        // Execute returns EffectResult with both PipelineEvent and UIEvents
+        let result = handler.execute(effect, ctx)?;
 
-        let new_state = reduce(state, event.clone());
+        // Display UI events (does not affect state)
+        for ui_event in &result.ui_events {
+            ctx.logger.info(&ui_event.format_for_display());
+        }
+
+        // Apply pipeline event to state (reducer remains pure)
+        let new_state = reduce(state, result.event.clone());
 
         handler.state = new_state.clone();
         state = new_state;

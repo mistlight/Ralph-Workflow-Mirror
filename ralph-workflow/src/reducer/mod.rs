@@ -120,6 +120,7 @@ pub mod mock_effect_handler;
 pub mod orchestration;
 pub mod state;
 pub mod state_reduction;
+pub mod ui_event;
 
 #[cfg(test)]
 mod orchestration_tests;
@@ -127,12 +128,13 @@ mod orchestration_tests;
 #[cfg(test)]
 mod tests;
 
-pub use effect::EffectHandler;
+pub use effect::{EffectHandler, EffectResult};
 pub use event::PipelineEvent;
 pub use handler::MainEffectHandler;
 pub use orchestration::determine_next_effect;
 pub use state::PipelineState;
 pub use state_reduction::reduce;
+pub use ui_event::UIEvent;
 
 // Re-export CheckpointTrigger for external use
 pub use event::CheckpointTrigger;

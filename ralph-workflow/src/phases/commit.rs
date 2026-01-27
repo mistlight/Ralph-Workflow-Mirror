@@ -32,9 +32,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-/// Maximum length for commit message preview in logs.
-const COMMIT_PREVIEW_MAX_LENGTH: usize = 60;
-
 /// Preview a commit message for display (first line, truncated if needed).
 ///
 /// Uses character-based truncation to avoid panics on UTF-8 multi-byte characters.

@@ -881,14 +881,14 @@ mod tests {
         );
 
         // Step 2: Execute effect, get event
-        let event1 = handler.execute_mock(effect1);
+        let result1 = handler.execute_mock(effect1);
         assert!(
-            matches!(event1, PipelineEvent::FinalizingStarted),
+            matches!(result1.event, PipelineEvent::FinalizingStarted),
             "ValidateFinalState should return FinalizingStarted"
         );
 
         // Step 3: Reduce state with event
-        let state2 = reduce(initial_state, event1);
+        let state2 = reduce(initial_state, result1.event);
         assert_eq!(state2.phase, PipelinePhase::Finalizing);
         assert!(!state2.is_complete(), "Finalizing should not be complete");
 
@@ -903,14 +903,14 @@ mod tests {
         );
 
         // Step 5: Execute effect, get event
-        let event2 = handler.execute_mock(effect2);
+        let result2 = handler.execute_mock(effect2);
         assert!(
-            matches!(event2, PipelineEvent::PromptPermissionsRestored),
+            matches!(result2.event, PipelineEvent::PromptPermissionsRestored),
             "RestorePromptPermissions should return PromptPermissionsRestored"
         );
 
         // Step 6: Reduce state with event
-        let final_state = reduce(state2, event2);
+        let final_state = reduce(state2, result2.event);
         assert_eq!(final_state.phase, PipelinePhase::Complete);
         assert!(final_state.is_complete(), "Complete should be complete");
 

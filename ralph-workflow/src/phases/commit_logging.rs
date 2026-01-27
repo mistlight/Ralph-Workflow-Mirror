@@ -18,9 +18,6 @@ use std::path::{Path, PathBuf};
 use crate::common::truncate_text;
 use crate::workspace::Workspace;
 
-/// Maximum length for log line preview in commit logging.
-const LOG_LINE_PREVIEW_LENGTH: usize = 60;
-
 /// Maximum length for agent name in filenames (to avoid path length issues).
 const MAX_AGENT_NAME_LENGTH: usize = 20;
 
