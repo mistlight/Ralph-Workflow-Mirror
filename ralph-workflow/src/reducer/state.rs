@@ -118,7 +118,6 @@ impl AgentChainState {
     }
 
     #[doc(hidden)]
-    #[allow(dead_code)]
     pub fn with_max_cycles(mut self, max_cycles: u32) -> Self {
         self.max_cycles = max_cycles;
         self

@@ -310,6 +310,19 @@ fn print_project_stack(colors: Colors) {
                 if critical_count > 0 || high_count > 0 {
                     println!("  Check severities: {critical_count} critical, {high_count} high");
                 }
+
+                // Show first few critical checks as examples
+                let critical_checks: Vec<_> = all_checks
+                    .iter()
+                    .filter(|c| matches!(c.severity, CheckSeverity::Critical))
+                    .take(3)
+                    .collect();
+                if !critical_checks.is_empty() {
+                    println!("  Critical checks (sample):");
+                    for check in critical_checks {
+                        println!("    - {}", check.check);
+                    }
+                }
             }
             Err(e) => {
                 println!("  Detection failed: {e}");
