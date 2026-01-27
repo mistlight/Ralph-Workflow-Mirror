@@ -59,7 +59,7 @@ use std::sync::Arc;
 /// the source of truth for effect handling.
 fn create_workspace_from_handler(
     handler: &ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
-) -> std::sync::Arc<dyn ralph_workflow::workspace::Workspace> {
+) -> Arc<ralph_workflow::workspace::MemoryWorkspace> {
     let cwd = handler.get_cwd();
     let mut workspace = ralph_workflow::workspace::MemoryWorkspace::new(cwd);
 
@@ -71,7 +71,24 @@ fn create_workspace_from_handler(
         }
     }
 
-    std::sync::Arc::new(workspace)
+    Arc::new(workspace)
+}
+
+/// Sync files from a MemoryWorkspace back to a MockAppEffectHandler.
+///
+/// After the pipeline runs, the workspace contains newly created/modified files.
+/// This function copies those files back to the handler so tests can verify
+/// file-based side effects using `handler.file_exists()` and `handler.get_file()`.
+fn sync_workspace_to_handler(
+    workspace: &ralph_workflow::workspace::MemoryWorkspace,
+    handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
+) {
+    for (path, content) in workspace.written_files() {
+        if let Some(path_str) = path.to_str() {
+            let content_str = String::from_utf8_lossy(&content).to_string();
+            handler.add_file(path_str, &content_str);
+        }
+    }
 }
 
 /// Run ralph workflow with a custom MockAppEffectHandler.
@@ -142,15 +159,20 @@ pub fn run_ralph_cli_with_handler(
     let workspace = create_workspace_from_handler(handler);
 
     // Use run_with_config_and_resolver with the provided handler, memory config env, and memory workspace
-    ralph_workflow::app::run_with_config_and_resolver(
+    let result = ralph_workflow::app::run_with_config_and_resolver(
         parsed_args,
         executor,
         config,
         registry,
         &config_env,
         handler,
-        Some(workspace),
-    )
+        Some(workspace.clone() as Arc<dyn ralph_workflow::workspace::Workspace>),
+    );
+
+    // Sync workspace files back to handler so tests can verify file side effects
+    sync_workspace_to_handler(&workspace, handler);
+
+    result
 }
 
 /// Run ralph workflow with BOTH handlers for full isolation.
@@ -229,17 +251,24 @@ pub fn run_ralph_cli_with_handlers(
     let workspace = create_workspace_from_handler(app_handler);
 
     // Use run_with_config_and_handlers with both handlers and memory workspace
-    ralph_workflow::app::run_with_config_and_handlers(ralph_workflow::app::RunWithHandlersParams {
-        args: parsed_args,
-        executor,
-        config,
-        registry,
-        path_resolver: &config_env,
-        app_handler,
-        effect_handler,
-        workspace: Some(workspace),
-        _marker: std::marker::PhantomData,
-    })
+    let result = ralph_workflow::app::run_with_config_and_handlers(
+        ralph_workflow::app::RunWithHandlersParams {
+            args: parsed_args,
+            executor,
+            config,
+            registry,
+            path_resolver: &config_env,
+            app_handler,
+            effect_handler,
+            workspace: Some(workspace.clone() as Arc<dyn ralph_workflow::workspace::Workspace>),
+            _marker: std::marker::PhantomData,
+        },
+    );
+
+    // Sync workspace files back to handler so tests can verify file side effects
+    sync_workspace_to_handler(&workspace, app_handler);
+
+    result
 }
 
 /// Run ralph workflow with a custom MemoryConfigEnvironment.
@@ -301,15 +330,20 @@ pub fn run_ralph_cli_with_env(
     let workspace = create_workspace_from_handler(handler);
 
     // Use run_with_config_and_resolver with the provided handler and custom config env
-    ralph_workflow::app::run_with_config_and_resolver(
+    let result = ralph_workflow::app::run_with_config_and_resolver(
         parsed_args,
         executor,
         config,
         registry,
         config_env,
         handler,
-        Some(workspace),
-    )
+        Some(workspace.clone() as Arc<dyn ralph_workflow::workspace::Workspace>),
+    );
+
+    // Sync workspace files back to handler so tests can verify file side effects
+    sync_workspace_to_handler(&workspace, handler);
+
+    result
 }
 
 /// Create a MockProcessExecutor configured for successful agent execution.

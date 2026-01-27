@@ -285,6 +285,20 @@ impl MockAppEffectHandler {
     pub fn clear_captured(&self) {
         self.captured_effects.borrow_mut().clear();
     }
+
+    /// Add a file to the in-memory filesystem (non-builder version).
+    ///
+    /// Unlike `with_file`, this method takes `&mut self` instead of consuming
+    /// and returning `self`, making it suitable for use after handler construction
+    /// (e.g., syncing workspace files back to handler after pipeline execution).
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path of the file
+    /// * `content` - The content of the file
+    pub fn add_file(&mut self, path: impl Into<PathBuf>, content: impl Into<String>) {
+        self.files.borrow_mut().insert(path.into(), content.into());
+    }
 }
 
 impl AppEffectHandler for MockAppEffectHandler {
