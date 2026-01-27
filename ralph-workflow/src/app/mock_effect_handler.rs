@@ -299,6 +299,18 @@ impl MockAppEffectHandler {
     pub fn add_file(&mut self, path: impl Into<PathBuf>, content: impl Into<String>) {
         self.files.borrow_mut().insert(path.into(), content.into());
     }
+
+    /// Remove a file from the in-memory filesystem.
+    ///
+    /// This method removes a file from the handler's in-memory filesystem.
+    /// Used for syncing deletions from workspace back to handler after pipeline execution.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path of the file to remove
+    pub fn remove_file(&mut self, path: &PathBuf) {
+        self.files.borrow_mut().remove(path);
+    }
 }
 
 impl AppEffectHandler for MockAppEffectHandler {
