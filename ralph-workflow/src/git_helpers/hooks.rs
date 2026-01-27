@@ -13,6 +13,19 @@
 //!
 //! Note: This module uses libgit2 (via the repo module) for locating the hooks
 //! directory, avoiding CLI dependencies.
+//!
+//! # Architecture Note
+//!
+//! Hook installation uses `std::fs` directly rather than the `Workspace` trait.
+//! This is acceptable per AGENTS.md because:
+//!
+//! 1. `.git/hooks/` is managed by git, not the workspace abstraction
+//! 2. Hook installation is a bootstrap operation that occurs before pipeline execution
+//! 3. Tests that need hook behavior use workspace-aware test utilities
+//!    (`file_contains_marker_with_workspace`, `verify_hook_integrity_with_workspace`)
+//!
+//! The workspace abstraction is designed for files within the repository working
+//! tree, not for git internals.
 
 use super::repo::get_hooks_dir;
 use crate::files::file_contains_marker;

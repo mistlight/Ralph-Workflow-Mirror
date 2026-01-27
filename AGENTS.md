@@ -143,6 +143,24 @@ The ONLY acceptable uses of `std::fs` are:
 1. Inside `WorkspaceFs` implementation itself (the production `Workspace` impl)
 2. Bootstrap code that discovers the repo root before `Workspace` is created
 
+### Documented Exceptions
+
+The following specific uses of `std::fs` are acceptable and do not need refactoring:
+
+| Location | Reason |
+|----------|--------|
+| `workspace.rs` (`WorkspaceFs`) | This IS the production filesystem implementation |
+| `app/effect_handler.rs` (`RealAppEffectHandler`) | This IS the production effect handler |
+| `config/path_resolver.rs` (`RealConfigEnvironment`) | Production config environment implementation |
+| `agents/opencode_api/cache.rs` (`RealCacheEnvironment`) | Production cache implementation |
+| `git_helpers/rebase.rs` | Operating on `.git/` directory internals |
+| `git_helpers/hooks.rs` | Bootstrap operation on `.git/hooks/` (see module docs) |
+| `files/protection/monitoring.rs` | Atomic file open for TOCTOU security |
+| `files/io/agent_files.rs` (CWD functions) | CLI plumbing commands before workspace available |
+| `checkpoint/file_state.rs` (deprecated functions) | Legacy support with workspace alternatives available |
+
+All other production code MUST use the Workspace trait.
+
 **When you see `std::fs` in production code outside these exceptions, it MUST be refactored to use `Workspace`.**
 
 ---

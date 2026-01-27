@@ -62,7 +62,6 @@ pub use rebase::{
     PostRebaseValidationResult,
 };
 
-#[cfg(any(test, feature = "test-utils"))]
 pub use rebase::RebaseErrorKind;
 
 #[cfg(any(test, feature = "test-utils"))]
