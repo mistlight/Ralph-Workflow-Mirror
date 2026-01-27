@@ -79,14 +79,32 @@ fn create_workspace_from_handler(
 /// After the pipeline runs, the workspace contains newly created/modified files.
 /// This function copies those files back to the handler so tests can verify
 /// file-based side effects using `handler.file_exists()` and `handler.get_file()`.
+///
+/// **Important**: This only adds files that don't exist in the handler yet.
+/// Files that already exist in the handler are NOT overwritten, since they
+/// may have been updated by AppEffects during execution (e.g., `.agent/start_commit`
+/// is updated by `GitResetStartCommit`).
+///
+/// This design means:
+/// - New files created by workspace (backups, logs) -> synced to handler
+/// - Existing files updated by effects -> preserved in handler
+/// - Existing files updated by workspace ONLY -> NOT synced (handler keeps original/effect value)
+///
+/// The last case is intentional: if both the effect system and workspace might update
+/// the same file, the effect system's version takes precedence.
 fn sync_workspace_to_handler(
     workspace: &ralph_workflow::workspace::MemoryWorkspace,
     handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
 ) {
     for (path, content) in workspace.written_files() {
         if let Some(path_str) = path.to_str() {
-            let content_str = String::from_utf8_lossy(&content).to_string();
-            handler.add_file(path_str, &content_str);
+            let path_buf = std::path::PathBuf::from(path_str);
+
+            // Only add files that don't exist in the handler yet
+            if !handler.file_exists(&path_buf) {
+                let content_str = String::from_utf8_lossy(&content).to_string();
+                handler.add_file(path_str, &content_str);
+            }
         }
     }
 }
