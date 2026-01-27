@@ -126,6 +126,8 @@ The following specific uses of `std::fs` are acceptable and do not need refactor
 | `files/protection/monitoring.rs` | Atomic file open for TOCTOU security |
 | `files/io/agent_files.rs` (CWD functions) | CLI plumbing commands before workspace available |
 | `checkpoint/file_state.rs` (deprecated functions) | Legacy support with workspace alternatives available |
+| `logger/output.rs` (legacy mode logging) | Legacy mode logging for CLI layer code before workspace available |
+| `config/unified.rs` (`load_from_path`) | Convenience method for config loading when ConfigEnvironment not available |
 
 All other production code MUST use the Workspace trait.
 
