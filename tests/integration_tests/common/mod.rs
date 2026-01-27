@@ -79,7 +79,7 @@ fn create_workspace_from_handler(
 /// After the pipeline runs, the workspace contains newly created/modified files
 /// and may have deleted some files. This function:
 /// 1. Adds new files created by the workspace to the handler
-/// 2. Removes files that were deleted by the workspace from the handler
+/// 2. Removes files from handler that were deleted from workspace during execution
 ///
 /// **Important for existing files**: Files that exist in BOTH the workspace and
 /// handler are NOT overwritten, since they may have been updated by AppEffects
@@ -87,21 +87,19 @@ fn create_workspace_from_handler(
 ///
 /// This design means:
 /// - New files created by workspace (backups, logs) -> synced to handler
-/// - Deleted files (checkpoints) -> removed from handler
+/// - Deleted files (checkpoints after success) -> removed from handler
 /// - Existing files updated by effects -> preserved in handler
 /// - Existing files updated by workspace ONLY -> NOT synced (handler keeps effect value)
 fn sync_workspace_to_handler(
     workspace: &ralph_workflow::workspace::MemoryWorkspace,
     handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
 ) {
-    use ralph_workflow::workspace::Workspace;
-
     // Get files in workspace after execution
     let workspace_files = workspace.written_files();
     let workspace_paths: std::collections::HashSet<_> = workspace_files.keys().cloned().collect();
 
     // Get files in handler (original + effect-updated files)
-    let handler_files: std::collections::HashSet<_> = handler
+    let handler_files_snapshot: Vec<_> = handler
         .get_all_files()
         .iter()
         .map(|(p, _)| p.clone())
@@ -109,7 +107,8 @@ fn sync_workspace_to_handler(
 
     // Add new files from workspace to handler
     for (path, content) in workspace_files.iter() {
-        if !handler_files.contains(path) {
+        let is_in_handler = handler_files_snapshot.contains(path);
+        if !is_in_handler {
             if let Some(path_str) = path.to_str() {
                 let content_str = String::from_utf8_lossy(content).to_string();
                 handler.add_file(path_str, &content_str);
@@ -117,28 +116,11 @@ fn sync_workspace_to_handler(
         }
     }
 
-    // Remove files that were in handler but deleted from workspace
-    // Only remove if the file existed in the original workspace (i.e., was set up by test)
-    // and is now gone from the workspace (i.e., was deleted during execution)
-    for path in &handler_files {
+    // Remove files that were in handler but no longer exist in workspace
+    // This handles checkpoint deletion on successful completion
+    for path in &handler_files_snapshot {
         if !workspace_paths.contains(path) {
-            // The file exists in handler but not in workspace.
-            // This could mean:
-            // 1. File was deleted by the workspace during execution
-            // 2. File was added by an effect and never existed in workspace
-            //
-            // We need to check if the file existed in the ORIGINAL workspace setup.
-            // Since we can't easily track this, we'll check if the file NO LONGER EXISTS
-            // in the workspace's current state.
-            //
-            // Use the Workspace trait to check if file exists
-            if let Some(path_str) = path.to_str() {
-                // Check if the path would have existed if it was in the workspace
-                // If workspace.exists() returns false AND handler has it, it was deleted
-                if !workspace.exists(std::path::Path::new(path_str)) {
-                    handler.remove_file(path);
-                }
-            }
+            handler.remove_file(path);
         }
     }
 }
