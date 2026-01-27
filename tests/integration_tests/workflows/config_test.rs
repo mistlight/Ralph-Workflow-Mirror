@@ -18,8 +18,11 @@ use std::path::Path;
 
 use ralph_workflow::config::MemoryConfigEnvironment;
 
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+use std::path::PathBuf;
+
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_path_resolver,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_env,
 };
 use crate::test_timeout::with_default_timeout;
 
@@ -30,6 +33,11 @@ use crate::test_timeout::with_default_timeout;
 #[test]
 fn test_ralph_init_exits_cleanly() {
     with_default_timeout(|| {
+        // Create mock handler for app effects
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/repo"));
+
         // Create in-memory environment with paths configured
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -38,7 +46,7 @@ fn test_ralph_init_exits_cleanly() {
         // Run ralph --init with injected config and environment
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_with_path_resolver(&["--init"], executor, config, None, &env).unwrap();
+        run_ralph_cli_with_env(&["--init"], executor, config, &mut handler, &env).unwrap();
 
         // --init in non-interactive mode without template and no config
         // should create the config file
@@ -56,6 +64,11 @@ fn test_ralph_init_exits_cleanly() {
 #[test]
 fn test_ralph_init_with_template_exits_cleanly() {
     with_default_timeout(|| {
+        // Create mock handler for app effects
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/repo"));
+
         // Create in-memory environment with existing config (so --init focuses on PROMPT.md)
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -65,8 +78,7 @@ fn test_ralph_init_with_template_exits_cleanly() {
         // Run ralph --init bug-fix with injected config
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_with_path_resolver(&["--init=bug-fix"], executor, config, None, &env)
-            .unwrap();
+        run_ralph_cli_with_env(&["--init=bug-fix"], executor, config, &mut handler, &env).unwrap();
 
         // Should have created PROMPT.md from bug-fix template
         assert!(
@@ -90,6 +102,11 @@ fn test_ralph_init_with_template_exits_cleanly() {
 #[test]
 fn test_ralph_init_when_setup_complete_exits_cleanly() {
     with_default_timeout(|| {
+        // Create mock handler for app effects
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/repo"));
+
         // Create in-memory environment with both files already existing
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -100,7 +117,7 @@ fn test_ralph_init_when_setup_complete_exits_cleanly() {
         // Run ralph --init with injected config
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        let result = run_ralph_cli_with_path_resolver(&["--init"], executor, config, None, &env);
+        let result = run_ralph_cli_with_env(&["--init"], executor, config, &mut handler, &env);
 
         // Should exit successfully
         assert!(
@@ -117,6 +134,11 @@ fn test_ralph_init_when_setup_complete_exits_cleanly() {
 #[test]
 fn test_ralph_init_with_invalid_template_exits_cleanly() {
     with_default_timeout(|| {
+        // Create mock handler for app effects
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/repo"));
+
         // Create in-memory environment
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -128,11 +150,11 @@ fn test_ralph_init_with_invalid_template_exits_cleanly() {
         let executor = mock_executor_with_success();
 
         // Should exit successfully (even though template is invalid)
-        let result = run_ralph_cli_with_path_resolver(
+        let result = run_ralph_cli_with_env(
             &["--init=not-a-real-template"],
             executor,
             config,
-            None,
+            &mut handler,
             &env,
         );
         assert!(
@@ -155,6 +177,11 @@ fn test_ralph_init_with_invalid_template_exits_cleanly() {
 #[test]
 fn test_ralph_init_with_commit_message_exits_cleanly() {
     with_default_timeout(|| {
+        // Create mock handler for app effects
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/repo"));
+
         // Create in-memory environment
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -167,11 +194,11 @@ fn test_ralph_init_with_commit_message_exits_cleanly() {
         let executor = mock_executor_with_success();
 
         // Should exit successfully (treating "my commit message" as invalid template)
-        let result = run_ralph_cli_with_path_resolver(
+        let result = run_ralph_cli_with_env(
             &["--init", "my commit message"],
             executor,
             config,
-            None,
+            &mut handler,
             &env,
         );
         assert!(

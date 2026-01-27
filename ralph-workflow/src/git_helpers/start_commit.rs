@@ -19,6 +19,9 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+#[cfg(any(test, feature = "test-utils"))]
+use crate::workspace::Workspace;
+
 /// Path to the starting commit file.
 ///
 /// Stored in `.agent/start_commit`, this file contains the OID (SHA) of the
@@ -145,6 +148,98 @@ fn write_start_point(repo_root: &Path, start_point: StartPoint) -> io::Result<()
             Ok(())
         }
     }
+}
+
+/// Write start point to file using workspace abstraction.
+///
+/// This is the workspace-aware version that should be used in pipeline code
+/// where a workspace is available.
+#[cfg(any(test, feature = "test-utils"))]
+fn write_start_point_with_workspace(
+    workspace: &dyn Workspace,
+    start_point: StartPoint,
+) -> io::Result<()> {
+    let path = Path::new(START_COMMIT_FILE);
+    let content = match start_point {
+        StartPoint::Commit(oid) => oid.to_string(),
+        StartPoint::EmptyRepo => EMPTY_REPO_SENTINEL.to_string(),
+    };
+    workspace.write(path, &content)
+}
+
+/// Load start point from file using workspace abstraction.
+///
+/// This version reads the file content via workspace but still validates
+/// the commit exists using the provided repository.
+///
+/// This is the workspace-aware version for pipeline code where git operations
+/// are needed for validation.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn load_start_point_with_workspace(
+    workspace: &dyn Workspace,
+    repo: &git2::Repository,
+) -> io::Result<StartPoint> {
+    let path = Path::new(START_COMMIT_FILE);
+    let content = workspace.read(path)?;
+    let raw = content.trim();
+
+    if raw.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Starting commit file is empty. Run 'ralph --reset-start-commit' to fix.",
+        ));
+    }
+
+    if raw == EMPTY_REPO_SENTINEL {
+        return Ok(StartPoint::EmptyRepo);
+    }
+
+    // Validate OID format using libgit2.
+    let oid = git2::Oid::from_str(raw).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Invalid OID format in {}: '{}'. Run 'ralph --reset-start-commit' to fix.",
+                START_COMMIT_FILE, raw
+            ),
+        )
+    })?;
+
+    // Ensure the commit still exists in this repository.
+    repo.find_commit(oid).map_err(|e| {
+        let err_msg = e.message();
+        if err_msg.contains("not found") || err_msg.contains("invalid") {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "Start commit '{}' no longer exists (history rewritten). \
+                     Run 'ralph --reset-start-commit' to fix.",
+                    raw
+                ),
+            )
+        } else {
+            to_io_error(&e)
+        }
+    })?;
+
+    Ok(StartPoint::Commit(oid))
+}
+
+/// Save start commit using workspace abstraction.
+///
+/// This is the workspace-aware version for pipeline code where a workspace
+/// is available. If a valid start commit already exists, it is preserved.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn save_start_commit_with_workspace(
+    workspace: &dyn Workspace,
+    repo: &git2::Repository,
+) -> io::Result<()> {
+    // If a start commit exists and is valid, preserve it across runs.
+    if load_start_point_with_workspace(workspace, repo).is_ok() {
+        return Ok(());
+    }
+
+    write_start_point_with_workspace(workspace, get_current_start_point(repo)?)
 }
 
 /// Load the starting commit OID from the file.
@@ -502,4 +597,33 @@ mod tests {
 
     // Integration tests would require a temporary git repository
     // For full integration tests, see tests/git_workflow.rs
+
+    // =========================================================================
+    // Workspace-aware function tests
+    // =========================================================================
+
+    #[test]
+    fn test_write_start_point_with_workspace_commit() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test();
+        let oid = git2::Oid::from_str("abcd1234abcd1234abcd1234abcd1234abcd1234").unwrap();
+
+        write_start_point_with_workspace(&workspace, StartPoint::Commit(oid)).unwrap();
+
+        let content = workspace.get_file(".agent/start_commit").unwrap();
+        assert_eq!(content, "abcd1234abcd1234abcd1234abcd1234abcd1234");
+    }
+
+    #[test]
+    fn test_write_start_point_with_workspace_empty_repo() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test();
+
+        write_start_point_with_workspace(&workspace, StartPoint::EmptyRepo).unwrap();
+
+        let content = workspace.get_file(".agent/start_commit").unwrap();
+        assert_eq!(content, EMPTY_REPO_SENTINEL);
+    }
 }

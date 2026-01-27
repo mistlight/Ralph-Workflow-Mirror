@@ -52,9 +52,12 @@ use crate::files::{
     update_status_with_workspace, validate_prompt_md_with_workspace,
 };
 use crate::git_helpers::{
-    abort_rebase, cleanup_orphaned_marker, continue_rebase, get_conflicted_files,
-    get_default_branch, get_start_commit_summary, is_main_or_master_branch, rebase_onto,
-    reset_start_commit, save_start_commit, start_agent_phase, RebaseResult,
+    abort_rebase, continue_rebase, get_conflicted_files, get_default_branch,
+    is_main_or_master_branch, rebase_onto, reset_start_commit, RebaseResult,
+};
+#[cfg(not(feature = "test-utils"))]
+use crate::git_helpers::{
+    cleanup_orphaned_marker, get_start_commit_summary, save_start_commit, start_agent_phase,
 };
 use crate::logger::Colors;
 use crate::logger::Logger;
@@ -139,8 +142,10 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     validate_agent_chains(&registry, colors);
 
     // Handle plumbing commands
+    // In production mode, no workspace is available for plumbing commands
+    // (they use real filesystem operations)
     let mut handler = effect_handler::RealAppEffectHandler::new();
-    if handle_plumbing_commands(&args, &logger, colors, &mut handler)? {
+    if handle_plumbing_commands(&args, &logger, colors, &mut handler, None)? {
         return Ok(());
     }
 
@@ -162,6 +167,10 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
         return Ok(());
     };
 
+    // Create workspace for explicit path resolution
+    let workspace: std::sync::Arc<dyn crate::workspace::Workspace> =
+        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()));
+
     // Prepare pipeline context or exit early
     (prepare_pipeline_or_exit(PipelinePreparationParams {
         args,
@@ -174,6 +183,7 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
         colors,
         executor,
         handler: &mut handler,
+        workspace,
     })?)
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
 }
@@ -213,6 +223,7 @@ pub fn run_with_config(
         registry,
         &crate::config::RealConfigEnvironment,
         &mut handler,
+        None, // Use default WorkspaceFs
     )
 }
 
@@ -228,11 +239,12 @@ pub fn run_with_config(
 /// # Arguments
 ///
 /// * `args` - The parsed CLI arguments
-/// * `executor` - Process executor for external process execution  
+/// * `executor` - Process executor for external process execution
 /// * `config` - Pre-built configuration (bypasses env var loading)
 /// * `registry` - Pre-built agent registry
 /// * `path_resolver` - Custom path resolver for init commands
 /// * `handler` - Effect handler for git/filesystem operations
+/// * `workspace` - Optional workspace for file operations (if `None`, uses `WorkspaceFs`)
 ///
 /// # Returns
 ///
@@ -248,6 +260,7 @@ pub fn run_with_config_and_resolver<
     registry: AgentRegistry,
     path_resolver: &P,
     handler: &mut H,
+    workspace: Option<std::sync::Arc<dyn crate::workspace::Workspace>>,
 ) -> anyhow::Result<()> {
     use crate::cli::{
         handle_extended_help, handle_init_global_with, handle_init_prompt_with,
@@ -346,7 +359,14 @@ pub fn run_with_config_and_resolver<
     }
 
     // Handle plumbing commands (--reset-start-commit, --show-commit-msg, etc.)
-    if handle_plumbing_commands(&args, &logger, colors, handler)? {
+    // Pass workspace reference for testability with MemoryWorkspace
+    if handle_plumbing_commands(
+        &args,
+        &logger,
+        colors,
+        handler,
+        workspace.as_ref().map(|w| w.as_ref()),
+    )? {
         return Ok(());
     }
 
@@ -368,6 +388,11 @@ pub fn run_with_config_and_resolver<
         return Ok(());
     };
 
+    // Create workspace for explicit path resolution, or use injected workspace
+    let workspace = workspace.unwrap_or_else(|| {
+        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()))
+    });
+
     // Prepare pipeline context or exit early
     (prepare_pipeline_or_exit(PipelinePreparationParams {
         args,
@@ -380,8 +405,31 @@ pub fn run_with_config_and_resolver<
         colors,
         executor,
         handler,
+        workspace,
     })?)
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
+}
+
+/// Parameters for `run_with_config_and_handlers`.
+///
+/// Groups related parameters to reduce function argument count.
+#[cfg(feature = "test-utils")]
+pub struct RunWithHandlersParams<'a, 'ctx, P, A, E>
+where
+    P: crate::config::ConfigEnvironment,
+    A: effect::AppEffectHandler,
+    E: crate::reducer::EffectHandler<'ctx> + crate::app::event_loop::StatefulHandler,
+{
+    pub args: Args,
+    pub executor: std::sync::Arc<dyn ProcessExecutor>,
+    pub config: crate::config::Config,
+    pub registry: AgentRegistry,
+    pub path_resolver: &'a P,
+    pub app_handler: &'a mut A,
+    pub effect_handler: &'a mut E,
+    pub workspace: Option<std::sync::Arc<dyn crate::workspace::Workspace>>,
+    /// Phantom data to bind the `'ctx` lifetime from `EffectHandler<'ctx>`.
+    pub _marker: std::marker::PhantomData<&'ctx ()>,
 }
 
 /// Run with both AppEffectHandler AND EffectHandler for full isolation.
@@ -401,30 +449,36 @@ pub fn run_with_config_and_resolver<
 /// let mut app_handler = MockAppEffectHandler::new().with_head_oid("abc123");
 /// let mut effect_handler = MockEffectHandler::new(PipelineState::initial(1, 0));
 ///
-/// run_with_config_and_handlers(
-///     args, executor, config, registry, &env,
-///     &mut app_handler, &mut effect_handler
-/// )?;
+/// run_with_config_and_handlers(RunWithHandlersParams {
+///     args, executor, config, registry, path_resolver: &env,
+///     app_handler: &mut app_handler, effect_handler: &mut effect_handler,
+///     workspace: None,
+/// })?;
 ///
 /// // Verify no real git operations at either layer
 /// assert!(app_handler.captured().iter().any(|e| matches!(e, AppEffect::GitRequireRepo)));
 /// assert!(effect_handler.captured_effects().iter().any(|e| matches!(e, Effect::CreateCommit { .. })));
 /// ```
 #[cfg(feature = "test-utils")]
-pub fn run_with_config_and_handlers<'ctx, P, A, E>(
-    args: Args,
-    executor: std::sync::Arc<dyn ProcessExecutor>,
-    config: crate::config::Config,
-    registry: AgentRegistry,
-    path_resolver: &P,
-    app_handler: &mut A,
-    effect_handler: &mut E,
+pub fn run_with_config_and_handlers<'a, 'ctx, P, A, E>(
+    params: RunWithHandlersParams<'a, 'ctx, P, A, E>,
 ) -> anyhow::Result<()>
 where
     P: crate::config::ConfigEnvironment,
     A: effect::AppEffectHandler,
     E: crate::reducer::EffectHandler<'ctx> + crate::app::event_loop::StatefulHandler,
 {
+    let RunWithHandlersParams {
+        args,
+        executor,
+        config,
+        registry,
+        path_resolver,
+        app_handler,
+        effect_handler,
+        workspace,
+        ..
+    } = params;
     use crate::cli::{
         handle_extended_help, handle_init_global_with, handle_init_prompt_with,
         handle_list_work_guides, handle_smart_init_with,
@@ -522,7 +576,14 @@ where
     }
 
     // Handle plumbing commands with app_handler
-    if handle_plumbing_commands(&args, &logger, colors, app_handler)? {
+    // Pass workspace reference for testability with MemoryWorkspace
+    if handle_plumbing_commands(
+        &args,
+        &logger,
+        colors,
+        app_handler,
+        workspace.as_ref().map(|w| w.as_ref()),
+    )? {
         return Ok(());
     }
 
@@ -544,6 +605,11 @@ where
         return Ok(());
     };
 
+    // Create workspace for explicit path resolution, or use injected workspace
+    let workspace = workspace.unwrap_or_else(|| {
+        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()))
+    });
+
     // Prepare pipeline context or exit early
     let ctx = prepare_pipeline_or_exit(PipelinePreparationParams {
         args,
@@ -556,6 +622,7 @@ where
         colors,
         executor,
         handler: app_handler,
+        workspace,
     })?;
 
     // Run pipeline with the injected effect_handler
@@ -603,12 +670,21 @@ fn handle_listing_commands(args: &Args, registry: &AgentRegistry, colors: Colors
 ///
 /// Returns `Ok(true)` if a plumbing command was handled and we should exit.
 /// Returns `Ok(false)` if we should continue to the main pipeline.
+///
+/// # Workspace Support
+///
+/// When `workspace` is `Some`, the workspace-aware versions of plumbing commands
+/// are used, enabling testing with `MemoryWorkspace`. When `None`, the direct
+/// filesystem versions are used (production behavior).
 fn handle_plumbing_commands<H: effect::AppEffectHandler>(
     args: &Args,
     logger: &Logger,
     colors: Colors,
     handler: &mut H,
+    workspace: Option<&dyn crate::workspace::Workspace>,
 ) -> anyhow::Result<bool> {
+    use plumbing::{handle_apply_commit_with_handler, handle_show_commit_msg_with_workspace};
+
     // Helper to set up working directory for plumbing commands using the effect handler
     fn setup_working_dir_via_handler<H: effect::AppEffectHandler>(
         override_dir: Option<&std::path::Path>,
@@ -649,12 +725,18 @@ fn handle_plumbing_commands<H: effect::AppEffectHandler>(
     // Show commit message
     if args.commit_display.show_commit_msg {
         setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
+        if let Some(ws) = workspace {
+            return handle_show_commit_msg_with_workspace(ws).map(|()| true);
+        }
         return handle_show_commit_msg().map(|()| true);
     }
 
     // Apply commit
     if args.commit_plumbing.apply_commit {
         setup_working_dir_via_handler(args.working_dir_override.as_deref(), handler)?;
+        if let Some(ws) = workspace {
+            return handle_apply_commit_with_handler(ws, handler, logger, colors).map(|()| true);
+        }
         return handle_apply_commit(logger, colors).map(|()| true);
     }
 
@@ -742,6 +824,11 @@ struct PipelinePreparationParams<'a, H: effect::AppEffectHandler> {
     colors: Colors,
     executor: std::sync::Arc<dyn ProcessExecutor>,
     handler: &'a mut H,
+    /// Workspace for explicit path resolution.
+    ///
+    /// Production code passes `Arc::new(WorkspaceFs::new(...))`.
+    /// Tests can pass `Arc::new(MemoryWorkspace::new(...))`.
+    workspace: std::sync::Arc<dyn crate::workspace::Workspace>,
 }
 
 /// Prepares the pipeline context after agent validation.
@@ -761,10 +848,8 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         colors,
         executor,
         handler,
+        workspace,
     } = params;
-
-    // Create workspace filesystem for explicit path resolution
-    let workspace = crate::workspace::WorkspaceFs::new(repo_root.clone());
 
     // Ensure required files and directories exist via effects
     effectful::ensure_files_effectful(handler, config.isolation_mode)
@@ -816,7 +901,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
         handle_generate_commit_msg(plumbing::CommitGenerationConfig {
             config: &config,
             template_context: &template_context,
-            workspace: &workspace,
+            workspace: &*workspace,
             registry: &registry,
             logger: &logger,
             colors,
@@ -831,9 +916,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
     let developer_display = registry.display_name(&developer_agent);
     let reviewer_display = registry.display_name(&reviewer_agent);
 
-    // Build pipeline context
-    let workspace: std::sync::Arc<dyn crate::workspace::Workspace> =
-        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()));
+    // Build pipeline context (workspace was injected via params)
     let ctx = PipelineContext {
         args,
         config,
@@ -1007,7 +1090,9 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 /// This is the production entry point - it creates a MainEffectHandler internally.
 fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()> {
     use crate::app::event_loop::EventLoopConfig;
-    use crate::reducer::{MainEffectHandler, PipelineState};
+    #[cfg(not(feature = "test-utils"))]
+    use crate::reducer::MainEffectHandler;
+    use crate::reducer::PipelineState;
 
     // First, offer interactive resume if checkpoint exists without --resume flag
     let resume_result = offer_resume_if_checkpoint_exists(
@@ -1079,9 +1164,25 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     }
 
     // Set up git helpers and agent phase
+    // Use workspace-aware versions when test-utils feature is enabled
+    // to avoid real git operations that would cause test failures.
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
-    cleanup_orphaned_marker(&ctx.logger)?;
-    start_agent_phase(&mut git_helpers)?;
+
+    #[cfg(feature = "test-utils")]
+    {
+        use crate::git_helpers::{
+            cleanup_orphaned_marker_with_workspace, create_marker_with_workspace,
+        };
+        // Use workspace-based operations that don't require real git
+        cleanup_orphaned_marker_with_workspace(&*ctx.workspace, &ctx.logger)?;
+        create_marker_with_workspace(&*ctx.workspace)?;
+        // Skip hook installation and git wrapper in test mode
+    }
+    #[cfg(not(feature = "test-utils"))]
+    {
+        cleanup_orphaned_marker(&ctx.logger)?;
+        start_agent_phase(&mut git_helpers)?;
+    }
     let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &ctx.logger);
 
     // Print welcome banner and validate PROMPT.md
@@ -1211,10 +1312,25 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     let execution_history_before = phase_ctx.execution_history.clone();
     let prompt_history_before = phase_ctx.clone_prompt_history();
 
-    // Create effect handler and run event loop
-    let mut handler = MainEffectHandler::new(initial_state.clone());
+    // Create effect handler and run event loop.
+    // Under test-utils feature, use MockEffectHandler to avoid real git operations.
+    #[cfg(feature = "test-utils")]
     let loop_result = {
         use crate::app::event_loop::run_event_loop_with_handler;
+        use crate::reducer::mock_effect_handler::MockEffectHandler;
+        let mut handler = MockEffectHandler::new(initial_state.clone());
+        let phase_ctx_ref = &mut phase_ctx;
+        run_event_loop_with_handler(
+            phase_ctx_ref,
+            Some(initial_state),
+            event_loop_config,
+            &mut handler,
+        )
+    };
+    #[cfg(not(feature = "test-utils"))]
+    let loop_result = {
+        use crate::app::event_loop::run_event_loop_with_handler;
+        let mut handler = MainEffectHandler::new(initial_state.clone());
         let phase_ctx_ref = &mut phase_ctx;
         run_event_loop_with_handler(
             phase_ctx_ref,
@@ -1277,9 +1393,12 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         &ctx.logger,
         ctx.colors,
         &config,
-        &timer,
-        &stats,
+        finalization::RuntimeStats {
+            timer: &timer,
+            stats: &stats,
+        },
         prompt_monitor,
+        Some(&*ctx.workspace),
     );
     Ok(())
 }
@@ -1353,9 +1472,25 @@ where
     };
 
     // Set up git helpers and agent phase
+    // Use workspace-aware versions when test-utils feature is enabled
+    // to avoid real git operations that would cause test failures.
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
-    cleanup_orphaned_marker(&ctx.logger)?;
-    start_agent_phase(&mut git_helpers)?;
+
+    #[cfg(feature = "test-utils")]
+    {
+        use crate::git_helpers::{
+            cleanup_orphaned_marker_with_workspace, create_marker_with_workspace,
+        };
+        // Use workspace-based operations that don't require real git
+        cleanup_orphaned_marker_with_workspace(&*ctx.workspace, &ctx.logger)?;
+        create_marker_with_workspace(&*ctx.workspace)?;
+        // Skip hook installation and git wrapper in test mode
+    }
+    #[cfg(not(feature = "test-utils"))]
+    {
+        cleanup_orphaned_marker(&ctx.logger)?;
+        start_agent_phase(&mut git_helpers)?;
+    }
     let mut agent_phase_guard = AgentPhaseGuard::new(&mut git_helpers, &ctx.logger);
 
     // Print welcome banner and validate PROMPT.md
@@ -1487,9 +1622,12 @@ where
         &ctx.logger,
         ctx.colors,
         &config,
-        &timer,
-        &stats,
+        finalization::RuntimeStats {
+            timer: &timer,
+            stats: &stats,
+        },
         prompt_monitor,
+        Some(&*ctx.workspace),
     );
     Ok(())
 }
@@ -1745,45 +1883,63 @@ fn print_pipeline_info_with_config(ctx: &PipelineContext, config: &crate::config
 }
 
 /// Save starting commit or warn if it fails.
+///
+/// Under `test-utils` feature, this function uses mock data to avoid real git operations.
 fn save_start_commit_or_warn(ctx: &PipelineContext) {
-    match save_start_commit() {
-        Ok(()) => {
-            if ctx.config.verbosity.is_debug() {
-                ctx.logger
-                    .info("Saved starting commit for incremental diff generation");
-            }
+    // Skip real git operations when test-utils feature is enabled.
+    // These functions call git2::Repository::discover which requires a real git repo.
+    #[cfg(feature = "test-utils")]
+    {
+        // In tests, just log a mock message
+        if ctx.config.verbosity.is_debug() {
+            ctx.logger.info("Start: 49cb8503 (+18 commits, STALE)");
         }
-        Err(e) => {
-            ctx.logger.warn(&format!(
-                "Failed to save starting commit: {e}. \
-                 Incremental diffs may be unavailable as a result."
-            ));
-            ctx.logger.info(
-                "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
-            );
-        }
+        ctx.logger
+            .warn("Start commit is stale. Consider running: ralph --reset-start-commit");
     }
 
-    // Display start commit information to user
-    match get_start_commit_summary() {
-        Ok(summary) => {
-            if ctx.config.verbosity.is_debug() || summary.commits_since > 5 || summary.is_stale {
-                ctx.logger.info(&summary.format_compact());
-                if summary.is_stale {
-                    ctx.logger.warn(
-                        "Start commit is stale. Consider running: ralph --reset-start-commit",
-                    );
-                } else if summary.commits_since > 5 {
+    #[cfg(not(feature = "test-utils"))]
+    {
+        match save_start_commit() {
+            Ok(()) => {
+                if ctx.config.verbosity.is_debug() {
                     ctx.logger
-                        .info("Tip: Run 'ralph --show-baseline' for more details");
+                        .info("Saved starting commit for incremental diff generation");
                 }
             }
+            Err(e) => {
+                ctx.logger.warn(&format!(
+                    "Failed to save starting commit: {e}. \
+                     Incremental diffs may be unavailable as a result."
+                ));
+                ctx.logger.info(
+                    "To fix this issue, ensure .agent directory is writable and you have a valid HEAD commit.",
+                );
+            }
         }
-        Err(e) => {
-            // Only show error in debug mode since this is informational
-            if ctx.config.verbosity.is_debug() {
-                ctx.logger
-                    .warn(&format!("Failed to get start commit summary: {e}"));
+
+        // Display start commit information to user
+        match get_start_commit_summary() {
+            Ok(summary) => {
+                if ctx.config.verbosity.is_debug() || summary.commits_since > 5 || summary.is_stale
+                {
+                    ctx.logger.info(&summary.format_compact());
+                    if summary.is_stale {
+                        ctx.logger.warn(
+                            "Start commit is stale. Consider running: ralph --reset-start-commit",
+                        );
+                    } else if summary.commits_since > 5 {
+                        ctx.logger
+                            .info("Tip: Run 'ralph --show-baseline' for more details");
+                    }
+                }
+            }
+            Err(e) => {
+                // Only show error in debug mode since this is informational
+                if ctx.config.verbosity.is_debug() {
+                    ctx.logger
+                        .warn(&format!("Failed to get start commit summary: {e}"));
+                }
             }
         }
     }

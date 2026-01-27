@@ -13,206 +13,129 @@
 //! - Test **observable behavior**, not implementation details
 //! - Mock only at **architectural boundaries** (filesystem, network, external APIs)
 //! - Use `TestPrinter` for parser tests (replaces stdout)
-//! - Use `TempDir` for filesystem isolation
+//! - Use `MockAppEffectHandler` with `run_ralph_cli_with_handler()` or
+//!   `run_ralph_cli_with_handlers()` for filesystem/git isolation
+//! - NEVER use `TempDir`, `std::fs`, or real git operations in integration tests
 //! - NEVER use `cfg!(test)` branches in production code
 //! - Use **dependency injection** for configuration, not environment variables
 //!
 //! The utilities in this module support proper integration test patterns:
-//! - `run_ralph_cli_injected()`: Run ralph CLI via app::run_with_config() with injected Config
+//! - `run_ralph_cli_with_handler()`: Run ralph CLI with MockAppEffectHandler
+//! - `run_ralph_cli_with_handlers()`: Run ralph CLI with both app and reducer mock handlers
 //! - `create_test_config_struct()`: Create a Config struct directly for dependency injection
 //! - `mock_executor_with_success()`: Mock executor for successful agent execution
 //!
 //! # Configuration via Dependency Injection
 //!
-//! Tests use `create_test_config_struct()` to build a Config directly, bypassing
-//! environment variable loading. This ensures tests are deterministic and can
-//! run in parallel without affecting each other.
+//! Tests use `create_test_config_struct()` and `MockAppEffectHandler` to run
+//! entirely in-memory, without real filesystem or git operations:
 //!
 //! ```ignore
-//! let dir = TempDir::new().unwrap();
+//! use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+//!
+//! let mut handler = MockAppEffectHandler::new()
+//!     .with_head_oid("a".repeat(40))
+//!     .with_cwd(PathBuf::from("/mock/repo"))
+//!     .with_file("PROMPT.md", "# Test\n## Goal\nTest\n## Acceptance\n- Pass");
+//!
 //! let config = create_test_config_struct();
 //! let executor = mock_executor_with_success();
-//! run_ralph_cli_injected(&["--reset-start-commit"], executor, config, Some(dir.path())).unwrap();
+//!
+//! run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
+//!
+//! // Verify effects via handler.captured()
+//! assert!(handler.captured().iter().any(|e| matches!(e, AppEffect::GitSaveStartCommit)));
 //! ```
 
 use clap::error::ErrorKind;
 use clap::Parser;
-use ralph_workflow::config::ConfigEnvironment;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-/// Global lock for CWD-changing operations.
+/// Create a MemoryWorkspace from a MockAppEffectHandler.
 ///
-/// The production code uses relative paths extensively, and CWD is process-global.
-/// Tests that change CWD must hold this lock to prevent races.
+/// This function creates a MemoryWorkspace pre-populated with all files
+/// from the handler's in-memory filesystem. This allows the pipeline
+/// to use MemoryWorkspace for file operations while the handler remains
+/// the source of truth for effect handling.
 ///
-/// This lock is used internally by `run_ralph_cli_injected()` when a `working_dir` is provided.
-static CWD_LOCK: Mutex<()> = Mutex::new(());
+/// Returns both the workspace and a set of initial file paths for tracking deletions.
+fn create_workspace_from_handler(
+    handler: &ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
+) -> (
+    Arc<ralph_workflow::workspace::MemoryWorkspace>,
+    std::collections::HashSet<std::path::PathBuf>,
+) {
+    let cwd = handler.get_cwd();
+    let mut workspace = ralph_workflow::workspace::MemoryWorkspace::new(cwd);
+    let mut initial_paths = std::collections::HashSet::new();
 
-/// Run ralph workflow with injected Config (no environment variable loading).
-///
-/// This is the recommended approach for integration tests per the style guide
-/// (Rule 3: Use Dependency Injection for Testability). It bypasses all
-/// environment variable loading and uses the provided Config directly.
-///
-/// # Arguments
-///
-/// * `args` - Command line arguments to pass to ralph
-/// * `executor` - Process executor for external process execution
-/// * `config` - Pre-built Config struct (bypasses env var loading)
-/// * `working_dir` - Optional working directory override
-///
-/// # Example
-///
-/// ```ignore
-/// use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected};
-///
-/// #[test]
-/// fn test_workflow() {
-///     with_default_timeout(|| {
-///         let dir = TempDir::new().unwrap();
-///         let config = create_test_config_struct();
-///         let executor = mock_executor_with_success();
-///         run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
-///     });
-/// }
-/// ```
-pub fn run_ralph_cli_injected(
-    args: &[&str],
-    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-    config: ralph_workflow::config::Config,
-    working_dir: Option<&std::path::Path>,
-) -> anyhow::Result<()> {
-    // Build argv: binary name + args
-    let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(|s| s.to_string()));
-
-    // Parse args using clap directly
-    let mut parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
-        Ok(args) => args,
-        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
-            return Ok(());
+    // Copy all files from the handler to the workspace
+    for (path, content) in handler.get_all_files() {
+        // MemoryWorkspace stores files relative to root, so convert PathBuf to &str
+        if let Some(path_str) = path.to_str() {
+            workspace = workspace.with_file(path_str, &content);
+            initial_paths.insert(path.clone());
         }
-        Err(e) => return Err(e.into()),
-    };
-
-    // Set working_dir_override if provided
-    if let Some(dir) = working_dir {
-        parsed_args.working_dir_override = Some(dir.to_path_buf());
     }
 
-    // Use real path resolver by default
-    run_ralph_cli_with_resolver(
-        parsed_args,
-        executor,
-        config,
-        working_dir,
-        &ralph_workflow::config::RealConfigEnvironment,
-    )
+    (Arc::new(workspace), initial_paths)
 }
 
-/// Run ralph workflow with injected Config and custom path resolver.
+/// Sync files from a MemoryWorkspace back to a MockAppEffectHandler.
 ///
-/// This is the same as [`run_ralph_cli_injected`] but accepts a custom
-/// [`ConfigEnvironment`] for testing init commands that need to create
-/// config files at specific paths.
+/// After the pipeline runs, the workspace contains newly created/modified files
+/// and may have deleted some files. This function:
+/// 1. Adds new files created by the workspace to the handler
+/// 2. Removes files from handler that were in the initial workspace but are now deleted
 ///
-/// # Arguments
+/// **Important for existing files**: Files that exist in BOTH the workspace and
+/// handler are NOT overwritten, since they may have been updated by AppEffects
+/// during execution (e.g., `.agent/start_commit` is updated by `GitResetStartCommit`).
 ///
-/// * `args` - Command line arguments to pass to ralph
-/// * `executor` - Process executor for external process execution
-/// * `config` - Pre-built Config struct (bypasses env var loading)
-/// * `working_dir` - Optional working directory override
-/// * `path_resolver` - Custom path resolver for init commands
-///
-/// # Example
-///
-/// ```ignore
-/// use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_path_resolver};
-///
-/// #[test]
-/// fn test_init_workflow() {
-///     with_default_timeout(|| {
-///         let dir = TempDir::new().unwrap();
-///         let config = create_test_config_struct();
-///         let executor = mock_executor_with_success();
-///         let resolver = TestConfigEnvironment::new()
-///             .with_unified_config_path(dir.path().join("ralph-workflow.toml"))
-///             .with_prompt_path(dir.path().join("PROMPT.md"));
-///         run_ralph_cli_with_path_resolver(&["--init"], executor, config, Some(dir.path()), &resolver).unwrap();
-///     });
-/// }
-/// ```
-pub fn run_ralph_cli_with_path_resolver<P: ConfigEnvironment>(
-    args: &[&str],
-    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-    config: ralph_workflow::config::Config,
-    working_dir: Option<&std::path::Path>,
-    path_resolver: &P,
-) -> anyhow::Result<()> {
-    // Build argv: binary name + args
-    let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(|s| s.to_string()));
+/// This design means:
+/// - New files created by workspace (backups, logs) -> synced to handler
+/// - Deleted files (from initial set) -> removed from handler
+/// - Effect-created files (not in initial set) -> preserved in handler
+/// - Existing files updated by workspace ONLY -> NOT synced (handler keeps effect value)
+fn sync_workspace_to_handler(
+    workspace: &ralph_workflow::workspace::MemoryWorkspace,
+    handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
+    initial_workspace_files: &std::collections::HashSet<std::path::PathBuf>,
+) {
+    // Get current files in workspace after execution
+    let workspace_files = workspace.written_files();
+    let current_workspace_paths: std::collections::HashSet<_> =
+        workspace_files.keys().cloned().collect();
 
-    // Parse args using clap directly
-    let mut parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
-        Ok(args) => args,
-        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
-            return Ok(());
+    // Get files in handler (original + effect-updated files)
+    let handler_files_snapshot: Vec<_> = handler
+        .get_all_files()
+        .iter()
+        .map(|(p, _)| p.clone())
+        .collect();
+
+    // Add new files from workspace to handler
+    for (path, content) in workspace_files.iter() {
+        let is_in_handler = handler_files_snapshot.contains(path);
+        if !is_in_handler {
+            if let Some(path_str) = path.to_str() {
+                let content_str = String::from_utf8_lossy(content).to_string();
+                handler.add_file(path_str, &content_str);
+            }
         }
-        Err(e) => return Err(e.into()),
-    };
-
-    // Set working_dir_override if provided
-    if let Some(dir) = working_dir {
-        parsed_args.working_dir_override = Some(dir.to_path_buf());
     }
 
-    run_ralph_cli_with_resolver(parsed_args, executor, config, working_dir, path_resolver)
-}
-
-/// Internal helper that runs ralph with parsed args and resolver.
-fn run_ralph_cli_with_resolver<P: ConfigEnvironment>(
-    parsed_args: ralph_workflow::cli::Args,
-    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-    config: ralph_workflow::config::Config,
-    working_dir: Option<&std::path::Path>,
-    path_resolver: &P,
-) -> anyhow::Result<()> {
-    // Create test registry with built-in agents only
-    let registry = create_test_registry();
-
-    // Create effect handler for git/filesystem operations
-    let mut handler = ralph_workflow::app::effect_handler::RealAppEffectHandler::new();
-
-    // If working_dir is provided, we need to lock CWD and restore it after
-    if working_dir.is_some() {
-        let _lock = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let original_cwd = std::env::current_dir().ok();
-
-        // Use run_with_config_and_resolver which bypasses env var loading
-        let result = ralph_workflow::app::run_with_config_and_resolver(
-            parsed_args,
-            executor,
-            config,
-            registry,
-            path_resolver,
-            &mut handler,
-        );
-
-        if let Some(cwd) = original_cwd {
-            let _ = std::env::set_current_dir(cwd);
+    // Remove files that:
+    // 1. Were in the initial workspace (when copied from handler)
+    // 2. Are no longer in the workspace (were deleted during execution)
+    //
+    // This preserves effect-created files (like .agent/start_commit) which
+    // are NOT in the initial set because they're created via effects.
+    for path in initial_workspace_files {
+        if !current_workspace_paths.contains(path) {
+            // File was in initial workspace but is now deleted - remove from handler
+            handler.remove_file(path);
         }
-
-        result
-    } else {
-        ralph_workflow::app::run_with_config_and_resolver(
-            parsed_args,
-            executor,
-            config,
-            registry,
-            path_resolver,
-            &mut handler,
-        )
     }
 }
 
@@ -221,6 +144,11 @@ fn run_ralph_cli_with_resolver<P: ConfigEnvironment>(
 /// This function allows tests to inject a mock effect handler to verify
 /// that the CLI properly delegates git/filesystem operations to the handler
 /// instead of calling git_helpers directly.
+///
+/// **NOTE:** This function uses `MemoryConfigEnvironment` for full isolation.
+/// The config environment is pre-configured with:
+/// - PROMPT.md path from the handler's cwd
+/// - No pre-existing files (unless added via the handler)
 ///
 /// # Arguments
 ///
@@ -234,7 +162,9 @@ fn run_ralph_cli_with_resolver<P: ConfigEnvironment>(
 /// ```ignore
 /// use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 ///
-/// let mut handler = MockAppEffectHandler::new().with_head_oid("abc123");
+/// let mut handler = MockAppEffectHandler::new()
+///     .with_head_oid("abc123")
+///     .with_cwd(PathBuf::from("/mock/repo"));
 /// let config = create_test_config_struct();
 /// let executor = mock_executor_with_success();
 ///
@@ -265,15 +195,33 @@ pub fn run_ralph_cli_with_handler(
     // Create test registry with built-in agents only
     let registry = create_test_registry();
 
-    // Use run_with_config_and_resolver with the provided handler
-    ralph_workflow::app::run_with_config_and_resolver(
+    // Create a MemoryConfigEnvironment for full isolation.
+    // Configure paths based on handler's cwd.
+    let cwd = handler.get_cwd();
+    let config_env = ralph_workflow::config::MemoryConfigEnvironment::new()
+        .with_prompt_path(cwd.join("PROMPT.md"))
+        .with_unified_config_path(cwd.join(".config/ralph-workflow.toml"));
+
+    // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
+    // This ensures file operations use the handler's in-memory filesystem.
+    // We also track the initial files so we can detect deletions during execution.
+    let (workspace, initial_files) = create_workspace_from_handler(handler);
+
+    // Use run_with_config_and_resolver with the provided handler, memory config env, and memory workspace
+    let result = ralph_workflow::app::run_with_config_and_resolver(
         parsed_args,
         executor,
         config,
         registry,
-        &ralph_workflow::config::RealConfigEnvironment,
+        &config_env,
         handler,
-    )
+        Some(workspace.clone() as Arc<dyn ralph_workflow::workspace::Workspace>),
+    );
+
+    // Sync workspace files back to handler so tests can verify file side effects
+    sync_workspace_to_handler(&workspace, handler, &initial_files);
+
+    result
 }
 
 /// Run ralph workflow with BOTH handlers for full isolation.
@@ -281,6 +229,7 @@ pub fn run_ralph_cli_with_handler(
 /// This is the ultimate test entry point that injects:
 /// - `MockAppEffectHandler` for CLI-layer operations (git require repo, set cwd, etc.)
 /// - `MockEffectHandler` for reducer-layer operations (create commit, run rebase, etc.)
+/// - `MemoryConfigEnvironment` for config file operations (init commands, etc.)
 ///
 /// Using both handlers ensures tests make **ZERO real git calls at any layer**.
 ///
@@ -301,6 +250,7 @@ pub fn run_ralph_cli_with_handler(
 ///
 /// let mut app_handler = MockAppEffectHandler::new()
 ///     .with_head_oid("abc123")
+///     .with_cwd(PathBuf::from("/mock/repo"))
 ///     .with_file("PROMPT.md", "# Test");
 /// let mut effect_handler = MockEffectHandler::new(PipelineState::initial(1, 0));
 ///
@@ -339,16 +289,112 @@ pub fn run_ralph_cli_with_handlers(
     // Create test registry with built-in agents only
     let registry = create_test_registry();
 
-    // Use run_with_config_and_handlers with both handlers
-    ralph_workflow::app::run_with_config_and_handlers(
+    // Create a MemoryConfigEnvironment for full isolation.
+    // Configure paths based on handler's cwd.
+    let cwd = app_handler.get_cwd();
+    let config_env = ralph_workflow::config::MemoryConfigEnvironment::new()
+        .with_prompt_path(cwd.join("PROMPT.md"))
+        .with_unified_config_path(cwd.join(".config/ralph-workflow.toml"));
+
+    // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
+    // Track initial files so we can detect deletions during execution.
+    let (workspace, initial_files) = create_workspace_from_handler(app_handler);
+
+    // Use run_with_config_and_handlers with both handlers and memory workspace
+    let result = ralph_workflow::app::run_with_config_and_handlers(
+        ralph_workflow::app::RunWithHandlersParams {
+            args: parsed_args,
+            executor,
+            config,
+            registry,
+            path_resolver: &config_env,
+            app_handler,
+            effect_handler,
+            workspace: Some(workspace.clone() as Arc<dyn ralph_workflow::workspace::Workspace>),
+            _marker: std::marker::PhantomData,
+        },
+    );
+
+    // Sync workspace files back to handler so tests can verify file side effects
+    sync_workspace_to_handler(&workspace, app_handler, &initial_files);
+
+    result
+}
+
+/// Run ralph workflow with a custom MemoryConfigEnvironment.
+///
+/// This variant of `run_ralph_cli_with_handler` allows passing a custom
+/// `MemoryConfigEnvironment` for tests that need to verify config file creation
+/// (e.g., `--init`, `--init-global` commands).
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments to pass to ralph
+/// * `executor` - Process executor for external process execution
+/// * `config` - Pre-built Config struct (bypasses env var loading)
+/// * `handler` - Mock effect handler to capture effects
+/// * `config_env` - Custom MemoryConfigEnvironment for config path resolution
+///
+/// # Example
+///
+/// ```ignore
+/// use ralph_workflow::config::MemoryConfigEnvironment;
+///
+/// let mut handler = MockAppEffectHandler::new()
+///     .with_head_oid("a".repeat(40))
+///     .with_cwd(PathBuf::from("/mock/repo"));
+///
+/// let env = MemoryConfigEnvironment::new()
+///     .with_unified_config_path("/test/config/ralph-workflow.toml")
+///     .with_prompt_path("/test/repo/PROMPT.md");
+///
+/// run_ralph_cli_with_env(&["--init"], executor, config, &mut handler, &env).unwrap();
+///
+/// // Verify config file was created
+/// assert!(env.was_written(Path::new("/test/config/ralph-workflow.toml")));
+/// ```
+pub fn run_ralph_cli_with_env(
+    args: &[&str],
+    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+    config: ralph_workflow::config::Config,
+    handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
+    config_env: &ralph_workflow::config::MemoryConfigEnvironment,
+) -> anyhow::Result<()> {
+    // Build argv: binary name + args
+    let mut argv: Vec<String> = vec!["ralph".to_string()];
+    argv.extend(args.iter().map(|s| s.to_string()));
+
+    // Parse args using clap directly
+    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+        Ok(args) => args,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Create test registry with built-in agents only
+    let registry = create_test_registry();
+
+    // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
+    // Track initial files so we can detect deletions during execution.
+    let (workspace, initial_files) = create_workspace_from_handler(handler);
+
+    // Use run_with_config_and_resolver with the provided handler and custom config env
+    let result = ralph_workflow::app::run_with_config_and_resolver(
         parsed_args,
         executor,
         config,
         registry,
-        &ralph_workflow::config::RealConfigEnvironment,
-        app_handler,
-        effect_handler,
-    )
+        config_env,
+        handler,
+        Some(workspace.clone() as Arc<dyn ralph_workflow::workspace::Workspace>),
+    );
+
+    // Sync workspace files back to handler so tests can verify file side effects
+    sync_workspace_to_handler(&workspace, handler, &initial_files);
+
+    result
 }
 
 /// Create a MockProcessExecutor configured for successful agent execution.
@@ -445,15 +491,20 @@ pub fn mock_executor_with_success() -> Arc<dyn ralph_workflow::executor::Process
 /// # Usage
 ///
 /// ```ignore
-/// use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected};
+/// use std::path::PathBuf;
+/// use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+/// use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handler};
 ///
 /// #[test]
 /// fn test_workflow() {
 ///     with_default_timeout(|| {
-///         let dir = TempDir::new().unwrap();
+///         let mut handler = MockAppEffectHandler::new()
+///             .with_head_oid("a".repeat(40))
+///             .with_cwd(PathBuf::from("/mock/repo"))
+///             .with_file("PROMPT.md", "# Test\n## Goal\nTest\n## Acceptance\n- Pass");
 ///         let config = create_test_config_struct();
 ///         let executor = mock_executor_with_success();
-///         run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+///         run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 ///     });
 /// }
 /// ```

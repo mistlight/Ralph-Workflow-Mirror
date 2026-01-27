@@ -29,7 +29,6 @@
 use crate::test_timeout::with_default_timeout;
 use std::cell::RefCell;
 use std::io::{BufReader, Cursor};
-use std::path::Path;
 use std::rc::Rc;
 
 use ralph_workflow::config::Verbosity;
@@ -964,54 +963,7 @@ fn test_glm_multiple_content_blocks_lexicographic_sort_bug() {
     });
 }
 
-/// Test with real production log file using VirtualTerminal.
-///
-/// This verifies that when an actual production log file is parsed,
-/// the deduplication system prevents duplicate visible content.
-#[test]
-fn test_real_log_file_no_visible_duplicates() {
-    with_default_timeout(|| {
-        let possible_paths = [
-            "tests/deduplication_integration_tests/fixtures/PROMPT-LOG.log",
-            "deduplication_integration_tests/fixtures/PROMPT-LOG.log",
-            "../tests/deduplication_integration_tests/fixtures/PROMPT-LOG.log",
-        ];
-
-        let log_path = possible_paths.iter().find(|p| Path::new(p).exists());
-
-        let Some(log_path) = log_path else {
-            eprintln!("Skipping real log test - fixture not found");
-            return;
-        };
-
-        let log_content = std::fs::read_to_string(log_path)
-            .unwrap_or_else(|e| panic!("Failed to read log file: {}", e));
-
-        let (parser, vterm) = create_parser_with_vterm();
-        let workspace = MemoryWorkspace::new_test();
-        let cursor = Cursor::new(log_content);
-        let reader = BufReader::new(cursor);
-        parser
-            .parse_stream(reader, &workspace)
-            .expect("parse_stream should succeed");
-
-        let vterm_ref = vterm.borrow();
-        let visible = vterm_ref.get_visible_output();
-
-        // Should have some output
-        assert!(!visible.trim().is_empty(), "Should produce visible output");
-
-        // No duplicate visible lines
-        assert!(
-            !vterm_ref.has_duplicate_lines(),
-            "Real log should have no duplicate visible lines"
-        );
-
-        // Verify deduplication metrics
-        let metrics = parser.streaming_metrics();
-        println!(
-            "Real log metrics: {} deltas, {} snapshot repairs",
-            metrics.total_deltas, metrics.snapshot_repairs_count
-        );
-    });
-}
+// NOTE: test_real_log_file_no_visible_duplicates has been moved to
+// tests/system_tests/deduplication/mod.rs because it requires real
+// filesystem access to a 1.3MB fixture file which is too large
+// for include_str! embedding.

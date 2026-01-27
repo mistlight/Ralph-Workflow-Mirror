@@ -11,7 +11,7 @@
 //!
 //! Key principles applied in this module:
 //! - Tests verify **observable behavior** (file content, parsed output)
-//! - Uses `TempDir` for filesystem isolation
+//! - Uses `TestLogger` mock at architectural boundary (logging I/O)
 //! - Tests are deterministic and black-box (test logger behavior as a user would experience it)
 
 mod json_event_extraction;

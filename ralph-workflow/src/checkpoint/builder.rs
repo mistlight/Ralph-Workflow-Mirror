@@ -14,6 +14,7 @@ use crate::checkpoint::RunContext;
 use crate::config::{Config, ReviewDepth};
 use crate::executor::ProcessExecutor;
 use crate::logger::Logger;
+use crate::workspace::Workspace;
 use std::sync::Arc;
 
 /// Builder for creating pipeline checkpoints.
@@ -285,11 +286,32 @@ impl CheckpointBuilder {
         self
     }
 
-    /// Build the checkpoint.
+    /// Build the checkpoint without workspace.
     ///
     /// Returns None if required fields (phase, agent configs) are missing.
     /// Generates a new RunContext if not set.
+    ///
+    /// This method uses CWD-relative file operations for file state capture.
+    /// For pipeline code where a workspace is available, prefer `build_with_workspace()`.
     pub fn build(self) -> Option<PipelineCheckpoint> {
+        self.build_internal(None)
+    }
+
+    /// Build the checkpoint with workspace-aware file capture.
+    ///
+    /// Returns None if required fields (phase, agent configs) are missing.
+    /// Generates a new RunContext if not set.
+    ///
+    /// This method uses the workspace abstraction for file state capture, which is
+    /// the preferred approach for pipeline code. The workspace provides:
+    /// - Explicit path resolution relative to repo root
+    /// - Testability via `MemoryWorkspace` in tests
+    pub fn build_with_workspace(self, workspace: &dyn Workspace) -> Option<PipelineCheckpoint> {
+        self.build_internal(Some(workspace))
+    }
+
+    /// Internal build implementation that handles both workspace and non-workspace cases.
+    fn build_internal(self, workspace: Option<&dyn Workspace>) -> Option<PipelineCheckpoint> {
         let phase = self.phase?;
         let developer_agent = self.developer_agent?;
         let reviewer_agent = self.reviewer_agent?;
@@ -335,10 +357,23 @@ impl CheckpointBuilder {
         checkpoint.prompt_history = self.prompt_history;
 
         // Capture and populate file system state
+        // Use workspace-based capture when workspace is available (pipeline code),
+        // fall back to CWD-based capture when not (CLI layer code)
         let executor_ref = self.executor.as_ref().map(|e| e.as_ref());
-        checkpoint.file_system_state = Some(FileSystemState::capture_with_optional_executor_impl(
-            executor_ref,
-        ));
+        checkpoint.file_system_state = if let Some(ws) = workspace {
+            let executor = executor_ref.unwrap_or_else(|| {
+                // This is safe because we're using a static reference that lives for the scope
+                // In practice, executor should always be provided when workspace is available
+                static DEFAULT_EXECUTOR: std::sync::LazyLock<crate::executor::RealProcessExecutor> =
+                    std::sync::LazyLock::new(crate::executor::RealProcessExecutor::new);
+                &*DEFAULT_EXECUTOR
+            });
+            Some(FileSystemState::capture_with_workspace(ws, executor))
+        } else {
+            Some(FileSystemState::capture_with_optional_executor_impl(
+                executor_ref,
+            ))
+        };
 
         // Capture and populate environment snapshot
         checkpoint.env_snapshot =
@@ -490,5 +525,87 @@ mod tests {
             history.get("review_1"),
             Some(&"Review the changes".to_string())
         );
+    }
+
+    // =========================================================================
+    // Workspace-based tests (for testability without real filesystem)
+    // =========================================================================
+
+    #[cfg(feature = "test-utils")]
+    mod workspace_tests {
+        use super::*;
+        use crate::workspace::MemoryWorkspace;
+
+        #[test]
+        fn test_builder_with_workspace_captures_file_state() {
+            // Create a workspace with PROMPT.md file
+            let workspace =
+                MemoryWorkspace::new_test().with_file("PROMPT.md", "# Test prompt content");
+
+            let cli_args =
+                CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
+            let dev_config =
+                AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
+            let rev_config =
+                AgentConfigSnapshot::new("rev".into(), "cmd".into(), "-o".into(), None, true);
+
+            let checkpoint = CheckpointBuilder::new()
+                .phase(PipelinePhase::Development, 2, 5)
+                .reviewer_pass(1, 2)
+                .agents("dev", "rev")
+                .cli_args(cli_args)
+                .developer_config(dev_config)
+                .reviewer_config(rev_config)
+                .build_with_workspace(&workspace)
+                .unwrap();
+
+            // Verify file system state was captured
+            assert!(checkpoint.file_system_state.is_some());
+            let fs_state = checkpoint.file_system_state.as_ref().unwrap();
+
+            // PROMPT.md should be captured
+            assert!(fs_state.files.contains_key("PROMPT.md"));
+            let snapshot = &fs_state.files["PROMPT.md"];
+            assert!(snapshot.exists);
+            assert_eq!(snapshot.size, 21); // "# Test prompt content"
+        }
+
+        #[test]
+        fn test_builder_with_workspace_captures_agent_files() {
+            // Create a workspace with PROMPT.md and agent files
+            let workspace = MemoryWorkspace::new_test()
+                .with_file("PROMPT.md", "# Test prompt")
+                .with_file(".agent/PLAN.md", "# Plan")
+                .with_file(".agent/ISSUES.md", "# Issues");
+
+            let cli_args =
+                CliArgsSnapshot::new(5, 2, "test".into(), None, false, true, 2, false, None);
+            let dev_config =
+                AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
+            let rev_config =
+                AgentConfigSnapshot::new("rev".into(), "cmd".into(), "-o".into(), None, true);
+
+            let checkpoint = CheckpointBuilder::new()
+                .phase(PipelinePhase::Review, 2, 5)
+                .reviewer_pass(1, 2)
+                .agents("dev", "rev")
+                .cli_args(cli_args)
+                .developer_config(dev_config)
+                .reviewer_config(rev_config)
+                .build_with_workspace(&workspace)
+                .unwrap();
+
+            let fs_state = checkpoint.file_system_state.as_ref().unwrap();
+
+            // Both agent files should be captured
+            assert!(fs_state.files.contains_key(".agent/PLAN.md"));
+            assert!(fs_state.files.contains_key(".agent/ISSUES.md"));
+
+            let plan_snapshot = &fs_state.files[".agent/PLAN.md"];
+            assert!(plan_snapshot.exists);
+
+            let issues_snapshot = &fs_state.files[".agent/ISSUES.md"];
+            assert!(issues_snapshot.exists);
+        }
     }
 }

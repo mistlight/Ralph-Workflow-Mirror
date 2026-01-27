@@ -7,8 +7,8 @@
 //! 4. Backup rotation maintains multiple backup versions
 //! 5. Periodic restoration works during pipeline execution
 //!
-//! These tests use file-based mocking instead of shell scripts to avoid
-//! external process spawning, making tests faster and more deterministic.
+//! These tests use MockAppEffectHandler for in-memory testing instead of
+//! real filesystem operations, making tests faster and more deterministic.
 //!
 //! # Integration Test Style Guide
 //!
@@ -16,70 +16,33 @@
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
-//! - Tests verify **observable behavior** (file system state)
-//! - Uses `tempfile::TempDir` to mock at architectural boundary (filesystem)
+//! - Tests verify **observable behavior** (effects captured by handler)
+//! - Uses `MockAppEffectHandler` to mock at architectural boundary (filesystem/git)
 //! - Tests are deterministic and isolated
+//!
+//! # Note on Permission Tests
+//!
+//! Tests that verify real file permissions (readonly attribute, Unix mode bits)
+//! belong in `tests/system_tests/` as they require real filesystem operations.
 
-use std::fs;
-use tempfile::TempDir;
+use std::path::PathBuf;
+
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handler,
 };
 use crate::test_timeout::{with_default_timeout, with_timeout};
-use test_helpers::init_git_repo;
 
-/// Helper to pre-create a PLAN.md file to avoid agent execution.
-///
-/// This allows tests to run without needing real agents or shell scripts.
-fn create_plan_file(dir: &tempfile::TempDir) {
-    let plan_path = dir.path().join(".agent/PLAN.md");
-    fs::create_dir_all(plan_path.parent().unwrap()).unwrap();
-    fs::write(&plan_path, "Test plan\n").unwrap();
-}
+/// Standard prompt content for tests - matches the required PROMPT.md format.
+const STANDARD_PROMPT: &str = r#"## Goal
 
-/// Helper to make a file writable on Unix/Windows (for testing backup corruption)
-fn make_writable(path: &std::path::Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(metadata) = fs::metadata(path) {
-            let mut perms = metadata.permissions();
-            perms.set_mode(0o644);
-            fs::set_permissions(path, perms).ok();
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        if let Ok(metadata) = fs::metadata(path) {
-            let attrs = metadata.file_attributes();
-            fs::set_file_attributes(path, attrs & !0x1).ok();
-        }
-    }
-}
-
-/// Helper to create a minimal valid PROMPT.md for testing.
-///
-/// Ralph requires a valid PROMPT.md to run with Goal and Acceptance sections.
-/// This helper creates the minimal required sections for testing backup functionality.
-///
-/// The content parameter is used as the Goal section text.
-fn create_prompt_file(dir: &tempfile::TempDir, content: &str) {
-    let prompt_path = dir.path().join("PROMPT.md");
-    let valid_content = format!(
-        r#"## Goal
-
-{}
+Test the Ralph workflow integration
 
 ## Acceptance
 
 - Tests pass
-"#,
-        content
-    );
-    fs::write(&prompt_path, valid_content).unwrap();
-}
+"#;
 
 /// Test that a backup is created at pipeline start.
 ///
@@ -89,26 +52,28 @@ fn create_prompt_file(dir: &tempfile::TempDir, content: &str) {
 #[test]
 fn backup_created_at_pipeline_start() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _ = init_git_repo(&dir);
-
-        // Create a minimal PROMPT.md to allow ralph to run
-        create_prompt_file(&dir, "Test the Ralph workflow integration");
-
-        // Pre-create PLAN.md to avoid agent execution
-        create_plan_file(&dir);
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
+            .with_file(".agent/PLAN.md", "Test plan\n");
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
         // Verify backup was created
-        assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
+        assert!(
+            handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")),
+            "Backup file should be created"
+        );
 
         // Verify backup content matches original PROMPT.md
-        let original = fs::read_to_string(dir.path().join("PROMPT.md")).unwrap();
-        let backup = fs::read_to_string(dir.path().join(".agent/PROMPT.md.backup")).unwrap();
-        assert_eq!(original, backup);
+        let original = handler.get_file(&PathBuf::from("PROMPT.md")).unwrap();
+        let backup = handler
+            .get_file(&PathBuf::from(".agent/PROMPT.md.backup"))
+            .unwrap();
+        assert_eq!(original, backup, "Backup content should match original");
     });
 }
 
@@ -128,30 +93,28 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
         // opportunity to detect and restore deletions during execution.
         //
         // This test verifies the backup creation functionality.
-        let dir = TempDir::new().unwrap();
-        let _ = init_git_repo(&dir);
-
-        let prompt_path = dir.path().join("PROMPT.md");
-        let backup_path = dir.path().join(".agent/PROMPT.md.backup");
-
-        // Create the original PROMPT.md content
-        let original_content = "Test the Ralph workflow integration";
-        create_prompt_file(&dir, original_content);
-
-        // Run to create backup
-        create_plan_file(&dir);
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
+            .with_file(".agent/PLAN.md", "Test plan\n");
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
         // Verify backup was created and content matches
-        assert!(backup_path.exists(), "Backup should be created after run");
+        assert!(
+            handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")),
+            "Backup should be created after run"
+        );
 
-        let backup_content = fs::read_to_string(&backup_path).unwrap();
-        let prompt_content = fs::read_to_string(&prompt_path).unwrap();
+        let backup_content = handler
+            .get_file(&PathBuf::from(".agent/PROMPT.md.backup"))
+            .unwrap();
+        let prompt_content = handler.get_file(&PathBuf::from("PROMPT.md")).unwrap();
         assert_eq!(backup_content, prompt_content);
-        assert!(prompt_path.exists());
+        assert!(handler.file_exists(&PathBuf::from("PROMPT.md")));
 
         // Note: Runtime restoration behavior is tested via unit tests
         // with mock file operations handlers.
@@ -169,90 +132,33 @@ fn auto_restore_during_pipeline_when_prompt_deleted_by_agent() {
 fn backup_not_deleted_during_cleanup() {
     with_timeout(
         || {
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
-
-            let backup_path = dir.path().join(".agent/PROMPT.md.backup");
-
-            // Create a minimal PROMPT.md
-            create_prompt_file(&dir, "Test backup persistence across runs");
-
-            // Run Ralph to create backup
-            create_plan_file(&dir);
+            let mut handler = MockAppEffectHandler::new()
+                .with_head_oid("a".repeat(40))
+                .with_cwd(PathBuf::from("/mock/repo"))
+                .with_file("PROMPT.md", STANDARD_PROMPT)
+                .with_file(".agent/PLAN.md", "Test plan\n");
 
             let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+            run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
             // Verify backup exists
-            assert!(backup_path.exists());
+            assert!(handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")));
 
             // Run Ralph again - cleanup shouldn't delete backup
-            create_plan_file(&dir);
-
+            // Re-add the PLAN.md since it might have been modified
             let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+            run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
             // Verify backup still exists (wasn't cleaned up)
-            assert!(backup_path.exists());
+            assert!(
+                handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")),
+                "Backup should persist across runs"
+            );
         },
         std::time::Duration::from_secs(30),
     );
-}
-
-/// Test that the backup file has read-only permissions.
-///
-/// This verifies that when ralph creates a backup,
-/// the `.agent/PROMPT.md.backup` file is created with read-only
-/// permissions (no write permissions on Unix, readonly attribute on Windows).
-#[test]
-fn backup_has_readonly_permissions() {
-    with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _ = init_git_repo(&dir);
-
-        let backup_path = dir.path().join(".agent/PROMPT.md.backup");
-
-        // Run Ralph to create backup
-        create_plan_file(&dir);
-
-        let config = create_test_config_struct();
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
-
-        // Verify backup exists
-        assert!(backup_path.exists());
-
-        // On Unix systems, check if file is read-only
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let metadata = fs::metadata(&backup_path).unwrap();
-            let permissions = metadata.permissions();
-            let mode = permissions.mode();
-
-            // Check if read-only (0o444 means read for all, no write)
-            // The file should have read permission but not write permission
-            assert!(
-                mode & 0o222 == 0,
-                "Backup file should not have write permissions"
-            );
-        }
-
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::MetadataExt;
-            let metadata = fs::metadata(&backup_path).unwrap();
-            let attrs = metadata.file_attributes();
-
-            // Check if readonly flag is set (FILE_ATTRIBUTE_READONLY = 0x1)
-            assert!(
-                attrs & 0x1 != 0,
-                "Backup file should have readonly attribute set"
-            );
-        }
-    });
 }
 
 /// Test that backup persists across pipeline runs.
@@ -271,38 +177,31 @@ fn periodic_restoration_works_during_pipeline() {
             // Note: The actual "periodic restoration during execution" requires
             // agent execution to trigger the integrity monitor during runtime.
             // This test verifies the backup creation and persistence functionality.
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
-
-            let original_content = "Test the Ralph workflow integration";
-            let prompt_path = dir.path().join("PROMPT.md");
-            let backup_path = dir.path().join(".agent/PROMPT.md.backup");
-
-            // Create initial PROMPT.md
-            create_prompt_file(&dir, original_content);
-
-            // Initial run to create backup
-            create_plan_file(&dir);
+            let mut handler = MockAppEffectHandler::new()
+                .with_head_oid("a".repeat(40))
+                .with_cwd(PathBuf::from("/mock/repo"))
+                .with_file("PROMPT.md", STANDARD_PROMPT)
+                .with_file(".agent/PLAN.md", "Test plan\n");
 
             let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+            run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
             // Verify backup was created
-            assert!(backup_path.exists());
+            assert!(handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")));
 
             // Run again - backup should persist
-            create_plan_file(&dir);
-
             let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+            run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
             // Verify backup still exists and has correct content
-            assert!(prompt_path.exists());
-            assert!(backup_path.exists());
-            let backup_content = fs::read_to_string(&backup_path).unwrap();
-            let prompt_content = fs::read_to_string(&prompt_path).unwrap();
+            assert!(handler.file_exists(&PathBuf::from("PROMPT.md")));
+            assert!(handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")));
+            let backup_content = handler
+                .get_file(&PathBuf::from(".agent/PROMPT.md.backup"))
+                .unwrap();
+            let prompt_content = handler.get_file(&PathBuf::from("PROMPT.md")).unwrap();
             assert_eq!(backup_content, prompt_content);
 
             // Note: Runtime periodic restoration is tested via unit tests
@@ -315,53 +214,42 @@ fn periodic_restoration_works_during_pipeline() {
 /// Test that backup rotation maintains multiple backup versions.
 ///
 /// This verifies that when a user runs ralph multiple times,
-/// multiple backup levels are created (`.backup`, `.backup.1`, `.backup.2`)
-/// and all backups have read-only permissions on Unix systems.
+/// multiple backup levels are created (`.backup`, `.backup.1`, `.backup.2`).
 ///
-/// Uses a 30-second timeout because this test runs ralph 3 times sequentially,
-/// which may exceed the default 5-second timeout on slower systems.
+/// Uses a 30-second timeout because this test runs ralph 3 times sequentially.
+///
+/// Note: Permission verification (read-only) belongs in system_tests/ as it
+/// requires real filesystem operations.
 #[test]
 fn backup_rotation_maintains_multiple_backups() {
     with_timeout(
         || {
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
-
-            let backup_base = dir.path().join(".agent/PROMPT.md.backup");
-            let backup_1 = dir.path().join(".agent/PROMPT.md.backup.1");
-            let backup_2 = dir.path().join(".agent/PROMPT.md.backup.2");
-
-            // Create initial PROMPT.md
-            create_prompt_file(&dir, "Test backup rotation functionality");
+            let mut handler = MockAppEffectHandler::new()
+                .with_head_oid("a".repeat(40))
+                .with_cwd(PathBuf::from("/mock/repo"))
+                .with_file("PROMPT.md", STANDARD_PROMPT)
+                .with_file(".agent/PLAN.md", "Test plan\n");
 
             // Run Ralph multiple times to create multiple backups
             for _ in 0..3 {
-                create_plan_file(&dir);
-
                 let config = create_test_config_struct();
                 let executor = mock_executor_with_success();
-                run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+                run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
             }
 
             // Verify all 3 backup levels exist
-            assert!(backup_base.exists());
-            assert!(backup_1.exists());
-            assert!(backup_2.exists());
-
-            // On Unix systems, check that all backups are read-only
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                for backup_path in &[&backup_base, &backup_1, &backup_2] {
-                    let metadata = fs::metadata(backup_path).unwrap();
-                    let permissions = metadata.permissions();
-                    let mode = permissions.mode();
-                    assert!(
-                        mode & 0o222 == 0,
-                        "Backup file should not have write permissions"
-                    );
-                }
-            }
+            assert!(
+                handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")),
+                "Base backup should exist"
+            );
+            assert!(
+                handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup.1")),
+                "Backup.1 should exist"
+            );
+            assert!(
+                handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup.2")),
+                "Backup.2 should exist"
+            );
         },
         std::time::Duration::from_secs(30),
     );
@@ -372,32 +260,35 @@ fn backup_rotation_maintains_multiple_backups() {
 /// This verifies that when a user runs ralph more times than the backup limit,
 /// the oldest backup (e.g., `.backup.3`) is deleted while newer backups are retained.
 ///
-/// Uses a 30-second timeout because this test runs ralph 4 times sequentially,
-/// which may exceed the default 5-second timeout on slower systems.
+/// Uses a 30-second timeout because this test runs ralph 4 times sequentially.
 #[test]
 fn backup_oldest_deleted_when_exceeding_limit() {
     with_timeout(
         || {
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
-
-            let backup_2 = dir.path().join(".agent/PROMPT.md.backup.2");
-            let backup_3 = dir.path().join(".agent/PROMPT.md.backup.3");
+            let mut handler = MockAppEffectHandler::new()
+                .with_head_oid("a".repeat(40))
+                .with_cwd(PathBuf::from("/mock/repo"))
+                .with_file("PROMPT.md", STANDARD_PROMPT)
+                .with_file(".agent/PLAN.md", "Test plan\n");
 
             // Run Ralph 4 times - should only keep 3 backups
             for _ in 0..4 {
-                create_plan_file(&dir);
-
                 let config = create_test_config_struct();
                 let executor = mock_executor_with_success();
-                run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+                run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
             }
 
             // Verify .backup.3 doesn't exist (oldest was deleted)
-            assert!(!backup_3.exists());
+            assert!(
+                !handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup.3")),
+                "Backup.3 should not exist (oldest deleted)"
+            );
 
             // Verify .backup.2 exists (this is the oldest kept backup)
-            assert!(backup_2.exists());
+            assert!(
+                handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup.2")),
+                "Backup.2 should exist"
+            );
         },
         std::time::Duration::from_secs(30),
     );
@@ -408,8 +299,7 @@ fn backup_oldest_deleted_when_exceeding_limit() {
 /// This verifies that when the primary backup is corrupted or missing,
 /// the system can restore PROMPT.md from fallback backup files.
 ///
-/// Uses a 30-second timeout because this test runs ralph 3 times sequentially,
-/// which may exceed the default 5-second timeout on slower systems.
+/// Uses a 30-second timeout because this test runs ralph 3 times sequentially.
 #[test]
 fn restore_from_fallback_backup_when_primary_corrupted() {
     with_timeout(
@@ -417,55 +307,61 @@ fn restore_from_fallback_backup_when_primary_corrupted() {
             // This test verifies that when the primary backup is corrupted or missing,
             // the system can still restore PROMPT.md from a fallback backup if available.
             // This is an important edge case for backup integrity and recovery.
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
-
-            let prompt_path = dir.path().join("PROMPT.md");
-            let backup_base = dir.path().join(".agent/PROMPT.md.backup");
-            let backup_1 = dir.path().join(".agent/PROMPT.md.backup.1");
+            let mut handler = MockAppEffectHandler::new()
+                .with_head_oid("a".repeat(40))
+                .with_cwd(PathBuf::from("/mock/repo"))
+                .with_file("PROMPT.md", STANDARD_PROMPT)
+                .with_file(".agent/PLAN.md", "Test plan\n");
 
             // Run Ralph twice to create multiple backups
             for _ in 0..2 {
-                create_plan_file(&dir);
-
                 let config = create_test_config_struct();
                 let executor = mock_executor_with_success();
-                run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+                run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
             }
 
             // Verify both backups exist
-            assert!(backup_base.exists(), "Primary backup should exist");
-            assert!(backup_1.exists(), "First rotated backup should exist");
+            assert!(
+                handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")),
+                "Primary backup should exist"
+            );
+            assert!(
+                handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup.1")),
+                "First rotated backup should exist"
+            );
 
             // Read the original content from backup_1 (the fallback)
-            // First make it writable since backups are read-only by design
-            make_writable(&backup_1);
-            let fallback_content = fs::read_to_string(&backup_1).unwrap();
+            let fallback_content = handler
+                .get_file(&PathBuf::from(".agent/PROMPT.md.backup.1"))
+                .unwrap();
 
-            // Corrupt the primary backup (simulate corruption)
-            // First make the backup writable since it's read-only by design
-            make_writable(&backup_base);
-            fs::write(&backup_base, "CORRUPTED CONTENT").unwrap();
+            // Corrupt the primary backup (simulate corruption) using the handler's execute method
+            use ralph_workflow::app::effect::{AppEffect, AppEffectHandler};
+            handler.execute(AppEffect::WriteFile {
+                path: PathBuf::from(".agent/PROMPT.md.backup"),
+                content: "CORRUPTED CONTENT".to_string(),
+            });
 
             // Simulate the scenario where PROMPT.md was lost (e.g., system crash) and needs to be
-            // restored from a fallback backup. Restore PROMPT.md from the fallback backup manually
-            // to simulate what would happen after a crash, then verify Ralph runs successfully.
-            // First make sure PROMPT.md is writable (it might be read-only from previous runs)
-            make_writable(&prompt_path);
-            fs::write(&prompt_path, &fallback_content).unwrap();
+            // restored from a fallback backup manually. Write the fallback content to PROMPT.md.
+            handler.execute(AppEffect::WriteFile {
+                path: PathBuf::from("PROMPT.md"),
+                content: fallback_content.clone(),
+            });
 
             // Run Ralph again - it should successfully run with the restored PROMPT.md
-            create_plan_file(&dir);
-
             let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+            run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
             // Verify PROMPT.md exists and has valid content
-            assert!(prompt_path.exists(), "PROMPT.md should exist");
+            assert!(
+                handler.file_exists(&PathBuf::from("PROMPT.md")),
+                "PROMPT.md should exist"
+            );
 
             // The content should match the fallback backup (not the corrupted primary)
-            let final_content = fs::read_to_string(&prompt_path).unwrap();
+            let final_content = handler.get_file(&PathBuf::from("PROMPT.md")).unwrap();
             assert_eq!(
                 final_content, fallback_content,
                 "PROMPT.md should have the content from the fallback backup"
@@ -496,23 +392,19 @@ fn agent_chmod_rm_is_caught_and_restored() {
         // actually running agents or using complex concurrency primitives.
         //
         // Unit tests with mock file handlers can properly test this behavior.
-        let dir = TempDir::new().unwrap();
-        let _ = init_git_repo(&dir);
-
-        let prompt_path = dir.path().join("PROMPT.md");
-        let original_content = "Test the Ralph workflow integration";
-        create_prompt_file(&dir, original_content);
-
-        // Initial run to create backup
-        create_plan_file(&dir);
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
+            .with_file(".agent/PLAN.md", "Test plan\n");
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
         // Verify backup was created
-        assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
-        assert!(prompt_path.exists());
+        assert!(handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")));
+        assert!(handler.file_exists(&PathBuf::from("PROMPT.md")));
 
         // Note: The actual restoration behavior is tested via unit tests
         // with mock file operations handlers.
@@ -533,24 +425,19 @@ fn agent_overwrite_is_detected_and_restored() {
         //
         // Without agent execution, we can't trigger the overwrite detection.
         // Unit tests with mock file operations can properly test this behavior.
-        let dir = TempDir::new().unwrap();
-        let _ = init_git_repo(&dir);
-
-        let prompt_path = dir.path().join("PROMPT.md");
-
-        // Create initial PROMPT.md
-        create_prompt_file(&dir, "Test the Ralph workflow integration");
-
-        // Initial run to create backup
-        create_plan_file(&dir);
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
+            .with_file(".agent/PLAN.md", "Test plan\n");
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
         // Verify backup was created
-        assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
-        assert!(prompt_path.exists());
+        assert!(handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")));
+        assert!(handler.file_exists(&PathBuf::from("PROMPT.md")));
 
         // Note: The actual overwrite detection and restoration is tested
         // via unit tests with mock file operations handlers.
@@ -572,24 +459,19 @@ fn multiple_deletions_are_logged_with_context() {
             //
             // Without agent execution, we can't trigger multiple deletion cycles.
             // Unit tests with mock file operations can properly test this behavior.
-            let dir = TempDir::new().unwrap();
-            let _ = init_git_repo(&dir);
-
-            let prompt_path = dir.path().join("PROMPT.md");
-
-            // Create initial PROMPT.md
-            create_prompt_file(&dir, "Test the Ralph workflow integration");
-
-            // Initial run to create backup
-            create_plan_file(&dir);
+            let mut handler = MockAppEffectHandler::new()
+                .with_head_oid("a".repeat(40))
+                .with_cwd(PathBuf::from("/mock/repo"))
+                .with_file("PROMPT.md", STANDARD_PROMPT)
+                .with_file(".agent/PLAN.md", "Test plan\n");
 
             let config = create_test_config_struct();
             let executor = mock_executor_with_success();
-            run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+            run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 
             // Verify backup was created and PROMPT.md exists
-            assert!(dir.path().join(".agent/PROMPT.md.backup").exists());
-            assert!(prompt_path.exists());
+            assert!(handler.file_exists(&PathBuf::from(".agent/PROMPT.md.backup")));
+            assert!(handler.file_exists(&PathBuf::from("PROMPT.md")));
 
             // Note: Multiple deletion handling is tested via unit tests
             // with mock file operations handlers.
@@ -597,3 +479,14 @@ fn multiple_deletions_are_logged_with_context() {
         std::time::Duration::from_secs(30),
     );
 }
+
+// ============================================================================
+// Note: Permission Tests Moved to System Tests
+// ============================================================================
+//
+// The following test has been moved to `tests/system_tests/backup/`:
+// - `backup_has_readonly_permissions` - Requires real filesystem to verify
+//   Unix mode bits or Windows readonly attribute.
+//
+// Per INTEGRATION_TESTS.md, tests requiring real filesystem operations
+// belong in `tests/system_tests/`.

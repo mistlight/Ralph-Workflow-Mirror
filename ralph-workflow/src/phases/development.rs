@@ -201,7 +201,7 @@ pub fn run_development_phase(
 
         // Periodic restoration check - ensure PROMPT.md still exists
         // This catches agent deletions and restores from backup
-        ensure_prompt_integrity(ctx.logger, "development", i);
+        ensure_prompt_integrity(ctx.workspace, ctx.logger, "development", i);
 
         // Step 3: Delete the PLAN
         ctx.logger.info("Deleting PLAN.md...");

@@ -5,12 +5,23 @@
 //! - `--show-commit-msg`: Display the stored commit message
 //! - `--apply-commit`: Stage and commit using the stored message
 //! - `--generate-commit-msg`: Generate a commit message for staged changes
+//!
+//! # Workspace Support
+//!
+//! Plumbing commands have two variants:
+//! - Direct functions (e.g., `handle_show_commit_msg`) - use real filesystem
+//! - Workspace-aware functions (e.g., `handle_show_commit_msg_with_workspace`) - use injected workspace
+//!
+//! Tests should use the workspace-aware variants with `MemoryWorkspace` for isolation.
 
 use crate::agents::AgentRegistry;
+use crate::app::effect::{AppEffect, AppEffectHandler, AppEffectResult};
 use crate::config::Config;
 use crate::executor::ProcessExecutor;
 use crate::files::{
-    delete_commit_message_file, read_commit_message_file, write_commit_message_file,
+    delete_commit_message_file, delete_commit_message_file_with_workspace,
+    read_commit_message_file, read_commit_message_file_with_workspace,
+    write_commit_message_file_with_workspace,
 };
 use crate::git_helpers::{
     get_repo_root, git_add_all, git_commit, git_diff, git_snapshot, require_git_repo,
@@ -21,6 +32,7 @@ use crate::phases::generate_commit_message;
 use crate::pipeline::PipelineRuntime;
 use crate::pipeline::Timer;
 use crate::prompts::TemplateContext;
+use crate::workspace::Workspace;
 use std::env;
 use std::sync::Arc;
 
@@ -62,6 +74,30 @@ pub fn handle_show_commit_msg() -> anyhow::Result<()> {
     env::set_current_dir(&repo_root)?;
 
     match read_commit_message_file() {
+        Ok(msg) => {
+            println!("{msg}");
+            Ok(())
+        }
+        Err(e) => {
+            anyhow::bail!("Failed to read commit message: {e}");
+        }
+    }
+}
+
+/// Handles the `--show-commit-msg` command using workspace abstraction.
+///
+/// This is a testable version that uses `Workspace` for file I/O,
+/// enabling tests to use `MemoryWorkspace` for isolation.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace to read from
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success or an error if the file cannot be read.
+pub fn handle_show_commit_msg_with_workspace(workspace: &dyn Workspace) -> anyhow::Result<()> {
+    match read_commit_message_file_with_workspace(workspace) {
         Ok(msg) => {
             println!("{msg}");
             Ok(())
@@ -128,6 +164,86 @@ pub fn handle_apply_commit(logger: &Logger, colors: Colors) -> anyhow::Result<()
     }
 
     Ok(())
+}
+
+/// Handles the `--apply-commit` command using effect handler abstraction.
+///
+/// This is a testable version that uses `AppEffectHandler` for git operations
+/// and `Workspace` for file I/O, enabling tests to use mocks for isolation.
+///
+/// # Arguments
+///
+/// * `workspace` - The workspace for file operations
+/// * `handler` - The effect handler for git operations
+/// * `logger` - Logger for info/warning messages
+/// * `colors` - Color configuration for output
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success or an error if commit fails.
+pub fn handle_apply_commit_with_handler<H: AppEffectHandler>(
+    workspace: &dyn Workspace,
+    handler: &mut H,
+    logger: &Logger,
+    colors: Colors,
+) -> anyhow::Result<()> {
+    let commit_msg = read_commit_message_file_with_workspace(workspace)?;
+
+    logger.info("Staging all changes...");
+
+    // Stage all changes via effect
+    // Mock returns Bool(true) to indicate staged changes exist, production returns Ok
+    match handler.execute(AppEffect::GitAddAll) {
+        AppEffectResult::Ok | AppEffectResult::Bool(true) => {}
+        AppEffectResult::Bool(false) => {
+            // No changes to stage
+        }
+        AppEffectResult::Error(e) => anyhow::bail!("Failed to stage changes: {e}"),
+        other => anyhow::bail!("Unexpected result from GitAddAll: {other:?}"),
+    }
+
+    logger.info(&format!(
+        "Commit message: {}{}{}",
+        colors.cyan(),
+        commit_msg,
+        colors.reset()
+    ));
+
+    logger.info("Creating commit...");
+
+    // Create commit via effect
+    // Note: Plumbing commands don't have access to config, so we use None
+    // for git identity, falling back to git config (via repo.signature())
+    match handler.execute(AppEffect::GitCommit {
+        message: commit_msg,
+        user_name: None,
+        user_email: None,
+    }) {
+        AppEffectResult::String(oid) => {
+            logger.success(&format!("Commit created successfully: {oid}"));
+            // Clean up the commit message file
+            if let Err(err) = delete_commit_message_file_with_workspace(workspace) {
+                logger.warn(&format!("Failed to delete commit-message.txt: {err}"));
+            }
+            Ok(())
+        }
+        AppEffectResult::Commit(crate::app::effect::CommitResult::Success(oid)) => {
+            logger.success(&format!("Commit created successfully: {oid}"));
+            // Clean up the commit message file
+            if let Err(err) = delete_commit_message_file_with_workspace(workspace) {
+                logger.warn(&format!("Failed to delete commit-message.txt: {err}"));
+            }
+            Ok(())
+        }
+        AppEffectResult::Commit(crate::app::effect::CommitResult::NoChanges)
+        | AppEffectResult::Ok => {
+            // No changes to commit (clean working tree)
+            logger.warn("Nothing to commit (working tree clean)");
+            Ok(())
+        }
+        AppEffectResult::Error(e) => anyhow::bail!("Failed to create commit: {e}"),
+        other => anyhow::bail!("Unexpected result from GitCommit: {other:?}"),
+    }
 }
 
 /// Handles the `--generate-commit-msg` command.
@@ -207,8 +323,8 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
     );
     println!();
 
-    // Write the message to file for use with --apply-commit
-    write_commit_message_file(&commit_message)?;
+    // Write the message to file for use with --apply-commit (using workspace)
+    write_commit_message_file_with_workspace(config.workspace, &commit_message)?;
 
     config
         .logger

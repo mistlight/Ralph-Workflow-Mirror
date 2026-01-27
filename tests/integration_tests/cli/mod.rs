@@ -13,18 +13,27 @@
 //! defined in **[INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
-//! - Tests verify **observable behavior** (exit codes, file changes)
-//! - Uses `run_ralph_cli_injected()` which calls `app::run_with_config()` directly
-//! - Uses `TempDir` for filesystem isolation
-//! - Tests are deterministic and focus on successful execution and file side effects
+//! - Tests verify **observable behavior** (exit codes, effect capture)
+//! - Uses `run_ralph_cli_with_handler()` with `MockAppEffectHandler`
+//! - NO `TempDir`, `std::fs`, or real git operations
+//! - Tests are deterministic and verify effects, not real filesystem state
 
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handler,
 };
 use crate::test_timeout::with_default_timeout;
-use std::fs;
-use tempfile::TempDir;
-use test_helpers::init_git_repo;
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+use std::path::PathBuf;
+
+/// Standard PROMPT.md content for tests that need it.
+const STANDARD_PROMPT: &str = r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#;
 
 // ============================================================================
 // Version and Help Commands
@@ -37,10 +46,11 @@ use test_helpers::init_git_repo;
 #[test]
 fn ralph_prints_version() {
     with_default_timeout(|| {
+        // --version doesn't need a git repo, but we still need a handler
+        let mut handler = MockAppEffectHandler::new();
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        // --version doesn't need a working directory
-        run_ralph_cli_injected(&["--version"], executor, config, None).unwrap();
+        run_ralph_cli_with_handler(&["--version"], executor, config, &mut handler).unwrap();
     });
 }
 
@@ -52,10 +62,10 @@ fn ralph_prints_version() {
 #[test]
 fn ralph_help_shows_usage() {
     with_default_timeout(|| {
+        let mut handler = MockAppEffectHandler::new();
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        // --help doesn't need a working directory
-        run_ralph_cli_injected(&["--help"], executor, config, None).unwrap();
+        run_ralph_cli_with_handler(&["--help"], executor, config, &mut handler).unwrap();
     });
 }
 
@@ -70,10 +80,10 @@ fn ralph_help_shows_usage() {
 #[test]
 fn ralph_list_templates_shows_available() {
     with_default_timeout(|| {
+        let mut handler = MockAppEffectHandler::new();
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        // --list-templates doesn't need a working directory
-        run_ralph_cli_injected(&["--list-templates"], executor, config, None).unwrap();
+        run_ralph_cli_with_handler(&["--list-templates"], executor, config, &mut handler).unwrap();
     });
 }
 
@@ -88,12 +98,14 @@ fn ralph_list_templates_shows_available() {
 #[test]
 fn ralph_diagnose_shows_system_info() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _ = init_git_repo(&dir);
+        // Set up mock handler with git repo context
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"));
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--diagnose"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--diagnose"], executor, config, &mut handler).unwrap();
     });
 }
 
@@ -104,12 +116,13 @@ fn ralph_diagnose_shows_system_info() {
 #[test]
 fn ralph_diagnose_short_flag_works() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _ = init_git_repo(&dir);
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"));
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["-d"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["-d"], executor, config, &mut handler).unwrap();
     });
 }
 
@@ -124,26 +137,15 @@ fn ralph_diagnose_short_flag_works() {
 #[test]
 fn ralph_dry_run_validates_without_executing() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _ = init_git_repo(&dir);
-
-        // Create a PROMPT.md for validation
-        fs::write(
-            dir.path().join("PROMPT.md"),
-            r#"## Goal
-
-Do something.
-
-## Acceptance
-
-- Tests pass
-"#,
-        )
-        .unwrap();
+        // Set up mock handler with PROMPT.md file
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"))
+            .with_file("PROMPT.md", STANDARD_PROMPT);
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--dry-run"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--dry-run"], executor, config, &mut handler).unwrap();
     });
 }
 
@@ -151,30 +153,24 @@ Do something.
 // Init Commands
 // ============================================================================
 
-/// Test that the `--init` flag with a template creates a PROMPT.md file.
+/// Test that the `--init` flag with a template executes without errors.
 ///
 /// This verifies that when a user invokes ralph with the `--init` flag
-/// and a template name like "bug-fix", a PROMPT.md file is created
-/// with content appropriate for that template (e.g., Goal section).
+/// and a template name like "bug-fix", the command executes successfully.
+/// (In non-interactive mode, it returns early without creating PROMPT.md)
 #[test]
 fn ralph_init_with_template_creates_prompt() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _ = init_git_repo(&dir);
-
-        // Remove the PROMPT.md created by init_git_repo to test --init creating it
-        let prompt_path = dir.path().join("PROMPT.md");
-        fs::remove_file(&prompt_path).unwrap();
-        assert!(
-            !prompt_path.exists(),
-            "PROMPT.md should be removed for test"
-        );
+        // Set up mock handler with git repo but no PROMPT.md
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/mock/repo"));
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
         // Note: --init in non-interactive mode returns early without creating PROMPT.md
         // The actual PROMPT.md creation happens in interactive mode
-        run_ralph_cli_injected(&["--init", "bug-fix"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--init", "bug-fix"], executor, config, &mut handler).unwrap();
     });
 }

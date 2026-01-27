@@ -178,6 +178,7 @@ pub fn run_review_phase(
 
         // PRE-FLIGHT VALIDATION: Check environment before running review
         match pre_flight_review_check(
+            ctx.workspace,
             ctx.logger,
             j,
             ctx.reviewer_agent,
@@ -1092,7 +1093,7 @@ fn store_xsd_error_for_retry(ctx: &PhaseContext<'_>, log_dir: &Path, error: &str
 
 /// Handle post-flight validation after a review pass.
 fn handle_postflight_validation(ctx: &PhaseContext<'_>, j: u32) {
-    let postflight_result = post_flight_review_check(ctx.logger, j);
+    let postflight_result = post_flight_review_check(ctx.workspace, ctx.logger, j);
     match postflight_result {
         PostflightResult::Valid => {
             // ISSUES.md found and valid, continue

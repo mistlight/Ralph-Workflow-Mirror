@@ -3,7 +3,7 @@
 //! Core `ReviewMetrics` struct and parsing logic for extracting
 //! issue counts and resolution rates from ISSUES.md.
 
-use std::fs;
+use crate::workspace::Workspace;
 use std::io;
 use std::path::Path;
 
@@ -181,14 +181,17 @@ impl ReviewMetrics {
         metrics
     }
 
-    /// Load metrics from the ISSUES.md file
-    pub(crate) fn from_issues_file() -> io::Result<Self> {
+    /// Load metrics from the ISSUES.md file using workspace abstraction.
+    ///
+    /// This enables testing with `MemoryWorkspace` without real filesystem access.
+    /// Used by the pipeline layer for post-flight validation checks.
+    pub(crate) fn from_issues_file_with_workspace(workspace: &dyn Workspace) -> io::Result<Self> {
         let path = Path::new(".agent/ISSUES.md");
-        if !path.exists() {
+        if !workspace.exists(path) {
             return Ok(Self::new());
         }
 
-        let content = fs::read_to_string(path)?;
+        let content = workspace.read(path)?;
         Ok(Self::from_issues_content(&content))
     }
 }

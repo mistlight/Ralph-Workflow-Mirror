@@ -25,14 +25,18 @@
 //! # Usage
 //!
 //! ```rust,no_run
+//! use std::path::PathBuf;
+//! use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 //! use crate::test_timeout::with_default_timeout;
 //!
 //! #[test]
 //! fn test_name() {
 //!     with_default_timeout(|| {
 //!         // ALL test code must run inside this closure
-//!         let dir = TempDir::new().unwrap();
-//!         // ... rest of test
+//!         let mut handler = MockAppEffectHandler::new()
+//!             .with_head_oid("a".repeat(40))
+//!             .with_cwd(PathBuf::from("/mock/repo"));
+//!         // ... rest of test using handler
 //!     });
 //! }
 //! ```

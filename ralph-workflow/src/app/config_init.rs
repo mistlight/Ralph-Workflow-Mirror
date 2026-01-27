@@ -117,12 +117,9 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
     path_resolver: &P,
 ) -> anyhow::Result<Option<ConfigInitResult>> {
     // Load configuration from unified config file (with env overrides)
-    let (mut config, unified, warnings) = args
-        .config
-        .as_ref()
-        .map_or_else(loader::load_config, |config_path| {
-            loader::load_config_from_path(Some(config_path.as_path()))
-        });
+    // Uses the provided path_resolver for filesystem operations instead of std::fs directly
+    let (mut config, unified, warnings) =
+        loader::load_config_from_path_with_env(args.config.as_deref(), path_resolver);
 
     // Display any deprecation warnings from config loading
     for warning in warnings {

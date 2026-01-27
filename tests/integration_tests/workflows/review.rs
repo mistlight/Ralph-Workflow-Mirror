@@ -8,19 +8,44 @@
 //! defined in **[../../INTEGRATION_TESTS.md](../../INTEGRATION_TESTS.md)**.
 //!
 //! Key principles applied in this module:
-//! - Tests verify **observable behavior** (exit codes, output)
-//! - Uses `tempfile::TempDir` for tests requiring real git operations
-//! - Uses `MemoryWorkspace` + `MockProcessExecutor` for tests verifying agent prompts
-//! - Uses **dependency injection** for configuration (no env vars)
-//! - Tests are deterministic and isolated
-
-use tempfile::TempDir;
+//! - Tests verify **observable behavior** via effect capture
+//! - Uses `MockAppEffectHandler` AND `MockEffectHandler` for git/filesystem isolation
+//! - NO `TempDir`, `std::fs`, or real git operations
+//! - Tests are deterministic and verify effects, not real filesystem state
 
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handlers,
 };
 use crate::test_timeout::with_default_timeout;
-use test_helpers::{commit_all, init_git_repo, write_file};
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+use ralph_workflow::reducer::effect::Effect;
+use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
+use ralph_workflow::reducer::PipelineState;
+use std::path::PathBuf;
+
+/// Standard PROMPT.md content for review tests.
+const STANDARD_PROMPT: &str = r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#;
+
+/// Create mock handlers with standard setup for review tests.
+fn create_review_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
+    let app_handler = MockAppEffectHandler::new()
+        .with_head_oid("a".repeat(40))
+        .with_cwd(PathBuf::from("/mock/repo"))
+        .with_file("PROMPT.md", STANDARD_PROMPT)
+        .with_diff("diff --git a/test.txt b/test.txt\n+new content")
+        .with_staged_changes(true);
+
+    let effect_handler = MockEffectHandler::new(PipelineState::initial(0, 0));
+
+    (app_handler, effect_handler)
+}
 
 // ============================================================================
 // Review Workflow Tests
@@ -37,82 +62,73 @@ use test_helpers::{commit_all, init_git_repo, write_file};
 /// This verifies that when a user runs ralph with reviewer_reviews=0,
 /// the review phase is skipped entirely and no ISSUES.md file is created.
 #[test]
-fn ralph_zero_reviewer_reviews_skips_review() {
+fn test_zero_reviewer_reviews_skips_review() {
     with_default_timeout(|| {
-        // Test that reviewer_reviews=0 skips the review phase entirely
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-
-        // Create initial commit with tracked files
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&_repo, "initial commit");
-
-        // Create a change for the diff
-        write_file(dir.path().join("initial.txt"), "updated content");
-
-        // Use dependency injection - no env vars needed
+        let (mut app_handler, mut effect_handler) = create_review_test_handlers();
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // ISSUES.md should NOT be created when review is skipped
-        assert!(!dir.path().join(".agent/ISSUES.md").exists());
+        assert!(
+            app_handler
+                .get_file(&PathBuf::from(".agent/ISSUES.md"))
+                .is_none(),
+            "ISSUES.md should not be created when review phase is skipped"
+        );
     });
 }
 
 /// Test that the pipeline succeeds without a review phase.
 ///
 /// This verifies that when a user runs ralph with reviewer_reviews=0,
-/// the pipeline completes successfully and outputs "Pipeline Complete".
+/// the pipeline completes successfully.
 #[test]
-fn ralph_succeeds_without_review_phase() {
+fn test_pipeline_succeeds_without_review_phase() {
     with_default_timeout(|| {
-        // Test that the pipeline can succeed without any review phase
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-
-        // Create initial commit
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&_repo, "initial commit");
-
-        // Create a change
-        write_file(dir.path().join("test.txt"), "new content");
-
-        // Use dependency injection - no env vars needed
+        let (mut app_handler, mut effect_handler) = create_review_test_handlers();
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+
+        let result = run_ralph_cli_with_handlers(
+            &[],
+            executor,
+            config,
+            &mut app_handler,
+            &mut effect_handler,
+        );
+
+        assert!(
+            result.is_ok(),
+            "Pipeline should succeed without review phase"
+        );
     });
 }
 
 /// Test that a commit is created when the review phase is skipped.
 ///
 /// This verifies that when a user runs ralph with reviewer_reviews=0,
-/// a commit is still created with a non-empty commit message.
+/// a commit effect is still triggered.
 #[test]
-fn ralph_commit_created_when_review_skipped() {
+fn test_commit_created_when_review_skipped() {
     with_default_timeout(|| {
-        // Test that commits are still created when review phase is skipped
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-
-        // Create initial commit
-        write_file(dir.path().join("initial.txt"), "initial content");
-        let _ = commit_all(&_repo, "initial commit");
-
-        // Create a change
-        write_file(dir.path().join("test.txt"), "new content");
-
-        // Use dependency injection - no env vars needed
+        let (mut app_handler, mut effect_handler) = create_review_test_handlers();
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
 
-        // Verify commit was created
-        let repo = git2::Repository::open(dir.path()).unwrap();
-        let head = repo.head().unwrap();
-        let commit = head.peel_to_commit().unwrap();
-        assert!(!commit.message().unwrap().is_empty());
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
+
+        // Verify CreateCommit effect was called at the reducer layer
+        let was_commit_created =
+            effect_handler.was_effect_executed(|e| matches!(e, Effect::CreateCommit { .. }));
+
+        assert!(
+            was_commit_created,
+            "CreateCommit effect should be called when review phase is skipped"
+        );
     });
 }
 

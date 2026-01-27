@@ -20,6 +20,9 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+#[cfg(any(test, feature = "test-utils"))]
+use crate::workspace::Workspace;
+
 use super::start_commit::get_current_head_oid;
 
 /// Path to the review baseline file.
@@ -138,6 +141,58 @@ fn write_review_baseline_cwd(oid: &str) -> io::Result<()> {
     }
     fs::write(path, oid)?;
     Ok(())
+}
+
+/// Write the review baseline using workspace abstraction.
+///
+/// This is the workspace-aware version for pipeline code.
+#[cfg(any(test, feature = "test-utils"))]
+fn write_review_baseline_with_workspace(workspace: &dyn Workspace, oid: &str) -> io::Result<()> {
+    workspace.write(Path::new(REVIEW_BASELINE_FILE), oid)
+}
+
+/// Load the review baseline using workspace abstraction.
+///
+/// This is the workspace-aware version for pipeline code.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn load_review_baseline_with_workspace(
+    workspace: &dyn Workspace,
+) -> io::Result<ReviewBaseline> {
+    let path = Path::new(REVIEW_BASELINE_FILE);
+
+    if !workspace.exists(path) {
+        return Ok(ReviewBaseline::NotSet);
+    }
+
+    let content = workspace.read(path)?;
+    let raw = content.trim();
+
+    if raw.is_empty() || raw == BASELINE_NOT_SET {
+        return Ok(ReviewBaseline::NotSet);
+    }
+
+    // Parse the OID
+    let oid = git2::Oid::from_str(raw).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Invalid OID format in {}: '{}'. The review baseline will be reset. \
+                 Run 'ralph --reset-start-commit' if this persists.",
+                REVIEW_BASELINE_FILE, raw
+            ),
+        )
+    })?;
+
+    Ok(ReviewBaseline::Commit(oid))
+}
+
+/// Update the review baseline to current HEAD using workspace abstraction.
+///
+/// This should be called AFTER each fix pass to update the baseline.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn update_review_baseline_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
+    let oid = get_current_head_oid()?;
+    write_review_baseline_with_workspace(workspace, &oid)
 }
 
 /// Count commits since a given baseline.
@@ -472,5 +527,78 @@ mod tests {
     fn test_get_review_baseline_info_returns_result() {
         let result = get_review_baseline_info();
         assert!(result.is_ok() || result.is_err());
+    }
+
+    // =========================================================================
+    // Workspace-aware function tests
+    // =========================================================================
+
+    #[test]
+    fn test_load_review_baseline_with_workspace_not_set() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test();
+
+        let result = load_review_baseline_with_workspace(&workspace).unwrap();
+        assert_eq!(result, ReviewBaseline::NotSet);
+    }
+
+    #[test]
+    fn test_load_review_baseline_with_workspace_sentinel() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/review_baseline.txt", BASELINE_NOT_SET);
+
+        let result = load_review_baseline_with_workspace(&workspace).unwrap();
+        assert_eq!(result, ReviewBaseline::NotSet);
+    }
+
+    #[test]
+    fn test_load_review_baseline_with_workspace_empty() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test().with_file(".agent/review_baseline.txt", "");
+
+        let result = load_review_baseline_with_workspace(&workspace).unwrap();
+        assert_eq!(result, ReviewBaseline::NotSet);
+    }
+
+    #[test]
+    fn test_load_review_baseline_with_workspace_valid_oid() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test().with_file(
+            ".agent/review_baseline.txt",
+            "abcd1234abcd1234abcd1234abcd1234abcd1234",
+        );
+
+        let result = load_review_baseline_with_workspace(&workspace).unwrap();
+        let expected_oid = git2::Oid::from_str("abcd1234abcd1234abcd1234abcd1234abcd1234").unwrap();
+        assert_eq!(result, ReviewBaseline::Commit(expected_oid));
+    }
+
+    #[test]
+    fn test_load_review_baseline_with_workspace_invalid_oid() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/review_baseline.txt", "invalid");
+
+        let result = load_review_baseline_with_workspace(&workspace);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn test_write_review_baseline_with_workspace() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test();
+
+        write_review_baseline_with_workspace(&workspace, "abc123").unwrap();
+
+        let content = workspace.get_file(".agent/review_baseline.txt").unwrap();
+        assert_eq!(content, "abc123");
     }
 }

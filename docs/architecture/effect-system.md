@@ -650,16 +650,18 @@ These files contain "Real*" implementations that wrap `std::fs` behind traits:
 | File | Reason |
 |------|--------|
 | `files/protection/monitoring.rs` | Background thread monitoring real filesystem changes |
+| `git_helpers/hooks.rs` | Hook installation operates on `.git/hooks/` which is outside workspace root by design |
+| `git_helpers/wrapper.rs` | Creates temp directory for PATH manipulation (must be real filesystem path) |
+| `git_helpers/rebase.rs` | Operates on `.git/` internals (rebase state, worktree config) |
+| `logger/output.rs` | `with_log_file()` is for CLI layer (pre-workspace); `with_workspace_log()` exists for pipeline |
+| `checkpoint/file_state.rs` | `capture_file_impl()`/`validate_file_impl()` called from CLI layer before workspace exists |
 
-### Deprecated Methods (Migration In Progress)
+### Crate-Internal Methods (Not Called From Production Code)
 
-The following files have `std::fs` usage that should migrate to workspace abstractions.
-New code should use `_with_workspace` or `_with_env` variants where available:
+The following files have `std::fs` functions that are crate-internal for legacy/external use.
+Production code already uses `_with_workspace` variants:
 
-- `files/io/integrity.rs` - Use `*_with_workspace` variants
-- `git_helpers/*.rs` - Use `*_with_workspace` variants  
-- `logger/output.rs` - Use `with_workspace_log()` method
-- `checkpoint/file_state.rs` - Use `*_with_workspace` variants
+- `files/io/integrity.rs` - `write_file_atomic()`, `verify_file_not_corrupted()`, `check_filesystem_ready()` are crate-internal; production uses `*_with_workspace` variants
 
 **EVERYWHERE ELSE: std::fs is FORBIDDEN**
 

@@ -36,7 +36,6 @@ impl std::fmt::Display for CheckSeverity {
 #[derive(Debug, Clone)]
 pub struct SeverityCheck {
     /// The check description
-    #[allow(dead_code)]
     pub(crate) check: String,
     /// Severity level for this check
     pub(crate) severity: CheckSeverity,
@@ -153,43 +152,6 @@ impl Default for ReviewGuidelines {
 }
 
 impl ReviewGuidelines {
-    #[allow(dead_code)]
-    fn format_section(items: &[String], title: &str, limit: usize) -> Option<String> {
-        if items.is_empty() {
-            return None;
-        }
-        let mut lines: Vec<String> = items
-            .iter()
-            .take(limit)
-            .map(|s| format!("  - {s}"))
-            .collect();
-        if items.len() > limit {
-            lines.push(format!("  - ... (+{} more)", items.len() - limit));
-        }
-        Some(format!("{}:\n{}", title, lines.join("\n")))
-    }
-
-    /// Format guidelines as a prompt section
-    #[allow(dead_code)]
-    pub(crate) fn format_for_prompt(&self) -> String {
-        let mut sections = Vec::new();
-
-        if let Some(s) = Self::format_section(&self.quality_checks, "CODE QUALITY", 10) {
-            sections.push(s);
-        }
-        if let Some(s) = Self::format_section(&self.security_checks, "SECURITY", 10) {
-            sections.push(s);
-        }
-        if let Some(s) = Self::format_section(&self.performance_checks, "PERFORMANCE", 8) {
-            sections.push(s);
-        }
-        if let Some(s) = Self::format_section(&self.anti_patterns, "AVOID", 8) {
-            sections.push(s);
-        }
-
-        sections.join("\n\n")
-    }
-
     /// Get all checks with their severity classifications
     ///
     /// Returns a comprehensive list of all applicable checks organized by category
@@ -250,11 +212,77 @@ impl ReviewGuidelines {
         checks
     }
 
-    /// Format guidelines with severity priorities for the review prompt
+    /// Get a brief summary for display
+    pub(crate) fn summary(&self) -> String {
+        format!(
+            "{} quality checks, {} security checks, {} anti-patterns",
+            self.quality_checks.len(),
+            self.security_checks.len(),
+            self.anti_patterns.len()
+        )
+    }
+
+    /// Get a comprehensive count of all checks
+    pub(crate) const fn total_checks(&self) -> usize {
+        self.quality_checks.len()
+            + self.security_checks.len()
+            + self.performance_checks.len()
+            + self.testing_checks.len()
+            + self.documentation_checks.len()
+            + self.idioms.len()
+            + self.anti_patterns.len()
+            + self.concurrency_checks.len()
+            + self.resource_checks.len()
+            + self.observability_checks.len()
+            + self.secrets_checks.len()
+            + self.api_design_checks.len()
+    }
+}
+
+/// Test-only methods for ReviewGuidelines.
+/// These are used by tests to format guidelines into prompts.
+#[cfg(test)]
+impl ReviewGuidelines {
+    /// Format a section of guidelines with a title and item limit.
+    fn format_section(items: &[String], title: &str, limit: usize) -> Option<String> {
+        if items.is_empty() {
+            return None;
+        }
+        let mut lines: Vec<String> = items
+            .iter()
+            .take(limit)
+            .map(|s| format!("  - {s}"))
+            .collect();
+        if items.len() > limit {
+            lines.push(format!("  - ... (+{} more)", items.len() - limit));
+        }
+        Some(format!("{}:\n{}", title, lines.join("\n")))
+    }
+
+    /// Format guidelines as a prompt section
+    pub(crate) fn format_for_prompt(&self) -> String {
+        let mut sections = Vec::new();
+
+        if let Some(s) = Self::format_section(&self.quality_checks, "CODE QUALITY", 10) {
+            sections.push(s);
+        }
+        if let Some(s) = Self::format_section(&self.security_checks, "SECURITY", 10) {
+            sections.push(s);
+        }
+        if let Some(s) = Self::format_section(&self.performance_checks, "PERFORMANCE", 8) {
+            sections.push(s);
+        }
+        if let Some(s) = Self::format_section(&self.anti_patterns, "AVOID", 8) {
+            sections.push(s);
+        }
+
+        sections.join("\n\n")
+    }
+
+    /// Format guidelines with severity priorities for the review prompt.
     ///
     /// This produces a more detailed prompt section that groups checks by priority,
     /// helping agents focus on the most critical issues first.
-    #[allow(dead_code)]
     pub(crate) fn format_for_prompt_with_priorities(&self) -> String {
         fn push_section(
             sections: &mut Vec<String>,
@@ -288,7 +316,7 @@ impl ReviewGuidelines {
             .collect();
         push_section(
             &mut sections,
-            "🔴 CRITICAL (must fix before merge):",
+            "CRITICAL (must fix before merge):",
             &critical_checks,
             10,
         );
@@ -303,7 +331,7 @@ impl ReviewGuidelines {
             .collect();
         push_section(
             &mut sections,
-            "🟠 HIGH (should fix before merge):",
+            "HIGH (should fix before merge):",
             &high_checks,
             10,
         );
@@ -321,7 +349,7 @@ impl ReviewGuidelines {
             .collect();
         push_section(
             &mut sections,
-            "🟡 MEDIUM (should address):",
+            "MEDIUM (should address):",
             &medium_checks,
             12,
         );
@@ -334,7 +362,7 @@ impl ReviewGuidelines {
             .cloned()
             .map(SeverityCheck::low)
             .collect();
-        push_section(&mut sections, "🟢 LOW (nice to have):", &low_checks, 10);
+        push_section(&mut sections, "LOW (nice to have):", &low_checks, 10);
 
         // Info: Idioms.
         let info_checks: Vec<SeverityCheck> = self
@@ -343,35 +371,9 @@ impl ReviewGuidelines {
             .cloned()
             .map(SeverityCheck::info)
             .collect();
-        push_section(&mut sections, "🔵 INFO (observations):", &info_checks, 10);
+        push_section(&mut sections, "INFO (observations):", &info_checks, 10);
 
         sections.join("\n\n")
-    }
-
-    /// Get a brief summary for display
-    pub(crate) fn summary(&self) -> String {
-        format!(
-            "{} quality checks, {} security checks, {} anti-patterns",
-            self.quality_checks.len(),
-            self.security_checks.len(),
-            self.anti_patterns.len()
-        )
-    }
-
-    /// Get a comprehensive count of all checks
-    pub(crate) const fn total_checks(&self) -> usize {
-        self.quality_checks.len()
-            + self.security_checks.len()
-            + self.performance_checks.len()
-            + self.testing_checks.len()
-            + self.documentation_checks.len()
-            + self.idioms.len()
-            + self.anti_patterns.len()
-            + self.concurrency_checks.len()
-            + self.resource_checks.len()
-            + self.observability_checks.len()
-            + self.secrets_checks.len()
-            + self.api_design_checks.len()
     }
 }
 
