@@ -58,7 +58,8 @@
       "Bash(wc:*)",
       "Bash(./tests/integration_tests/compliance_check.sh:*)",
       "Bash(./tests/integration_tests/no_test_flags_check.sh:*)",
-      "mcp__git__git_commit"
+      "mcp__git__git_commit",
+      "Bash(git merge:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
