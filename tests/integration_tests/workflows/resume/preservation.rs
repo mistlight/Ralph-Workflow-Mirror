@@ -222,6 +222,7 @@ fn ralph_resume_shows_prompt_replay_info() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();

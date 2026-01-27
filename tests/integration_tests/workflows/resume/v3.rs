@@ -292,6 +292,7 @@ fn ralph_v3_file_system_state_auto_recovery() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/PLAN.md", "Modified plan content")
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
