@@ -127,7 +127,7 @@ fn ralph_commit_created_when_review_skipped() {
 ///
 /// This verifies that `prompt_review_xml_with_context` produces a prompt that includes:
 /// - "REVIEW MODE" marker
-/// - The original user requirements (PROMPT content)
+/// - Reference to PROMPT.md.backup file (reviewer reads it directly)
 /// - The implementation plan (PLAN content)
 /// - Changes made (git diff content)
 /// - XML output format instructions with <ralph-issues> tags
@@ -139,7 +139,7 @@ fn review_prompt_construction_includes_all_required_components() {
     with_default_timeout(|| {
         let template_context = TemplateContext::default();
 
-        // Test inputs
+        // Test inputs - prompt_content is unused, reviewer reads PROMPT.md.backup directly
         let prompt_content = "# Test Requirements\n\nImplement feature X with validation";
         let plan_content = "# Implementation Plan\n\n1. Create module\n2. Add tests";
         let changes_content = "diff --git a/src/lib.rs b/src/lib.rs\n+fn new_function() {}";
@@ -159,9 +159,10 @@ fn review_prompt_construction_includes_all_required_components() {
             &review_prompt[..500.min(review_prompt.len())]
         );
 
+        // prompt_content is no longer embedded - reviewer reads PROMPT.md.backup directly
         assert!(
-            review_prompt.contains(prompt_content),
-            "Review prompt must contain the original user requirements"
+            review_prompt.contains("PROMPT.md.backup"),
+            "Review prompt must reference PROMPT.md.backup for original requirements"
         );
 
         assert!(

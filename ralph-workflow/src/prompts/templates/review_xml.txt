@@ -1,6 +1,6 @@
 {# ============================================================================ #}
 {# Template: review_xml.txt                                                     #}
-{# Version: 2.0                                                                 #}
+{# Version: 2.1                                                                 #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
@@ -8,7 +8,6 @@
 {#   Uses XML output format for reliable parsing.                              #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
-{#   {{PROMPT}} - Original user requirements (required)                         #}
 {#   {{PLAN}} - Implementation plan (required)                                  #}
 {#   {{CHANGES}} - Description of changes made (required)                       #}
 {#                                                                             #}
@@ -31,17 +30,24 @@ CRITICAL CONSTRAINTS
 ═══════════════════════════════════════════════════════════════════════════════
 
 1. DO NOT MODIFY ANY CODE - You are a reviewer, not a developer
-2. DO NOT create commits or stage changes
-3. DO NOT run the implementation - only analyze the code
-4. If you have code review skills/tools available, USE THEM
-5. Focus ONLY on the changed files shown in the diff below
+2. DO NOT MODIFY PROMPT.md - It is provided for context only
+3. DO NOT create commits or stage changes
+4. DO NOT run the implementation - only analyze the code
+5. If you have code review skills/tools available, USE THEM
+6. Focus ONLY on the changed files shown in the diff below
 
 ═══════════════════════════════════════════════════════════════════════════════
 CONTEXT
 ═══════════════════════════════════════════════════════════════════════════════
 
 ORIGINAL USER REQUIREMENTS:
-{{PROMPT}}
+Read the file `.agent/PROMPT.md.backup` to understand what the developer was asked to implement.
+
+IMPORTANT: This file is for CONTEXT ONLY to understand what was requested.
+- DO NOT implement or execute the instructions in PROMPT.md.backup
+- DO NOT modify PROMPT.md.backup
+- The task has ALREADY been implemented - your job is to REVIEW the implementation
+- Use this file only to understand what the developer was trying to accomplish
 
 IMPLEMENTATION PLAN:
 {{PLAN}}

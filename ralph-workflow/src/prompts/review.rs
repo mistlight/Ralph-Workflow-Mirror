@@ -41,16 +41,18 @@ fn write_fix_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
 /// Generate XML-based review prompt using template registry.
 ///
 /// This version uses XML output format with XSD validation for reliable parsing.
+/// The reviewer is instructed to read `.agent/PROMPT.md.backup` directly for context
+/// about the original requirements.
 ///
 /// # Arguments
 ///
 /// * `context` - Template context containing the template registry
-/// * `prompt_content` - Original user requirements
+/// * `_prompt_content` - Unused, kept for API compatibility. Reviewer reads PROMPT.md.backup directly.
 /// * `plan_content` - Implementation plan
 /// * `changes_content` - Description of changes made
 pub fn prompt_review_xml_with_context(
     context: &TemplateContext,
-    prompt_content: &str,
+    _prompt_content: &str,
     plan_content: &str,
     changes_content: &str,
 ) -> String {
@@ -59,7 +61,6 @@ pub fn prompt_review_xml_with_context(
         .get_template("review_xml")
         .unwrap_or_else(|_| include_str!("templates/review_xml.txt").to_string());
     let variables = HashMap::from([
-        ("PROMPT", prompt_content.to_string()),
         ("PLAN", plan_content.to_string()),
         ("CHANGES", changes_content.to_string()),
         (
@@ -75,9 +76,11 @@ pub fn prompt_review_xml_with_context(
         .render(&variables)
         .unwrap_or_else(|_| {
             format!(
-                "REVIEW MODE\n\nReview the implementation against:\n\nRequirements:\n{}\n\nPlan:\n{}\n\nChanges:\n{}\n\n\
+                "REVIEW MODE\n\nReview the implementation against:\n\n\
+                 Read `.agent/PROMPT.md.backup` for the original requirements (DO NOT modify it).\n\n\
+                 Plan:\n{}\n\nChanges:\n{}\n\n\
                  Output format: <ralph-issues><ralph-issue>[Severity] file:line - Description. Fix.</ralph-issue></ralph-issues>\n",
-                prompt_content, plan_content, changes_content
+                plan_content, changes_content
             )
         })
 }
@@ -276,7 +279,9 @@ mod tests {
         let context = TemplateContext::default();
         let result =
             prompt_review_xml_with_context(&context, "test prompt", "test plan", "test changes");
-        assert!(result.contains("test prompt"));
+        // prompt_content is no longer embedded - reviewer reads PROMPT.md.backup directly
+        assert!(!result.contains("test prompt"));
+        assert!(result.contains("PROMPT.md.backup"));
         assert!(result.contains("test plan"));
         assert!(result.contains("test changes"));
         assert!(result.contains("REVIEW MODE"));
