@@ -8,18 +8,23 @@
 //! it goes through the effect system for proper testability.
 
 use crate::banner::{print_final_summary, PipelineSummary};
-use crate::checkpoint::clear_checkpoint;
+use crate::checkpoint::{clear_checkpoint, clear_checkpoint_with_workspace};
 use crate::config::Config;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::pipeline::Timer;
 use crate::pipeline::{AgentPhaseGuard, Stats};
+use crate::workspace::Workspace;
 
 /// Finalizes the pipeline: cleans up and prints summary.
 ///
 /// Commits now happen per-iteration during development and per-cycle during review,
 /// so this function only handles cleanup and final summary.
+///
+/// # Arguments
+///
+/// * `workspace` - Optional workspace for file operations (enables testability)
 pub fn finalize_pipeline(
     agent_phase_guard: &mut AgentPhaseGuard,
     logger: &Logger,
@@ -28,6 +33,7 @@ pub fn finalize_pipeline(
     timer: &Timer,
     stats: &Stats,
     prompt_monitor: Option<PromptMonitor>,
+    workspace: Option<&dyn Workspace>,
 ) {
     // Stop the PROMPT.md monitor if it was started
     if let Some(monitor) = prompt_monitor {
@@ -58,7 +64,12 @@ pub fn finalize_pipeline(
     print_final_summary(colors, &summary, logger);
 
     if config.features.checkpoint_enabled {
-        if let Err(err) = clear_checkpoint() {
+        let result = if let Some(ws) = workspace {
+            clear_checkpoint_with_workspace(ws)
+        } else {
+            clear_checkpoint()
+        };
+        if let Err(err) = result {
             logger.warn(&format!("Failed to clear checkpoint: {err}"));
         }
     }

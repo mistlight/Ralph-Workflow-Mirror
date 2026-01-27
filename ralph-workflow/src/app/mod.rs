@@ -1376,6 +1376,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         &timer,
         &stats,
         prompt_monitor,
+        Some(&*ctx.workspace),
     );
     Ok(())
 }
@@ -1602,6 +1603,7 @@ where
         &timer,
         &stats,
         prompt_monitor,
+        Some(&*ctx.workspace),
     );
     Ok(())
 }
