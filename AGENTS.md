@@ -120,7 +120,7 @@ The following specific uses of `std::fs` are acceptable and do not need refactor
 | `workspace.rs` (`WorkspaceFs`) | This IS the production filesystem implementation |
 | `app/effect_handler.rs` (`RealAppEffectHandler`) | This IS the production effect handler |
 | `config/path_resolver.rs` (`RealConfigEnvironment`) | Production config environment implementation |
-| `agents/Claude_api/cache.rs` (`RealCacheEnvironment`) | Production cache implementation |
+| `ralph-workflow/src/agents/opencode_api/cache.rs` (`RealCacheEnvironment`) | Production cache implementation |
 | `git_helpers/rebase.rs` | Operating on `.git/` directory internals |
 | `git_helpers/hooks.rs` | Bootstrap operation on `.git/hooks/` (see module docs) |
 | `files/protection/monitoring.rs` | Atomic file open for TOCTOU security |
