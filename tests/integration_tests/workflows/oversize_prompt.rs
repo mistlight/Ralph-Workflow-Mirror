@@ -338,3 +338,135 @@ fn builder_reports_any_oversize() {
         );
     });
 }
+
+/// Test that oversize PLAN falls back to XML file when PLAN.md is unavailable.
+///
+/// When PLAN.md content exceeds MAX_INLINE_CONTENT_SIZE and PLAN.md doesn't exist
+/// or is empty, the generated prompt should tell the agent to read from
+/// .agent/tmp/plan.xml as fallback.
+#[test]
+fn oversize_plan_falls_back_to_xml_when_md_unavailable() {
+    with_default_timeout(|| {
+        let large_plan = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+        // Create workspace with only plan.xml, no PLAN.md
+        let _workspace = MemoryWorkspace::new_test().with_file(".agent/tmp/plan.xml", &large_plan);
+
+        let plan_ref = PlanContentReference::from_plan(
+            large_plan,
+            Path::new(".agent/PLAN.md"),
+            Some(Path::new(".agent/tmp/plan.xml")),
+        );
+
+        assert!(!plan_ref.is_inline(), "Large plan should not be inline");
+
+        let rendered = plan_ref.render_for_template();
+        assert!(
+            rendered.contains(".agent/PLAN.md"),
+            "Should reference primary PLAN.md"
+        );
+        assert!(
+            rendered.contains("plan.xml"),
+            "Should mention XML fallback: {}",
+            &rendered[..rendered.len().min(300)]
+        );
+    });
+}
+
+/// Test that PromptContentBuilder handles all three oversized content types.
+///
+/// When PROMPT, PLAN, and DIFF all exceed MAX_INLINE_CONTENT_SIZE, the builder
+/// should correctly reference all backup locations and the rendered output
+/// should contain appropriate instructions for each.
+#[test]
+fn builder_handles_all_three_oversized_content_types() {
+    with_default_timeout(|| {
+        let large_content = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/PROMPT.md.backup", &large_content)
+            .with_file(".agent/PLAN.md", &large_content);
+
+        let builder = PromptContentBuilder::new(&workspace)
+            .with_prompt(large_content.clone())
+            .with_plan(large_content.clone())
+            .with_diff(large_content, "abc123def");
+
+        assert!(
+            builder.has_oversize_content(),
+            "Builder should detect all oversize content"
+        );
+
+        let refs = builder.build();
+
+        // Verify PROMPT references backup
+        let prompt_rendered = refs.prompt_for_template();
+        assert!(
+            prompt_rendered.contains("PROMPT.md.backup"),
+            "PROMPT should reference backup: {}",
+            &prompt_rendered[..prompt_rendered.len().min(200)]
+        );
+
+        // Verify PLAN references file with XML fallback
+        let plan_rendered = refs.plan_for_template();
+        assert!(
+            plan_rendered.contains(".agent/PLAN.md"),
+            "PLAN should reference PLAN.md"
+        );
+        assert!(
+            plan_rendered.contains("plan.xml"),
+            "PLAN should mention XML fallback"
+        );
+
+        // Verify DIFF references git command
+        let diff_rendered = refs.diff_for_template();
+        assert!(
+            diff_rendered.contains("git diff abc123def..HEAD"),
+            "DIFF should reference git command: {}",
+            &diff_rendered[..diff_rendered.len().min(200)]
+        );
+
+        // Verify none are inline
+        assert!(!refs.prompt_is_inline());
+        assert!(!refs.plan_is_inline());
+        assert!(!refs.diff_is_inline());
+    });
+}
+
+/// Test that developer iteration prompt correctly uses oversized content references.
+///
+/// When using prompt_developer_iteration_xml_with_references with oversized content,
+/// the generated prompt should include file path instructions, not embedded content.
+#[test]
+fn developer_iteration_prompt_uses_oversize_references() {
+    with_default_timeout(|| {
+        use ralph_workflow::prompts::prompt_developer_iteration_xml_with_references;
+        use ralph_workflow::prompts::template_context::TemplateContext;
+
+        let large_content = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/PROMPT.md.backup", &large_content);
+
+        let context = TemplateContext::default();
+        let refs = PromptContentBuilder::new(&workspace)
+            .with_prompt(large_content.clone())
+            .with_plan(large_content)
+            .build();
+
+        let prompt = prompt_developer_iteration_xml_with_references(&context, &refs);
+
+        // Should contain file reference instructions, not embedded content
+        assert!(
+            prompt.contains("PROMPT.md.backup") || prompt.contains("Read from"),
+            "Prompt should reference backup file: {}",
+            &prompt[..prompt.len().min(500)]
+        );
+        assert!(
+            prompt.contains(".agent/PLAN.md") || prompt.contains("plan.xml"),
+            "Prompt should reference plan file"
+        );
+        // Should NOT contain the repeated 'x' pattern from large content
+        assert!(
+            !prompt.contains(&"x".repeat(1000)),
+            "Prompt should not embed large content"
+        );
+    });
+}
