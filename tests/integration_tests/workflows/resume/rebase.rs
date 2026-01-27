@@ -1,15 +1,18 @@
 //! Rebase state preservation and conflict tests.
+//!
+//! These tests use MockAppEffectHandler for in-memory testing without
+//! real filesystem or git operations.
 
-use std::fs;
-use tempfile::TempDir;
+use std::path::PathBuf;
+
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handler,
 };
 use crate::test_timeout::with_default_timeout;
 
-use super::canonical_working_dir;
-use test_helpers::init_git_repo;
+use super::MOCK_REPO_PATH;
 
 // ============================================================================
 // Rebase State Preservation Tests
@@ -18,22 +21,19 @@ use test_helpers::init_git_repo;
 #[test]
 fn ralph_checkpoint_records_rebase_state() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase with rebase state
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete"),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete");
+
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
 
         // Run with --resume - should detect checkpoint
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
@@ -44,88 +44,76 @@ fn ralph_checkpoint_records_rebase_state() {
 #[test]
 fn ralph_resume_from_prerebase_phase_preserves_full_config() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete"),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete");
+
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
 
         // Run with --resume
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
 #[test]
 fn ralph_resume_from_prerebase_conflict_preserves_full_config() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete"),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete");
+
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
 
         // Run with --resume
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
 #[test]
 fn ralph_resume_from_postrebase_phase_preserves_full_config() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete"),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete");
+
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
 
         // Run with --resume
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
 #[test]
 fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete"),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete");
+
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
 
         // Run with --resume
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
@@ -136,25 +124,23 @@ fn ralph_resume_from_postrebase_conflict_preserves_full_config() {
 #[test]
 fn ralph_resume_is_idempotent_from_prerebase() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete"),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete");
+
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
 
         // First resume run
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
+
         // Checkpoint should be cleared
         assert!(
-            !dir.path().join(".agent/checkpoint.json").exists(),
+            !handler.file_exists(&PathBuf::from(".agent/checkpoint.json")),
             "Checkpoint should be cleared after successful resume"
         );
     });
@@ -167,50 +153,44 @@ fn ralph_resume_is_idempotent_from_prerebase() {
 #[test]
 fn ralph_v3_rebase_conflict_checkpoint_saves_execution_history() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a v3 checkpoint at Complete phase with execution history
-        let working_dir = canonical_working_dir(&dir);
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json_with_execution_history(&working_dir),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json_with_execution_history(MOCK_REPO_PATH);
+
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
 
         // Load checkpoint and verify execution history is preserved
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
 
         // Verify the checkpoint was consumed
-        assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        assert!(!handler.file_exists(&PathBuf::from(".agent/checkpoint.json")));
     });
 }
 
 #[test]
 fn ralph_v3_rebase_conflict_checkpoint_saves_prompt_history() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a v3 checkpoint at Complete phase with prompt history
-        let working_dir = canonical_working_dir(&dir);
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json_with_prompt_history(&working_dir),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json_with_prompt_history(MOCK_REPO_PATH);
+
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
 
         // Resume and verify prompt history is preserved
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
 
         // Verify the checkpoint was consumed
-        assert!(!dir.path().join(".agent/checkpoint.json").exists());
+        assert!(!handler.file_exists(&PathBuf::from(".agent/checkpoint.json")));
     });
 }
 

@@ -28,8 +28,8 @@ use ralph_workflow::reducer::PipelineState;
 use std::path::PathBuf;
 
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handlers,
-    run_ralph_cli_with_path_resolver,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_env,
+    run_ralph_cli_with_handlers,
 };
 use crate::test_timeout::with_default_timeout;
 
@@ -68,6 +68,12 @@ fn create_config_test_handlers() -> (MockAppEffectHandler, MockEffectHandler) {
 #[test]
 fn test_init_global_creates_config() {
     with_default_timeout(|| {
+        // Create mock handler for app effects
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from("/test/repo"))
+            .with_file("/test/repo/PROMPT.md", "## Goal\n\nTest task\n");
+
         // Create in-memory environment - no config exists yet
         let env = MemoryConfigEnvironment::new()
             .with_unified_config_path("/test/config/ralph-workflow.toml")
@@ -76,7 +82,7 @@ fn test_init_global_creates_config() {
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_with_path_resolver(&["--init-global"], executor, config, None, &env).unwrap();
+        run_ralph_cli_with_env(&["--init-global"], executor, config, &mut handler, &env).unwrap();
 
         // Should have created the config file
         assert!(

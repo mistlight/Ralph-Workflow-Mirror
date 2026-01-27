@@ -82,17 +82,19 @@
 //! }
 //! ```
 //!
-//! ## Pattern 2: CLI Tests with MemoryWorkspace
+//! ## Pattern 2: CLI Tests with MockAppEffectHandler
 //!
-//! Used when testing the CLI without real filesystem operations:
+//! Used when testing the CLI without real filesystem or git operations:
 //!
 //! ```rust
-//! use std::path::Path;
+//! use std::path::PathBuf;
+//! use std::sync::Arc;
 //!
-//! use ralph_workflow::workspace::MemoryWorkspace;
+//! use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+//! use ralph_workflow::app::AppEffect;
 //! use ralph_workflow::executor::MockProcessExecutor;
 //!
-//! use crate::common::run_ralph_cli_injected;
+//! use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handler};
 //! use crate::test_timeout::with_default_timeout;
 //!
 //! /// Test that [CLI SCENARIO] produces [EXPECTED BEHAVIOR].
@@ -101,30 +103,34 @@
 //! #[test]
 //! fn test_cli_scenario_produces_expected_behavior() {
 //!     with_default_timeout(|| {
-//!         // Setup: Create in-memory workspace with test files
-//!         let workspace = MemoryWorkspace::new_test()
-//!             .with_file(".agent/config.toml", "[agent]\nname = \"test\"")
-//!             .with_file("PROMPT.md", "Test prompt content");
+//!         // Setup: Create mock handler with in-memory filesystem and git state
+//!         let mut handler = MockAppEffectHandler::new()
+//!             .with_head_oid("a".repeat(40))
+//!             .with_cwd(PathBuf::from("/mock/repo"))
+//!             .with_file("PROMPT.md", "# Test\n## Goal\nTest\n## Acceptance\n- Pass");
 //!
-//!         // Setup: Create mock executor for process simulation
-//!         let executor = MockProcessExecutor::new()
-//!             .with_output("git", "main")
-//!             .with_agent_result("claude", Ok(AgentCommandResult::success()));
+//!         // Setup: Create mock executor and config
+//!         let executor = mock_executor_with_success();
+//!         let config = create_test_config_struct();
 //!
-//!         // Execute: Run CLI with injected dependencies
-//!         let result = run_ralph_cli_injected(
+//!         // Execute: Run CLI with mock handler
+//!         let result = run_ralph_cli_with_handler(
 //!             &["--some-flag", "value"],
 //!             executor,
-//!             &workspace,
+//!             config,
+//!             &mut handler,
 //!         );
 //!
-//!         // Assert: Verify OBSERVABLE behavior (return value, file side effects)
+//!         // Assert: Verify OBSERVABLE behavior (return value, captured effects)
 //!         assert!(result.is_ok(), "CLI should succeed");
-//!         assert!(workspace.was_written(".agent/output.txt"),
-//!             "Should create expected output file");
 //!
-//!         // Assert: Verify file content if needed
-//!         let content = workspace.get_file(".agent/output.txt").unwrap();
+//!         // Assert: Verify effects were captured
+//!         assert!(handler.captured().iter().any(|e| matches!(e, AppEffect::GitSaveStartCommit)));
+//!
+//!         // Assert: Verify file side effects if needed
+//!         assert!(handler.file_exists(".agent/output.txt"),
+//!             "Should create expected output file");
+//!         let content = handler.get_file(".agent/output.txt").unwrap();
 //!         assert!(content.contains("expected"), "Output should contain expected content");
 //!     });
 //! }
@@ -177,13 +183,14 @@
 //!
 //! | Anti-Pattern | Why It's Wrong | Fix |
 //! |--------------|----------------|-----|
-//! | `TempDir` in integration tests | Real I/O, slow, non-deterministic | Use `MemoryWorkspace::new_test()` |
-//! | `std::fs::*` in integration tests | Real I/O, tests affect each other | Use `workspace.read()`/`write()` |
+//! | `TempDir` in integration tests | Real I/O, slow, non-deterministic | Use `MockAppEffectHandler` |
+//! | `std::fs::*` in integration tests | Real I/O, tests affect each other | Use `MockAppEffectHandler.with_file()` |
+//! | `init_git_repo()` in integration tests | Real git, slow, non-deterministic | Use `MockAppEffectHandler.with_head_oid()` |
 //! | Mocking internal functions | Tests implementation, not behavior | Use integration boundary mocks |
 //! | Asserting on log messages | Logs are not part of behavior contract | Assert on outputs/side effects |
 //! | Testing private functions | Private = implementation detail | Test through public API |
 //! | Brittle string matching | Ties test to exact formatting | Use semantic assertions |
-//! | Shared mutable state | Tests affect each other | Use `MemoryWorkspace`, reset state |
+//! | Shared mutable state | Tests affect each other | Use `MockAppEffectHandler`, reset state |
 //! | `cfg!(test)` in production | Adds untested code paths | Use dependency injection |
 //! | Test file >1000 lines | Hard to maintain | Split into focused modules |
 //!

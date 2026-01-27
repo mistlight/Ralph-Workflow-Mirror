@@ -1,15 +1,28 @@
 //! Resume from different phases tests.
+//!
+//! These tests use MockAppEffectHandler for in-memory testing without
+//! real filesystem or git operations.
 
-use std::fs;
-use tempfile::TempDir;
+use std::path::PathBuf;
+
+use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 
 use crate::common::{
-    create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected,
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handler,
 };
 use crate::test_timeout::with_default_timeout;
 
-use super::canonical_working_dir;
-use test_helpers::init_git_repo;
+use super::{make_checkpoint_json, MOCK_REPO_PATH};
+
+/// Standard prompt content for tests - matches the required PROMPT.md format.
+const STANDARD_PROMPT: &str = r#"## Goal
+
+Test resume functionality.
+
+## Acceptance
+
+- Tests pass
+"#;
 
 // ============================================================================
 // Phase Resume Tests
@@ -18,37 +31,21 @@ use test_helpers::init_git_repo;
 #[test]
 fn ralph_resume_shows_checkpoint_summary() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a v3 checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete", 3, 3),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete", 3, 3);
 
-        // Pre-create required files
-        fs::write(
-            dir.path().join("PROMPT.md"),
-            r#"## Goal
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json)
+            .with_file("PROMPT.md", STANDARD_PROMPT)
+            .with_file(".agent/commit-message.txt", "feat: test\n");
 
-Test resume functionality.
-
-## Acceptance
-
-- Tests pass
-"#,
-        )
-        .unwrap();
-        fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
+        let config = create_test_config_struct();
+        let executor = mock_executor_with_success();
 
         // Run with --resume - Complete phase means no execution needed
-        let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
@@ -59,95 +56,75 @@ Test resume functionality.
 #[test]
 fn ralph_resume_from_planning_phase() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase (0 iterations = complete immediately)
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete", 1, 1),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete", 1, 1);
 
-        // Pre-create required files to skip agent phases
-        fs::write(dir.path().join("PROMPT.md"), "Test prompt\n").unwrap();
-        fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
-        fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json)
+            .with_file("PROMPT.md", "Test prompt\n")
+            .with_file(".agent/PLAN.md", "Test plan\n")
+            .with_file(".agent/commit-message.txt", "feat: test\n");
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
 #[test]
 fn ralph_resume_from_development_phase() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete", 2, 3),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete", 2, 3);
 
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
 #[test]
 fn ralph_resume_from_review_phase() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete", 3, 3),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete", 3, 3);
 
-        // Pre-create required files to skip agent phases
-        fs::write(dir.path().join("PROMPT.md"), "Test prompt\n").unwrap();
-        fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
-        fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
-        fs::write(dir.path().join(".agent/ISSUES.md"), "No issues\n").unwrap();
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json)
+            .with_file("PROMPT.md", "Test prompt\n")
+            .with_file(".agent/PLAN.md", "Test plan\n")
+            .with_file(".agent/commit-message.txt", "feat: test\n")
+            .with_file(".agent/ISSUES.md", "No issues\n");
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
 #[test]
 fn ralph_resume_from_complete_phase() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete", 3, 3),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete", 3, 3);
 
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
         // Resume from Complete should recognize pipeline is done
     });
 }
@@ -159,130 +136,37 @@ fn ralph_resume_from_complete_phase() {
 #[test]
 fn ralph_resume_passes_context_to_developer_agent() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
         // Create a checkpoint at Complete phase
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete", 1, 1),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete", 1, 1);
 
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file(".agent/checkpoint.json", &checkpoint_json);
+
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
 }
 
 #[test]
 fn ralph_resume_passes_context_to_reviewer_agent() {
     with_default_timeout(|| {
-        let dir = TempDir::new().unwrap();
-        let _repo = init_git_repo(&dir);
-        let config = create_test_config_struct();
-
-        // Pre-create required files
-        fs::write(
-            dir.path().join("PROMPT.md"),
-            r#"## Goal
-
-Test resume functionality.
-
-## Acceptance
-
-- Tests pass
-"#,
-        )
-        .unwrap();
-        fs::create_dir_all(dir.path().join(".agent")).unwrap();
-        fs::write(dir.path().join(".agent/PLAN.md"), "Test plan\n").unwrap();
-
         // Create a checkpoint at Complete phase
-        let working_dir = canonical_working_dir(&dir);
-        fs::write(
-            dir.path().join(".agent/checkpoint.json"),
-            make_checkpoint_json(&working_dir, "Complete", 1, 1),
-        )
-        .unwrap();
+        let checkpoint_json = make_checkpoint_json(MOCK_REPO_PATH, "Complete", 1, 1);
 
-        // Pre-create ISSUES.md and commit-message.txt to satisfy validation
-        fs::write(dir.path().join(".agent/ISSUES.md"), "No issues found.\n").unwrap();
-        fs::write(dir.path().join(".agent/commit-message.txt"), "feat: test\n").unwrap();
+        let mut handler = MockAppEffectHandler::new()
+            .with_head_oid("a".repeat(40))
+            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
+            .with_file(".agent/checkpoint.json", &checkpoint_json)
+            .with_file(".agent/PLAN.md", "Test plan\n")
+            .with_file(".agent/ISSUES.md", "No issues found.\n")
+            .with_file(".agent/commit-message.txt", "feat: test\n");
 
+        let config = create_test_config_struct();
         let executor = mock_executor_with_success();
-        run_ralph_cli_injected(&["--resume"], executor, config, Some(dir.path())).unwrap();
+        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
     });
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Helper function to create a valid v3 checkpoint JSON with all required fields.
-/// Always sets developer_iters and reviewer_reviews to 0 to prevent agent execution.
-fn make_checkpoint_json(
-    working_dir: &str,
-    phase: &str,
-    iteration: u32,
-    total_iterations: u32,
-) -> String {
-    format!(
-        r#"{{
-            "version": 3,
-            "phase": "{}",
-            "iteration": {},
-            "total_iterations": {},
-            "reviewer_pass": 0,
-            "total_reviewer_passes": 0,
-            "timestamp": "2024-01-01 12:00:00",
-            "developer_agent": "test-agent",
-            "reviewer_agent": "test-agent",
-            "cli_args": {{
-                "developer_iters": 0,
-                "reviewer_reviews": 0,
-                "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
-            }},
-            "developer_agent_config": {{
-                "name": "test-agent",
-                "cmd": "echo",
-                "output_flag": "",
-                "yolo_flag": null,
-                "can_commit": false,
-                "model_override": null,
-                "provider_override": null,
-                "context_level": 1
-            }},
-            "reviewer_agent_config": {{
-                "name": "test-agent",
-                "cmd": "echo",
-                "output_flag": "",
-                "yolo_flag": null,
-                "can_commit": false,
-                "model_override": null,
-                "provider_override": null,
-                "context_level": 1
-            }},
-            "rebase_state": "NotStarted",
-            "config_path": null,
-            "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": null,
-            "git_user_name": null,
-            "git_user_email": null,
-            "run_id": "00000000-0000-0000-0000-000000000001",
-            "parent_run_id": null,
-            "resume_count": 0,
-            "actual_developer_runs": {},
-            "actual_reviewer_runs": 0,
-            "execution_history": null,
-            "file_system_state": null,
-            "prompt_history": null
-        }}"#,
-        phase, iteration, total_iterations, working_dir, iteration
-    )
 }

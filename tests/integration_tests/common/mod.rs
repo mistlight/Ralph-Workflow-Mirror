@@ -49,8 +49,7 @@
 
 use clap::error::ErrorKind;
 use clap::Parser;
-use ralph_workflow::config::ConfigEnvironment;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Create a MemoryWorkspace from a MockAppEffectHandler.
 ///
@@ -73,193 +72,6 @@ fn create_workspace_from_handler(
     }
 
     std::sync::Arc::new(workspace)
-}
-
-/// Global lock for CWD-changing operations.
-///
-/// The production code uses relative paths extensively, and CWD is process-global.
-/// Tests that change CWD must hold this lock to prevent races.
-///
-/// This lock is used internally by `run_ralph_cli_injected()` when a `working_dir` is provided.
-static CWD_LOCK: Mutex<()> = Mutex::new(());
-
-/// DEPRECATED: Use `run_ralph_cli_with_handler()` or `run_ralph_cli_with_handlers()` instead.
-///
-/// This function creates a `RealAppEffectHandler` internally, which requires
-/// a real git repository and filesystem. Per INTEGRATION_TESTS.md, integration
-/// tests MUST use `MockAppEffectHandler` instead of real filesystem operations.
-///
-/// # Migration Guide
-///
-/// Replace:
-/// ```ignore
-/// let dir = TempDir::new().unwrap();
-/// let _repo = init_git_repo(&dir);
-/// run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
-/// ```
-///
-/// With:
-/// ```ignore
-/// let mut handler = MockAppEffectHandler::new()
-///     .with_head_oid("a".repeat(40))
-///     .with_cwd(PathBuf::from("/mock/repo"))
-///     .with_file("PROMPT.md", "# Test\n## Goal\nTest\n## Acceptance\n- Pass");
-/// run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
-/// ```
-///
-/// For full isolation (both CLI and reducer layers):
-/// ```ignore
-/// let mut app_handler = MockAppEffectHandler::new()
-///     .with_head_oid("a".repeat(40))
-///     .with_cwd(PathBuf::from("/mock/repo"))
-///     .with_file("PROMPT.md", STANDARD_PROMPT);
-/// let mut effect_handler = MockEffectHandler::new(PipelineState::initial(1, 0));
-///
-/// run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler).unwrap();
-/// ```
-/// LEGACY: This function uses real filesystem and git operations.
-///
-/// **WARNING:** Per INTEGRATION_TESTS.md, new tests MUST use `run_ralph_cli_with_handler()`
-/// with `MockAppEffectHandler` instead. This function exists for backward compatibility
-/// with tests that haven't been migrated yet.
-///
-/// # Migration Status
-///
-/// - [ ] backup.rs - 42 usages
-/// - [ ] commit_tests.rs - 22 usages
-/// - [ ] resume/*.rs - ~190 usages
-pub fn run_ralph_cli_injected(
-    args: &[&str],
-    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-    config: ralph_workflow::config::Config,
-    working_dir: Option<&std::path::Path>,
-) -> anyhow::Result<()> {
-    // Build argv: binary name + args
-    let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(|s| s.to_string()));
-
-    // Parse args using clap directly
-    let mut parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
-        Ok(args) => args,
-        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
-            return Ok(());
-        }
-        Err(e) => return Err(e.into()),
-    };
-
-    // Set working_dir_override if provided
-    if let Some(dir) = working_dir {
-        parsed_args.working_dir_override = Some(dir.to_path_buf());
-    }
-
-    // Use real path resolver by default
-    run_ralph_cli_with_resolver(
-        parsed_args,
-        executor,
-        config,
-        working_dir,
-        &ralph_workflow::config::RealConfigEnvironment,
-    )
-}
-
-/// DEPRECATED: Use `run_ralph_cli_with_handler()` with a custom path in MockAppEffectHandler instead.
-///
-/// This function creates a `RealAppEffectHandler` internally, which requires
-/// a real git repository and filesystem. Per INTEGRATION_TESTS.md, integration
-/// tests MUST use `MockAppEffectHandler` instead.
-///
-/// # Migration Guide
-///
-/// For tests that need custom config paths, configure the MockAppEffectHandler
-/// to have the expected files at the right paths:
-///
-/// ```ignore
-/// let mut handler = MockAppEffectHandler::new()
-///     .with_head_oid("a".repeat(40))
-///     .with_cwd(PathBuf::from("/mock/repo"))
-///     .with_file("/mock/repo/ralph-workflow.toml", "# config")
-///     .with_file("/mock/repo/PROMPT.md", STANDARD_PROMPT);
-///
-/// run_ralph_cli_with_handler(&["--init"], executor, config, &mut handler).unwrap();
-/// ```
-/// LEGACY: This function uses real filesystem and git operations.
-///
-/// **WARNING:** Per INTEGRATION_TESTS.md, new tests MUST use `run_ralph_cli_with_handler()`
-/// with `MockAppEffectHandler` instead.
-pub fn run_ralph_cli_with_path_resolver<P: ConfigEnvironment>(
-    args: &[&str],
-    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-    config: ralph_workflow::config::Config,
-    working_dir: Option<&std::path::Path>,
-    path_resolver: &P,
-) -> anyhow::Result<()> {
-    // Build argv: binary name + args
-    let mut argv: Vec<String> = vec!["ralph".to_string()];
-    argv.extend(args.iter().map(|s| s.to_string()));
-
-    // Parse args using clap directly
-    let mut parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
-        Ok(args) => args,
-        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
-            return Ok(());
-        }
-        Err(e) => return Err(e.into()),
-    };
-
-    // Set working_dir_override if provided
-    if let Some(dir) = working_dir {
-        parsed_args.working_dir_override = Some(dir.to_path_buf());
-    }
-
-    run_ralph_cli_with_resolver(parsed_args, executor, config, working_dir, path_resolver)
-}
-
-/// Internal helper that runs ralph with parsed args and resolver.
-fn run_ralph_cli_with_resolver<P: ConfigEnvironment>(
-    parsed_args: ralph_workflow::cli::Args,
-    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
-    config: ralph_workflow::config::Config,
-    working_dir: Option<&std::path::Path>,
-    path_resolver: &P,
-) -> anyhow::Result<()> {
-    // Create test registry with built-in agents only
-    let registry = create_test_registry();
-
-    // Create effect handler for git/filesystem operations
-    let mut handler = ralph_workflow::app::effect_handler::RealAppEffectHandler::new();
-
-    // If working_dir is provided, we need to lock CWD and restore it after
-    if working_dir.is_some() {
-        let _lock = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let original_cwd = std::env::current_dir().ok();
-
-        // Use run_with_config_and_resolver which bypasses env var loading
-        let result = ralph_workflow::app::run_with_config_and_resolver(
-            parsed_args,
-            executor,
-            config,
-            registry,
-            path_resolver,
-            &mut handler,
-            None, // Use default WorkspaceFs
-        );
-
-        if let Some(cwd) = original_cwd {
-            let _ = std::env::set_current_dir(cwd);
-        }
-
-        result
-    } else {
-        ralph_workflow::app::run_with_config_and_resolver(
-            parsed_args,
-            executor,
-            config,
-            registry,
-            path_resolver,
-            &mut handler,
-            None, // Use default WorkspaceFs
-        )
-    }
 }
 
 /// Run ralph workflow with a custom MockAppEffectHandler.
@@ -430,6 +242,76 @@ pub fn run_ralph_cli_with_handlers(
     })
 }
 
+/// Run ralph workflow with a custom MemoryConfigEnvironment.
+///
+/// This variant of `run_ralph_cli_with_handler` allows passing a custom
+/// `MemoryConfigEnvironment` for tests that need to verify config file creation
+/// (e.g., `--init`, `--init-global` commands).
+///
+/// # Arguments
+///
+/// * `args` - Command line arguments to pass to ralph
+/// * `executor` - Process executor for external process execution
+/// * `config` - Pre-built Config struct (bypasses env var loading)
+/// * `handler` - Mock effect handler to capture effects
+/// * `config_env` - Custom MemoryConfigEnvironment for config path resolution
+///
+/// # Example
+///
+/// ```ignore
+/// use ralph_workflow::config::MemoryConfigEnvironment;
+///
+/// let mut handler = MockAppEffectHandler::new()
+///     .with_head_oid("a".repeat(40))
+///     .with_cwd(PathBuf::from("/mock/repo"));
+///
+/// let env = MemoryConfigEnvironment::new()
+///     .with_unified_config_path("/test/config/ralph-workflow.toml")
+///     .with_prompt_path("/test/repo/PROMPT.md");
+///
+/// run_ralph_cli_with_env(&["--init"], executor, config, &mut handler, &env).unwrap();
+///
+/// // Verify config file was created
+/// assert!(env.was_written(Path::new("/test/config/ralph-workflow.toml")));
+/// ```
+pub fn run_ralph_cli_with_env(
+    args: &[&str],
+    executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+    config: ralph_workflow::config::Config,
+    handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
+    config_env: &ralph_workflow::config::MemoryConfigEnvironment,
+) -> anyhow::Result<()> {
+    // Build argv: binary name + args
+    let mut argv: Vec<String> = vec!["ralph".to_string()];
+    argv.extend(args.iter().map(|s| s.to_string()));
+
+    // Parse args using clap directly
+    let parsed_args = match ralph_workflow::cli::Args::try_parse_from(&argv) {
+        Ok(args) => args,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayVersion | ErrorKind::DisplayHelp) => {
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Create test registry with built-in agents only
+    let registry = create_test_registry();
+
+    // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
+    let workspace = create_workspace_from_handler(handler);
+
+    // Use run_with_config_and_resolver with the provided handler and custom config env
+    ralph_workflow::app::run_with_config_and_resolver(
+        parsed_args,
+        executor,
+        config,
+        registry,
+        config_env,
+        handler,
+        Some(workspace),
+    )
+}
+
 /// Create a MockProcessExecutor configured for successful agent execution.
 ///
 /// This helper prevents tests from spawning real AI agent processes by
@@ -524,15 +406,20 @@ pub fn mock_executor_with_success() -> Arc<dyn ralph_workflow::executor::Process
 /// # Usage
 ///
 /// ```ignore
-/// use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_injected};
+/// use std::path::PathBuf;
+/// use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
+/// use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handler};
 ///
 /// #[test]
 /// fn test_workflow() {
 ///     with_default_timeout(|| {
-///         let dir = TempDir::new().unwrap();
+///         let mut handler = MockAppEffectHandler::new()
+///             .with_head_oid("a".repeat(40))
+///             .with_cwd(PathBuf::from("/mock/repo"))
+///             .with_file("PROMPT.md", "# Test\n## Goal\nTest\n## Acceptance\n- Pass");
 ///         let config = create_test_config_struct();
 ///         let executor = mock_executor_with_success();
-///         run_ralph_cli_injected(&[], executor, config, Some(dir.path())).unwrap();
+///         run_ralph_cli_with_handler(&[], executor, config, &mut handler).unwrap();
 ///     });
 /// }
 /// ```
