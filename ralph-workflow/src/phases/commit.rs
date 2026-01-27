@@ -56,6 +56,12 @@ fn preview_commit_message(msg: &str) -> String {
 /// allowing substantial diffs to be processed without truncation.
 const MAX_SAFE_PROMPT_SIZE: usize = 200_000;
 
+/// Maximum prompt size for GLM-like agents (GLM, Zhipu, Qwen, DeepSeek).
+const GLM_MAX_PROMPT_SIZE: usize = 100_000;
+
+/// Maximum prompt size for Claude-based agents.
+const CLAUDE_MAX_PROMPT_SIZE: usize = 300_000;
+
 /// Absolute last resort fallback commit message.
 ///
 /// This is used ONLY when all other methods fail:
@@ -90,14 +96,14 @@ fn max_prompt_size_for_agent(commit_agent: &str) -> usize {
         || agent_lower.contains("qwen")
         || agent_lower.contains("deepseek")
     {
-        100_000 // 100KB for GLM-like agents
+        GLM_MAX_PROMPT_SIZE
     } else if agent_lower.contains("claude")
         || agent_lower.contains("ccs")
         || agent_lower.contains("anthropic")
     {
-        300_000 // 300KB for Claude-based agents
+        CLAUDE_MAX_PROMPT_SIZE
     } else {
-        MAX_SAFE_PROMPT_SIZE // Default 200KB
+        MAX_SAFE_PROMPT_SIZE
     }
 }
 

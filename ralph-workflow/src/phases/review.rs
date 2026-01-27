@@ -8,7 +8,6 @@
 //!
 //! # Module Structure
 //!
-//! - [`prompt`] - Review prompt building logic
 //! - [`validation`] - Pre-flight and post-flight validation checks
 
 use crate::agents::AgentRole;
@@ -40,8 +39,6 @@ use crate::prompts::{
 };
 use crate::workspace::Workspace;
 use std::path::Path;
-
-mod prompt;
 
 mod validation;
 pub use validation::{

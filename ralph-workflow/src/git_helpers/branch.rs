@@ -13,10 +13,7 @@
 use std::io;
 use std::path::Path;
 
-/// Convert git2 error to `io::Error`.
-fn git2_to_io_error(err: &git2::Error) -> io::Error {
-    io::Error::other(err.to_string())
-}
+use super::git2_to_io_error;
 
 /// Check if the current branch is "main" or "master".
 ///

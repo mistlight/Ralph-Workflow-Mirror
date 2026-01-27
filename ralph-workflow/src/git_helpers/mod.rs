@@ -16,6 +16,13 @@
 
 #![deny(unsafe_code)]
 
+use std::io;
+
+/// Convert git2 errors to std::io errors for consistent error handling.
+pub(crate) fn git2_to_io_error(err: &git2::Error) -> io::Error {
+    io::Error::other(err.to_string())
+}
+
 pub mod branch;
 mod hooks;
 pub mod identity;
