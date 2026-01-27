@@ -197,10 +197,7 @@ fn test_quick_mode_explicit_iters_override() {
             &mut effect_handler,
         );
 
-        assert!(
-            result.is_ok(),
-            "Explicit iters should override quick mode"
-        );
+        assert!(result.is_ok(), "Explicit iters should override quick mode");
     });
 }
 
@@ -343,10 +340,7 @@ fn test_review_depth_standard() {
             &mut effect_handler,
         );
 
-        assert!(
-            result.is_ok(),
-            "Standard review depth should work"
-        );
+        assert!(result.is_ok(), "Standard review depth should work");
     });
 }
 
@@ -371,10 +365,7 @@ fn test_review_depth_comprehensive() {
             &mut effect_handler,
         );
 
-        assert!(
-            result.is_ok(),
-            "Comprehensive review depth should work"
-        );
+        assert!(result.is_ok(), "Comprehensive review depth should work");
     });
 }
 
@@ -399,10 +390,7 @@ fn test_review_depth_security() {
             &mut effect_handler,
         );
 
-        assert!(
-            result.is_ok(),
-            "Security review depth should work"
-        );
+        assert!(result.is_ok(), "Security review depth should work");
     });
 }
 
@@ -427,9 +415,6 @@ fn test_review_depth_incremental() {
             &mut effect_handler,
         );
 
-        assert!(
-            result.is_ok(),
-            "Incremental review depth should work"
-        );
+        assert!(result.is_ok(), "Incremental review depth should work");
     });
 }

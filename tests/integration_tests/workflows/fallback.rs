@@ -70,14 +70,8 @@ fn test_skips_phases_with_zero_iterations() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify ISSUES.md is not created in isolation mode (default)
         assert!(
@@ -101,14 +95,8 @@ fn test_succeeds_with_zero_iterations() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify CreateCommit effect was called at the reducer layer
         let was_commit_created =

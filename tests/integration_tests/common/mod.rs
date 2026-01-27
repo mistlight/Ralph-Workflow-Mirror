@@ -117,10 +117,17 @@ static CWD_LOCK: Mutex<()> = Mutex::new(());
 ///
 /// run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler).unwrap();
 /// ```
-#[deprecated(
-    since = "0.1.0",
-    note = "Use run_ralph_cli_with_handler() with MockAppEffectHandler instead. See INTEGRATION_TESTS.md."
-)]
+/// LEGACY: This function uses real filesystem and git operations.
+///
+/// **WARNING:** Per INTEGRATION_TESTS.md, new tests MUST use `run_ralph_cli_with_handler()`
+/// with `MockAppEffectHandler` instead. This function exists for backward compatibility
+/// with tests that haven't been migrated yet.
+///
+/// # Migration Status
+///
+/// - [ ] backup.rs - 42 usages
+/// - [ ] commit_tests.rs - 22 usages
+/// - [ ] resume/*.rs - ~190 usages
 pub fn run_ralph_cli_injected(
     args: &[&str],
     executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
@@ -175,10 +182,10 @@ pub fn run_ralph_cli_injected(
 ///
 /// run_ralph_cli_with_handler(&["--init"], executor, config, &mut handler).unwrap();
 /// ```
-#[deprecated(
-    since = "0.1.0",
-    note = "Use run_ralph_cli_with_handler() with MockAppEffectHandler instead. See INTEGRATION_TESTS.md."
-)]
+/// LEGACY: This function uses real filesystem and git operations.
+///
+/// **WARNING:** Per INTEGRATION_TESTS.md, new tests MUST use `run_ralph_cli_with_handler()`
+/// with `MockAppEffectHandler` instead.
 pub fn run_ralph_cli_with_path_resolver<P: ConfigEnvironment>(
     args: &[&str],
     executor: Arc<dyn ralph_workflow::executor::ProcessExecutor>,
@@ -410,19 +417,17 @@ pub fn run_ralph_cli_with_handlers(
     let workspace = create_workspace_from_handler(app_handler);
 
     // Use run_with_config_and_handlers with both handlers and memory workspace
-    ralph_workflow::app::run_with_config_and_handlers(
-        ralph_workflow::app::RunWithHandlersParams {
-            args: parsed_args,
-            executor,
-            config,
-            registry,
-            path_resolver: &config_env,
-            app_handler,
-            effect_handler,
-            workspace: Some(workspace),
-            _marker: std::marker::PhantomData,
-        },
-    )
+    ralph_workflow::app::run_with_config_and_handlers(ralph_workflow::app::RunWithHandlersParams {
+        args: parsed_args,
+        executor,
+        config,
+        registry,
+        path_resolver: &config_env,
+        app_handler,
+        effect_handler,
+        workspace: Some(workspace),
+        _marker: std::marker::PhantomData,
+    })
 }
 
 /// Create a MockProcessExecutor configured for successful agent execution.

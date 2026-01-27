@@ -21,7 +21,9 @@
 //! - NO `TempDir`, `std::fs`, or real git operations
 //! - Tests are deterministic and verify effects, not real filesystem state
 
-use crate::common::{create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handlers};
+use crate::common::{
+    create_test_config_struct, mock_executor_with_success, run_ralph_cli_with_handlers,
+};
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::app::mock_effect_handler::MockAppEffectHandler;
 use ralph_workflow::reducer::effect::Effect;
@@ -182,9 +184,6 @@ fn test_commit_succeeds_without_developer_or_review() {
         let was_commit_created =
             effect_handler.was_effect_executed(|e| matches!(e, Effect::CreateCommit { .. }));
 
-        assert!(
-            was_commit_created,
-            "CreateCommit effect should be called"
-        );
+        assert!(was_commit_created, "CreateCommit effect should be called");
     });
 }

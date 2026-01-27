@@ -91,14 +91,8 @@ fn test_pipeline_creates_commit_on_completion() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify CreateCommit effect was called at the reducer layer
         let was_commit_created =
@@ -189,14 +183,8 @@ fn test_isolation_mode_does_not_create_context_files() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify STATUS.md, NOTES.md and ISSUES.md are NOT in mock filesystem
         assert!(
@@ -242,26 +230,20 @@ fn test_isolation_mode_deletes_existing_context_files() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Check that DeleteFile effects were called for these files
         let effects = app_handler.captured();
-        let status_deleted = effects.iter().any(|e| {
-            matches!(e, AppEffect::DeleteFile { path } if path.ends_with("STATUS.md"))
-        });
-        let notes_deleted = effects.iter().any(|e| {
-            matches!(e, AppEffect::DeleteFile { path } if path.ends_with("NOTES.md"))
-        });
-        let issues_deleted = effects.iter().any(|e| {
-            matches!(e, AppEffect::DeleteFile { path } if path.ends_with("ISSUES.md"))
-        });
+        let status_deleted = effects
+            .iter()
+            .any(|e| matches!(e, AppEffect::DeleteFile { path } if path.ends_with("STATUS.md")));
+        let notes_deleted = effects
+            .iter()
+            .any(|e| matches!(e, AppEffect::DeleteFile { path } if path.ends_with("NOTES.md")));
+        let issues_deleted = effects
+            .iter()
+            .any(|e| matches!(e, AppEffect::DeleteFile { path } if path.ends_with("ISSUES.md")));
 
         assert!(
             status_deleted,
@@ -307,15 +289,15 @@ fn test_no_isolation_creates_context_files() {
 
         // Verify STATUS.md, NOTES.md and ISSUES.md were written via WriteFile effects
         let effects = app_handler.captured();
-        let status_written = effects.iter().any(|e| {
-            matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("STATUS.md"))
-        });
-        let notes_written = effects.iter().any(|e| {
-            matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("NOTES.md"))
-        });
-        let issues_written = effects.iter().any(|e| {
-            matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("ISSUES.md"))
-        });
+        let status_written = effects
+            .iter()
+            .any(|e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("STATUS.md")));
+        let notes_written = effects
+            .iter()
+            .any(|e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("NOTES.md")));
+        let issues_written = effects
+            .iter()
+            .any(|e| matches!(e, AppEffect::WriteFile { path, .. } if path.ends_with("ISSUES.md")));
 
         assert!(
             status_written,
@@ -350,14 +332,8 @@ fn test_isolation_mode_config_false_creates_context_files() {
         let config = create_test_config_struct_with_isolation(false);
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify context files were written
         let effects = app_handler.captured();
@@ -487,14 +463,8 @@ fn test_commit_infrastructure_in_place() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify the commit infrastructure works (CreateCommit effect is called)
         let was_commit_created =

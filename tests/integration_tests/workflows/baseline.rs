@@ -111,14 +111,8 @@ fn test_pipeline_accesses_git_state() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify at least one git effect was called
         let effects = app_handler.captured();

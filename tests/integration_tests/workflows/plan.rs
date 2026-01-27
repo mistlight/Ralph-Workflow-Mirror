@@ -74,14 +74,8 @@ fn test_skips_plan_phase_when_zero_developer_iters() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify PLAN.md was never created (since planning was skipped)
         assert!(
@@ -104,14 +98,8 @@ fn test_commit_without_plan_succeeds() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify CreateCommit effect was called at the reducer layer
         let was_commit_created =

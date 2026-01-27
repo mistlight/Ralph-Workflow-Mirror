@@ -74,14 +74,8 @@ fn test_zero_reviewer_reviews_skips_review() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // ISSUES.md should NOT be created when review is skipped
         assert!(
@@ -130,14 +124,8 @@ fn test_commit_created_when_review_skipped() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        run_ralph_cli_with_handlers(
-            &[],
-            executor,
-            config,
-            &mut app_handler,
-            &mut effect_handler,
-        )
-        .unwrap();
+        run_ralph_cli_with_handlers(&[], executor, config, &mut app_handler, &mut effect_handler)
+            .unwrap();
 
         // Verify CreateCommit effect was called at the reducer layer
         let was_commit_created =
