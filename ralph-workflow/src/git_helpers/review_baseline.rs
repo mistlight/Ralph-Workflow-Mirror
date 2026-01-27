@@ -16,12 +16,10 @@
 //! This prevents "diff scope creep" where previous fix commits pollute
 //! subsequent review passes.
 
-use std::fs;
 use std::io;
 use std::path::Path;
 
-#[cfg(any(test, feature = "test-utils"))]
-use crate::workspace::Workspace;
+use crate::workspace::{Workspace, WorkspaceFs};
 
 use super::start_commit::get_current_head_oid;
 
@@ -72,32 +70,9 @@ pub fn update_review_baseline() -> io::Result<()> {
 /// - The file content is invalid
 ///
 pub fn load_review_baseline() -> io::Result<ReviewBaseline> {
-    let path = Path::new(REVIEW_BASELINE_FILE);
-    load_review_baseline_impl(path)
-}
-
-/// Implementation of load_review_baseline.
-fn load_review_baseline_impl(path: &Path) -> io::Result<ReviewBaseline> {
-    if !path.exists() {
-        return Ok(ReviewBaseline::NotSet);
-    }
-
-    let content = fs::read_to_string(path)?;
-    let raw = content.trim();
-
-    if raw.is_empty() || raw == BASELINE_NOT_SET {
-        return Ok(ReviewBaseline::NotSet);
-    }
-
-    // Parse the OID
-    let oid = git2::Oid::from_str(raw).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Invalid OID format in {}: '{}'. The review baseline will be reset. Run 'ralph --reset-start-commit' if this persists.", REVIEW_BASELINE_FILE, raw),
-        )
-    })?;
-
-    Ok(ReviewBaseline::Commit(oid))
+    // Use CWD as workspace root since this is a relative path
+    let workspace = WorkspaceFs::new(std::env::current_dir()?);
+    load_review_baseline_with_workspace(&workspace)
 }
 
 /// Get information about the current review baseline.
@@ -135,18 +110,13 @@ fn get_review_baseline_info_impl(
 
 /// Write the review baseline to disk (CWD-based, for backward compatibility).
 fn write_review_baseline_cwd(oid: &str) -> io::Result<()> {
-    let path = Path::new(REVIEW_BASELINE_FILE);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, oid)?;
-    Ok(())
+    let workspace = WorkspaceFs::new(std::env::current_dir()?);
+    write_review_baseline_with_workspace(&workspace, oid)
 }
 
 /// Write the review baseline using workspace abstraction.
 ///
 /// This is the workspace-aware version for pipeline code.
-#[cfg(any(test, feature = "test-utils"))]
 fn write_review_baseline_with_workspace(workspace: &dyn Workspace, oid: &str) -> io::Result<()> {
     workspace.write(Path::new(REVIEW_BASELINE_FILE), oid)
 }
@@ -154,7 +124,6 @@ fn write_review_baseline_with_workspace(workspace: &dyn Workspace, oid: &str) ->
 /// Load the review baseline using workspace abstraction.
 ///
 /// This is the workspace-aware version for pipeline code.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn load_review_baseline_with_workspace(
     workspace: &dyn Workspace,
 ) -> io::Result<ReviewBaseline> {
@@ -189,7 +158,6 @@ pub fn load_review_baseline_with_workspace(
 /// Update the review baseline to current HEAD using workspace abstraction.
 ///
 /// This should be called AFTER each fix pass to update the baseline.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn update_review_baseline_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     let oid = get_current_head_oid()?;
     write_review_baseline_with_workspace(workspace, &oid)

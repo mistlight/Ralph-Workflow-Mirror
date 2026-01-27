@@ -2469,7 +2469,7 @@ fn try_resolve_conflicts_with_fallback(
     let prompt_key = format!("{}_conflict_resolution", phase.to_lowercase());
     let (resolution_prompt, was_replayed) =
         get_stored_or_generate_prompt(&prompt_key, &phase_ctx.prompt_history, || {
-            build_resolution_prompt(&conflicts, ctx.template_context)
+            build_resolution_prompt(&conflicts, ctx.template_context, ctx.workspace)
         });
 
     // Capture the resolution prompt for deterministic resume (only if newly generated)
@@ -2495,7 +2495,7 @@ fn try_resolve_conflicts_with_fallback(
             // JSON is optional for verification - LibGit2 state is authoritative
             match parse_and_validate_resolved_files(&resolved_content, ctx.logger) {
                 Ok(resolved_files) => {
-                    write_resolved_files(&resolved_files, ctx.logger)?;
+                    write_resolved_files(&resolved_files, ctx.workspace, ctx.logger)?;
                 }
                 Err(_) => {
                     // JSON parsing failed - this is expected and normal
@@ -2658,26 +2658,33 @@ fn collect_conflict_info_or_error(
 }
 
 /// Build the conflict resolution prompt from context files.
+///
+/// Uses workspace abstraction for file operations, enabling testing with
+/// `MemoryWorkspace`.
 fn build_resolution_prompt(
     conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
     template_context: &TemplateContext,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> String {
-    build_enhanced_resolution_prompt(conflicts, None::<()>, template_context)
+    build_enhanced_resolution_prompt(conflicts, None::<()>, template_context, workspace)
         .unwrap_or_else(|_| String::new())
 }
 
 /// Build the conflict resolution prompt.
 ///
 /// This function uses the standard conflict resolution prompt.
+/// Uses workspace abstraction for file operations, enabling testing with
+/// `MemoryWorkspace`.
 fn build_enhanced_resolution_prompt(
     conflicts: &std::collections::HashMap<String, crate::prompts::FileConflict>,
     _branch_info: Option<()>, // Kept for API compatibility, currently unused
     template_context: &TemplateContext,
+    workspace: &dyn crate::workspace::Workspace,
 ) -> anyhow::Result<String> {
-    use std::fs;
+    use std::path::Path;
 
-    let prompt_md_content = fs::read_to_string("PROMPT.md").ok();
-    let plan_content = fs::read_to_string(".agent/PLAN.md").ok();
+    let prompt_md_content = workspace.read(Path::new("PROMPT.md")).ok();
+    let plan_content = workspace.read(Path::new(".agent/PLAN.md")).ok();
 
     // Use standard prompt
     Ok(
@@ -2852,16 +2859,20 @@ fn parse_and_validate_resolved_files(
 }
 
 /// Write resolved files to disk and stage them.
+///
+/// Uses workspace abstraction for file operations, enabling testing with
+/// `MemoryWorkspace`.
 fn write_resolved_files(
     resolved_files: &serde_json::Map<String, serde_json::Value>,
+    workspace: &dyn crate::workspace::Workspace,
     logger: &Logger,
 ) -> anyhow::Result<usize> {
-    use std::fs;
+    use std::path::Path;
 
     let mut files_written = 0;
     for (path, content) in resolved_files {
         if let Some(content_str) = content.as_str() {
-            fs::write(path, content_str).map_err(|e| {
+            workspace.write(Path::new(path), content_str).map_err(|e| {
                 logger.error(&format!("Failed to write {path}: {e}"));
                 anyhow::anyhow!("Failed to write {path}: {e}")
             })?;

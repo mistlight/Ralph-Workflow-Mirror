@@ -31,11 +31,14 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
+/// Maximum length for commit message preview in logs.
+const COMMIT_PREVIEW_MAX_LENGTH: usize = 60;
+
 /// Preview a commit message for display (first line, truncated if needed).
 fn preview_commit_message(msg: &str) -> String {
     let first_line = msg.lines().next().unwrap_or(msg);
-    if first_line.len() > 60 {
-        format!("{}...", &first_line[..60])
+    if first_line.len() > COMMIT_PREVIEW_MAX_LENGTH {
+        format!("{}...", &first_line[..COMMIT_PREVIEW_MAX_LENGTH])
     } else {
         first_line.to_string()
     }
@@ -289,6 +292,24 @@ struct DiffFile {
     lines: Vec<String>,
 }
 
+/// File prioritization weights for diff truncation.
+///
+/// Higher priority files are kept first when truncating large diffs.
+mod file_priority {
+    /// Rust source in src/ (highest priority).
+    pub const SRC_RUST: i32 = 100;
+    /// Other src/ files.
+    pub const SRC_OTHER: i32 = 80;
+    /// Config files (Cargo.toml, package.json).
+    pub const CONFIG: i32 = 60;
+    /// Default priority for unknown files.
+    pub const DEFAULT: i32 = 50;
+    /// Test files.
+    pub const TESTS: i32 = 40;
+    /// Documentation (lowest priority).
+    pub const DOCS: i32 = 20;
+}
+
 /// Assign a priority score to a file path for truncation selection.
 ///
 /// Higher priority files are kept first when truncating:
@@ -320,13 +341,13 @@ fn prioritize_file_path(path: &str) -> i32 {
 
     // Source code files (highest priority)
     if path_lower.contains("src/") && has_ext_lower("rs") {
-        100
+        file_priority::SRC_RUST
     } else if path_lower.contains("src/") {
-        80
+        file_priority::SRC_OTHER
     }
     // Test files
     else if path_lower.contains("test") {
-        40
+        file_priority::TESTS
     }
     // Config files - use case-insensitive extension check
     else if has_ext("toml")
@@ -335,15 +356,15 @@ fn prioritize_file_path(path: &str) -> i32 {
         || path_lower.ends_with("package.json")
         || path_lower.ends_with("tsconfig.json")
     {
-        60
+        file_priority::CONFIG
     }
     // Documentation files (lowest priority)
     else if path_lower.contains("doc") || has_ext("md") {
-        20
+        file_priority::DOCS
     }
     // Default priority
     else {
-        50
+        file_priority::DEFAULT
     }
 }
 

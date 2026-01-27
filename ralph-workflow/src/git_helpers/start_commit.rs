@@ -15,12 +15,10 @@
 //! The starting commit file persists across pipeline runs unless explicitly
 //! reset by the user via the `--reset-start-commit` CLI command.
 
-use std::fs;
 use std::io;
 use std::path::Path;
 
-#[cfg(any(test, feature = "test-utils"))]
-use crate::workspace::Workspace;
+use crate::workspace::{Workspace, WorkspaceFs};
 
 /// Path to the starting commit file.
 ///
@@ -123,38 +121,23 @@ fn save_start_commit_impl(repo: &git2::Repository, repo_root: &Path) -> io::Resu
 }
 
 fn write_start_commit_with_oid(repo_root: &Path, oid: &str) -> io::Result<()> {
-    // Ensure .agent directory exists
-    let path = repo_root.join(START_COMMIT_FILE);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    // Write the OID to the file
-    fs::write(&path, oid)?;
-
-    Ok(())
+    let workspace = WorkspaceFs::new(repo_root.to_path_buf());
+    workspace.write(Path::new(START_COMMIT_FILE), oid)
 }
 
 fn write_start_point(repo_root: &Path, start_point: StartPoint) -> io::Result<()> {
-    match start_point {
-        StartPoint::Commit(oid) => write_start_commit_with_oid(repo_root, &oid.to_string()),
-        StartPoint::EmptyRepo => {
-            // Ensure .agent directory exists
-            let path = repo_root.join(START_COMMIT_FILE);
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&path, EMPTY_REPO_SENTINEL)?;
-            Ok(())
-        }
-    }
+    let content = match start_point {
+        StartPoint::Commit(oid) => oid.to_string(),
+        StartPoint::EmptyRepo => EMPTY_REPO_SENTINEL.to_string(),
+    };
+    let workspace = WorkspaceFs::new(repo_root.to_path_buf());
+    workspace.write(Path::new(START_COMMIT_FILE), &content)
 }
 
 /// Write start point to file using workspace abstraction.
 ///
 /// This is the workspace-aware version that should be used in pipeline code
 /// where a workspace is available.
-#[cfg(any(test, feature = "test-utils"))]
 fn write_start_point_with_workspace(
     workspace: &dyn Workspace,
     start_point: StartPoint,
@@ -174,7 +157,6 @@ fn write_start_point_with_workspace(
 ///
 /// This is the workspace-aware version for pipeline code where git operations
 /// are needed for validation.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn load_start_point_with_workspace(
     workspace: &dyn Workspace,
     repo: &git2::Repository,
@@ -229,7 +211,6 @@ pub fn load_start_point_with_workspace(
 ///
 /// This is the workspace-aware version for pipeline code where a workspace
 /// is available. If a valid start commit already exists, it is preserved.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn save_start_commit_with_workspace(
     workspace: &dyn Workspace,
     repo: &git2::Repository,
@@ -268,49 +249,8 @@ pub fn load_start_point() -> io::Result<StartPoint> {
 
 /// Implementation of load_start_point.
 fn load_start_point_impl(repo: &git2::Repository, repo_root: &Path) -> io::Result<StartPoint> {
-    let path = repo_root.join(START_COMMIT_FILE);
-    let content = fs::read_to_string(&path)?;
-
-    let raw = content.trim();
-
-    if raw.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Starting commit file is empty. Run 'ralph --reset-start-commit' to fix.",
-        ));
-    }
-
-    if raw == EMPTY_REPO_SENTINEL {
-        return Ok(StartPoint::EmptyRepo);
-    }
-
-    // Validate OID format using libgit2.
-    // git2::Oid::from_str automatically validates both SHA-1 (40 hex chars) and
-    // SHA-256 (64 hex chars) formats, as well as abbreviated forms.
-    let oid = git2::Oid::from_str(raw).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Invalid OID format in {}: '{}'. Run 'ralph --reset-start-commit' to fix.",
-                START_COMMIT_FILE, raw
-            ),
-        )
-    })?;
-
-    // Ensure the commit still exists in this repository (history may have been rewritten).
-    repo.find_commit(oid).map_err(|e| {
-        let err_msg = e.message();
-        if err_msg.contains("not found") || err_msg.contains("invalid") {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("Start commit '{}' no longer exists (history rewritten). Run 'ralph --reset-start-commit' to fix.", raw),
-            )
-        } else {
-            to_io_error(&e)
-        }
-    })?;
-
-    Ok(StartPoint::Commit(oid))
+    let workspace = WorkspaceFs::new(repo_root.to_path_buf());
+    load_start_point_with_workspace(&workspace, repo)
 }
 
 /// Result of resetting the start commit.

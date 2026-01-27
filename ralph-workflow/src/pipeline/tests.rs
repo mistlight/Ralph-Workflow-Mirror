@@ -201,7 +201,15 @@ fn run_with_fallback_handles_command_not_found() {
     // Use MockProcessExecutor for agent and git commands.
     // Configure primary agent (printf) to fail with exit code 127 (command not found)
     // and fallback agent (echo) to succeed.
-    // TODO: This test is incomplete - need to actually call the pipeline to exercise fallback behavior
+    //
+    // NOTE: This test is incomplete. To properly test fallback behavior, we would need to:
+    // 1. Create a workspace with PROMPT.md
+    // 2. Call run_with_fallback_and_validator with the mock executor
+    // 3. Assert that the fallback agent (echo) was used after primary (printf) failed
+    //
+    // The test setup is preserved for documentation purposes, showing how to configure
+    // the mock executor for command-not-found scenarios. See run_with_fallback_uses_chain_on_failure
+    // for a working example of fallback testing.
     let _mock_executor = crate::executor::MockProcessExecutor::new()
         .with_output("git", "")
         .with_output("cargo", "")

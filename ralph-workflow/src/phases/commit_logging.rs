@@ -17,6 +17,12 @@ use std::path::{Path, PathBuf};
 
 use crate::workspace::Workspace;
 
+/// Maximum length for log line preview in commit logging.
+const LOG_LINE_PREVIEW_LENGTH: usize = 60;
+
+/// Maximum length for agent name in filenames (to avoid path length issues).
+const MAX_AGENT_NAME_LENGTH: usize = 20;
+
 /// Represents a single step in the parsing trace log.
 #[derive(Debug, Clone)]
 pub struct ParsingTraceStep {
@@ -416,8 +422,8 @@ impl std::fmt::Display for AttemptOutcome {
 /// Preview a message, truncating if too long.
 fn preview_message(msg: &str) -> String {
     let first_line = msg.lines().next().unwrap_or(msg);
-    if first_line.len() > 60 {
-        format!("{}...", &first_line[..60])
+    if first_line.len() > LOG_LINE_PREVIEW_LENGTH {
+        format!("{}...", &first_line[..LOG_LINE_PREVIEW_LENGTH])
     } else {
         first_line.to_string()
     }
@@ -733,7 +739,7 @@ fn sanitize_agent_name(agent: &str) -> String {
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
         .collect::<String>()
         .chars()
-        .take(20)
+        .take(MAX_AGENT_NAME_LENGTH)
         .collect()
 }
 

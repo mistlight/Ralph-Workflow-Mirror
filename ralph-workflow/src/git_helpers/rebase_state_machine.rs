@@ -11,6 +11,8 @@ use std::io;
 use std::io::Write;
 use std::path::Path;
 
+use crate::workspace::{Workspace, WorkspaceFs};
+
 use super::rebase_checkpoint::{
     clear_rebase_checkpoint, load_rebase_checkpoint, rebase_checkpoint_exists,
     save_rebase_checkpoint, RebaseCheckpoint, RebasePhase,
@@ -132,14 +134,26 @@ impl RebaseStateMachine {
     ///
     /// Returns `Ok(state_machine)` with either backup loaded or fresh state.
     fn try_load_backup_or_create(upstream_branch: String) -> io::Result<Self> {
+        let workspace = WorkspaceFs::new(std::env::current_dir()?);
+        Self::try_load_backup_or_create_with_workspace(&workspace, upstream_branch)
+    }
+
+    /// Load backup checkpoint or create fresh state using workspace abstraction.
+    ///
+    /// This is the workspace-aware version for pipeline code.
+    fn try_load_backup_or_create_with_workspace(
+        workspace: &dyn Workspace,
+        upstream_branch: String,
+    ) -> io::Result<Self> {
         use super::rebase_checkpoint::rebase_checkpoint_backup_path;
 
-        let backup_path = rebase_checkpoint_backup_path();
+        let backup_path_str = rebase_checkpoint_backup_path();
+        let backup_path = Path::new(&backup_path_str);
 
         // Check if backup exists
-        if Path::new(&backup_path).exists() {
+        if workspace.exists(backup_path) {
             // Try to load the backup checkpoint directly
-            match fs::read_to_string(&backup_path) {
+            match workspace.read(backup_path) {
                 Ok(content) => match serde_json::from_str::<RebaseCheckpoint>(&content) {
                     Ok(checkpoint) => {
                         eprintln!("Successfully recovered from backup checkpoint");

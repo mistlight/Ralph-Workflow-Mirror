@@ -1,5 +1,7 @@
 # AGENTS.md
 
+ALWAYS USE test-driven-development!
+
 This repository welcomes automated code assistants (“agents”) and human contributors.
 Follow these rules so changes stay safe, consistent, and easy to review.
 

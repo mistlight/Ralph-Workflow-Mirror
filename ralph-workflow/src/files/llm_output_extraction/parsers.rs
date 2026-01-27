@@ -142,6 +142,28 @@ fn extract_claude_result(content: &str) -> Option<String> {
     last_result.or(last_assistant_text)
 }
 
+/// Extract agent message text from a Codex item.completed event JSON.
+///
+/// Returns `Some(text)` if the JSON contains a valid agent message with non-empty text.
+fn extract_codex_message_text(json: &JsonValue) -> Option<&str> {
+    let type_field = json.get("type")?.as_str()?;
+    if type_field != "item.completed" {
+        return None;
+    }
+
+    let item = json.get("item")?;
+    if item.get("type")?.as_str()? != "agent_message" {
+        return None;
+    }
+
+    let text = item.get("text")?.as_str()?;
+    if text.trim().is_empty() {
+        return None;
+    }
+
+    Some(text)
+}
+
 /// Extract result from Codex CLI NDJSON output.
 ///
 /// Codex outputs JSONL with item events. The result comes from:
@@ -155,22 +177,13 @@ fn extract_codex_result(content: &str) -> Option<String> {
             continue;
         }
 
-        if let Ok(json) = serde_json::from_str::<JsonValue>(line) {
-            if let Some(type_field) = json.get("type").and_then(|v| v.as_str()) {
-                if type_field == "item.completed" {
-                    if let Some(item) = json.get("item") {
-                        if item.get("type").and_then(|v| v.as_str()) == Some("agent_message") {
-                            if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
-                                if !text.trim().is_empty() {
-                                    // Apply thought process filtering
-                                    let filtered = remove_thought_process_patterns(text);
-                                    last_message = Some(filtered);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        let Ok(json) = serde_json::from_str::<JsonValue>(line) else {
+            continue;
+        };
+
+        if let Some(text) = extract_codex_message_text(&json) {
+            let filtered = remove_thought_process_patterns(text);
+            last_message = Some(filtered);
         }
     }
 
@@ -220,6 +233,24 @@ fn extract_gemini_result(content: &str) -> Option<String> {
     last_assistant_content.map(|content| remove_thought_process_patterns(&content))
 }
 
+/// Extract text from an OpenCode text event JSON.
+///
+/// Returns `Some(text)` if the JSON contains a valid text part with non-empty content.
+fn extract_opencode_text_part(json: &JsonValue) -> Option<&str> {
+    let type_field = json.get("type")?.as_str()?;
+    if type_field != "text" {
+        return None;
+    }
+
+    let part = json.get("part")?;
+    let text = part.get("text")?.as_str()?;
+    if text.trim().is_empty() {
+        return None;
+    }
+
+    Some(text)
+}
+
 /// Extract result from `OpenCode` CLI NDJSON output.
 ///
 /// `OpenCode` outputs JSONL with nested part structures. The result comes from:
@@ -233,21 +264,15 @@ fn extract_opencode_result(content: &str) -> Option<String> {
             continue;
         }
 
-        if let Ok(json) = serde_json::from_str::<JsonValue>(line) {
-            if let Some(type_field) = json.get("type").and_then(|v| v.as_str()) {
-                if type_field == "text" {
-                    if let Some(part) = json.get("part") {
-                        if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                            if !text.trim().is_empty() {
-                                if !accumulated_text.is_empty() {
-                                    accumulated_text.push(' ');
-                                }
-                                accumulated_text.push_str(text.trim());
-                            }
-                        }
-                    }
-                }
+        let Ok(json) = serde_json::from_str::<JsonValue>(line) else {
+            continue;
+        };
+
+        if let Some(text) = extract_opencode_text_part(&json) {
+            if !accumulated_text.is_empty() {
+                accumulated_text.push(' ');
             }
+            accumulated_text.push_str(text.trim());
         }
     }
 
