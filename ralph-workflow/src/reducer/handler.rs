@@ -564,10 +564,23 @@ impl MainEffectHandler {
             max_cycles
         ));
 
-        Ok(EffectResult::event(PipelineEvent::AgentChainInitialized {
-            role,
-            agents,
-        }))
+        let event = PipelineEvent::AgentChainInitialized { role, agents };
+
+        // Emit phase transition when entering a new major phase
+        let ui_events = match role {
+            AgentRole::Developer if self.state.phase == PipelinePhase::Planning => {
+                vec![UIEvent::PhaseTransition {
+                    from: None,
+                    to: PipelinePhase::Planning,
+                }]
+            }
+            AgentRole::Reviewer if self.state.phase == PipelinePhase::Review => {
+                vec![self.phase_transition_ui(PipelinePhase::Review)]
+            }
+            _ => vec![],
+        };
+
+        Ok(EffectResult::with_ui(event, ui_events))
     }
 
     fn cleanup_context(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {

@@ -255,3 +255,149 @@ fn test_captured_ui_events_cleared_on_clear() {
         assert_eq!(handler.effect_count(), 0, "Effects should be cleared");
     });
 }
+
+#[test]
+fn test_pipeline_start_emits_planning_phase_transition() {
+    with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRole;
+
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        // CleanupContext is the first effect in Planning phase
+        let _result = handler.execute_mock(Effect::CleanupContext);
+
+        // Should NOT emit phase transition for cleanup
+        assert!(
+            !handler.was_ui_event_emitted(|e| matches!(e, UIEvent::PhaseTransition { .. })),
+            "CleanupContext should not emit phase transition"
+        );
+
+        // Clear and test InitializeAgentChain
+        handler.clear_captured();
+        let _result = handler.execute_mock(Effect::InitializeAgentChain {
+            role: AgentRole::Developer,
+        });
+
+        // InitializeAgentChain in Planning phase should emit Planning transition
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::PhaseTransition {
+                    from: None,
+                    to: PipelinePhase::Planning,
+                }
+            )),
+            "InitializeAgentChain should emit Planning phase transition"
+        );
+    });
+}
+
+#[test]
+fn test_review_phase_start_emits_phase_transition() {
+    with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRole;
+
+        // Create state already in Review phase (simulates after Development completes)
+        // Using (0, 1) sets phase to Review since developer_iters is 0
+        let state = PipelineState::initial(0, 1);
+        assert_eq!(state.phase, PipelinePhase::Review);
+
+        let mut handler = MockEffectHandler::new(state);
+
+        // InitializeAgentChain for Reviewer should emit Review phase transition
+        let _result = handler.execute_mock(Effect::InitializeAgentChain {
+            role: AgentRole::Reviewer,
+        });
+
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::PhaseTransition {
+                    to: PipelinePhase::Review,
+                    ..
+                }
+            )),
+            "InitializeAgentChain for Reviewer should emit Review phase transition"
+        );
+    });
+}
+
+#[test]
+fn test_complete_phase_transition_sequence() {
+    with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRole;
+
+        let state = PipelineState::initial(1, 1);
+        let mut handler = MockEffectHandler::new(state);
+        let mut all_ui_events = Vec::new();
+
+        // 1. Planning phase (via InitializeAgentChain)
+        let result = handler.execute_mock(Effect::InitializeAgentChain {
+            role: AgentRole::Developer,
+        });
+        all_ui_events.extend(result.ui_events);
+
+        // 2. Development phase (via GeneratePlan success)
+        let result = handler.execute_mock(Effect::GeneratePlan { iteration: 1 });
+        all_ui_events.extend(result.ui_events);
+
+        // Update handler state to Review phase
+        handler.state.phase = PipelinePhase::Review;
+
+        // 3. Review phase (via InitializeAgentChain for Reviewer)
+        let result = handler.execute_mock(Effect::InitializeAgentChain {
+            role: AgentRole::Reviewer,
+        });
+        all_ui_events.extend(result.ui_events);
+
+        // Update state for final validation
+        handler.state.phase = PipelinePhase::FinalValidation;
+
+        // 4. Finalizing phase
+        let result = handler.execute_mock(Effect::ValidateFinalState);
+        all_ui_events.extend(result.ui_events);
+
+        // Update state for finalizing
+        handler.state.phase = PipelinePhase::Finalizing;
+
+        // 5. Complete phase
+        let result = handler.execute_mock(Effect::RestorePromptPermissions);
+        all_ui_events.extend(result.ui_events);
+
+        // Verify all expected phase transitions
+        let phase_transitions: Vec<_> = all_ui_events
+            .iter()
+            .filter_map(|e| match e {
+                UIEvent::PhaseTransition { to, .. } => Some(*to),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            phase_transitions.contains(&PipelinePhase::Planning),
+            "Should emit Planning transition, got: {:?}",
+            phase_transitions
+        );
+        assert!(
+            phase_transitions.contains(&PipelinePhase::Development),
+            "Should emit Development transition, got: {:?}",
+            phase_transitions
+        );
+        assert!(
+            phase_transitions.contains(&PipelinePhase::Review),
+            "Should emit Review transition, got: {:?}",
+            phase_transitions
+        );
+        assert!(
+            phase_transitions.contains(&PipelinePhase::Finalizing),
+            "Should emit Finalizing transition, got: {:?}",
+            phase_transitions
+        );
+        assert!(
+            phase_transitions.contains(&PipelinePhase::Complete),
+            "Should emit Complete transition, got: {:?}",
+            phase_transitions
+        );
+    });
+}

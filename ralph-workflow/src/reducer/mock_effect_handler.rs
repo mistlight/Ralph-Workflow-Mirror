@@ -144,13 +144,35 @@ impl MockEffectHandler {
                 (PipelineEvent::AgentInvocationSucceeded { role, agent }, ui)
             }
 
-            Effect::InitializeAgentChain { role } => (
-                PipelineEvent::AgentChainInitialized {
-                    role,
-                    agents: vec!["mock_agent".to_string()],
-                },
-                vec![],
-            ),
+            Effect::InitializeAgentChain { role } => {
+                // Emit phase transition when initializing agent chain for a new phase
+                let ui = match role {
+                    crate::agents::AgentRole::Developer
+                        if self.state.phase == PipelinePhase::Planning =>
+                    {
+                        vec![UIEvent::PhaseTransition {
+                            from: None,
+                            to: PipelinePhase::Planning,
+                        }]
+                    }
+                    crate::agents::AgentRole::Reviewer
+                        if self.state.phase == PipelinePhase::Review =>
+                    {
+                        vec![UIEvent::PhaseTransition {
+                            from: Some(self.state.phase),
+                            to: PipelinePhase::Review,
+                        }]
+                    }
+                    _ => vec![],
+                };
+                (
+                    PipelineEvent::AgentChainInitialized {
+                        role,
+                        agents: vec!["mock_agent".to_string()],
+                    },
+                    ui,
+                )
+            }
 
             Effect::GeneratePlan { iteration } => {
                 let ui = vec![UIEvent::PhaseTransition {
