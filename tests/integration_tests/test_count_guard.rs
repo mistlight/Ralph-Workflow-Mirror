@@ -25,6 +25,13 @@
 //! cargo test -p ralph-workflow-tests -- --list 2>&1 | grep -c ': test$'
 //! ```
 //!
+//! To feed the compiled test count into this guard test without spawning
+//! processes, set `RALPH_INTEGRATION_TEST_LIST_COUNT` to the `--list` count:
+//! ```bash
+//! RALPH_INTEGRATION_TEST_LIST_COUNT=$(cargo test -p ralph-workflow-tests -- --list 2>&1 | grep -c ': test$') \
+//!   cargo test -p ralph-workflow-tests
+//! ```
+//!
 //! The compliance check script (`compliance_check.sh`) verifies the compiled
 //! test list using the same minimum floor defined here.
 //!
@@ -333,6 +340,11 @@ fn count_tests_from_module_tree() -> usize {
     count_tests_recursive("main.rs", "", main_contents, &mut visited)
 }
 
+fn compiled_test_count_from_env() -> Option<usize> {
+    let value = std::env::var("RALPH_INTEGRATION_TEST_LIST_COUNT").ok()?;
+    value.trim().parse::<usize>().ok()
+}
+
 fn count_tests_recursive(
     file_path: &str,
     module_dir: &str,
@@ -374,6 +386,18 @@ fn integration_test_count_guard_documentation() {
         assert!(
             actual_count >= MINIMUM_EXPECTED_TESTS,
             "Source scan found {actual_count} #[test] annotations; expected at least {MINIMUM_EXPECTED_TESTS}"
+        );
+
+        let compiled_count = compiled_test_count_from_env().unwrap_or_else(|| {
+            panic!(
+                "Missing RALPH_INTEGRATION_TEST_LIST_COUNT env var. \
+Set it to the `cargo test -p ralph-workflow-tests -- --list` count to validate compiled test discovery."
+            )
+        });
+        assert!(
+            compiled_count >= MINIMUM_EXPECTED_TESTS,
+            "Compiled test list count {compiled_count} is below MINIMUM_EXPECTED_TESTS ({MINIMUM_EXPECTED_TESTS}). \
+Ensure you're running `cargo test -p ralph-workflow-tests`."
         );
     });
 }
