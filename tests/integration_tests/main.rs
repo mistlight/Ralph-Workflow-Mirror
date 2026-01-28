@@ -45,6 +45,7 @@ mod reducer_state_machine;
 mod review_output_validation;
 mod review_xml_validation;
 mod review_xsd_retry_session;
+mod test_count_guard;
 mod test_timeout;
 mod test_traits;
 mod ui_events;

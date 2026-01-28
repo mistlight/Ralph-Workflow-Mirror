@@ -3,7 +3,22 @@
 //! These tests require real filesystem access to large fixture files that
 //! are impractical to embed at compile time.
 //!
-//! # Why System Tests
+//! # RFC: Deduplication System Tests Justification
+//!
+//! ## Current Status: PENDING MIGRATION
+//!
+//! This module is scheduled for migration to integration tests. The only reason
+//! it currently uses real filesystem is the large fixture file size (1.3MB).
+//!
+//! ## Migration Plan
+//!
+//! Options for migration:
+//! 1. Compress fixture with gzip, decompress at runtime using flate2
+//! 2. Split fixture into smaller chunks
+//! 3. Use `include_bytes!` with compression
+//! 4. Generate synthetic test data that exercises the same code paths
+//!
+//! ## Why This Test Is Currently Here
 //!
 //! The fixture file `PROMPT-LOG.log` is 1.3MB - too large for `include_str!`.
 //! Using real filesystem read is acceptable here because:
@@ -11,10 +26,16 @@
 //! - The test gracefully skips if the fixture is not found
 //! - Testing production log parsing is valuable for regression testing
 //!
+//! ## Boundary Being Tested
+//!
+//! This test does NOT test a boundary implementation. It tests parser logic
+//! with realistic data. Once migrated, it should use `MemoryWorkspace` or
+//! embedded fixtures.
+//!
 //! # Running
 //!
 //! ```bash
-//! cargo test -p ralph-workflow-system-tests -- deduplication
+//! cargo test -p ralph-workflow-tests --test ralph-workflow-system-tests -- deduplication
 //! ```
 
 use std::cell::RefCell;

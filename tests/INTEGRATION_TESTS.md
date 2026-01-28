@@ -2,6 +2,22 @@
 
 **Read before writing ANY test.** Real filesystem/git → [SYSTEM_TESTS.md](system_tests/SYSTEM_TESTS.md).
 
+## Running Integration Tests
+
+**IMPORTANT:** Always use the explicit package command:
+
+```bash
+# Run integration tests (400+ tests) - THIS IS THE DEFAULT FOR CI
+cargo test -p ralph-workflow-tests
+
+# DO NOT use just `cargo test` - it runs everything including system tests
+# DO NOT confuse with system tests (ralph-workflow-system-tests)
+```
+
+If you see significantly fewer tests (e.g., ~130), you may be running
+system tests instead. Check your command and ensure you're targeting
+`ralph-workflow-tests`.
+
 ## Architecture Context
 
 Ralph uses a **reducer architecture** with two effect layers:

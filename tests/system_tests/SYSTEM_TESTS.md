@@ -41,15 +41,26 @@ System tests are **NOT** appropriate for:
 
 ## Running System Tests
 
+> **Warning: System Tests Are NOT CI Tests**
+>
+> System tests are **NOT** part of CI. They are run manually for boundary validation.
+>
+> If you accidentally run system tests instead of integration tests, you'll see:
+> - ~130 tests instead of 400+
+> - Tests creating real git repositories
+> - Potentially slow tests on disk
+>
+> **For CI/PR verification, always use:** `cargo test -p ralph-workflow-tests`
+
 ```bash
 # Run system tests (not part of CI)
-cargo test -p ralph-workflow-system-tests
+cargo test -p ralph-workflow-tests --test ralph-workflow-system-tests
 
 # Run with verbose output
-cargo test -p ralph-workflow-system-tests -- --nocapture
+cargo test -p ralph-workflow-tests --test ralph-workflow-system-tests -- --nocapture
 
 # Run specific test module
-cargo test -p ralph-workflow-system-tests -- rebase::edge_cases
+cargo test -p ralph-workflow-tests --test ralph-workflow-system-tests -- rebase::edge_cases
 ```
 
 ## NOT Allowed

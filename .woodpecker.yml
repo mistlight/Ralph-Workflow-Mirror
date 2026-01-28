@@ -8,4 +8,9 @@ steps:
       - rustup component add rustfmt clippy
       - cargo fmt -- --check
       - cargo clippy --all-targets -- -D warnings
-      - cargo test
+      # Unit tests for main crate
+      - cargo test -p ralph-workflow --lib --all-features
+      # Integration tests (mandatory - 437+ tests)
+      - cargo test -p ralph-workflow-tests
+      # Note: System tests (ralph-workflow-system-tests) are NOT run in CI
+      # They require real git/filesystem and are run manually as needed

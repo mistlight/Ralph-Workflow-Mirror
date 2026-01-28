@@ -161,6 +161,33 @@ else
 fi
 
 # ============================================================================
+# Check minimum integration test count
+# ============================================================================
+
+echo "Checking integration test count..."
+
+EXPECTED_MIN_TESTS=400
+# Count tests by running cargo test --list and counting lines ending in ": test"
+# Use the repository root to run cargo commands
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ACTUAL_TEST_COUNT=$(cd "$REPO_ROOT" && cargo test -p ralph-workflow-tests -- --list 2>&1 | grep -c ': test$' || echo "0")
+
+if [ "$ACTUAL_TEST_COUNT" -lt "$EXPECTED_MIN_TESTS" ]; then
+    echo -e "${RED}✗ Integration test count too low: $ACTUAL_TEST_COUNT (expected >= $EXPECTED_MIN_TESTS)${NC}"
+    echo
+    echo "This may indicate:"
+    echo "  - Tests were accidentally removed"
+    echo "  - A test module is not being compiled"
+    echo "  - You're running the wrong test target"
+    echo
+    echo "Verify you're running: cargo test -p ralph-workflow-tests"
+    exit 1
+else
+    echo -e "${GREEN}✓ Integration test count: $ACTUAL_TEST_COUNT (>= $EXPECTED_MIN_TESTS)${NC}"
+    echo
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 
@@ -169,4 +196,5 @@ file_count=$(wc -l < "$TEMP_OUTPUT" | tr -d ' ')
 echo "  - Checked $file_count test file(s)"
 echo "  - All tests properly wrapped with timeout wrapper (with_default_timeout or with_timeout)"
 echo "  - No process spawning violations detected"
+echo "  - Integration test count: $ACTUAL_TEST_COUNT (>= $EXPECTED_MIN_TESTS)"
 exit 0
