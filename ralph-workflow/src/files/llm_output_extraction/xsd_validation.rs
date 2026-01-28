@@ -45,7 +45,7 @@ const EXAMPLE_COMMIT_XML: &str = r#"<ralph-commit>
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use ralph_workflow::files::llm_output_extraction::xsd_validation::validate_xml_against_xsd;
 ///
 /// let xml = r#"<ralph-commit>

@@ -1,6 +1,6 @@
 # Ralph Workflow
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 
 **Ralph Workflow is an unattended AI agent orchestrator for long-running development tasks.** Write a detailed specification in `PROMPT.md`, start Ralph, and walk away. It coordinates AI agents through multiple development iterations and review cycles, producing commits automatically.
@@ -59,13 +59,17 @@ Ralph makes **deterministic decisions whenever possible**, only calling on AI wh
 ```bash
 git clone https://codeberg.org/mistlight/RalphWithReviewer.git
 cd RalphWithReviewer
-cargo install --path .
-make install # (if you want to install this system wide)
+
+# Install from source
+cargo install --path ralph-workflow --locked
+
+# Or build + install via Makefile
+make install-local
 ```
 
 Alternatively you can use cargo crate
 ```bash
-cargo install ralph-workflow
+cargo install ralph-workflow --locked
 ```
 
 ### 2. Install AI Agents
@@ -229,10 +233,10 @@ Environment variables override config:
 
 ## Documentation
 
-- **[Quick Reference](docs/quick-reference.md)** - Cheat sheet for commands and flags
-- **[Agent Compatibility](docs/agent-compatibility.md)** - Supported AI agents
-- **[Git Workflow](docs/git-workflow.md)** - How Ralph handles commits and diffs
-- **[Work Guide Reference](docs/template-guide.md)** - PROMPT.md Work Guides (templates for your tasks)
+- **[Quick Reference](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/quick-reference.md)** - Cheat sheet for commands and flags
+- **[Agent Compatibility](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/agent-compatibility.md)** - Supported AI agents
+- **[Git Workflow](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/git-workflow.md)** - How Ralph handles commits and diffs
+- **[Work Guide Reference](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/template-guide.md)** - PROMPT.md Work Guides (templates for your tasks)
 
 ## FAQ
 
@@ -248,6 +252,21 @@ No. The AGPL covers only Ralph itself, not your code or Ralph's output.
 
 Use `ralph --resume` to continue from the last checkpoint.
 
+## Cargo Features
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `monitoring` | Yes | Enable streaming metrics and debugging APIs |
+| `test-utils` | No | Enable test utilities (TestLogger, TestPrinter, MemoryWorkspace) |
+| `hardened-resume` | Yes | Enable execution history and file state capture for recovery |
+
+To use `test-utils` for integration testing:
+
+```toml
+[dev-dependencies]
+ralph-workflow = { version = "0.6", features = ["test-utils"] }
+```
+
 ## Contributing
 
 Contributions welcome!
@@ -260,4 +279,4 @@ Contributions welcome!
 
 ## License
 
-AGPL-3.0. See [LICENSE](LICENSE).
+AGPL-3.0. See [LICENSE](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/LICENSE).

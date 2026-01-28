@@ -6,9 +6,9 @@
 //!
 //! # Module Structure
 //!
-//! - [`types`] - API catalog data structures
-//! - [`cache`] - File-based caching with TTL
-//! - [`fetch`] - HTTP fetching logic
+//! - `types` - API catalog data structures
+//! - `cache` - File-based caching with TTL
+//! - `fetch` - HTTP fetching logic
 //!
 //! # Dependency Injection
 //!

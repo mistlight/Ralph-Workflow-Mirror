@@ -37,6 +37,21 @@ Never mix. AppEffect cannot use Workspace; Effect cannot use `std::fs`.
 
 ---
 
+## Glossary
+
+| Term | Definition |
+|------|------------|
+| **Effect** | A side-effect operation (git, filesystem, agent execution) that handlers execute |
+| **Reducer** | Pure function: `(State, Event) → State` with no side effects |
+| **Workspace** | Filesystem abstraction trait - use `WorkspaceFs` in production, `MemoryWorkspace` in tests |
+| **Phase** | Pipeline stage: Planning, Development, Review, Commit |
+| **Agent Chain** | Ordered fallback list of agents - Ralph tries next agent on failure |
+| **CCS** | Claude Code Switch - tool for switching between Claude Code profiles |
+| **NDJSON** | Newline-delimited JSON - streaming format used by agent CLIs |
+| **XSD** | XML Schema Definition - used to validate agent XML output |
+
+---
+
 ## Design Principles
 
 - **High cohesion**: Code that changes together lives together

@@ -9,11 +9,11 @@
 //!
 //! # Module Structure
 //!
-//! - [`args`] - Args struct with clap configuration
+//! - `args` - Args struct with clap configuration
 //! - [`presets`] - Preset enum and `apply_args_to_config`
-//! - [`providers`] - Provider listing and info display
-//! - [`handlers`] - Command handlers (list-agents, diagnose, dry-run, template-selection)
-//! - [`init`] - Config initialization handlers (--init, --init-global, --init-legacy)
+//! - `providers` - Provider listing and info display
+//! - `handlers` - Command handlers (list-agents, diagnose, dry-run, template-selection)
+//! - `init` - Config initialization handlers (--init, --init-global, --init-legacy)
 
 mod args;
 mod completions;

@@ -10,8 +10,8 @@
 //! 2. Executes effects through the handler
 //! 3. Returns strongly-typed results
 //!
-//! In production, use [`RealAppEffectHandler`] for actual I/O.
-//! In tests, use [`MockAppEffectHandler`] to verify behavior without side effects.
+//! In production, use `RealAppEffectHandler` for actual I/O.
+//! In tests, use `MockAppEffectHandler` to verify behavior without side effects.
 //!
 //! # Example
 //!

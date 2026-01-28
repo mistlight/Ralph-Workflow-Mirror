@@ -9,7 +9,7 @@
 //!
 //! # Architecture
 //!
-//! ```
+//! ```text
 //! ┌──────────────────────────────────────────────────┐
 //! │                     Pipeline State                        │
 //! │  (immutable: phase, iteration, agent_chain, history)     │

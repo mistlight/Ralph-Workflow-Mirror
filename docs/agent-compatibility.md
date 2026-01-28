@@ -672,4 +672,4 @@ If you test Ralph with an agent not listed here, please contribute your findings
 
 ---
 
-Last updated: 2026-01-12
+Last updated: 2026-01-28

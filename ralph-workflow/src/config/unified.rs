@@ -368,9 +368,9 @@ impl UnifiedConfig {
         Self::load_with_env(&super::path_resolver::RealConfigEnvironment)
     }
 
-    /// Load unified configuration using a [`ConfigEnvironment`].
+    /// Load unified configuration using a `ConfigEnvironment`.
     ///
-    /// This is the testable version of [`load_default`]. It reads from the
+    /// This is the testable version of `load_default`. It reads from the
     /// unified config path as determined by the environment.
     ///
     /// Returns None if no config path is available or the file doesn't exist.
@@ -387,16 +387,16 @@ impl UnifiedConfig {
     /// Load unified configuration from a specific path.
     ///
     /// **Note:** This method uses `std::fs` directly. For testable code,
-    /// use [`load_from_path_with_env`] with a [`ConfigEnvironment`] instead.
+    /// use `load_from_path_with_env` with a `ConfigEnvironment` instead.
     pub fn load_from_path(path: &std::path::Path) -> Result<Self, ConfigLoadError> {
         let contents = std::fs::read_to_string(path)?;
         let config: Self = toml::from_str(&contents)?;
         Ok(config)
     }
 
-    /// Load unified configuration from a specific path using a [`ConfigEnvironment`].
+    /// Load unified configuration from a specific path using a `ConfigEnvironment`.
     ///
-    /// This is the testable version of [`load_from_path`].
+    /// This is the testable version of `load_from_path`.
     pub fn load_from_path_with_env(
         path: &std::path::Path,
         env: &dyn super::path_resolver::ConfigEnvironment,
@@ -415,9 +415,9 @@ impl UnifiedConfig {
         Self::ensure_config_exists_with_env(&super::path_resolver::RealConfigEnvironment)
     }
 
-    /// Ensure unified config file exists using a [`ConfigEnvironment`].
+    /// Ensure unified config file exists using a `ConfigEnvironment`.
     ///
-    /// This is the testable version of [`ensure_config_exists`].
+    /// This is the testable version of `ensure_config_exists`.
     pub fn ensure_config_exists_with_env(
         env: &dyn super::path_resolver::ConfigEnvironment,
     ) -> io::Result<ConfigInitResult> {
@@ -437,9 +437,9 @@ impl UnifiedConfig {
         Self::ensure_config_exists_at_with_env(path, &super::path_resolver::RealConfigEnvironment)
     }
 
-    /// Ensure a config file exists at the specified path using a [`ConfigEnvironment`].
+    /// Ensure a config file exists at the specified path using a `ConfigEnvironment`.
     ///
-    /// This is the testable version of [`ensure_config_exists_at`].
+    /// This is the testable version of `ensure_config_exists_at`.
     pub fn ensure_config_exists_at_with_env(
         path: &std::path::Path,
         env: &dyn super::path_resolver::ConfigEnvironment,

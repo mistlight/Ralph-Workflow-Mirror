@@ -6,6 +6,9 @@
 //! This module uses serde for JSON parsing, which is ~100x faster
 //! than spawning jq for each event.
 //!
+//! For the detailed streaming contract and implementation notes,
+//! see the `README.md` file in this module's directory.
+//!
 //! # Module Structure
 //!
 //! - [`types`] - Shared types and event structures

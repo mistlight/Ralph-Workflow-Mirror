@@ -24,32 +24,27 @@ ralph-workflow/src/prompts/templates/
 
 ```
 templates/
-├── shared/                              # Shared partials (reusable sections)
-│   ├── _critical_header.txt            # Warning about agent constraints
-│   ├── _context_section.txt            # PROMPT and PLAN context
-│   ├── _diff_section.txt               # DIFF display format
-│   └── _output_checklist.txt           # Prioritized checklist format
-├── commit_message_xml.txt              # Normal strategy (XML format)
-├── commit_simplified.txt               # Simplified strategy (direct instructions)
-├── commit_xsd_retry.txt                # XSD validation retry (in-session)
-├── developer_iteration.txt             # Implementation mode prompt
-├── planning.txt                        # Planning phase prompt
-├── fix_mode.txt                        # Fix mode prompt
-├── conflict_resolution.txt             # Merge conflict resolution
-└── reviewer/
-    └── templates/                      # Reviewer-specific templates
-        ├── detailed_review_minimal.txt      # Detailed review, minimal context
-        ├── detailed_review_normal.txt       # Detailed review, normal context
-        ├── incremental_review_minimal.txt   # Incremental review, minimal context
-        ├── incremental_review_normal.txt    # Incremental review, normal context
-        ├── universal_review_minimal.txt     # Universal review, minimal context
-        ├── universal_review_normal.txt      # Universal review, normal context
-        ├── standard_review_minimal.txt      # Standard review, minimal context
-        ├── standard_review_normal.txt       # Standard review, normal context
-        ├── comprehensive_review_minimal.txt # Comprehensive review, minimal context
-        ├── comprehensive_review_normal.txt  # Comprehensive review, normal context
-        ├── security_review_minimal.txt      # Security review, minimal context
-        └── security_review_normal.txt       # Security review, normal context
+├── shared/                               # Shared partials (reusable sections)
+│   ├── _critical_header.txt             # Warning about agent constraints
+│   ├── _context_section.txt             # PROMPT and PLAN context
+│   ├── _diff_section.txt                # DIFF display format
+│   ├── _output_checklist.txt            # Prioritized checklist format
+│   ├── _safety_no_execute.txt           # Safety constraints for agents
+│   └── _unattended_mode.txt             # Unattended mode instructions
+├── commit_message_xml.txt               # Normal commit message (XML format)
+├── commit_simplified.txt                # Simplified commit strategy
+├── commit_xsd_retry.txt                 # XSD validation retry (in-session)
+├── developer_iteration_xml.txt          # Implementation mode prompt
+├── developer_iteration_continuation_xml.txt  # Continuation prompt
+├── developer_iteration_xsd_retry.txt    # Dev XSD validation retry
+├── planning_xml.txt                     # Planning phase prompt
+├── planning_xsd_retry.txt               # Planning XSD validation retry
+├── fix_mode_xml.txt                     # Fix mode prompt
+├── fix_mode_xsd_retry.txt               # Fix mode XSD validation retry
+├── review_xml.txt                       # Code review prompt
+├── review_xsd_retry.txt                 # Review XSD validation retry
+├── conflict_resolution.txt              # Merge conflict resolution
+└── conflict_resolution_fallback.txt     # Fallback conflict resolution
 ```
 
 ## Template Syntax
@@ -96,7 +91,7 @@ Each template has access to different variables depending on its context. Below 
 
 ### Developer Templates
 
-#### `developer_iteration.txt`
+#### `developer_iteration_xml.txt`
 **When used**: During implementation phase
 
 | Variable | Description |
@@ -104,7 +99,7 @@ Each template has access to different variables depending on its context. Below 
 | `PROMPT` | Original user request from PROMPT.md |
 | `PLAN` | Implementation plan from `.agent/PLAN.md` |
 
-#### `planning.txt`
+#### `planning_xml.txt`
 **When used**: During planning phase before implementation
 
 | Variable | Description |
@@ -182,7 +177,7 @@ All commit templates are used during the commit message generation phase, with d
 
 ### Fix Template
 
-#### `fix_mode.txt`
+#### `fix_mode_xml.txt`
 **When used**: During fix mode when addressing review issues
 
 | Variable | Description |
@@ -190,40 +185,10 @@ All commit templates are used during the commit message generation phase, with d
 | `PROMPT` | Original user request from PROMPT.md |
 | `PLAN` | Implementation plan from `.agent/PLAN.md` |
 
-### Reviewer Templates
+### Reviewer Template
 
-All reviewer templates are used during the review phase. Each has minimal and normal variants.
-
-#### Detailed Review Templates
-**When used**: Detailed review phase with structured output
-
-| Variable | Description |
-|----------|-------------|
-| `MODE` | Review mode identifier ("DETAILED REVIEW MODE") |
-| `PROMPT` | Original user request from PROMPT.md |
-| `PLAN` | Implementation plan from `.agent/PLAN.md` |
-| `DIFF` | Git diff of changes to review |
-
-#### Incremental Review Templates
-**When used**: Incremental review focusing on recent changes
-
-| Variable | Description |
-|----------|-------------|
-| `PROMPT` | Original user request from PROMPT.md |
-| `PLAN` | Implementation plan from `.agent/PLAN.md` |
-| `DIFF` | Git diff of changes to review |
-
-#### Universal Review Templates
-**When used**: Universal review for maximum agent compatibility
-
-| Variable | Description |
-|----------|-------------|
-| `PROMPT` | Original user request from PROMPT.md |
-| `PLAN` | Implementation plan from `.agent/PLAN.md` |
-| `DIFF` | Git diff of changes to review |
-
-#### Standard, Comprehensive, Security Review Templates
-**When used**: Guided review with language-specific guidelines
+#### `review_xml.txt`
+**When used**: During code review phase
 
 | Variable | Description |
 |----------|-------------|
@@ -267,6 +232,16 @@ These are reusable sections included by other templates:
 **Purpose**: Defines prioritized checklist output format
 
 **Variables**: None (static template)
+
+#### `_safety_no_execute.txt`
+**Purpose**: Safety constraints preventing dangerous operations
+
+**Variables**: None (static content)
+
+#### `_unattended_mode.txt`
+**Purpose**: Instructions for unattended/autonomous mode
+
+**Variables**: None (static content)
 
 ## Modifying Templates
 
@@ -356,7 +331,6 @@ let variables = HashMap::from([
 
 ## Related Documentation
 
-- [Variable Reference](template-variables.md) - Detailed variable documentation
 - [Agent Compatibility](agent-compatibility.md) - Understanding how different agents respond
 - [Git Workflow](git-workflow.md) - How Ralph handles git operations
 

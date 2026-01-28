@@ -10,8 +10,8 @@
 //!
 //! # Submodules
 //!
-//! - [`integrity`] - File integrity and atomic writes
-//! - [`recovery`] - Error recovery and state repair
+//! - `integrity` - File integrity and atomic writes (internal)
+//! - `recovery` - Error recovery and state repair (internal)
 //! - [`context`] - Context file management (STATUS.md, NOTES.md, ISSUES.md)
 //! - [`agent_files`] - Agent file operations (`ensure_files`, commit message, etc.)
 //! - [`backup`] - PROMPT.md backup and read-only protection

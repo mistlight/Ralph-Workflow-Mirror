@@ -6,7 +6,7 @@
 //!
 //! # Purpose
 //!
-//! - Production: `RealProcessExecutor` executes actual commands using `std::process::Command`
+//! - Production: [`RealProcessExecutor`] executes actual commands using `std::process::Command`
 //! - Tests: `MockProcessExecutor` captures calls and returns controlled results
 //!
 //! # Benefits
@@ -15,6 +15,25 @@
 //! - Determinism: Tests produce consistent results
 //! - Speed: Tests run faster without subprocess overhead
 //! - Mockability: Full control over process behavior in tests
+//!
+//! # Testing with MockProcessExecutor
+//!
+//! The `test-utils` feature enables `MockProcessExecutor` for integration tests:
+//!
+//! ```ignore
+//! use ralph_workflow::{MockProcessExecutor, ProcessExecutor};
+//!
+//! // Create a mock that returns success for 'git' commands
+//! let executor = MockProcessExecutor::new()
+//!     .with_output("git", "On branch main\nnothing to commit");
+//!
+//! // Execute command (captured, returns mock result)
+//! let result = executor.execute("git", &["status"], &[], None)?;
+//! assert!(result.status.success());
+//!
+//! // Verify the call was captured
+//! assert_eq!(executor.execute_count(), 1);
+//! ```
 
 use crate::agents::JsonParserType;
 use std::collections::HashMap;

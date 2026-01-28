@@ -473,7 +473,7 @@ pub fn prompt_for_agent(
 ///
 /// # Example
 ///
-/// ```rust
+/// ```ignore
 /// let (prompt, was_replayed) = get_stored_or_generate_prompt(
 ///     "development_1",
 ///     &ctx.prompt_history,

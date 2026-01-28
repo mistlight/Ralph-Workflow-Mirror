@@ -20,7 +20,7 @@
 //! - [`WorkspaceFs`] - Production implementation using the real filesystem
 //! - [`MemoryWorkspace`] - Test implementation with in-memory storage (available with `test-utils` feature)
 //!
-//! # Example
+//! # Production Example
 //!
 //! ```ignore
 //! use ralph_workflow::workspace::WorkspaceFs;
@@ -33,8 +33,30 @@
 //! let prompt = ws.prompt_md();  // /path/to/repo/PROMPT.md
 //!
 //! // Perform file operations
-//! ws.write(".agent/test.txt", "content")?;
-//! let content = ws.read(".agent/test.txt")?;
+//! ws.write(Path::new(".agent/test.txt"), "content")?;
+//! let content = ws.read(Path::new(".agent/test.txt"))?;
+//! ```
+//!
+//! # Testing with MemoryWorkspace
+//!
+//! The `test-utils` feature enables [`MemoryWorkspace`] for integration tests:
+//!
+//! ```ignore
+//! use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+//! use std::path::Path;
+//!
+//! // Create a test workspace with pre-populated files
+//! let ws = MemoryWorkspace::new_test()
+//!     .with_file("PROMPT.md", "# Task: Add logging")
+//!     .with_file(".agent/PLAN.md", "1. Add log statements");
+//!
+//! // Verify file operations
+//! assert!(ws.exists(Path::new("PROMPT.md")));
+//! assert_eq!(ws.read(Path::new("PROMPT.md"))?, "# Task: Add logging");
+//!
+//! // Write and verify
+//! ws.write(Path::new(".agent/output.txt"), "result")?;
+//! assert!(ws.was_written(".agent/output.txt"));
 //! ```
 
 // ============================================================================

@@ -3,6 +3,8 @@
 //! Provides a pluggable agent system for different AI coding assistants
 //! (Claude, Codex, `OpenCode`, Goose, Cline, CCS, etc.)
 //!
+//! For detailed compatibility information, see `docs/agent-compatibility.md`.
+//!
 //! ## Module Structure
 //!
 //! - `ccs` - CCS (Claude Code Switch) alias resolution

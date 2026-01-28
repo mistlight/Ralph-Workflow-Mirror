@@ -1,7 +1,45 @@
-//! Ralph workflow library for commit message parsing and validation.
+//! Ralph workflow library for AI agent orchestration.
 //!
-//! This library exposes the core functionality used by the ralph binary,
-//! including commit message extraction from LLM output.
+//! This crate provides the core functionality for the `ralph` CLI binary,
+//! implementing a reducer-based architecture for orchestrating AI coding agents
+//! through development and review cycles.
+//!
+//! # Architecture
+//!
+//! Ralph uses an event-sourced reducer architecture with two effect layers:
+//!
+//! - [`app`] - CLI layer effects (before repo root is known)
+//! - [`reducer`] - Pipeline effects (after repo root is established)
+//!
+//! All I/O is abstracted through traits for testability:
+//!
+//! - [`workspace::Workspace`] - Filesystem operations
+//! - [`executor::ProcessExecutor`] - Process spawning
+//!
+//! # Feature Flags
+//!
+//! - `monitoring` (default) - Enable streaming metrics and debugging APIs
+//! - `test-utils` - Enable test utilities (MockProcessExecutor, etc.)
+//! - `hardened-resume` (default) - Enable checkpoint file state capture for recovery
+//!
+//! # For Library Users
+//!
+//! This crate is primarily designed as a binary. Library usage is supported
+//! for integration testing with the `test-utils` feature:
+//!
+//! ```toml
+//! [dev-dependencies]
+//! ralph-workflow = { version = "0.6", features = ["test-utils"] }
+//! ```
+//!
+//! # Key Modules
+//!
+//! - [`agents`] - Agent configuration, registry, and CCS support
+//! - [`reducer`] - Core state machine and effect handling
+//! - [`phases`] - Pipeline phase implementations (development, review, commit)
+//! - [`workspace`] - Filesystem abstraction (production and test implementations)
+//! - [`executor`] - Process execution abstraction
+//! - [`json_parser`] - NDJSON streaming parsers for Claude, Codex, Gemini, OpenCode
 
 pub mod agents;
 pub mod app;

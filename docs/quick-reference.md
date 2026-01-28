@@ -17,7 +17,7 @@ Ralph is an AI-powered coding assistant that helps you implement features, fix b
 **Your first Ralph command:**
 ```bash
 # Create a prompt template for a new feature
-ralph --init-prompt feature-spec
+ralph --init feature-spec
 
 # Edit PROMPT.md with your requirements
 # Then run ralph to implement it
@@ -34,15 +34,15 @@ ralph
 **Common scenarios:**
 ```bash
 # Fix a small bug quickly
-ralph -Q "fix: typo in header"
+ralph -Q
 
 # Add a new feature
-ralph --init-prompt feature-spec
+ralph --init feature-spec
 # Edit PROMPT.md, then:
 ralph
 
 # Just want more control over iterations
-ralph -D 3 -R 2 "feat: add user settings"
+ralph -D 3 -R 2
 ```
 
 ## Short Flags Reference
@@ -69,7 +69,7 @@ ralph -D 3 -R 2 "feat: add user settings"
 
 ```bash
 ralph --help           # Show basic help (quick start, common flags)
-ralph --help-advanced  # Show comprehensive help (all options, templates, docs)
+ralph --extended-help  # Show extended help (presets, troubleshooting, more)
 ralph --list-work-guides  # Show available Work Guides for PROMPT.md
 ```
 
@@ -102,26 +102,26 @@ ralph -L              # Long (15+10)
 
 ### Custom Iterations
 ```bash
-ralph -D 3 -R 2 "fix: bug"
-ralph -D 10 -R 5 "refactor: module"
+ralph -D 3 -R 2           # 3 dev iterations, 2 review cycles
+ralph -D 10 -R 5          # 10 dev iterations, 5 review cycles
 ```
 
 ### Specific Agents
 ```bash
 # Use specific agents
-ralph -a claude -r codex "feat: change"
+ralph -a claude -r codex
 
 # Use preset
-ralph --preset opencode "feat: change"
+ralph --preset opencode
 ```
 
 ### Verbosity Control
 ```bash
-ralph -q "fix: typo"                   # Quiet
-ralph -v1 "feat: change"               # Normal
-ralph -v2 "feat: change"               # Verbose (default)
-ralph -f "feat: complex change"        # Full
-ralph --debug "feat: change"           # Debug with raw JSON
+ralph -q               # Quiet (level 0)
+ralph -v1              # Normal (level 1)
+ralph -v2              # Verbose (level 2, default)
+ralph -f               # Full (level 3, no truncation)
+ralph -v4              # Debug (level 4, raw JSON)
 ```
 
 ### Diagnostic Commands
@@ -155,7 +155,7 @@ ralph --init-global             # Create ~/.config/ralph-workflow.toml
 ralph --init-legacy             # Create .agent/agents.toml (legacy)
 ```
 
-## Review Depth Levels
+## Review Depth Levels (Advanced)
 
 | Level | Description |
 |-------|-------------|
@@ -165,19 +165,19 @@ ralph --init-legacy             # Create .agent/agents.toml (legacy)
 | `incremental` | Changed files only |
 
 ```bash
-ralph --review-depth security "feat: auth"
-ralph --review-depth incremental "fix: bug"
+ralph --review-depth security
+ralph --review-depth incremental
 ```
 
 ## Verbosity Levels
 
 | Level | Flag | Output |
 |-------|------|--------|
-| 0 | `-q` | Minimal |
+| 0 | `-q`, `--quiet` | Minimal |
 | 1 | `-v1` | Normal |
-| 2 | (default) | Verbose |
+| 2 | `-v2` (default) | Verbose |
 | 3 | `-f`, `--full` | Everything |
-| 4 | `--debug` | Raw JSON |
+| 4 | `-v4` | Raw JSON (debug) |
 
 ## Plumbing Commands (Scripting)
 
@@ -219,15 +219,17 @@ Ralph's streaming system handles real-time AI agent output. These environment va
 
 ```
 .agent/
-├── STATUS.md          # Current status
-├── NOTES.md           # Agent notes
-├── ISSUES.md          # Issues found during review
-├── PLAN.md            # Current iteration plan
-├── commit-message.txt # Generated commit message
-├── checkpoint.json    # For --resume
-├── last_prompt.txt    # Last prompt sent
-├── start_commit       # Baseline for reviewer diffs
-└── logs/              # Agent run logs
+├── PLAN.md              # Current iteration plan (orchestrator-written)
+├── ISSUES.md            # Issues found during review (orchestrator-written)
+├── STATUS.md            # Current status
+├── NOTES.md             # Agent notes
+├── commit-message.txt   # Generated commit message
+├── checkpoint.json      # For --resume
+├── last_prompt.txt      # Last prompt sent to agent
+├── start_commit         # Baseline commit for cumulative diffs
+├── review_baseline.txt  # Review baseline tracking
+├── tmp/                 # Temporary files (XSD, XML artifacts)
+└── logs/                # Agent run logs (pipeline.log, per-phase logs)
 ```
 
 ## Quick Setup
@@ -236,7 +238,7 @@ Ralph's streaming system handles real-time AI agent output. These environment va
 # 1. Install Ralph
 git clone https://codeberg.org/mistlight/RalphWithReviewer.git
 cd RalphWithReviewer
-cargo install --path .
+cargo install --path ralph-workflow --locked
 
 # 2. Create config
 ralph --init-global
@@ -248,7 +250,7 @@ npm install -g @openai/codex           # Codex
 
 # 4. Run Ralph
 cd /path/to/your/project
-ralph --init-prompt feature-spec
+ralph --init feature-spec
 # Edit PROMPT.md with your requirements
 ralph
 ```
@@ -298,4 +300,4 @@ ralph -T
 | Auth errors | Run agent's auth command or set API key |
 | No commit created | Ensure there are meaningful changes |
 
-For more help, run `ralph --diagnose` or see the [full documentation](README.md#documentation).
+For more help, run `ralph --diagnose` or see the [full documentation](../README.md#documentation).
