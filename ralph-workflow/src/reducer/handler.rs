@@ -126,7 +126,7 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         role: AgentRole,
         agent: String,
-        _model: Option<String>,
+        model: Option<String>,
         prompt: String,
     ) -> Result<EffectResult> {
         // Use agent from state.agent_chain if available
@@ -139,15 +139,21 @@ impl MainEffectHandler {
 
         let model_name = self.state.agent_chain.current_model();
 
-        // Use continuation prompt if available (from rate-limited predecessor)
-        // This allows continuing the same work without starting over when an
-        // agent hits 429 and we fallback to the next agent in the chain.
-        let effective_prompt = self
+        // Use continuation prompt if available (from rate-limited predecessor).
+        //
+        // Important: only use it when it's the *same* prompt as this invocation.
+        // If the pipeline has generated a new prompt (retry/fallback instructions,
+        // different phase/role, etc.), do not override it with stale continuation
+        // context.
+        let effective_prompt = match self
             .state
             .agent_chain
             .rate_limit_continuation_prompt
-            .clone()
-            .unwrap_or(prompt);
+            .as_ref()
+        {
+            Some(saved) if saved == &prompt => saved.clone(),
+            _ => prompt,
+        };
 
         ctx.logger.info(&format!(
             "Executing with agent: {}, model: {:?}",
@@ -161,7 +167,17 @@ impl MainEffectHandler {
             .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", effective_agent))?;
 
         // Determine log file path
-        let logfile = format!(".agent/logs/{}.log", effective_agent.to_lowercase());
+        let safe_agent_name =
+            crate::pipeline::logfile::sanitize_agent_name(&effective_agent.to_lowercase());
+        let logfile = format!(".agent/logs/{}.log", safe_agent_name);
+
+        // Build command string, honoring reducer-selected model (if any).
+        // The reducer's agent chain drives model fallback (advance_to_next_model).
+        // When present, the selected model must be threaded into the command.
+        let model_override = model_name
+            .map(std::string::String::as_str)
+            .or(model.as_deref());
+        let cmd_str = agent_config.build_cmd_with_model(true, true, true, model_override);
 
         // Build pipeline runtime
         let mut runtime = PipelineRuntime {
@@ -178,7 +194,7 @@ impl MainEffectHandler {
         let config = AgentExecutionConfig {
             role,
             agent_name: &effective_agent,
-            cmd_str: &agent_config.cmd,
+            cmd_str: &cmd_str,
             parser_type: agent_config.json_parser,
             env_vars: &agent_config.env_vars,
             prompt: &effective_prompt,
@@ -1463,6 +1479,312 @@ mod tests {
 
         let xml = read_commit_message_xml(&workspace).expect("expected xml");
         assert_eq!(xml, "<preferred/>");
+    }
+
+    #[test]
+    fn test_invoke_agent_sanitizes_logfile_name() {
+        use crate::agents::{AgentConfig, AgentRegistry, JsonParserType};
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::reducer::state::AgentChainState;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.register(
+            "ccs/glm",
+            AgentConfig {
+                cmd: "mock-glm-agent".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: Some("mock".to_string()),
+            },
+        );
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+
+        let mock_executor = std::sync::Arc::new(MockProcessExecutor::new().with_agent_result(
+            "mock-glm-agent",
+            Ok(crate::executor::AgentCommandResult::success()),
+        ));
+        let executor_arc =
+            mock_executor.clone() as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+
+        let workspace = MemoryWorkspace::new_test();
+        let repo_root = PathBuf::from("/test/repo");
+        let config = Config::default();
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "ccs/glm",
+            reviewer_agent: "ccs/glm",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let state = PipelineState {
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["ccs/glm".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
+            ..PipelineState::initial(1, 0)
+        };
+
+        let mut handler = super::MainEffectHandler::new(state);
+        let _ = handler
+            .invoke_agent(
+                &mut ctx,
+                AgentRole::Developer,
+                "ccs/glm".to_string(),
+                None,
+                "prompt".to_string(),
+            )
+            .unwrap();
+
+        let calls = mock_executor.agent_calls_for("mock-glm-agent");
+        assert_eq!(calls.len(), 1, "expected one agent spawn call");
+        let logfile = &calls[0].logfile;
+        assert!(
+            !logfile.contains("ccs/glm"),
+            "logfile should not contain raw agent name with slashes: {logfile}"
+        );
+        assert!(
+            logfile.contains("ccs-glm"),
+            "logfile should use sanitized agent name: {logfile}"
+        );
+    }
+
+    #[test]
+    fn test_invoke_agent_applies_selected_model_to_command() {
+        use crate::agents::{AgentConfig, AgentRegistry, JsonParserType};
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::reducer::state::AgentChainState;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.register(
+            "mock-agent",
+            AgentConfig {
+                cmd: "mock-agent-bin".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: Some("mock".to_string()),
+            },
+        );
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+
+        let mock_executor = std::sync::Arc::new(MockProcessExecutor::new().with_agent_result(
+            "mock-agent-bin",
+            Ok(crate::executor::AgentCommandResult::success()),
+        ));
+        let executor_arc =
+            mock_executor.clone() as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+
+        let workspace = MemoryWorkspace::new_test();
+        let repo_root = PathBuf::from("/test/repo");
+        let config = Config::default();
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "mock-agent",
+            reviewer_agent: "mock-agent",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let selected_model = "-m openai/gpt-5.2".to_string();
+        let state = PipelineState {
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["mock-agent".to_string()],
+                vec![vec![selected_model.clone()]],
+                AgentRole::Developer,
+            ),
+            ..PipelineState::initial(1, 0)
+        };
+
+        let mut handler = super::MainEffectHandler::new(state);
+        let _ = handler
+            .invoke_agent(
+                &mut ctx,
+                AgentRole::Developer,
+                "mock-agent".to_string(),
+                None,
+                "prompt".to_string(),
+            )
+            .unwrap();
+
+        let calls = mock_executor.agent_calls_for("mock-agent-bin");
+        assert_eq!(calls.len(), 1, "expected one agent spawn call");
+        assert!(
+            calls[0].args.iter().any(|a| a == "-m"
+                || a == "-m=openai/gpt-5.2"
+                || a.contains("openai/gpt-5.2")
+                || a == &selected_model),
+            "expected selected model to be threaded into agent command args; args={:?}",
+            calls[0].args
+        );
+    }
+
+    #[test]
+    fn test_invoke_agent_does_not_override_new_prompt_with_stale_rate_limit_prompt() {
+        use crate::agents::{AgentConfig, AgentRegistry, JsonParserType};
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::reducer::state::AgentChainState;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.register(
+            "mock-agent",
+            AgentConfig {
+                cmd: "mock-agent-bin".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: Some("mock".to_string()),
+            },
+        );
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+
+        let mock_executor = std::sync::Arc::new(MockProcessExecutor::new().with_agent_result(
+            "mock-agent-bin",
+            Ok(crate::executor::AgentCommandResult::success()),
+        ));
+        let executor_arc =
+            mock_executor.clone() as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+
+        let workspace = MemoryWorkspace::new_test();
+        let repo_root = PathBuf::from("/test/repo");
+        let config = Config::default();
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "mock-agent",
+            reviewer_agent: "mock-agent",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let mut state = PipelineState {
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["mock-agent".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
+            ..PipelineState::initial(1, 0)
+        };
+        state.agent_chain.rate_limit_continuation_prompt = Some("stale".to_string());
+
+        let mut handler = super::MainEffectHandler::new(state);
+        let _ = handler
+            .invoke_agent(
+                &mut ctx,
+                AgentRole::Developer,
+                "mock-agent".to_string(),
+                None,
+                "fresh".to_string(),
+            )
+            .unwrap();
+
+        let calls = mock_executor.agent_calls_for("mock-agent-bin");
+        assert_eq!(calls.len(), 1, "expected one agent spawn call");
+        assert_eq!(
+            calls[0].prompt,
+            "fresh",
+            "invoke_agent should not override a new prompt with a stale rate_limit_continuation_prompt"
+        );
     }
 
     #[test]

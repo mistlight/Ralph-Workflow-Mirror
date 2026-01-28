@@ -458,6 +458,15 @@ pub fn try_agent_with_retries(
             return Ok(TryAgentResult::Unrecoverable(result.exit_code));
         }
 
+        // Check for rate limit - requires immediate agent fallback, not retry
+        if error_kind.should_immediate_agent_fallback() {
+            runtime.logger.info(&format!(
+                "Rate limit (429) hit for '{}{}' - switching to next agent immediately",
+                config.display_name, model_suffix,
+            ));
+            return Ok(TryAgentResult::Fallback);
+        }
+
         // Check if we should fallback to next agent
         if error_kind.should_fallback() {
             runtime.logger.info(&format!(

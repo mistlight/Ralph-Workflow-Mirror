@@ -28,7 +28,6 @@ use crate::agents::fallback::FallbackConfig;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::env;
-use std::fs;
 use std::io;
 use std::path::PathBuf;
 
@@ -365,16 +364,8 @@ impl UnifiedConfig {
     ///
     /// Returns None if the file doesn't exist.
     ///
-    /// **Note:** This method uses `std::fs` directly. For testable code,
-    /// use [`load_with_env`] with a [`ConfigEnvironment`] instead.
     pub fn load_default() -> Option<Self> {
-        unified_config_path().and_then(|path| {
-            if path.exists() {
-                Self::load_from_path(&path).ok()
-            } else {
-                None
-            }
-        })
+        Self::load_with_env(&super::path_resolver::RealConfigEnvironment)
     }
 
     /// Load unified configuration using a [`ConfigEnvironment`].
@@ -420,17 +411,8 @@ impl UnifiedConfig {
     /// This creates `~/.config/ralph-workflow.toml` with the default template
     /// if it doesn't already exist.
     ///
-    /// **Note:** This method uses `std::fs` directly. For testable code,
-    /// use [`ensure_config_exists_with_env`] with a [`ConfigEnvironment`] instead.
     pub fn ensure_config_exists() -> io::Result<ConfigInitResult> {
-        let Some(path) = unified_config_path() else {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "Cannot determine config directory (no home directory)",
-            ));
-        };
-
-        Self::ensure_config_exists_at(&path)
+        Self::ensure_config_exists_with_env(&super::path_resolver::RealConfigEnvironment)
     }
 
     /// Ensure unified config file exists using a [`ConfigEnvironment`].
@@ -451,22 +433,8 @@ impl UnifiedConfig {
 
     /// Ensure a config file exists at the specified path.
     ///
-    /// **Note:** This method uses `std::fs` directly. For testable code,
-    /// use [`ensure_config_exists_at_with_env`] with a [`ConfigEnvironment`] instead.
     pub fn ensure_config_exists_at(path: &std::path::Path) -> io::Result<ConfigInitResult> {
-        if path.exists() {
-            return Ok(ConfigInitResult::AlreadyExists);
-        }
-
-        // Create parent directories if they don't exist
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        // Write the default template
-        fs::write(path, DEFAULT_UNIFIED_CONFIG)?;
-
-        Ok(ConfigInitResult::Created)
+        Self::ensure_config_exists_at_with_env(path, &super::path_resolver::RealConfigEnvironment)
     }
 
     /// Ensure a config file exists at the specified path using a [`ConfigEnvironment`].

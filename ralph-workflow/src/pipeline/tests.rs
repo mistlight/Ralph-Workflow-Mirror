@@ -19,8 +19,8 @@ use std::path;
 /// Helper to set up a test registry with mock agents.
 ///
 /// Creates agents with commands that pass `which::which()` checks (required for fallback chain).
-/// Uses `echo` as the base command since it exists on all systems.
-/// MockProcessExecutor intercepts agent execution based on command pattern matching.
+/// Uses distinct, always-available binaries so MockProcessExecutor can differentiate agents
+/// by `AgentSpawnConfig.command`.
 fn setup_mock_registry_with_fallback() -> AgentRegistry {
     let mut registry = AgentRegistry::new().unwrap();
     let defaults = crate::config::CcsConfig {
@@ -34,19 +34,18 @@ fn setup_mock_registry_with_fallback() -> AgentRegistry {
     };
 
     let mut aliases = HashMap::new();
-    // Use `echo` as base command - it exists on all systems and passes which::which() check.
-    // MockProcessExecutor matches by command pattern, so "echo mock-glm" is matched by "echo".
+    // Use distinct binaries so MockProcessExecutor can return different results per agent.
     aliases.insert(
         "glm".to_string(),
         crate::config::CcsAliasConfig {
-            cmd: "echo mock-glm".to_string(),
+            cmd: "printf".to_string(),
             ..Default::default()
         },
     );
     aliases.insert(
         "ok".to_string(),
         crate::config::CcsAliasConfig {
-            cmd: "echo mock-ok".to_string(),
+            cmd: "echo".to_string(),
             ..Default::default()
         },
     );
@@ -94,13 +93,10 @@ fn run_with_fallback_retries_unknown_glm_errors_before_fallback() {
         .with_output("git", "")
         .with_output("cargo", "")
         .with_agent_result(
-            "mock-glm-agent",
+            "printf",
             Ok(crate::executor::AgentCommandResult::failure(1, "")),
         )
-        .with_agent_result(
-            "mock-ok-agent",
-            Ok(crate::executor::AgentCommandResult::success()),
-        );
+        .with_agent_result("echo", Ok(crate::executor::AgentCommandResult::success()));
 
     let executor_arc =
         std::sync::Arc::new(mock_executor) as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
@@ -1281,6 +1277,98 @@ fn test_resolve_from_logfile_name_opencode() {
     );
 }
 
+/// Test that rate limit (429) errors trigger immediate agent fallback without retries.
+///
+/// This verifies the core behavior change: when an agent hits a 429 rate limit,
+/// we immediately switch to the next agent in the chain rather than retrying
+/// with the same agent. This allows work to continue without waiting for rate
+/// limits to reset.
+///
+/// Uses MockProcessExecutor to avoid spawning real processes.
+#[test]
+fn test_rate_limit_triggers_immediate_agent_fallback() {
+    let registry = setup_mock_registry_with_fallback();
+
+    // Set up runtime components
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let prompt_dir = std::env::temp_dir().join("ralph-test-rate-limit");
+    let config = Config {
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
+        verbosity: Verbosity::Quiet,
+        prompt_path: prompt_dir.join("prompt.txt"),
+        ..Config::default()
+    };
+
+    // Configure MockProcessExecutor:
+    // - GLM agent fails with 429 rate limit error
+    // - OK agent succeeds
+    let mock_executor = std::sync::Arc::new(
+        crate::executor::MockProcessExecutor::new()
+            .with_output("git", "")
+            .with_output("cargo", "")
+            .with_agent_result(
+                "printf",
+                Ok(crate::executor::AgentCommandResult::failure(
+                    1,
+                    "rate limit exceeded: error 429",
+                )),
+            )
+            .with_agent_result("echo", Ok(crate::executor::AgentCommandResult::success())),
+    );
+
+    let executor_arc =
+        mock_executor.clone() as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+    let workspace = MemoryWorkspace::new_test();
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
+        workspace: &workspace,
+    };
+
+    let mut fallback_config = super::runner::FallbackConfig {
+        role: crate::agents::AgentRole::Reviewer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: "/test/logs",
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "ccs/glm",
+        output_validator: None,
+        workspace: &workspace,
+    };
+
+    // The 429 error should NOT be retried - immediate fallback to next agent
+    // Exit code 0 confirms the fallback chain worked correctly.
+    let exit = super::runner::run_with_fallback_and_validator(&mut fallback_config).unwrap();
+
+    assert_eq!(
+        exit, 0,
+        "Fallback agent should succeed after 429 on first agent"
+    );
+
+    // Key requirement: 429 should NOT be retried with the same agent.
+    assert_eq!(
+        mock_executor.agent_calls_for("printf").len(),
+        1,
+        "rate-limited agent should not be retried"
+    );
+    assert_eq!(
+        mock_executor.agent_calls_for("echo").len(),
+        1,
+        "fallback agent should be invoked exactly once"
+    );
+}
+
 /// Test that stderr with multi-byte UTF-8 characters doesn't cause panic.
 ///
 /// This is a regression test for the bug where `&stderr[..500]` panicked
@@ -1321,16 +1409,13 @@ fn test_handle_agent_error_with_utf8_stderr() {
         .with_output("git", "")
         .with_output("cargo", "")
         .with_agent_result(
-            "mock-glm-agent",
+            "printf",
             Ok(crate::executor::AgentCommandResult::failure(
                 1,
                 &stderr_content,
             )),
         )
-        .with_agent_result(
-            "mock-ok-agent",
-            Ok(crate::executor::AgentCommandResult::success()),
-        );
+        .with_agent_result("echo", Ok(crate::executor::AgentCommandResult::success()));
 
     let executor_arc =
         std::sync::Arc::new(mock_executor) as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
@@ -1403,16 +1488,13 @@ fn test_handle_agent_error_with_mixed_utf8_stderr() {
         .with_output("git", "")
         .with_output("cargo", "")
         .with_agent_result(
-            "mock-glm-agent",
+            "printf",
             Ok(crate::executor::AgentCommandResult::failure(
                 1,
                 &stderr_content,
             )),
         )
-        .with_agent_result(
-            "mock-ok-agent",
-            Ok(crate::executor::AgentCommandResult::success()),
-        );
+        .with_agent_result("echo", Ok(crate::executor::AgentCommandResult::success()));
 
     let executor_arc =
         std::sync::Arc::new(mock_executor) as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
@@ -1481,16 +1563,13 @@ fn test_error_handling_with_replacement_characters() {
         .with_output("git", "")
         .with_output("cargo", "")
         .with_agent_result(
-            "mock-glm-agent",
+            "printf",
             Ok(crate::executor::AgentCommandResult::failure(
                 1,
                 &problematic_stderr,
             )),
         )
-        .with_agent_result(
-            "mock-ok-agent",
-            Ok(crate::executor::AgentCommandResult::success()),
-        );
+        .with_agent_result("echo", Ok(crate::executor::AgentCommandResult::success()));
 
     let executor_arc =
         std::sync::Arc::new(mock_executor) as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
