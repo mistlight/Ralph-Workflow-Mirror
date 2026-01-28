@@ -1,6 +1,7 @@
 //! Tests for development phase events (iterations, plan generation).
 
 use super::*;
+use crate::reducer::state::{ContinuationState, DevelopmentStatus};
 
 #[test]
 fn test_development_phase_started_sets_development_phase() {
@@ -94,6 +95,34 @@ fn test_development_iteration_completed_increments_iteration() {
 }
 
 #[test]
+fn test_development_iteration_completed_does_not_transition_when_output_invalid() {
+    let continuation = ContinuationState::new().trigger_continuation(
+        DevelopmentStatus::Partial,
+        "partial work".to_string(),
+        Some(vec!["src/lib.rs".to_string()]),
+        Some("do more".to_string()),
+    );
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 0,
+        total_iterations: 5,
+        continuation: continuation.clone(),
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::DevelopmentIterationCompleted {
+            iteration: 0,
+            output_valid: false,
+        },
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::Development);
+    assert_eq!(new_state.continuation, continuation);
+}
+
+#[test]
 fn test_development_iteration_completed_stays_in_development_when_more_iterations() {
     // Dev iteration complete -> CommitMessage -> Planning (next iteration)
     let state = PipelineState {
@@ -156,6 +185,35 @@ fn test_development_iteration_completed_transitions_to_review_when_done() {
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
     assert_eq!(new_state.iteration, 3);
+}
+
+#[test]
+fn test_development_iteration_continuation_succeeded_transitions_to_commit_message() {
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 2,
+        total_iterations: 5,
+        continuation: ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "partial work".to_string(),
+            None,
+            Some("finish it".to_string()),
+        ),
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::DevelopmentIterationContinuationSucceeded {
+            iteration: 2,
+            total_continuation_attempts: 1,
+        },
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    assert_eq!(new_state.previous_phase, Some(PipelinePhase::Development));
+    assert!(matches!(new_state.commit, CommitState::NotStarted));
+    assert_eq!(new_state.continuation, ContinuationState::new());
 }
 
 #[test]

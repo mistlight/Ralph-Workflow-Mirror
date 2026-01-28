@@ -43,4 +43,4 @@ pub use state_reduction::reduce;
 
 // Public API is exposed through presets::apply_args_to_config
 // Modules are made public to allow imports from presets.rs
-// Note: Only re-export items that are actually used to avoid #[allow(unused_imports)]
+// Note: Only re-export items that are actually used to avoid unused-import suppressions.

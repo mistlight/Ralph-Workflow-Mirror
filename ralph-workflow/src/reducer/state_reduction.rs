@@ -159,18 +159,27 @@ fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> Pipel
         },
         PipelineEvent::DevelopmentIterationCompleted {
             iteration,
-            output_valid: _,
+            output_valid,
         } => {
-            // After dev iteration, go to CommitMessage phase to create a commit
-            PipelineState {
-                phase: super::event::PipelinePhase::CommitMessage,
-                previous_phase: Some(super::event::PipelinePhase::Development),
-                iteration,
-                commit: super::state::CommitState::NotStarted,
-                context_cleaned: false,
-                // Reset continuation state on successful completion
-                continuation: ContinuationState::new(),
-                ..state
+            if output_valid {
+                // After a successful dev iteration, go to CommitMessage phase to create a commit.
+                PipelineState {
+                    phase: super::event::PipelinePhase::CommitMessage,
+                    previous_phase: Some(super::event::PipelinePhase::Development),
+                    iteration,
+                    commit: super::state::CommitState::NotStarted,
+                    context_cleaned: false,
+                    // Reset continuation state on successful completion
+                    continuation: ContinuationState::new(),
+                    ..state
+                }
+            } else {
+                // Output was not valid enough to proceed to commit; stay in Development.
+                PipelineState {
+                    phase: super::event::PipelinePhase::Development,
+                    iteration,
+                    ..state
+                }
             }
         }
         PipelineEvent::DevelopmentPhaseCompleted => PipelineState {
@@ -201,8 +210,12 @@ fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> Pipel
             iteration: _,
             total_continuation_attempts: _,
         } => {
-            // Reset continuation state on successful completion
+            // Continuation succeeded; proceed to CommitMessage and reset continuation state.
             PipelineState {
+                phase: super::event::PipelinePhase::CommitMessage,
+                previous_phase: Some(super::event::PipelinePhase::Development),
+                commit: super::state::CommitState::NotStarted,
+                context_cleaned: false,
                 continuation: ContinuationState::new(),
                 ..state
             }

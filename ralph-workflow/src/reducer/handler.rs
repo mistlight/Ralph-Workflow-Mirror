@@ -237,45 +237,104 @@ impl MainEffectHandler {
 
         // Get continuation state from reducer state
         let continuation_state = &self.state.continuation;
-        let max_continuations = ctx.config.max_dev_continuations.unwrap_or(2) as usize;
-        let continuation_config = development::ContinuationConfig {
-            state: continuation_state,
-            max_attempts: max_continuations,
-        };
+        let max_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
 
-        // Run development iteration with continuation state
-        let result = development::run_development_iteration_with_xml_retry(
+        // Defensive guard: if checkpoint state already exceeds the configured limit,
+        // abort rather than looping indefinitely.
+        if continuation_state.continuation_attempt >= max_continuations {
+            return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
+                reason: format!(
+                    "Development continuation attempts exhausted (attempt={}, max={})",
+                    continuation_state.continuation_attempt, max_continuations
+                ),
+            }));
+        }
+
+        // Clean stale continuation context when starting a fresh attempt.
+        if continuation_state.continuation_attempt == 0 {
+            let _ = cleanup_continuation_context_file(ctx);
+        }
+
+        // Run a single development attempt (one session) with XSD retry.
+        let attempt = development::run_development_attempt_with_xml_retry(
             ctx,
             iteration,
             developer_context,
             false,
             None::<&ResumeContext>,
             dev_agent.as_deref(),
-            continuation_config,
+            continuation_state,
         );
 
-        match result {
-            Ok(_dev_result) => {
-                let event = PipelineEvent::DevelopmentIterationCompleted {
-                    iteration,
-                    output_valid: true,
-                };
-
-                // Emit UI event for iteration progress
-                let ui_event = UIEvent::IterationProgress {
-                    current: iteration,
-                    total: self.state.total_iterations,
-                };
-
-                Ok(EffectResult::with_ui(event, vec![ui_event]))
+        let attempt = match attempt {
+            Ok(a) => a,
+            Err(err) => {
+                return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
+                    reason: format!("Development attempt failed: {err}"),
+                }));
             }
-            Err(_) => Ok(EffectResult::event(
+        };
+
+        // If we reached completed, the iteration can transition to commit.
+        if attempt.output_valid
+            && matches!(
+                attempt.status,
+                crate::reducer::state::DevelopmentStatus::Completed
+            )
+        {
+            let _ = cleanup_continuation_context_file(ctx);
+
+            let event = if continuation_state.is_continuation() {
+                PipelineEvent::DevelopmentIterationContinuationSucceeded {
+                    iteration,
+                    total_continuation_attempts: continuation_state.continuation_attempt,
+                }
+            } else {
                 PipelineEvent::DevelopmentIterationCompleted {
                     iteration,
-                    output_valid: false,
-                },
-            )),
+                    output_valid: true,
+                }
+            };
+
+            let ui_event = UIEvent::IterationProgress {
+                current: iteration,
+                total: self.state.total_iterations,
+            };
+
+            return Ok(EffectResult::with_ui(event, vec![ui_event]));
         }
+
+        // Not completed: either partial/failed status, or invalid output after XSD retries.
+        let next_attempt = continuation_state.continuation_attempt + 1;
+        if next_attempt >= max_continuations {
+            let _ = cleanup_continuation_context_file(ctx);
+            return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
+                reason: format!(
+                    "Development did not reach status='completed' after {} total attempts. Last status={:?}. Last summary={}",
+                    max_continuations,
+                    attempt.status,
+                    attempt.summary
+                ),
+            }));
+        }
+
+        // Write continuation context for the next attempt.
+        write_continuation_context_file(
+            ctx,
+            iteration,
+            continuation_state.continuation_attempt + 1,
+            &attempt,
+        )?;
+
+        Ok(EffectResult::event(
+            PipelineEvent::DevelopmentIterationContinuationTriggered {
+                iteration,
+                status: attempt.status,
+                summary: attempt.summary,
+                files_changed: attempt.files_changed,
+                next_steps: attempt.next_steps,
+            },
+        ))
     }
 
     fn run_review_pass(&mut self, ctx: &mut PhaseContext<'_>, pass: u32) -> Result<EffectResult> {
@@ -646,6 +705,9 @@ impl MainEffectHandler {
             }
         }
 
+        // Delete continuation context file (if present) via workspace
+        let _ = cleanup_continuation_context_file(ctx);
+
         if cleaned_count > 0 {
             ctx.logger.success(&format!(
                 "Context cleanup complete: {} files deleted{}",
@@ -680,6 +742,60 @@ impl MainEffectHandler {
 
         Ok(EffectResult::with_ui(event, vec![ui_event]))
     }
+}
+
+fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {
+    let path = Path::new(".agent/tmp/continuation_context.md");
+    if ctx.workspace.exists(path) {
+        ctx.workspace.remove(path)?;
+    }
+    Ok(())
+}
+
+fn write_continuation_context_file(
+    ctx: &mut PhaseContext<'_>,
+    iteration: u32,
+    continuation_attempt: u32,
+    attempt: &development::DevAttemptResult,
+) -> anyhow::Result<()> {
+    let tmp_dir = Path::new(".agent/tmp");
+    if !ctx.workspace.exists(tmp_dir) {
+        ctx.workspace.create_dir_all(tmp_dir)?;
+    }
+
+    let mut content = String::new();
+    content.push_str("# Development Continuation Context\n\n");
+    content.push_str(&format!("- Iteration: {iteration}\n"));
+    content.push_str(&format!("- Continuation attempt: {continuation_attempt}\n"));
+    content.push_str(&format!("- Previous status: {}\n\n", attempt.status));
+
+    content.push_str("## Previous summary\n\n");
+    content.push_str(&attempt.summary);
+    content.push('\n');
+
+    if let Some(ref files) = attempt.files_changed {
+        content.push_str("\n## Files changed\n\n");
+        for file in files {
+            content.push_str("- ");
+            content.push_str(file);
+            content.push('\n');
+        }
+    }
+
+    if let Some(ref next_steps) = attempt.next_steps {
+        content.push_str("\n## Recommended next steps\n\n");
+        content.push_str(next_steps);
+        content.push('\n');
+    }
+
+    content.push_str("\n## Reference files (do not modify)\n\n");
+    content.push_str("- PROMPT.md\n");
+    content.push_str("- .agent/PLAN.md\n");
+
+    ctx.workspace
+        .write(Path::new(".agent/tmp/continuation_context.md"), &content)?;
+
+    Ok(())
 }
 
 /// Save checkpoint from current pipeline state.
