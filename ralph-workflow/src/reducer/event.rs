@@ -199,9 +199,9 @@ pub enum PipelineEvent {
 
     /// Development iteration needs continuation due to partial/failed status.
     ///
-    /// Emitted when development output is valid but status is not "completed".
-    /// This triggers the continuation state machine to track context for the
-    /// next attempt within the same iteration.
+    /// Emitted only when development output is valid (`output_valid == true`) and
+    /// status is not "completed" (i.e., "partial" or "failed"). Invalid XML/XSD
+    /// failures are handled separately and must not consume the continuation budget.
     DevelopmentIterationContinuationTriggered {
         /// Current iteration number.
         iteration: u32,

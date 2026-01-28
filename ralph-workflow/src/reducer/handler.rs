@@ -255,33 +255,70 @@ impl MainEffectHandler {
             let _ = cleanup_continuation_context_file(ctx);
         }
 
-        // Run a single development attempt (one session) with XSD retry.
-        let attempt = development::run_development_attempt_with_xml_retry(
-            ctx,
-            iteration,
-            developer_context,
-            false,
-            None::<&ResumeContext>,
-            dev_agent.as_deref(),
-            continuation_state,
-        );
+        // If the agent repeatedly fails to produce valid XML even after in-session
+        // XSD retries, rerun the attempt a small number of times without consuming
+        // the continuation budget (which is reserved for valid partial/failed work).
+        const MAX_INVALID_OUTPUT_RERUNS: u32 = 2;
 
-        let attempt = match attempt {
-            Ok(a) => a,
-            Err(err) => {
-                return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
-                    reason: format!("Development attempt failed: {err}"),
-                }));
+        let mut invalid_reruns: u32 = 0;
+        let attempt = loop {
+            // Run a single development attempt (one session) with XSD retry.
+            let attempt = development::run_development_attempt_with_xml_retry(
+                ctx,
+                iteration,
+                developer_context,
+                false,
+                None::<&ResumeContext>,
+                dev_agent.as_deref(),
+                continuation_state,
+            );
+
+            let attempt = match attempt {
+                Ok(a) => a,
+                Err(err) => {
+                    return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
+                        reason: format!("Development attempt failed: {err}"),
+                    }));
+                }
+            };
+
+            match decide_dev_iteration_next_step(
+                continuation_state.continuation_attempt,
+                max_continuations,
+                &attempt,
+            ) {
+                DevIterationNextStep::RetryInvalidOutput
+                    if invalid_reruns < MAX_INVALID_OUTPUT_RERUNS =>
+                {
+                    invalid_reruns += 1;
+                    ctx.logger.info(&format!(
+                        "Development output invalid after XSD retries; rerunning attempt without consuming continuation budget ({}/{})",
+                        invalid_reruns, MAX_INVALID_OUTPUT_RERUNS
+                    ));
+                    continue;
+                }
+                DevIterationNextStep::RetryInvalidOutput => {
+                    return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
+                        reason: format!(
+                            "Development output remained invalid after XSD retries and {} reruns. Last summary={}",
+                            MAX_INVALID_OUTPUT_RERUNS,
+                            attempt.summary
+                        ),
+                    }));
+                }
+                _ => break attempt,
             }
         };
 
         // If we reached completed, the iteration can transition to commit.
-        if attempt.output_valid
-            && matches!(
-                attempt.status,
-                crate::reducer::state::DevelopmentStatus::Completed
-            )
-        {
+        if matches!(
+            decide_dev_iteration_next_step(
+                continuation_state.continuation_attempt,
+                max_continuations,
+                &attempt
+            ),
+            DevIterationNextStep::Completed
+        ) {
             let _ = cleanup_continuation_context_file(ctx);
 
             let event = if continuation_state.is_continuation() {
@@ -304,27 +341,34 @@ impl MainEffectHandler {
             return Ok(EffectResult::with_ui(event, vec![ui_event]));
         }
 
-        // Not completed: either partial/failed status, or invalid output after XSD retries.
-        let next_attempt = continuation_state.continuation_attempt + 1;
-        if next_attempt >= max_continuations {
-            let _ = cleanup_continuation_context_file(ctx);
-            return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
-                reason: format!(
-                    "Development did not reach status='completed' after {} total attempts. Last status={:?}. Last summary={}",
-                    max_continuations,
-                    attempt.status,
-                    attempt.summary
-                ),
-            }));
-        }
+        // Not completed (valid output): partial/failed status triggers a continuation attempt.
+        let next_attempt = match decide_dev_iteration_next_step(
+            continuation_state.continuation_attempt,
+            max_continuations,
+            &attempt,
+        ) {
+            DevIterationNextStep::Continue {
+                next_continuation_attempt,
+            } => next_continuation_attempt,
+            DevIterationNextStep::Abort { .. } => {
+                let _ = cleanup_continuation_context_file(ctx);
+                return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
+                    reason: format!(
+                        "Development did not reach status='completed' after {} total valid attempts. Last status={:?}. Last summary={}",
+                        max_continuations,
+                        attempt.status,
+                        attempt.summary
+                    ),
+                }));
+            }
+            DevIterationNextStep::RetryInvalidOutput | DevIterationNextStep::Completed => {
+                // Completed is handled above. Invalid output is handled by the rerun loop above.
+                unreachable!("Unexpected dev iteration next step after invalid-output handling")
+            }
+        };
 
         // Write continuation context for the next attempt.
-        write_continuation_context_file(
-            ctx,
-            iteration,
-            continuation_state.continuation_attempt + 1,
-            &attempt,
-        )?;
+        write_continuation_context_file(ctx, iteration, next_attempt, &attempt)?;
 
         Ok(EffectResult::event(
             PipelineEvent::DevelopmentIterationContinuationTriggered {
@@ -843,6 +887,44 @@ fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> Check
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DevIterationNextStep {
+    Completed,
+    RetryInvalidOutput,
+    Continue { next_continuation_attempt: u32 },
+    Abort { next_continuation_attempt: u32 },
+}
+
+fn decide_dev_iteration_next_step(
+    continuation_attempt: u32,
+    max_continuations: u32,
+    attempt: &crate::phases::development::DevAttemptResult,
+) -> DevIterationNextStep {
+    if !attempt.output_valid {
+        return DevIterationNextStep::RetryInvalidOutput;
+    }
+
+    if attempt.output_valid
+        && matches!(
+            attempt.status,
+            crate::reducer::state::DevelopmentStatus::Completed
+        )
+    {
+        return DevIterationNextStep::Completed;
+    }
+
+    let next_attempt = continuation_attempt + 1;
+    if next_attempt >= max_continuations {
+        DevIterationNextStep::Abort {
+            next_continuation_attempt: next_attempt,
+        }
+    } else {
+        DevIterationNextStep::Continue {
+            next_continuation_attempt: next_attempt,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1068,6 +1150,73 @@ mod tests {
         assert!(
             content.contains("\"version\""),
             "checkpoint should contain version field"
+        );
+    }
+
+    #[test]
+    fn test_decide_dev_iteration_next_step_invalid_output_does_not_consume_continuation_budget() {
+        use crate::phases::development::DevAttemptResult;
+        use crate::reducer::state::DevelopmentStatus;
+
+        let attempt = DevAttemptResult {
+            had_error: true,
+            output_valid: false,
+            status: DevelopmentStatus::Failed,
+            summary: "invalid xml".to_string(),
+            files_changed: None,
+            next_steps: None,
+        };
+
+        let next = decide_dev_iteration_next_step(0, 2, &attempt);
+
+        assert_eq!(next, DevIterationNextStep::RetryInvalidOutput);
+    }
+
+    #[test]
+    fn test_decide_dev_iteration_next_step_partial_consumes_continuation_budget() {
+        use crate::phases::development::DevAttemptResult;
+        use crate::reducer::state::DevelopmentStatus;
+
+        let attempt = DevAttemptResult {
+            had_error: false,
+            output_valid: true,
+            status: DevelopmentStatus::Partial,
+            summary: "partial".to_string(),
+            files_changed: None,
+            next_steps: None,
+        };
+
+        let next = decide_dev_iteration_next_step(0, 2, &attempt);
+
+        assert_eq!(
+            next,
+            DevIterationNextStep::Continue {
+                next_continuation_attempt: 1
+            }
+        );
+    }
+
+    #[test]
+    fn test_decide_dev_iteration_next_step_partial_aborts_at_max_continuations() {
+        use crate::phases::development::DevAttemptResult;
+        use crate::reducer::state::DevelopmentStatus;
+
+        let attempt = DevAttemptResult {
+            had_error: false,
+            output_valid: true,
+            status: DevelopmentStatus::Partial,
+            summary: "partial".to_string(),
+            files_changed: None,
+            next_steps: None,
+        };
+
+        let next = decide_dev_iteration_next_step(1, 2, &attempt);
+
+        assert_eq!(
+            next,
+            DevIterationNextStep::Abort {
+                next_continuation_attempt: 2
+            }
         );
     }
 }

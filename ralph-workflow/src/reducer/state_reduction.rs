@@ -189,7 +189,7 @@ fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> Pipel
             ..state
         },
         PipelineEvent::DevelopmentIterationContinuationTriggered {
-            iteration: _,
+            iteration,
             status,
             summary,
             files_changed,
@@ -197,6 +197,7 @@ fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> Pipel
         } => {
             // Trigger continuation with context from the previous attempt
             PipelineState {
+                iteration,
                 continuation: state.continuation.trigger_continuation(
                     status,
                     summary,
@@ -207,13 +208,14 @@ fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> Pipel
             }
         }
         PipelineEvent::DevelopmentIterationContinuationSucceeded {
-            iteration: _,
+            iteration,
             total_continuation_attempts: _,
         } => {
             // Continuation succeeded; proceed to CommitMessage and reset continuation state.
             PipelineState {
                 phase: super::event::PipelinePhase::CommitMessage,
                 previous_phase: Some(super::event::PipelinePhase::Development),
+                iteration,
                 commit: super::state::CommitState::NotStarted,
                 context_cleaned: false,
                 continuation: ContinuationState::new(),
@@ -1019,6 +1021,29 @@ mod tests {
     }
 
     #[test]
+    fn test_continuation_triggered_sets_iteration_from_event() {
+        use crate::reducer::state::DevelopmentStatus;
+
+        let state = PipelineState {
+            iteration: 99,
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationContinuationTriggered {
+                iteration: 2,
+                status: DevelopmentStatus::Partial,
+                summary: "Did work".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+
+        assert_eq!(new_state.iteration, 2);
+    }
+
+    #[test]
     fn test_continuation_triggered_with_failed_status() {
         use crate::reducer::state::DevelopmentStatus;
 
@@ -1070,6 +1095,33 @@ mod tests {
         assert!(!new_state.continuation.is_continuation());
         assert_eq!(new_state.continuation.continuation_attempt, 0);
         assert!(new_state.continuation.previous_status.is_none());
+    }
+
+    #[test]
+    fn test_continuation_succeeded_sets_iteration_from_event() {
+        use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+        let mut state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 99,
+            ..create_test_state()
+        };
+        state.continuation = ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Work".to_string(),
+            None,
+            None,
+        );
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationContinuationSucceeded {
+                iteration: 1,
+                total_continuation_attempts: 1,
+            },
+        );
+
+        assert_eq!(new_state.iteration, 1);
     }
 
     #[test]
