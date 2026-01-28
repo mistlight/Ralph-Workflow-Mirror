@@ -17,6 +17,7 @@ use crate::files::llm_output_extraction::{
     validate_plan_xml, xml_paths, PlanElements,
 };
 use crate::files::{delete_plan_file_with_workspace, update_status_with_workspace};
+use crate::format_xml_for_display;
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
@@ -136,8 +137,7 @@ pub fn run_development_phase(
         // Config semantics: max_dev_continuations counts *continuation attempts* beyond the
         // initial attempt. Total valid attempts is `1 + max_dev_continuations`.
         let continuation_state = if resuming_into_development {
-            load_continuation_state_from_context_file(ctx.workspace)
-                .unwrap_or_else(ContinuationState::new)
+            load_continuation_state_from_context_file(ctx.workspace).unwrap_or_default()
         } else {
             ContinuationState::new()
         };
