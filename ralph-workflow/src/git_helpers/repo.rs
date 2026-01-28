@@ -16,6 +16,7 @@ use std::path::PathBuf;
 
 use super::git2_to_io_error;
 use super::identity::GitIdentity;
+use crate::workspace::Workspace;
 
 /// The level of truncation applied to a diff for review.
 ///
@@ -606,9 +607,6 @@ fn git_commit_impl(
 ///
 /// # Note
 ///
-/// This function is part of the test infrastructure (used by `RealAppEffectHandler`
-/// to implement the `AppEffect::GitDiffFrom` effect).
-#[cfg(any(test, feature = "test-utils"))]
 pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
     let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
 
@@ -620,6 +618,10 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
         )
     })?;
 
+    git_diff_from_oid(&repo, oid)
+}
+
+fn git_diff_from_oid(repo: &git2::Repository, oid: git2::Oid) -> io::Result<String> {
     // Find the starting commit
     let start_commit = repo.find_commit(oid).map_err(|e| git2_to_io_error(&e))?;
     let start_tree = start_commit.tree().map_err(|e| git2_to_io_error(&e))?;
@@ -650,9 +652,6 @@ pub fn git_diff_from(start_oid: &str) -> io::Result<String> {
 /// This is a helper function for `get_git_diff_from_start` that handles the
 /// case of a repository with no commits yet.
 ///
-/// This function is part of the test infrastructure (used by `RealAppEffectHandler`
-/// to implement the `AppEffect::GitDiffFromStart` effect).
-#[cfg(any(test, feature = "test-utils"))]
 fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
     let mut diff_opts = git2::DiffOptions::new();
     diff_opts.include_untracked(true);
@@ -684,9 +683,6 @@ fn git_diff_from_empty_tree(repo: &git2::Repository) -> io::Result<String> {
 /// - The diff cannot be generated
 /// - The starting commit file exists but is invalid
 ///
-/// This function is part of the test infrastructure (used by `RealAppEffectHandler`
-/// to implement the `AppEffect::GitDiffFromStart` effect).
-#[cfg(any(test, feature = "test-utils"))]
 pub fn get_git_diff_from_start() -> io::Result<String> {
     use crate::git_helpers::start_commit::{load_start_point, save_start_commit, StartPoint};
 
@@ -699,6 +695,76 @@ pub fn get_git_diff_from_start() -> io::Result<String> {
     match load_start_point()? {
         StartPoint::Commit(oid) => git_diff_from(&oid.to_string()),
         StartPoint::EmptyRepo => git_diff_from_empty_tree(&repo),
+    }
+}
+
+/// Get the git diff from the starting commit (workspace-aware).
+///
+/// This uses `.agent/start_commit` as the baseline and generates a diff between that baseline
+/// and the current state on disk, including staged + unstaged changes and untracked files.
+///
+/// Unlike [`get_git_diff_from_start`], this does not rely on the process CWD.
+pub fn get_git_diff_from_start_with_workspace(workspace: &dyn Workspace) -> io::Result<String> {
+    use crate::git_helpers::start_commit::{
+        load_start_point_with_workspace, save_start_commit_with_workspace, StartPoint,
+    };
+
+    // NOTE: We intentionally discover the repository from the process CWD.
+    // The pipeline sets CWD to the repo root early, and many test harnesses use a
+    // mock workspace root that doesn't exist on disk.
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+
+    // Ensure a valid start point exists. This is expected to persist across runs, but we also
+    // repair missing/corrupt files opportunistically for robustness.
+    save_start_commit_with_workspace(workspace, &repo)?;
+
+    match load_start_point_with_workspace(workspace, &repo)? {
+        StartPoint::Commit(oid) => git_diff_from_oid(&repo, oid),
+        StartPoint::EmptyRepo => git_diff_from_empty_tree(&repo),
+    }
+}
+
+/// Get the diff content that should be shown to reviewers.
+///
+/// Baseline selection:
+/// - If `.agent/review_baseline.txt` is set, diff from that commit.
+/// - Otherwise, diff from `.agent/start_commit` (the initial pipeline baseline).
+///
+/// The diff is always generated against the current state on disk (staged + unstaged + untracked).
+///
+/// Returns `(diff, baseline_oid_for_prompts)` where `baseline_oid_for_prompts` is the commit hash
+/// to mention in fallback instructions (or empty for empty repo baseline).
+pub fn get_git_diff_for_review_with_workspace(
+    workspace: &dyn Workspace,
+) -> io::Result<(String, String)> {
+    use crate::git_helpers::review_baseline::{
+        load_review_baseline_with_workspace, ReviewBaseline,
+    };
+    use crate::git_helpers::start_commit::{
+        load_start_point_with_workspace, save_start_commit_with_workspace, StartPoint,
+    };
+
+    // NOTE: See comment in get_git_diff_from_start_with_workspace.
+    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+
+    let baseline = load_review_baseline_with_workspace(workspace).unwrap_or(ReviewBaseline::NotSet);
+    match baseline {
+        ReviewBaseline::Commit(oid) => {
+            let diff = git_diff_from_oid(&repo, oid)?;
+            Ok((diff, oid.to_string()))
+        }
+        ReviewBaseline::NotSet => {
+            // Ensure a valid start point exists.
+            save_start_commit_with_workspace(workspace, &repo)?;
+
+            match load_start_point_with_workspace(workspace, &repo)? {
+                StartPoint::Commit(oid) => {
+                    let diff = git_diff_from_oid(&repo, oid)?;
+                    Ok((diff, oid.to_string()))
+                }
+                StartPoint::EmptyRepo => Ok((git_diff_from_empty_tree(&repo)?, String::new())),
+            }
+        }
     }
 }
 

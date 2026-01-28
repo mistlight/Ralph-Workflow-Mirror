@@ -152,17 +152,40 @@ impl DiffContentReference {
                 start_commit,
                 description,
             } => {
-                format!(
-                    "[DIFF too large to embed - Read from file]\n\
-                     {}\n\n\
-                     Read the diff from: {}\n\
-                     If this file is missing or unavailable, run:\n\
-                     git diff {}..HEAD\n\n\
-                     This shows all changes since the start of this session.",
-                    description,
-                    path.display(),
-                    start_commit
-                )
+                // NOTE: The pipeline prefers writing the full diff to `path` so agents don't
+                // need git. The git commands below are a *last resort* fallback.
+                //
+                // We want the diff from `start_commit` to the current state on disk,
+                // including staged + unstaged changes (and untracked, if any).
+                // There is no single git command that covers all of that in every case,
+                // so we provide the minimal set.
+                if start_commit.is_empty() {
+                    format!(
+                        "[DIFF too large to embed - Read from file]\n\
+                         {}\n\n\
+                         Read the diff from: {}\n\
+                         If this file is missing or unavailable, regenerate it with git (last resort):\n\
+                         - Unstaged changes: git diff\n\
+                         - Staged changes:   git diff --cached\n\
+                         - Untracked files:  git ls-files --others --exclude-standard\n",
+                        description,
+                        path.display(),
+                    )
+                } else {
+                    format!(
+                        "[DIFF too large to embed - Read from file]\n\
+                         {}\n\n\
+                         Read the diff from: {}\n\
+                         If this file is missing or unavailable, regenerate it with git (last resort):\n\
+                         - Unstaged changes: git diff {}\n\
+                         - Staged changes:   git diff --cached {}\n\
+                         - Untracked files:  git ls-files --others --exclude-standard\n",
+                        description,
+                        path.display(),
+                        start_commit,
+                        start_commit,
+                    )
+                }
             }
         }
     }
@@ -363,7 +386,8 @@ mod tests {
         assert!(!reference.is_inline());
         let rendered = reference.render_for_template();
         assert!(rendered.contains("/backup/diff.txt"));
-        assert!(rendered.contains("git diff abc123..HEAD"));
+        assert!(rendered.contains("git diff abc123"));
+        assert!(rendered.contains("git diff --cached abc123"));
     }
 
     #[test]
@@ -374,7 +398,8 @@ mod tests {
             Path::new("/backup/diff.txt"),
         );
         let rendered = reference.render_for_template();
-        assert!(rendered.contains("git diff ..HEAD"));
+        assert!(rendered.contains("Unstaged changes: git diff"));
+        assert!(rendered.contains("Staged changes:   git diff --cached"));
     }
 
     #[test]

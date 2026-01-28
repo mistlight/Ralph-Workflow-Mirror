@@ -41,7 +41,8 @@ use crate::phases::get_primary_commit_agent;
 use crate::pipeline::{run_xsd_retry_with_session, PipelineRuntime, XsdRetryConfig};
 use crate::prompts::{
     get_stored_or_generate_prompt, prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context,
-    prompt_review_xml_with_context, prompt_review_xsd_retry_with_context, ContextLevel,
+    prompt_review_xml_with_references, prompt_review_xsd_retry_with_context, ContextLevel,
+    PromptContentBuilder,
 };
 use crate::workspace::Workspace;
 use std::path::Path;
@@ -636,15 +637,18 @@ pub fn run_review_pass(
         .read(Path::new(".agent/PLAN.md"))
         .unwrap_or_default();
 
-    // Get the diff for review context
-    let changes_content = match crate::git_helpers::git_diff() {
-        Ok(diff) => diff,
-        Err(e) => {
-            ctx.logger
-                .warn(&format!("Failed to get diff for review: {e}"));
-            String::new()
-        }
-    };
+    // Get the diff for review context.
+    // IMPORTANT: This must be the diff from the review baseline (or start_commit for the first
+    // cycle) to the current state on disk. It may or may not correspond to the last commit.
+    let (changes_content, baseline_oid_for_prompts) =
+        match crate::git_helpers::get_git_diff_for_review_with_workspace(ctx.workspace) {
+            Ok((diff, baseline_oid)) => (diff, baseline_oid),
+            Err(e) => {
+                ctx.logger
+                    .warn(&format!("Failed to get baseline diff for review: {e}"));
+                (String::new(), String::new())
+            }
+        };
 
     // Session info for potential session continuation on XSD retries
     let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
@@ -676,12 +680,12 @@ pub fn run_review_pass(
             let prompt_key = format!("review_{}", j);
             let (prompt, was_replayed) =
                 get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                    prompt_review_xml_with_context(
-                        ctx.template_context,
-                        &prompt_content,
-                        &plan_content,
-                        &changes_content,
-                    )
+                    let refs = PromptContentBuilder::new(ctx.workspace)
+                        .with_plan(plan_content.clone())
+                        .with_diff(changes_content.clone(), &baseline_oid_for_prompts)
+                        .build();
+
+                    prompt_review_xml_with_references(ctx.template_context, &refs)
                 });
 
             if !was_replayed {
