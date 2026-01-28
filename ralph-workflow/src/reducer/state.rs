@@ -359,10 +359,12 @@ pub const MAX_VALIDATION_RETRY_ATTEMPTS: u32 = 100;
 
 /// Maximum number of developer validation retry attempts before giving up.
 ///
-/// Specifically for developer iterations to reduce the development cycle time.
-/// This allows for faster iteration during development while keeping other
-/// validation retry attempts at their original values.
-pub const MAX_DEV_VALIDATION_RETRY_ATTEMPTS: u32 = 2;
+/// Specifically for developer iterations - this is for XSD validation failures
+/// (malformed XML). After exhausting these retries, the system will fall back
+/// to a continuation attempt with a fresh prompt rather than failing entirely.
+/// This separates XSD retry (can't parse the response) from continuation
+/// (understood the response but work is incomplete).
+pub const MAX_DEV_VALIDATION_RETRY_ATTEMPTS: u32 = 10;
 
 /// Commit generation state.
 ///

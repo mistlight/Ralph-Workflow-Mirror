@@ -1,11 +1,11 @@
 {# ============================================================================ #}
 {# Template: commit_xsd_retry.txt                                              #}
-{# Version: 3.0 - File-based context to avoid prompt bloat                     #}
+{# Version: 4.0 - STRICT XML-only fix mode                                     #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
 {#   Retry prompt for commit message generation when XSD validation fails.     #}
-{#   XSD schema and diff are written to files to keep prompt small.            #}
+{#   This is STRICTLY for fixing malformed XML - NO other actions allowed.     #}
 {#                                                                             #}
 {# VARIABLES:                                                                  #}
 {#   {{XSD_ERROR}} - The XSD validation error message (required)               #}
@@ -21,10 +21,44 @@
 
 {{> shared/_unattended_mode}}
 
-Your XML at `{{COMMIT_MESSAGE_XML_PATH}}` failed validation.
+═══════════════════════════════════════════════════════════════════════════════
+XSD VALIDATION FAILED - FIX XML ONLY
+═══════════════════════════════════════════════════════════════════════════════
+
+Your XML output at `{{COMMIT_MESSAGE_XML_PATH}}` failed XSD validation.
 
 ERROR: {{XSD_ERROR}}
 
-Fix `{{COMMIT_MESSAGE_XML_PATH}}` based on `{{COMMIT_MESSAGE_XSD_PATH}}`.
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL INSTRUCTIONS - READ CAREFULLY
+═══════════════════════════════════════════════════════════════════════════════
 
-IMPORTANT: Use file editing tools to modify the XML file directly. Do NOT output the corrected XML in your response.
+You MUST:
+1. Read the XSD schema at `{{COMMIT_MESSAGE_XSD_PATH}}`
+2. Read your previous invalid output (if available)
+3. Fix ONLY the XML structure/format issues
+4. Write the corrected XML to `{{COMMIT_MESSAGE_XML_PATH}}`
+
+You MUST NOT:
+- Analyze any code or diffs
+- Run any commands
+- Do ANY work other than fixing XML
+- Change the content/meaning of your commit message - ONLY fix the XML format
+
+This is a PURE XML SYNTAX FIX. Your commit message content is fine. The only
+problem is that your XML output doesn't conform to the schema. Fix the XML
+structure, nothing else.
+
+═══════════════════════════════════════════════════════════════════════════════
+COMMON XML MISTAKES TO FIX
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Missing required elements (check XSD)
+2. Wrong element order (check XSD for correct sequence)
+3. Unescaped special characters (use &lt; &gt; &amp; or CDATA)
+4. Missing closing tags
+5. Text before/after root element
+6. Markdown code fences around XML (remove ```)
+
+After reading the XSD schema, fix ONLY the XML validation error.
+DO NOT do any other work.

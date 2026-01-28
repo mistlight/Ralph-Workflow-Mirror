@@ -607,19 +607,34 @@ pub fn run_development_iteration_with_xml_retry(
                         // Continue to next XSD retry iteration
                         continue;
                     } else {
-                        ctx.logger
-                            .warn("  No more in-session XSD retries remaining");
-                        // Fall through to return what we have
-                        break 'continuation;
+                        // XSD retries exhausted - fall through to trigger continuation
+                        ctx.logger.warn(&format!(
+                            "  XSD retries exhausted ({}/{}). Will attempt fresh continuation.",
+                            retry_num + 1,
+                            max_xsd_retries
+                        ));
+                        // Break inner loop to trigger continuation with fresh prompt
+                        break;
                     }
                 }
             }
         }
 
-        // If we've exhausted XSD retries, break the continuation loop
-        ctx.logger
-            .warn("XSD retry loop exhausted - stopping continuation");
-        break;
+        // XSD retries exhausted for this continuation attempt.
+        // Trigger a fresh continuation attempt (outer loop will continue).
+        // This treats "couldn't parse response" as equivalent to "partial" status.
+        // The invalid XML is already saved to .agent/tmp/last_output.xml for reference.
+        ctx.logger.warn(&format!(
+            "XSD validation failed after {} retries. Starting fresh continuation attempt.",
+            max_xsd_retries
+        ));
+        local_continuation = local_continuation.trigger_continuation(
+            DevelopmentStatus::Failed,
+            "XML output failed validation. Your previous (invalid) output is at .agent/tmp/last_output.xml for reference.".to_string(),
+            None,
+            Some("Complete the task and provide valid XML output conforming to the XSD schema.".to_string()),
+        );
+        // Continue to next iteration of outer continuation loop
     }
 
     // If we get here, we exhausted the continuation limit or XSD retries
