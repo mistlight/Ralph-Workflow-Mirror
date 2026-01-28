@@ -2,6 +2,7 @@
 
 use crate::agents::{validate_model_flag, AgentConfig, AgentRegistry, AgentRole, JsonParserType};
 use crate::common::split_command;
+use std::path::Path;
 use std::sync::Arc;
 
 use super::fallback::try_agent_with_retries;
@@ -720,19 +721,17 @@ fn try_session_continuation(
 
     match result {
         Ok(Ok(cmd_result)) => {
-            // Check for auth/credential errors in stderr when agent failed
-            if cmd_result.exit_code != 0 {
-                let stderr_lower = cmd_result.stderr.to_lowercase();
-                if stderr_lower.contains("credential")
-                    || stderr_lower.contains("unauthorized")
-                    || stderr_lower.contains("authentication")
-                    || stderr_lower.contains("forbidden")
-                    || stderr_lower.contains("api key")
-                    || stderr_lower.contains("401")
-                    || stderr_lower.contains("403")
-                {
-                    return SessionContinuationResult::AuthError;
-                }
+            // Check for auth/credential errors.
+            // IMPORTANT: Some agent CLIs (notably OpenCode) emit auth failures into stdout/logs
+            // rather than stderr, and may even return exit_code=0 while printing an error event.
+            // We must inspect the session log output as well as stderr.
+            let log_output = config
+                .workspace
+                .read(Path::new(&logfile))
+                .ok()
+                .unwrap_or_default();
+            if output_contains_auth_error(&cmd_result.stderr, &log_output) {
+                return SessionContinuationResult::AuthError;
             }
 
             // Agent ran (even if it returned non-zero exit code)
@@ -751,5 +750,73 @@ fn try_session_continuation(
             // Fall back to normal behavior
             SessionContinuationResult::Fallback
         }
+    }
+}
+
+fn output_contains_auth_error(stderr: &str, log_output: &str) -> bool {
+    // Keep detection conservative to avoid false positives from informational text like
+    // "Check authentication: opencode auth login".
+    let combined = format!("{stderr}\n{log_output}").to_lowercase();
+
+    // Highly specific known OpenCode credential error.
+    if combined.contains("this credential is only authorized for use with claude code") {
+        return true;
+    }
+
+    // Strong, unambiguous phrases.
+    if combined.contains("authentication failed")
+        || combined.contains("credential is invalid")
+        || combined.contains("invalid credential")
+        || combined.contains("invalid api key")
+        || combined.contains("api key invalid")
+        || combined.contains("unauthorized")
+        || combined.contains("forbidden")
+        || combined.contains("not authorized")
+        || combined.contains("permission denied")
+    {
+        return true;
+    }
+
+    // Broader heuristic: auth keywords must be paired with an error-ish marker.
+    let has_errorish_marker = combined.contains("error")
+        || combined.contains("failed")
+        || combined.contains("invalid")
+        || combined.contains("denied")
+        || combined.contains(" 401")
+        || combined.contains(" 403")
+        || combined.contains("status=401")
+        || combined.contains("status=403");
+    if !has_errorish_marker {
+        return false;
+    }
+
+    combined.contains("credential")
+        || combined.contains("authentication")
+        || combined.contains("api key")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_output_contains_auth_error_detects_opencode_stdout_credential_error() {
+        let stderr = "";
+        let log = "[opencode/anthropic/claude-opus-4-5] ✗ Error: This credential is only authorized for use with Claude Code and cannot be used for other API requests.";
+        assert!(output_contains_auth_error(stderr, log));
+    }
+
+    #[test]
+    fn test_output_contains_auth_error_ignores_auth_tips_without_error_marker() {
+        let stderr = "";
+        let log = "OpenCode debugging tips: Check authentication: opencode auth login";
+        assert!(!output_contains_auth_error(stderr, log));
+    }
+
+    #[test]
+    fn test_output_contains_auth_error_detects_stderr_unauthorized() {
+        let stderr = "Error: Unauthorized (401)";
+        let log = "";
+        assert!(output_contains_auth_error(stderr, log));
     }
 }
