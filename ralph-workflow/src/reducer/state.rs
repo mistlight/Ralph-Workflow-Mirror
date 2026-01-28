@@ -10,6 +10,97 @@ use std::path::PathBuf;
 
 use super::event::PipelinePhase;
 
+/// Development status from agent output.
+///
+/// These values map to the `<ralph-status>` element in development_result.xml.
+/// Used to track whether work is complete or needs continuation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DevelopmentStatus {
+    /// Work completed successfully - no continuation needed.
+    Completed,
+    /// Work partially done - needs continuation.
+    Partial,
+    /// Work failed - needs continuation with different approach.
+    Failed,
+}
+
+impl std::fmt::Display for DevelopmentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Completed => write!(f, "completed"),
+            Self::Partial => write!(f, "partial"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+/// Continuation state for development iterations.
+///
+/// Tracks context from previous attempts within the same iteration to enable
+/// continuation-aware prompting when status is "partial" or "failed".
+///
+/// # When Fields Are Populated
+///
+/// - `previous_status`: Set when DevelopmentIterationContinuationTriggered event fires
+/// - `previous_summary`: Set when DevelopmentIterationContinuationTriggered event fires
+/// - `previous_files_changed`: Set when DevelopmentIterationContinuationTriggered event fires
+/// - `previous_next_steps`: Set when DevelopmentIterationContinuationTriggered event fires
+/// - `continuation_attempt`: Incremented on each continuation within same iteration
+///
+/// # Reset Triggers
+///
+/// The continuation state is reset (cleared) when:
+/// - A new iteration starts (DevelopmentIterationStarted event)
+/// - Status becomes "completed" (ContinuationSucceeded event)
+/// - Phase transitions away from Development
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct ContinuationState {
+    /// Status from the previous attempt ("partial" or "failed").
+    pub previous_status: Option<DevelopmentStatus>,
+    /// Summary of what was accomplished in the previous attempt.
+    pub previous_summary: Option<String>,
+    /// Files changed in the previous attempt.
+    pub previous_files_changed: Option<Vec<String>>,
+    /// Agent's recommended next steps from the previous attempt.
+    pub previous_next_steps: Option<String>,
+    /// Current continuation attempt number (0 = first attempt, 1+ = continuation).
+    pub continuation_attempt: u32,
+}
+
+impl ContinuationState {
+    /// Create a new empty continuation state.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Check if this is a continuation attempt (not the first attempt).
+    pub fn is_continuation(&self) -> bool {
+        self.continuation_attempt > 0
+    }
+
+    /// Reset the continuation state for a new iteration.
+    pub fn reset(&self) -> Self {
+        Self::default()
+    }
+
+    /// Trigger a continuation with context from the previous attempt.
+    pub fn trigger_continuation(
+        &self,
+        status: DevelopmentStatus,
+        summary: String,
+        files_changed: Option<Vec<String>>,
+        next_steps: Option<String>,
+    ) -> Self {
+        Self {
+            previous_status: Some(status),
+            previous_summary: Some(summary),
+            previous_files_changed: files_changed,
+            previous_next_steps: next_steps,
+            continuation_attempt: self.continuation_attempt + 1,
+        }
+    }
+}
+
 /// Immutable pipeline state (this IS the checkpoint).
 ///
 /// Contains all information needed to resume pipeline execution at any point.
@@ -28,6 +119,12 @@ pub struct PipelineState {
     pub rebase: RebaseState,
     pub commit: CommitState,
     pub execution_history: Vec<ExecutionStep>,
+    /// Continuation state for development iterations.
+    ///
+    /// Tracks context from previous attempts when status is "partial" or "failed"
+    /// to enable continuation-aware prompting.
+    #[serde(default)]
+    pub continuation: ContinuationState,
 }
 
 impl PipelineState {
@@ -58,6 +155,7 @@ impl PipelineState {
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
             execution_history: Vec::new(),
+            continuation: ContinuationState::new(),
         }
     }
 
@@ -441,5 +539,127 @@ mod tests {
             ..PipelineState::initial(5, 2)
         };
         assert!(state.is_complete(), "Complete phase should be complete");
+    }
+
+    // =========================================================================
+    // Continuation state tests
+    // =========================================================================
+
+    #[test]
+    fn test_continuation_state_initial() {
+        let state = ContinuationState::new();
+        assert!(!state.is_continuation());
+        assert_eq!(state.continuation_attempt, 0);
+        assert!(state.previous_status.is_none());
+        assert!(state.previous_summary.is_none());
+        assert!(state.previous_files_changed.is_none());
+        assert!(state.previous_next_steps.is_none());
+    }
+
+    #[test]
+    fn test_continuation_state_default() {
+        let state = ContinuationState::default();
+        assert!(!state.is_continuation());
+        assert_eq!(state.continuation_attempt, 0);
+    }
+
+    #[test]
+    fn test_continuation_trigger_partial() {
+        let state = ContinuationState::new();
+        let new_state = state.trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Did some work".to_string(),
+            Some(vec!["file1.rs".to_string()]),
+            Some("Continue with tests".to_string()),
+        );
+
+        assert!(new_state.is_continuation());
+        assert_eq!(new_state.continuation_attempt, 1);
+        assert_eq!(new_state.previous_status, Some(DevelopmentStatus::Partial));
+        assert_eq!(
+            new_state.previous_summary,
+            Some("Did some work".to_string())
+        );
+        assert_eq!(
+            new_state.previous_files_changed,
+            Some(vec!["file1.rs".to_string()])
+        );
+        assert_eq!(
+            new_state.previous_next_steps,
+            Some("Continue with tests".to_string())
+        );
+    }
+
+    #[test]
+    fn test_continuation_trigger_failed() {
+        let state = ContinuationState::new();
+        let new_state = state.trigger_continuation(
+            DevelopmentStatus::Failed,
+            "Build failed".to_string(),
+            None,
+            Some("Fix errors".to_string()),
+        );
+
+        assert!(new_state.is_continuation());
+        assert_eq!(new_state.continuation_attempt, 1);
+        assert_eq!(new_state.previous_status, Some(DevelopmentStatus::Failed));
+        assert_eq!(new_state.previous_summary, Some("Build failed".to_string()));
+        assert!(new_state.previous_files_changed.is_none());
+        assert_eq!(
+            new_state.previous_next_steps,
+            Some("Fix errors".to_string())
+        );
+    }
+
+    #[test]
+    fn test_continuation_reset() {
+        let state = ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Work".to_string(),
+            None,
+            None,
+        );
+
+        let reset = state.reset();
+        assert!(!reset.is_continuation());
+        assert_eq!(reset.continuation_attempt, 0);
+        assert!(reset.previous_status.is_none());
+        assert!(reset.previous_summary.is_none());
+    }
+
+    #[test]
+    fn test_multiple_continuations() {
+        let state = ContinuationState::new()
+            .trigger_continuation(
+                DevelopmentStatus::Partial,
+                "First".to_string(),
+                Some(vec!["a.rs".to_string()]),
+                None,
+            )
+            .trigger_continuation(
+                DevelopmentStatus::Partial,
+                "Second".to_string(),
+                Some(vec!["b.rs".to_string()]),
+                Some("Do more".to_string()),
+            );
+
+        assert_eq!(state.continuation_attempt, 2);
+        assert_eq!(state.previous_summary, Some("Second".to_string()));
+        assert_eq!(state.previous_files_changed, Some(vec!["b.rs".to_string()]));
+        assert_eq!(state.previous_next_steps, Some("Do more".to_string()));
+    }
+
+    #[test]
+    fn test_development_status_display() {
+        assert_eq!(format!("{}", DevelopmentStatus::Completed), "completed");
+        assert_eq!(format!("{}", DevelopmentStatus::Partial), "partial");
+        assert_eq!(format!("{}", DevelopmentStatus::Failed), "failed");
+    }
+
+    #[test]
+    fn test_pipeline_state_initial_has_empty_continuation() {
+        let state = PipelineState::initial(5, 2);
+        assert!(!state.continuation.is_continuation());
+        assert_eq!(state.continuation.continuation_attempt, 0);
     }
 }

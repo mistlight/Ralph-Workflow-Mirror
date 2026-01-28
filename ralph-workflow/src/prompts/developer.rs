@@ -526,6 +526,119 @@ pub fn prompt_developer_iteration_xsd_retry_with_context(
         })
 }
 
+/// Generate continuation prompt for development iteration.
+///
+/// Used when the previous attempt returned status="partial" or "failed".
+/// Includes context about what was previously done and guidance to continue.
+///
+/// # Arguments
+///
+/// * `context` - Template context containing the template registry
+/// * `continuation_state` - The continuation state with context from previous attempt
+///
+/// # Example
+///
+/// ```ignore
+/// let continuation_state = ContinuationState::new()
+///     .trigger_continuation(
+///         DevelopmentStatus::Partial,
+///         "Implemented half the feature".to_string(),
+///         Some(vec!["src/lib.rs".to_string()]),
+///         Some("Add tests".to_string()),
+///     );
+/// let prompt = prompt_developer_iteration_continuation_xml(
+///     &template_context,
+///     &continuation_state,
+/// );
+/// ```
+pub fn prompt_developer_iteration_continuation_xml(
+    context: &TemplateContext,
+    continuation_state: &crate::reducer::state::ContinuationState,
+) -> String {
+    use crate::prompts::partials::get_shared_partials;
+
+    let template_content = context
+        .registry()
+        .get_template("developer_iteration_continuation_xml")
+        .unwrap_or_else(|_| {
+            include_str!("templates/developer_iteration_continuation_xml.txt").to_string()
+        });
+    let template = Template::new(&template_content);
+    let partials = get_shared_partials();
+
+    let previous_status = continuation_state
+        .previous_status
+        .as_ref()
+        .map_or("unknown".to_string(), |s| format!("{}", s));
+
+    let previous_summary = continuation_state
+        .previous_summary
+        .clone()
+        .unwrap_or_else(|| "No summary available".to_string());
+
+    let previous_files_changed = continuation_state
+        .previous_files_changed
+        .as_ref()
+        .map(|files| files.join("\n"));
+
+    let previous_next_steps = continuation_state.previous_next_steps.clone();
+
+    let mut variables: HashMap<&str, String> = HashMap::new();
+    variables.insert("PROMPT_PATH", "PROMPT.md".to_string());
+    variables.insert("PLAN_PATH", ".agent/PLAN.md".to_string());
+    variables.insert("PREVIOUS_STATUS", previous_status);
+    variables.insert("PREVIOUS_SUMMARY", previous_summary);
+    variables.insert(
+        "CONTINUATION_ATTEMPT",
+        continuation_state.continuation_attempt.to_string(),
+    );
+    variables.insert(
+        "DEVELOPMENT_RESULT_XML_PATH",
+        resolve_absolute_path(".agent/tmp/development_result.xml"),
+    );
+    variables.insert(
+        "DEVELOPMENT_RESULT_XSD_PATH",
+        resolve_absolute_path(".agent/tmp/development_result.xsd"),
+    );
+
+    // Optional fields - add if present
+    if let Some(files) = previous_files_changed {
+        variables.insert("PREVIOUS_FILES_CHANGED", files);
+    }
+    if let Some(next_steps) = previous_next_steps {
+        variables.insert("PREVIOUS_NEXT_STEPS", next_steps);
+    }
+
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
+            // Fallback template if rendering fails
+            let status = continuation_state
+                .previous_status
+                .as_ref()
+                .map_or("unknown", |s| match s {
+                    crate::reducer::state::DevelopmentStatus::Completed => "completed",
+                    crate::reducer::state::DevelopmentStatus::Partial => "partial",
+                    crate::reducer::state::DevelopmentStatus::Failed => "failed",
+                });
+            let summary = continuation_state
+                .previous_summary
+                .as_ref()
+                .map_or("No summary", |s| s.as_str());
+            format!(
+                "CONTINUATION MODE\n\n\
+                 This is continuation attempt #{}. Previous status: {}\n\n\
+                 Previous summary: {}\n\n\
+                 Continue the implementation from where you left off.\n\
+                 Read PROMPT.md and .agent/PLAN.md for the full context.\n\n\
+                 Output format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n",
+                continuation_state.continuation_attempt,
+                status,
+                summary
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -884,5 +997,62 @@ mod tests {
 
         // Should have written the XSD schema file
         assert!(workspace.exists(Path::new(".agent/tmp/plan.xsd")));
+    }
+
+    #[test]
+    fn test_continuation_prompt_contains_expected_elements() {
+        use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+        let context = TemplateContext::default();
+        let continuation_state = ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Implemented half the feature".to_string(),
+            Some(vec!["src/lib.rs".to_string(), "src/main.rs".to_string()]),
+            Some("Add tests for the new functionality".to_string()),
+        );
+
+        let prompt = prompt_developer_iteration_continuation_xml(&context, &continuation_state);
+
+        // Debug: print the prompt to see what we're actually getting
+        eprintln!("Generated prompt:\n{}", prompt);
+
+        // Verify the prompt contains key elements
+        assert!(
+            prompt.contains("CONTINUATION MODE"),
+            "Prompt should indicate continuation mode"
+        );
+        assert!(
+            prompt.contains("partial"),
+            "Prompt should include previous status"
+        );
+        assert!(
+            prompt.contains("Implemented half the feature"),
+            "Prompt should include previous summary"
+        );
+        assert!(
+            prompt.contains("src/lib.rs"),
+            "Prompt should include changed files"
+        );
+        assert!(
+            prompt.contains("Add tests"),
+            "Prompt should include next steps"
+        );
+        assert!(
+            prompt.contains("#1"),
+            "Prompt should include continuation attempt number"
+        );
+        assert!(
+            prompt.contains("PROMPT.md"),
+            "Prompt should reference PROMPT.md"
+        );
+        assert!(
+            prompt.contains("PLAN.md"),
+            "Prompt should reference PLAN.md"
+        );
+        assert!(
+            prompt.contains("do NOT modify") || prompt.contains("DO NOT MODIFY"),
+            "Prompt should warn against modifying original files. Actual prompt: {}",
+            prompt
+        );
     }
 }

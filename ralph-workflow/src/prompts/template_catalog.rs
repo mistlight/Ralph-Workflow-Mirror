@@ -162,6 +162,16 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             },
         );
 
+        m.insert(
+            "developer_iteration_continuation_xml",
+            EmbeddedTemplate {
+                name: "developer_iteration_continuation_xml",
+                content: include_str!("templates/developer_iteration_continuation_xml.txt"),
+                description: "Continuation prompt when previous attempt returned partial/failed",
+                deprecated: false,
+            },
+        );
+
         // ============================================================================
         // Review XML Templates
         // ============================================================================

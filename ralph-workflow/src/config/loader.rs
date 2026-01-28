@@ -200,6 +200,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         git_user_email: general.git_user_email.clone(),
         show_streaming_metrics: false, // Default to false; can be enabled via CLI flag or config file
         review_format_retries: 5,      // Default to 5 retries for format correction
+        max_dev_continuations: Some(general.max_dev_continuations),
     }
 }
 
@@ -242,6 +243,7 @@ fn default_config() -> Config {
         git_user_email: None,
         show_streaming_metrics: false,
         review_format_retries: 5,
+        max_dev_continuations: Some(2), // Default to 2 (initial + 1 continuation)
     }
 }
 

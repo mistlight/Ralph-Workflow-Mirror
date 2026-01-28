@@ -24,10 +24,11 @@ use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_xsd_retry_with_session, PipelineRuntime, XsdRetryConfig};
 use crate::prompts::{
-    get_stored_or_generate_prompt, prompt_developer_iteration_xml_with_context,
-    prompt_developer_iteration_xsd_retry_with_context, prompt_planning_xml_with_context,
-    prompt_planning_xsd_retry_with_context, ContextLevel,
+    get_stored_or_generate_prompt, prompt_developer_iteration_continuation_xml,
+    prompt_developer_iteration_xml_with_context, prompt_developer_iteration_xsd_retry_with_context,
+    prompt_planning_xml_with_context, prompt_planning_xsd_retry_with_context, ContextLevel,
 };
+use crate::reducer::state::{ContinuationState, DevelopmentStatus};
 use std::path::Path;
 
 use super::context::PhaseContext;
@@ -125,6 +126,13 @@ pub fn run_development_phase(
         )?;
 
         // Run development iteration with XML extraction and XSD validation
+        // Use default continuation state (no previous attempt context) for legacy flow
+        let continuation_state = ContinuationState::new();
+        let max_continuations = ctx.config.max_dev_continuations.unwrap_or(2) as usize;
+        let continuation_config = ContinuationConfig {
+            state: &continuation_state,
+            max_attempts: max_continuations,
+        };
         let dev_result = run_development_iteration_with_xml_retry(
             ctx,
             i,
@@ -132,6 +140,7 @@ pub fn run_development_phase(
             resuming_into_development,
             resume_context,
             None,
+            continuation_config,
         )?;
 
         if dev_result.had_error {
@@ -253,10 +262,21 @@ pub struct DevIterationResult {
     pub files_changed: Option<Vec<String>>,
 }
 
+/// Configuration for continuation-aware development iterations.
+///
+/// Groups the continuation state and limit together to reduce function argument count.
+#[derive(Debug, Clone)]
+pub struct ContinuationConfig<'a> {
+    /// Current continuation state for the iteration.
+    pub state: &'a ContinuationState,
+    /// Maximum number of continuation attempts allowed.
+    pub max_attempts: usize,
+}
+
 /// Run a single development iteration with XML extraction and XSD validation retry loop.
 ///
 /// This function implements a nested loop structure:
-/// - **Outer loop (continuation)**: Continue while status != "completed" (max 100)
+/// - **Outer loop (continuation)**: Continue while status != "completed" (max configurable)
 /// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 100)
 ///
 /// The continuation logic ignores non-XSD errors and only looks for valid XML.
@@ -267,6 +287,16 @@ pub struct DevIterationResult {
 /// The development iteration produces side effects (file changes) as its primary output.
 /// The XML status is secondary - we use it for logging/tracking but don't fail the
 /// entire iteration if XML is missing or invalid.
+///
+/// # Arguments
+///
+/// * `ctx` - Phase context with access to workspace, logger, and configuration
+/// * `iteration` - Current iteration number
+/// * `_developer_context` - Context level (deprecated, unused)
+/// * `_resuming_into_development` - Whether resuming into development phase
+/// * `_resume_context` - Optional resume context from checkpoint
+/// * `_agent` - Optional agent override
+/// * `continuation_config` - Configuration for continuation-aware prompting
 pub fn run_development_iteration_with_xml_retry(
     ctx: &mut PhaseContext<'_>,
     iteration: u32,
@@ -274,6 +304,7 @@ pub fn run_development_iteration_with_xml_retry(
     _resuming_into_development: bool,
     _resume_context: Option<&ResumeContext>,
     _agent: Option<&str>,
+    continuation_config: ContinuationConfig<'_>,
 ) -> anyhow::Result<DevIterationResult> {
     let prompt_md = ctx
         .workspace
@@ -286,18 +317,21 @@ pub fn run_development_iteration_with_xml_retry(
     let log_dir = format!(".agent/logs/developer_{iteration}");
 
     let max_xsd_retries = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize;
-    let max_continuations = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize; // Safety limit to prevent infinite loops
+    let max_continuations = continuation_config.max_attempts;
     let mut final_summary: Option<String> = None;
     let mut final_files_changed: Option<Vec<String>> = None;
     let mut had_any_error = false;
 
+    // Track local continuation state (starts from the provided state)
+    let mut local_continuation = continuation_config.state.clone();
+
     // Outer loop: Continue until agent returns status="completed" or we hit the limit
     'continuation: for continuation_num in 0..max_continuations {
-        let is_continuation = continuation_num > 0;
+        let is_continuation = local_continuation.is_continuation() || continuation_num > 0;
         if is_continuation {
             ctx.logger.info(&format!(
                 "Continuation {} of {} (status was not 'completed')",
-                continuation_num, max_continuations
+                local_continuation.continuation_attempt, max_continuations
             ));
         }
 
@@ -375,13 +409,13 @@ pub fn run_development_iteration_with_xml_retry(
                 // Continuation only (first XSD attempt after continuation)
                 ctx.logger.info(&format!(
                     "  Continuation attempt {} (XSD validation attempt {}/{})",
-                    total_attempts, 1, max_xsd_retries
+                    local_continuation.continuation_attempt, 1, max_xsd_retries
                 ));
 
-                prompt_developer_iteration_xml_with_context(
+                // Use continuation prompt with context from previous attempt
+                prompt_developer_iteration_continuation_xml(
                     ctx.template_context,
-                    &prompt_md,
-                    &plan_md,
+                    &local_continuation,
                 )
             } else {
                 // Both continuation and XSD retry
@@ -532,14 +566,32 @@ pub fn run_development_iteration_with_xml_retry(
                             files_changed: final_files_changed,
                         });
                     } else if result_elements.is_partial() {
-                        // Status is "partial" - continue the outer loop
+                        // Status is "partial" - update continuation state and continue
                         ctx.logger
                             .info("Status is 'partial' - continuing with same iteration");
+                        local_continuation = local_continuation.trigger_continuation(
+                            DevelopmentStatus::Partial,
+                            result_elements.summary.clone(),
+                            result_elements
+                                .files_changed
+                                .as_ref()
+                                .map(|f| f.lines().map(|s| s.to_string()).collect()),
+                            result_elements.next_steps.clone(),
+                        );
                         continue 'continuation;
                     } else if result_elements.is_failed() {
-                        // Status is "failed" - continue the outer loop
+                        // Status is "failed" - update continuation state and continue
                         ctx.logger
                             .warn("Status is 'failed' - continuing with same iteration");
+                        local_continuation = local_continuation.trigger_continuation(
+                            DevelopmentStatus::Failed,
+                            result_elements.summary.clone(),
+                            result_elements
+                                .files_changed
+                                .as_ref()
+                                .map(|f| f.lines().map(|s| s.to_string()).collect()),
+                            result_elements.next_steps.clone(),
+                        );
                         continue 'continuation;
                     }
                 }

@@ -151,6 +151,7 @@ mod tests {
             git_user_email: None,
             show_streaming_metrics: false,
             review_format_retries: 5,
+            max_dev_continuations: Some(2),
         }
     }
 

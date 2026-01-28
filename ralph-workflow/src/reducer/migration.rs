@@ -35,6 +35,8 @@ impl From<PipelineCheckpoint> for PipelineState {
                 .execution_history
                 .map(|h| h.steps)
                 .unwrap_or_default(),
+            // Default to no continuation in progress (backward compatibility)
+            continuation: super::state::ContinuationState::new(),
         }
     }
 }

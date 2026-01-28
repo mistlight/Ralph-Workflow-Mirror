@@ -4,6 +4,7 @@
 //! Each event represents a state transition that the reducer handles.
 
 use crate::agents::AgentRole;
+use crate::reducer::state::DevelopmentStatus;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -195,6 +196,35 @@ pub enum PipelineEvent {
     /// This event is emitted after the RestorePromptPermissions effect
     /// successfully restores write permissions on PROMPT.md.
     PromptPermissionsRestored,
+
+    /// Development iteration needs continuation due to partial/failed status.
+    ///
+    /// Emitted when development output is valid but status is not "completed".
+    /// This triggers the continuation state machine to track context for the
+    /// next attempt within the same iteration.
+    DevelopmentIterationContinuationTriggered {
+        /// Current iteration number.
+        iteration: u32,
+        /// Status from the agent ("partial" or "failed").
+        status: DevelopmentStatus,
+        /// Summary of what was accomplished.
+        summary: String,
+        /// Files changed in this attempt.
+        files_changed: Option<Vec<String>>,
+        /// Agent's recommended next steps.
+        next_steps: Option<String>,
+    },
+
+    /// Development iteration continuation succeeded.
+    ///
+    /// Emitted when a continuation attempt completes with status "completed".
+    /// This resets the continuation state and allows the iteration to complete.
+    DevelopmentIterationContinuationSucceeded {
+        /// Current iteration number.
+        iteration: u32,
+        /// Number of continuation attempts it took.
+        total_continuation_attempts: u32,
+    },
 }
 
 /// Rebase phase (initial or post-review).

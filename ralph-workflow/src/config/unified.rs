@@ -140,6 +140,20 @@ pub struct GeneralConfig {
     /// Git user email for commits (optional, falls back to git config).
     #[serde(default)]
     pub git_user_email: Option<String>,
+    /// Maximum continuation attempts when developer returns "partial" or "failed".
+    ///
+    /// Higher values allow more attempts to complete complex tasks within a single plan.
+    /// Default: 2 (initial attempt + 1 continuation = 2 total attempts per iteration).
+    #[serde(default = "default_max_dev_continuations")]
+    pub max_dev_continuations: u32,
+}
+
+/// Default maximum continuation attempts per development iteration.
+///
+/// This allows 2 total attempts per iteration (initial + 1 continuation)
+/// for fast iteration cycles.
+fn default_max_dev_continuations() -> u32 {
+    2
 }
 
 impl Default for GeneralConfig {
@@ -167,6 +181,7 @@ impl Default for GeneralConfig {
             templates_dir: None,
             git_user_name: None,
             git_user_email: None,
+            max_dev_continuations: default_max_dev_continuations(),
         }
     }
 }

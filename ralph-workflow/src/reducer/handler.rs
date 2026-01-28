@@ -235,7 +235,15 @@ impl MainEffectHandler {
         // Get current agent from agent chain
         let dev_agent = self.state.agent_chain.current_agent().cloned();
 
-        // Run development iteration
+        // Get continuation state from reducer state
+        let continuation_state = &self.state.continuation;
+        let max_continuations = ctx.config.max_dev_continuations.unwrap_or(2) as usize;
+        let continuation_config = development::ContinuationConfig {
+            state: continuation_state,
+            max_attempts: max_continuations,
+        };
+
+        // Run development iteration with continuation state
         let result = development::run_development_iteration_with_xml_retry(
             ctx,
             iteration,
@@ -243,6 +251,7 @@ impl MainEffectHandler {
             false,
             None::<&ResumeContext>,
             dev_agent.as_deref(),
+            continuation_config,
         );
 
         match result {
