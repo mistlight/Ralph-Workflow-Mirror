@@ -166,7 +166,13 @@ fi
 
 echo "Checking integration test count..."
 
-EXPECTED_MIN_TESTS=400
+MIN_TEST_FILE="$TEST_DIR/test_count_guard.rs"
+EXPECTED_MIN_TESTS=$(rg -n "MINIMUM_EXPECTED_TESTS: usize = [0-9]+" "$MIN_TEST_FILE" \
+    | sed -E 's/.*= ([0-9]+).*/\1/' | head -n 1)
+if [ -z "$EXPECTED_MIN_TESTS" ]; then
+    echo -e "${RED}✗ Failed to determine MINIMUM_EXPECTED_TESTS from $MIN_TEST_FILE${NC}"
+    exit 2
+fi
 # Count tests by running cargo test --list and counting lines ending in ": test"
 # Use the repository root to run cargo commands
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
