@@ -16,6 +16,7 @@
 //! - Document the expected minimum integration test count
 //! - Serve as a reminder to verify the full suite is running
 //! - Provide a best-effort source scan to ensure the guard stays wired up
+//! - Fail loudly if the source-level count drops below the minimum floor
 //!
 //! # How to Verify Test Count
 //!
@@ -24,8 +25,8 @@
 //! cargo test -p ralph-workflow-tests -- --list 2>&1 | grep -c ': test$'
 //! ```
 //!
-//! The compliance check script (`compliance_check.sh`) verifies this count
-//! using the same minimum floor defined here.
+//! The compliance check script (`compliance_check.sh`) verifies the compiled
+//! test list using the same minimum floor defined here.
 //!
 //! NOTE: The source scan in this module is intentionally non-authoritative.
 //! It only looks for literal `#[test]` annotations and does not reflect
@@ -353,11 +354,13 @@ fn count_tests_recursive(
     total
 }
 
-/// This test documents the expected minimum test count.
+/// This test documents and enforces the expected minimum test count.
 ///
-/// This verifies that the test count guard module is properly loaded and the
-/// constant is accessible. The actual count verification happens in CI via
-/// `cargo test -p ralph-workflow-tests -- --list` and in the compliance check script.
+/// This verifies that the test count guard module is properly loaded, the
+/// constant is accessible, and the best-effort source scan has not regressed
+/// below the minimum floor. The authoritative compiled test list verification
+/// happens in CI via `cargo test -p ralph-workflow-tests -- --list` and in the
+/// compliance check script.
 ///
 /// If this test appears, it means the test count guard module is properly loaded
 /// and the integration test suite includes this verification documentation.
@@ -369,8 +372,8 @@ fn integration_test_count_guard_documentation() {
 
         let actual_count = count_tests_from_module_tree();
         assert!(
-            actual_count > 0,
-            "Source scan found zero #[test] annotations; guard wiring may be broken"
+            actual_count >= MINIMUM_EXPECTED_TESTS,
+            "Source scan found {actual_count} #[test] annotations; expected at least {MINIMUM_EXPECTED_TESTS}"
         );
     });
 }
