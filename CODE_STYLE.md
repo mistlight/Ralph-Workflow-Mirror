@@ -1,5 +1,14 @@
 # Code Style Guide
 
+## Important Rules for this Project
+- A file should at most be 1000 lines long, if it's longer, it's time to break it up. It is also a sign of smelly code and refactor is in order
+- A file should do one conceptual job. If you need a paragraph to explain what the file does, it’s doing too much.
+- If you need comments to explain what the code does, rewrite it.
+- If nesting goes past 3–4 levels, refactor.
+- Prefer early returns over deep if trees.
+- Function should be at most 100 lines long but if it's longer than 50 lines you should start considering refactoring, if it's like barely passing lint at 97 your PR may not be accepted and you will be asked to refactor.
+- Avoid clever code. Boring is good.
+
 ## Architecture
 
 Ralph uses an **event-sourced reducer architecture**. See [effect-system.md](docs/architecture/effect-system.md).

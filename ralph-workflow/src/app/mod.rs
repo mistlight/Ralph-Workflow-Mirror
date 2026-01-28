@@ -73,6 +73,35 @@ use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
 };
 
+fn discover_repo_root_for_workspace<H: effect::AppEffectHandler>(
+    override_dir: Option<&std::path::Path>,
+    handler: &mut H,
+) -> anyhow::Result<std::path::PathBuf> {
+    use effect::{AppEffect, AppEffectResult};
+
+    if let Some(dir) = override_dir {
+        match handler.execute(AppEffect::SetCurrentDir {
+            path: dir.to_path_buf(),
+        }) {
+            AppEffectResult::Ok => {}
+            AppEffectResult::Error(e) => anyhow::bail!(e),
+            other => anyhow::bail!("unexpected result from SetCurrentDir: {:?}", other),
+        }
+    }
+
+    match handler.execute(AppEffect::GitRequireRepo) {
+        AppEffectResult::Ok => {}
+        AppEffectResult::Error(e) => anyhow::bail!("Not in a git repository: {e}"),
+        other => anyhow::bail!("unexpected result from GitRequireRepo: {:?}", other),
+    }
+
+    match handler.execute(AppEffect::GitGetRepoRoot) {
+        AppEffectResult::Path(p) => Ok(p),
+        AppEffectResult::Error(e) => anyhow::bail!("Failed to get repo root: {e}"),
+        other => anyhow::bail!("unexpected result from GitGetRepoRoot: {:?}", other),
+    }
+}
+
 /// Main application entry point.
 ///
 /// Orchestrates the entire Ralph pipeline:
@@ -140,15 +169,32 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
     // Validate agent chains
     validate_agent_chains(&registry, colors);
 
-    // Handle plumbing commands
-    // In production mode, no workspace is available for plumbing commands
-    // (they use real filesystem operations)
+    // Create effect handler for production operations
     let mut handler = effect_handler::RealAppEffectHandler::new();
-    if handle_plumbing_commands(&args, &logger, colors, &mut handler, None)? {
+
+    // Get repo root early for workspace creation (needed by plumbing commands)
+    // This uses the same logic as setup_working_dir_via_handler but captures the repo_root.
+    let early_repo_root =
+        discover_repo_root_for_workspace(args.working_dir_override.as_deref(), &mut handler)?;
+
+    // Create workspace for plumbing commands (and later for the full pipeline)
+    let workspace: std::sync::Arc<dyn crate::workspace::Workspace> =
+        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(early_repo_root));
+
+    // Handle plumbing commands with workspace support
+    if handle_plumbing_commands(
+        &args,
+        &logger,
+        colors,
+        &mut handler,
+        Some(workspace.as_ref()),
+    )? {
         return Ok(());
     }
 
     // Validate agents and set up git repo and PROMPT.md
+    // Note: repo_root is discovered again here (same as early_repo_root) but also
+    // does additional setup like PROMPT.md creation that plumbing commands don't need
     let Some(repo_root) = validate_and_setup_agents(
         AgentSetupParams {
             config: &config,
@@ -166,11 +212,8 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
         return Ok(());
     };
 
-    // Create workspace for explicit path resolution
-    let workspace: std::sync::Arc<dyn crate::workspace::Workspace> =
-        std::sync::Arc::new(crate::workspace::WorkspaceFs::new(repo_root.clone()));
-
     // Prepare pipeline context or exit early
+    // Note: Reuse workspace created earlier (same repo root)
     (prepare_pipeline_or_exit(PipelinePreparationParams {
         args,
         config,
@@ -185,6 +228,62 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
         workspace,
     })?)
     .map_or_else(|| Ok(()), |ctx| run_pipeline(&ctx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::effect::{AppEffect, AppEffectHandler, AppEffectResult};
+
+    #[derive(Debug)]
+    struct TestRepoRootHandler {
+        captured: Vec<AppEffect>,
+        repo_root: std::path::PathBuf,
+    }
+
+    impl TestRepoRootHandler {
+        fn new(repo_root: std::path::PathBuf) -> Self {
+            Self {
+                captured: Vec::new(),
+                repo_root,
+            }
+        }
+    }
+
+    impl AppEffectHandler for TestRepoRootHandler {
+        fn execute(&mut self, effect: AppEffect) -> AppEffectResult {
+            self.captured.push(effect.clone());
+            match effect {
+                AppEffect::SetCurrentDir { .. } => AppEffectResult::Ok,
+                AppEffect::GitRequireRepo => AppEffectResult::Ok,
+                AppEffect::GitGetRepoRoot => AppEffectResult::Path(self.repo_root.clone()),
+                other => panic!("unexpected effect in test handler: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn discover_repo_root_for_workspace_prefers_git_repo_root_over_override_dir() {
+        let override_dir = std::path::PathBuf::from("/override/subdir");
+        let repo_root = std::path::PathBuf::from("/repo");
+        let mut handler = TestRepoRootHandler::new(repo_root.clone());
+
+        let got = discover_repo_root_for_workspace(Some(&override_dir), &mut handler).unwrap();
+        assert_eq!(got, repo_root);
+
+        assert!(matches!(
+            handler.captured.get(0),
+            Some(AppEffect::SetCurrentDir { .. })
+        ));
+        assert!(handler
+            .captured
+            .iter()
+            .any(|e| matches!(e, AppEffect::GitRequireRepo)));
+        assert!(handler
+            .captured
+            .iter()
+            .any(|e| matches!(e, AppEffect::GitGetRepoRoot)));
+    }
 }
 
 /// Test-only entry point that accepts a pre-built Config.
