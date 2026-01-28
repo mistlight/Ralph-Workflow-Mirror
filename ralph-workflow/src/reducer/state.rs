@@ -285,6 +285,30 @@ impl AgentChainState {
     /// we switch to the next agent and preserve the prompt so the new agent
     /// can continue the same work.
     pub fn switch_to_next_agent_with_prompt(&self, prompt: Option<String>) -> Self {
+        // Rate-limit fallback is special: it should never retry an agent that has
+        // already been rate-limited in the current chain.
+        //
+        // For single-agent chains (or when switching would wrap around), we
+        // treat the chain as exhausted to avoid immediately re-invoking the same
+        // rate-limited agent.
+        if self.agents.len() <= 1 {
+            let mut exhausted = self.clone();
+            exhausted.current_agent_index = 0;
+            exhausted.current_model_index = 0;
+            exhausted.retry_cycle = exhausted.max_cycles;
+            exhausted.rate_limit_continuation_prompt = None;
+            return exhausted;
+        }
+
+        if self.current_agent_index + 1 >= self.agents.len() {
+            let mut exhausted = self.clone();
+            exhausted.current_agent_index = 0;
+            exhausted.current_model_index = 0;
+            exhausted.retry_cycle = exhausted.max_cycles;
+            exhausted.rate_limit_continuation_prompt = None;
+            return exhausted;
+        }
+
         let mut next = self.switch_to_next_agent();
         next.rate_limit_continuation_prompt = prompt;
         next
@@ -306,6 +330,7 @@ impl AgentChainState {
         new.current_agent_index = 0;
         new.current_model_index = 0;
         new.retry_cycle = 0;
+        new.rate_limit_continuation_prompt = None;
         new
     }
 
@@ -313,6 +338,7 @@ impl AgentChainState {
         let mut new = self.clone();
         new.current_agent_index = 0;
         new.current_model_index = 0;
+        new.rate_limit_continuation_prompt = None;
         new
     }
 
@@ -692,5 +718,68 @@ mod tests {
         let state = PipelineState::initial(5, 2);
         assert!(!state.continuation.is_continuation());
         assert_eq!(state.continuation.continuation_attempt, 0);
+    }
+
+    #[test]
+    fn test_agent_chain_reset_clears_rate_limit_continuation_prompt() {
+        let mut chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+        chain.rate_limit_continuation_prompt = Some("saved".to_string());
+
+        let reset = chain.reset();
+        assert!(
+            reset.rate_limit_continuation_prompt.is_none(),
+            "reset() should clear rate_limit_continuation_prompt"
+        );
+    }
+
+    #[test]
+    fn test_agent_chain_reset_for_role_clears_rate_limit_continuation_prompt() {
+        let mut chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+        chain.rate_limit_continuation_prompt = Some("saved".to_string());
+
+        let reset = chain.reset_for_role(AgentRole::Reviewer);
+        assert!(
+            reset.rate_limit_continuation_prompt.is_none(),
+            "reset_for_role() should clear rate_limit_continuation_prompt"
+        );
+    }
+
+    #[test]
+    fn test_switch_to_next_agent_with_prompt_exhausts_when_single_agent() {
+        let chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+
+        let next = chain.switch_to_next_agent_with_prompt(Some("prompt".to_string()));
+        assert!(
+            next.is_exhausted(),
+            "single-agent rate limit fallback should exhaust the chain"
+        );
+    }
+
+    #[test]
+    fn test_switch_to_next_agent_with_prompt_exhausts_on_wraparound() {
+        let mut chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+        chain.current_agent_index = 1;
+
+        let next = chain.switch_to_next_agent_with_prompt(Some("prompt".to_string()));
+        assert!(
+            next.is_exhausted(),
+            "rate limit fallback should not wrap and retry a previously rate-limited agent"
+        );
     }
 }

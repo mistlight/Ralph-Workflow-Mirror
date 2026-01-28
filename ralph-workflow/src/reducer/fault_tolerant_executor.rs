@@ -13,6 +13,7 @@ use crate::agents::{AgentRole, JsonParserType};
 use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
 use crate::reducer::event::{AgentErrorKind, PipelineEvent};
 use anyhow::Result;
+use serde_json::Value;
 use std::io;
 
 /// Configuration for fault-tolerant agent execution.
@@ -172,12 +173,7 @@ fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
                 || stderr_lower.contains("unauthorized")
             {
                 AgentErrorKind::Authentication
-            } else if stderr_lower.contains("rate limit")
-                || stderr_lower.contains("quota")
-                || stderr_lower.contains("too many requests")
-                || stderr_lower.contains("429")
-                || stderr_lower.contains("rate_limit_exceeded")
-            {
+            } else if is_rate_limit_stderr(&stderr_lower, stderr) {
                 AgentErrorKind::RateLimit
             } else if stderr_lower.contains("model")
                 && (stderr_lower.contains("not found") || stderr_lower.contains("unavailable"))
@@ -198,6 +194,67 @@ fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
             }
         }
     }
+}
+
+fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
+    // Prefer structured formats when available.
+    if is_structured_rate_limit_error(stderr_raw) {
+        return true;
+    }
+
+    // Match documented OpenAI 429 wording (avoid broad substring matches like "429" or "quota").
+    if stderr_lower.contains("rate limit reached") || stderr_lower.contains("rate limit exceeded") {
+        return true;
+    }
+
+    if stderr_lower.contains("too many requests") {
+        return true;
+    }
+
+    if stderr_lower.contains("http 429") || stderr_lower.contains("status 429") {
+        return stderr_lower.contains("rate limit") || stderr_lower.contains("too many requests");
+    }
+
+    if stderr_lower.contains("exceeded your current quota") {
+        return true;
+    }
+
+    false
+}
+
+fn is_structured_rate_limit_error(stderr: &str) -> bool {
+    // OpenCode (and some providers) emit structured JSON errors containing a stable code.
+    // Example observed in CI:
+    //   "✗ Error: {\"type\":\"error\",...,\"error\":{\"code\":\"rate_limit_exceeded\",...}}"
+    let Some(value) = try_parse_json_object(stderr) else {
+        return false;
+    };
+
+    let code = extract_error_code(&value);
+    matches!(code.as_deref(), Some("rate_limit_exceeded"))
+}
+
+fn try_parse_json_object(text: &str) -> Option<Value> {
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    let json_str = text.get(start..=end)?;
+    serde_json::from_str(json_str).ok()
+}
+
+fn extract_error_code(value: &Value) -> Option<String> {
+    // Support a couple of common nestings.
+    // - OpenCode: {"error": {"code": "rate_limit_exceeded", ...}}
+    // - Some SDKs: {"error": {"error": {"code": "..."}}}
+    value
+        .pointer("/error/code")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string())
+        .or_else(|| {
+            value
+                .pointer("/error/error/code")
+                .and_then(Value::as_str)
+                .map(|s| s.to_string())
+        })
 }
 
 /// Classify I/O error during agent execution.
@@ -279,8 +336,27 @@ mod tests {
 
     #[test]
     fn test_classify_agent_error_rate_limit_matches_http_429() {
-        let error_kind = classify_agent_error(1, "error 429");
+        let error_kind = classify_agent_error(1, "HTTP 429: Rate limit reached for requests");
         assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_from_opencode_json_error() {
+        let stderr = r#"✗ Error: {"type":"error","sequence_number":2,"error":{"type":"tokens","code":"rate_limit_exceeded","message":"Rate limit reached"}}"#;
+        let error_kind = classify_agent_error(1, stderr);
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_does_not_treat_429_token_count_as_rate_limit() {
+        let error_kind = classify_agent_error(1, "Parse error: expected 429 tokens");
+        assert_eq!(error_kind, AgentErrorKind::ParsingError);
+    }
+
+    #[test]
+    fn test_classify_agent_error_does_not_treat_quota_word_as_rate_limit() {
+        let error_kind = classify_agent_error(1, "quota.rs:1:1: syntax error");
+        assert_ne!(error_kind, AgentErrorKind::RateLimit);
     }
 
     #[test]
