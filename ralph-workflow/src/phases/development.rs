@@ -29,8 +29,9 @@ use crate::prompts::{
     prompt_developer_iteration_xml_with_context, prompt_developer_iteration_xsd_retry_with_context,
     prompt_planning_xml_with_context, prompt_planning_xsd_retry_with_context, ContextLevel,
 };
-use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+use crate::reducer::state::{AgentChainState, ContinuationState, DevelopmentStatus};
 use std::path::Path;
+use std::time::Duration;
 
 use super::context::PhaseContext;
 
@@ -70,6 +71,7 @@ pub fn run_development_phase(
     let mut had_errors = false;
     let mut prev_snap = git_snapshot()?;
     let developer_context = ContextLevel::from(ctx.config.developer_context);
+    let fallback_config = ctx.registry.fallback_config();
 
     for i in start_iter..=ctx.config.developer_iters {
         ctx.logger.subheader(&format!(
@@ -85,16 +87,43 @@ pub fn run_development_phase(
             let _ = cleanup_continuation_context_file(ctx);
         }
 
+        let mut agent_chain =
+            build_agent_chain_state(fallback_config, AgentRole::Developer, ctx.developer_agent);
+        let mut active_agent = current_agent_from_chain(&agent_chain)?;
+
         // Step 1: Create PLAN from PROMPT (skip if resuming into development)
         if resuming_into_development {
             ctx.logger
                 .info("Resuming at development step; skipping plan generation");
         } else {
-            run_planning_step(ctx, i)?;
+            loop {
+                match run_planning_step_with_agent(ctx, i, active_agent) {
+                    Ok(()) => break,
+                    Err(err) if is_auth_failure_error(&err) => {
+                        ctx.logger.warn(&format!(
+                            "Auth failure during planning with '{}', switching agent",
+                            active_agent
+                        ));
+                        let backoff_delay =
+                            advance_agent_chain_on_auth_failure(&mut agent_chain, fallback_config)?;
+                        active_agent = current_agent_from_chain(&agent_chain)?;
+                        if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
+                            ctx.logger.info(&format!(
+                                "Backoff before retrying with '{}': {}ms",
+                                active_agent, delay_ms
+                            ));
+                            ctx.registry
+                                .retry_timer()
+                                .sleep(Duration::from_millis(delay_ms));
+                        }
+                    }
+                    Err(err) => return Err(err),
+                }
+            }
         }
 
         // Verify PLAN.md was created (required)
-        let plan_ok = verify_plan_exists(ctx, i, resuming_into_development)?;
+        let plan_ok = verify_plan_exists(ctx, i, resuming_into_development, active_agent)?;
         if !plan_ok {
             anyhow::bail!("Planning phase did not create a non-empty .agent/PLAN.md");
         }
@@ -108,7 +137,7 @@ pub fn run_development_phase(
                 .capture_from_context(
                     ctx.config,
                     ctx.registry,
-                    ctx.developer_agent,
+                    active_agent,
                     ctx.reviewer_agent,
                     ctx.logger,
                     &ctx.run_context,
@@ -149,15 +178,38 @@ pub fn run_development_phase(
         };
 
         let dev_start_time = Instant::now();
-        let dev_result = run_development_iteration_with_xml_retry(
-            ctx,
-            i,
-            developer_context,
-            resuming_into_development,
-            resume_context,
-            None,
-            continuation_config,
-        )?;
+        let dev_result = loop {
+            match run_development_iteration_with_xml_retry(
+                ctx,
+                i,
+                developer_context,
+                resuming_into_development,
+                resume_context,
+                Some(active_agent),
+                continuation_config.clone(),
+            ) {
+                Ok(result) => break result,
+                Err(err) if is_auth_failure_error(&err) => {
+                    ctx.logger.warn(&format!(
+                        "Auth failure during development with '{}', switching agent",
+                        active_agent
+                    ));
+                    let backoff_delay =
+                        advance_agent_chain_on_auth_failure(&mut agent_chain, fallback_config)?;
+                    active_agent = current_agent_from_chain(&agent_chain)?;
+                    if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
+                        ctx.logger.info(&format!(
+                            "Backoff before retrying with '{}': {}ms",
+                            active_agent, delay_ms
+                        ));
+                        ctx.registry
+                            .retry_timer()
+                            .sleep(Duration::from_millis(delay_ms));
+                    }
+                }
+                Err(err) => return Err(err),
+            }
+        };
 
         // This iteration reached status="completed"; cleanup the continuation context file.
         let _ = cleanup_continuation_context_file(ctx);
@@ -184,7 +236,7 @@ pub fn run_development_phase(
                 )
             };
             let step = ExecutionStep::new("Development", i, "dev_run", outcome)
-                .with_agent(ctx.developer_agent)
+                .with_agent(active_agent)
                 .with_duration(duration);
             ctx.execution_history.add_step(step);
         }
@@ -251,7 +303,7 @@ pub fn run_development_phase(
                 .capture_from_context(
                     ctx.config,
                     ctx.registry,
-                    ctx.developer_agent,
+                    active_agent,
                     ctx.reviewer_agent,
                     ctx.logger,
                     &ctx.run_context,
@@ -320,6 +372,78 @@ pub enum AuthFailureError {
     Development,
 }
 
+fn is_auth_failure_error(err: &anyhow::Error) -> bool {
+    if err
+        .chain()
+        .any(|cause| cause.downcast_ref::<AuthFailureError>().is_some())
+    {
+        return true;
+    }
+
+    let msg = err.to_string().to_lowercase();
+    msg.contains("authentication error")
+        || msg.contains("auth/credential")
+        || msg.contains("unauthorized")
+        || msg.contains("credential")
+        || msg.contains("api key")
+}
+
+fn build_agent_chain_state(
+    fallback_config: &crate::agents::fallback::FallbackConfig,
+    role: AgentRole,
+    primary_agent: &str,
+) -> AgentChainState {
+    let mut agents: Vec<String> = fallback_config.get_fallbacks(role).to_vec();
+
+    if !agents.iter().any(|agent| agent == primary_agent) {
+        agents.insert(0, primary_agent.to_string());
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    agents.retain(|agent| seen.insert(agent.clone()));
+
+    if agents.is_empty() {
+        agents.push(primary_agent.to_string());
+    }
+
+    let models_per_agent = agents.iter().map(|_| Vec::new()).collect();
+    let mut chain = AgentChainState::initial()
+        .with_agents(agents, models_per_agent, role)
+        .with_max_cycles(fallback_config.max_cycles);
+
+    if let Some(index) = chain.agents.iter().position(|agent| agent == primary_agent) {
+        chain.current_agent_index = index;
+    }
+
+    chain
+}
+
+fn advance_agent_chain_on_auth_failure(
+    chain: &mut AgentChainState,
+    fallback_config: &crate::agents::fallback::FallbackConfig,
+) -> anyhow::Result<Option<u64>> {
+    let next = chain.switch_to_next_agent();
+    if next.is_exhausted() || next.current_agent().is_none() {
+        anyhow::bail!("Agent fallback chain exhausted after authentication failures");
+    }
+
+    let backoff_delay = if next.retry_cycle > chain.retry_cycle {
+        Some(fallback_config.calculate_backoff(next.retry_cycle))
+    } else {
+        None
+    };
+
+    *chain = next;
+    Ok(backoff_delay)
+}
+
+fn current_agent_from_chain(chain: &AgentChainState) -> anyhow::Result<&str> {
+    chain
+        .current_agent()
+        .map(|agent| agent.as_str())
+        .ok_or_else(|| anyhow::anyhow!("No available agent in fallback chain"))
+}
+
 /// Run a single development attempt (one session) with XML extraction and XSD validation retry loop.
 ///
 /// This does **not** perform continuation retries. If the agent returns status="partial" or
@@ -334,6 +458,7 @@ pub fn run_development_attempt_with_xml_retry(
     _agent: Option<&str>,
     continuation_state: &ContinuationState,
 ) -> anyhow::Result<DevAttemptResult> {
+    let active_agent = _agent.unwrap_or(ctx.developer_agent);
     let prompt_md = ctx
         .workspace
         .read(Path::new("PROMPT.md"))
@@ -502,7 +627,7 @@ pub fn run_development_attempt_with_xml_retry(
                 logfile_prefix: &log_dir,
                 runtime: &mut runtime,
                 registry: ctx.registry,
-                primary_agent: _agent.unwrap_or(ctx.developer_agent),
+                primary_agent: active_agent,
                 session_info: session_info.as_ref(),
                 retry_num,
                 output_validator: None,
@@ -538,7 +663,7 @@ pub fn run_development_attempt_with_xml_retry(
         // Extract session info for potential retry (only if we don't have it yet)
         // This is best-effort - if extraction fails, we just won't use session continuation
         if session_info.is_none() {
-            if let Some(agent_config) = ctx.registry.resolve_config(ctx.developer_agent) {
+            if let Some(agent_config) = ctx.registry.resolve_config(active_agent) {
                 ctx.logger.info(&format!(
                     "  [dev] Extracting session from {:?} with parser {:?}",
                     log_dir_path, agent_config.json_parser
@@ -546,7 +671,7 @@ pub fn run_development_attempt_with_xml_retry(
                 session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                     log_dir_path,
                     agent_config.json_parser,
-                    Some(ctx.developer_agent),
+                    Some(active_agent),
                     ctx.workspace,
                 );
                 if let Some(ref info) = session_info {
@@ -926,11 +1051,15 @@ fn parse_continuation_context_markdown(content: &str) -> Option<ContinuationStat
     })
 }
 
-/// Run the planning step to create PLAN.md.
+/// Run the planning step to create PLAN.md with an explicit agent.
 ///
 /// The orchestrator ALWAYS extracts and writes PLAN.md from agent XML output.
 /// Uses XSD validation with retry loop to ensure valid XML format.
-pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
+fn run_planning_step_with_agent(
+    ctx: &mut PhaseContext<'_>,
+    iteration: u32,
+    agent: &str,
+) -> anyhow::Result<()> {
     let start_time = Instant::now();
     // Save checkpoint at start of planning phase (if enabled)
     if ctx.config.features.checkpoint_enabled {
@@ -944,7 +1073,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             .capture_from_context(
                 ctx.config,
                 ctx.registry,
-                ctx.developer_agent,
+                agent,
                 ctx.reviewer_agent,
                 ctx.logger,
                 &ctx.run_context,
@@ -1067,7 +1196,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             logfile_prefix: &log_dir,
             runtime: &mut runtime,
             registry: ctx.registry,
-            primary_agent: ctx.developer_agent,
+            primary_agent: agent,
             session_info: session_info.as_ref(),
             retry_num,
             output_validator: None,
@@ -1090,11 +1219,11 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
         // Extract session info for potential retry (only if we don't have it yet)
         // This is best-effort - if extraction fails, we just won't use session continuation
         if session_info.is_none() {
-            if let Some(agent_config) = ctx.registry.resolve_config(ctx.developer_agent) {
+            if let Some(agent_config) = ctx.registry.resolve_config(agent) {
                 session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                     log_dir_path,
                     agent_config.json_parser,
-                    Some(ctx.developer_agent),
+                    Some(agent),
                     ctx.workspace,
                 );
             }
@@ -1140,7 +1269,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
                         "plan_generation",
                         StepOutcome::success(None, vec![".agent/PLAN.md".to_string()]),
                     )
-                    .with_agent(ctx.developer_agent)
+                    .with_agent(agent)
                     .with_duration(duration);
                     ctx.execution_history.add_step(step);
                 }
@@ -1182,12 +1311,20 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             "plan_generation",
             StepOutcome::failure("No valid XML output produced".to_string(), false),
         )
-        .with_agent(ctx.developer_agent)
+        .with_agent(agent)
         .with_duration(duration);
         ctx.execution_history.add_step(step);
     }
 
     anyhow::bail!("Planning failed after {} XSD retry attempts", max_retries)
+}
+
+/// Run the planning step to create PLAN.md.
+///
+/// The orchestrator ALWAYS extracts and writes PLAN.md from agent XML output.
+/// Uses XSD validation with retry loop to ensure valid XML format.
+pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
+    run_planning_step_with_agent(ctx, iteration, ctx.developer_agent)
 }
 
 /// Read the last planning output from logs.
@@ -1530,6 +1667,7 @@ fn verify_plan_exists(
     ctx: &mut PhaseContext<'_>,
     iteration: u32,
     resuming_into_development: bool,
+    agent: &str,
 ) -> anyhow::Result<bool> {
     let plan_path = Path::new(".agent/PLAN.md");
 
@@ -1544,7 +1682,7 @@ fn verify_plan_exists(
     if !plan_ok && resuming_into_development {
         ctx.logger
             .warn("Missing .agent/PLAN.md; rerunning plan generation to recover");
-        run_planning_step(ctx, iteration)?;
+        run_planning_step_with_agent(ctx, iteration, agent)?;
 
         // Check again after rerunning - orchestrator guarantees file exists
         let plan_ok = ctx
@@ -1720,6 +1858,62 @@ mod tests {
             result.is_err(),
             "Expected error when continuations exhausted without status='completed'"
         );
+    }
+
+    #[test]
+    fn test_is_auth_failure_error_detects_auth_failure() {
+        let err = anyhow::Error::new(AuthFailureError::Planning);
+        assert!(is_auth_failure_error(&err));
+
+        let other = anyhow::anyhow!("some other error");
+        assert!(!is_auth_failure_error(&other));
+    }
+
+    #[test]
+    fn test_advance_agent_chain_on_auth_failure_advances_and_exhausts() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            developer: vec!["agent-a".to_string(), "agent-b".to_string()],
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent-a".to_string(), "agent-b".to_string()],
+                vec![Vec::new(), Vec::new()],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(1);
+
+        let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
+        assert_eq!(backoff, None);
+        assert_eq!(chain.current_agent().map(String::as_str), Some("agent-b"));
+
+        let exhausted = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config);
+        assert!(exhausted.is_err());
+        assert_eq!(chain.current_agent().map(String::as_str), Some("agent-b"));
+    }
+
+    #[test]
+    fn test_advance_agent_chain_on_auth_failure_applies_backoff_on_cycle() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            developer: vec!["solo-agent".to_string()],
+            retry_delay_ms: 1000,
+            backoff_multiplier: 2.0,
+            max_backoff_ms: 60000,
+            max_cycles: 2,
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["solo-agent".to_string()],
+                vec![Vec::new()],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(2);
+
+        let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
+        assert_eq!(backoff, Some(2000));
     }
 }
 

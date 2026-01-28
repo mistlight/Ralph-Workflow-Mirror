@@ -235,7 +235,19 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        match development::run_planning_step(ctx, iteration) {
+        // Planning must honor the reducer-selected agent chain.
+        // We achieve this by running the planning phase with a temporary PhaseContext
+        // whose `developer_agent` is set to the current agent in `state.agent_chain`.
+        let effective_agent = self
+            .state
+            .agent_chain
+            .current_agent()
+            .map(|s| s.as_str())
+            .unwrap_or(ctx.developer_agent);
+
+        match with_overridden_developer_agent(ctx, effective_agent, |inner_ctx| {
+            development::run_planning_step(inner_ctx, iteration)
+        }) {
             Ok(_) => {
                 // Validate plan was created
                 let plan_path = Path::new(".agent/PLAN.md");
@@ -1003,6 +1015,55 @@ impl MainEffectHandler {
 
         Ok(EffectResult::with_ui(event, vec![ui_event]))
     }
+}
+
+fn with_overridden_developer_agent<R>(
+    ctx: &mut PhaseContext<'_>,
+    developer_agent: &str,
+    run: impl for<'a> FnOnce(&mut PhaseContext<'a>) -> R,
+) -> R {
+    // PhaseContext owns some state (run_context/execution_history/prompt_history).
+    // To override `developer_agent` without leaking lifetimes, we temporarily move
+    // those owned values into a new PhaseContext with a shorter lifetime.
+    let run_context = std::mem::take(&mut ctx.run_context);
+    let execution_history = std::mem::take(&mut ctx.execution_history);
+    let prompt_history = std::mem::take(&mut ctx.prompt_history);
+
+    let (result, run_context, execution_history, prompt_history) = {
+        let mut inner_ctx = PhaseContext {
+            config: ctx.config,
+            registry: ctx.registry,
+            logger: ctx.logger,
+            colors: ctx.colors,
+            timer: &mut *ctx.timer,
+            stats: &mut *ctx.stats,
+            developer_agent,
+            reviewer_agent: ctx.reviewer_agent,
+            review_guidelines: ctx.review_guidelines,
+            template_context: ctx.template_context,
+            run_context,
+            execution_history,
+            prompt_history,
+            executor: ctx.executor,
+            executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+            repo_root: ctx.repo_root,
+            workspace: ctx.workspace,
+        };
+
+        let result = run(&mut inner_ctx);
+        (
+            result,
+            inner_ctx.run_context,
+            inner_ctx.execution_history,
+            inner_ctx.prompt_history,
+        )
+    };
+
+    ctx.run_context = run_context;
+    ctx.execution_history = execution_history;
+    ctx.prompt_history = prompt_history;
+
+    result
 }
 
 fn collect_review_issue_snippets(
@@ -1927,5 +1988,69 @@ mod tests {
                 next_continuation_attempt: 3
             }
         );
+    }
+
+    #[test]
+    fn test_with_overridden_developer_agent_overrides_only_inner_ctx() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::workspace::MemoryWorkspace;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new_test();
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
+            as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+        let repo_root = PathBuf::from("/test/repo");
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "primary-agent",
+            reviewer_agent: "reviewer-agent",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: &*executor_arc,
+            executor_arc: std::sync::Arc::clone(&executor_arc),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let orig_dev = ctx.developer_agent;
+        ctx.prompt_history
+            .insert("existing".to_string(), "value".to_string());
+
+        let res = with_overridden_developer_agent(&mut ctx, "fallback-agent", |inner| {
+            assert_eq!(inner.developer_agent, "fallback-agent");
+            inner
+                .prompt_history
+                .insert("new".to_string(), "prompt".to_string());
+            inner.record_developer_iteration();
+            7
+        });
+
+        assert_eq!(res, 7);
+        assert_eq!(ctx.developer_agent, orig_dev);
+        assert!(ctx.prompt_history.contains_key("existing"));
+        assert!(ctx.prompt_history.contains_key("new"));
     }
 }
