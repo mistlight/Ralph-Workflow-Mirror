@@ -8,7 +8,7 @@ use super::*;
 #[test]
 fn test_review_phase_started_sets_review_phase() {
     let state = create_test_state();
-    let new_state = reduce(state, PipelineEvent::ReviewPhaseStarted);
+    let new_state = reduce(state, PipelineEvent::review_phase_started());
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
 }
@@ -19,7 +19,7 @@ fn test_review_phase_started_resets_reviewer_pass_to_zero() {
         reviewer_pass: 5,
         ..create_test_state()
     };
-    let new_state = reduce(state, PipelineEvent::ReviewPhaseStarted);
+    let new_state = reduce(state, PipelineEvent::review_phase_started());
 
     assert_eq!(new_state.reviewer_pass, 0);
 }
@@ -30,7 +30,7 @@ fn test_review_phase_started_clears_issues_flag() {
         review_issues_found: true,
         ..create_test_state()
     };
-    let new_state = reduce(state, PipelineEvent::ReviewPhaseStarted);
+    let new_state = reduce(state, PipelineEvent::review_phase_started());
 
     assert!(!new_state.review_issues_found);
 }
@@ -57,7 +57,7 @@ fn test_review_pass_started_sets_pass_and_resets_agent_chain() {
     assert_eq!(state.agent_chain.retry_cycle, 2);
     assert!(state.review_issues_found);
 
-    let new_state = reduce(state, PipelineEvent::ReviewPassStarted { pass: 2 });
+    let new_state = reduce(state, PipelineEvent::review_pass_started(2));
 
     // Pass should be set
     assert_eq!(new_state.reviewer_pass, 2);
@@ -77,7 +77,7 @@ fn test_review_pass_started_clears_issues_flag() {
         review_issues_found: true,
         ..create_test_state()
     };
-    let new_state = reduce(state, PipelineEvent::ReviewPassStarted { pass: 0 });
+    let new_state = reduce(state, PipelineEvent::review_pass_started(0));
 
     assert!(!new_state.review_issues_found);
 }
@@ -91,13 +91,7 @@ fn test_review_completed_with_no_issues_increments_pass() {
         review_issues_found: false,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state,
-        PipelineEvent::ReviewCompleted {
-            pass: 0,
-            issues_found: false,
-        },
-    );
+    let new_state = reduce(state, PipelineEvent::review_completed(0, false));
 
     assert_eq!(new_state.reviewer_pass, 1);
     assert!(!new_state.review_issues_found);
@@ -112,13 +106,7 @@ fn test_review_completed_with_issues_stays_on_same_pass() {
         review_issues_found: false,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state,
-        PipelineEvent::ReviewCompleted {
-            pass: 0,
-            issues_found: true,
-        },
-    );
+    let new_state = reduce(state, PipelineEvent::review_completed(0, true));
 
     // Should stay on pass 0 to allow fix attempt
     assert_eq!(new_state.reviewer_pass, 0);
@@ -135,13 +123,7 @@ fn test_review_completed_on_last_pass_with_no_issues_transitions_to_commit() {
         review_issues_found: false,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state,
-        PipelineEvent::ReviewCompleted {
-            pass: 1,
-            issues_found: false,
-        },
-    );
+    let new_state = reduce(state, PipelineEvent::review_completed(1, false));
 
     // 1 + 1 = 2, 2 >= 2, should transition to CommitMessage
     assert_eq!(new_state.reviewer_pass, 2);
@@ -157,13 +139,7 @@ fn test_review_completed_on_last_pass_with_issues_stays_in_review() {
         review_issues_found: false,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state,
-        PipelineEvent::ReviewCompleted {
-            pass: 1,
-            issues_found: true,
-        },
-    );
+    let new_state = reduce(state, PipelineEvent::review_completed(1, true));
 
     // Should stay on pass 1 for fix attempt
     assert_eq!(new_state.reviewer_pass, 1);
@@ -193,7 +169,7 @@ fn test_fix_attempt_started_resets_agent_chain() {
     assert_eq!(state.agent_chain.retry_cycle, 3);
     assert!(state.review_issues_found);
 
-    let new_state = reduce(state.clone(), PipelineEvent::FixAttemptStarted { pass: 0 });
+    let new_state = reduce(state.clone(), PipelineEvent::fix_attempt_started(0));
 
     // Phase and reviewer pass should be preserved
     assert_eq!(new_state.phase, state.phase);
@@ -217,13 +193,7 @@ fn test_fix_attempt_completed_clears_issues_flag() {
         review_issues_found: true,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state,
-        PipelineEvent::FixAttemptCompleted {
-            pass: 0,
-            changes_made: true,
-        },
-    );
+    let new_state = reduce(state, PipelineEvent::fix_attempt_completed(0, true));
 
     assert!(!new_state.review_issues_found);
 }
@@ -238,13 +208,7 @@ fn test_fix_attempt_completed_on_mid_pass_increments_and_stays_in_review() {
         review_issues_found: true,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state,
-        PipelineEvent::FixAttemptCompleted {
-            pass: 0,
-            changes_made: true,
-        },
-    );
+    let new_state = reduce(state, PipelineEvent::fix_attempt_completed(0, true));
 
     // After fix, go to CommitMessage (don't increment yet)
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -254,10 +218,7 @@ fn test_fix_attempt_completed_on_mid_pass_increments_and_stays_in_review() {
     // After commit, go back to Review and increment
     let new_state = reduce(
         new_state,
-        PipelineEvent::CommitCreated {
-            hash: "abc".to_string(),
-            message: "fix".to_string(),
-        },
+        PipelineEvent::commit_created("abc".to_string(), "fix".to_string()),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
@@ -274,13 +235,7 @@ fn test_fix_attempt_completed_on_last_pass_transitions_to_commit() {
         review_issues_found: true,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state,
-        PipelineEvent::FixAttemptCompleted {
-            pass: 1,
-            changes_made: true,
-        },
-    );
+    let new_state = reduce(state, PipelineEvent::fix_attempt_completed(1, true));
 
     // After fix, go to CommitMessage (don't increment yet)
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -289,10 +244,7 @@ fn test_fix_attempt_completed_on_last_pass_transitions_to_commit() {
     // After commit, all passes done -> go to FinalValidation
     let new_state = reduce(
         new_state,
-        PipelineEvent::CommitCreated {
-            hash: "abc".to_string(),
-            message: "fix".to_string(),
-        },
+        PipelineEvent::commit_created("abc".to_string(), "fix".to_string()),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
@@ -302,10 +254,7 @@ fn test_fix_attempt_completed_on_last_pass_transitions_to_commit() {
 #[test]
 fn test_review_phase_completed_transitions_to_commit_message() {
     let state = create_state_in_phase(PipelinePhase::Review);
-    let new_state = reduce(
-        state,
-        PipelineEvent::ReviewPhaseCompleted { early_exit: false },
-    );
+    let new_state = reduce(state, PipelineEvent::review_phase_completed(false));
 
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
 }
@@ -313,10 +262,7 @@ fn test_review_phase_completed_transitions_to_commit_message() {
 #[test]
 fn test_review_phase_completed_with_early_exit_transitions_to_commit_message() {
     let state = create_state_in_phase(PipelinePhase::Review);
-    let new_state = reduce(
-        state,
-        PipelineEvent::ReviewPhaseCompleted { early_exit: true },
-    );
+    let new_state = reduce(state, PipelineEvent::review_phase_completed(true));
 
     // Even with early_exit, should still transition to CommitMessage
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -325,7 +271,7 @@ fn test_review_phase_completed_with_early_exit_transitions_to_commit_message() {
 #[test]
 fn test_review_pass_started_with_large_pass_number() {
     let state = create_test_state();
-    let new_state = reduce(state, PipelineEvent::ReviewPassStarted { pass: 999 });
+    let new_state = reduce(state, PipelineEvent::review_pass_started(999));
 
     assert_eq!(new_state.reviewer_pass, 999);
 }
@@ -339,13 +285,7 @@ fn test_review_completed_increments_large_pass_number() {
         review_issues_found: false,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state,
-        PipelineEvent::ReviewCompleted {
-            pass: 999,
-            issues_found: false,
-        },
-    );
+    let new_state = reduce(state, PipelineEvent::review_completed(999, false));
 
     // Should increment to 1000
     assert_eq!(new_state.reviewer_pass, 1000);

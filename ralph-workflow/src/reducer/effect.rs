@@ -156,19 +156,19 @@ mod tests {
 
     #[test]
     fn test_effect_result_event_only() {
-        let event = PipelineEvent::PipelineStarted;
+        let event = PipelineEvent::pipeline_started();
         let result = EffectResult::event(event.clone());
 
-        assert!(matches!(result.event, PipelineEvent::PipelineStarted));
+        assert!(matches!(
+            result.event,
+            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Started)
+        ));
         assert!(result.ui_events.is_empty());
     }
 
     #[test]
     fn test_effect_result_with_ui() {
-        let event = PipelineEvent::DevelopmentIterationCompleted {
-            iteration: 1,
-            output_valid: true,
-        };
+        let event = PipelineEvent::development_iteration_completed(1, true);
         let ui_events = vec![UIEvent::IterationProgress {
             current: 1,
             total: 3,
@@ -178,7 +178,9 @@ mod tests {
 
         assert!(matches!(
             result.event,
-            PipelineEvent::DevelopmentIterationCompleted { .. }
+            PipelineEvent::Development(
+                crate::reducer::event::DevelopmentEvent::IterationCompleted { .. }
+            )
         ));
         assert_eq!(result.ui_events.len(), 1);
         assert!(matches!(
@@ -192,10 +194,7 @@ mod tests {
 
     #[test]
     fn test_effect_result_with_ui_event_builder() {
-        let event = PipelineEvent::PlanGenerationCompleted {
-            iteration: 1,
-            valid: true,
-        };
+        let event = PipelineEvent::plan_generation_completed(1, true);
 
         let result = EffectResult::event(event).with_ui_event(UIEvent::PhaseTransition {
             from: Some(PipelinePhase::Planning),
@@ -211,10 +210,7 @@ mod tests {
 
     #[test]
     fn test_effect_result_multiple_ui_events() {
-        let event = PipelineEvent::DevelopmentIterationCompleted {
-            iteration: 2,
-            output_valid: true,
-        };
+        let event = PipelineEvent::development_iteration_completed(2, true);
 
         let result = EffectResult::event(event)
             .with_ui_event(UIEvent::IterationProgress {

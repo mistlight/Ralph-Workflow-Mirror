@@ -141,7 +141,7 @@ impl MockEffectHandler {
                     agent: agent.clone(),
                     message: format!("Completed {} task", role),
                 }];
-                (PipelineEvent::AgentInvocationSucceeded { role, agent }, ui)
+                (PipelineEvent::agent_invocation_succeeded(role, agent), ui)
             }
 
             Effect::InitializeAgentChain { role } => {
@@ -166,10 +166,7 @@ impl MockEffectHandler {
                     _ => vec![],
                 };
                 (
-                    PipelineEvent::AgentChainInitialized {
-                        role,
-                        agents: vec!["mock_agent".to_string()],
-                    },
+                    PipelineEvent::agent_chain_initialized(role, vec!["mock_agent".to_string()]),
                     ui,
                 )
             }
@@ -218,10 +215,7 @@ impl MockEffectHandler {
                     },
                 ];
                 (
-                    PipelineEvent::PlanGenerationCompleted {
-                        iteration,
-                        valid: true,
-                    },
+                    PipelineEvent::plan_generation_completed(iteration, true),
                     ui,
                 )
             }
@@ -249,10 +243,7 @@ src/lib.rs</ralph-files-changed>
                     },
                 ];
                 (
-                    PipelineEvent::DevelopmentIterationCompleted {
-                        iteration,
-                        output_valid: true,
-                    },
+                    PipelineEvent::development_iteration_completed(iteration, true),
                     ui,
                 )
             }
@@ -276,13 +267,7 @@ src/lib.rs</ralph-files-changed>
                         }),
                     },
                 ];
-                (
-                    PipelineEvent::ReviewCompleted {
-                        pass,
-                        issues_found: false,
-                    },
-                    ui,
-                )
+                (PipelineEvent::review_completed(pass, false), ui)
             }
 
             Effect::RunFixAttempt { pass } => {
@@ -299,37 +284,27 @@ src/lib.rs</ralph-files-changed>
                         snippets: Vec::new(),
                     }),
                 }];
-                (
-                    PipelineEvent::FixAttemptCompleted {
-                        pass,
-                        changes_made: true,
-                    },
-                    ui,
-                )
+                (PipelineEvent::fix_attempt_completed(pass, true), ui)
             }
 
             Effect::RunRebase {
                 phase,
                 target_branch: _,
             } => (
-                PipelineEvent::RebaseSucceeded {
-                    phase,
-                    new_head: "mock_head_abc123".to_string(),
-                },
+                PipelineEvent::rebase_succeeded(phase, "mock_head_abc123".to_string()),
                 vec![],
             ),
 
-            Effect::ResolveRebaseConflicts { strategy: _ } => (
-                PipelineEvent::RebaseConflictResolved { files: vec![] },
-                vec![],
-            ),
+            Effect::ResolveRebaseConflicts { strategy: _ } => {
+                (PipelineEvent::rebase_conflict_resolved(vec![]), vec![])
+            }
 
             Effect::GenerateCommitMessage => {
                 if self.simulate_empty_diff {
                     (
-                        PipelineEvent::CommitSkipped {
-                            reason: "No changes to commit (empty diff)".to_string(),
-                        },
+                        PipelineEvent::commit_skipped(
+                            "No changes to commit (empty diff)".to_string(),
+                        ),
                         vec![],
                     )
                 } else {
@@ -352,45 +327,42 @@ src/lib.rs</ralph-files-changed>
                         },
                     ];
                     (
-                        PipelineEvent::CommitMessageGenerated {
-                            message: "mock commit message".to_string(),
-                            attempt: 1,
-                        },
+                        PipelineEvent::commit_message_generated(
+                            "mock commit message".to_string(),
+                            1,
+                        ),
                         ui,
                     )
                 }
             }
 
             Effect::CreateCommit { message } => (
-                PipelineEvent::CommitCreated {
-                    hash: "mock_commit_hash_abc123".to_string(),
-                    message,
-                },
+                PipelineEvent::commit_created("mock_commit_hash_abc123".to_string(), message),
                 vec![],
             ),
 
-            Effect::SkipCommit { reason } => (PipelineEvent::CommitSkipped { reason }, vec![]),
+            Effect::SkipCommit { reason } => (PipelineEvent::commit_skipped(reason), vec![]),
 
             Effect::ValidateFinalState => {
                 let ui = vec![UIEvent::PhaseTransition {
                     from: Some(self.state.phase),
                     to: PipelinePhase::Finalizing,
                 }];
-                (PipelineEvent::FinalizingStarted, ui)
+                (PipelineEvent::finalizing_started(), ui)
             }
 
             Effect::SaveCheckpoint { trigger } => {
-                (PipelineEvent::CheckpointSaved { trigger }, vec![])
+                (PipelineEvent::checkpoint_saved(trigger), vec![])
             }
 
-            Effect::CleanupContext => (PipelineEvent::ContextCleaned, vec![]),
+            Effect::CleanupContext => (PipelineEvent::context_cleaned(), vec![]),
 
             Effect::RestorePromptPermissions => {
                 let ui = vec![UIEvent::PhaseTransition {
                     from: Some(self.state.phase),
                     to: PipelinePhase::Complete,
                 }];
-                (PipelineEvent::PromptPermissionsRestored, ui)
+                (PipelineEvent::prompt_permissions_restored(), ui)
             }
         };
 
@@ -451,13 +423,18 @@ mod tests {
         let result = handler.execute_mock(Effect::GenerateCommitMessage);
 
         assert!(
-            matches!(result.event, PipelineEvent::CommitSkipped { .. }),
+            matches!(
+                result.event,
+                PipelineEvent::Commit(crate::reducer::event::CommitEvent::Skipped { .. })
+            ),
             "Should return CommitSkipped when empty diff is simulated, got: {:?}",
             result.event
         );
 
         // Verify the reason message
-        if let PipelineEvent::CommitSkipped { reason } = result.event {
+        if let PipelineEvent::Commit(crate::reducer::event::CommitEvent::Skipped { reason }) =
+            result.event
+        {
             assert!(
                 reason.contains("empty diff"),
                 "Reason should mention empty diff: {}",
@@ -475,7 +452,10 @@ mod tests {
         let result = handler.execute_mock(Effect::GenerateCommitMessage);
 
         assert!(
-            matches!(result.event, PipelineEvent::CommitMessageGenerated { .. }),
+            matches!(
+                result.event,
+                PipelineEvent::Commit(crate::reducer::event::CommitEvent::MessageGenerated { .. })
+            ),
             "Should return CommitMessageGenerated when empty diff is not simulated, got: {:?}",
             result.event
         );
@@ -506,7 +486,10 @@ mod tests {
 
         // Event should be CommitCreated (no real git call)
         assert!(
-            matches!(result.event, PipelineEvent::CommitCreated { .. }),
+            matches!(
+                result.event,
+                PipelineEvent::Commit(crate::reducer::event::CommitEvent::Created { .. })
+            ),
             "Should return CommitCreated event, got: {:?}",
             result.event
         );
@@ -632,7 +615,10 @@ mod tests {
         // Should return CommitCreated event
         let effect_result = result.unwrap();
         match effect_result.event {
-            PipelineEvent::CommitCreated { hash, message } => {
+            PipelineEvent::Commit(crate::reducer::event::CommitEvent::Created {
+                hash,
+                message,
+            }) => {
                 assert_eq!(hash, "mock_commit_hash_abc123");
                 assert_eq!(message, "test via trait");
             }

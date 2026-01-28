@@ -43,7 +43,7 @@ fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
 fn test_planning_to_development_transition() {
     with_default_timeout(|| {
         let state = create_initial_state();
-        let new_state = reduce(state, PipelineEvent::PlanningPhaseCompleted);
+        let new_state = reduce(state, PipelineEvent::planning_phase_completed());
         assert_eq!(new_state.phase, PipelinePhase::Development);
     });
 }
@@ -52,7 +52,7 @@ fn test_planning_to_development_transition() {
 fn test_development_phase_starts() {
     with_default_timeout(|| {
         let state = create_initial_state();
-        let new_state = reduce(state, PipelineEvent::DevelopmentPhaseStarted);
+        let new_state = reduce(state, PipelineEvent::development_phase_started());
         assert_eq!(new_state.phase, PipelinePhase::Development);
     });
 }
@@ -61,7 +61,7 @@ fn test_development_phase_starts() {
 fn test_development_to_review_transition() {
     with_default_timeout(|| {
         let state = create_initial_state();
-        let new_state = reduce(state, PipelineEvent::DevelopmentPhaseCompleted);
+        let new_state = reduce(state, PipelineEvent::development_phase_completed());
         assert_eq!(new_state.phase, PipelinePhase::Review);
     });
 }
@@ -70,7 +70,7 @@ fn test_development_to_review_transition() {
 fn test_review_phase_starts() {
     with_default_timeout(|| {
         let state = create_initial_state();
-        let new_state = reduce(state, PipelineEvent::ReviewPhaseStarted);
+        let new_state = reduce(state, PipelineEvent::review_phase_started());
         assert_eq!(new_state.phase, PipelinePhase::Review);
         assert_eq!(new_state.reviewer_pass, 0);
     });
@@ -80,10 +80,7 @@ fn test_review_phase_starts() {
 fn test_review_to_commit_message_transition() {
     with_default_timeout(|| {
         let state = create_initial_state();
-        let new_state = reduce(
-            state,
-            PipelineEvent::ReviewPhaseCompleted { early_exit: false },
-        );
+        let new_state = reduce(state, PipelineEvent::review_phase_completed(false));
         assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
     });
 }
@@ -94,10 +91,7 @@ fn test_commit_message_to_final_validation_on_commit() {
         let state = create_initial_state();
         let new_state = reduce(
             state,
-            PipelineEvent::CommitCreated {
-                hash: "abc123".to_string(),
-                message: "test commit".to_string(),
-            },
+            PipelineEvent::commit_created("abc123".to_string(), "test commit".to_string()),
         );
         assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
     });
@@ -109,9 +103,7 @@ fn test_commit_message_to_final_validation_on_skip() {
         let state = create_initial_state();
         let new_state = reduce(
             state,
-            PipelineEvent::CommitSkipped {
-                reason: "no changes".to_string(),
-            },
+            PipelineEvent::commit_skipped("no changes".to_string()),
         );
         assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
     });
@@ -121,7 +113,7 @@ fn test_commit_message_to_final_validation_on_skip() {
 fn test_pipeline_complete_transition() {
     with_default_timeout(|| {
         let state = create_initial_state();
-        let new_state = reduce(state, PipelineEvent::PipelineCompleted);
+        let new_state = reduce(state, PipelineEvent::pipeline_completed());
         assert_eq!(new_state.phase, PipelinePhase::Complete);
     });
 }
@@ -139,10 +131,7 @@ fn test_development_iteration_increments() {
         // The iteration stays the same; increment happens after CommitCreated
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationCompleted {
-                iteration: 2,
-                output_valid: true,
-            },
+            PipelineEvent::development_iteration_completed(2, true),
         );
         assert_eq!(new_state.iteration, 2);
         assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -163,10 +152,7 @@ fn test_development_iteration_complete_moves_to_review() {
         // Transition to Review happens after CommitCreated when iteration >= total_iterations
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationCompleted {
-                iteration: 5,
-                output_valid: true,
-            },
+            PipelineEvent::development_iteration_completed(5, true),
         );
         assert_eq!(new_state.iteration, 5);
         assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -180,17 +166,14 @@ fn test_development_iteration_started_resets_agent_chain() {
         let mut state = create_state_with_agent_chain();
         state = reduce(
             state,
-            PipelineEvent::AgentFallbackTriggered {
-                role: AgentRole::Developer,
-                from_agent: "agent1".to_string(),
-                to_agent: "agent2".to_string(),
-            },
+            PipelineEvent::agent_fallback_triggered(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                "agent2".to_string(),
+            ),
         );
         assert_eq!(state.agent_chain.current_agent().unwrap(), "agent2");
-        let new_state = reduce(
-            state,
-            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
-        );
+        let new_state = reduce(state, PipelineEvent::development_iteration_started(2));
         assert_eq!(new_state.iteration, 2);
         assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent1");
     });
@@ -207,13 +190,7 @@ fn test_review_pass_increments() {
         };
         // FixAttemptCompleted transitions to CommitMessage phase
         // The reviewer_pass stays the same; increment happens after CommitCreated
-        let new_state = reduce(
-            state,
-            PipelineEvent::FixAttemptCompleted {
-                pass: 1,
-                changes_made: true,
-            },
-        );
+        let new_state = reduce(state, PipelineEvent::fix_attempt_completed(1, true));
         assert_eq!(new_state.reviewer_pass, 1);
         assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
         assert_eq!(new_state.previous_phase, Some(PipelinePhase::Review));
@@ -231,13 +208,7 @@ fn test_review_pass_complete_moves_to_commit_message() {
         };
         // FixAttemptCompleted goes to CommitMessage phase
         // reviewer_pass stays the same; increment happens after CommitCreated
-        let new_state = reduce(
-            state,
-            PipelineEvent::FixAttemptCompleted {
-                pass: 2,
-                changes_made: true,
-            },
-        );
+        let new_state = reduce(state, PipelineEvent::fix_attempt_completed(2, true));
         assert_eq!(new_state.reviewer_pass, 2);
         assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
         assert_eq!(new_state.previous_phase, Some(PipelinePhase::Review));
@@ -250,19 +221,16 @@ fn test_agent_chain_resets_on_new_iteration() {
         let mut state = create_state_with_agent_chain();
         state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
         );
         assert_eq!(state.agent_chain.current_model_index, 1);
-        let new_state = reduce(
-            state,
-            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
-        );
+        let new_state = reduce(state, PipelineEvent::development_iteration_started(2));
         assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent1");
         assert_eq!(new_state.agent_chain.current_model_index, 0);
     });
@@ -274,13 +242,13 @@ fn test_agent_chain_advances_on_model_fallback() {
         let state = create_state_with_agent_chain();
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
         );
         assert!(new_state.agent_chain.current_model_index > 0);
     });
@@ -295,13 +263,13 @@ fn test_agent_fallback_on_auth_error() {
         // Simulate non-retriable error (auth) - should switch to next agent
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Authentication,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Authentication,
+                false,
+            ),
         );
 
         // Should switch to next agent
@@ -327,9 +295,7 @@ fn test_agent_chain_exhausted_triggers_retry_cycle() {
         // Simulate chain exhausted event
         let new_state = reduce(
             state,
-            PipelineEvent::AgentChainExhausted {
-                role: AgentRole::Developer,
-            },
+            PipelineEvent::agent_chain_exhausted(AgentRole::Developer),
         );
 
         // Should start retry cycle
@@ -348,13 +314,13 @@ fn test_sigsegv_causes_agent_fallback() {
         // Simulate SIGSEGV (exit code 139, non-retriable)
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 139,
-                error_kind: AgentErrorKind::InternalError,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                139,
+                AgentErrorKind::InternalError,
+                false,
+            ),
         );
 
         // Should switch to next agent, not crash pipeline
@@ -379,13 +345,13 @@ fn test_pipeline_continues_after_agent_failure() {
         // Agent fails with retriable error
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
         );
 
         // Pipeline should continue with same agent, different model
@@ -402,13 +368,13 @@ fn test_network_error_triggers_model_fallback() {
         // Simulate network error (retriable) - should trigger model fallback event
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
         );
 
         // Should advance to next model, not agent
@@ -426,13 +392,13 @@ fn test_filesystem_error_triggers_agent_fallback() {
         // Simulate filesystem error (non-retriable) - should trigger agent fallback
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::FileSystem,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::FileSystem,
+                false,
+            ),
         );
 
         // Should switch to next agent
@@ -454,11 +420,11 @@ fn test_rate_limit_error_triggers_agent_fallback() {
         // Simulate rate limit via AgentRateLimitFallback event - should trigger agent fallback
         let new_state = reduce(
             state,
-            PipelineEvent::AgentRateLimitFallback {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                prompt_context: Some("continue work".to_string()),
-            },
+            PipelineEvent::agent_rate_limit_fallback(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                Some("continue work".to_string()),
+            ),
         );
 
         // Should switch to next agent
@@ -485,13 +451,13 @@ fn test_authentication_error_triggers_agent_fallback() {
         // Simulate auth error (non-retriable) - should trigger agent fallback
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Authentication,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Authentication,
+                false,
+            ),
         );
 
         // Should switch to next agent
@@ -508,13 +474,13 @@ fn test_internal_error_triggers_agent_fallback() {
         // Simulate internal error (non-retriable) - should trigger agent fallback
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::InternalError,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::InternalError,
+                false,
+            ),
         );
 
         // Should switch to next agent
@@ -528,22 +494,13 @@ fn test_event_replay_reproduces_final_state() {
         let initial_state = create_initial_state();
 
         let events = vec![
-            PipelineEvent::DevelopmentPhaseStarted,
-            PipelineEvent::DevelopmentIterationStarted { iteration: 1 },
-            PipelineEvent::DevelopmentIterationCompleted {
-                iteration: 1,
-                output_valid: true,
-            },
-            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
-            PipelineEvent::DevelopmentIterationCompleted {
-                iteration: 2,
-                output_valid: true,
-            },
-            PipelineEvent::DevelopmentIterationCompleted {
-                iteration: 3,
-                output_valid: true,
-            },
-            PipelineEvent::PipelineCompleted,
+            PipelineEvent::development_phase_started(),
+            PipelineEvent::development_iteration_started(1),
+            PipelineEvent::development_iteration_completed(1, true),
+            PipelineEvent::development_iteration_started(2),
+            PipelineEvent::development_iteration_completed(2, true),
+            PipelineEvent::development_iteration_completed(3, true),
+            PipelineEvent::pipeline_completed(),
         ];
 
         let final_state = events.into_iter().fold(initial_state, reduce);
@@ -579,9 +536,7 @@ fn test_commit_skipped_respects_previous_phase_from_development() {
         // Simulate commit being skipped (empty diff)
         let new_state = reduce(
             state,
-            PipelineEvent::CommitSkipped {
-                reason: "No changes to commit (empty diff)".to_string(),
-            },
+            PipelineEvent::commit_skipped("No changes to commit (empty diff)".to_string()),
         );
 
         // Should go back to Planning for next iteration, NOT FinalValidation
@@ -610,9 +565,7 @@ fn test_commit_skipped_after_last_dev_iteration_goes_to_review() {
         // Simulate commit being skipped
         let new_state = reduce(
             state,
-            PipelineEvent::CommitSkipped {
-                reason: "No changes to commit".to_string(),
-            },
+            PipelineEvent::commit_skipped("No changes to commit".to_string()),
         );
 
         // Should go to Review after all dev iterations done
@@ -640,9 +593,7 @@ fn test_commit_skipped_respects_previous_phase_from_review() {
         // Simulate commit being skipped
         let new_state = reduce(
             state,
-            PipelineEvent::CommitSkipped {
-                reason: "No changes to commit".to_string(),
-            },
+            PipelineEvent::commit_skipped("No changes to commit".to_string()),
         );
 
         // Should stay in Review for next pass
@@ -670,9 +621,7 @@ fn test_commit_skipped_after_last_review_goes_to_final_validation() {
         // Simulate commit being skipped
         let new_state = reduce(
             state,
-            PipelineEvent::CommitSkipped {
-                reason: "No changes to commit".to_string(),
-            },
+            PipelineEvent::commit_skipped("No changes to commit".to_string()),
         );
 
         // Should go to FinalValidation after all review passes done

@@ -4,20 +4,26 @@
 //!
 //! # Architecture
 //!
-//! The main `reduce` function delegates to category-specific handlers for
-//! better organization and maintainability:
+//! The main `reduce` function routes events to category-specific handlers based
+//! on event type, providing type-safe dispatch:
 //!
-//! - `reduce_pipeline_lifecycle` - Pipeline start/stop/completion events
-//! - `reduce_planning_event` - Planning phase events
-//! - `reduce_development_event` - Development iteration events
-//! - `reduce_review_event` - Review pass and fix events
-//! - `reduce_agent_event` - Agent invocation and chain events
-//! - `reduce_rebase_event` - Rebase operation events
-//! - `reduce_commit_event` - Commit generation and creation events
+//! | Category     | Handler                    | Responsibility                    |
+//! |--------------|----------------------------|-----------------------------------|
+//! | Lifecycle    | reduce_lifecycle_event     | Pipeline start/stop/abort         |
+//! | Planning     | reduce_planning_event      | Plan generation                   |
+//! | Development  | reduce_development_event   | Dev iterations, continuation      |
+//! | Review       | reduce_review_event        | Review passes, fix attempts       |
+//! | Agent        | reduce_agent_event         | Agent chain, fallback, retries    |
+//! | Rebase       | reduce_rebase_event        | Rebase state machine              |
+//! | Commit       | reduce_commit_event        | Commit message generation         |
 //!
-//! Each handler is a pure function that takes state and returns new state.
+//! Each handler is a pure function that takes state and its specific event type,
+//! enabling compile-time verification of exhaustive matching within each category.
 
-use super::event::PipelineEvent;
+use super::event::{
+    AgentEvent, CommitEvent, DevelopmentEvent, LifecycleEvent, PipelineEvent, PlanningEvent,
+    RebaseEvent, ReviewEvent,
+};
 use super::state::{CommitState, ContinuationState, PipelineState, RebaseState};
 
 /// Pure reducer - no side effects, exhaustive match.
@@ -25,68 +31,33 @@ use super::state::{CommitState, ContinuationState, PipelineState, RebaseState};
 /// Computes new state by applying an event to current state.
 /// This function has zero side effects - all state mutations are explicit.
 ///
-/// Delegates to category-specific handlers for better organization.
+/// # Event Routing
+///
+/// Events are routed to category-specific reducers based on their type:
+///
+/// | Category     | Handler                    | Responsibility                    |
+/// |--------------|----------------------------|-----------------------------------|
+/// | Lifecycle    | reduce_lifecycle_event     | Pipeline start/stop/abort         |
+/// | Planning     | reduce_planning_event      | Plan generation                   |
+/// | Development  | reduce_development_event   | Dev iterations, continuation      |
+/// | Review       | reduce_review_event        | Review passes, fix attempts       |
+/// | Agent        | reduce_agent_event         | Agent chain, fallback, retries    |
+/// | Rebase       | reduce_rebase_event        | Rebase state machine              |
+/// | Commit       | reduce_commit_event        | Commit message generation         |
+///
+/// Miscellaneous events are handled directly in this function.
 pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
-    match &event {
-        // Pipeline lifecycle events
-        PipelineEvent::PipelineStarted
-        | PipelineEvent::PipelineResumed { .. }
-        | PipelineEvent::PipelineCompleted
-        | PipelineEvent::PipelineAborted { .. } => reduce_pipeline_lifecycle(state, event),
+    match event {
+        // Route to category-specific reducers
+        PipelineEvent::Lifecycle(e) => reduce_lifecycle_event(state, e),
+        PipelineEvent::Planning(e) => reduce_planning_event(state, e),
+        PipelineEvent::Development(e) => reduce_development_event(state, e),
+        PipelineEvent::Review(e) => reduce_review_event(state, e),
+        PipelineEvent::Agent(e) => reduce_agent_event(state, e),
+        PipelineEvent::Rebase(e) => reduce_rebase_event(state, e),
+        PipelineEvent::Commit(e) => reduce_commit_event(state, e),
 
-        // Planning events
-        PipelineEvent::PlanningPhaseStarted
-        | PipelineEvent::PlanningPhaseCompleted
-        | PipelineEvent::PlanGenerationStarted { .. }
-        | PipelineEvent::PlanGenerationCompleted { .. } => reduce_planning_event(state, event),
-
-        // Development events
-        PipelineEvent::DevelopmentPhaseStarted
-        | PipelineEvent::DevelopmentIterationStarted { .. }
-        | PipelineEvent::DevelopmentIterationCompleted { .. }
-        | PipelineEvent::DevelopmentPhaseCompleted
-        | PipelineEvent::DevelopmentIterationContinuationTriggered { .. }
-        | PipelineEvent::DevelopmentIterationContinuationSucceeded { .. } => {
-            reduce_development_event(state, event)
-        }
-
-        // Review events
-        PipelineEvent::ReviewPhaseStarted
-        | PipelineEvent::ReviewPassStarted { .. }
-        | PipelineEvent::ReviewCompleted { .. }
-        | PipelineEvent::FixAttemptStarted { .. }
-        | PipelineEvent::FixAttemptCompleted { .. }
-        | PipelineEvent::ReviewPhaseCompleted { .. } => reduce_review_event(state, event),
-
-        // Agent events
-        PipelineEvent::AgentInvocationStarted { .. }
-        | PipelineEvent::AgentInvocationSucceeded { .. }
-        | PipelineEvent::AgentInvocationFailed { .. }
-        | PipelineEvent::AgentFallbackTriggered { .. }
-        | PipelineEvent::AgentChainExhausted { .. }
-        | PipelineEvent::AgentModelFallbackTriggered { .. }
-        | PipelineEvent::AgentRetryCycleStarted { .. }
-        | PipelineEvent::AgentChainInitialized { .. }
-        | PipelineEvent::AgentRateLimitFallback { .. } => reduce_agent_event(state, event),
-
-        // Rebase events
-        PipelineEvent::RebaseStarted { .. }
-        | PipelineEvent::RebaseConflictDetected { .. }
-        | PipelineEvent::RebaseConflictResolved { .. }
-        | PipelineEvent::RebaseSucceeded { .. }
-        | PipelineEvent::RebaseFailed { .. }
-        | PipelineEvent::RebaseSkipped { .. }
-        | PipelineEvent::RebaseAborted { .. } => reduce_rebase_event(state, event),
-
-        // Commit events
-        PipelineEvent::CommitGenerationStarted
-        | PipelineEvent::CommitMessageGenerated { .. }
-        | PipelineEvent::CommitCreated { .. }
-        | PipelineEvent::CommitGenerationFailed { .. }
-        | PipelineEvent::CommitSkipped { .. }
-        | PipelineEvent::CommitMessageValidationFailed { .. } => reduce_commit_event(state, event),
-
-        // Miscellaneous events
+        // Handle miscellaneous events directly
         PipelineEvent::ContextCleaned => PipelineState {
             context_cleaned: true,
             ..state
@@ -108,35 +79,45 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
 // ============================================================================
 
 /// Handle pipeline lifecycle events.
-fn reduce_pipeline_lifecycle(state: PipelineState, event: PipelineEvent) -> PipelineState {
+///
+/// Lifecycle events control the overall pipeline execution state:
+/// - Started/Resumed: Initialize or restore pipeline (no state change needed)
+/// - Completed: Transition to Complete phase
+/// - Aborted: Transition to Interrupted phase
+fn reduce_lifecycle_event(state: PipelineState, event: LifecycleEvent) -> PipelineState {
     match event {
-        PipelineEvent::PipelineStarted => state,
-        PipelineEvent::PipelineResumed { .. } => state,
-        PipelineEvent::PipelineCompleted => PipelineState {
+        LifecycleEvent::Started => state,
+        LifecycleEvent::Resumed { .. } => state,
+        LifecycleEvent::Completed => PipelineState {
             phase: super::event::PipelinePhase::Complete,
             ..state
         },
-        PipelineEvent::PipelineAborted { .. } => PipelineState {
+        LifecycleEvent::Aborted { .. } => PipelineState {
             phase: super::event::PipelinePhase::Interrupted,
             ..state
         },
-        _ => state,
     }
 }
 
 /// Handle planning phase events.
-fn reduce_planning_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+///
+/// Planning events manage plan generation and validation:
+/// - PhaseStarted: Set phase to Planning
+/// - GenerationCompleted(valid=true): Transition to Development
+/// - GenerationCompleted(valid=false): Stay in Planning for retry
+/// - PhaseCompleted: Transition to Development
+fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> PipelineState {
     match event {
-        PipelineEvent::PlanningPhaseStarted => PipelineState {
+        PlanningEvent::PhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Planning,
             ..state
         },
-        PipelineEvent::PlanningPhaseCompleted => PipelineState {
+        PlanningEvent::PhaseCompleted => PipelineState {
             phase: super::event::PipelinePhase::Development,
             ..state
         },
-        PipelineEvent::PlanGenerationStarted { .. } => state,
-        PipelineEvent::PlanGenerationCompleted { valid, .. } => {
+        PlanningEvent::GenerationStarted { .. } => state,
+        PlanningEvent::GenerationCompleted { valid, .. } => {
             if valid {
                 PipelineState {
                     phase: super::event::PipelinePhase::Development,
@@ -150,25 +131,32 @@ fn reduce_planning_event(state: PipelineState, event: PipelineEvent) -> Pipeline
                 }
             }
         }
-        _ => state,
     }
 }
 
 /// Handle development phase events.
-fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+///
+/// Development events manage iteration execution and continuation:
+/// - IterationStarted: Reset agent chain, clear continuation state
+/// - IterationCompleted(valid=true): Transition to CommitMessage
+/// - IterationCompleted(valid=false): Stay in Development for retry
+/// - ContinuationTriggered: Save context for retry
+/// - ContinuationSucceeded: Clear continuation, proceed to CommitMessage
+/// - PhaseCompleted: Transition to Review
+fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> PipelineState {
     match event {
-        PipelineEvent::DevelopmentPhaseStarted => PipelineState {
+        DevelopmentEvent::PhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Development,
             ..state
         },
-        PipelineEvent::DevelopmentIterationStarted { iteration } => PipelineState {
+        DevelopmentEvent::IterationStarted { iteration } => PipelineState {
             iteration,
             agent_chain: state.agent_chain.reset(),
             // Reset continuation state when starting a new iteration
             continuation: state.continuation.reset(),
             ..state
         },
-        PipelineEvent::DevelopmentIterationCompleted {
+        DevelopmentEvent::IterationCompleted {
             iteration,
             output_valid,
         } => {
@@ -193,13 +181,13 @@ fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> Pipel
                 }
             }
         }
-        PipelineEvent::DevelopmentPhaseCompleted => PipelineState {
+        DevelopmentEvent::PhaseCompleted => PipelineState {
             phase: super::event::PipelinePhase::Review,
             // Reset continuation state when phase completes
             continuation: ContinuationState::new(),
             ..state
         },
-        PipelineEvent::DevelopmentIterationContinuationTriggered {
+        DevelopmentEvent::ContinuationTriggered {
             iteration,
             status,
             summary,
@@ -218,7 +206,7 @@ fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> Pipel
                 ..state
             }
         }
-        PipelineEvent::DevelopmentIterationContinuationSucceeded {
+        DevelopmentEvent::ContinuationSucceeded {
             iteration,
             total_continuation_attempts: _,
         } => {
@@ -233,26 +221,33 @@ fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> Pipel
                 ..state
             }
         }
-        _ => state,
     }
 }
 
 /// Handle review phase events.
-fn reduce_review_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+///
+/// Review events manage review passes and fix attempts:
+/// - PhaseStarted: Set phase to Review, reset pass counter
+/// - PassStarted: Reset agent chain, prepare for review
+/// - Completed(issues_found=true): Stay in Review, issues need fixing
+/// - Completed(issues_found=false): Advance to next pass or CommitMessage
+/// - FixAttemptCompleted: Transition to CommitMessage
+/// - PhaseCompleted: Transition to CommitMessage
+fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineState {
     match event {
-        PipelineEvent::ReviewPhaseStarted => PipelineState {
+        ReviewEvent::PhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Review,
             reviewer_pass: 0,
             review_issues_found: false,
             ..state
         },
-        PipelineEvent::ReviewPassStarted { pass } => PipelineState {
+        ReviewEvent::PassStarted { pass } => PipelineState {
             reviewer_pass: pass,
             review_issues_found: false,
             agent_chain: state.agent_chain.reset(),
             ..state
         },
-        PipelineEvent::ReviewCompleted { pass, issues_found } => {
+        ReviewEvent::Completed { pass, issues_found } => {
             let next_pass = if issues_found { pass } else { pass + 1 };
             let next_phase = if !issues_found && next_pass >= state.total_reviewer_passes {
                 super::event::PipelinePhase::CommitMessage
@@ -266,11 +261,11 @@ fn reduce_review_event(state: PipelineState, event: PipelineEvent) -> PipelineSt
                 ..state
             }
         }
-        PipelineEvent::FixAttemptStarted { .. } => PipelineState {
+        ReviewEvent::FixAttemptStarted { .. } => PipelineState {
             agent_chain: state.agent_chain.reset(),
             ..state
         },
-        PipelineEvent::FixAttemptCompleted { pass, .. } => PipelineState {
+        ReviewEvent::FixAttemptCompleted { pass, .. } => PipelineState {
             phase: super::event::PipelinePhase::CommitMessage,
             previous_phase: Some(super::event::PipelinePhase::Review),
             reviewer_pass: pass,
@@ -278,20 +273,27 @@ fn reduce_review_event(state: PipelineState, event: PipelineEvent) -> PipelineSt
             commit: super::state::CommitState::NotStarted,
             ..state
         },
-        PipelineEvent::ReviewPhaseCompleted { .. } => PipelineState {
+        ReviewEvent::PhaseCompleted { .. } => PipelineState {
             phase: super::event::PipelinePhase::CommitMessage,
             ..state
         },
-        _ => state,
     }
 }
 
 /// Handle agent-related events.
-fn reduce_agent_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+///
+/// Agent events manage the fallback chain and retry logic:
+/// - InvocationSucceeded: Clear continuation prompt
+/// - InvocationFailed(retriable=true): Try next model
+/// - InvocationFailed(retriable=false): Switch to next agent
+/// - RateLimitFallback: Immediate agent switch with prompt preservation
+/// - ChainExhausted: Start new retry cycle
+/// - ChainInitialized: Set up agent chain for a role
+fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState {
     match event {
-        PipelineEvent::AgentInvocationStarted { .. } => state,
+        AgentEvent::InvocationStarted { .. } => state,
         // Clear continuation prompt on success
-        PipelineEvent::AgentInvocationSucceeded { .. } => PipelineState {
+        AgentEvent::InvocationSucceeded { .. } => PipelineState {
             agent_chain: state.agent_chain.clear_continuation_prompt(),
             ..state
         },
@@ -299,40 +301,40 @@ fn reduce_agent_event(state: PipelineState, event: PipelineEvent) -> PipelineSta
         // Unlike other retriable errors, rate limits indicate the provider is
         // temporarily exhausted, so we switch to the next agent immediately
         // to continue work without delay.
-        PipelineEvent::AgentRateLimitFallback { prompt_context, .. } => PipelineState {
+        AgentEvent::RateLimitFallback { prompt_context, .. } => PipelineState {
             agent_chain: state
                 .agent_chain
                 .switch_to_next_agent_with_prompt(prompt_context),
             ..state
         },
         // Other retriable errors (Network, Timeout): try next model
-        PipelineEvent::AgentInvocationFailed {
+        AgentEvent::InvocationFailed {
             retriable: true, ..
         } => PipelineState {
             agent_chain: state.agent_chain.advance_to_next_model(),
             ..state
         },
         // Non-retriable errors: switch agent
-        PipelineEvent::AgentInvocationFailed {
+        AgentEvent::InvocationFailed {
             retriable: false, ..
         } => PipelineState {
             agent_chain: state.agent_chain.switch_to_next_agent(),
             ..state
         },
-        PipelineEvent::AgentFallbackTriggered { .. } => PipelineState {
+        AgentEvent::FallbackTriggered { .. } => PipelineState {
             agent_chain: state.agent_chain.switch_to_next_agent(),
             ..state
         },
-        PipelineEvent::AgentChainExhausted { .. } => PipelineState {
+        AgentEvent::ChainExhausted { .. } => PipelineState {
             agent_chain: state.agent_chain.start_retry_cycle(),
             ..state
         },
-        PipelineEvent::AgentModelFallbackTriggered { .. } => PipelineState {
+        AgentEvent::ModelFallbackTriggered { .. } => PipelineState {
             agent_chain: state.agent_chain.advance_to_next_model(),
             ..state
         },
-        PipelineEvent::AgentRetryCycleStarted { .. } => state,
-        PipelineEvent::AgentChainInitialized { role, agents } => {
+        AgentEvent::RetryCycleStarted { .. } => state,
+        AgentEvent::ChainInitialized { role, agents } => {
             let models_per_agent = agents.iter().map(|_| vec![]).collect();
             PipelineState {
                 agent_chain: state
@@ -342,14 +344,22 @@ fn reduce_agent_event(state: PipelineState, event: PipelineEvent) -> PipelineSta
                 ..state
             }
         }
-        _ => state,
     }
 }
 
 /// Handle rebase-related events.
-fn reduce_rebase_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+///
+/// Rebase events manage the rebase state machine:
+/// - Started: Transition to InProgress
+/// - ConflictDetected: Transition to Conflicted
+/// - ConflictResolved: Return to InProgress
+/// - Succeeded: Transition to Completed
+/// - Failed: Reset to NotStarted
+/// - Skipped: Transition to Skipped
+/// - Aborted: Keep current state (caller handles restoration)
+fn reduce_rebase_event(state: PipelineState, event: RebaseEvent) -> PipelineState {
     match event {
-        PipelineEvent::RebaseStarted {
+        RebaseEvent::Started {
             target_branch,
             phase: _,
         } => PipelineState {
@@ -359,7 +369,7 @@ fn reduce_rebase_event(state: PipelineState, event: PipelineEvent) -> PipelineSt
             },
             ..state
         },
-        PipelineEvent::RebaseConflictDetected { files } => PipelineState {
+        RebaseEvent::ConflictDetected { files } => PipelineState {
             rebase: match &state.rebase {
                 RebaseState::InProgress {
                     original_head,
@@ -374,7 +384,7 @@ fn reduce_rebase_event(state: PipelineState, event: PipelineEvent) -> PipelineSt
             },
             ..state
         },
-        PipelineEvent::RebaseConflictResolved { .. } => PipelineState {
+        RebaseEvent::ConflictResolved { .. } => PipelineState {
             rebase: match &state.rebase {
                 RebaseState::Conflicted {
                     original_head,
@@ -388,38 +398,45 @@ fn reduce_rebase_event(state: PipelineState, event: PipelineEvent) -> PipelineSt
             },
             ..state
         },
-        PipelineEvent::RebaseSucceeded { new_head, .. } => PipelineState {
+        RebaseEvent::Succeeded { new_head, .. } => PipelineState {
             rebase: RebaseState::Completed { new_head },
             ..state
         },
-        PipelineEvent::RebaseFailed { .. } => PipelineState {
+        RebaseEvent::Failed { .. } => PipelineState {
             rebase: RebaseState::NotStarted,
             ..state
         },
-        PipelineEvent::RebaseSkipped { .. } => PipelineState {
+        RebaseEvent::Skipped { .. } => PipelineState {
             rebase: RebaseState::Skipped,
             ..state
         },
-        PipelineEvent::RebaseAborted { .. } => state,
-        _ => state,
+        RebaseEvent::Aborted { .. } => state,
     }
 }
 
 /// Handle commit-related events.
-fn reduce_commit_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
+///
+/// Commit events manage commit message generation and creation:
+/// - GenerationStarted: Transition to Generating
+/// - MessageGenerated: Transition to Generated
+/// - Created: Transition to Committed, advance phase
+/// - Skipped: Transition to Skipped, advance phase
+/// - GenerationFailed: Reset to NotStarted
+/// - MessageValidationFailed: Retry or advance agent
+fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineState {
     match event {
-        PipelineEvent::CommitGenerationStarted => PipelineState {
+        CommitEvent::GenerationStarted => PipelineState {
             commit: CommitState::Generating {
                 attempt: 1,
                 max_attempts: super::state::MAX_VALIDATION_RETRY_ATTEMPTS,
             },
             ..state
         },
-        PipelineEvent::CommitMessageGenerated { message, .. } => PipelineState {
+        CommitEvent::MessageGenerated { message, .. } => PipelineState {
             commit: CommitState::Generated { message },
             ..state
         },
-        PipelineEvent::CommitCreated { hash, .. } => {
+        CommitEvent::Created { hash, .. } => {
             let (next_phase, next_iter, next_reviewer_pass) =
                 compute_post_commit_transition(&state);
             PipelineState {
@@ -432,11 +449,11 @@ fn reduce_commit_event(state: PipelineState, event: PipelineEvent) -> PipelineSt
                 ..state
             }
         }
-        PipelineEvent::CommitGenerationFailed { .. } => PipelineState {
+        CommitEvent::GenerationFailed { .. } => PipelineState {
             commit: CommitState::NotStarted,
             ..state
         },
-        PipelineEvent::CommitSkipped { .. } => {
+        CommitEvent::Skipped { .. } => {
             let (next_phase, next_iter, next_reviewer_pass) =
                 compute_post_commit_transition(&state);
             PipelineState {
@@ -449,10 +466,9 @@ fn reduce_commit_event(state: PipelineState, event: PipelineEvent) -> PipelineSt
                 ..state
             }
         }
-        PipelineEvent::CommitMessageValidationFailed { attempt, .. } => {
+        CommitEvent::MessageValidationFailed { attempt, .. } => {
             reduce_commit_validation_failed(state, attempt)
         }
-        _ => state,
     }
 }
 
@@ -567,14 +583,14 @@ mod tests {
     #[test]
     fn test_reduce_pipeline_started() {
         let state = create_test_state();
-        let new_state = reduce(state, PipelineEvent::PipelineStarted);
+        let new_state = reduce(state, PipelineEvent::pipeline_started());
         assert_eq!(new_state.phase, PipelinePhase::Planning);
     }
 
     #[test]
     fn test_reduce_pipeline_completed() {
         let state = create_test_state();
-        let new_state = reduce(state, PipelineEvent::PipelineCompleted);
+        let new_state = reduce(state, PipelineEvent::pipeline_completed());
         assert_eq!(new_state.phase, PipelinePhase::Complete);
     }
 
@@ -590,10 +606,7 @@ mod tests {
         };
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationCompleted {
-                iteration: 2,
-                output_valid: true,
-            },
+            PipelineEvent::development_iteration_completed(2, true),
         );
         // Iteration stays at 2 (incremented by CommitCreated later)
         assert_eq!(new_state.iteration, 2);
@@ -615,10 +628,7 @@ mod tests {
         };
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationCompleted {
-                iteration: 5,
-                output_valid: true,
-            },
+            PipelineEvent::development_iteration_completed(5, true),
         );
         // Iteration stays at 5 (incremented by CommitCreated later)
         assert_eq!(new_state.iteration, 5);
@@ -633,13 +643,7 @@ mod tests {
             ..create_test_state()
         };
 
-        let new_state = reduce(
-            state,
-            PipelineEvent::PlanGenerationCompleted {
-                iteration: 1,
-                valid: false,
-            },
-        );
+        let new_state = reduce(state, PipelineEvent::plan_generation_completed(1, false));
 
         assert_eq!(
             new_state.phase,
@@ -656,13 +660,13 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: initial_agent.clone(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                initial_agent.clone(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
         );
 
         assert_ne!(
@@ -676,10 +680,7 @@ mod tests {
         let state = create_test_state();
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseStarted {
-                phase: RebasePhase::Initial,
-                target_branch: "main".to_string(),
-            },
+            PipelineEvent::rebase_started(RebasePhase::Initial, "main".to_string()),
         );
 
         assert!(matches!(new_state.rebase, RebaseState::InProgress { .. }));
@@ -690,10 +691,7 @@ mod tests {
         let state = create_test_state();
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseSucceeded {
-                phase: RebasePhase::Initial,
-                new_head: "abc123".to_string(),
-            },
+            PipelineEvent::rebase_succeeded(RebasePhase::Initial, "abc123".to_string()),
         );
 
         assert!(matches!(new_state.rebase, RebaseState::Completed { .. }));
@@ -702,7 +700,7 @@ mod tests {
     #[test]
     fn test_reduce_commit_generation_started() {
         let state = create_test_state();
-        let new_state = reduce(state, PipelineEvent::CommitGenerationStarted);
+        let new_state = reduce(state, PipelineEvent::commit_generation_started());
 
         assert!(matches!(new_state.commit, CommitState::Generating { .. }));
     }
@@ -712,10 +710,7 @@ mod tests {
         let state = create_test_state();
         let new_state = reduce(
             state,
-            PipelineEvent::CommitCreated {
-                hash: "abc123".to_string(),
-                message: "test commit".to_string(),
-            },
+            PipelineEvent::commit_created("abc123".to_string(), "test commit".to_string()),
         );
 
         assert!(matches!(new_state.commit, CommitState::Committed { .. }));
@@ -731,13 +726,13 @@ mod tests {
 
         let network_error_state = reduce(
             state.clone(),
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: agent_name.clone(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                agent_name.clone(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
         );
         assert_eq!(
             network_error_state.agent_chain.current_agent_index,
@@ -747,13 +742,13 @@ mod tests {
 
         let auth_error_state = reduce(
             state.clone(),
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: agent_name.clone(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Authentication,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                agent_name.clone(),
+                1,
+                AgentErrorKind::Authentication,
+                false,
+            ),
         );
         assert!(auth_error_state.agent_chain.current_agent_index > initial_agent_index);
         assert_eq!(
@@ -763,13 +758,13 @@ mod tests {
 
         let internal_error_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: agent_name,
-                exit_code: 139,
-                error_kind: AgentErrorKind::InternalError,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                agent_name,
+                139,
+                AgentErrorKind::InternalError,
+                false,
+            ),
         );
         assert!(internal_error_state.agent_chain.current_agent_index > initial_agent_index);
     }
@@ -780,35 +775,25 @@ mod tests {
 
         state = reduce(
             state,
-            PipelineEvent::RebaseStarted {
-                phase: RebasePhase::Initial,
-                target_branch: "main".to_string(),
-            },
+            PipelineEvent::rebase_started(RebasePhase::Initial, "main".to_string()),
         );
         assert!(matches!(state.rebase, RebaseState::InProgress { .. }));
 
         state = reduce(
             state,
-            PipelineEvent::RebaseConflictDetected {
-                files: vec![std::path::PathBuf::from("file1.txt")],
-            },
+            PipelineEvent::rebase_conflict_detected(vec![std::path::PathBuf::from("file1.txt")]),
         );
         assert!(matches!(state.rebase, RebaseState::Conflicted { .. }));
 
         state = reduce(
             state,
-            PipelineEvent::RebaseConflictResolved {
-                files: vec![std::path::PathBuf::from("file1.txt")],
-            },
+            PipelineEvent::rebase_conflict_resolved(vec![std::path::PathBuf::from("file1.txt")]),
         );
         assert!(matches!(state.rebase, RebaseState::InProgress { .. }));
 
         state = reduce(
             state,
-            PipelineEvent::RebaseSucceeded {
-                phase: RebasePhase::Initial,
-                new_head: "def456".to_string(),
-            },
+            PipelineEvent::rebase_succeeded(RebasePhase::Initial, "def456".to_string()),
         );
         assert!(matches!(state.rebase, RebaseState::Completed { .. }));
     }
@@ -817,15 +802,12 @@ mod tests {
     fn test_reduce_commit_full_state_machine() {
         let mut state = create_test_state();
 
-        state = reduce(state, PipelineEvent::CommitGenerationStarted);
+        state = reduce(state, PipelineEvent::commit_generation_started());
         assert!(matches!(state.commit, CommitState::Generating { .. }));
 
         state = reduce(
             state,
-            PipelineEvent::CommitCreated {
-                hash: "abc123".to_string(),
-                message: "test commit".to_string(),
-            },
+            PipelineEvent::commit_created("abc123".to_string(), "test commit".to_string()),
         );
         assert!(matches!(state.commit, CommitState::Committed { .. }));
     }
@@ -834,22 +816,19 @@ mod tests {
     fn test_reduce_phase_transitions() {
         let mut state = create_test_state();
 
-        state = reduce(state, PipelineEvent::PlanningPhaseCompleted);
+        state = reduce(state, PipelineEvent::planning_phase_completed());
         assert_eq!(state.phase, PipelinePhase::Development);
 
-        state = reduce(state, PipelineEvent::DevelopmentPhaseStarted);
+        state = reduce(state, PipelineEvent::development_phase_started());
         assert_eq!(state.phase, PipelinePhase::Development);
 
-        state = reduce(state, PipelineEvent::DevelopmentPhaseCompleted);
+        state = reduce(state, PipelineEvent::development_phase_completed());
         assert_eq!(state.phase, PipelinePhase::Review);
 
-        state = reduce(state, PipelineEvent::ReviewPhaseStarted);
+        state = reduce(state, PipelineEvent::review_phase_started());
         assert_eq!(state.phase, PipelinePhase::Review);
 
-        state = reduce(
-            state,
-            PipelineEvent::ReviewPhaseCompleted { early_exit: false },
-        );
+        state = reduce(state, PipelineEvent::review_phase_completed(false));
         assert_eq!(state.phase, PipelinePhase::CommitMessage);
     }
 
@@ -868,9 +847,7 @@ mod tests {
 
         let exhausted_state = reduce(
             state,
-            PipelineEvent::AgentChainExhausted {
-                role: AgentRole::Developer,
-            },
+            PipelineEvent::agent_chain_exhausted(AgentRole::Developer),
         );
 
         assert_eq!(exhausted_state.agent_chain.current_agent_index, 0);
@@ -885,13 +862,13 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: agent.clone(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Authentication,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                agent.clone(),
+                1,
+                AgentErrorKind::Authentication,
+                false,
+            ),
         );
 
         assert!(new_state.agent_chain.current_agent_index > 0);
@@ -905,13 +882,13 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: agent_name,
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                agent_name,
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
         );
 
         assert!(new_state.agent_chain.current_model_index > initial_model_index);
@@ -924,11 +901,11 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::AgentRateLimitFallback {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                prompt_context: Some("test prompt".to_string()),
-            },
+            PipelineEvent::agent_rate_limit_fallback(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                Some("test prompt".to_string()),
+            ),
         );
 
         // Should switch to next agent
@@ -950,11 +927,11 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::AgentRateLimitFallback {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                prompt_context: None,
-            },
+            PipelineEvent::agent_rate_limit_fallback(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                None,
+            ),
         );
 
         // Should still switch to next agent
@@ -973,10 +950,7 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationSucceeded {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-            },
+            PipelineEvent::agent_invocation_succeeded(AgentRole::Developer, "agent1".to_string()),
         );
 
         assert!(
@@ -994,7 +968,7 @@ mod tests {
             phase: PipelinePhase::FinalValidation,
             ..create_test_state()
         };
-        let new_state = reduce(state, PipelineEvent::FinalizingStarted);
+        let new_state = reduce(state, PipelineEvent::finalizing_started());
         assert_eq!(new_state.phase, PipelinePhase::Finalizing);
     }
 
@@ -1004,7 +978,7 @@ mod tests {
             phase: PipelinePhase::Finalizing,
             ..create_test_state()
         };
-        let new_state = reduce(state, PipelineEvent::PromptPermissionsRestored);
+        let new_state = reduce(state, PipelineEvent::prompt_permissions_restored());
         assert_eq!(new_state.phase, PipelinePhase::Complete);
     }
 
@@ -1016,11 +990,11 @@ mod tests {
         };
 
         // FinalValidation -> Finalizing
-        state = reduce(state, PipelineEvent::FinalizingStarted);
+        state = reduce(state, PipelineEvent::finalizing_started());
         assert_eq!(state.phase, PipelinePhase::Finalizing);
 
         // Finalizing -> Complete
-        state = reduce(state, PipelineEvent::PromptPermissionsRestored);
+        state = reduce(state, PipelineEvent::prompt_permissions_restored());
         assert_eq!(state.phase, PipelinePhase::Complete);
     }
 
@@ -1111,13 +1085,13 @@ mod tests {
         let state = create_test_state();
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationTriggered {
-                iteration: 1,
-                status: DevelopmentStatus::Partial,
-                summary: "Did work".to_string(),
-                files_changed: Some(vec!["src/main.rs".to_string()]),
-                next_steps: Some("Continue".to_string()),
-            },
+            PipelineEvent::development_iteration_continuation_triggered(
+                1,
+                DevelopmentStatus::Partial,
+                "Did work".to_string(),
+                Some(vec!["src/main.rs".to_string()]),
+                Some("Continue".to_string()),
+            ),
         );
 
         assert!(new_state.continuation.is_continuation());
@@ -1151,13 +1125,13 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationTriggered {
-                iteration: 2,
-                status: DevelopmentStatus::Partial,
-                summary: "Did work".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+            PipelineEvent::development_iteration_continuation_triggered(
+                2,
+                DevelopmentStatus::Partial,
+                "Did work".to_string(),
+                None,
+                None,
+            ),
         );
 
         assert_eq!(new_state.iteration, 2);
@@ -1170,13 +1144,13 @@ mod tests {
         let state = create_test_state();
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationTriggered {
-                iteration: 1,
-                status: DevelopmentStatus::Failed,
-                summary: "Build failed".to_string(),
-                files_changed: None,
-                next_steps: Some("Fix errors".to_string()),
-            },
+            PipelineEvent::development_iteration_continuation_triggered(
+                1,
+                DevelopmentStatus::Failed,
+                "Build failed".to_string(),
+                None,
+                Some("Fix errors".to_string()),
+            ),
         );
 
         assert!(new_state.continuation.is_continuation());
@@ -1206,10 +1180,7 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationSucceeded {
-                iteration: 1,
-                total_continuation_attempts: 2,
-            },
+            PipelineEvent::development_iteration_continuation_succeeded(1, 2),
         );
 
         assert!(!new_state.continuation.is_continuation());
@@ -1235,10 +1206,7 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationSucceeded {
-                iteration: 1,
-                total_continuation_attempts: 1,
-            },
+            PipelineEvent::development_iteration_continuation_succeeded(1, 1),
         );
 
         assert_eq!(new_state.iteration, 1);
@@ -1257,10 +1225,7 @@ mod tests {
         );
         assert!(state.continuation.is_continuation());
 
-        let new_state = reduce(
-            state,
-            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
-        );
+        let new_state = reduce(state, PipelineEvent::development_iteration_started(2));
 
         assert!(!new_state.continuation.is_continuation());
         assert_eq!(new_state.iteration, 2);
@@ -1281,10 +1246,7 @@ mod tests {
 
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationCompleted {
-                iteration: 1,
-                output_valid: true,
-            },
+            PipelineEvent::development_iteration_completed(1, true),
         );
 
         assert!(!new_state.continuation.is_continuation());
@@ -1304,7 +1266,7 @@ mod tests {
             None,
         );
 
-        let new_state = reduce(state, PipelineEvent::DevelopmentPhaseCompleted);
+        let new_state = reduce(state, PipelineEvent::development_phase_completed());
 
         assert!(!new_state.continuation.is_continuation());
         assert_eq!(new_state.phase, PipelinePhase::Review);
@@ -1319,26 +1281,26 @@ mod tests {
         // First continuation
         let state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationTriggered {
-                iteration: 1,
-                status: DevelopmentStatus::Partial,
-                summary: "First attempt".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+            PipelineEvent::development_iteration_continuation_triggered(
+                1,
+                DevelopmentStatus::Partial,
+                "First attempt".to_string(),
+                None,
+                None,
+            ),
         );
         assert_eq!(state.continuation.continuation_attempt, 1);
 
         // Second continuation
         let state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationTriggered {
-                iteration: 1,
-                status: DevelopmentStatus::Partial,
-                summary: "Second attempt".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+            PipelineEvent::development_iteration_continuation_triggered(
+                1,
+                DevelopmentStatus::Partial,
+                "Second attempt".to_string(),
+                None,
+                None,
+            ),
         );
         assert_eq!(state.continuation.continuation_attempt, 2);
         assert_eq!(

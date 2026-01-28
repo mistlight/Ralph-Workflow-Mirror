@@ -231,10 +231,7 @@ impl MainEffectHandler {
 
                 let is_valid = plan_exists && !plan_content.trim().is_empty();
 
-                let event = PipelineEvent::PlanGenerationCompleted {
-                    iteration,
-                    valid: is_valid,
-                };
+                let event = PipelineEvent::plan_generation_completed(iteration, is_valid);
 
                 // Build UI events
                 let mut ui_events = vec![];
@@ -267,10 +264,7 @@ impl MainEffectHandler {
                 Ok(EffectResult::with_ui(event, ui_events))
             }
             Err(_) => Ok(EffectResult::event(
-                PipelineEvent::PlanGenerationCompleted {
-                    iteration,
-                    valid: false,
-                },
+                PipelineEvent::plan_generation_completed(iteration, false),
             )),
         }
     }
@@ -296,12 +290,12 @@ impl MainEffectHandler {
         // Defensive guard: if checkpoint state already exceeds the configured limit,
         // abort rather than looping indefinitely.
         if continuation_state.continuation_attempt > max_continuations {
-            return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
-                reason: format!(
+            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                format!(
                     "Development continuation attempts exhausted (continuation_attempt={}, max_continuations={})",
                     continuation_state.continuation_attempt, max_continuations
                 ),
-            }));
+            )));
         }
 
         // Clean stale continuation context when starting a fresh attempt.
@@ -330,9 +324,9 @@ impl MainEffectHandler {
             let attempt = match attempt {
                 Ok(a) => a,
                 Err(err) => {
-                    return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
-                        reason: format!("Development attempt failed: {err}"),
-                    }));
+                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                        format!("Development attempt failed: {err}"),
+                    )));
                 }
             };
 
@@ -352,13 +346,13 @@ impl MainEffectHandler {
                     continue;
                 }
                 DevIterationNextStep::RetryInvalidOutput => {
-                    return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
-                        reason: format!(
+                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                        format!(
                             "Development output remained invalid after XSD retries and {} reruns. Last summary={}",
                             MAX_INVALID_OUTPUT_RERUNS,
                             attempt.summary
                         ),
-                    }));
+                    )));
                 }
                 _ => break attempt,
             }
@@ -376,15 +370,12 @@ impl MainEffectHandler {
             let _ = cleanup_continuation_context_file(ctx);
 
             let event = if continuation_state.is_continuation() {
-                PipelineEvent::DevelopmentIterationContinuationSucceeded {
+                PipelineEvent::development_iteration_continuation_succeeded(
                     iteration,
-                    total_continuation_attempts: continuation_state.continuation_attempt,
-                }
+                    continuation_state.continuation_attempt,
+                )
             } else {
-                PipelineEvent::DevelopmentIterationCompleted {
-                    iteration,
-                    output_valid: true,
-                }
+                PipelineEvent::development_iteration_completed(iteration, true)
             };
 
             let ui_event = UIEvent::IterationProgress {
@@ -429,14 +420,14 @@ impl MainEffectHandler {
             DevIterationNextStep::Abort { .. } => {
                 let _ = cleanup_continuation_context_file(ctx);
                 let total_valid_attempts = 1 + max_continuations;
-                return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
-                    reason: format!(
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    format!(
                         "Development did not reach status='completed' after {} total valid attempts. Last status={:?}. Last summary={}",
                         total_valid_attempts,
                         attempt.status,
                         attempt.summary
                     ),
-                }));
+                )));
             }
             DevIterationNextStep::RetryInvalidOutput | DevIterationNextStep::Completed => {
                 // Completed is handled above. Invalid output is handled by the rerun loop above.
@@ -454,13 +445,13 @@ impl MainEffectHandler {
         ctx.logger
             .info("Continuation context written to .agent/tmp/continuation_context.md");
 
-        let event = PipelineEvent::DevelopmentIterationContinuationTriggered {
+        let event = PipelineEvent::development_iteration_continuation_triggered(
             iteration,
-            status: attempt.status,
-            summary: attempt.summary,
-            files_changed: attempt.files_changed,
-            next_steps: attempt.next_steps,
-        };
+            attempt.status,
+            attempt.summary,
+            attempt.files_changed,
+            attempt.next_steps,
+        );
 
         let mut ui_events = vec![UIEvent::IterationProgress {
             current: iteration,
@@ -498,10 +489,7 @@ impl MainEffectHandler {
 
         match review::run_review_pass(ctx, pass, &review_label, "", review_agent.as_deref()) {
             Ok(result) => {
-                let event = PipelineEvent::ReviewCompleted {
-                    pass,
-                    issues_found: !result.early_exit,
-                };
+                let event = PipelineEvent::review_completed(pass, !result.early_exit);
 
                 // Build UI events
                 let mut ui_events = vec![
@@ -535,10 +523,9 @@ impl MainEffectHandler {
 
                 Ok(EffectResult::with_ui(event, ui_events))
             }
-            Err(_) => Ok(EffectResult::event(PipelineEvent::ReviewCompleted {
-                pass,
-                issues_found: false,
-            })),
+            Err(_) => Ok(EffectResult::event(PipelineEvent::review_completed(
+                pass, false,
+            ))),
         }
     }
 
@@ -557,10 +544,7 @@ impl MainEffectHandler {
             fix_agent.as_deref(),
         ) {
             Ok(_) => {
-                let event = PipelineEvent::FixAttemptCompleted {
-                    pass,
-                    changes_made: true,
-                };
+                let event = PipelineEvent::fix_attempt_completed(pass, true);
 
                 // Build UI events - try to read fix result XML for semantic rendering
                 let mut ui_events = vec![];
@@ -585,10 +569,9 @@ impl MainEffectHandler {
 
                 Ok(EffectResult::with_ui(event, ui_events))
             }
-            Err(_) => Ok(EffectResult::event(PipelineEvent::FixAttemptCompleted {
-                pass,
-                changes_made: false,
-            })),
+            Err(_) => Ok(EffectResult::event(PipelineEvent::fix_attempt_completed(
+                pass, false,
+            ))),
         }
     }
 
@@ -608,9 +591,9 @@ impl MainEffectHandler {
                 if !conflicted_files.is_empty() {
                     let files = conflicted_files.into_iter().map(|s| s.into()).collect();
 
-                    Ok(EffectResult::event(PipelineEvent::RebaseConflictDetected {
-                        files,
-                    }))
+                    Ok(EffectResult::event(
+                        PipelineEvent::rebase_conflict_detected(files),
+                    ))
                 } else {
                     // Get current head for success case
                     let new_head = match git2::Repository::open(".") {
@@ -623,16 +606,15 @@ impl MainEffectHandler {
                         Err(_) => "unknown".to_string(),
                     };
 
-                    Ok(EffectResult::event(PipelineEvent::RebaseSucceeded {
-                        phase,
-                        new_head,
-                    }))
+                    Ok(EffectResult::event(PipelineEvent::rebase_succeeded(
+                        phase, new_head,
+                    )))
                 }
             }
-            Err(e) => Ok(EffectResult::event(PipelineEvent::RebaseFailed {
+            Err(e) => Ok(EffectResult::event(PipelineEvent::rebase_failed(
                 phase,
-                reason: e.to_string(),
-            })),
+                e.to_string(),
+            ))),
         }
     }
 
@@ -652,14 +634,14 @@ impl MainEffectHandler {
                         .map(|s| s.into())
                         .collect();
 
-                    Ok(EffectResult::event(PipelineEvent::RebaseConflictResolved {
-                        files,
-                    }))
+                    Ok(EffectResult::event(
+                        PipelineEvent::rebase_conflict_resolved(files),
+                    ))
                 }
-                Err(e) => Ok(EffectResult::event(PipelineEvent::RebaseFailed {
-                    phase: RebasePhase::PostReview,
-                    reason: e.to_string(),
-                })),
+                Err(e) => Ok(EffectResult::event(PipelineEvent::rebase_failed(
+                    RebasePhase::PostReview,
+                    e.to_string(),
+                ))),
             },
             ConflictStrategy::Abort => match abort_rebase(_ctx.executor) {
                 Ok(_) => {
@@ -673,21 +655,19 @@ impl MainEffectHandler {
                         Err(_) => "HEAD".to_string(),
                     };
 
-                    Ok(EffectResult::event(PipelineEvent::RebaseAborted {
-                        phase: RebasePhase::PostReview,
+                    Ok(EffectResult::event(PipelineEvent::rebase_aborted(
+                        RebasePhase::PostReview,
                         restored_to,
-                    }))
+                    )))
                 }
-                Err(e) => Ok(EffectResult::event(PipelineEvent::RebaseFailed {
-                    phase: RebasePhase::PostReview,
-                    reason: e.to_string(),
-                })),
+                Err(e) => Ok(EffectResult::event(PipelineEvent::rebase_failed(
+                    RebasePhase::PostReview,
+                    e.to_string(),
+                ))),
             },
-            ConflictStrategy::Skip => {
-                Ok(EffectResult::event(PipelineEvent::RebaseConflictResolved {
-                    files: Vec::new(),
-                }))
-            }
+            ConflictStrategy::Skip => Ok(EffectResult::event(
+                PipelineEvent::rebase_conflict_resolved(Vec::new()),
+            )),
         }
     }
 
@@ -705,9 +685,9 @@ impl MainEffectHandler {
         if diff.trim().is_empty() {
             ctx.logger
                 .info("No changes to commit (empty diff), skipping commit");
-            return Ok(EffectResult::event(PipelineEvent::CommitSkipped {
-                reason: "No changes to commit (empty diff)".to_string(),
-            }));
+            return Ok(EffectResult::event(PipelineEvent::commit_skipped(
+                "No changes to commit (empty diff)".to_string(),
+            )));
         }
 
         // Get commit agent first to avoid borrow conflicts
@@ -733,10 +713,8 @@ impl MainEffectHandler {
             &ctx.prompt_history,
         ) {
             Ok(result) => {
-                let event = PipelineEvent::CommitMessageGenerated {
-                    message: result.message.clone(),
-                    attempt,
-                };
+                let event =
+                    PipelineEvent::commit_message_generated(result.message.clone(), attempt);
 
                 // Build UI events
                 let mut ui_events = vec![
@@ -755,10 +733,12 @@ impl MainEffectHandler {
 
                 Ok(EffectResult::with_ui(event, ui_events))
             }
-            Err(_) => Ok(EffectResult::event(PipelineEvent::CommitMessageGenerated {
-                message: "chore: automated commit".to_string(),
-                attempt,
-            })),
+            Err(_) => Ok(EffectResult::event(
+                PipelineEvent::commit_message_generated(
+                    "chore: automated commit".to_string(),
+                    attempt,
+                ),
+            )),
         }
     }
 
@@ -774,31 +754,31 @@ impl MainEffectHandler {
 
         // Create commit
         match git_commit(&message, None, None, Some(ctx.executor)) {
-            Ok(Some(hash)) => Ok(EffectResult::event(PipelineEvent::CommitCreated {
-                hash: hash.to_string(),
+            Ok(Some(hash)) => Ok(EffectResult::event(PipelineEvent::commit_created(
+                hash.to_string(),
                 message,
-            })),
+            ))),
             Ok(None) => {
                 // No changes to commit - skip to FinalValidation instead of failing
                 // This prevents infinite loop when there are no changes
-                Ok(EffectResult::event(PipelineEvent::CommitSkipped {
-                    reason: "No changes to commit".to_string(),
-                }))
+                Ok(EffectResult::event(PipelineEvent::commit_skipped(
+                    "No changes to commit".to_string(),
+                )))
             }
-            Err(e) => Ok(EffectResult::event(PipelineEvent::CommitGenerationFailed {
-                reason: e.to_string(),
-            })),
+            Err(e) => Ok(EffectResult::event(
+                PipelineEvent::commit_generation_failed(e.to_string()),
+            )),
         }
     }
 
     fn skip_commit(&mut self, _ctx: &mut PhaseContext<'_>, reason: String) -> Result<EffectResult> {
-        Ok(EffectResult::event(PipelineEvent::CommitSkipped { reason }))
+        Ok(EffectResult::event(PipelineEvent::commit_skipped(reason)))
     }
 
     fn validate_final_state(&mut self, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         // Transition to Finalizing phase to restore PROMPT.md permissions
         // via the effect system before marking the pipeline complete
-        let event = PipelineEvent::FinalizingStarted;
+        let event = PipelineEvent::finalizing_started();
 
         // Emit phase transition UI event
         let ui_event = self.phase_transition_ui(PipelinePhase::Finalizing);
@@ -815,9 +795,9 @@ impl MainEffectHandler {
             let _ = save_checkpoint_from_state(&self.state, ctx);
         }
 
-        Ok(EffectResult::event(PipelineEvent::CheckpointSaved {
+        Ok(EffectResult::event(PipelineEvent::checkpoint_saved(
             trigger,
-        }))
+        )))
     }
 
     fn initialize_agent_chain(
@@ -846,7 +826,7 @@ impl MainEffectHandler {
             max_cycles
         ));
 
-        let event = PipelineEvent::AgentChainInitialized { role, agents };
+        let event = PipelineEvent::agent_chain_initialized(role, agents);
 
         // Emit phase transition when entering a new major phase
         let ui_events = match role {
@@ -936,7 +916,7 @@ impl MainEffectHandler {
             ctx.logger.info("No context files to clean up");
         }
 
-        Ok(EffectResult::event(PipelineEvent::ContextCleaned))
+        Ok(EffectResult::event(PipelineEvent::context_cleaned()))
     }
 
     fn restore_prompt_permissions(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
@@ -949,7 +929,7 @@ impl MainEffectHandler {
             ctx.logger.warn(&warning);
         }
 
-        let event = PipelineEvent::PromptPermissionsRestored;
+        let event = PipelineEvent::prompt_permissions_restored();
 
         // Emit phase transition UI event to Complete
         let ui_event = self.phase_transition_ui(PipelinePhase::Complete);

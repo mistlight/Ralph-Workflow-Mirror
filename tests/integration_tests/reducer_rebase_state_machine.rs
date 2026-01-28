@@ -23,10 +23,7 @@ fn test_rebase_started_before_planning() {
         let state = create_initial_state();
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseStarted {
-                phase: RebasePhase::Initial,
-                target_branch: "main".to_string(),
-            },
+            PipelineEvent::rebase_started(RebasePhase::Initial, "main".to_string()),
         );
 
         assert!(matches!(new_state.rebase, RebaseState::InProgress { .. }));
@@ -43,10 +40,7 @@ fn test_rebase_started_sets_original_head() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseStarted {
-                phase: RebasePhase::Initial,
-                target_branch: "main".to_string(),
-            },
+            PipelineEvent::rebase_started(RebasePhase::Initial, "main".to_string()),
         );
 
         if let RebaseState::InProgress { original_head, .. } = new_state.rebase {
@@ -70,9 +64,7 @@ fn test_rebase_conflict_detected_transitions_to_conflicted() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseConflictDetected {
-                files: vec!["file1.txt".into(), "file2.txt".into()],
-            },
+            PipelineEvent::rebase_conflict_detected(vec!["file1.txt".into(), "file2.txt".into()]),
         );
 
         if let RebaseState::Conflicted { files, .. } = &new_state.rebase {
@@ -100,9 +92,7 @@ fn test_rebase_conflict_resolved_returns_to_in_progress() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseConflictResolved {
-                files: vec!["file1.txt".into()],
-            },
+            PipelineEvent::rebase_conflict_resolved(vec!["file1.txt".into()]),
         );
 
         assert!(matches!(new_state.rebase, RebaseState::InProgress { .. }));
@@ -122,10 +112,7 @@ fn test_rebase_succeeded_transitions_to_completed() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseSucceeded {
-                phase: RebasePhase::Initial,
-                new_head: "def456".to_string(),
-            },
+            PipelineEvent::rebase_succeeded(RebasePhase::Initial, "def456".to_string()),
         );
 
         if let RebaseState::Completed { new_head } = &new_state.rebase {
@@ -143,10 +130,7 @@ fn test_rebase_succeeded_stores_new_head() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseSucceeded {
-                phase: RebasePhase::Initial,
-                new_head: "def456".to_string(),
-            },
+            PipelineEvent::rebase_succeeded(RebasePhase::Initial, "def456".to_string()),
         );
 
         assert!(matches!(new_state.rebase, RebaseState::Completed { .. }));
@@ -166,10 +150,7 @@ fn test_rebase_failed_transitions_to_not_started() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseFailed {
-                phase: RebasePhase::Initial,
-                reason: "conflict".to_string(),
-            },
+            PipelineEvent::rebase_failed(RebasePhase::Initial, "conflict".to_string()),
         );
 
         assert!(matches!(new_state.rebase, RebaseState::NotStarted));
@@ -189,10 +170,7 @@ fn test_rebase_skipped_transitions_to_skipped() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseSkipped {
-                phase: RebasePhase::Initial,
-                reason: "up to date".to_string(),
-            },
+            PipelineEvent::rebase_skipped(RebasePhase::Initial, "up to date".to_string()),
         );
 
         assert!(matches!(new_state.rebase, RebaseState::Skipped));
@@ -212,10 +190,7 @@ fn test_rebase_aborted_keeps_in_progress_state() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::RebaseAborted {
-                phase: RebasePhase::Initial,
-                restored_to: "abc123".to_string(),
-            },
+            PipelineEvent::rebase_aborted(RebasePhase::Initial, "abc123".to_string()),
         );
 
         assert!(matches!(new_state.rebase, RebaseState::InProgress { .. }));

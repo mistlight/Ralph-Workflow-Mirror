@@ -8,7 +8,7 @@ fn test_pipeline_started_preserves_all_state() {
     let original_phase = state.phase;
     let original_iteration = state.iteration;
 
-    let new_state = reduce(state, PipelineEvent::PipelineStarted);
+    let new_state = reduce(state, PipelineEvent::pipeline_started());
 
     assert_eq!(new_state.phase, original_phase);
     assert_eq!(new_state.iteration, original_iteration);
@@ -23,12 +23,7 @@ fn test_pipeline_resumed_from_checkpoint_preserves_all_state() {
         review_issues_found: true,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state.clone(),
-        PipelineEvent::PipelineResumed {
-            from_checkpoint: true,
-        },
-    );
+    let new_state = reduce(state.clone(), PipelineEvent::pipeline_resumed(true));
 
     // All state should be preserved
     assert_eq!(new_state.phase, state.phase);
@@ -45,12 +40,7 @@ fn test_pipeline_resumed_not_from_checkpoint_preserves_all_state() {
         reviewer_pass: 0,
         ..create_test_state()
     };
-    let new_state = reduce(
-        state.clone(),
-        PipelineEvent::PipelineResumed {
-            from_checkpoint: false,
-        },
-    );
+    let new_state = reduce(state.clone(), PipelineEvent::pipeline_resumed(false));
 
     // All state should be preserved (from_checkpoint parameter doesn't affect reducer)
     assert_eq!(new_state.phase, state.phase);
@@ -61,7 +51,7 @@ fn test_pipeline_resumed_not_from_checkpoint_preserves_all_state() {
 #[test]
 fn test_pipeline_completed_transitions_to_complete_phase() {
     let state = create_state_in_phase(PipelinePhase::FinalValidation);
-    let new_state = reduce(state, PipelineEvent::PipelineCompleted);
+    let new_state = reduce(state, PipelineEvent::pipeline_completed());
 
     assert_eq!(new_state.phase, PipelinePhase::Complete);
 }
@@ -71,9 +61,7 @@ fn test_pipeline_aborted_transitions_to_interrupted() {
     let state = create_state_in_phase(PipelinePhase::Development);
     let new_state = reduce(
         state,
-        PipelineEvent::PipelineAborted {
-            reason: "User cancelled".to_string(),
-        },
+        PipelineEvent::pipeline_aborted("User cancelled".to_string()),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::Interrupted);
@@ -89,9 +77,7 @@ fn test_pipeline_aborted_preserves_progress() {
     };
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::PipelineAborted {
-            reason: "Error".to_string(),
-        },
+        PipelineEvent::pipeline_aborted("Error".to_string()),
     );
 
     assert_eq!(new_state.iteration, state.iteration);
