@@ -676,7 +676,7 @@ fn try_session_continuation(
     }
 
     // Build the command with session continuation flag
-    let yolo = matches!(config.role, AgentRole::Developer);
+    let yolo = true;
     let cmd_str = agent_config.build_cmd_with_session(
         true, // output (JSON)
         yolo, // yolo mode

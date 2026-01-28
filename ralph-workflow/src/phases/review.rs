@@ -217,7 +217,29 @@ pub fn run_review_phase(
         let review_prompt_key = format!("review_{}", j);
         let (review_prompt, was_replayed) =
             get_stored_or_generate_prompt(&review_prompt_key, &ctx.prompt_history, || {
-                String::new()
+                let plan_content = ctx
+                    .workspace
+                    .read(Path::new(".agent/PLAN.md"))
+                    .unwrap_or_default();
+
+                let (changes_content, baseline_oid_for_prompts) =
+                    match crate::git_helpers::get_git_diff_for_review_with_workspace(ctx.workspace)
+                    {
+                        Ok((diff, baseline_oid)) => (diff, baseline_oid),
+                        Err(e) => {
+                            ctx.logger.warn(&format!(
+                                "Failed to get baseline diff for review prompt: {e}"
+                            ));
+                            (String::new(), String::new())
+                        }
+                    };
+
+                let refs = PromptContentBuilder::new(ctx.workspace)
+                    .with_plan(plan_content)
+                    .with_diff(changes_content, &baseline_oid_for_prompts)
+                    .build();
+
+                prompt_review_xml_with_references(ctx.template_context, &refs)
             });
 
         // Capture the review prompt for checkpoint/resume (only if newly generated)

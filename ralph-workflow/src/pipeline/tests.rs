@@ -1230,7 +1230,10 @@ fn session_continuation_e2e_extracts_session_from_logfile() {
     // Retry should succeed - this verifies the full session continuation flow works:
     // 1. Session ID was extracted from the log file
     // 2. Session continuation passed the session ID via --resume flag
-    assert_eq!(exit2.exit_code, 0, "Retry should succeed with session continuation");
+    assert_eq!(
+        exit2.exit_code, 0,
+        "Retry should succeed with session continuation"
+    );
 }
 
 /// Test that resolve_from_logfile_name works for OpenCode agents.

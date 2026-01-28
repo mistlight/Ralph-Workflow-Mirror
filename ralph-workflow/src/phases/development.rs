@@ -922,6 +922,7 @@ fn parse_continuation_context_markdown(content: &str) -> Option<ContinuationStat
             Some(previous_next_steps)
         },
         continuation_attempt,
+        invalid_output_attempts: 0,
     })
 }
 
