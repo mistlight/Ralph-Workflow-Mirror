@@ -9,7 +9,7 @@
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
-use ralph_workflow::reducer::ui_event::UIEvent;
+use ralph_workflow::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use ralph_workflow::reducer::PipelineState;
 
 use crate::test_timeout::with_default_timeout;
@@ -399,5 +399,259 @@ fn test_complete_phase_transition_sequence() {
             "Should emit Complete transition, got: {:?}",
             phase_transitions
         );
+    });
+}
+
+// =========================================================================
+// XmlOutput Event Tests
+// =========================================================================
+
+#[test]
+fn test_generate_plan_emits_xml_output() {
+    with_default_timeout(|| {
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        // Generate plan
+        let _result = handler.execute_mock(Effect::GeneratePlan { iteration: 1 });
+
+        // Verify XmlOutput event was emitted with DevelopmentPlan type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::DevelopmentPlan,
+                    ..
+                }
+            )),
+            "GeneratePlan should emit XmlOutput event with DevelopmentPlan type"
+        );
+    });
+}
+
+#[test]
+fn test_development_iteration_emits_xml_output() {
+    with_default_timeout(|| {
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        // Run development iteration
+        let _result = handler.execute_mock(Effect::RunDevelopmentIteration { iteration: 1 });
+
+        // Verify XmlOutput event was emitted with DevelopmentResult type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::DevelopmentResult,
+                    ..
+                }
+            )),
+            "RunDevelopmentIteration should emit XmlOutput event with DevelopmentResult type"
+        );
+    });
+}
+
+#[test]
+fn test_review_pass_emits_xml_output() {
+    with_default_timeout(|| {
+        let state = PipelineState::initial(1, 1);
+        let mut handler = MockEffectHandler::new(state);
+
+        // Run review pass
+        let _result = handler.execute_mock(Effect::RunReviewPass { pass: 1 });
+
+        // Verify XmlOutput event was emitted with ReviewIssues type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::ReviewIssues,
+                    ..
+                }
+            )),
+            "RunReviewPass should emit XmlOutput event with ReviewIssues type"
+        );
+    });
+}
+
+#[test]
+fn test_fix_attempt_emits_xml_output() {
+    with_default_timeout(|| {
+        let state = PipelineState::initial(1, 1);
+        let mut handler = MockEffectHandler::new(state);
+
+        // Run fix attempt
+        let _result = handler.execute_mock(Effect::RunFixAttempt { pass: 1 });
+
+        // Verify XmlOutput event was emitted with FixResult type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::FixResult,
+                    ..
+                }
+            )),
+            "RunFixAttempt should emit XmlOutput event with FixResult type"
+        );
+    });
+}
+
+#[test]
+fn test_commit_message_emits_xml_output() {
+    with_default_timeout(|| {
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        // Generate commit message
+        let _result = handler.execute_mock(Effect::GenerateCommitMessage);
+
+        // Verify XmlOutput event was emitted with CommitMessage type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::CommitMessage,
+                    ..
+                }
+            )),
+            "GenerateCommitMessage should emit XmlOutput event with CommitMessage type"
+        );
+    });
+}
+
+#[test]
+fn test_xml_output_context_includes_iteration() {
+    with_default_timeout(|| {
+        let state = PipelineState::initial(3, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        // Generate plan for iteration 2
+        let result = handler.execute_mock(Effect::GeneratePlan { iteration: 2 });
+
+        // Find the XmlOutput event and check context
+        let xml_output = result
+            .ui_events
+            .iter()
+            .find(|e| matches!(e, UIEvent::XmlOutput { .. }));
+
+        assert!(xml_output.is_some(), "Should have XmlOutput event");
+        if let Some(UIEvent::XmlOutput { context, .. }) = xml_output {
+            assert!(context.is_some(), "Context should be present");
+            if let Some(ctx) = context {
+                assert_eq!(
+                    ctx.iteration,
+                    Some(2),
+                    "Context should include iteration number"
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn test_xml_output_context_includes_pass() {
+    with_default_timeout(|| {
+        let state = PipelineState::initial(1, 3);
+        let mut handler = MockEffectHandler::new(state);
+
+        // Run review pass 2
+        let result = handler.execute_mock(Effect::RunReviewPass { pass: 2 });
+
+        // Find the XmlOutput event and check context
+        let xml_output = result
+            .ui_events
+            .iter()
+            .find(|e| matches!(e, UIEvent::XmlOutput { .. }));
+
+        assert!(xml_output.is_some(), "Should have XmlOutput event");
+        if let Some(UIEvent::XmlOutput { context, .. }) = xml_output {
+            assert!(context.is_some(), "Context should be present");
+            if let Some(ctx) = context {
+                assert_eq!(ctx.pass, Some(2), "Context should include pass number");
+            }
+        }
+    });
+}
+
+#[test]
+fn test_xml_output_format_for_display_renders_semantically() {
+    with_default_timeout(|| {
+        let event = UIEvent::XmlOutput {
+            xml_type: XmlOutputType::DevelopmentResult,
+            content: r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Test complete</ralph-summary>
+</ralph-development-result>"#
+                .to_string(),
+            context: Some(XmlOutputContext {
+                iteration: Some(1),
+                pass: None,
+            }),
+        };
+
+        let output = event.format_for_display();
+
+        // Verify semantic rendering, not raw XML
+        assert!(
+            !output.contains("<ralph-"),
+            "Should not contain raw XML tags in output: {}",
+            output
+        );
+        assert!(
+            output.contains("✅") || output.contains("completed"),
+            "Should have status indicator: {}",
+            output
+        );
+        assert!(
+            output.contains("Test complete"),
+            "Should have summary: {}",
+            output
+        );
+    });
+}
+
+#[test]
+fn test_xml_output_serialization_roundtrip() {
+    with_default_timeout(|| {
+        let event = UIEvent::XmlOutput {
+            xml_type: XmlOutputType::ReviewIssues,
+            content: "<ralph-issues><ralph-issue>Test issue</ralph-issue></ralph-issues>"
+                .to_string(),
+            context: Some(XmlOutputContext {
+                iteration: None,
+                pass: Some(1),
+            }),
+        };
+
+        let json = serde_json::to_string(&event).expect("Should serialize");
+        let deserialized: UIEvent = serde_json::from_str(&json).expect("Should deserialize");
+
+        assert_eq!(event, deserialized, "Roundtrip should preserve event");
+    });
+}
+
+#[test]
+fn test_xml_output_type_all_variants() {
+    with_default_timeout(|| {
+        // Verify all XmlOutputType variants are distinct
+        let types = [
+            XmlOutputType::DevelopmentResult,
+            XmlOutputType::DevelopmentPlan,
+            XmlOutputType::ReviewIssues,
+            XmlOutputType::FixResult,
+            XmlOutputType::CommitMessage,
+        ];
+
+        for (i, t1) in types.iter().enumerate() {
+            for (j, t2) in types.iter().enumerate() {
+                if i == j {
+                    assert_eq!(t1, t2);
+                } else {
+                    assert_ne!(t1, t2, "{:?} should be different from {:?}", t1, t2);
+                }
+            }
+        }
     });
 }

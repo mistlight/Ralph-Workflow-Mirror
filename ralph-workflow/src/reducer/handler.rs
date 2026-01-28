@@ -19,7 +19,7 @@ use crate::reducer::fault_tolerant_executor::{
     execute_agent_fault_tolerantly, AgentExecutionConfig,
 };
 use crate::reducer::state::PipelineState;
-use crate::reducer::ui_event::UIEvent;
+use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use anyhow::Result;
 use std::path::Path;
 
@@ -206,12 +206,32 @@ impl MainEffectHandler {
                     valid: is_valid,
                 };
 
+                // Build UI events
+                let mut ui_events = vec![];
+
                 // Emit phase transition UI event when plan is valid
-                let ui_events = if is_valid {
-                    vec![self.phase_transition_ui(PipelinePhase::Development)]
-                } else {
-                    vec![]
-                };
+                if is_valid {
+                    ui_events.push(self.phase_transition_ui(PipelinePhase::Development));
+
+                    // Try to read plan XML for semantic rendering
+                    let plan_xml_path = Path::new(".agent/tmp/plan.xml");
+                    let processed_path = Path::new(".agent/tmp/plan.xml.processed");
+                    if let Some(xml_content) = ctx
+                        .workspace
+                        .read(plan_xml_path)
+                        .ok()
+                        .or_else(|| ctx.workspace.read(processed_path).ok())
+                    {
+                        ui_events.push(UIEvent::XmlOutput {
+                            xml_type: XmlOutputType::DevelopmentPlan,
+                            content: xml_content,
+                            context: Some(XmlOutputContext {
+                                iteration: Some(iteration),
+                                pass: None,
+                            }),
+                        });
+                    }
+                }
 
                 Ok(EffectResult::with_ui(event, ui_events))
             }
@@ -252,13 +272,35 @@ impl MainEffectHandler {
                     output_valid: true,
                 };
 
-                // Emit UI event for iteration progress
-                let ui_event = UIEvent::IterationProgress {
-                    current: iteration,
-                    total: self.state.total_iterations,
-                };
+                // Build UI events
+                let mut ui_events = vec![
+                    // Emit UI event for iteration progress
+                    UIEvent::IterationProgress {
+                        current: iteration,
+                        total: self.state.total_iterations,
+                    },
+                ];
 
-                Ok(EffectResult::with_ui(event, vec![ui_event]))
+                // Try to read development result XML for semantic rendering
+                let dev_xml_path = Path::new(".agent/tmp/development_result.xml");
+                let processed_path = Path::new(".agent/tmp/development_result.xml.processed");
+                if let Some(xml_content) = ctx
+                    .workspace
+                    .read(dev_xml_path)
+                    .ok()
+                    .or_else(|| ctx.workspace.read(processed_path).ok())
+                {
+                    ui_events.push(UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::DevelopmentResult,
+                        content: xml_content,
+                        context: Some(XmlOutputContext {
+                            iteration: Some(iteration),
+                            pass: None,
+                        }),
+                    });
+                }
+
+                Ok(EffectResult::with_ui(event, ui_events))
             }
             Err(_) => Ok(EffectResult::event(
                 PipelineEvent::DevelopmentIterationCompleted {
@@ -282,13 +324,35 @@ impl MainEffectHandler {
                     issues_found: !result.early_exit,
                 };
 
-                // Emit UI event for review progress
-                let ui_event = UIEvent::ReviewProgress {
-                    pass,
-                    total: self.state.total_reviewer_passes,
-                };
+                // Build UI events
+                let mut ui_events = vec![
+                    // Emit UI event for review progress
+                    UIEvent::ReviewProgress {
+                        pass,
+                        total: self.state.total_reviewer_passes,
+                    },
+                ];
 
-                Ok(EffectResult::with_ui(event, vec![ui_event]))
+                // Try to read issues XML for semantic rendering
+                let issues_xml_path = Path::new(".agent/tmp/issues.xml");
+                let processed_path = Path::new(".agent/tmp/issues.xml.processed");
+                if let Some(xml_content) = ctx
+                    .workspace
+                    .read(issues_xml_path)
+                    .ok()
+                    .or_else(|| ctx.workspace.read(processed_path).ok())
+                {
+                    ui_events.push(UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::ReviewIssues,
+                        content: xml_content,
+                        context: Some(XmlOutputContext {
+                            iteration: None,
+                            pass: Some(pass),
+                        }),
+                    });
+                }
+
+                Ok(EffectResult::with_ui(event, ui_events))
             }
             Err(_) => Ok(EffectResult::event(PipelineEvent::ReviewCompleted {
                 pass,
@@ -311,10 +375,34 @@ impl MainEffectHandler {
             None::<&ResumeContext>,
             fix_agent.as_deref(),
         ) {
-            Ok(_) => Ok(EffectResult::event(PipelineEvent::FixAttemptCompleted {
-                pass,
-                changes_made: true,
-            })),
+            Ok(_) => {
+                let event = PipelineEvent::FixAttemptCompleted {
+                    pass,
+                    changes_made: true,
+                };
+
+                // Build UI events - try to read fix result XML for semantic rendering
+                let mut ui_events = vec![];
+                let fix_xml_path = Path::new(".agent/tmp/fix_result.xml");
+                let processed_path = Path::new(".agent/tmp/fix_result.xml.processed");
+                if let Some(xml_content) = ctx
+                    .workspace
+                    .read(fix_xml_path)
+                    .ok()
+                    .or_else(|| ctx.workspace.read(processed_path).ok())
+                {
+                    ui_events.push(UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::FixResult,
+                        content: xml_content,
+                        context: Some(XmlOutputContext {
+                            iteration: None,
+                            pass: Some(pass),
+                        }),
+                    });
+                }
+
+                Ok(EffectResult::with_ui(event, ui_events))
+            }
             Err(_) => Ok(EffectResult::event(PipelineEvent::FixAttemptCompleted {
                 pass,
                 changes_made: false,
@@ -468,10 +556,29 @@ impl MainEffectHandler {
                     attempt,
                 };
 
-                // Emit phase transition UI event
-                let ui_event = self.phase_transition_ui(PipelinePhase::CommitMessage);
+                // Build UI events
+                let mut ui_events = vec![
+                    // Emit phase transition UI event
+                    self.phase_transition_ui(PipelinePhase::CommitMessage),
+                ];
 
-                Ok(EffectResult::with_ui(event, vec![ui_event]))
+                // Try to read commit XML for semantic rendering
+                let commit_xml_path = Path::new(".agent/tmp/commit.xml");
+                let processed_path = Path::new(".agent/tmp/commit.xml.processed");
+                if let Some(xml_content) = ctx
+                    .workspace
+                    .read(commit_xml_path)
+                    .ok()
+                    .or_else(|| ctx.workspace.read(processed_path).ok())
+                {
+                    ui_events.push(UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::CommitMessage,
+                        content: xml_content,
+                        context: None,
+                    });
+                }
+
+                Ok(EffectResult::with_ui(event, ui_events))
             }
             Err(_) => Ok(EffectResult::event(PipelineEvent::CommitMessageGenerated {
                 message: "chore: automated commit".to_string(),
