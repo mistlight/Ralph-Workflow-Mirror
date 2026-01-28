@@ -3,11 +3,29 @@
 //! This module provides pretty-printing of XML content for display purposes.
 //! When AI agents return XML, we want to display it in a nice, readable format
 //! rather than showing raw XML.
+//!
+//! # Note on Semantic Rendering
+//!
+//! For user-facing output, prefer using `UIEvent::XmlOutput` which routes
+//! through the semantic renderers in `reducer::xml_renderer`. Those renderers
+//! provide user-friendly output (status emojis, structured layout) rather
+//! than raw pretty-printed XML.
+//!
+//! This formatter is kept for:
+//! - Debugging/logging where raw XML structure is needed
+//! - Fallback rendering when semantic parsing fails
+//! - Tests that verify XML structure
 
-/// Format XML content for nice display.
+/// Format XML content for nice display (pretty-printed XML with indentation).
 ///
 /// This function prettifies XML by adding proper indentation and line breaks.
 /// If the XML parsing fails or the content isn't XML, it returns the original content.
+///
+/// # Prefer Semantic Rendering
+///
+/// For user-facing output, consider using the semantic renderers via
+/// `UIEvent::XmlOutput` instead. They provide user-friendly formatting
+/// (emojis, structured layout) rather than raw XML.
 ///
 /// # Arguments
 ///

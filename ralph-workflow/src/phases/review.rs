@@ -24,9 +24,8 @@ use crate::files::extract_issues;
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::llm_output_extraction::{
     archive_xml_file_with_workspace, extract_fix_result_xml, extract_issues_xml,
-    extract_xml_with_file_fallback_with_workspace, format_xml_for_display,
-    try_extract_from_file_with_workspace, validate_fix_result_xml, validate_issues_xml, xml_paths,
-    IssuesElements,
+    extract_xml_with_file_fallback_with_workspace, try_extract_from_file_with_workspace,
+    validate_fix_result_xml, validate_issues_xml, xml_paths, IssuesElements,
 };
 use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::files::{
@@ -832,15 +831,7 @@ pub fn run_review_pass(
                 ctx.logger
                     .success(&format!("Issues extracted: {} total", issues.len()));
 
-                // Display formatted XML for user
-                if let Ok(xml_content) = ctx.workspace.read(issues_path) {
-                    if let Some(extracted_xml) = extract_issues_xml(&xml_content) {
-                        ctx.logger.info(&format!(
-                            "Review output:\n{}",
-                            format_xml_for_display(&extracted_xml)
-                        ));
-                    }
-                }
+                // Note: XML display is handled via UIEvent::XmlOutput in the effect handler
 
                 let step = ExecutionStep::new(
                     "Review",
@@ -1418,10 +1409,8 @@ pub fn run_fix_pass(
             // Try to validate against XSD
             match validate_fix_result_xml(&xml_to_validate) {
                 Ok(result_elements) => {
-                    // XSD validation passed - format and log the result
-                    let formatted_xml = format_xml_for_display(&xml_to_validate);
-
-                    // Archive the XML file for debugging (moves to .xml.processed)
+                    // XSD validation passed - archive the file for debugging (moves to .xml.processed)
+                    // Note: XML display is handled via UIEvent::XmlOutput in the effect handler
                     archive_xml_file_with_workspace(
                         ctx.workspace,
                         Path::new(xml_paths::FIX_RESULT_XML),
@@ -1434,9 +1423,6 @@ pub fn run_fix_pass(
                         ctx.logger
                             .success("Fix status extracted and validated (XML)");
                     }
-
-                    // Display the formatted status
-                    ctx.logger.info(&format!("\n{}", formatted_xml));
 
                     // Check the status to determine if we should continue
                     if result_elements.is_complete() || result_elements.is_no_issues() {

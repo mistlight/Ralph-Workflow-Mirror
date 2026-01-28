@@ -29,7 +29,7 @@
 use super::effect::{Effect, EffectHandler, EffectResult};
 use super::event::{PipelineEvent, PipelinePhase};
 use super::state::PipelineState;
-use super::ui_event::UIEvent;
+use super::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use crate::phases::PhaseContext;
 use anyhow::Result;
 use std::cell::RefCell;
@@ -175,10 +175,48 @@ impl MockEffectHandler {
             }
 
             Effect::GeneratePlan { iteration } => {
-                let ui = vec![UIEvent::PhaseTransition {
-                    from: Some(self.state.phase),
-                    to: PipelinePhase::Development,
-                }];
+                let mock_plan_xml = r#"<ralph-plan>
+<ralph-summary>
+<context>Mock plan for testing</context>
+<scope-items>
+<scope-item count="1">test item</scope-item>
+<scope-item count="1">another item</scope-item>
+<scope-item count="1">third item</scope-item>
+</scope-items>
+</ralph-summary>
+<ralph-implementation-steps>
+<step number="1" type="file-change">
+<title>Mock step</title>
+<target-files><file path="src/test.rs" action="modify"/></target-files>
+<content><paragraph>Test content</paragraph></content>
+</step>
+</ralph-implementation-steps>
+<ralph-critical-files>
+<primary-files><file path="src/test.rs" action="modify"/></primary-files>
+<reference-files><file path="src/lib.rs" purpose="reference"/></reference-files>
+</ralph-critical-files>
+<ralph-risks-mitigations>
+<risk-pair severity="low"><risk>Test risk</risk><mitigation>Test mitigation</mitigation></risk-pair>
+</ralph-risks-mitigations>
+<ralph-verification-strategy>
+<verification><method>Test method</method><expected-outcome>Pass</expected-outcome></verification>
+</ralph-verification-strategy>
+</ralph-plan>"#;
+                let ui = vec![
+                    UIEvent::PhaseTransition {
+                        from: Some(self.state.phase),
+                        to: PipelinePhase::Development,
+                    },
+                    UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::DevelopmentPlan,
+                        content: mock_plan_xml.to_string(),
+                        context: Some(XmlOutputContext {
+                            iteration: Some(iteration),
+                            pass: None,
+                            snippets: Vec::new(),
+                        }),
+                    },
+                ];
                 (
                     PipelineEvent::PlanGenerationCompleted {
                         iteration,
@@ -189,10 +227,27 @@ impl MockEffectHandler {
             }
 
             Effect::RunDevelopmentIteration { iteration } => {
-                let ui = vec![UIEvent::IterationProgress {
-                    current: iteration,
-                    total: self.state.total_iterations,
-                }];
+                let mock_dev_result_xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Mock development iteration completed successfully</ralph-summary>
+<ralph-files-changed>src/test.rs
+src/lib.rs</ralph-files-changed>
+</ralph-development-result>"#;
+                let ui = vec![
+                    UIEvent::IterationProgress {
+                        current: iteration,
+                        total: self.state.total_iterations,
+                    },
+                    UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::DevelopmentResult,
+                        content: mock_dev_result_xml.to_string(),
+                        context: Some(XmlOutputContext {
+                            iteration: Some(iteration),
+                            pass: None,
+                            snippets: Vec::new(),
+                        }),
+                    },
+                ];
                 (
                     PipelineEvent::DevelopmentIterationCompleted {
                         iteration,
@@ -203,10 +258,24 @@ impl MockEffectHandler {
             }
 
             Effect::RunReviewPass { pass } => {
-                let ui = vec![UIEvent::ReviewProgress {
-                    pass,
-                    total: self.state.total_reviewer_passes,
-                }];
+                let mock_issues_xml = r#"<ralph-issues>
+<ralph-no-issues-found>Mock review found no issues</ralph-no-issues-found>
+</ralph-issues>"#;
+                let ui = vec![
+                    UIEvent::ReviewProgress {
+                        pass,
+                        total: self.state.total_reviewer_passes,
+                    },
+                    UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::ReviewIssues,
+                        content: mock_issues_xml.to_string(),
+                        context: Some(XmlOutputContext {
+                            iteration: None,
+                            pass: Some(pass),
+                            snippets: Vec::new(),
+                        }),
+                    },
+                ];
                 (
                     PipelineEvent::ReviewCompleted {
                         pass,
@@ -216,13 +285,28 @@ impl MockEffectHandler {
                 )
             }
 
-            Effect::RunFixAttempt { pass } => (
-                PipelineEvent::FixAttemptCompleted {
-                    pass,
-                    changes_made: true,
-                },
-                vec![],
-            ),
+            Effect::RunFixAttempt { pass } => {
+                let mock_fix_xml = r#"<ralph-fix-result>
+<ralph-status>all_issues_addressed</ralph-status>
+<ralph-summary>Mock fix completed - all issues addressed</ralph-summary>
+</ralph-fix-result>"#;
+                let ui = vec![UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::FixResult,
+                    content: mock_fix_xml.to_string(),
+                    context: Some(XmlOutputContext {
+                        iteration: None,
+                        pass: Some(pass),
+                        snippets: Vec::new(),
+                    }),
+                }];
+                (
+                    PipelineEvent::FixAttemptCompleted {
+                        pass,
+                        changes_made: true,
+                    },
+                    ui,
+                )
+            }
 
             Effect::RunRebase {
                 phase,
@@ -249,10 +333,24 @@ impl MockEffectHandler {
                         vec![],
                     )
                 } else {
-                    let ui = vec![UIEvent::PhaseTransition {
-                        from: Some(self.state.phase),
-                        to: PipelinePhase::CommitMessage,
-                    }];
+                    let mock_commit_xml = r#"<ralph-commit>
+<ralph-subject>feat: mock commit message for testing</ralph-subject>
+<ralph-body>This is a mock commit body generated for testing purposes.
+
+- Changed some files
+- Added new features</ralph-body>
+</ralph-commit>"#;
+                    let ui = vec![
+                        UIEvent::PhaseTransition {
+                            from: Some(self.state.phase),
+                            to: PipelinePhase::CommitMessage,
+                        },
+                        UIEvent::XmlOutput {
+                            xml_type: XmlOutputType::CommitMessage,
+                            content: mock_commit_xml.to_string(),
+                            context: None,
+                        },
+                    ];
                     (
                         PipelineEvent::CommitMessageGenerated {
                             message: "mock commit message".to_string(),
@@ -605,5 +703,110 @@ mod tests {
 
         // State should be unchanged
         assert_eq!(state.phase, state_clone.phase);
+    }
+
+    /// Test that MockEffectHandler emits XmlOutput events for plan generation.
+    #[test]
+    fn mock_effect_handler_emits_xml_output_for_plan() {
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        let _result = handler.execute_mock(Effect::GeneratePlan { iteration: 1 });
+
+        // Verify XmlOutput event was emitted with DevelopmentPlan type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::DevelopmentPlan,
+                    ..
+                }
+            )),
+            "Should emit XmlOutput event for plan generation"
+        );
+    }
+
+    /// Test that MockEffectHandler emits XmlOutput events for development iteration.
+    #[test]
+    fn mock_effect_handler_emits_xml_output_for_development() {
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        let _result = handler.execute_mock(Effect::RunDevelopmentIteration { iteration: 1 });
+
+        // Verify XmlOutput event was emitted with DevelopmentResult type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::DevelopmentResult,
+                    ..
+                }
+            )),
+            "Should emit XmlOutput event for development result"
+        );
+    }
+
+    /// Test that MockEffectHandler emits XmlOutput events for review pass.
+    #[test]
+    fn mock_effect_handler_emits_xml_output_for_review() {
+        let state = PipelineState::initial(1, 1);
+        let mut handler = MockEffectHandler::new(state);
+
+        let _result = handler.execute_mock(Effect::RunReviewPass { pass: 1 });
+
+        // Verify XmlOutput event was emitted with ReviewIssues type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::ReviewIssues,
+                    ..
+                }
+            )),
+            "Should emit XmlOutput event for review issues"
+        );
+    }
+
+    /// Test that MockEffectHandler emits XmlOutput events for fix attempt.
+    #[test]
+    fn mock_effect_handler_emits_xml_output_for_fix() {
+        let state = PipelineState::initial(1, 1);
+        let mut handler = MockEffectHandler::new(state);
+
+        let _result = handler.execute_mock(Effect::RunFixAttempt { pass: 1 });
+
+        // Verify XmlOutput event was emitted with FixResult type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::FixResult,
+                    ..
+                }
+            )),
+            "Should emit XmlOutput event for fix result"
+        );
+    }
+
+    /// Test that MockEffectHandler emits XmlOutput events for commit message.
+    #[test]
+    fn mock_effect_handler_emits_xml_output_for_commit() {
+        let state = PipelineState::initial(1, 0);
+        let mut handler = MockEffectHandler::new(state);
+
+        let _result = handler.execute_mock(Effect::GenerateCommitMessage);
+
+        // Verify XmlOutput event was emitted with CommitMessage type
+        assert!(
+            handler.was_ui_event_emitted(|e| matches!(
+                e,
+                UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::CommitMessage,
+                    ..
+                }
+            )),
+            "Should emit XmlOutput event for commit message"
+        );
     }
 }

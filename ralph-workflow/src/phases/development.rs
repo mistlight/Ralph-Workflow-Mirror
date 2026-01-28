@@ -13,8 +13,8 @@ use crate::checkpoint::{save_checkpoint_with_workspace, CheckpointBuilder, Pipel
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::llm_output_extraction::{
     archive_xml_file_with_workspace, extract_development_result_xml, extract_plan_xml,
-    extract_xml_with_file_fallback_with_workspace, format_xml_for_display,
-    validate_development_result_xml, validate_plan_xml, xml_paths, PlanElements,
+    extract_xml_with_file_fallback_with_workspace, validate_development_result_xml,
+    validate_plan_xml, xml_paths, PlanElements,
 };
 use crate::files::{delete_plan_file_with_workspace, update_status_with_workspace};
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
@@ -1074,10 +1074,8 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
         // Try to validate against XSD
         match validate_plan_xml(&xml_to_validate) {
             Ok(plan_elements) => {
-                // XSD validation passed - format and write the plan
-                let formatted_xml = format_xml_for_display(&xml_to_validate);
-
-                // Convert XML to markdown format for PLAN.md
+                // XSD validation passed - convert XML to markdown format for PLAN.md
+                // Note: XML display is handled via UIEvent::XmlOutput in the effect handler
                 let markdown = format_plan_as_markdown(&plan_elements);
                 ctx.workspace.write(plan_path, &markdown)?;
 
@@ -1090,9 +1088,6 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
                 } else {
                     ctx.logger.success("Plan extracted and validated (XML)");
                 }
-
-                // Display the formatted plan
-                ctx.logger.info(&format!("\n{}", formatted_xml));
 
                 // Record execution history before returning
                 {
