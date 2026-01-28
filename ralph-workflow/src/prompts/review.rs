@@ -480,8 +480,9 @@ mod tests {
 
         let result = prompt_review_xml_with_references(&context, &refs);
 
-        // Should instruct to use git diff, not embed content
-        assert!(result.contains("git diff abc123def..HEAD"));
+        // Should instruct to use git diff fallback commands, not embed content
+        assert!(result.contains("git diff abc123def"));
+        assert!(result.contains("git diff --cached abc123def"));
         assert!(result.contains("Small plan"));
     }
 
@@ -504,7 +505,8 @@ mod tests {
 
         // Both should be referenced by file/git command
         assert!(result.contains(".agent/PLAN.md"));
-        assert!(result.contains("git diff start123..HEAD"));
+        assert!(result.contains("git diff start123"));
+        assert!(result.contains("git diff --cached start123"));
         // Should not contain the large content
         let pppp = "p".repeat(100);
         assert!(!result.contains(&pppp));

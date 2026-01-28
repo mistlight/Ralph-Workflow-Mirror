@@ -211,7 +211,6 @@ impl AppEffectHandler for RealAppEffectHandler {
                 Err(e) => AppEffectResult::Error(format!("Failed to get git diff: {}", e)),
             },
 
-            #[cfg(any(test, feature = "test-utils"))]
             AppEffect::GitDiffFrom { start_oid } => {
                 match crate::git_helpers::git_diff_from(&start_oid) {
                     Ok(diff) => AppEffectResult::String(diff),
@@ -222,23 +221,12 @@ impl AppEffectHandler for RealAppEffectHandler {
                 }
             }
 
-            #[cfg(not(any(test, feature = "test-utils")))]
-            AppEffect::GitDiffFrom { start_oid: _ } => {
-                AppEffectResult::Error("GitDiffFrom requires test-utils feature".to_string())
-            }
-
-            #[cfg(any(test, feature = "test-utils"))]
             AppEffect::GitDiffFromStart => match crate::git_helpers::get_git_diff_from_start() {
                 Ok(diff) => AppEffectResult::String(diff),
                 Err(e) => {
                     AppEffectResult::Error(format!("Failed to get diff from start commit: {}", e))
                 }
             },
-
-            #[cfg(not(any(test, feature = "test-utils")))]
-            AppEffect::GitDiffFromStart => {
-                AppEffectResult::Error("GitDiffFromStart requires test-utils feature".to_string())
-            }
 
             AppEffect::GitSnapshot => match crate::git_helpers::git_snapshot() {
                 Ok(snapshot) => AppEffectResult::String(snapshot),

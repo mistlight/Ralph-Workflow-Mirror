@@ -228,7 +228,8 @@ fn diff_with_empty_start_commit() {
 
         let rendered = ref_result.render_for_template();
         assert!(
-            rendered.contains("git diff ..HEAD"),
+            rendered.contains("Unstaged changes: git diff")
+                && rendered.contains("Staged changes:   git diff --cached"),
             "Should handle empty start commit: {}",
             &rendered[..rendered.len().min(200)]
         );
