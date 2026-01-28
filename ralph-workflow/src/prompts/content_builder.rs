@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use super::content_reference::{
-    DiffContentReference, PlanContentReference, PromptContentReference,
+    DiffContentReference, PlanContentReference, PromptContentReference, MAX_INLINE_CONTENT_SIZE,
 };
 use crate::workspace::Workspace;
 
@@ -68,7 +68,23 @@ impl<'a> PromptContentBuilder<'a> {
     /// If the content exceeds [`MAX_INLINE_CONTENT_SIZE`], the builder will
     /// create instructions to use `git diff` instead of embedding inline.
     pub fn with_diff(mut self, content: String, start_commit: &str) -> Self {
-        self.diff_ref = Some(DiffContentReference::from_diff(content, start_commit));
+        // For oversize diffs, write the diff to .agent/tmp/diff.txt so agents can read it
+        // without relying on git being available.
+        let is_oversize = content.len() > MAX_INLINE_CONTENT_SIZE;
+        if is_oversize {
+            let tmp_dir = Path::new(".agent/tmp");
+            let diff_rel = tmp_dir.join("diff.txt");
+            if self.workspace.create_dir_all(tmp_dir).is_ok() {
+                let _ = self.workspace.write(&diff_rel, &content);
+            }
+        }
+
+        let diff_abs = self.workspace.absolute(Path::new(".agent/tmp/diff.txt"));
+        self.diff_ref = Some(DiffContentReference::from_diff(
+            content,
+            start_commit,
+            &diff_abs,
+        ));
         self
     }
 
@@ -220,7 +236,13 @@ mod tests {
 
         let refs = builder.build();
         let rendered = refs.diff_for_template();
-        assert!(rendered.contains("git diff abc123def..HEAD"));
+        assert!(
+            rendered.contains(".agent/tmp/diff.txt"),
+            "Oversize diff should reference .agent/tmp/diff.txt: {}",
+            &rendered[..rendered.len().min(200)]
+        );
+        // Diff should be written for file-based fallback
+        assert!(workspace.was_written(".agent/tmp/diff.txt"));
         assert!(!refs.diff_is_inline());
     }
 

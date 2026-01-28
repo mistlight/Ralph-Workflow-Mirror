@@ -56,12 +56,12 @@ fn oversize_prompt_uses_backup_reference() {
     });
 }
 
-/// Test that oversize DIFF uses git diff reference.
+/// Test that oversize DIFF is written to `.agent/tmp/diff.txt` and referenced.
 ///
 /// When diff content exceeds MAX_INLINE_CONTENT_SIZE, the generated
-/// prompt should tell the agent to use git diff command.
+/// prompt should tell the agent to read from `.agent/tmp/diff.txt`.
 #[test]
-fn oversize_diff_uses_git_reference() {
+fn oversize_diff_writes_tmp_file_and_references_it() {
     with_default_timeout(|| {
         let large_diff = format!("+{}", "added_line\n".repeat(MAX_INLINE_CONTENT_SIZE / 10));
         let workspace = MemoryWorkspace::new_test();
@@ -77,9 +77,14 @@ fn oversize_diff_uses_git_reference() {
         let rendered = refs.diff_for_template();
 
         assert!(
-            rendered.contains("git diff abc123def..HEAD"),
-            "Should include git diff command: {}",
+            rendered.contains(".agent/tmp/diff.txt"),
+            "Should reference .agent/tmp/diff.txt: {}",
             &rendered[..rendered.len().min(200)]
+        );
+
+        assert!(
+            workspace.was_written(".agent/tmp/diff.txt"),
+            "Should write oversize diff to .agent/tmp/diff.txt"
         );
     });
 }
@@ -216,7 +221,8 @@ fn one_byte_over_max_triggers_file_reference() {
 fn diff_with_empty_start_commit() {
     with_default_timeout(|| {
         let large_diff = "d".repeat(MAX_INLINE_CONTENT_SIZE + 1);
-        let ref_result = DiffContentReference::from_diff(large_diff, "");
+        let ref_result =
+            DiffContentReference::from_diff(large_diff, "", Path::new(".agent/tmp/diff.txt"));
 
         assert!(!ref_result.is_inline(), "Large diff should not be inline");
 
@@ -419,10 +425,12 @@ fn builder_handles_all_three_oversized_content_types() {
         // Verify DIFF references git command
         let diff_rendered = refs.diff_for_template();
         assert!(
-            diff_rendered.contains("git diff abc123def..HEAD"),
-            "DIFF should reference git command: {}",
+            diff_rendered.contains(".agent/tmp/diff.txt"),
+            "DIFF should reference .agent/tmp/diff.txt: {}",
             &diff_rendered[..diff_rendered.len().min(200)]
         );
+
+        assert!(workspace.was_written(".agent/tmp/diff.txt"));
 
         // Verify none are inline
         assert!(!refs.prompt_is_inline());

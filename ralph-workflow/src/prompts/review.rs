@@ -3,6 +3,7 @@
 //! Prompts for review and fix result generation using XML format with XSD validation.
 
 use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
+use crate::prompts::partials::get_shared_partials;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use crate::workspace::Workspace;
@@ -56,6 +57,7 @@ pub fn prompt_review_xml_with_context(
     plan_content: &str,
     changes_content: &str,
 ) -> String {
+    let partials = get_shared_partials();
     let template_content = context
         .registry()
         .get_template("review_xml")
@@ -73,7 +75,7 @@ pub fn prompt_review_xml_with_context(
         ),
     ]);
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
                 "REVIEW MODE\n\nReview the implementation against:\n\n\
@@ -101,6 +103,7 @@ pub fn prompt_review_xml_with_references(
     context: &TemplateContext,
     refs: &crate::prompts::content_builder::PromptContentReferences,
 ) -> String {
+    let partials = get_shared_partials();
     let template_content = context
         .registry()
         .get_template("review_xml")
@@ -120,7 +123,7 @@ pub fn prompt_review_xml_with_references(
     ]);
 
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             let plan = refs.plan_for_template();
             let changes = refs.diff_for_template();
@@ -152,6 +155,7 @@ pub fn prompt_review_xsd_retry_with_context(
     last_output: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    let partials = get_shared_partials();
     // Write context files to .agent/tmp/ for the agent to read
     write_review_xsd_retry_files(workspace, last_output);
 
@@ -175,7 +179,7 @@ pub fn prompt_review_xsd_retry_with_context(
         ),
     ]);
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
                 "Your previous review failed XSD validation.\n\nError: {}\n\n\
@@ -228,6 +232,7 @@ pub fn prompt_fix_xml_with_context(
     issues_content: &str,
     files_to_modify: &[String],
 ) -> String {
+    let partials = get_shared_partials();
     let template_content = context
         .registry()
         .get_template("fix_mode_xml")
@@ -247,7 +252,7 @@ pub fn prompt_fix_xml_with_context(
         ),
     ]);
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
                 "FIX MODE\n\nFix the issues:\n\n{}\n\n\
@@ -278,6 +283,7 @@ pub fn prompt_fix_xsd_retry_with_context(
     last_output: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    let partials = get_shared_partials();
     // Write context files to .agent/tmp/ for the agent to read
     write_fix_xsd_retry_files(workspace, last_output);
 
@@ -301,7 +307,7 @@ pub fn prompt_fix_xsd_retry_with_context(
         ),
     ]);
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
                 "Your previous fix failed XSD validation.\n\nError: {}\n\n\
@@ -329,6 +335,16 @@ mod tests {
         assert!(result.contains("test changes"));
         assert!(result.contains("REVIEW MODE"));
         assert!(result.contains("<ralph-issues>"));
+
+        // Shared partials should be expanded (no raw partial directives left in output)
+        assert!(
+            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+            "review_xml should render shared/_unattended_mode partial"
+        );
+        assert!(
+            !result.contains("{{>"),
+            "review_xml should not contain raw partial directives"
+        );
     }
 
     #[test]
@@ -347,6 +363,17 @@ mod tests {
         assert!(result.contains("XSD error"));
         assert!(result.contains(".agent/tmp/issues.xml"));
         assert!(result.contains(".agent/tmp/issues.xsd"));
+
+        // Shared partials should be expanded
+        assert!(
+            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+            "review_xsd_retry should render shared/_unattended_mode partial"
+        );
+        assert!(
+            !result.contains("{{>"),
+            "review_xsd_retry should not contain raw partial directives"
+        );
+
         // Verify files were written to workspace
         assert!(workspace.was_written(".agent/tmp/issues.xsd"));
         assert!(workspace.was_written(".agent/tmp/last_output.xml"));
@@ -360,6 +387,16 @@ mod tests {
         assert!(result.contains("test issues"));
         assert!(result.contains("FIX MODE"));
         assert!(result.contains("<ralph-fix-result>"));
+
+        // Shared partials should be expanded
+        assert!(
+            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+            "fix_mode_xml should render shared/_unattended_mode partial"
+        );
+        assert!(
+            !result.contains("{{>"),
+            "fix_mode_xml should not contain raw partial directives"
+        );
     }
 
     #[test]
