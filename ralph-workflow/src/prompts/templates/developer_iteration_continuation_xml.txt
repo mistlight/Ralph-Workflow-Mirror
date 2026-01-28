@@ -56,6 +56,10 @@ status="{{PREVIOUS_STATUS}}" which means work is incomplete.
 3. DO continue from where the previous attempt left off
 4. Review what was done and focus on what remains
 
+IMPORTANT: A full continuation context file may be available at `.agent/tmp/continuation_context.md`.
+If it exists, read it first. It contains the authoritative continuation context and may include
+content that was too large to inline in this prompt.
+
 ═══════════════════════════════════════════════════════════════════════════════
 PREVIOUS ATTEMPT SUMMARY
 ═══════════════════════════════════════════════════════════════════════════════

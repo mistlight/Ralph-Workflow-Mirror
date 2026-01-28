@@ -37,6 +37,8 @@ use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
 
 use std::time::Instant;
 
+const CONTINUATION_CONTEXT_PATH: &str = ".agent/tmp/continuation_context.md";
+
 /// Result of the development phase.
 pub struct DevelopmentResult {
     /// Whether any errors occurred during the phase.
@@ -76,6 +78,11 @@ pub fn run_development_phase(
         print_progress(i, ctx.config.developer_iters, "Overall");
 
         let resuming_into_development = resume_context.is_some() && i == start_iter;
+
+        // Ensure continuation context from a previous iteration does not leak forward.
+        if !resuming_into_development {
+            let _ = cleanup_continuation_context_file(ctx);
+        }
 
         // Step 1: Create PLAN from PROMPT (skip if resuming into development)
         if resuming_into_development {
@@ -125,14 +132,23 @@ pub fn run_development_phase(
             ctx.config.isolation_mode,
         )?;
 
-        // Run development iteration with XML extraction and XSD validation
-        // Use default continuation state (no previous attempt context) for legacy flow
-        let continuation_state = ContinuationState::new();
+        // Run development iteration with XML extraction and XSD validation.
+        // Config semantics: max_dev_continuations counts *continuation attempts* beyond the
+        // initial attempt. Total valid attempts is `1 + max_dev_continuations`.
+        let continuation_state = if resuming_into_development {
+            load_continuation_state_from_context_file(ctx.workspace)
+                .unwrap_or_else(ContinuationState::new)
+        } else {
+            ContinuationState::new()
+        };
         let max_continuations = ctx.config.max_dev_continuations.unwrap_or(2) as usize;
+        let max_total_attempts = 1 + max_continuations;
         let continuation_config = ContinuationConfig {
             state: &continuation_state,
-            max_attempts: max_continuations,
+            max_attempts: max_total_attempts,
         };
+
+        let dev_start_time = Instant::now();
         let dev_result = run_development_iteration_with_xml_retry(
             ctx,
             i,
@@ -142,6 +158,9 @@ pub fn run_development_phase(
             None,
             continuation_config,
         )?;
+
+        // This iteration reached status="completed"; cleanup the continuation context file.
+        let _ = cleanup_continuation_context_file(ctx);
 
         if dev_result.had_error {
             ctx.logger.error(&format!(
@@ -155,7 +174,6 @@ pub fn run_development_phase(
 
         // Record execution history
         {
-            let dev_start_time = Instant::now(); // Note: this is after the iteration runs
             let duration = dev_start_time.elapsed().as_secs();
             let outcome = if dev_result.had_error {
                 StepOutcome::failure("Agent exited with non-zero code".to_string(), true)
@@ -269,7 +287,7 @@ pub struct DevIterationResult {
 pub struct ContinuationConfig<'a> {
     /// Current continuation state for the iteration.
     pub state: &'a ContinuationState,
-    /// Maximum number of continuation attempts allowed.
+    /// Maximum number of total valid attempts allowed (initial attempt + continuations).
     pub max_attempts: usize,
 }
 
@@ -639,15 +657,17 @@ pub fn run_development_iteration_with_xml_retry(
     continuation_config: ContinuationConfig<'_>,
 ) -> anyhow::Result<DevIterationResult> {
     let max_xsd_retries = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize;
-    let max_continuations = continuation_config.max_attempts;
+    let max_total_attempts = continuation_config.max_attempts;
+    let max_continuations = max_total_attempts.saturating_sub(1);
 
     // Track local continuation state (starts from the provided state)
     let mut local_continuation = continuation_config.state.clone();
     let mut had_any_error = false;
     let mut last_summary: Option<String> = None;
 
-    // Outer loop: Continue until agent returns status="completed" or we hit the limit
-    for _ in 0..max_continuations {
+    // Outer loop: Continue until agent returns status="completed" or we hit the limit.
+    // The loop count is total valid attempts (initial + continuations).
+    for _ in 0..max_total_attempts {
         if local_continuation.is_continuation() {
             ctx.logger.info(&format!(
                 "Continuation {} of {} (status was not 'completed')",
@@ -684,6 +704,10 @@ pub fn run_development_iteration_with_xml_retry(
             attempt.files_changed,
             attempt.next_steps,
         );
+
+        // Persist continuation context for resumability through checkpoints.
+        // This file is referenced by the continuation prompt template.
+        let _ = write_continuation_context_file(ctx, iteration, &local_continuation);
     }
 
     // If we get here, we exhausted the continuation limit without ever reaching
@@ -692,15 +716,179 @@ pub fn run_development_iteration_with_xml_retry(
     let summary = last_summary.unwrap_or_else(|| {
         format!(
             "Continuation stopped after {} attempts",
-            max_continuations * max_xsd_retries
+            max_total_attempts * max_xsd_retries
         )
     });
     anyhow::bail!(
-        "Development iteration did not reach status='completed' after {} continuation attempts (max_xsd_retries={} per attempt). Last summary: {}",
+        "Development iteration did not reach status='completed' after {} total valid attempts (max_continuations={}, max_xsd_retries={} per attempt). Last summary: {}",
+        max_total_attempts,
         max_continuations,
         max_xsd_retries,
         summary
     );
+}
+
+fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {
+    let path = Path::new(CONTINUATION_CONTEXT_PATH);
+    if ctx.workspace.exists(path) {
+        ctx.workspace.remove(path)?;
+    }
+    Ok(())
+}
+
+fn write_continuation_context_file(
+    ctx: &mut PhaseContext<'_>,
+    iteration: u32,
+    continuation_state: &ContinuationState,
+) -> anyhow::Result<()> {
+    let tmp_dir = Path::new(".agent/tmp");
+    if !ctx.workspace.exists(tmp_dir) {
+        ctx.workspace.create_dir_all(tmp_dir)?;
+    }
+
+    let mut content = String::new();
+    content.push_str("# Development Continuation Context\n\n");
+    content.push_str(&format!("- Iteration: {iteration}\n"));
+    content.push_str(&format!(
+        "- Continuation attempt: {}\n",
+        continuation_state.continuation_attempt
+    ));
+    if let Some(ref status) = continuation_state.previous_status {
+        content.push_str(&format!("- Previous status: {status}\n\n"));
+    } else {
+        content.push_str("- Previous status: unknown\n\n");
+    }
+
+    content.push_str("## Previous summary\n\n");
+    if let Some(ref summary) = continuation_state.previous_summary {
+        content.push_str(summary);
+    }
+    content.push('\n');
+
+    if let Some(ref files) = continuation_state.previous_files_changed {
+        content.push_str("\n## Files changed\n\n");
+        for file in files {
+            content.push_str("- ");
+            content.push_str(file);
+            content.push('\n');
+        }
+    }
+
+    if let Some(ref next_steps) = continuation_state.previous_next_steps {
+        content.push_str("\n## Recommended next steps\n\n");
+        content.push_str(next_steps);
+        content.push('\n');
+    }
+
+    content.push_str("\n## Reference files (do not modify)\n\n");
+    content.push_str("- PROMPT.md\n");
+    content.push_str("- .agent/PLAN.md\n");
+
+    ctx.workspace
+        .write(Path::new(CONTINUATION_CONTEXT_PATH), &content)?;
+
+    Ok(())
+}
+
+fn load_continuation_state_from_context_file(
+    workspace: &dyn crate::workspace::Workspace,
+) -> Option<ContinuationState> {
+    let path = Path::new(CONTINUATION_CONTEXT_PATH);
+    if !workspace.exists(path) {
+        return None;
+    }
+    let content = workspace.read(path).ok()?;
+    parse_continuation_context_markdown(&content)
+}
+
+fn parse_continuation_context_markdown(content: &str) -> Option<ContinuationState> {
+    let mut continuation_attempt: Option<u32> = None;
+    let mut previous_status: Option<DevelopmentStatus> = None;
+    let mut previous_summary_lines: Vec<String> = Vec::new();
+    let mut previous_next_steps_lines: Vec<String> = Vec::new();
+    let mut previous_files_changed: Vec<String> = Vec::new();
+
+    enum Section {
+        None,
+        PreviousSummary,
+        FilesChanged,
+        NextSteps,
+    }
+
+    let mut section = Section::None;
+
+    for line in content.lines() {
+        let line = line.trim_end();
+
+        if let Some(rest) = line.strip_prefix("- Continuation attempt:") {
+            continuation_attempt = rest.trim().parse::<u32>().ok();
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("- Previous status:") {
+            let s = rest.trim().to_ascii_lowercase();
+            previous_status = match s.as_str() {
+                "completed" => Some(DevelopmentStatus::Completed),
+                "partial" => Some(DevelopmentStatus::Partial),
+                "failed" => Some(DevelopmentStatus::Failed),
+                _ => None,
+            };
+            continue;
+        }
+
+        if line == "## Previous summary" {
+            section = Section::PreviousSummary;
+            continue;
+        }
+        if line == "## Files changed" {
+            section = Section::FilesChanged;
+            continue;
+        }
+        if line == "## Recommended next steps" {
+            section = Section::NextSteps;
+            continue;
+        }
+        if line.starts_with("## ") {
+            section = Section::None;
+            continue;
+        }
+
+        match section {
+            Section::PreviousSummary => previous_summary_lines.push(line.to_string()),
+            Section::FilesChanged => {
+                if let Some(item) = line.strip_prefix("- ") {
+                    if !item.trim().is_empty() {
+                        previous_files_changed.push(item.trim().to_string());
+                    }
+                }
+            }
+            Section::NextSteps => previous_next_steps_lines.push(line.to_string()),
+            Section::None => {}
+        }
+    }
+
+    let continuation_attempt = continuation_attempt?;
+    let previous_summary = previous_summary_lines.join("\n").trim().to_string();
+    let previous_next_steps = previous_next_steps_lines.join("\n").trim().to_string();
+
+    Some(ContinuationState {
+        previous_status,
+        previous_summary: if previous_summary.is_empty() {
+            None
+        } else {
+            Some(previous_summary)
+        },
+        previous_files_changed: if previous_files_changed.is_empty() {
+            None
+        } else {
+            Some(previous_files_changed)
+        },
+        previous_next_steps: if previous_next_steps.is_empty() {
+            None
+        } else {
+            Some(previous_next_steps)
+        },
+        continuation_attempt,
+    })
 }
 
 /// Run the planning step to create PLAN.md.
@@ -1476,7 +1664,9 @@ mod tests {
         let continuation_state = ContinuationState::new();
         let continuation_config = ContinuationConfig {
             state: &continuation_state,
-            max_attempts: 1,
+            // Config semantics: max_dev_continuations counts continuation attempts beyond the
+            // initial attempt.
+            max_attempts: 1 + fixture.config.max_dev_continuations.unwrap_or(2) as usize,
         };
 
         let result = run_development_iteration_with_xml_retry(

@@ -143,14 +143,18 @@ pub struct GeneralConfig {
     /// Maximum continuation attempts when developer returns "partial" or "failed".
     ///
     /// Higher values allow more attempts to complete complex tasks within a single plan.
-    /// Default: 2 (initial attempt + 1 continuation = 2 total attempts per iteration).
+    ///
+    /// Semantics: this value counts *continuation attempts* (fresh sessions) beyond the initial
+    /// attempt. Total valid attempts per iteration is `1 + max_dev_continuations`.
+    ///
+    /// Default: 2 continuations (initial attempt + 2 continuations = 3 total attempts per iteration).
     #[serde(default = "default_max_dev_continuations")]
     pub max_dev_continuations: u32,
 }
 
 /// Default maximum continuation attempts per development iteration.
 ///
-/// This allows 2 total attempts per iteration (initial + 1 continuation)
+/// This allows 2 continuations per iteration (3 total valid attempts including the initial)
 /// for fast iteration cycles.
 fn default_max_dev_continuations() -> u32 {
     2

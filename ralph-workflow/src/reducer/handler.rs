@@ -237,14 +237,17 @@ impl MainEffectHandler {
 
         // Get continuation state from reducer state
         let continuation_state = &self.state.continuation;
+        // Config semantics: max_dev_continuations counts *continuation attempts* (fresh sessions)
+        // allowed after the initial attempt. Total valid attempts per iteration is
+        // `1 + max_dev_continuations`.
         let max_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
 
         // Defensive guard: if checkpoint state already exceeds the configured limit,
         // abort rather than looping indefinitely.
-        if continuation_state.continuation_attempt >= max_continuations {
+        if continuation_state.continuation_attempt > max_continuations {
             return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
                 reason: format!(
-                    "Development continuation attempts exhausted (attempt={}, max={})",
+                    "Development continuation attempts exhausted (continuation_attempt={}, max_continuations={})",
                     continuation_state.continuation_attempt, max_continuations
                 ),
             }));
@@ -352,10 +355,11 @@ impl MainEffectHandler {
             } => next_continuation_attempt,
             DevIterationNextStep::Abort { .. } => {
                 let _ = cleanup_continuation_context_file(ctx);
+                let total_valid_attempts = 1 + max_continuations;
                 return Ok(EffectResult::event(PipelineEvent::PipelineAborted {
                     reason: format!(
                         "Development did not reach status='completed' after {} total valid attempts. Last status={:?}. Last summary={}",
-                        max_continuations,
+                        total_valid_attempts,
                         attempt.status,
                         attempt.summary
                     ),
@@ -367,8 +371,15 @@ impl MainEffectHandler {
             }
         };
 
+        ctx.logger.info(&format!(
+            "Triggering development continuation attempt {}/{} (previous status={})",
+            next_attempt, max_continuations, attempt.status
+        ));
+
         // Write continuation context for the next attempt.
         write_continuation_context_file(ctx, iteration, next_attempt, &attempt)?;
+        ctx.logger
+            .info("Continuation context written to .agent/tmp/continuation_context.md");
 
         Ok(EffectResult::event(
             PipelineEvent::DevelopmentIterationContinuationTriggered {
@@ -914,7 +925,10 @@ fn decide_dev_iteration_next_step(
     }
 
     let next_attempt = continuation_attempt + 1;
-    if next_attempt >= max_continuations {
+    // Config semantics: max_continuations counts *continuation attempts* beyond the initial
+    // attempt (where continuation_attempt == 0). So next_attempt is allowed as long as it does
+    // not exceed max_continuations.
+    if next_attempt > max_continuations {
         DevIterationNextStep::Abort {
             next_continuation_attempt: next_attempt,
         }
@@ -1207,7 +1221,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decide_dev_iteration_next_step_partial_aborts_at_max_continuations() {
+    fn test_decide_dev_iteration_next_step_partial_allows_max_continuations() {
         use crate::phases::development::DevAttemptResult;
         use crate::reducer::state::DevelopmentStatus;
 
@@ -1224,8 +1238,32 @@ mod tests {
 
         assert_eq!(
             next,
-            DevIterationNextStep::Abort {
+            DevIterationNextStep::Continue {
                 next_continuation_attempt: 2
+            }
+        );
+    }
+
+    #[test]
+    fn test_decide_dev_iteration_next_step_partial_aborts_when_next_exceeds_max_continuations() {
+        use crate::phases::development::DevAttemptResult;
+        use crate::reducer::state::DevelopmentStatus;
+
+        let attempt = DevAttemptResult {
+            had_error: false,
+            output_valid: true,
+            status: DevelopmentStatus::Partial,
+            summary: "partial".to_string(),
+            files_changed: None,
+            next_steps: None,
+        };
+
+        let next = decide_dev_iteration_next_step(2, 2, &attempt);
+
+        assert_eq!(
+            next,
+            DevIterationNextStep::Abort {
+                next_continuation_attempt: 3
             }
         );
     }
