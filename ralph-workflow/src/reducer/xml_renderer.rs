@@ -422,7 +422,10 @@ src/lib.rs</ralph-files-changed>
         let output = render_development_result(xml, &None);
 
         assert!(output.contains("✅"), "Should have completed emoji");
-        assert!(output.contains("Completed"), "Should show friendly status label");
+        assert!(
+            output.contains("Completed"),
+            "Should show friendly status label"
+        );
         assert!(
             output.contains("Implemented feature X"),
             "Should show summary"
@@ -543,12 +546,18 @@ src/lib.rs</ralph-files-changed>
             output.contains("3 files to modify"),
             "Should show scope items"
         );
-        assert!(output.contains("Implementation Steps"), "Should show steps section");
+        assert!(
+            output.contains("Implementation Steps"),
+            "Should show steps section"
+        );
         assert!(
             output.contains("1. Add new module"),
             "Should show step title"
         );
-        assert!(output.contains("Risks & Mitigations"), "Should show risks section");
+        assert!(
+            output.contains("Risks & Mitigations"),
+            "Should show risks section"
+        );
     }
 
     #[test]
