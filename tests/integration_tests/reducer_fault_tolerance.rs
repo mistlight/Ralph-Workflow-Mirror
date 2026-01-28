@@ -9,7 +9,7 @@ use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhas
 use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 
 fn create_state_with_agent_chain_in_development() -> PipelineState {
-    use ralph_workflow::reducer::state::{CommitState, RebaseState};
+    use ralph_workflow::reducer::state::{CommitState, ContinuationState, RebaseState};
 
     PipelineState {
         agent_chain: AgentChainState::initial().with_agents(
@@ -35,6 +35,7 @@ fn create_state_with_agent_chain_in_development() -> PipelineState {
         context_cleaned: false,
         rebase: RebaseState::NotStarted,
         commit: CommitState::NotStarted,
+        continuation: ContinuationState::new(),
         execution_history: Vec::new(),
     }
 }
@@ -209,7 +210,7 @@ fn test_agent_fails_after_99_retries_fallback_to_next_agent() {
 #[test]
 fn test_all_agents_exhausted_pipeline_graceful_abort() {
     with_default_timeout(|| {
-        use ralph_workflow::reducer::state::{CommitState, RebaseState};
+        use ralph_workflow::reducer::state::{CommitState, ContinuationState, RebaseState};
 
         let state = PipelineState {
             agent_chain: AgentChainState::initial()
@@ -229,6 +230,7 @@ fn test_all_agents_exhausted_pipeline_graceful_abort() {
             context_cleaned: false,
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
+            continuation: ContinuationState::new(),
             execution_history: Vec::new(),
         };
 
@@ -249,7 +251,7 @@ fn test_all_agents_exhausted_pipeline_graceful_abort() {
 #[test]
 fn test_agent_exhaustion_transitions_to_next_phase() {
     with_default_timeout(|| {
-        use ralph_workflow::reducer::state::{CommitState, RebaseState};
+        use ralph_workflow::reducer::state::{CommitState, ContinuationState, RebaseState};
 
         let mut chain = AgentChainState::initial()
             .with_agents(
@@ -272,6 +274,7 @@ fn test_agent_exhaustion_transitions_to_next_phase() {
             context_cleaned: false,
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
+            continuation: ContinuationState::new(),
             execution_history: Vec::new(),
         };
 

@@ -54,6 +54,11 @@ review_depth = "standard"
 # Strict PROMPT.md validation
 strict_validation = false
 
+# Maximum continuation attempts when developer returns "partial" or "failed"
+# Higher values allow more attempts to complete complex tasks within a single plan
+# Default: 2 (initial attempt + 1 continuation = 2 total attempts per iteration)
+# max_dev_continuations = 2
+
 # Path to save the last prompt (relative to project root)
 # prompt_path = ".agent/last_prompt.txt"
 

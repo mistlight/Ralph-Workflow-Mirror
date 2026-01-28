@@ -18,7 +18,7 @@
 //! Each handler is a pure function that takes state and returns new state.
 
 use super::event::PipelineEvent;
-use super::state::{CommitState, PipelineState, RebaseState};
+use super::state::{CommitState, ContinuationState, PipelineState, RebaseState};
 
 /// Pure reducer - no side effects, exhaustive match.
 ///
@@ -44,7 +44,11 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         PipelineEvent::DevelopmentPhaseStarted
         | PipelineEvent::DevelopmentIterationStarted { .. }
         | PipelineEvent::DevelopmentIterationCompleted { .. }
-        | PipelineEvent::DevelopmentPhaseCompleted => reduce_development_event(state, event),
+        | PipelineEvent::DevelopmentPhaseCompleted
+        | PipelineEvent::DevelopmentIterationContinuationTriggered { .. }
+        | PipelineEvent::DevelopmentIterationContinuationSucceeded { .. } => {
+            reduce_development_event(state, event)
+        }
 
         // Review events
         PipelineEvent::ReviewPhaseStarted
@@ -149,26 +153,75 @@ fn reduce_development_event(state: PipelineState, event: PipelineEvent) -> Pipel
         PipelineEvent::DevelopmentIterationStarted { iteration } => PipelineState {
             iteration,
             agent_chain: state.agent_chain.reset(),
+            // Reset continuation state when starting a new iteration
+            continuation: state.continuation.reset(),
             ..state
         },
         PipelineEvent::DevelopmentIterationCompleted {
             iteration,
-            output_valid: _,
+            output_valid,
         } => {
-            // After dev iteration, go to CommitMessage phase to create a commit
+            if output_valid {
+                // After a successful dev iteration, go to CommitMessage phase to create a commit.
+                PipelineState {
+                    phase: super::event::PipelinePhase::CommitMessage,
+                    previous_phase: Some(super::event::PipelinePhase::Development),
+                    iteration,
+                    commit: super::state::CommitState::NotStarted,
+                    context_cleaned: false,
+                    // Reset continuation state on successful completion
+                    continuation: ContinuationState::new(),
+                    ..state
+                }
+            } else {
+                // Output was not valid enough to proceed to commit; stay in Development.
+                PipelineState {
+                    phase: super::event::PipelinePhase::Development,
+                    iteration,
+                    ..state
+                }
+            }
+        }
+        PipelineEvent::DevelopmentPhaseCompleted => PipelineState {
+            phase: super::event::PipelinePhase::Review,
+            // Reset continuation state when phase completes
+            continuation: ContinuationState::new(),
+            ..state
+        },
+        PipelineEvent::DevelopmentIterationContinuationTriggered {
+            iteration,
+            status,
+            summary,
+            files_changed,
+            next_steps,
+        } => {
+            // Trigger continuation with context from the previous attempt
+            PipelineState {
+                iteration,
+                continuation: state.continuation.trigger_continuation(
+                    status,
+                    summary,
+                    files_changed,
+                    next_steps,
+                ),
+                ..state
+            }
+        }
+        PipelineEvent::DevelopmentIterationContinuationSucceeded {
+            iteration,
+            total_continuation_attempts: _,
+        } => {
+            // Continuation succeeded; proceed to CommitMessage and reset continuation state.
             PipelineState {
                 phase: super::event::PipelinePhase::CommitMessage,
                 previous_phase: Some(super::event::PipelinePhase::Development),
                 iteration,
                 commit: super::state::CommitState::NotStarted,
                 context_cleaned: false,
+                continuation: ContinuationState::new(),
                 ..state
             }
         }
-        PipelineEvent::DevelopmentPhaseCompleted => PipelineState {
-            phase: super::event::PipelinePhase::Review,
-            ..state
-        },
         _ => state,
     }
 }
@@ -925,5 +978,252 @@ mod tests {
             effects[1],
             crate::reducer::effect::Effect::RestorePromptPermissions
         ));
+    }
+
+    // =========================================================================
+    // Continuation event handling tests
+    // =========================================================================
+
+    #[test]
+    fn test_continuation_triggered_updates_state() {
+        use crate::reducer::state::DevelopmentStatus;
+
+        let state = create_test_state();
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationContinuationTriggered {
+                iteration: 1,
+                status: DevelopmentStatus::Partial,
+                summary: "Did work".to_string(),
+                files_changed: Some(vec!["src/main.rs".to_string()]),
+                next_steps: Some("Continue".to_string()),
+            },
+        );
+
+        assert!(new_state.continuation.is_continuation());
+        assert_eq!(
+            new_state.continuation.previous_status,
+            Some(DevelopmentStatus::Partial)
+        );
+        assert_eq!(
+            new_state.continuation.previous_summary,
+            Some("Did work".to_string())
+        );
+        assert_eq!(
+            new_state.continuation.previous_files_changed,
+            Some(vec!["src/main.rs".to_string()])
+        );
+        assert_eq!(
+            new_state.continuation.previous_next_steps,
+            Some("Continue".to_string())
+        );
+        assert_eq!(new_state.continuation.continuation_attempt, 1);
+    }
+
+    #[test]
+    fn test_continuation_triggered_sets_iteration_from_event() {
+        use crate::reducer::state::DevelopmentStatus;
+
+        let state = PipelineState {
+            iteration: 99,
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationContinuationTriggered {
+                iteration: 2,
+                status: DevelopmentStatus::Partial,
+                summary: "Did work".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+
+        assert_eq!(new_state.iteration, 2);
+    }
+
+    #[test]
+    fn test_continuation_triggered_with_failed_status() {
+        use crate::reducer::state::DevelopmentStatus;
+
+        let state = create_test_state();
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationContinuationTriggered {
+                iteration: 1,
+                status: DevelopmentStatus::Failed,
+                summary: "Build failed".to_string(),
+                files_changed: None,
+                next_steps: Some("Fix errors".to_string()),
+            },
+        );
+
+        assert!(new_state.continuation.is_continuation());
+        assert_eq!(
+            new_state.continuation.previous_status,
+            Some(DevelopmentStatus::Failed)
+        );
+        assert_eq!(
+            new_state.continuation.previous_summary,
+            Some("Build failed".to_string())
+        );
+        assert!(new_state.continuation.previous_files_changed.is_none());
+    }
+
+    #[test]
+    fn test_continuation_succeeded_resets_state() {
+        use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+        let mut state = create_test_state();
+        state.continuation = ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Work".to_string(),
+            None,
+            None,
+        );
+        assert!(state.continuation.is_continuation());
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationContinuationSucceeded {
+                iteration: 1,
+                total_continuation_attempts: 2,
+            },
+        );
+
+        assert!(!new_state.continuation.is_continuation());
+        assert_eq!(new_state.continuation.continuation_attempt, 0);
+        assert!(new_state.continuation.previous_status.is_none());
+    }
+
+    #[test]
+    fn test_continuation_succeeded_sets_iteration_from_event() {
+        use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+        let mut state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 99,
+            ..create_test_state()
+        };
+        state.continuation = ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Work".to_string(),
+            None,
+            None,
+        );
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationContinuationSucceeded {
+                iteration: 1,
+                total_continuation_attempts: 1,
+            },
+        );
+
+        assert_eq!(new_state.iteration, 1);
+    }
+
+    #[test]
+    fn test_iteration_started_resets_continuation() {
+        use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+        let mut state = create_test_state();
+        state.continuation = ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Work".to_string(),
+            None,
+            None,
+        );
+        assert!(state.continuation.is_continuation());
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
+        );
+
+        assert!(!new_state.continuation.is_continuation());
+        assert_eq!(new_state.iteration, 2);
+    }
+
+    #[test]
+    fn test_iteration_completed_resets_continuation() {
+        use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Development;
+        state.continuation = ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Work".to_string(),
+            None,
+            None,
+        );
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationCompleted {
+                iteration: 1,
+                output_valid: true,
+            },
+        );
+
+        assert!(!new_state.continuation.is_continuation());
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    }
+
+    #[test]
+    fn test_development_phase_completed_resets_continuation() {
+        use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Development;
+        state.continuation = ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Work".to_string(),
+            None,
+            None,
+        );
+
+        let new_state = reduce(state, PipelineEvent::DevelopmentPhaseCompleted);
+
+        assert!(!new_state.continuation.is_continuation());
+        assert_eq!(new_state.phase, PipelinePhase::Review);
+    }
+
+    #[test]
+    fn test_multiple_continuation_triggers_accumulate() {
+        use crate::reducer::state::DevelopmentStatus;
+
+        let state = create_test_state();
+
+        // First continuation
+        let state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationContinuationTriggered {
+                iteration: 1,
+                status: DevelopmentStatus::Partial,
+                summary: "First attempt".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+        assert_eq!(state.continuation.continuation_attempt, 1);
+
+        // Second continuation
+        let state = reduce(
+            state,
+            PipelineEvent::DevelopmentIterationContinuationTriggered {
+                iteration: 1,
+                status: DevelopmentStatus::Partial,
+                summary: "Second attempt".to_string(),
+                files_changed: None,
+                next_steps: None,
+            },
+        );
+        assert_eq!(state.continuation.continuation_attempt, 2);
+        assert_eq!(
+            state.continuation.previous_summary,
+            Some("Second attempt".to_string())
+        );
     }
 }

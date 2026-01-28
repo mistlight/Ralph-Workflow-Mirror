@@ -244,6 +244,10 @@ pub struct Config {
     /// When the reviewer agent produces unparseable output, the orchestrator will
     /// retry up to this many times with a format correction prompt. Default: 5.
     pub(crate) review_format_retries: u32,
+    /// Maximum continuation attempts when developer returns "partial" or "failed".
+    /// Higher values allow more attempts to complete complex tasks within a single plan.
+    /// Default: 2 (initial attempt + 1 continuation = 2 total attempts per iteration).
+    pub max_dev_continuations: Option<u32>,
 }
 
 impl Config {
@@ -300,6 +304,7 @@ impl Config {
             git_user_email: Some("test@example.com".to_string()),
             show_streaming_metrics: false,
             review_format_retries: 5,
+            max_dev_continuations: Some(2),
         }
     }
 

@@ -493,6 +493,12 @@ impl Template {
             result = result.replace(&full_match, &rendered_partial);
         }
 
+        // Process loops (they may generate new variable references)
+        result = Self::process_loops(&result, variables);
+
+        // Process conditionals
+        result = Self::process_conditionals(&result, variables);
+
         // Now substitute variables in the result (using the new method that handles defaults)
         let (result_after_sub, missing_vars) = Self::substitute_variables(&result, variables);
 

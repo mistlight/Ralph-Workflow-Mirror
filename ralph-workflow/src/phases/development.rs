@@ -24,10 +24,11 @@ use crate::phases::get_primary_commit_agent;
 use crate::phases::integrity::ensure_prompt_integrity;
 use crate::pipeline::{run_xsd_retry_with_session, PipelineRuntime, XsdRetryConfig};
 use crate::prompts::{
-    get_stored_or_generate_prompt, prompt_developer_iteration_xml_with_context,
-    prompt_developer_iteration_xsd_retry_with_context, prompt_planning_xml_with_context,
-    prompt_planning_xsd_retry_with_context, ContextLevel,
+    get_stored_or_generate_prompt, prompt_developer_iteration_continuation_xml,
+    prompt_developer_iteration_xml_with_context, prompt_developer_iteration_xsd_retry_with_context,
+    prompt_planning_xml_with_context, prompt_planning_xsd_retry_with_context, ContextLevel,
 };
+use crate::reducer::state::{ContinuationState, DevelopmentStatus};
 use std::path::Path;
 
 use super::context::PhaseContext;
@@ -125,6 +126,13 @@ pub fn run_development_phase(
         )?;
 
         // Run development iteration with XML extraction and XSD validation
+        // Use default continuation state (no previous attempt context) for legacy flow
+        let continuation_state = ContinuationState::new();
+        let max_continuations = ctx.config.max_dev_continuations.unwrap_or(2) as usize;
+        let continuation_config = ContinuationConfig {
+            state: &continuation_state,
+            max_attempts: max_continuations,
+        };
         let dev_result = run_development_iteration_with_xml_retry(
             ctx,
             i,
@@ -132,6 +140,7 @@ pub fn run_development_phase(
             resuming_into_development,
             resume_context,
             None,
+            continuation_config,
         )?;
 
         if dev_result.had_error {
@@ -253,28 +262,48 @@ pub struct DevIterationResult {
     pub files_changed: Option<Vec<String>>,
 }
 
-/// Run a single development iteration with XML extraction and XSD validation retry loop.
+/// Configuration for continuation-aware development iterations.
 ///
-/// This function implements a nested loop structure:
-/// - **Outer loop (continuation)**: Continue while status != "completed" (max 100)
-/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback (max 100)
+/// Groups the continuation state and limit together to reduce function argument count.
+#[derive(Debug, Clone)]
+pub struct ContinuationConfig<'a> {
+    /// Current continuation state for the iteration.
+    pub state: &'a ContinuationState,
+    /// Maximum number of continuation attempts allowed.
+    pub max_attempts: usize,
+}
+
+/// Result of a single development attempt (one session), including XSD retries.
+#[derive(Debug, Clone)]
+pub struct DevAttemptResult {
+    /// Whether any agent run returned a non-zero exit code.
+    pub had_error: bool,
+    /// Whether the output was successfully validated against the XSD.
+    pub output_valid: bool,
+    /// Development status (completed/partial/failed).
+    pub status: DevelopmentStatus,
+    /// Summary of what was done in this attempt.
+    pub summary: String,
+    /// Optional list of files changed in this attempt.
+    pub files_changed: Option<Vec<String>>,
+    /// Optional next steps recommended by the agent.
+    pub next_steps: Option<String>,
+}
+
+/// Run a single development attempt (one session) with XML extraction and XSD validation retry loop.
 ///
-/// The continuation logic ignores non-XSD errors and only looks for valid XML.
-/// If XML passes XSD validation with status="completed", we're done for this iteration.
-/// If XML passes XSD validation with status="partial", we continue the outer loop.
-/// If XML passes XSD validation with status="failed", we continue the outer loop.
-///
-/// The development iteration produces side effects (file changes) as its primary output.
-/// The XML status is secondary - we use it for logging/tracking but don't fail the
-/// entire iteration if XML is missing or invalid.
-pub fn run_development_iteration_with_xml_retry(
+/// This does **not** perform continuation retries. If the agent returns status="partial" or
+/// status="failed", callers should trigger a fresh continuation attempt (new session) at the
+/// orchestration layer.
+pub fn run_development_attempt_with_xml_retry(
     ctx: &mut PhaseContext<'_>,
     iteration: u32,
     _developer_context: ContextLevel,
     _resuming_into_development: bool,
     _resume_context: Option<&ResumeContext>,
     _agent: Option<&str>,
-) -> anyhow::Result<DevIterationResult> {
+    continuation_state: &ContinuationState,
+) -> anyhow::Result<DevAttemptResult> {
     let prompt_md = ctx
         .workspace
         .read(Path::new("PROMPT.md"))
@@ -286,296 +315,392 @@ pub fn run_development_iteration_with_xml_retry(
     let log_dir = format!(".agent/logs/developer_{iteration}");
 
     let max_xsd_retries = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize;
-    let max_continuations = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize; // Safety limit to prevent infinite loops
-    let mut final_summary: Option<String> = None;
-    let mut final_files_changed: Option<Vec<String>> = None;
+    let is_continuation = continuation_state.is_continuation();
+    let mut had_error = false;
+
+    let mut xsd_error: Option<String> = None;
+    let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
+
+    // Inner loop: XSD validation retry with error feedback
+    // Session continuation allows the AI to retain memory between XSD retries
+    for retry_num in 0..max_xsd_retries {
+        let is_retry = retry_num > 0;
+        let total_attempts = retry_num + 1;
+
+        // Before each retry, check if the XML file is writable and clean up if locked
+        // This prevents "permission denied" errors from stale file handles
+        if is_retry {
+            use crate::files::io::check_and_cleanup_xml_before_retry_with_workspace;
+
+            let xml_path =
+                Path::new(crate::files::llm_output_extraction::xml_paths::DEVELOPMENT_RESULT_XML);
+            let _ = check_and_cleanup_xml_before_retry_with_workspace(
+                ctx.workspace,
+                xml_path,
+                ctx.logger,
+            );
+        }
+
+        // For initial attempt, use XML prompt
+        // For retries, use XSD retry prompt with error feedback
+        let dev_prompt = if !is_retry && !is_continuation {
+            // First attempt ever - use initial XML prompt
+            let prompt_key = format!("development_{}", iteration);
+            let (prompt, was_replayed) =
+                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                    prompt_developer_iteration_xml_with_context(
+                        ctx.template_context,
+                        &prompt_md,
+                        &plan_md,
+                    )
+                });
+
+            if !was_replayed {
+                ctx.capture_prompt(&prompt_key, &prompt);
+            } else {
+                ctx.logger.info(&format!(
+                    "Using stored prompt from checkpoint for determinism: {}",
+                    prompt_key
+                ));
+            }
+
+            prompt
+        } else if !is_continuation {
+            // XSD retry only (no continuation yet)
+            ctx.logger.info(&format!(
+                "  In-session retry {}/{} for XSD validation (total attempt: {})",
+                retry_num,
+                max_xsd_retries - 1,
+                total_attempts
+            ));
+            if let Some(ref error) = xsd_error {
+                ctx.logger.info(&format!("  XSD error: {}", error));
+            }
+
+            let last_output = read_last_development_output(Path::new(&log_dir), ctx.workspace);
+
+            prompt_developer_iteration_xsd_retry_with_context(
+                ctx.template_context,
+                &prompt_md,
+                &plan_md,
+                xsd_error.as_deref().unwrap_or("Unknown error"),
+                &last_output,
+                ctx.workspace,
+            )
+        } else if !is_retry {
+            // Continuation only (first XSD attempt after continuation)
+            ctx.logger.info(&format!(
+                "  Continuation attempt {} (XSD validation attempt {}/{})",
+                continuation_state.continuation_attempt, 1, max_xsd_retries
+            ));
+
+            let prompt_key = format!(
+                "development_{}_continuation_{}",
+                iteration, continuation_state.continuation_attempt
+            );
+            let (prompt, was_replayed) =
+                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                    prompt_developer_iteration_continuation_xml(
+                        ctx.template_context,
+                        continuation_state,
+                    )
+                });
+
+            if !was_replayed {
+                ctx.capture_prompt(&prompt_key, &prompt);
+            } else {
+                ctx.logger.info(&format!(
+                    "Using stored prompt from checkpoint for determinism: {}",
+                    prompt_key
+                ));
+            }
+
+            prompt
+        } else {
+            // Both continuation and XSD retry
+            ctx.logger.info(&format!(
+                "  Continuation retry {}/{} for XSD validation (total attempt: {})",
+                retry_num,
+                max_xsd_retries - 1,
+                total_attempts
+            ));
+            if let Some(ref error) = xsd_error {
+                ctx.logger.info(&format!("  XSD error: {}", error));
+            }
+
+            let last_output = read_last_development_output(Path::new(&log_dir), ctx.workspace);
+
+            prompt_developer_iteration_xsd_retry_with_context(
+                ctx.template_context,
+                &prompt_md,
+                &plan_md,
+                xsd_error.as_deref().unwrap_or("Unknown error"),
+                &last_output,
+                ctx.workspace,
+            )
+        };
+
+        // Run the agent with session continuation for XSD retries
+        // This is completely fault-tolerant - if session continuation fails for any reason
+        // (including agent crash, segfault, invalid session), it falls back to normal behavior
+        let exit_code = {
+            let mut runtime = PipelineRuntime {
+                timer: ctx.timer,
+                logger: ctx.logger,
+                colors: ctx.colors,
+                config: ctx.config,
+                executor: ctx.executor,
+                executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+                workspace: ctx.workspace,
+            };
+            let base_label = format!(
+                "run #{}{}",
+                iteration,
+                if is_continuation {
+                    format!(
+                        " (continuation {})",
+                        continuation_state.continuation_attempt
+                    )
+                } else {
+                    String::new()
+                }
+            );
+            let mut xsd_retry_config = XsdRetryConfig {
+                role: AgentRole::Developer,
+                base_label: &base_label,
+                prompt: &dev_prompt,
+                logfile_prefix: &log_dir,
+                runtime: &mut runtime,
+                registry: ctx.registry,
+                primary_agent: _agent.unwrap_or(ctx.developer_agent),
+                session_info: session_info.as_ref(),
+                retry_num,
+                output_validator: None,
+                workspace: ctx.workspace,
+            };
+            run_xsd_retry_with_session(&mut xsd_retry_config)?
+        };
+
+        if exit_code != 0 {
+            had_error = true;
+        }
+
+        // Extract and validate the development result XML
+        let log_dir_path = Path::new(&log_dir);
+        let dev_content = read_last_development_output(log_dir_path, ctx.workspace);
+
+        // Extract session info for potential retry (only if we don't have it yet)
+        // This is best-effort - if extraction fails, we just won't use session continuation
+        if session_info.is_none() {
+            if let Some(agent_config) = ctx.registry.resolve_config(ctx.developer_agent) {
+                ctx.logger.info(&format!(
+                    "  [dev] Extracting session from {:?} with parser {:?}",
+                    log_dir_path, agent_config.json_parser
+                ));
+                session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
+                    log_dir_path,
+                    agent_config.json_parser,
+                    Some(ctx.developer_agent),
+                    ctx.workspace,
+                );
+                if let Some(ref info) = session_info {
+                    ctx.logger.info(&format!(
+                        "  [dev] Extracted session: agent={}, session_id={}...",
+                        info.agent_name,
+                        &info.session_id[..8.min(info.session_id.len())]
+                    ));
+                } else {
+                    ctx.logger
+                        .warn("  [dev] Failed to extract session info from log");
+                }
+            }
+        }
+
+        // Try file-based extraction first - allows agents to write XML to .agent/tmp/development_result.xml
+        let xml_to_validate = extract_xml_with_file_fallback_with_workspace(
+            ctx.workspace,
+            Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+            &dev_content,
+            extract_development_result_xml,
+        )
+        .unwrap_or_else(|| {
+            // No XML found anywhere - assume entire log content is XML for validation
+            // This allows us to get specific XSD errors to send back to the agent
+            dev_content.clone()
+        });
+
+        match validate_development_result_xml(&xml_to_validate) {
+            Ok(result_elements) => {
+                // XSD validation passed - format and log the result
+                let formatted_xml = format_xml_for_display(&xml_to_validate);
+
+                // Archive the XML file for debugging (moves to .xml.processed)
+                archive_xml_file_with_workspace(
+                    ctx.workspace,
+                    Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+                );
+
+                if is_retry {
+                    ctx.logger
+                        .success(&format!("Status validated after {} retries", retry_num));
+                } else {
+                    ctx.logger.success("Status extracted and validated (XML)");
+                }
+
+                ctx.logger.info(&format!("\n{}", formatted_xml));
+
+                let files_changed = result_elements
+                    .files_changed
+                    .as_ref()
+                    .map(|f| f.lines().map(|s| s.to_string()).collect());
+
+                let status = if result_elements.is_completed() {
+                    DevelopmentStatus::Completed
+                } else if result_elements.is_partial() {
+                    DevelopmentStatus::Partial
+                } else {
+                    DevelopmentStatus::Failed
+                };
+
+                return Ok(DevAttemptResult {
+                    had_error,
+                    output_valid: true,
+                    status,
+                    summary: result_elements.summary.clone(),
+                    files_changed,
+                    next_steps: result_elements.next_steps.clone(),
+                });
+            }
+            Err(xsd_err) => {
+                let error_msg = format_xsd_error(&xsd_err);
+                ctx.logger
+                    .warn(&format!("  XSD validation failed: {}", error_msg));
+
+                if retry_num < max_xsd_retries - 1 {
+                    xsd_error = Some(error_msg);
+                    continue;
+                }
+
+                ctx.logger.warn(&format!(
+                    "  XSD retries exhausted ({}/{}). Will attempt fresh continuation.",
+                    retry_num + 1,
+                    max_xsd_retries
+                ));
+                break;
+            }
+        }
+    }
+
+    Ok(DevAttemptResult {
+        had_error,
+        output_valid: false,
+        status: DevelopmentStatus::Failed,
+        summary: "XML output failed validation. Your previous (invalid) output is at .agent/tmp/last_output.xml for reference.".to_string(),
+        files_changed: None,
+        next_steps: Some(
+            "Complete the task and provide valid XML output conforming to the XSD schema."
+                .to_string(),
+        ),
+    })
+}
+
+/// Run a single development iteration with XML extraction and XSD validation retry loop.
+///
+/// This function implements a nested loop structure:
+/// - **Outer loop (continuation)**: Continue while status != "completed" (max configurable)
+/// - **Inner loop (XSD retry)**: Retry XSD validation with error feedback
+///   (max `MAX_DEV_VALIDATION_RETRY_ATTEMPTS`, currently 10)
+///
+/// The continuation logic ignores non-XSD errors and only looks for valid XML.
+/// If XML passes XSD validation with status="completed", we're done for this iteration.
+/// If XML passes XSD validation with status="partial", we continue the outer loop.
+/// If XML passes XSD validation with status="failed", we continue the outer loop.
+///
+/// The development iteration produces side effects (file changes) as its primary output.
+/// The XML status is secondary - we use it for logging/tracking but don't fail the
+/// entire iteration if XML is missing or invalid.
+///
+/// # Arguments
+///
+/// * `ctx` - Phase context with access to workspace, logger, and configuration
+/// * `iteration` - Current iteration number
+/// * `_developer_context` - Context level (deprecated, unused)
+/// * `_resuming_into_development` - Whether resuming into development phase
+/// * `_resume_context` - Optional resume context from checkpoint
+/// * `_agent` - Optional agent override
+/// * `continuation_config` - Configuration for continuation-aware prompting
+pub fn run_development_iteration_with_xml_retry(
+    ctx: &mut PhaseContext<'_>,
+    iteration: u32,
+    _developer_context: ContextLevel,
+    _resuming_into_development: bool,
+    _resume_context: Option<&ResumeContext>,
+    _agent: Option<&str>,
+    continuation_config: ContinuationConfig<'_>,
+) -> anyhow::Result<DevIterationResult> {
+    let max_xsd_retries = crate::reducer::state::MAX_DEV_VALIDATION_RETRY_ATTEMPTS as usize;
+    let max_continuations = continuation_config.max_attempts;
+
+    // Track local continuation state (starts from the provided state)
+    let mut local_continuation = continuation_config.state.clone();
     let mut had_any_error = false;
+    let mut last_summary: Option<String> = None;
 
     // Outer loop: Continue until agent returns status="completed" or we hit the limit
-    'continuation: for continuation_num in 0..max_continuations {
-        let is_continuation = continuation_num > 0;
-        if is_continuation {
+    for _ in 0..max_continuations {
+        if local_continuation.is_continuation() {
             ctx.logger.info(&format!(
                 "Continuation {} of {} (status was not 'completed')",
-                continuation_num, max_continuations
+                local_continuation.continuation_attempt, max_continuations
             ));
         }
 
-        let mut xsd_error: Option<String> = None;
-        let mut session_info: Option<crate::pipeline::session::SessionInfo> = None;
+        let attempt = run_development_attempt_with_xml_retry(
+            ctx,
+            iteration,
+            _developer_context,
+            _resuming_into_development,
+            _resume_context,
+            _agent,
+            &local_continuation,
+        )?;
 
-        // Inner loop: XSD validation retry with error feedback
-        // Session continuation allows the AI to retain memory between XSD retries
-        for retry_num in 0..max_xsd_retries {
-            let is_retry = retry_num > 0;
-            let total_attempts = continuation_num * max_xsd_retries + retry_num + 1;
+        had_any_error |= attempt.had_error;
+        last_summary = Some(attempt.summary.clone());
 
-            // Before each retry, check if the XML file is writable and clean up if locked
-            // This prevents "permission denied" errors from stale file handles
-            if is_retry {
-                use crate::files::io::check_and_cleanup_xml_before_retry_with_workspace;
-
-                let xml_path = Path::new(
-                    crate::files::llm_output_extraction::xml_paths::DEVELOPMENT_RESULT_XML,
-                );
-                let _ = check_and_cleanup_xml_before_retry_with_workspace(
-                    ctx.workspace,
-                    xml_path,
-                    ctx.logger,
-                );
-            }
-
-            // For initial attempt, use XML prompt
-            // For retries, use XSD retry prompt with error feedback
-            let dev_prompt = if !is_retry && !is_continuation {
-                // First attempt ever - use initial XML prompt
-                let prompt_key = format!("development_{}", iteration);
-                let (prompt, was_replayed) =
-                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        prompt_developer_iteration_xml_with_context(
-                            ctx.template_context,
-                            &prompt_md,
-                            &plan_md,
-                        )
-                    });
-
-                if !was_replayed {
-                    ctx.capture_prompt(&prompt_key, &prompt);
-                } else {
-                    ctx.logger.info(&format!(
-                        "Using stored prompt from checkpoint for determinism: {}",
-                        prompt_key
-                    ));
-                }
-
-                prompt
-            } else if !is_continuation {
-                // XSD retry only (no continuation yet)
-                ctx.logger.info(&format!(
-                    "  In-session retry {}/{} for XSD validation (total attempt: {})",
-                    retry_num,
-                    max_xsd_retries - 1,
-                    total_attempts
-                ));
-                if let Some(ref error) = xsd_error {
-                    ctx.logger.info(&format!("  XSD error: {}", error));
-                }
-
-                let last_output = read_last_development_output(Path::new(&log_dir), ctx.workspace);
-
-                prompt_developer_iteration_xsd_retry_with_context(
-                    ctx.template_context,
-                    &prompt_md,
-                    &plan_md,
-                    xsd_error.as_deref().unwrap_or("Unknown error"),
-                    &last_output,
-                    ctx.workspace,
-                )
-            } else if !is_retry {
-                // Continuation only (first XSD attempt after continuation)
-                ctx.logger.info(&format!(
-                    "  Continuation attempt {} (XSD validation attempt {}/{})",
-                    total_attempts, 1, max_xsd_retries
-                ));
-
-                prompt_developer_iteration_xml_with_context(
-                    ctx.template_context,
-                    &prompt_md,
-                    &plan_md,
-                )
-            } else {
-                // Both continuation and XSD retry
-                ctx.logger.info(&format!(
-                    "  Continuation retry {}/{} for XSD validation (total attempt: {})",
-                    retry_num,
-                    max_xsd_retries - 1,
-                    total_attempts
-                ));
-                if let Some(ref error) = xsd_error {
-                    ctx.logger.info(&format!("  XSD error: {}", error));
-                }
-
-                let last_output = read_last_development_output(Path::new(&log_dir), ctx.workspace);
-
-                prompt_developer_iteration_xsd_retry_with_context(
-                    ctx.template_context,
-                    &prompt_md,
-                    &plan_md,
-                    xsd_error.as_deref().unwrap_or("Unknown error"),
-                    &last_output,
-                    ctx.workspace,
-                )
-            };
-
-            // Run the agent with session continuation for XSD retries
-            // This is completely fault-tolerant - if session continuation fails for any reason
-            // (including agent crash, segfault, invalid session), it falls back to normal behavior
-            let exit_code = {
-                let mut runtime = PipelineRuntime {
-                    timer: ctx.timer,
-                    logger: ctx.logger,
-                    colors: ctx.colors,
-                    config: ctx.config,
-                    executor: ctx.executor,
-                    executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
-                    workspace: ctx.workspace,
-                };
-                let base_label = format!(
-                    "run #{}{}",
-                    iteration,
-                    if is_continuation {
-                        format!(" (continuation {})", continuation_num)
-                    } else {
-                        String::new()
-                    }
-                );
-                let mut xsd_retry_config = XsdRetryConfig {
-                    role: AgentRole::Developer,
-                    base_label: &base_label,
-                    prompt: &dev_prompt,
-                    logfile_prefix: &log_dir,
-                    runtime: &mut runtime,
-                    registry: ctx.registry,
-                    primary_agent: _agent.unwrap_or(ctx.developer_agent),
-                    session_info: session_info.as_ref(),
-                    retry_num,
-                    output_validator: None,
-                    workspace: ctx.workspace,
-                };
-                run_xsd_retry_with_session(&mut xsd_retry_config)?
-            };
-
-            // Track if any agent run had an error (for final result)
-            if exit_code != 0 {
-                had_any_error = true;
-            }
-
-            // Extract and validate the development result XML
-            let log_dir_path = Path::new(&log_dir);
-            let dev_content = read_last_development_output(log_dir_path, ctx.workspace);
-
-            // Extract session info for potential retry (only if we don't have it yet)
-            // This is best-effort - if extraction fails, we just won't use session continuation
-            if session_info.is_none() {
-                if let Some(agent_config) = ctx.registry.resolve_config(ctx.developer_agent) {
-                    ctx.logger.info(&format!(
-                        "  [dev] Extracting session from {:?} with parser {:?}",
-                        log_dir_path, agent_config.json_parser
-                    ));
-                    session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
-                        log_dir_path,
-                        agent_config.json_parser,
-                        Some(ctx.developer_agent),
-                        ctx.workspace,
-                    );
-                    if let Some(ref info) = session_info {
-                        ctx.logger.info(&format!(
-                            "  [dev] Extracted session: agent={}, session_id={}...",
-                            info.agent_name,
-                            &info.session_id[..8.min(info.session_id.len())]
-                        ));
-                    } else {
-                        ctx.logger
-                            .warn("  [dev] Failed to extract session info from log");
-                    }
-                }
-            }
-
-            // Try file-based extraction first - allows agents to write XML to .agent/tmp/development_result.xml
-            let xml_to_validate = extract_xml_with_file_fallback_with_workspace(
-                ctx.workspace,
-                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-                &dev_content,
-                extract_development_result_xml,
-            )
-            .unwrap_or_else(|| {
-                // No XML found anywhere - assume entire log content is XML for validation
-                // This allows us to get specific XSD errors to send back to the agent
-                dev_content.clone()
+        if attempt.output_valid && matches!(attempt.status, DevelopmentStatus::Completed) {
+            return Ok(DevIterationResult {
+                had_error: had_any_error,
+                summary: Some(attempt.summary),
+                files_changed: attempt.files_changed,
             });
-
-            // Try to validate against XSD
-            match validate_development_result_xml(&xml_to_validate) {
-                Ok(result_elements) => {
-                    // XSD validation passed - archive the file for debugging (moves to .xml.processed)
-                    // Note: XML display is handled via UIEvent::XmlOutput in the effect handler
-                    archive_xml_file_with_workspace(
-                        ctx.workspace,
-                        Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-                    );
-
-                    if is_retry {
-                        ctx.logger
-                            .success(&format!("Status validated after {} retries", retry_num));
-                    } else {
-                        ctx.logger.success("Status extracted and validated (XML)");
-                    }
-
-                    // Store the results
-                    final_summary = Some(result_elements.summary.clone());
-                    final_files_changed = result_elements
-                        .files_changed
-                        .as_ref()
-                        .map(|f| f.lines().map(|s| s.to_string()).collect());
-
-                    // Check the status to determine if we should continue
-                    if result_elements.is_completed() {
-                        // Status is "completed" - we're done with this iteration
-                        return Ok(DevIterationResult {
-                            had_error: had_any_error,
-                            summary: final_summary,
-                            files_changed: final_files_changed,
-                        });
-                    } else if result_elements.is_partial() {
-                        // Status is "partial" - continue the outer loop
-                        ctx.logger
-                            .info("Status is 'partial' - continuing with same iteration");
-                        continue 'continuation;
-                    } else if result_elements.is_failed() {
-                        // Status is "failed" - continue the outer loop
-                        ctx.logger
-                            .warn("Status is 'failed' - continuing with same iteration");
-                        continue 'continuation;
-                    }
-                }
-                Err(xsd_err) => {
-                    // XSD validation failed - check if we can retry
-                    let error_msg = format_xsd_error(&xsd_err);
-                    ctx.logger
-                        .warn(&format!("  XSD validation failed: {}", error_msg));
-
-                    if retry_num < max_xsd_retries - 1 {
-                        // Store error for next retry attempt
-                        xsd_error = Some(error_msg);
-                        // Continue to next XSD retry iteration
-                        continue;
-                    } else {
-                        ctx.logger
-                            .warn("  No more in-session XSD retries remaining");
-                        // Fall through to return what we have
-                        break 'continuation;
-                    }
-                }
-            }
         }
 
-        // If we've exhausted XSD retries, break the continuation loop
-        ctx.logger
-            .warn("XSD retry loop exhausted - stopping continuation");
-        break;
+        // Trigger a fresh continuation attempt (outer loop will continue).
+        // This treats "couldn't parse response" as equivalent to "failed" status.
+        local_continuation = local_continuation.trigger_continuation(
+            attempt.status,
+            attempt.summary,
+            attempt.files_changed,
+            attempt.next_steps,
+        );
     }
 
-    // If we get here, we exhausted the continuation limit or XSD retries
-    Ok(DevIterationResult {
-        had_error: had_any_error,
-        summary: final_summary.or_else(|| {
-            Some(format!(
-                "Continuation stopped after {} attempts",
-                max_continuations * max_xsd_retries
-            ))
-        }),
-        files_changed: final_files_changed,
-    })
+    // If we get here, we exhausted the continuation limit without ever reaching
+    // status="completed". This is an explicit failure signal: proceeding would
+    // silently allow the pipeline to continue despite incomplete work.
+    let summary = last_summary.unwrap_or_else(|| {
+        format!(
+            "Continuation stopped after {} attempts",
+            max_continuations * max_xsd_retries
+        )
+    });
+    anyhow::bail!(
+        "Development iteration did not reach status='completed' after {} continuation attempts (max_xsd_retries={} per attempt). Last summary: {}",
+        max_continuations,
+        max_xsd_retries,
+        summary
+    );
 }
 
 /// Run the planning step to create PLAN.md.
@@ -1239,6 +1364,131 @@ fn run_fast_check(ctx: &PhaseContext<'_>, fast_cmd: &str, iteration: u32) -> any
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::execution_history::ExecutionHistory;
+    use crate::checkpoint::RunContext;
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::{Stats, Timer};
+    use crate::prompts::template_context::TemplateContext;
+    use crate::workspace::MemoryWorkspace;
+    use crate::workspace::Workspace;
+    use std::path::{Path, PathBuf};
+
+    struct TestFixture {
+        config: Config,
+        registry: AgentRegistry,
+        colors: Colors,
+        logger: Logger,
+        timer: Timer,
+        stats: Stats,
+        template_context: TemplateContext,
+        executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: PathBuf,
+        workspace: MemoryWorkspace,
+    }
+
+    impl TestFixture {
+        fn new() -> Self {
+            let colors = Colors { enabled: false };
+            let executor = MockProcessExecutor::new();
+            let executor_arc = std::sync::Arc::new(executor)
+                as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+            let repo_root = PathBuf::from("/test/repo");
+            let workspace = MemoryWorkspace::new(repo_root.clone());
+            let registry = AgentRegistry::new().unwrap();
+
+            Self {
+                config: Config::default(),
+                registry,
+                colors,
+                logger: Logger::new(colors),
+                timer: Timer::new(),
+                stats: Stats::default(),
+                template_context: TemplateContext::default(),
+                executor_arc,
+                repo_root,
+                workspace,
+            }
+        }
+    }
+
+    #[test]
+    fn test_run_development_iteration_with_xml_retry_errors_when_continuations_exhausted_without_completion(
+    ) {
+        let mut fixture = TestFixture::new();
+        fixture.config.max_dev_continuations = Some(1);
+
+        fixture
+            .workspace
+            .write(Path::new("PROMPT.md"), "do the thing")
+            .unwrap();
+        fixture
+            .workspace
+            .write(Path::new(".agent/PLAN.md"), "plan")
+            .unwrap();
+        fixture
+            .workspace
+            .create_dir_all(Path::new(".agent/tmp"))
+            .unwrap();
+        fixture
+            .workspace
+            .write(
+                Path::new(".agent/tmp/development_result.xml"),
+                r#"<ralph-development-result>
+<ralph-status>partial</ralph-status>
+<ralph-summary>partial work</ralph-summary>
+</ralph-development-result>"#,
+            )
+            .unwrap();
+
+        let mut ctx = PhaseContext {
+            config: &fixture.config,
+            registry: &fixture.registry,
+            logger: &fixture.logger,
+            colors: &fixture.colors,
+            timer: &mut fixture.timer,
+            stats: &mut fixture.stats,
+            developer_agent: "codex",
+            reviewer_agent: "codex",
+            review_guidelines: None,
+            template_context: &fixture.template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*fixture.executor_arc,
+            executor_arc: std::sync::Arc::clone(&fixture.executor_arc),
+            repo_root: &fixture.repo_root,
+            workspace: &fixture.workspace,
+        };
+
+        let continuation_state = ContinuationState::new();
+        let continuation_config = ContinuationConfig {
+            state: &continuation_state,
+            max_attempts: 1,
+        };
+
+        let result = run_development_iteration_with_xml_retry(
+            &mut ctx,
+            1,
+            ContextLevel::Minimal,
+            false,
+            None::<&crate::checkpoint::restore::ResumeContext>,
+            Some("codex"),
+            continuation_config,
+        );
+
+        assert!(
+            result.is_err(),
+            "Expected error when continuations exhausted without status='completed'"
+        );
+    }
 }
 
 /// Handle commit creation after development changes are detected.

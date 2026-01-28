@@ -153,6 +153,15 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
     use super::types::{BehavioralFlags, FeatureFlags};
 
     let general = &unified.general;
+    let max_dev_continuations = if general.max_dev_continuations >= 1 {
+        general.max_dev_continuations
+    } else {
+        warnings.push(
+            "Invalid max_dev_continuations in config; must be a positive integer (>= 1). Falling back to default."
+                .to_string(),
+        );
+        2
+    };
 
     let review_depth = ReviewDepth::from_str(&general.review_depth).unwrap_or_else(|| {
         warnings.push(format!(
@@ -200,6 +209,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         git_user_email: general.git_user_email.clone(),
         show_streaming_metrics: false, // Default to false; can be enabled via CLI flag or config file
         review_format_retries: 5,      // Default to 5 retries for format correction
+        max_dev_continuations: Some(max_dev_continuations),
     }
 }
 
@@ -242,6 +252,7 @@ fn default_config() -> Config {
         git_user_email: None,
         show_streaming_metrics: false,
         review_format_retries: 5,
+        max_dev_continuations: Some(2), // Default to 2 (initial + 1 continuation)
     }
 }
 
@@ -719,6 +730,33 @@ review_depth = "standard"
             .with_unified_config_path("/test/config/ralph-workflow.toml")
             .with_file("/test/config/ralph-workflow.toml", "[general]");
         assert!(unified_config_exists_with_env(&env));
+    }
+
+    #[test]
+    #[serial]
+    fn test_max_dev_continuations_zero_falls_back_to_default() {
+        let toml_str = r#"
+[general]
+verbosity = 4
+developer_iters = 8
+review_depth = "standard"
+max_dev_continuations = 0
+"#;
+
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_file("/test/config/ralph-workflow.toml", toml_str);
+
+        let (config, _unified, warnings) = load_config_from_path_with_env(None, &env);
+
+        assert_eq!(config.max_dev_continuations, Some(2));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("max_dev_continuations") && w.contains(">= 1")),
+            "Expected warning about invalid max_dev_continuations, got: {:?}",
+            warnings
+        );
     }
 
     #[test]
