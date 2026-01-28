@@ -95,17 +95,28 @@ pub enum AgentErrorKind {
 
 impl AgentErrorKind {
     /// Determine if this error should trigger a retry.
+    ///
+    /// Note: `RateLimited` is intentionally excluded - it triggers immediate agent fallback
+    /// via `should_immediate_agent_fallback()` instead of retrying with the same agent.
     pub const fn should_retry(self) -> bool {
         matches!(
             self,
-            Self::RateLimited
-                | Self::ApiUnavailable
+            Self::ApiUnavailable
                 | Self::NetworkError
                 | Self::Timeout
                 | Self::InvalidResponse
                 | Self::RetryableAgentQuirk
                 | Self::Transient
         )
+    }
+
+    /// Determine if this error requires immediate agent fallback (without retry).
+    ///
+    /// Rate limit (429) errors indicate the current provider is temporarily exhausted.
+    /// Rather than waiting and retrying the same agent (which wastes time), we should
+    /// immediately switch to the next agent in the fallback chain to continue work.
+    pub const fn should_immediate_agent_fallback(self) -> bool {
+        matches!(self, Self::RateLimited)
     }
 
     /// Determine if this error should trigger a fallback to another agent.
@@ -144,7 +155,8 @@ impl AgentErrorKind {
     /// Get suggested wait time in milliseconds before retry.
     pub const fn suggested_wait_ms(self) -> u64 {
         match self {
-            Self::RateLimited => 5000,    // Rate limit: wait 5 seconds
+            // RateLimited: no wait - we immediately fallback to next agent
+            Self::RateLimited => 0,
             Self::ApiUnavailable => 3000, // Server issue: wait 3 seconds
             Self::NetworkError => 2000,   // Network: wait 2 seconds
             Self::Timeout | Self::Transient | Self::RetryableAgentQuirk => 1000, // Timeout/Transient: short wait
@@ -178,7 +190,7 @@ impl AgentErrorKind {
     pub const fn recovery_advice(self) -> &'static str {
         match self {
             Self::RateLimited => {
-                "Will retry after delay. Tip: Consider reducing request frequency or using a different provider."
+                "Switching to next agent immediately. Rate limit indicates provider exhaustion."
             }
             Self::TokenExhausted => {
                 "Switching to alternative agent. Tip: Try RALPH_DEVELOPER_CONTEXT=0 or RALPH_REVIEWER_CONTEXT=0"
@@ -571,7 +583,8 @@ mod tests {
 
     #[test]
     fn test_agent_error_kind_should_retry() {
-        assert!(AgentErrorKind::RateLimited.should_retry());
+        // RateLimited should NOT retry - it triggers immediate agent fallback
+        assert!(!AgentErrorKind::RateLimited.should_retry());
         assert!(AgentErrorKind::ApiUnavailable.should_retry());
         assert!(AgentErrorKind::NetworkError.should_retry());
         assert!(AgentErrorKind::Timeout.should_retry());
@@ -582,6 +595,22 @@ mod tests {
         assert!(!AgentErrorKind::AuthFailure.should_retry());
         assert!(!AgentErrorKind::CommandNotFound.should_retry());
         assert!(!AgentErrorKind::Permanent.should_retry());
+    }
+
+    #[test]
+    fn test_agent_error_kind_should_immediate_agent_fallback() {
+        // Only RateLimited should trigger immediate agent fallback
+        assert!(AgentErrorKind::RateLimited.should_immediate_agent_fallback());
+
+        // All other errors should not trigger immediate agent fallback
+        assert!(!AgentErrorKind::ApiUnavailable.should_immediate_agent_fallback());
+        assert!(!AgentErrorKind::NetworkError.should_immediate_agent_fallback());
+        assert!(!AgentErrorKind::Timeout.should_immediate_agent_fallback());
+        assert!(!AgentErrorKind::AuthFailure.should_immediate_agent_fallback());
+        assert!(!AgentErrorKind::TokenExhausted.should_immediate_agent_fallback());
+        assert!(!AgentErrorKind::CommandNotFound.should_immediate_agent_fallback());
+        assert!(!AgentErrorKind::Permanent.should_immediate_agent_fallback());
+        assert!(!AgentErrorKind::Transient.should_immediate_agent_fallback());
     }
 
     #[test]
@@ -759,8 +788,12 @@ mod tests {
 
     #[test]
     fn test_agent_error_kind_suggested_wait_ms() {
-        assert_eq!(AgentErrorKind::RateLimited.suggested_wait_ms(), 5000);
+        // RateLimited: 0ms wait (immediate agent fallback, no retry)
+        assert_eq!(AgentErrorKind::RateLimited.suggested_wait_ms(), 0);
         assert_eq!(AgentErrorKind::Permanent.suggested_wait_ms(), 0);
+        // Retriable errors should have positive wait times
+        assert!(AgentErrorKind::ApiUnavailable.suggested_wait_ms() > 0);
+        assert!(AgentErrorKind::NetworkError.suggested_wait_ms() > 0);
     }
 
     #[test]
