@@ -233,10 +233,14 @@ Environment variables override config:
 
 ## Documentation
 
+Full documentation is available on [Codeberg](https://codeberg.org/mistlight/RalphWithReviewer):
+
 - **[Quick Reference](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/quick-reference.md)** - Cheat sheet for commands and flags
-- **[Agent Compatibility](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/agent-compatibility.md)** - Supported AI agents
+- **[Agent Compatibility](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/agent-compatibility.md)** - Supported AI agents and configuration
 - **[Git Workflow](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/git-workflow.md)** - How Ralph handles commits and diffs
-- **[Work Guide Reference](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/template-guide.md)** - PROMPT.md Work Guides (templates for your tasks)
+- **[Template Guide](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/template-guide.md)** - PROMPT.md Work Guides and agent prompt customization
+
+**Note:** Links point to the source repository. When viewing on crates.io, visit the repository for full documentation.
 
 ## FAQ
 

@@ -1,7 +1,36 @@
-//! Shared types and utilities for JSON parsers.
+//! Shared types and utilities for NDJSON stream parsers.
 //!
-//! This module contains event types and utility functions used by
-//! all the CLI parsers (Claude, Codex, Gemini).
+//! This module defines the event types emitted by AI agent CLIs during streaming
+//! execution. Each agent (Claude, Codex, Gemini, OpenCode) outputs NDJSON (newline-delimited
+//! JSON) with agent-specific event schemas that get normalized into these types.
+//!
+//! # Event Hierarchy
+//!
+//! The parsers consume raw NDJSON lines and produce typed events:
+//!
+//! - [`ClaudeEvent`] - Claude CLI events (system, assistant, user, result, stream events)
+//! - [`CodexEvent`] - OpenAI Codex CLI events (thread, turn, item lifecycle)
+//! - [`GeminiEvent`] - Gemini CLI events (init, message, tool use/result)
+//!
+//! # Streaming Protocol
+//!
+//! For real-time output, agents use streaming events with deltas:
+//!
+//! - [`StreamInnerEvent`] - Claude's streaming protocol events
+//! - [`ContentBlockDelta`] - Incremental content updates
+//! - [`DeltaAccumulator`] - Accumulates deltas into complete content
+//!
+//! # Display Utilities
+//!
+//! For verbose/debug output:
+//!
+//! - [`format_tool_input`] - Formats tool call parameters for display
+//! - [`format_unknown_json_event`] - Formats unrecognized events with context
+//!
+//! # See Also
+//!
+//! - [`crate::json_parser`] module docs for parser architecture overview
+//! - [`crate::json_parser::stream_classifier`] for event type classification
 
 use crate::common::truncate_text;
 use regex::Regex;

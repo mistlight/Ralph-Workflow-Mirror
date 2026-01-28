@@ -55,6 +55,8 @@ Never mix. AppEffect cannot use Workspace; Effect cannot use `std::fs`.
 | **EffectHandler** | Trait for executing effects (impure operations). Produces events from effects. |
 | **UIEvent** | Events for user-facing display (status, progress, XML output). See `reducer::ui_event`. |
 | **Work Guide** | PROMPT.md template for describing tasks to AI agents (e.g., bug-fix, feature-spec, refactor) |
+| **PLAN.md** | Implementation plan file written by orchestrator to `.agent/PLAN.md` after planning phase. Contains AI-generated plan based on PROMPT.md. |
+| **ISSUES.md** | Review issues file written by orchestrator to `.agent/ISSUES.md` after review phase. Contains problems found by reviewer agent. |
 
 ---
 
