@@ -332,21 +332,9 @@ impl AgentErrorKind {
             return Some(Self::RateLimited);
         }
 
-        // Token/context exhaustion (API-side)
-        // Check this BEFORE GLM agent-specific fallback to ensure TokenExhausted is detected
-        // Note: "too long" is specifically for API token limits, not OS argument limits
-        // We exclude "argument list too long" which is an E2BIG OS error
-        if stderr_lower.contains("token")
-            || stderr_lower.contains("context length")
-            || stderr_lower.contains("maximum context")
-            || stderr_lower.contains("input too large")
-            || (stderr_lower.contains("too long")
-                && !stderr_lower.contains("argument list too long"))
-        {
-            return Some(Self::TokenExhausted);
-        }
-
         // Auth failures
+        // Check BEFORE token/context exhaustion so strings like "invalid token" are
+        // treated as authentication failures (not context exhaustion).
         if stderr_lower.contains("unauthorized")
             || stderr_lower.contains("authentication")
             || stderr_lower.contains("401")
@@ -357,6 +345,27 @@ impl AgentErrorKind {
             || stderr_lower.contains("access denied")
         {
             return Some(Self::AuthFailure);
+        }
+
+        // Token/context exhaustion (API-side)
+        // Check this BEFORE GLM agent-specific fallback to ensure TokenExhausted is detected
+        // Note: "too long" is specifically for API token limits, not OS argument limits
+        // We exclude "argument list too long" which is an E2BIG OS error
+        if stderr_lower.contains("context length")
+            || stderr_lower.contains("maximum context")
+            || stderr_lower.contains("max context")
+            || stderr_lower.contains("context window")
+            || stderr_lower.contains("maximum tokens")
+            || stderr_lower.contains("max tokens")
+            || stderr_lower.contains("too many tokens")
+            || stderr_lower.contains("token limit")
+            || stderr_lower.contains("context_length_exceeded")
+            || stderr_lower.contains("input too large")
+            || stderr_lower.contains("prompt is too long")
+            || (stderr_lower.contains("too long")
+                && !stderr_lower.contains("argument list too long"))
+        {
+            return Some(Self::TokenExhausted);
         }
 
         None
@@ -647,6 +656,8 @@ mod tests {
         // Auth failure
         assert_eq!(classify(1, "unauthorized"), AgentErrorKind::AuthFailure);
         assert_eq!(classify(1, "error 401"), AgentErrorKind::AuthFailure);
+        // "invalid token" is an auth failure, not token exhaustion
+        assert_eq!(classify(1, "invalid token"), AgentErrorKind::AuthFailure);
 
         // Command not found
         assert_eq!(classify(127, ""), AgentErrorKind::CommandNotFound);

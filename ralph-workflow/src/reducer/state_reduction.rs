@@ -136,10 +136,20 @@ fn reduce_planning_event(state: PipelineState, event: PipelineEvent) -> Pipeline
             ..state
         },
         PipelineEvent::PlanGenerationStarted { .. } => state,
-        PipelineEvent::PlanGenerationCompleted { .. } => PipelineState {
-            phase: super::event::PipelinePhase::Development,
-            ..state
-        },
+        PipelineEvent::PlanGenerationCompleted { valid, .. } => {
+            if valid {
+                PipelineState {
+                    phase: super::event::PipelinePhase::Development,
+                    ..state
+                }
+            } else {
+                // Do not proceed to Development without a valid plan.
+                PipelineState {
+                    phase: super::event::PipelinePhase::Planning,
+                    ..state
+                }
+            }
+        }
         _ => state,
     }
 }
@@ -614,6 +624,28 @@ mod tests {
         assert_eq!(new_state.iteration, 5);
         // Goes to CommitMessage phase first
         assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+    }
+
+    #[test]
+    fn test_plan_generation_completed_invalid_does_not_transition_to_development() {
+        let state = PipelineState {
+            phase: PipelinePhase::Planning,
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::PlanGenerationCompleted {
+                iteration: 1,
+                valid: false,
+            },
+        );
+
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::Planning,
+            "Invalid plan should keep pipeline in Planning phase"
+        );
     }
 
     #[test]

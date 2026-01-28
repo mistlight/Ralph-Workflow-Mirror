@@ -175,6 +175,8 @@ fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
             } else if stderr_lower.contains("rate limit")
                 || stderr_lower.contains("quota")
                 || stderr_lower.contains("too many requests")
+                || stderr_lower.contains("429")
+                || stderr_lower.contains("rate_limit_exceeded")
             {
                 AgentErrorKind::RateLimit
             } else if stderr_lower.contains("model")
@@ -272,6 +274,12 @@ mod tests {
     #[test]
     fn test_classify_agent_error_rate_limit() {
         let error_kind = classify_agent_error(1, "Rate limit exceeded");
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_matches_http_429() {
+        let error_kind = classify_agent_error(1, "error 429");
         assert_eq!(error_kind, AgentErrorKind::RateLimit);
     }
 

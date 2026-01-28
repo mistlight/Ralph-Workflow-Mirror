@@ -777,7 +777,9 @@ impl ProcessExecutor for MockProcessExecutor {
         // Return a mock handle with valid stdout that provides complete JSON
         Ok(AgentChildHandle {
             stdout: Box::new(Cursor::new(mock_output)),
-            stderr: Box::new(io::empty()),
+            // Provide stderr content so tests can exercise error classification
+            // paths that depend on stderr (e.g., 429 rate limits).
+            stderr: Box::new(Cursor::new(result.stderr)),
             inner: Box::new(MockAgentChild::new(result.exit_code)),
         })
     }
