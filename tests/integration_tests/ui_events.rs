@@ -588,6 +588,7 @@ fn test_xml_output_format_for_display_renders_semantically() {
             context: Some(XmlOutputContext {
                 iteration: Some(1),
                 pass: None,
+                snippets: Vec::new(),
             }),
         };
 
@@ -622,6 +623,7 @@ fn test_xml_output_serialization_roundtrip() {
             context: Some(XmlOutputContext {
                 iteration: None,
                 pass: Some(1),
+                snippets: Vec::new(),
             }),
         };
 

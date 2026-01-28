@@ -16,7 +16,7 @@
 //! with a warning message. This ensures users always see output even if
 //! the format is unexpected.
 
-use super::ui_event::{XmlOutputContext, XmlOutputType};
+use super::ui_event::{XmlCodeSnippet, XmlOutputContext, XmlOutputType};
 use crate::files::llm_output_extraction::xsd_validation_plan::{FileAction, Priority, Severity};
 use crate::files::llm_output_extraction::{
     validate_development_result_xml, validate_fix_result_xml, validate_issues_xml,
@@ -423,7 +423,7 @@ fn render_issues(content: &str, context: &Option<XmlOutputContext>) -> String {
                     "🔍 Found {} issue(s) to address:\n\n",
                     elements.issues.len()
                 ));
-                output.push_str(&render_issues_grouped_by_file(&elements.issues));
+                output.push_str(&render_issues_grouped_by_file(&elements.issues, context));
             }
         }
         Err(_) => {
@@ -446,7 +446,7 @@ struct ParsedIssue {
     description: String,
 }
 
-fn render_issues_grouped_by_file(issues: &[String]) -> String {
+fn render_issues_grouped_by_file(issues: &[String], context: &Option<XmlOutputContext>) -> String {
     let parsed: Vec<ParsedIssue> = issues.iter().map(|i| parse_issue(i)).collect();
     let mut grouped: BTreeMap<String, Vec<ParsedIssue>> = BTreeMap::new();
 
@@ -483,7 +483,11 @@ fn render_issues_grouped_by_file(issues: &[String]) -> String {
                 output.push_str(&format!("   - {}{}\n", header, desc));
             }
 
-            if let Some(snippet) = &issue.snippet {
+            let snippet = issue
+                .snippet
+                .clone()
+                .or_else(|| snippet_from_context(&issue, context));
+            if let Some(snippet) = snippet {
                 for line in snippet.lines() {
                     output.push_str(&format!("      {}\n", line));
                 }
@@ -493,6 +497,49 @@ fn render_issues_grouped_by_file(issues: &[String]) -> String {
     }
 
     output
+}
+
+fn snippet_from_context(issue: &ParsedIssue, context: &Option<XmlOutputContext>) -> Option<String> {
+    let ctx = context.as_ref()?;
+    let file = issue.file.as_ref()?;
+    let start = issue.line_start?;
+    let end = issue.line_end.unwrap_or(start);
+
+    ctx.snippets
+        .iter()
+        .find(|s| snippet_matches_issue(s, file, start, end))
+        .map(|s| s.content.clone())
+}
+
+fn snippet_matches_issue(snippet: &XmlCodeSnippet, file: &str, start: u32, end: u32) -> bool {
+    file_matches(&snippet.file, file)
+        && ranges_overlap(snippet.line_start, snippet.line_end, start, end)
+}
+
+fn file_matches(snippet_file: &str, issue_file: &str) -> bool {
+    let snippet_norm = normalize_path_for_match(snippet_file);
+    let issue_norm = normalize_path_for_match(issue_file);
+    if snippet_norm == issue_norm {
+        return true;
+    }
+
+    // Be tolerant of differing prefixes (e.g. `./src/lib.rs` vs `src/lib.rs`),
+    // and of callers emitting paths rooted at a sub-crate (`ralph-workflow/src/...`).
+    let snippet_suffix = format!("/{}", issue_norm);
+    if snippet_norm.ends_with(&snippet_suffix) {
+        return true;
+    }
+
+    let issue_suffix = format!("/{}", snippet_norm);
+    issue_norm.ends_with(&issue_suffix)
+}
+
+fn normalize_path_for_match(path: &str) -> String {
+    path.replace('\\', "/").trim_start_matches("./").to_string()
+}
+
+fn ranges_overlap(a_start: u32, a_end: u32, b_start: u32, b_end: u32) -> bool {
+    a_start <= b_end && b_start <= a_end
 }
 
 fn parse_issue(issue: &str) -> ParsedIssue {
@@ -846,6 +893,7 @@ new file mode 100644
         let ctx = Some(XmlOutputContext {
             iteration: Some(2),
             pass: None,
+            snippets: Vec::new(),
         });
         let output = render_development_result(xml, &ctx);
 
@@ -972,6 +1020,7 @@ new file mode 100644
         let ctx = Some(XmlOutputContext {
             iteration: None,
             pass: Some(1),
+            snippets: Vec::new(),
         });
         let output = render_issues(xml, &ctx);
 
@@ -1022,6 +1071,31 @@ let x = foo().unwrap();
     }
 
     #[test]
+    fn test_render_issues_uses_context_snippets_when_issue_has_location_but_no_fenced_code() {
+        let xml = r#"<ralph-issues>
+<ralph-issue>./src/lib.rs:44-44 - Rename variable for clarity</ralph-issue>
+</ralph-issues>"#;
+
+        let ctx = Some(XmlOutputContext {
+            iteration: None,
+            pass: Some(1),
+            snippets: vec![XmlCodeSnippet {
+                file: "src/lib.rs".to_string(),
+                line_start: 42,
+                line_end: 46,
+                content: "42 | let old_name = 1;\n43 | let x = old_name;\n44 | let clearer = old_name;\n45 | println!(\"{}\", clearer);".to_string(),
+            }],
+        });
+
+        let output = render_issues(xml, &ctx);
+
+        assert!(
+            output.contains("let clearer"),
+            "Should render snippet from context even when file path differs by prefix"
+        );
+    }
+
+    #[test]
     fn test_render_issues_no_issues() {
         let xml = r#"<ralph-issues>
 <ralph-no-issues-found>The code looks good, no issues detected</ralph-no-issues-found>
@@ -1058,6 +1132,7 @@ let x = foo().unwrap();
         let ctx = Some(XmlOutputContext {
             iteration: None,
             pass: Some(2),
+            snippets: Vec::new(),
         });
         let output = render_fix_result(xml, &ctx);
 
@@ -1399,6 +1474,37 @@ deleted file mode 100644
         assert!(
             output.contains("Code Approved"),
             "Should show approval message"
+        );
+    }
+
+    #[test]
+    fn test_render_issues_shows_snippet_from_context_when_not_in_issue_text() {
+        let xml = r#"<ralph-issues>
+<ralph-issue>[High] src/lib.rs:2 Missing semicolon</ralph-issue>
+</ralph-issues>"#;
+
+        let ctx = Some(XmlOutputContext {
+            iteration: None,
+            pass: Some(1),
+            snippets: vec![XmlCodeSnippet {
+                file: "src/lib.rs".to_string(),
+                line_start: 1,
+                line_end: 3,
+                content: "fn example() {\n    let x = 1\n}\n".to_string(),
+            }],
+        });
+
+        let output = render_issues(xml, &ctx);
+
+        assert!(
+            output.contains("fn example()"),
+            "Should render snippet content when provided via context: {}",
+            output
+        );
+        assert!(
+            output.contains("src/lib.rs"),
+            "Should show file context: {}",
+            output
         );
     }
 

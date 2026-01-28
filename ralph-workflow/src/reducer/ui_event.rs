@@ -35,6 +35,25 @@ pub struct XmlOutputContext {
     pub iteration: Option<u32>,
     /// Review pass number (1-based).
     pub pass: Option<u32>,
+    /// Optional code snippets to enrich rendering (e.g., review issues).
+    ///
+    /// This allows semantic renderers to show relevant code context even when the
+    /// issue description itself does not embed a fenced code block.
+    #[serde(default)]
+    pub snippets: Vec<XmlCodeSnippet>,
+}
+
+/// A code snippet associated with a file and line range.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct XmlCodeSnippet {
+    /// File path (workspace-relative).
+    pub file: String,
+    /// 1-based starting line number (inclusive).
+    pub line_start: u32,
+    /// 1-based ending line number (inclusive).
+    pub line_end: u32,
+    /// Snippet content (may include newlines).
+    pub content: String,
 }
 
 /// UI events for user-facing display during pipeline execution.
@@ -211,6 +230,7 @@ mod tests {
         let context = XmlOutputContext::default();
         assert!(context.iteration.is_none());
         assert!(context.pass.is_none());
+        assert!(context.snippets.is_empty());
     }
 
     #[test]
@@ -218,6 +238,7 @@ mod tests {
         let context = XmlOutputContext {
             iteration: Some(2),
             pass: Some(1),
+            snippets: Vec::new(),
         };
         assert_eq!(context.iteration, Some(2));
         assert_eq!(context.pass, Some(1));
@@ -231,6 +252,7 @@ mod tests {
             context: Some(XmlOutputContext {
                 iteration: None,
                 pass: Some(1),
+                snippets: Vec::new(),
             }),
         };
         let json = serde_json::to_string(&event).unwrap();

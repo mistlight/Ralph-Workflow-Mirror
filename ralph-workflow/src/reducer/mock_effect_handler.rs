@@ -213,6 +213,7 @@ impl MockEffectHandler {
                         context: Some(XmlOutputContext {
                             iteration: Some(iteration),
                             pass: None,
+                            snippets: Vec::new(),
                         }),
                     },
                 ];
@@ -243,6 +244,7 @@ src/lib.rs</ralph-files-changed>
                         context: Some(XmlOutputContext {
                             iteration: Some(iteration),
                             pass: None,
+                            snippets: Vec::new(),
                         }),
                     },
                 ];
@@ -270,6 +272,7 @@ src/lib.rs</ralph-files-changed>
                         context: Some(XmlOutputContext {
                             iteration: None,
                             pass: Some(pass),
+                            snippets: Vec::new(),
                         }),
                     },
                 ];
@@ -293,6 +296,7 @@ src/lib.rs</ralph-files-changed>
                     context: Some(XmlOutputContext {
                         iteration: None,
                         pass: Some(pass),
+                        snippets: Vec::new(),
                     }),
                 }];
                 (

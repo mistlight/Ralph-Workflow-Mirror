@@ -8,6 +8,8 @@ use crate::agents::AgentRole;
 use crate::checkpoint::{
     save_checkpoint_with_workspace, CheckpointBuilder, PipelinePhase as CheckpointPhase,
 };
+use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
+use crate::files::llm_output_extraction::validate_issues_xml;
 use crate::phases::{commit, development, get_primary_commit_agent, review, PhaseContext};
 use crate::pipeline::PipelineRuntime;
 use crate::prompts::ContextLevel;
@@ -19,9 +21,11 @@ use crate::reducer::fault_tolerant_executor::{
     execute_agent_fault_tolerantly, AgentExecutionConfig,
 };
 use crate::reducer::state::PipelineState;
-use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
+use crate::reducer::ui_event::{UIEvent, XmlCodeSnippet, XmlOutputContext, XmlOutputType};
+use crate::workspace::Workspace;
 use anyhow::Result;
-use std::path::Path;
+use regex::Regex;
+use std::path::{Path, PathBuf};
 
 /// Main effect handler implementation.
 ///
@@ -228,6 +232,7 @@ impl MainEffectHandler {
                             context: Some(XmlOutputContext {
                                 iteration: Some(iteration),
                                 pass: None,
+                                snippets: Vec::new(),
                             }),
                         });
                     }
@@ -296,6 +301,7 @@ impl MainEffectHandler {
                         context: Some(XmlOutputContext {
                             iteration: Some(iteration),
                             pass: None,
+                            snippets: Vec::new(),
                         }),
                     });
                 }
@@ -342,12 +348,14 @@ impl MainEffectHandler {
                     .ok()
                     .or_else(|| ctx.workspace.read(processed_path).ok())
                 {
+                    let snippets = collect_review_issue_snippets(ctx.workspace, &xml_content);
                     ui_events.push(UIEvent::XmlOutput {
                         xml_type: XmlOutputType::ReviewIssues,
                         content: xml_content,
                         context: Some(XmlOutputContext {
                             iteration: None,
                             pass: Some(pass),
+                            snippets,
                         }),
                     });
                 }
@@ -397,6 +405,7 @@ impl MainEffectHandler {
                         context: Some(XmlOutputContext {
                             iteration: None,
                             pass: Some(pass),
+                            snippets: Vec::new(),
                         }),
                     });
                 }
@@ -562,15 +571,8 @@ impl MainEffectHandler {
                     self.phase_transition_ui(PipelinePhase::CommitMessage),
                 ];
 
-                // Try to read commit XML for semantic rendering
-                let commit_xml_path = Path::new(".agent/tmp/commit.xml");
-                let processed_path = Path::new(".agent/tmp/commit.xml.processed");
-                if let Some(xml_content) = ctx
-                    .workspace
-                    .read(commit_xml_path)
-                    .ok()
-                    .or_else(|| ctx.workspace.read(processed_path).ok())
-                {
+                // Try to read commit message XML for semantic rendering
+                if let Some(xml_content) = read_commit_message_xml(ctx.workspace) {
                     ui_events.push(UIEvent::XmlOutput {
                         xml_type: XmlOutputType::CommitMessage,
                         content: xml_content,
@@ -778,6 +780,126 @@ impl MainEffectHandler {
 
         Ok(EffectResult::with_ui(event, vec![ui_event]))
     }
+}
+
+fn collect_review_issue_snippets(
+    workspace: &dyn Workspace,
+    issues_xml: &str,
+) -> Vec<XmlCodeSnippet> {
+    let validated = match validate_issues_xml(issues_xml) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut snippets = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+
+    for issue in validated.issues {
+        if let Some((file, issue_start, issue_end)) = parse_issue_location(&issue) {
+            if let Some(snippet) = read_snippet_for_issue(workspace, &file, issue_start, issue_end)
+            {
+                let key = (
+                    snippet.file.clone(),
+                    snippet.line_start,
+                    snippet.line_end,
+                    snippet.content.clone(),
+                );
+                if seen.insert(key) {
+                    snippets.push(snippet);
+                }
+            }
+        }
+    }
+
+    snippets
+}
+
+fn read_commit_message_xml(workspace: &dyn Workspace) -> Option<String> {
+    let primary_path = Path::new(xml_paths::COMMIT_MESSAGE_XML);
+    let primary_processed_path =
+        PathBuf::from(format!("{}.processed", xml_paths::COMMIT_MESSAGE_XML));
+    let legacy_path = Path::new(".agent/tmp/commit.xml");
+    let legacy_processed_path = Path::new(".agent/tmp/commit.xml.processed");
+
+    workspace
+        .read(primary_path)
+        .ok()
+        .or_else(|| workspace.read(&primary_processed_path).ok())
+        .or_else(|| workspace.read(legacy_path).ok())
+        .or_else(|| workspace.read(legacy_processed_path).ok())
+}
+
+fn parse_issue_location(issue: &str) -> Option<(String, u32, u32)> {
+    let location_re = Regex::new(
+        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?",
+    )
+    .ok()?;
+    let gh_location_re = Regex::new(
+        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?",
+    )
+    .ok()?;
+
+    if let Some(cap) = location_re.captures(issue) {
+        let file = cap.name("file")?.as_str().to_string();
+        let start = cap.name("start")?.as_str().parse::<u32>().ok()?;
+        let end = cap
+            .name("end")
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .unwrap_or(start);
+        return Some((file, start, end));
+    }
+
+    if let Some(cap) = gh_location_re.captures(issue) {
+        let file = cap.name("file")?.as_str().to_string();
+        let start = cap.name("start")?.as_str().parse::<u32>().ok()?;
+        let end = cap
+            .name("end")
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .unwrap_or(start);
+        return Some((file, start, end));
+    }
+
+    None
+}
+
+fn read_snippet_for_issue(
+    workspace: &dyn Workspace,
+    file: &str,
+    issue_start: u32,
+    issue_end: u32,
+) -> Option<XmlCodeSnippet> {
+    let issue_start = issue_start.max(1);
+    let issue_end = issue_end.max(issue_start);
+
+    let context_lines: u32 = 2;
+    let start = issue_start.saturating_sub(context_lines).max(1);
+    let end = issue_end.saturating_add(context_lines);
+
+    let content = workspace.read(Path::new(file)).ok()?;
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return None;
+    }
+
+    let max_line = u32::try_from(lines.len()).ok()?;
+    let end = end.min(max_line);
+    if start > end {
+        return None;
+    }
+
+    let mut snippet = String::new();
+    for line_no in start..=end {
+        let idx = usize::try_from(line_no.saturating_sub(1)).ok()?;
+        let line = lines.get(idx).copied().unwrap_or_default();
+        snippet.push_str(&format!("{:>4} | {}\n", line_no, line));
+    }
+
+    Some(XmlCodeSnippet {
+        file: file.to_string(),
+        line_start: start,
+        line_end: end,
+        content: snippet,
+    })
 }
 
 /// Save checkpoint from current pipeline state.
@@ -1051,5 +1173,30 @@ mod tests {
             content.contains("\"version\""),
             "checkpoint should contain version field"
         );
+    }
+
+    #[test]
+    fn test_read_commit_message_xml_falls_back_to_legacy_commit_xml() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_dir(".agent/tmp")
+            .with_file(".agent/tmp/commit.xml", "<legacy/>");
+
+        let xml = read_commit_message_xml(&workspace).expect("expected xml");
+        assert_eq!(xml, "<legacy/>");
+    }
+
+    #[test]
+    fn test_read_commit_message_xml_prefers_commit_message_xml() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_dir(".agent/tmp")
+            .with_file(".agent/tmp/commit.xml", "<legacy/>")
+            .with_file(".agent/tmp/commit_message.xml", "<preferred/>");
+
+        let xml = read_commit_message_xml(&workspace).expect("expected xml");
+        assert_eq!(xml, "<preferred/>");
     }
 }
