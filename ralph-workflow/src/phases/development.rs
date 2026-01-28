@@ -306,6 +306,9 @@ pub struct DevAttemptResult {
     pub files_changed: Option<Vec<String>>,
     /// Optional next steps recommended by the agent.
     pub next_steps: Option<String>,
+    /// Whether an authentication/credential error was detected.
+    /// When true, the caller should trigger agent fallback instead of retrying.
+    pub auth_failure: bool,
 }
 
 /// Run a single development attempt (one session) with XML extraction and XSD validation retry loop.
@@ -461,7 +464,7 @@ pub fn run_development_attempt_with_xml_retry(
         // Run the agent with session continuation for XSD retries
         // This is completely fault-tolerant - if session continuation fails for any reason
         // (including agent crash, segfault, invalid session), it falls back to normal behavior
-        let exit_code = {
+        let xsd_result = {
             let mut runtime = PipelineRuntime {
                 timer: ctx.timer,
                 logger: ctx.logger,
@@ -499,7 +502,23 @@ pub fn run_development_attempt_with_xml_retry(
             run_xsd_retry_with_session(&mut xsd_retry_config)?
         };
 
-        if exit_code != 0 {
+        // Check for auth error FIRST - if detected, signal for agent fallback
+        // This breaks out of the XSD retry loop immediately
+        if xsd_result.auth_error_detected {
+            ctx.logger
+                .warn("  Auth/credential error detected, signaling agent fallback");
+            return Ok(DevAttemptResult {
+                had_error: true,
+                output_valid: false,
+                status: DevelopmentStatus::Failed,
+                summary: "Authentication error - agent fallback required".to_string(),
+                files_changed: None,
+                next_steps: None,
+                auth_failure: true,
+            });
+        }
+
+        if xsd_result.exit_code != 0 {
             had_error = true;
         }
 
@@ -587,6 +606,7 @@ pub fn run_development_attempt_with_xml_retry(
                     summary: result_elements.summary.clone(),
                     files_changed,
                     next_steps: result_elements.next_steps.clone(),
+                    auth_failure: false,
                 });
             }
             Err(xsd_err) => {
@@ -619,6 +639,7 @@ pub fn run_development_attempt_with_xml_retry(
             "Complete the task and provide valid XML output conforming to the XSD schema."
                 .to_string(),
         ),
+        auth_failure: false,
     })
 }
 
@@ -1039,7 +1060,14 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
             workspace: ctx.workspace,
         };
 
-        let _exit_code = run_xsd_retry_with_session(&mut xsd_retry_config)?;
+        let xsd_result = run_xsd_retry_with_session(&mut xsd_retry_config)?;
+
+        // Check for auth error FIRST - if detected, bail with an error that signals agent fallback
+        if xsd_result.auth_error_detected {
+            ctx.logger
+                .warn("  Auth/credential error detected during planning, signaling agent fallback");
+            anyhow::bail!("Authentication error during planning - agent fallback required");
+        }
 
         // Extract and validate the plan XML
         let log_dir_path = Path::new(&log_dir);

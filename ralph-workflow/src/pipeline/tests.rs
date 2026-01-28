@@ -685,7 +685,7 @@ fn session_continuation_not_used_on_first_attempt() {
     let exit = crate::pipeline::run_xsd_retry_with_session(&mut xsd_config).unwrap();
 
     // Agent should succeed - on first attempt (retry_num=0), normal fallback is used
-    assert_eq!(exit, 0, "Agent should succeed on first attempt");
+    assert_eq!(exit.exit_code, 0, "Agent should succeed on first attempt");
 }
 
 /// Test that session continuation IS used on retry (retry_num > 0).
@@ -777,7 +777,7 @@ fn session_continuation_used_on_retry() {
 
     // Agent should succeed - on retry (retry_num>0) with session_info, session continuation is used
     assert_eq!(
-        exit, 0,
+        exit.exit_code, 0,
         "Agent should succeed on retry with session continuation"
     );
 }
@@ -870,7 +870,7 @@ fn session_continuation_fallback_when_agent_unsupported() {
     let exit = crate::pipeline::run_xsd_retry_with_session(&mut xsd_config).unwrap();
 
     // Agent should succeed via fallback path since it doesn't support sessions
-    assert_eq!(exit, 0, "Agent should succeed via fallback path");
+    assert_eq!(exit.exit_code, 0, "Agent should succeed via fallback path");
 }
 
 /// Test that session continuation returns the agent's exit code even on crash.
@@ -966,7 +966,7 @@ fn session_continuation_fallback_when_agent_crashes() {
     // When session continuation runs but agent crashes (non-zero exit),
     // we return the exit code so caller can check for valid output.
     assert_eq!(
-        exit, 139,
+        exit.exit_code, 139,
         "Should return crash exit code when session continuation ran but agent crashed"
     );
 }
@@ -1069,7 +1069,7 @@ fn session_continuation_resolves_sanitized_agent_names() {
     // Agent should succeed - this proves that the sanitized name "ccs-test-agent"
     // was resolved to "ccs/test-agent" and session continuation was used
     assert_eq!(
-        exit, 0,
+        exit.exit_code, 0,
         "Agent should succeed with sanitized agent name resolved"
     );
 }
@@ -1160,7 +1160,7 @@ fn session_continuation_e2e_extracts_session_from_logfile() {
     };
 
     let exit = crate::pipeline::run_xsd_retry_with_session(&mut xsd_config).unwrap();
-    assert_eq!(exit, 0, "First agent run should succeed");
+    assert_eq!(exit.exit_code, 0, "First agent run should succeed");
 
     // Extract session info from the log file (this is what happens in production)
     // We pass the known agent name to avoid ambiguity from sanitized log file names
@@ -1230,7 +1230,7 @@ fn session_continuation_e2e_extracts_session_from_logfile() {
     // Retry should succeed - this verifies the full session continuation flow works:
     // 1. Session ID was extracted from the log file
     // 2. Session continuation passed the session ID via --resume flag
-    assert_eq!(exit2, 0, "Retry should succeed with session continuation");
+    assert_eq!(exit2.exit_code, 0, "Retry should succeed with session continuation");
 }
 
 /// Test that resolve_from_logfile_name works for OpenCode agents.

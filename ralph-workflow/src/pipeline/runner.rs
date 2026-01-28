@@ -491,9 +491,22 @@ pub enum SessionContinuationResult {
     /// the log file for valid output. Some agents produce valid XML even
     /// when returning non-zero exit codes.
     Ran { exit_code: i32 },
+    /// Session continuation detected an auth/credential error.
+    /// The caller should trigger agent fallback (switch to next agent).
+    AuthError,
     /// Session continuation failed to run or was not attempted.
     /// The caller should fall back to normal `run_with_fallback`.
     Fallback,
+}
+
+/// Result of an XSD retry attempt.
+#[derive(Debug)]
+pub struct XsdRetryResult {
+    /// The agent's exit code.
+    pub exit_code: i32,
+    /// If true, an auth/credential error was detected and agent fallback should occur.
+    /// The XSD retry loop should stop and the caller should advance the agent chain.
+    pub auth_error_detected: bool,
 }
 
 /// Configuration for XSD retry with optional session continuation.
@@ -552,9 +565,11 @@ pub struct XsdRetryConfig<'a, 'b> {
 ///
 /// # Returns
 ///
-/// * `Ok(exit_code)` - The agent's exit code (may be non-zero even with valid output)
+/// * `Ok(XsdRetryResult)` - Contains exit code and whether auth error was detected
 /// * `Err(_)` - I/O error (only from the fallback path, never from session continuation)
-pub fn run_xsd_retry_with_session(config: &mut XsdRetryConfig<'_, '_>) -> std::io::Result<i32> {
+pub fn run_xsd_retry_with_session(
+    config: &mut XsdRetryConfig<'_, '_>,
+) -> std::io::Result<XsdRetryResult> {
     // Try session continuation first (if we have session info and it's a retry)
     if config.retry_num > 0 {
         if let Some(session_info) = config.session_info {
@@ -573,7 +588,21 @@ pub fn run_xsd_retry_with_session(config: &mut XsdRetryConfig<'_, '_>) -> std::i
                         .runtime
                         .logger
                         .info("  Session continuation succeeded");
-                    return Ok(exit_code);
+                    return Ok(XsdRetryResult {
+                        exit_code,
+                        auth_error_detected: false,
+                    });
+                }
+                SessionContinuationResult::AuthError => {
+                    // Auth/credential error detected during session continuation
+                    // Signal to caller that agent fallback should occur
+                    config.runtime.logger.warn(
+                        "  Session continuation detected auth/credential error, triggering agent fallback",
+                    );
+                    return Ok(XsdRetryResult {
+                        exit_code: 1,
+                        auth_error_detected: true,
+                    });
                 }
                 SessionContinuationResult::Fallback => {
                     // Session continuation failed to start - fall through to normal behavior
@@ -603,7 +632,11 @@ pub fn run_xsd_retry_with_session(config: &mut XsdRetryConfig<'_, '_>) -> std::i
         output_validator: config.output_validator,
         workspace: config.workspace,
     };
-    run_with_fallback_and_validator(&mut fallback_config)
+    let exit_code = run_with_fallback_and_validator(&mut fallback_config)?;
+    Ok(XsdRetryResult {
+        exit_code,
+        auth_error_detected: false,
+    })
 }
 
 /// Attempt session continuation with full fault tolerance.
@@ -687,6 +720,21 @@ fn try_session_continuation(
 
     match result {
         Ok(Ok(cmd_result)) => {
+            // Check for auth/credential errors in stderr when agent failed
+            if cmd_result.exit_code != 0 {
+                let stderr_lower = cmd_result.stderr.to_lowercase();
+                if stderr_lower.contains("credential")
+                    || stderr_lower.contains("unauthorized")
+                    || stderr_lower.contains("authentication")
+                    || stderr_lower.contains("forbidden")
+                    || stderr_lower.contains("api key")
+                    || stderr_lower.contains("401")
+                    || stderr_lower.contains("403")
+                {
+                    return SessionContinuationResult::AuthError;
+                }
+            }
+
             // Agent ran (even if it returned non-zero exit code)
             // The caller will check if valid XML was produced
             SessionContinuationResult::Ran {

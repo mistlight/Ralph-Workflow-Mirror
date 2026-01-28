@@ -15,7 +15,7 @@ use crate::pipeline::PipelineRuntime;
 use crate::prompts::ContextLevel;
 use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
 use crate::reducer::event::{
-    CheckpointTrigger, ConflictStrategy, PipelineEvent, PipelinePhase, RebasePhase,
+    AgentErrorKind, CheckpointTrigger, ConflictStrategy, PipelineEvent, PipelinePhase, RebasePhase,
 };
 use crate::reducer::fault_tolerant_executor::{
     execute_agent_fault_tolerantly, AgentExecutionConfig,
@@ -336,6 +336,18 @@ impl MainEffectHandler {
                 }
             };
 
+            // Check for auth failure - trigger agent fallback immediately
+            if attempt.auth_failure {
+                let current_agent = dev_agent.clone().unwrap_or_else(|| "unknown".to_string());
+                return Ok(EffectResult::event(PipelineEvent::AgentInvocationFailed {
+                    role: AgentRole::Developer,
+                    agent: current_agent,
+                    exit_code: 1,
+                    error_kind: AgentErrorKind::Authentication,
+                    retriable: false,
+                }));
+            }
+
             match decide_dev_iteration_next_step(
                 continuation_state.continuation_attempt,
                 max_continuations,
@@ -498,6 +510,18 @@ impl MainEffectHandler {
 
         match review::run_review_pass(ctx, pass, &review_label, "", review_agent.as_deref()) {
             Ok(result) => {
+                // Check for auth failure - trigger agent fallback
+                if result.auth_failure {
+                    let current_agent = review_agent.unwrap_or_else(|| "unknown".to_string());
+                    return Ok(EffectResult::event(PipelineEvent::AgentInvocationFailed {
+                        role: AgentRole::Reviewer,
+                        agent: current_agent,
+                        exit_code: 1,
+                        error_kind: AgentErrorKind::Authentication,
+                        retriable: false,
+                    }));
+                }
+
                 let event = PipelineEvent::ReviewCompleted {
                     pass,
                     issues_found: !result.early_exit,
@@ -1799,6 +1823,7 @@ mod tests {
             summary: "invalid xml".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(0, 2, &attempt);
@@ -1818,6 +1843,7 @@ mod tests {
             summary: "partial".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(0, 2, &attempt);
@@ -1842,6 +1868,7 @@ mod tests {
             summary: "partial".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(1, 2, &attempt);
@@ -1866,6 +1893,7 @@ mod tests {
             summary: "partial".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(2, 2, &attempt);

@@ -343,6 +343,7 @@ impl AgentErrorKind {
             || stderr_lower.contains("forbidden")
             || stderr_lower.contains("403")
             || stderr_lower.contains("access denied")
+            || stderr_lower.contains("credential")
         {
             return Some(Self::AuthFailure);
         }
@@ -812,5 +813,25 @@ mod tests {
         assert!(AgentErrorKind::TokenExhausted.suggests_smaller_context());
         assert!(AgentErrorKind::ProcessKilled.suggests_smaller_context());
         assert!(!AgentErrorKind::RateLimited.suggests_smaller_context());
+    }
+
+    #[test]
+    fn credential_error_classified_as_auth_failure() {
+        // The specific error from Claude Code credential restrictions
+        let stderr = "Error: This credential is only authorized for use with Claude Code and cannot be used for other API requests.";
+        let result = AgentErrorKind::classify_with_agent(
+            1,
+            stderr,
+            Some("opencode/anthropic/claude-opus-4-5"),
+            None,
+        );
+        assert_eq!(result, AgentErrorKind::AuthFailure);
+
+        // Generic credential error
+        assert_eq!(
+            classify(1, "credential invalid"),
+            AgentErrorKind::AuthFailure
+        );
+        assert_eq!(classify(1, "bad credential"), AgentErrorKind::AuthFailure);
     }
 }
