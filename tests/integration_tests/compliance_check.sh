@@ -176,7 +176,8 @@ fi
 # Count tests by running cargo test --list and counting lines ending in ": test"
 # Use the repository root to run cargo commands
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ACTUAL_TEST_COUNT=$(cd "$REPO_ROOT" && cargo test -p ralph-workflow-tests -- --list 2>&1 | grep -c ': test$' || echo "0")
+ACTUAL_TEST_COUNT=$(cd "$REPO_ROOT" && cargo test -p ralph-workflow-tests -- --list 2>&1 | grep -c ': test$' || true)
+ACTUAL_TEST_COUNT=${ACTUAL_TEST_COUNT:-0}
 
 if [ "$ACTUAL_TEST_COUNT" -lt "$EXPECTED_MIN_TESTS" ]; then
     echo -e "${RED}✗ Integration test count too low: $ACTUAL_TEST_COUNT (expected >= $EXPECTED_MIN_TESTS)${NC}"
