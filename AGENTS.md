@@ -153,7 +153,7 @@ Handle dead code by:
 Run git rebase on main if on feature branch. All commands must produce **NO OUTPUT**:
 
 ```bash
-# Check for forbidden allow/expect attributes
+# Check for forbidden allow/expect attributes (aka. NOTHING IS ALLOWED HERE so this should produce NO OUTPUT)
 rg -n -U --pcre2 '(?xm)^\\s*\\#\\s*!?\\[\\s*(?:(allow|expect)\\s*\\([^()\\]]*(?:\\([^()\\]]*\\)[^()\\]]*)*\\)|cfg_attr\\s*\\([^()]*?,\\s*(allow|expect)\\s*\\([^()\\]]*(?:\\([^()\\]]*\\)[^()\\]]*)*\\)\\s*\\))\\s*\\]' --glob '!target/**' --glob '!.git/**' --glob '*.rs' .
 
 # Integration test compliance
