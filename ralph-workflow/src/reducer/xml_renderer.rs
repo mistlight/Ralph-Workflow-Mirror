@@ -17,6 +17,7 @@
 //! the format is unexpected.
 
 use super::ui_event::{XmlOutputContext, XmlOutputType};
+use crate::files::llm_output_extraction::xsd_validation_plan::{FileAction, Priority, Severity};
 use crate::files::llm_output_extraction::{
     validate_development_result_xml, validate_fix_result_xml, validate_issues_xml,
     validate_plan_xml,
@@ -43,9 +44,10 @@ pub fn render_xml(
 /// Render development result XML with semantic formatting.
 ///
 /// Shows:
-/// - Status with emoji indicator
-/// - Summary description
-/// - Files changed as bullet list
+/// - Header with box-drawing characters
+/// - Status with emoji indicator and label
+/// - Summary description with proper indentation
+/// - Files changed with action type indicators
 /// - Next steps if present
 fn render_development_result(content: &str, context: &Option<XmlOutputContext>) -> String {
     let mut output = String::new();
@@ -53,35 +55,50 @@ fn render_development_result(content: &str, context: &Option<XmlOutputContext>) 
     // Header with optional iteration context
     if let Some(ctx) = context {
         if let Some(iter) = ctx.iteration {
-            output.push_str(&format!("\n=== Development Iteration {} ===\n", iter));
+            output.push_str(&format!("\n╔═══ Development Iteration {} ═══╗\n\n", iter));
         }
     }
 
     match validate_development_result_xml(content) {
         Ok(elements) => {
-            // Status with emoji
-            let status_emoji = match elements.status.as_str() {
-                "completed" => "✅",
-                "partial" => "🔄",
-                "failed" => "❌",
-                _ => "❓",
+            // Status with emoji and label
+            let (status_emoji, status_label) = match elements.status.as_str() {
+                "completed" => ("✅", "Completed"),
+                "partial" => ("🔄", "In Progress"),
+                "failed" => ("❌", "Failed"),
+                _ => ("❓", "Unknown"),
             };
-            output.push_str(&format!("{} Status: {}\n\n", status_emoji, elements.status));
+            output.push_str(&format!("{} Status: {}\n\n", status_emoji, status_label));
 
-            // Summary
-            output.push_str(&format!("📋 {}\n", elements.summary));
+            // Summary with proper formatting for multiline
+            output.push_str("📋 Summary:\n");
+            for line in elements.summary.lines() {
+                output.push_str(&format!("   {}\n", line));
+            }
 
-            // Files changed
+            // Files changed with inferred action icons
             if let Some(ref files) = elements.files_changed {
                 output.push_str("\n📁 Files Changed:\n");
                 for file in files.lines().filter(|l| !l.trim().is_empty()) {
-                    output.push_str(&format!("   • {}\n", file.trim()));
+                    let file = file.trim();
+                    // Infer action from common patterns (best effort)
+                    let icon = if file.contains("(created)") || file.contains("(new)") {
+                        "➕"
+                    } else if file.contains("(deleted)") || file.contains("(removed)") {
+                        "🗑️"
+                    } else {
+                        "📝"
+                    };
+                    output.push_str(&format!("   {} {}\n", icon, file));
                 }
             }
 
-            // Next steps
+            // Next steps with proper formatting
             if let Some(ref next) = elements.next_steps {
-                output.push_str(&format!("\n➡️  Next: {}\n", next));
+                output.push_str("\n➡️  Next Steps:\n");
+                for line in next.lines() {
+                    output.push_str(&format!("   {}\n", line));
+                }
             }
         }
         Err(_) => {
@@ -96,46 +113,106 @@ fn render_development_result(content: &str, context: &Option<XmlOutputContext>) 
 /// Render development plan XML with semantic formatting.
 ///
 /// Shows:
+/// - Box-drawing header
 /// - Context description
-/// - Scope items with counts
-/// - Implementation steps with file targets
-/// - Risks and mitigations
+/// - Scope items with counts and categories
+/// - Implementation steps with priorities, file targets, rationale, and dependencies
+/// - Risks and mitigations with severity
+/// - Verification strategy
 fn render_plan(content: &str) -> String {
     let mut output = String::new();
 
-    output.push_str("\n=== Implementation Plan ===\n\n");
+    output.push_str("\n╔════════════════════════════════════╗\n");
+    output.push_str("║      Implementation Plan           ║\n");
+    output.push_str("╚════════════════════════════════════╝\n\n");
 
     match validate_plan_xml(content) {
         Ok(elements) => {
-            // Context
+            // Context section
             output.push_str("📋 Context:\n");
             output.push_str(&format!("   {}\n\n", elements.summary.context));
 
-            // Scope
+            // Scope section with categories
             output.push_str("📊 Scope:\n");
             for item in &elements.summary.scope_items {
                 if let Some(ref count) = item.count {
-                    output.push_str(&format!("   • {} {}\n", count, item.description));
+                    output.push_str(&format!("   • {} {}", count, item.description));
                 } else {
-                    output.push_str(&format!("   • {}\n", item.description));
+                    output.push_str(&format!("   • {}", item.description));
                 }
+                if let Some(ref category) = item.category {
+                    output.push_str(&format!(" ({})", category));
+                }
+                output.push('\n');
             }
 
-            // Steps
-            output.push_str("\n📝 Steps:\n");
+            // Steps section with priorities and dependencies
+            output.push_str("\n───────────────────────────────────\n");
+            output.push_str("📝 Implementation Steps:\n\n");
             for step in &elements.steps {
-                output.push_str(&format!("   {}. {}\n", step.number, step.title));
+                let priority_badge = step.priority.map_or(String::new(), |p| {
+                    format!(
+                        " [{}]",
+                        match p {
+                            Priority::Critical => "🔴 critical",
+                            Priority::High => "🟠 high",
+                            Priority::Medium => "🟡 medium",
+                            Priority::Low => "🟢 low",
+                        }
+                    )
+                });
+                output.push_str(&format!(
+                    "   {}. {}{}\n",
+                    step.number, step.title, priority_badge
+                ));
+
                 for file in &step.target_files {
-                    output.push_str(&format!("      └─ {:?} {}\n", file.action, file.path));
+                    let action_icon = match file.action {
+                        FileAction::Create => "➕",
+                        FileAction::Modify => "📝",
+                        FileAction::Delete => "🗑️",
+                    };
+                    output.push_str(&format!("      {} {}\n", action_icon, file.path));
+                }
+
+                if let Some(ref rationale) = step.rationale {
+                    output.push_str(&format!("      💡 {}\n", rationale));
+                }
+
+                if !step.depends_on.is_empty() {
+                    let deps: Vec<String> = step
+                        .depends_on
+                        .iter()
+                        .map(|d| format!("Step {}", d))
+                        .collect();
+                    output.push_str(&format!("      🔗 Depends on: {}\n", deps.join(", ")));
+                }
+                output.push('\n');
+            }
+
+            // Risks section with severity
+            if !elements.risks_mitigations.is_empty() {
+                output.push_str("───────────────────────────────────\n");
+                output.push_str("⚠️  Risks & Mitigations:\n\n");
+                for risk in &elements.risks_mitigations {
+                    let severity_icon = risk.severity.map_or("", |s| match s {
+                        Severity::Critical => "🔴",
+                        Severity::High => "🟠",
+                        Severity::Medium => "🟡",
+                        Severity::Low => "🟢",
+                    });
+                    output.push_str(&format!("   {} Risk: {}\n", severity_icon, risk.risk));
+                    output.push_str(&format!("     → Mitigation: {}\n\n", risk.mitigation));
                 }
             }
 
-            // Risks
-            if !elements.risks_mitigations.is_empty() {
-                output.push_str("\n⚠️  Risks:\n");
-                for risk in &elements.risks_mitigations {
-                    output.push_str(&format!("   • Risk: {}\n", risk.risk));
-                    output.push_str(&format!("     Mitigation: {}\n", risk.mitigation));
+            // Verification section
+            if !elements.verification_strategy.is_empty() {
+                output.push_str("───────────────────────────────────\n");
+                output.push_str("✓ Verification Strategy:\n\n");
+                for (i, v) in elements.verification_strategy.iter().enumerate() {
+                    output.push_str(&format!("   {}. {}\n", i + 1, v.method));
+                    output.push_str(&format!("      Expected: {}\n", v.expected_outcome));
                 }
             }
         }
@@ -151,35 +228,49 @@ fn render_plan(content: &str) -> String {
 /// Render review issues XML with semantic formatting.
 ///
 /// Shows:
-/// - Pass number header if provided
-/// - Issue count or approval message
-/// - Each issue as numbered item
+/// - Box-drawing header with pass number
+/// - Issue count or approval celebration
+/// - Each issue as numbered item with file path extraction
+/// - Visual separators between issues
 fn render_issues(content: &str, context: &Option<XmlOutputContext>) -> String {
     let mut output = String::new();
 
     // Header with pass context
     if let Some(ctx) = context {
         if let Some(pass) = ctx.pass {
-            output.push_str(&format!("\n=== Review Pass {} ===\n\n", pass));
+            output.push_str(&format!("\n╔═══ Review Pass {} ═══╗\n\n", pass));
         } else {
-            output.push_str("\n=== Review Results ===\n\n");
+            output.push_str("\n╔═══ Review Results ═══╗\n\n");
         }
     } else {
-        output.push_str("\n=== Review Results ===\n\n");
+        output.push_str("\n╔═══ Review Results ═══╗\n\n");
     }
 
     match validate_issues_xml(content) {
         Ok(elements) => {
             if elements.issues.is_empty() {
+                // Celebration for no issues
                 if let Some(ref msg) = elements.no_issues_found {
-                    output.push_str(&format!("✅ {}\n", msg));
+                    output.push_str("🎉 ✅ Code Approved!\n\n");
+                    output.push_str(&format!("   {}\n", msg));
                 } else {
-                    output.push_str("✅ No issues found!\n");
+                    output.push_str("🎉 ✅ No issues found! Code looks good.\n");
                 }
             } else {
-                output.push_str(&format!("🔍 Found {} issue(s):\n\n", elements.issues.len()));
+                output.push_str(&format!(
+                    "🔍 Found {} issue(s) to address:\n\n",
+                    elements.issues.len()
+                ));
                 for (i, issue) in elements.issues.iter().enumerate() {
-                    output.push_str(&format!("   {}. {}\n", i + 1, issue));
+                    // Try to extract file path from issue text (common patterns)
+                    let file_indicator = extract_file_from_issue(issue)
+                        .map(|f| format!("📄 {}\n   ", f))
+                        .unwrap_or_default();
+
+                    output.push_str(&format!("   {}. {}{}\n", i + 1, file_indicator, issue));
+                    if i < elements.issues.len() - 1 {
+                        output.push_str("   ───\n");
+                    }
                 }
             }
         }
@@ -192,33 +283,62 @@ fn render_issues(content: &str, context: &Option<XmlOutputContext>) -> String {
     output
 }
 
+/// Try to extract file path from issue text using common patterns.
+/// Returns None if no clear file path is found.
+fn extract_file_from_issue(issue: &str) -> Option<&str> {
+    // Common patterns: "in src/file.rs", "at src/file.rs:123", "File: src/file.rs"
+    // This is best-effort heuristic parsing
+    for pattern in ["in ", "at ", "File: ", "file "] {
+        if let Some(idx) = issue.find(pattern) {
+            let start = idx + pattern.len();
+            let rest = &issue[start..];
+            // Find end of path (space, comma, colon for line number, or end of string)
+            let end = rest
+                .find(|c: char| c.is_whitespace() || c == ',')
+                .unwrap_or(rest.len());
+            // Handle colon followed by line number (e.g., src/file.rs:123)
+            let path_with_line = &rest[..end];
+            let path = path_with_line
+                .find(':')
+                .map_or(path_with_line, |colon_pos| &path_with_line[..colon_pos]);
+            if path.contains('/') || path.contains('.') {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
 /// Render fix result XML with semantic formatting.
 ///
 /// Shows:
-/// - Pass number header if provided
-/// - Status with emoji indicator
-/// - Summary of fixes applied
+/// - Box-drawing header with pass number
+/// - Status with emoji indicator and friendly label
+/// - Summary with proper multiline formatting
 fn render_fix_result(content: &str, context: &Option<XmlOutputContext>) -> String {
     let mut output = String::new();
 
     if let Some(ctx) = context {
         if let Some(pass) = ctx.pass {
-            output.push_str(&format!("\n=== Fix Pass {} ===\n\n", pass));
+            output.push_str(&format!("\n╔═══ Fix Pass {} ═══╗\n\n", pass));
         }
     }
 
     match validate_fix_result_xml(content) {
         Ok(elements) => {
-            let emoji = match elements.status.as_str() {
-                "all_issues_addressed" => "✅",
-                "issues_remain" => "🔄",
-                "no_issues_found" => "✨",
-                _ => "❓",
+            let (emoji, label): (&str, &str) = match elements.status.as_str() {
+                "all_issues_addressed" => ("✅", "All Issues Addressed"),
+                "issues_remain" => ("🔄", "Issues Remain"),
+                "no_issues_found" => ("✨", "No Issues Found"),
+                _ => ("❓", elements.status.as_str()),
             };
-            output.push_str(&format!("{} Status: {}\n", emoji, elements.status));
+            output.push_str(&format!("{} Status: {}\n", emoji, label));
 
             if let Some(ref summary) = elements.summary {
-                output.push_str(&format!("\n📋 {}\n", summary));
+                output.push_str("\n📋 Summary:\n");
+                for line in summary.lines() {
+                    output.push_str(&format!("   {}\n", line));
+                }
             }
         }
         Err(_) => {
@@ -233,12 +353,13 @@ fn render_fix_result(content: &str, context: &Option<XmlOutputContext>) -> Strin
 /// Render commit message XML with semantic formatting.
 ///
 /// Shows:
+/// - Box-drawing header
 /// - Subject line prominently
-/// - Body text wrapped appropriately
+/// - Body text with proper indentation
 fn render_commit(content: &str) -> String {
     let mut output = String::new();
 
-    output.push_str("\n=== Commit Message ===\n\n");
+    output.push_str("\n╔═══ Commit Message ═══╗\n\n");
 
     // Extract subject and body from commit XML
     // Note: Commit XML uses ralph-subject and ralph-body tags
@@ -260,7 +381,7 @@ fn render_commit(content: &str) -> String {
     }
 
     // If no content was extracted, show raw
-    if output.len() <= 30 {
+    if output.len() <= 35 {
         output.push_str(content);
     }
 
@@ -301,7 +422,7 @@ src/lib.rs</ralph-files-changed>
         let output = render_development_result(xml, &None);
 
         assert!(output.contains("✅"), "Should have completed emoji");
-        assert!(output.contains("completed"), "Should show status");
+        assert!(output.contains("Completed"), "Should show friendly status label");
         assert!(
             output.contains("Implemented feature X"),
             "Should show summary"
@@ -422,12 +543,12 @@ src/lib.rs</ralph-files-changed>
             output.contains("3 files to modify"),
             "Should show scope items"
         );
-        assert!(output.contains("Steps:"), "Should show steps section");
+        assert!(output.contains("Implementation Steps"), "Should show steps section");
         assert!(
             output.contains("1. Add new module"),
             "Should show step title"
         );
-        assert!(output.contains("Risks:"), "Should show risks section");
+        assert!(output.contains("Risks & Mitigations"), "Should show risks section");
     }
 
     #[test]
@@ -509,8 +630,8 @@ src/lib.rs</ralph-files-changed>
         assert!(output.contains("Fix Pass 2"), "Should show pass number");
         assert!(output.contains("✅"), "Should show success emoji");
         assert!(
-            output.contains("all_issues_addressed"),
-            "Should show status"
+            output.contains("All Issues Addressed"),
+            "Should show friendly status label"
         );
         assert!(output.contains("Fixed all 3"), "Should show summary");
     }
@@ -524,7 +645,10 @@ src/lib.rs</ralph-files-changed>
         let output = render_fix_result(xml, &None);
 
         assert!(output.contains("🔄"), "Should show partial emoji");
-        assert!(output.contains("issues_remain"), "Should show status");
+        assert!(
+            output.contains("Issues Remain"),
+            "Should show friendly status label"
+        );
     }
 
     #[test]
@@ -638,5 +762,271 @@ src/lib.rs</ralph-files-changed>
         let xml = "<outer><ralph-subject>Nested</ralph-subject></outer>";
         let result = extract_tag_content(xml, "ralph-subject");
         assert_eq!(result, Some("Nested".to_string()));
+    }
+
+    // =========================================================================
+    // Enhanced Plan Renderer Tests
+    // =========================================================================
+
+    #[test]
+    fn test_render_plan_shows_step_priorities() {
+        let xml = r#"<ralph-plan>
+<ralph-summary>
+<context>Test context</context>
+<scope-items>
+<scope-item count="1">item 1</scope-item>
+<scope-item count="2">item 2</scope-item>
+<scope-item count="3">item 3</scope-item>
+</scope-items>
+</ralph-summary>
+<ralph-implementation-steps>
+<step number="1" priority="critical" type="file-change">
+<title>Critical step</title>
+<target-files><file path="src/main.rs" action="modify"/></target-files>
+<content><paragraph>Do something critical</paragraph></content>
+</step>
+</ralph-implementation-steps>
+<ralph-critical-files>
+<primary-files><file path="src/main.rs" action="modify"/></primary-files>
+</ralph-critical-files>
+<ralph-risks-mitigations>
+<risk-pair severity="high"><risk>Test risk</risk><mitigation>Test mitigation</mitigation></risk-pair>
+</ralph-risks-mitigations>
+<ralph-verification-strategy>
+<verification><method>Run tests</method><expected-outcome>All pass</expected-outcome></verification>
+</ralph-verification-strategy>
+</ralph-plan>"#;
+
+        let output = render_plan(xml);
+        assert!(output.contains("critical"), "Should show priority badge");
+        assert!(output.contains("🔴"), "Should show critical icon");
+    }
+
+    #[test]
+    fn test_render_plan_shows_step_dependencies() {
+        let xml = r#"<ralph-plan>
+<ralph-summary>
+<context>Test context</context>
+<scope-items>
+<scope-item count="1">item 1</scope-item>
+<scope-item count="2">item 2</scope-item>
+<scope-item count="3">item 3</scope-item>
+</scope-items>
+</ralph-summary>
+<ralph-implementation-steps>
+<step number="1" type="file-change">
+<title>First step</title>
+<target-files><file path="src/a.rs" action="create"/></target-files>
+<content><paragraph>Create file A</paragraph></content>
+</step>
+<step number="2" type="file-change">
+<title>Second step</title>
+<target-files><file path="src/b.rs" action="create"/></target-files>
+<depends-on step="1"/>
+<content><paragraph>Create file B</paragraph></content>
+</step>
+</ralph-implementation-steps>
+<ralph-critical-files>
+<primary-files><file path="src/a.rs" action="create"/></primary-files>
+</ralph-critical-files>
+<ralph-risks-mitigations>
+<risk-pair><risk>None</risk><mitigation>N/A</mitigation></risk-pair>
+</ralph-risks-mitigations>
+<ralph-verification-strategy>
+<verification><method>Run tests</method><expected-outcome>Pass</expected-outcome></verification>
+</ralph-verification-strategy>
+</ralph-plan>"#;
+
+        let output = render_plan(xml);
+        assert!(output.contains("Depends on"), "Should show dependencies");
+        assert!(output.contains("Step 1"), "Should list dependent step");
+    }
+
+    #[test]
+    fn test_render_plan_shows_verification_strategy() {
+        let xml = r#"<ralph-plan>
+<ralph-summary>
+<context>Test context</context>
+<scope-items>
+<scope-item count="1">item 1</scope-item>
+<scope-item count="2">item 2</scope-item>
+<scope-item count="3">item 3</scope-item>
+</scope-items>
+</ralph-summary>
+<ralph-implementation-steps>
+<step number="1" type="file-change">
+<title>Test step</title>
+<target-files><file path="src/main.rs" action="modify"/></target-files>
+<content><paragraph>Modify</paragraph></content>
+</step>
+</ralph-implementation-steps>
+<ralph-critical-files>
+<primary-files><file path="src/main.rs" action="modify"/></primary-files>
+</ralph-critical-files>
+<ralph-risks-mitigations>
+<risk-pair><risk>None</risk><mitigation>N/A</mitigation></risk-pair>
+</ralph-risks-mitigations>
+<ralph-verification-strategy>
+<verification><method>cargo test</method><expected-outcome>All tests pass</expected-outcome></verification>
+</ralph-verification-strategy>
+</ralph-plan>"#;
+
+        let output = render_plan(xml);
+        assert!(
+            output.contains("Verification Strategy"),
+            "Should show verification section"
+        );
+        assert!(output.contains("cargo test"), "Should show method");
+        assert!(output.contains("Expected"), "Should show expected outcome");
+    }
+
+    // =========================================================================
+    // Enhanced Issues Renderer Tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_file_from_issue_pattern_in() {
+        let issue = "Unused variable in src/main.rs";
+        let file = extract_file_from_issue(issue);
+        assert_eq!(file, Some("src/main.rs"));
+    }
+
+    #[test]
+    fn test_extract_file_from_issue_pattern_at() {
+        let issue = "Error at src/lib.rs:42 - missing semicolon";
+        let file = extract_file_from_issue(issue);
+        assert_eq!(file, Some("src/lib.rs"));
+    }
+
+    #[test]
+    fn test_extract_file_from_issue_no_file() {
+        let issue = "General code quality concern";
+        let file = extract_file_from_issue(issue);
+        assert!(file.is_none());
+    }
+
+    #[test]
+    fn test_render_issues_celebration_on_approval() {
+        let xml = r#"<ralph-issues>
+<ralph-no-issues-found>All code looks great!</ralph-no-issues-found>
+</ralph-issues>"#;
+
+        let output = render_issues(xml, &None);
+        assert!(output.contains("🎉"), "Should celebrate approval");
+        assert!(
+            output.contains("Code Approved"),
+            "Should show approval message"
+        );
+    }
+
+    // =========================================================================
+    // Visual Consistency Tests
+    // =========================================================================
+
+    #[test]
+    fn test_all_renderers_have_header_boxes() {
+        // Verify consistent visual structure across all renderers
+        let plan_output = render_plan("<ralph-plan>invalid</ralph-plan>");
+        let issues_output = render_issues("<ralph-issues>invalid</ralph-issues>", &None);
+        let commit_output = render_commit("<ralph-commit>invalid</ralph-commit>");
+
+        // All should have box-drawing characters for headers
+        assert!(plan_output.contains("═"), "Plan should have box header");
+        assert!(issues_output.contains("═"), "Issues should have box header");
+        assert!(commit_output.contains("═"), "Commit should have box header");
+    }
+
+    #[test]
+    fn test_development_result_multiline_summary() {
+        let xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>First line of summary
+Second line of summary
+Third line of summary</ralph-summary>
+</ralph-development-result>"#;
+
+        let output = render_development_result(xml, &None);
+        assert!(
+            output.contains("First line"),
+            "Should show first line of summary"
+        );
+        assert!(
+            output.contains("Second line"),
+            "Should show second line of summary"
+        );
+        assert!(
+            output.contains("Third line"),
+            "Should show third line of summary"
+        );
+    }
+
+    #[test]
+    fn test_development_result_file_action_icons() {
+        let xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Changes made</ralph-summary>
+<ralph-files-changed>src/new_file.rs (created)
+src/existing.rs
+src/old.rs (deleted)</ralph-files-changed>
+</ralph-development-result>"#;
+
+        let output = render_development_result(xml, &None);
+        assert!(
+            output.contains("➕"),
+            "Should show create icon for new file"
+        );
+        assert!(
+            output.contains("🗑️"),
+            "Should show delete icon for removed file"
+        );
+        assert!(
+            output.contains("📝"),
+            "Should show modify icon for existing file"
+        );
+    }
+
+    #[test]
+    fn test_render_plan_file_action_icons() {
+        let xml = r#"<ralph-plan>
+<ralph-summary>
+<context>Test</context>
+<scope-items>
+<scope-item count="1">create</scope-item>
+<scope-item count="1">modify</scope-item>
+<scope-item count="1">delete</scope-item>
+</scope-items>
+</ralph-summary>
+<ralph-implementation-steps>
+<step number="1" type="file-change">
+<title>Create file</title>
+<target-files><file path="src/new.rs" action="create"/></target-files>
+<content><paragraph>Create</paragraph></content>
+</step>
+<step number="2" type="file-change">
+<title>Modify file</title>
+<target-files><file path="src/existing.rs" action="modify"/></target-files>
+<content><paragraph>Modify</paragraph></content>
+</step>
+<step number="3" type="file-change">
+<title>Delete file</title>
+<target-files><file path="src/old.rs" action="delete"/></target-files>
+<content><paragraph>Delete</paragraph></content>
+</step>
+</ralph-implementation-steps>
+<ralph-critical-files>
+<primary-files><file path="src/new.rs" action="create"/></primary-files>
+</ralph-critical-files>
+<ralph-risks-mitigations>
+<risk-pair><risk>None</risk><mitigation>N/A</mitigation></risk-pair>
+</ralph-risks-mitigations>
+<ralph-verification-strategy>
+<verification><method>Test</method><expected-outcome>Pass</expected-outcome></verification>
+</ralph-verification-strategy>
+</ralph-plan>"#;
+
+        let output = render_plan(xml);
+        assert!(output.contains("➕"), "Should show create icon");
+        assert!(output.contains("📝"), "Should show modify icon");
+        assert!(output.contains("🗑️"), "Should show delete icon");
     }
 }
