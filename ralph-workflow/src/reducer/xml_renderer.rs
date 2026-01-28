@@ -22,6 +22,8 @@ use crate::files::llm_output_extraction::{
     validate_development_result_xml, validate_fix_result_xml, validate_issues_xml,
     validate_plan_xml,
 };
+use regex::Regex;
+use std::collections::BTreeMap;
 
 /// Render XML content based on its type.
 ///
@@ -76,21 +78,9 @@ fn render_development_result(content: &str, context: &Option<XmlOutputContext>) 
                 output.push_str(&format!("   {}\n", line));
             }
 
-            // Files changed with inferred action icons
+            // Files changed: prefer diff-like rendering when unified diff is present.
             if let Some(ref files) = elements.files_changed {
-                output.push_str("\n📁 Files Changed:\n");
-                for file in files.lines().filter(|l| !l.trim().is_empty()) {
-                    let file = file.trim();
-                    // Infer action from common patterns (best effort)
-                    let icon = if file.contains("(created)") || file.contains("(new)") {
-                        "➕"
-                    } else if file.contains("(deleted)") || file.contains("(removed)") {
-                        "🗑️"
-                    } else {
-                        "📝"
-                    };
-                    output.push_str(&format!("   {} {}\n", icon, file));
-                }
+                output.push_str(&render_files_changed_as_diff_like_view(files));
             }
 
             // Next steps with proper formatting
@@ -108,6 +98,178 @@ fn render_development_result(content: &str, context: &Option<XmlOutputContext>) 
     }
 
     output
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChangeAction {
+    Create,
+    Modify,
+    Delete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DiffFileSection {
+    path: String,
+    action: ChangeAction,
+    diff: String,
+}
+
+fn render_files_changed_as_diff_like_view(files_changed: &str) -> String {
+    let trimmed = files_changed.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    if trimmed.contains("diff --git ") {
+        let sections = parse_unified_diff_files(trimmed);
+        return render_diff_sections("📁 Files Changed", &sections);
+    }
+
+    let items = parse_files_changed_list(trimmed);
+    if items.is_empty() {
+        return String::new();
+    }
+
+    let file_list: Vec<&str> = items.iter().map(|(p, _)| p.as_str()).collect();
+    let mut output = String::new();
+    output.push_str("\n📁 Files Changed:\n");
+    output.push_str(&format!(
+        "   Modified {} file(s): {}\n",
+        file_list.len(),
+        file_list.join(", ")
+    ));
+
+    for (path, action) in items {
+        output.push_str(&format!("\n   📄 {}\n", path));
+        output.push_str(&format!(
+            "      Action: {}\n",
+            match action {
+                ChangeAction::Create => "created",
+                ChangeAction::Modify => "modified",
+                ChangeAction::Delete => "deleted",
+            }
+        ));
+        output.push_str("      (no diff provided)\n");
+    }
+
+    output
+}
+
+fn parse_unified_diff_files(diff: &str) -> Vec<DiffFileSection> {
+    let mut sections: Vec<Vec<&str>> = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
+
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            if !current.is_empty() {
+                sections.push(current);
+            }
+            current = vec![line];
+        } else if !current.is_empty() {
+            current.push(line);
+        }
+    }
+    if !current.is_empty() {
+        sections.push(current);
+    }
+
+    sections
+        .into_iter()
+        .filter_map(|lines| parse_diff_section(&lines))
+        .collect()
+}
+
+fn parse_diff_section(lines: &[&str]) -> Option<DiffFileSection> {
+    let header = *lines.first()?;
+    // Example: "diff --git a/src/main.rs b/src/main.rs"
+    let mut parts = header.split_whitespace();
+    let _ = parts.next()?; // diff
+    let _ = parts.next()?; // --git
+    let a_path = parts.next()?.trim();
+    let b_path = parts.next()?.trim();
+
+    let path = if b_path == "/dev/null" {
+        a_path
+    } else {
+        b_path
+    }
+    .trim_start_matches("a/")
+    .trim_start_matches("b/")
+    .to_string();
+
+    let mut action = ChangeAction::Modify;
+    for line in lines {
+        if line.starts_with("new file mode ") {
+            action = ChangeAction::Create;
+            break;
+        }
+        if line.starts_with("deleted file mode ") {
+            action = ChangeAction::Delete;
+            break;
+        }
+    }
+
+    Some(DiffFileSection {
+        path,
+        action,
+        diff: lines.join("\n"),
+    })
+}
+
+fn render_diff_sections(title: &str, sections: &[DiffFileSection]) -> String {
+    if sections.is_empty() {
+        return String::new();
+    }
+
+    let mut output = String::new();
+    output.push_str(&format!("\n{}:\n", title));
+    output.push_str(&format!(
+        "   Modified {} file(s): {}\n",
+        sections.len(),
+        sections
+            .iter()
+            .map(|s| s.path.as_str())
+            .collect::<Vec<&str>>()
+            .join(", ")
+    ));
+
+    for section in sections {
+        output.push_str(&format!("\n   📄 {}\n", section.path));
+        output.push_str(&format!(
+            "      Action: {}\n",
+            match section.action {
+                ChangeAction::Create => "created",
+                ChangeAction::Modify => "modified",
+                ChangeAction::Delete => "deleted",
+            }
+        ));
+        for line in section.diff.lines() {
+            output.push_str(&format!("      {}\n", line));
+        }
+    }
+
+    output
+}
+
+fn parse_files_changed_list(files: &str) -> Vec<(String, ChangeAction)> {
+    files
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| l.trim_start_matches("- ").trim())
+        .map(|l| {
+            let lowered = l.to_ascii_lowercase();
+            let action = if lowered.contains("(created)") || lowered.contains("(new)") {
+                ChangeAction::Create
+            } else if lowered.contains("(deleted)") || lowered.contains("(removed)") {
+                ChangeAction::Delete
+            } else {
+                ChangeAction::Modify
+            };
+            let path = l.split_once(" (").map_or(l, |(p, _)| p).trim().to_string();
+            (path, action)
+        })
+        .collect()
 }
 
 /// Render development plan XML with semantic formatting.
@@ -261,17 +423,7 @@ fn render_issues(content: &str, context: &Option<XmlOutputContext>) -> String {
                     "🔍 Found {} issue(s) to address:\n\n",
                     elements.issues.len()
                 ));
-                for (i, issue) in elements.issues.iter().enumerate() {
-                    // Try to extract file path from issue text (common patterns)
-                    let file_indicator = extract_file_from_issue(issue)
-                        .map(|f| format!("📄 {}\n   ", f))
-                        .unwrap_or_default();
-
-                    output.push_str(&format!("   {}. {}{}\n", i + 1, file_indicator, issue));
-                    if i < elements.issues.len() - 1 {
-                        output.push_str("   ───\n");
-                    }
-                }
+                output.push_str(&render_issues_grouped_by_file(&elements.issues));
             }
         }
         Err(_) => {
@@ -281,6 +433,150 @@ fn render_issues(content: &str, context: &Option<XmlOutputContext>) -> String {
     }
 
     output
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedIssue {
+    original: String,
+    file: Option<String>,
+    line_start: Option<u32>,
+    line_end: Option<u32>,
+    severity: Option<String>,
+    snippet: Option<String>,
+    description: String,
+}
+
+fn render_issues_grouped_by_file(issues: &[String]) -> String {
+    let parsed: Vec<ParsedIssue> = issues.iter().map(|i| parse_issue(i)).collect();
+    let mut grouped: BTreeMap<String, Vec<ParsedIssue>> = BTreeMap::new();
+
+    for issue in parsed {
+        let key = issue
+            .file
+            .clone()
+            .unwrap_or_else(|| "(no file)".to_string());
+        grouped.entry(key).or_default().push(issue);
+    }
+
+    let mut output = String::new();
+    for (file, issues) in grouped {
+        output.push_str(&format!("📄 {}\n", file));
+        for issue in issues {
+            let mut header = String::new();
+            if let Some(sev) = &issue.severity {
+                header.push_str(&format!("[{}] ", sev));
+            }
+            if let Some(start) = issue.line_start {
+                header.push_str(&format!("L{}", start));
+                if let Some(end) = issue.line_end {
+                    if end != start {
+                        header.push_str(&format!("-L{}", end));
+                    }
+                }
+                header.push_str(": ");
+            }
+
+            let desc = issue.description.trim();
+            if header.is_empty() {
+                output.push_str(&format!("   - {}\n", desc));
+            } else {
+                output.push_str(&format!("   - {}{}\n", header, desc));
+            }
+
+            if let Some(snippet) = &issue.snippet {
+                for line in snippet.lines() {
+                    output.push_str(&format!("      {}\n", line));
+                }
+            }
+        }
+        output.push('\n');
+    }
+
+    output
+}
+
+fn parse_issue(issue: &str) -> ParsedIssue {
+    let original = issue.to_string();
+    let trimmed = issue.trim();
+
+    let severity_re = Regex::new(r"(?i)^\[(critical|high|medium|low)\]\s*").unwrap();
+    let location_re = Regex::new(
+        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?",
+    )
+    .unwrap();
+    let gh_location_re = Regex::new(
+        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?",
+    )
+    .unwrap();
+    let snippet_re = Regex::new(r"(?s)```(?:[A-Za-z0-9_-]+)?\s*(?P<code>.*?)\s*```").unwrap();
+
+    let mut working = trimmed.to_string();
+
+    let severity = severity_re
+        .captures(&working)
+        .and_then(|cap| cap.get(1).map(|m| m.as_str().to_ascii_lowercase()))
+        .map(|s| match s.as_str() {
+            "critical" => "Critical".to_string(),
+            "high" => "High".to_string(),
+            "medium" => "Medium".to_string(),
+            "low" => "Low".to_string(),
+            _ => s,
+        });
+    if severity.is_some() {
+        working = severity_re.replace(&working, "").to_string();
+    }
+
+    let snippet = snippet_re
+        .captures(&working)
+        .and_then(|cap| cap.name("code").map(|m| m.as_str().to_string()));
+    if snippet.is_some() {
+        working = snippet_re.replace(&working, "").to_string();
+    }
+
+    let (file, line_start, line_end) = if let Some(cap) = location_re.captures(&working) {
+        let file = cap.name("file").map(|m| m.as_str().to_string());
+        let start = cap
+            .name("start")
+            .and_then(|m| m.as_str().parse::<u32>().ok());
+        let end = cap
+            .name("end")
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .or(start);
+        (file, start, end)
+    } else if let Some(cap) = gh_location_re.captures(&working) {
+        let file = cap.name("file").map(|m| m.as_str().to_string());
+        let start = cap
+            .name("start")
+            .and_then(|m| m.as_str().parse::<u32>().ok());
+        let end = cap
+            .name("end")
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .or(start);
+        (file, start, end)
+    } else {
+        (
+            extract_file_from_issue(&working).map(|s| s.to_string()),
+            None,
+            None,
+        )
+    };
+
+    let description = working
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<&str>>()
+        .join(" ");
+
+    ParsedIssue {
+        original,
+        file,
+        line_start,
+        line_end,
+        severity,
+        snippet,
+        description,
+    }
 }
 
 /// Try to extract file path from issue text using common patterns.
@@ -336,8 +632,13 @@ fn render_fix_result(content: &str, context: &Option<XmlOutputContext>) -> Strin
 
             if let Some(ref summary) = elements.summary {
                 output.push_str("\n📋 Summary:\n");
-                for line in summary.lines() {
-                    output.push_str(&format!("   {}\n", line));
+                if summary.contains("diff --git ") {
+                    let sections = parse_unified_diff_files(summary);
+                    output.push_str(&render_diff_sections("   Changes", &sections));
+                } else {
+                    for line in summary.lines() {
+                        output.push_str(&format!("   {}\n", line));
+                    }
                 }
             }
         }
@@ -363,29 +664,73 @@ fn render_commit(content: &str) -> String {
 
     // Extract subject and body from commit XML
     // Note: Commit XML uses ralph-subject and ralph-body tags
-    let subject = extract_tag_content(content, "ralph-subject");
-    let body = extract_tag_content(content, "ralph-body");
+    let subject = extract_tag_content(content, "ralph-subject")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let body = extract_tag_content(content, "ralph-body")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    if subject.is_none() && body.is_none() {
+        output.push_str("⚠️  Unable to parse commit message XML\n\n");
+        output.push_str(content);
+        return output;
+    }
 
     if let Some(subject) = subject {
-        output.push_str(&format!("📝 {}\n", subject.trim()));
+        output.push_str(&format!("📝 {}\n", subject));
     }
 
     if let Some(body) = body {
-        let body = body.trim();
-        if !body.is_empty() {
-            output.push('\n');
-            for line in body.lines() {
-                output.push_str(&format!("   {}\n", line));
-            }
+        output.push('\n');
+        for line in wrap_commit_body(&body, 80).lines() {
+            output.push_str(&format!("   {}\n", line));
         }
     }
 
-    // If no content was extracted, show raw
-    if output.len() <= 35 {
-        output.push_str(content);
-    }
-
     output
+}
+
+fn wrap_commit_body(body: &str, max_width: usize) -> String {
+    let indent = 3usize;
+    let wrap_width = max_width.saturating_sub(indent);
+
+    body.lines()
+        .map(|line| {
+            let line = line.trim_end();
+            if line.is_empty() {
+                return String::new();
+            }
+            let trimmed = line.trim_start();
+            let is_listish = trimmed.starts_with('-')
+                || trimmed.starts_with('*')
+                || trimmed.chars().next().is_some_and(|c| c.is_ascii_digit());
+            if is_listish || trimmed.len() <= wrap_width {
+                return trimmed.to_string();
+            }
+
+            let mut out_lines: Vec<String> = Vec::new();
+            let mut current = String::new();
+            for word in trimmed.split_whitespace() {
+                if current.is_empty() {
+                    current.push_str(word);
+                    continue;
+                }
+                if current.len() + 1 + word.len() > wrap_width {
+                    out_lines.push(current);
+                    current = word.to_string();
+                } else {
+                    current.push(' ');
+                    current.push_str(word);
+                }
+            }
+            if !current.is_empty() {
+                out_lines.push(current);
+            }
+            out_lines.join("\n")
+        })
+        .collect::<Vec<String>>()
+        .join("\n")
 }
 
 /// Extract text content from an XML tag.
@@ -431,6 +776,47 @@ src/lib.rs</ralph-files-changed>
             "Should show summary"
         );
         assert!(output.contains("src/main.rs"), "Should list files");
+    }
+
+    #[test]
+    fn test_render_development_result_renders_diff_like_view_per_file_when_diff_present() {
+        let xml = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Updated two files</ralph-summary>
+<ralph-files-changed>diff --git a/src/main.rs b/src/main.rs
+index 1111111..2222222 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,2 +1,2 @@
+-fn main() { println!("old"); }
++fn main() { println!("new"); }
+diff --git a/src/lib.rs b/src/lib.rs
+new file mode 100644
+--- /dev/null
++++ b/src/lib.rs
+@@ -0,0 +1,1 @@
++pub fn hello() {}
+</ralph-files-changed>
+</ralph-development-result>"#;
+
+        let output = render_development_result(xml, &None);
+
+        assert!(
+            output.contains("Modified 2 file") || output.contains("2 file"),
+            "Should include file count summary"
+        );
+        assert!(
+            output.contains("src/main.rs") && output.contains("src/lib.rs"),
+            "Should include per-file headers"
+        );
+        assert!(
+            output.contains("--- a/src/main.rs") && output.contains("+++ b/src/main.rs"),
+            "Should include diff markers"
+        );
+        assert!(
+            output.contains("+pub fn hello") || output.contains("pub fn hello"),
+            "Should include diff content"
+        );
     }
 
     #[test]
@@ -592,8 +978,47 @@ src/lib.rs</ralph-files-changed>
         assert!(output.contains("Review Pass 1"), "Should show pass number");
         assert!(output.contains("2 issue"), "Should show issue count");
         assert!(output.contains("Variable unused"), "Should list issues");
-        assert!(output.contains("1."), "Should number issues");
-        assert!(output.contains("2."), "Should number second issue");
+        assert!(
+            output.contains("📄 src/main.rs"),
+            "Should group issues under extracted file"
+        );
+        assert!(
+            output.contains("Missing error handling"),
+            "Should include issues without file"
+        );
+    }
+
+    #[test]
+    fn test_render_issues_groups_by_file_and_renders_line_ranges_and_snippets() {
+        let xml = r#"<ralph-issues>
+<ralph-issue>[High] src/main.rs:12-18 - Avoid unwrap in production code
+```rust
+let x = foo().unwrap();
+```
+</ralph-issue>
+<ralph-issue>src/lib.rs:44:3 - Rename variable for clarity</ralph-issue>
+<ralph-issue>General suggestion with no file</ralph-issue>
+</ralph-issues>"#;
+
+        let output = render_issues(xml, &None);
+
+        assert!(
+            output.contains("📄 src/main.rs") && output.contains("📄 src/lib.rs"),
+            "Should render grouped file headers"
+        );
+        assert!(
+            output.contains("L12") && output.contains("L18"),
+            "Should include parsed line range in Lx-Ly form"
+        );
+        assert!(output.contains("[High]"), "Should include severity badge");
+        assert!(
+            output.contains("let x = foo().unwrap()"),
+            "Should include extracted snippet"
+        );
+        assert!(
+            output.contains("General suggestion"),
+            "Should not drop issues without file"
+        );
     }
 
     #[test]
@@ -643,6 +1068,36 @@ src/lib.rs</ralph-files-changed>
             "Should show friendly status label"
         );
         assert!(output.contains("Fixed all 3"), "Should show summary");
+    }
+
+    #[test]
+    fn test_render_fix_result_renders_diff_like_view_when_summary_contains_diff() {
+        let xml = r#"<ralph-fix-result>
+<ralph-status>all_issues_addressed</ralph-status>
+<ralph-summary>Applied fix:
+diff --git a/src/a.rs b/src/a.rs
+deleted file mode 100644
+--- a/src/a.rs
++++ /dev/null
+@@ -1 +0,0 @@
+-fn a() {}
+</ralph-summary>
+</ralph-fix-result>"#;
+
+        let output = render_fix_result(xml, &None);
+
+        assert!(
+            output.contains("src/a.rs"),
+            "Should include per-file header derived from diff"
+        );
+        assert!(
+            output.contains("deleted") || output.contains("Deleted"),
+            "Should include action context for deleted file"
+        );
+        assert!(
+            output.contains("--- a/src/a.rs") && output.contains("+++ /dev/null"),
+            "Should include diff markers"
+        );
     }
 
     #[test]
@@ -717,6 +1172,25 @@ src/lib.rs</ralph-files-changed>
         assert!(
             output.contains("fix: resolve null pointer"),
             "Should show subject"
+        );
+    }
+
+    #[test]
+    fn test_render_commit_falls_back_to_raw_with_warning_when_subject_is_blank() {
+        let xml = r#"<ralph-commit>
+<ralph-subject>   </ralph-subject>
+</ralph-commit>"#;
+
+        let output = render_commit(xml);
+
+        assert!(output.contains("⚠️"), "Should warn on parse failure");
+        assert!(
+            output.contains("<ralph-commit>"),
+            "Should include raw XML fallback"
+        );
+        assert!(
+            !output.contains("📝 \n"),
+            "Should not render an empty subject line"
         );
     }
 
@@ -981,16 +1455,16 @@ src/old.rs (deleted)</ralph-files-changed>
 
         let output = render_development_result(xml, &None);
         assert!(
-            output.contains("➕"),
-            "Should show create icon for new file"
+            output.contains("src/new_file.rs") && output.contains("Action: created"),
+            "Should show created action for new file"
         );
         assert!(
-            output.contains("🗑️"),
-            "Should show delete icon for removed file"
+            output.contains("src/old.rs") && output.contains("Action: deleted"),
+            "Should show deleted action for removed file"
         );
         assert!(
-            output.contains("📝"),
-            "Should show modify icon for existing file"
+            output.contains("src/existing.rs") && output.contains("Action: modified"),
+            "Should show modified action for existing file"
         );
     }
 

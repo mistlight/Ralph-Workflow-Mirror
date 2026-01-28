@@ -279,7 +279,7 @@ fn test_development_xml_formatted_for_display() {
 </ralph-development-result>"#;
 
         // Execute: Format the XML for display
-        let formatted = ralph_workflow::format_xml_for_display(xml);
+        let formatted = ralph_workflow::files::llm_output_extraction::format_xml_for_display(xml);
 
         // Assert: Verify output is formatted nicely (pretty-printed XML)
         assert!(
