@@ -1,20 +1,31 @@
 //! Pipeline Execution Module
 //!
-//! This module contains the core pipeline execution infrastructure:
-//! - Types for tracking pipeline statistics and RAII cleanup
-//! - Model flag resolution utilities
-//! - Command execution helpers with fault-tolerant fallback chains
-//! - Timer utilities for tracking execution duration
-//! - Session management for agent continuation
-//! - Log file path management
+//! This module contains the core pipeline execution infrastructure for running
+//! AI agents with fault-tolerant fallback chains and real-time output streaming.
+//!
+//! # Key Types
+//!
+//! - [`Stats`] - Pipeline statistics tracking (commits, changes, errors)
+//! - [`AgentPhaseGuard`] - RAII guard for phase cleanup on success/failure
+//! - [`Timer`] - Execution duration tracking with phase support
+//! - [`PipelineRuntime`] - Runtime context for agent execution
+//! - [`FallbackConfig`] - Configuration for agent fallback behavior
+//!
+//! # Features
+//!
+//! - **Fault-tolerant execution** - Agents fall back to alternatives on failure
+//! - **XSD validation retries** - Invalid XML triggers in-session retries
+//! - **Session continuation** - Reuse agent sessions for XSD retry efficiency
+//! - **Real-time streaming** - Live output from agents during execution
+//! - **Log management** - Structured logging to `.agent/logs/`
 //!
 //! # Module Structure
 //!
-//! - `model_flag` - Model flag resolution and provider detection
 //! - `runner` - Pipeline runtime and command execution with fallback
 //! - `types` - Pipeline statistics tracking and RAII guards
 //! - [`session`] - Session extraction and continuation for XSD retries
 //! - [`logfile`] - Unified log file path creation, parsing, and discovery
+//! - [`idle_timeout`] - Timeout handling for stuck agents
 
 #![deny(unsafe_code)]
 

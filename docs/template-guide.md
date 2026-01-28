@@ -24,28 +24,28 @@ ralph-workflow/src/prompts/templates/
 
 ```
 templates/
-├── shared/                               # Shared partials (reusable sections)
-│   ├── _critical_header.txt             # Warning about agent constraints
-│   ├── _context_section.txt             # PROMPT and PLAN context
-│   ├── _diff_section.txt                # DIFF display format
-│   ├── _output_checklist.txt            # Prioritized checklist format
-│   ├── _safety_no_execute.txt           # Safety constraints for agents
-│   └── _unattended_mode.txt             # Unattended mode instructions
-├── commit_message_xml.txt               # Normal commit message (XML format)
-├── commit_simplified.txt                # Simplified commit strategy
-├── commit_xsd_retry.txt                 # XSD validation retry (in-session)
-├── conflict_resolution.txt              # Merge conflict resolution
-├── conflict_resolution_fallback.txt     # Fallback conflict resolution
-├── developer_iteration_xml.txt          # Implementation mode prompt
+├── shared/                                    # Shared partials (reusable sections)
+│   ├── _critical_header.txt                  # Warning about agent constraints
+│   ├── _context_section.txt                  # PROMPT and PLAN context
+│   ├── _diff_section.txt                     # DIFF display format
+│   ├── _output_checklist.txt                 # Prioritized checklist format
+│   ├── _safety_no_execute.txt                # Safety constraints for agents
+│   └── _unattended_mode.txt                  # Unattended mode instructions
+├── commit_message_xml.txt                    # Normal commit message (XML format)
+├── commit_simplified.txt                     # Simplified commit strategy
+├── commit_xsd_retry.txt                      # XSD validation retry (in-session)
+├── conflict_resolution.txt                   # Merge conflict resolution
+├── conflict_resolution_fallback.txt          # Fallback conflict resolution
+├── developer_iteration_xml.txt               # Implementation mode prompt
 ├── developer_iteration_continuation_xml.txt  # Continuation prompt
-├── developer_iteration_xsd_retry.txt    # Dev XSD validation retry
-├── fix_mode_xml.txt                     # Fix mode prompt
-├── fix_mode_xsd_retry.txt               # Fix mode XSD validation retry
-├── planning_xml.txt                     # Planning phase prompt
-├── planning_xsd_retry.txt               # Planning XSD validation retry
-├── review_xml.txt                       # Code review prompt
-├── review_xsd_retry.txt                 # Review XSD validation retry
-└── TEMPLATE_GUIDE.md                    # Internal reference for template developers
+├── developer_iteration_xsd_retry.txt         # Dev XSD validation retry
+├── fix_mode_xml.txt                          # Fix mode prompt
+├── fix_mode_xsd_retry.txt                    # Fix mode XSD validation retry
+├── planning_xml.txt                          # Planning phase prompt
+├── planning_xsd_retry.txt                    # Planning XSD validation retry
+├── review_xml.txt                            # Code review prompt
+├── review_xsd_retry.txt                      # Review XSD validation retry
+└── TEMPLATE_GUIDE.md                         # Internal reference for template developers
 ```
 
 ## Template Syntax

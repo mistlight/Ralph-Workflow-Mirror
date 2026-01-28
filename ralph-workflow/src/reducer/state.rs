@@ -105,10 +105,23 @@ impl ContinuationState {
     }
 }
 
-/// Immutable pipeline state (this IS the checkpoint).
+/// Immutable pipeline state - the single source of truth for pipeline progress.
 ///
-/// Contains all information needed to resume pipeline execution at any point.
-/// The reducer updates this state by returning new immutable copies on each event.
+/// This struct captures complete execution context and doubles as the checkpoint
+/// data structure for resume functionality. Serialize it to JSON to save state;
+/// deserialize to resume interrupted runs.
+///
+/// # Invariants
+///
+/// - `iteration` is always `<= total_iterations`
+/// - `reviewer_pass` is always `<= total_reviewer_passes`
+/// - `agent_chain` maintains fallback order and retry counts
+/// - State transitions only occur through the [`reduce`](super::reduce) function
+///
+/// # See Also
+///
+/// - [`reduce`](super::reduce) for state transitions
+/// - [`determine_next_effect`](super::determine_next_effect) for effect derivation
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PipelineState {
     pub phase: PipelinePhase,

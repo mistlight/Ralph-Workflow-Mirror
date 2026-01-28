@@ -7,7 +7,7 @@
 //! # Purpose
 //!
 //! - Production: [`RealProcessExecutor`] executes actual commands using `std::process::Command`
-//! - Tests: [`MockProcessExecutor`] captures calls and returns controlled results (with `test-utils` feature)
+//! - Tests: `MockProcessExecutor` captures calls and returns controlled results (with `test-utils` feature)
 //!
 //! # Benefits
 //!
@@ -25,7 +25,7 @@
 //!
 //! # Testing with MockProcessExecutor
 //!
-//! The `test-utils` feature enables [`MockProcessExecutor`] for integration tests:
+//! The `test-utils` feature enables `MockProcessExecutor` for integration tests:
 //!
 //! ```ignore
 //! use ralph_workflow::{MockProcessExecutor, ProcessExecutor};

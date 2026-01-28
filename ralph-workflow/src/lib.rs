@@ -4,40 +4,61 @@
 //! implementing a reducer-based architecture for orchestrating AI coding agents
 //! through development and review cycles.
 //!
-//! # Architecture
+//! # Quick Start
 //!
-//! Ralph uses an **event-sourced reducer architecture** with two effect layers:
-//!
-//! - [`app`] - CLI layer effects (before repo root is known)
-//! - [`reducer`] - Pipeline effects (after repo root is established)
-//!
-//! The core state machine follows the pattern:
-//! ```text
-//! State → Orchestrator → Effect → Handler → Event → Reducer → State
-//! ```
-//!
-//! All I/O is abstracted through traits for testability:
-//!
-//! - [`workspace::Workspace`] - Filesystem operations (see [`workspace::WorkspaceFs`] for production,
-//!   [`workspace::MemoryWorkspace`] for tests with `test-utils` feature)
-//! - [`ProcessExecutor`] - Process spawning (see [`RealProcessExecutor`] for production,
-//!   [`MockProcessExecutor`] for tests with `test-utils` feature)
-//!
-//! # Feature Flags
-//!
-//! - `monitoring` (default) - Enable streaming metrics and debugging APIs
-//! - `test-utils` - Enable test utilities ([`MockProcessExecutor`], [`workspace::MemoryWorkspace`], etc.)
-//! - `hardened-resume` (default) - Enable checkpoint file state capture for recovery
-//!
-//! # For Library Users
-//!
-//! This crate is primarily designed as a binary. Library usage is supported
-//! for integration testing with the `test-utils` feature:
+//! Ralph is primarily a CLI binary. For library use (integration testing):
 //!
 //! ```toml
 //! [dev-dependencies]
 //! ralph-workflow = { version = "0.6", features = ["test-utils"] }
 //! ```
+//!
+//! # Architecture
+//!
+//! Ralph uses an **event-sourced reducer architecture**. The core state machine
+//! follows the pattern:
+//!
+//! ```text
+//! State → Orchestrator → Effect → Handler → Event → Reducer → State
+//! ```
+//!
+//! | Component | Pure? | Role |
+//! |-----------|-------|------|
+//! | [`reducer::PipelineState`] | Yes | Immutable progress snapshot, doubles as checkpoint |
+//! | [`reducer::reduce`] | Yes | `(State, Event) → State` |
+//! | [`reducer::determine_next_effect`] | Yes | `State → Effect` |
+//! | [`reducer::EffectHandler`] | No | Executes effects, produces events |
+//!
+//! Business logic lives in reducers (pure). I/O lives in handlers (impure).
+//!
+//! ## Two Effect Layers
+//!
+//! Ralph has two distinct effect types for different pipeline stages:
+//!
+//! | Layer | Module | When | Filesystem Access |
+//! |-------|--------|------|-------------------|
+//! | `AppEffect` | [`app`] | Before repo root known | `std::fs` directly |
+//! | `Effect` | [`reducer`] | After repo root known | Via [`workspace::Workspace`] |
+//!
+//! These layers must never mix: `AppEffect` cannot use `Workspace`, and `Effect`
+//! cannot use `std::fs` directly.
+//!
+//! # I/O Abstractions
+//!
+//! All I/O is abstracted through traits for testability:
+//!
+//! - [`workspace::Workspace`] - Filesystem operations
+//!   - Production: [`workspace::WorkspaceFs`]
+//!   - Tests: `MemoryWorkspace` (with `test-utils` feature)
+//! - [`ProcessExecutor`] - Process spawning
+//!   - Production: [`RealProcessExecutor`]
+//!   - Tests: `MockProcessExecutor` (with `test-utils` feature)
+//!
+//! # Feature Flags
+//!
+//! - `monitoring` (default) - Enable streaming metrics and debugging APIs
+//! - `test-utils` - Enable test utilities (`MockProcessExecutor`, `MemoryWorkspace`, etc.)
+//! - `hardened-resume` (default) - Enable checkpoint file state capture for recovery
 //!
 //! # Key Modules
 //!
@@ -49,6 +70,11 @@
 //! - [`json_parser`] - NDJSON streaming parsers for Claude, Codex, Gemini, OpenCode
 //! - [`git_helpers`] - Git operations using libgit2 (no CLI dependency)
 //! - [`prompts`] - Template system for agent prompts
+//!
+//! # Error Handling
+//!
+//! Most functions return `anyhow::Result` for flexible error handling with context.
+//! Use `.context()` to add context to errors as they propagate.
 
 pub mod agents;
 pub mod app;

@@ -2,29 +2,29 @@
 //!
 //! Handles environment variables and configuration for Ralph.
 //!
-//! # Module Structure
+//! # Key Types
 //!
-//! - [`types`]: Core configuration types (Config, `ReviewDepth`, Verbosity)
-//! - [`truncation`]: Truncation limits for verbosity levels
-//! - [`parser`]: Environment variable parsing (legacy)
-//! - [`unified`]: Unified configuration format types
-//! - [`loader`]: Unified configuration loader with env overrides
+//! - [`Config`] - Runtime configuration used during pipeline execution
+//! - [`Verbosity`] - Output verbosity levels (Quiet, Normal, Verbose, Full, Debug)
+//! - [`ReviewDepth`] - Review thoroughness (Standard, Comprehensive, Security, Incremental)
+//! - [`UnifiedConfig`] - Full configuration file representation
 //!
 //! # Configuration Sources
 //!
 //! Ralph configuration is loaded from (in order of priority):
+//!
 //! 1. `~/.config/ralph-workflow.toml` (primary, unified config)
-//! 2. Environment variables (RALPH_*) as overrides
+//! 2. Environment variables (`RALPH_*`) as overrides
 //! 3. CLI arguments (final override)
 //!
-//! # Usage
+//! # Module Structure
 //!
-//! ```ignore
-//! use crate::config::Config;
-//!
-//! let config = Config::from_env();
-//! println!("Developer iterations: {}", config.developer_iters);
-//! ```
+//! - [`types`] - Core configuration types (Config, ReviewDepth, Verbosity)
+//! - [`truncation`] - Truncation limits for verbosity levels
+//! - [`parser`] - Environment variable parsing (legacy)
+//! - [`unified`] - Unified configuration format types
+//! - [`loader`] - Unified configuration loader with env overrides
+//! - [`path_resolver`] - Configuration path resolution with dependency injection
 
 pub mod loader;
 pub mod parser;

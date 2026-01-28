@@ -1,9 +1,20 @@
 //! Prompt Templates Module
 //!
-//! Provides context-controlled prompts for agents.
-//! Key design: reviewers get minimal context for "fresh eyes" perspective.
+//! Generates context-controlled prompts for AI agents. Key design principle:
+//! reviewers get minimal context for "fresh eyes" perspective.
 //!
-//! Enhanced with language-specific review guidelines based on detected project stack.
+//! # Key Types
+//!
+//! - [`ContextLevel`] - Amount of context to include (Minimal, Normal)
+//! - [`TemplateContext`] - User template overrides and customization
+//! - [`Template`] - Rendered template with variable substitution
+//!
+//! # Template System
+//!
+//! Templates are stored as `.txt` files in `prompts/templates/` and support:
+//! - Variables: `{{VARIABLE_NAME}}`
+//! - Partials: `{{> shared/_partial_name}}`
+//! - Comments: `{# comment #}`
 //!
 //! # Module Structure
 //!

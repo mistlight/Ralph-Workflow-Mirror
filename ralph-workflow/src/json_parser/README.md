@@ -1,6 +1,8 @@
 # JSON Parser Module
 
-This module provides streaming JSON parsers for various LLM agents (Claude, Codex, Gemini, OpenCode).
+This module provides streaming NDJSON parsers for various LLM agents (Claude, Codex, Gemini, OpenCode).
+
+NDJSON (Newline-delimited JSON) is the streaming format used by agent CLIs to provide real-time output.
 
 ## Streaming Contract
 
@@ -84,13 +86,16 @@ When implementing a new parser:
 
 ## Files
 
-- **`streaming_state.rs`**: Core `StreamingSession` implementation
-- **`delta_display.rs`**: `DeltaRenderer` trait for consistent display
-- **`claude.rs`**: Claude API parser (primary parser for ccs-glm)
-- **`codex.rs`**: Codex API parser
-- **`gemini.rs`**: Gemini API parser
-- **`opencode.rs`**: OpenCode API parser
-- **`tests.rs`**: Comprehensive test suite
+- **`streaming_state.rs`** - Core `StreamingSession` implementation
+- **`delta_display.rs`** - `DeltaRenderer` trait for consistent display
+- **`deduplication.rs`** - Content deduplication logic
+- **`claude.rs`** - Claude API parser (primary parser for CCS agents)
+- **`codex.rs`** - Codex API parser
+- **`gemini.rs`** - Gemini API parser
+- **`opencode.rs`** - OpenCode API parser
+- **`printer.rs`** - Output printing utilities (includes `TestPrinter` for tests)
+- **`types.rs`** - Shared type definitions
+- **`tests.rs`** - Comprehensive test suite
 
 ## Testing
 

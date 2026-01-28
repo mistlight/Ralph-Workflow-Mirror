@@ -1,7 +1,20 @@
 //! Effect types and handlers for side effects.
 //!
-//! Effects represent side-effect operations that the reducer triggers.
-//! Effect handlers execute effects and emit events.
+//! Effects represent impure operations (git, filesystem, agent execution) that
+//! handlers execute on behalf of the reducer. The reducer is pure and determines
+//! which effect to execute next; handlers execute effects and produce events.
+//!
+//! # Key Types
+//!
+//! - [`Effect`] - Enum of all possible side-effect operations
+//! - [`EffectHandler`] - Trait for executing effects (impure code lives here)
+//! - [`EffectResult`] - Contains both pipeline event and optional UI events
+//!
+//! # Design
+//!
+//! This separation keeps business logic pure (in reducers) while isolating
+//! side effects (in handlers). See [`CODE_STYLE.md`](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/CODE_STYLE.md)
+//! for the full architecture overview.
 
 use crate::agents::AgentRole;
 use crate::phases::PhaseContext;

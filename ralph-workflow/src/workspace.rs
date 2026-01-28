@@ -18,7 +18,7 @@
 //! The [`Workspace`] trait defines the interface for file operations, with two implementations:
 //!
 //! - [`WorkspaceFs`] - Production implementation using the real filesystem
-//! - [`MemoryWorkspace`] - Test implementation with in-memory storage (available with `test-utils` feature)
+//! - `MemoryWorkspace` - Test implementation with in-memory storage (available with `test-utils` feature)
 //!
 //! # Well-Known Paths
 //!
@@ -51,7 +51,7 @@
 //!
 //! # Testing with MemoryWorkspace
 //!
-//! The `test-utils` feature enables [`MemoryWorkspace`] for integration tests:
+//! The `test-utils` feature enables `MemoryWorkspace` for integration tests:
 //!
 //! ```ignore
 //! use ralph_workflow::workspace::{MemoryWorkspace, Workspace};

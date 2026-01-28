@@ -41,8 +41,10 @@ Never mix. AppEffect cannot use Workspace; Effect cannot use `std::fs`.
 
 | Term | Definition |
 |------|------------|
-| **Effect** | A side-effect operation (git, filesystem, agent execution) that handlers execute |
+| **Effect** | A side-effect operation (git, filesystem, agent execution) that handlers execute. See "Two Effect Layers" section. |
+| **AppEffect** | CLI-layer effect type for operations before repository root is known. Uses `std::fs` directly. |
 | **Reducer** | Pure function: `(State, Event) → State` with no side effects |
+| **PipelineState** | Immutable state snapshot representing current pipeline progress. Doubles as checkpoint data. |
 | **Workspace** | Filesystem abstraction trait - use `WorkspaceFs` in production, `MemoryWorkspace` in tests |
 | **Phase** | Pipeline stage: Planning, Development, Review, Commit |
 | **Agent Chain** | Ordered fallback list of agents - Ralph tries next agent on failure |
@@ -50,6 +52,8 @@ Never mix. AppEffect cannot use Workspace; Effect cannot use `std::fs`.
 | **NDJSON** | Newline-delimited JSON - streaming format used by agent CLIs |
 | **XSD** | XML Schema Definition - used to validate agent XML output |
 | **ProcessExecutor** | Process execution abstraction trait - use `RealProcessExecutor` in production, `MockProcessExecutor` in tests |
+| **EffectHandler** | Trait for executing effects (impure operations). Produces events from effects. |
+| **UIEvent** | Events for user-facing display (status, progress, XML output). See `reducer::ui_event`. |
 | **Work Guide** | PROMPT.md template for describing tasks to AI agents (e.g., bug-fix, feature-spec, refactor) |
 
 ---
