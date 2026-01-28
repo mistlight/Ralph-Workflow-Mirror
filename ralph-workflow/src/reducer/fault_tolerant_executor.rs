@@ -111,6 +111,16 @@ fn try_agent_execution(
         Ok(result) => {
             let exit_code = result.exit_code;
             let error_kind = classify_agent_error(exit_code, &result.stderr);
+
+            // Special handling for rate limit: emit fallback event with prompt context
+            if is_rate_limit_error(&error_kind) {
+                return Ok(PipelineEvent::AgentRateLimitFallback {
+                    role: config.role,
+                    agent: config.agent_name.to_string(),
+                    prompt_context: Some(config.prompt.to_string()),
+                });
+            }
+
             let retriable = is_retriable_agent_error(&error_kind);
 
             Ok(PipelineEvent::AgentInvocationFailed {
@@ -211,14 +221,24 @@ fn classify_io_error(error: &io::Error) -> AgentErrorKind {
 ///
 /// Retriable errors should trigger model fallback (same agent, different model).
 /// Non-retriable errors should trigger agent fallback (different agent).
+///
+/// Note: RateLimit (429) is intentionally NOT retriable - it triggers immediate
+/// agent fallback to continue work without waiting. This is handled specially
+/// via the `AgentRateLimitFallback` event which switches to the next agent
+/// immediately rather than retrying with the same agent.
 fn is_retriable_agent_error(error_kind: &AgentErrorKind) -> bool {
     matches!(
         error_kind,
-        AgentErrorKind::Network
-            | AgentErrorKind::RateLimit
-            | AgentErrorKind::Timeout
-            | AgentErrorKind::ModelUnavailable
+        AgentErrorKind::Network | AgentErrorKind::Timeout | AgentErrorKind::ModelUnavailable
     )
+}
+
+/// Check if an error kind represents a rate limit (429) error.
+///
+/// Rate limit errors get special handling - they trigger immediate agent
+/// fallback via `AgentRateLimitFallback` event instead of model fallback.
+fn is_rate_limit_error(error_kind: &AgentErrorKind) -> bool {
+    matches!(error_kind, AgentErrorKind::RateLimit)
 }
 
 #[cfg(test)]
@@ -269,14 +289,31 @@ mod tests {
 
     #[test]
     fn test_is_retriable_agent_error() {
+        // Network, Timeout, ModelUnavailable are retriable (model fallback)
         assert!(is_retriable_agent_error(&AgentErrorKind::Network));
-        assert!(is_retriable_agent_error(&AgentErrorKind::RateLimit));
         assert!(is_retriable_agent_error(&AgentErrorKind::Timeout));
         assert!(is_retriable_agent_error(&AgentErrorKind::ModelUnavailable));
+        // RateLimit is NOT retriable - it triggers immediate agent fallback
+        assert!(!is_retriable_agent_error(&AgentErrorKind::RateLimit));
+        // Non-retriable errors trigger agent fallback
         assert!(!is_retriable_agent_error(&AgentErrorKind::Authentication));
         assert!(!is_retriable_agent_error(&AgentErrorKind::ParsingError));
         assert!(!is_retriable_agent_error(&AgentErrorKind::FileSystem));
         assert!(!is_retriable_agent_error(&AgentErrorKind::InternalError));
+    }
+
+    #[test]
+    fn test_is_rate_limit_error() {
+        // Only RateLimit should match
+        assert!(is_rate_limit_error(&AgentErrorKind::RateLimit));
+        // All others should NOT be rate limit errors
+        assert!(!is_rate_limit_error(&AgentErrorKind::Network));
+        assert!(!is_rate_limit_error(&AgentErrorKind::Timeout));
+        assert!(!is_rate_limit_error(&AgentErrorKind::ModelUnavailable));
+        assert!(!is_rate_limit_error(&AgentErrorKind::Authentication));
+        assert!(!is_rate_limit_error(&AgentErrorKind::ParsingError));
+        assert!(!is_rate_limit_error(&AgentErrorKind::FileSystem));
+        assert!(!is_rate_limit_error(&AgentErrorKind::InternalError));
     }
 
     #[test]

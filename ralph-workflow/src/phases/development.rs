@@ -136,8 +136,7 @@ pub fn run_development_phase(
         // Config semantics: max_dev_continuations counts *continuation attempts* beyond the
         // initial attempt. Total valid attempts is `1 + max_dev_continuations`.
         let continuation_state = if resuming_into_development {
-            load_continuation_state_from_context_file(ctx.workspace)
-                .unwrap_or_else(ContinuationState::new)
+            load_continuation_state_from_context_file(ctx.workspace).unwrap_or_default()
         } else {
             ContinuationState::new()
         };

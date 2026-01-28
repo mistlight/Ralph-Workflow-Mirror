@@ -188,6 +188,12 @@ pub struct AgentChainState {
     pub retry_cycle: u32,
     pub max_cycles: u32,
     pub current_role: AgentRole,
+    /// Prompt context preserved from rate-limited agent for continuation.
+    ///
+    /// When an agent hits 429, we save the prompt here so the next agent
+    /// can continue the same work instead of starting from scratch.
+    #[serde(default)]
+    pub rate_limit_continuation_prompt: Option<String>,
 }
 
 impl AgentChainState {
@@ -200,6 +206,7 @@ impl AgentChainState {
             retry_cycle: 0,
             max_cycles: 3,
             current_role: AgentRole::Developer,
+            rate_limit_continuation_prompt: None,
         }
     }
 
@@ -268,6 +275,28 @@ impl AgentChainState {
             new.current_model_index = 0;
             new.retry_cycle += 1;
         }
+        new
+    }
+
+    /// Switch to next agent after rate limit, preserving prompt for continuation.
+    ///
+    /// This is used when an agent hits a 429 rate limit error. Instead of
+    /// retrying with the same agent (which would likely hit rate limits again),
+    /// we switch to the next agent and preserve the prompt so the new agent
+    /// can continue the same work.
+    pub fn switch_to_next_agent_with_prompt(&self, prompt: Option<String>) -> Self {
+        let mut next = self.switch_to_next_agent();
+        next.rate_limit_continuation_prompt = prompt;
+        next
+    }
+
+    /// Clear continuation prompt after successful execution.
+    ///
+    /// Called when an agent successfully completes its task, clearing any
+    /// saved prompt context from previous rate-limited agents.
+    pub fn clear_continuation_prompt(&self) -> Self {
+        let mut new = self.clone();
+        new.rate_limit_continuation_prompt = None;
         new
     }
 

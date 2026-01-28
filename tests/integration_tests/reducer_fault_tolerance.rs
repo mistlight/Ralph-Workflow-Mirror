@@ -184,26 +184,136 @@ fn test_agent_fails_after_10_retries_fallback_to_next_agent() {
     });
 }
 
+/// Test that rate limit (429) errors trigger AGENT fallback, not model fallback.
+///
+/// This verifies the core behavior change: when an agent hits a 429 rate limit,
+/// we immediately switch to the next agent in the chain rather than trying
+/// the same agent with a different model. This allows work to continue without
+/// waiting for rate limits to reset.
 #[test]
-fn test_agent_fails_after_99_retries_fallback_to_next_agent() {
+fn test_rate_limit_429_triggers_agent_fallback_not_model_fallback() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain_in_development();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        // Simulate 429 rate limit - should switch to next AGENT, not model
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::AgentRateLimitFallback {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                prompt_context: Some("continue this work".to_string()),
+            },
+        );
+
+        // Should switch to next agent
+        assert!(
+            new_state.agent_chain.current_agent_index > initial_agent_index,
+            "429 should trigger agent fallback, not model fallback"
+        );
+
+        // Model index should reset to 0 (new agent starts fresh)
+        assert_eq!(new_state.agent_chain.current_model_index, 0);
+
+        // Prompt context should be preserved for continuation
+        assert_eq!(
+            new_state.agent_chain.rate_limit_continuation_prompt,
+            Some("continue this work".to_string())
+        );
+
+        // Phase should remain Development
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+/// Test that network errors still trigger model fallback (same agent, different model).
+///
+/// This verifies that the change to rate limit handling doesn't affect other
+/// retriable errors like Network/Timeout which should still try different models
+/// within the same agent before falling back to the next agent.
+#[test]
+fn test_network_error_still_triggers_model_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain_in_development();
+        let initial_agent_index = state.agent_chain.current_agent_index;
         let initial_model_index = state.agent_chain.current_model_index;
 
+        // Network error should still trigger model fallback (same agent)
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
             PipelineEvent::AgentInvocationFailed {
                 role: AgentRole::Developer,
                 agent: "agent1".to_string(),
                 exit_code: 1,
-                error_kind: AgentErrorKind::RateLimit,
+                error_kind: AgentErrorKind::Network,
                 retriable: true,
             },
         );
 
-        assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent1");
-        assert!(new_state.agent_chain.current_model_index > initial_model_index);
-        assert!(matches!(new_state.phase, PipelinePhase::Development));
+        // Should stay on same agent
+        assert_eq!(
+            new_state.agent_chain.current_agent_index, initial_agent_index,
+            "Network error should trigger model fallback, not agent fallback"
+        );
+
+        // Should advance to next model
+        assert!(
+            new_state.agent_chain.current_model_index > initial_model_index,
+            "Network error should advance model index"
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+/// Test that rate limit continuation prompt is cleared on successful agent execution.
+#[test]
+fn test_rate_limit_continuation_prompt_cleared_on_success() {
+    with_default_timeout(|| {
+        use ralph_workflow::reducer::state::{CommitState, ContinuationState, RebaseState};
+
+        // Create state with a saved continuation prompt
+        let mut agent_chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec!["model1".to_string()], vec!["model1".to_string()]],
+            AgentRole::Developer,
+        );
+        agent_chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+        agent_chain.current_agent_index = 1; // On agent2 after rate limit fallback
+
+        let state = PipelineState {
+            agent_chain,
+            phase: PipelinePhase::Development,
+            previous_phase: None,
+            iteration: 1,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            review_issues_found: false,
+            context_cleaned: false,
+            rebase: RebaseState::NotStarted,
+            commit: CommitState::NotStarted,
+            continuation: ContinuationState::new(),
+            execution_history: Vec::new(),
+        };
+
+        // Agent succeeds
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::AgentInvocationSucceeded {
+                role: AgentRole::Developer,
+                agent: "agent2".to_string(),
+            },
+        );
+
+        // Continuation prompt should be cleared
+        assert!(
+            new_state
+                .agent_chain
+                .rate_limit_continuation_prompt
+                .is_none(),
+            "Success should clear rate limit continuation prompt"
+        );
     });
 }
 

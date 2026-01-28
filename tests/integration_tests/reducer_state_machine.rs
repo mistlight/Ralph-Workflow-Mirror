@@ -440,26 +440,39 @@ fn test_filesystem_error_triggers_agent_fallback() {
     });
 }
 
+/// Test that rate limit (429) triggers agent fallback via AgentRateLimitFallback event.
+///
+/// Rate limit errors now trigger immediate agent fallback (not model fallback)
+/// to allow work to continue without waiting for rate limits to reset.
+/// This is handled via the dedicated AgentRateLimitFallback event which also
+/// preserves prompt context for continuation.
 #[test]
-fn test_rate_limit_error_triggers_model_fallback() {
+fn test_rate_limit_error_triggers_agent_fallback() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain();
 
-        // Simulate rate limit error (retriable) - should trigger model fallback
+        // Simulate rate limit via AgentRateLimitFallback event - should trigger agent fallback
         let new_state = reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
+            PipelineEvent::AgentRateLimitFallback {
                 role: AgentRole::Developer,
                 agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::RateLimit,
-                retriable: true,
+                prompt_context: Some("continue work".to_string()),
             },
         );
 
-        // Should advance to next model
-        assert_eq!(new_state.agent_chain.current_agent_index, 0);
-        assert!(new_state.agent_chain.current_model_index > 0);
+        // Should switch to next agent
+        assert!(
+            new_state.agent_chain.current_agent_index > 0,
+            "Rate limit should trigger agent fallback"
+        );
+        // Model index should reset (new agent starts at model 0)
+        assert_eq!(new_state.agent_chain.current_model_index, 0);
+        // Prompt context should be preserved
+        assert_eq!(
+            new_state.agent_chain.rate_limit_continuation_prompt,
+            Some("continue work".to_string())
+        );
     });
 }
 
