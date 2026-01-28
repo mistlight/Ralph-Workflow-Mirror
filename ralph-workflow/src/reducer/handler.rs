@@ -15,7 +15,7 @@ use crate::pipeline::PipelineRuntime;
 use crate::prompts::ContextLevel;
 use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
 use crate::reducer::event::{
-    CheckpointTrigger, ConflictStrategy, PipelineEvent, PipelinePhase, RebasePhase,
+    AgentErrorKind, CheckpointTrigger, ConflictStrategy, PipelineEvent, PipelinePhase, RebasePhase,
 };
 use crate::reducer::fault_tolerant_executor::{
     execute_agent_fault_tolerantly, AgentExecutionConfig,
@@ -69,6 +69,23 @@ impl MainEffectHandler {
             from: Some(self.state.phase),
             to,
         }
+    }
+
+    fn is_auth_failure(err: &anyhow::Error) -> bool {
+        if err.chain().any(|cause| {
+            cause
+                .downcast_ref::<development::AuthFailureError>()
+                .is_some()
+        }) {
+            return true;
+        }
+
+        let msg = err.to_string().to_lowercase();
+        msg.contains("authentication error")
+            || msg.contains("auth/credential")
+            || msg.contains("unauthorized")
+            || msg.contains("credential")
+            || msg.contains("api key")
     }
 
     fn execute_effect(
@@ -263,9 +280,27 @@ impl MainEffectHandler {
 
                 Ok(EffectResult::with_ui(event, ui_events))
             }
-            Err(_) => Ok(EffectResult::event(
-                PipelineEvent::plan_generation_completed(iteration, false),
-            )),
+            Err(err) => {
+                if Self::is_auth_failure(&err) {
+                    let current_agent = self
+                        .state
+                        .agent_chain
+                        .current_agent()
+                        .cloned()
+                        .unwrap_or_else(|| ctx.developer_agent.to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Developer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::Authentication,
+                        false,
+                    )));
+                }
+
+                Ok(EffectResult::event(
+                    PipelineEvent::plan_generation_completed(iteration, false),
+                ))
+            }
         }
     }
 
@@ -303,70 +338,78 @@ impl MainEffectHandler {
             let _ = cleanup_continuation_context_file(ctx);
         }
 
-        // If the agent repeatedly fails to produce valid XML even after in-session
-        // XSD retries, rerun the attempt a small number of times without consuming
-        // the continuation budget (which is reserved for valid partial/failed work).
-        const MAX_INVALID_OUTPUT_RERUNS: u32 = 2;
+        // Run a single development attempt (one session) with XSD retry.
+        let attempt = development::run_development_attempt_with_xml_retry(
+            ctx,
+            iteration,
+            developer_context,
+            false,
+            None::<&ResumeContext>,
+            dev_agent.as_deref(),
+            continuation_state,
+        );
 
-        let mut invalid_reruns: u32 = 0;
-        let attempt = loop {
-            // Run a single development attempt (one session) with XSD retry.
-            let attempt = development::run_development_attempt_with_xml_retry(
-                ctx,
-                iteration,
-                developer_context,
-                false,
-                None::<&ResumeContext>,
-                dev_agent.as_deref(),
-                continuation_state,
-            );
-
-            let attempt = match attempt {
-                Ok(a) => a,
-                Err(err) => {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                        format!("Development attempt failed: {err}"),
-                    )));
-                }
-            };
-
-            match decide_dev_iteration_next_step(
-                continuation_state.continuation_attempt,
-                max_continuations,
-                &attempt,
-            ) {
-                DevIterationNextStep::RetryInvalidOutput
-                    if invalid_reruns < MAX_INVALID_OUTPUT_RERUNS =>
-                {
-                    invalid_reruns += 1;
-                    ctx.logger.info(&format!(
-                        "Development output invalid after XSD retries; rerunning attempt without consuming continuation budget ({}/{})",
-                        invalid_reruns, MAX_INVALID_OUTPUT_RERUNS
-                    ));
-                    continue;
-                }
-                DevIterationNextStep::RetryInvalidOutput => {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                        format!(
-                            "Development output remained invalid after XSD retries and {} reruns. Last summary={}",
-                            MAX_INVALID_OUTPUT_RERUNS,
-                            attempt.summary
-                        ),
-                    )));
-                }
-                _ => break attempt,
+        let attempt = match attempt {
+            Ok(a) => a,
+            Err(err) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    format!("Development attempt failed: {err}"),
+                )));
             }
         };
 
+        // Check for auth failure - trigger agent fallback immediately
+        if attempt.auth_failure {
+            let current_agent = dev_agent.clone().unwrap_or_else(|| "unknown".to_string());
+            return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                current_agent,
+                1,
+                AgentErrorKind::Authentication,
+                false,
+            )));
+        }
+
+        let next_step = decide_dev_iteration_next_step(
+            continuation_state.continuation_attempt,
+            max_continuations,
+            &attempt,
+        );
+
+        if matches!(next_step, DevIterationNextStep::RetryInvalidOutput) {
+            let mut ui_events = vec![UIEvent::IterationProgress {
+                current: iteration,
+                total: self.state.total_iterations,
+            }];
+
+            // Try to read development result XML for semantic rendering.
+            let dev_xml_path = Path::new(".agent/tmp/development_result.xml");
+            let processed_path = Path::new(".agent/tmp/development_result.xml.processed");
+            if let Some(xml_content) = ctx
+                .workspace
+                .read(dev_xml_path)
+                .ok()
+                .or_else(|| ctx.workspace.read(processed_path).ok())
+            {
+                ui_events.push(UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::DevelopmentResult,
+                    content: xml_content,
+                    context: Some(XmlOutputContext {
+                        iteration: Some(iteration),
+                        pass: None,
+                        snippets: Vec::new(),
+                    }),
+                });
+            }
+
+            return Ok(EffectResult::with_ui(
+                PipelineEvent::development_iteration_completed(iteration, false),
+                ui_events,
+            ));
+        }
+
         // If we reached completed, the iteration can transition to commit.
-        if matches!(
-            decide_dev_iteration_next_step(
-                continuation_state.continuation_attempt,
-                max_continuations,
-                &attempt
-            ),
-            DevIterationNextStep::Completed
-        ) {
+        if matches!(next_step, DevIterationNextStep::Completed) {
             let _ = cleanup_continuation_context_file(ctx);
 
             let event = if continuation_state.is_continuation() {
@@ -409,11 +452,7 @@ impl MainEffectHandler {
         }
 
         // Not completed (valid output): partial/failed status triggers a continuation attempt.
-        let next_attempt = match decide_dev_iteration_next_step(
-            continuation_state.continuation_attempt,
-            max_continuations,
-            &attempt,
-        ) {
+        let next_attempt = match next_step {
             DevIterationNextStep::Continue {
                 next_continuation_attempt,
             } => next_continuation_attempt,
@@ -430,7 +469,6 @@ impl MainEffectHandler {
                 )));
             }
             DevIterationNextStep::RetryInvalidOutput | DevIterationNextStep::Completed => {
-                // Completed is handled above. Invalid output is handled by the rerun loop above.
                 unreachable!("Unexpected dev iteration next step after invalid-output handling")
             }
         };
@@ -489,7 +527,23 @@ impl MainEffectHandler {
 
         match review::run_review_pass(ctx, pass, &review_label, "", review_agent.as_deref()) {
             Ok(result) => {
-                let event = PipelineEvent::review_completed(pass, !result.early_exit);
+                // Check for auth failure - trigger agent fallback
+                if result.auth_failure {
+                    let current_agent = review_agent.unwrap_or_else(|| "unknown".to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Reviewer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::Authentication,
+                        false,
+                    )));
+                }
+
+                let event = if result.early_exit {
+                    PipelineEvent::review_phase_completed(true)
+                } else {
+                    PipelineEvent::review_completed(pass, true)
+                };
 
                 // Build UI events
                 let mut ui_events = vec![
@@ -569,9 +623,22 @@ impl MainEffectHandler {
 
                 Ok(EffectResult::with_ui(event, ui_events))
             }
-            Err(_) => Ok(EffectResult::event(PipelineEvent::fix_attempt_completed(
-                pass, false,
-            ))),
+            Err(err) => {
+                if Self::is_auth_failure(&err) {
+                    let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Reviewer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::Authentication,
+                        false,
+                    )));
+                }
+
+                Ok(EffectResult::event(PipelineEvent::fix_attempt_completed(
+                    pass, false,
+                )))
+            }
         }
     }
 
@@ -1779,6 +1846,7 @@ mod tests {
             summary: "invalid xml".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(0, 2, &attempt);
@@ -1798,6 +1866,7 @@ mod tests {
             summary: "partial".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(0, 2, &attempt);
@@ -1822,6 +1891,7 @@ mod tests {
             summary: "partial".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(1, 2, &attempt);
@@ -1846,6 +1916,7 @@ mod tests {
             summary: "partial".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(2, 2, &attempt);

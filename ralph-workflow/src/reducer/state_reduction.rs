@@ -173,11 +173,34 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                     ..state
                 }
             } else {
-                // Output was not valid enough to proceed to commit; stay in Development.
-                PipelineState {
-                    phase: super::event::PipelinePhase::Development,
-                    iteration,
-                    ..state
+                // Output was not valid enough to proceed to commit; retry in Development.
+                let invalid_output_attempts = state.continuation.invalid_output_attempts + 1;
+                if invalid_output_attempts > super::state::MAX_DEV_INVALID_OUTPUT_RERUNS {
+                    let new_agent_chain = state.agent_chain.switch_to_next_agent();
+                    let continuation = ContinuationState {
+                        invalid_output_attempts: 0,
+                        ..state.continuation
+                    };
+
+                    PipelineState {
+                        phase: super::event::PipelinePhase::Development,
+                        iteration,
+                        continuation,
+                        agent_chain: new_agent_chain,
+                        ..state
+                    }
+                } else {
+                    let continuation = ContinuationState {
+                        invalid_output_attempts,
+                        ..state.continuation
+                    };
+
+                    PipelineState {
+                        phase: super::event::PipelinePhase::Development,
+                        iteration,
+                        continuation,
+                        ..state
+                    }
                 }
             }
         }

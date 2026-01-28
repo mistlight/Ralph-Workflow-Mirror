@@ -217,7 +217,29 @@ pub fn run_review_phase(
         let review_prompt_key = format!("review_{}", j);
         let (review_prompt, was_replayed) =
             get_stored_or_generate_prompt(&review_prompt_key, &ctx.prompt_history, || {
-                String::new()
+                let plan_content = ctx
+                    .workspace
+                    .read(Path::new(".agent/PLAN.md"))
+                    .unwrap_or_default();
+
+                let (changes_content, baseline_oid_for_prompts) =
+                    match crate::git_helpers::get_git_diff_for_review_with_workspace(ctx.workspace)
+                    {
+                        Ok((diff, baseline_oid)) => (diff, baseline_oid),
+                        Err(e) => {
+                            ctx.logger.warn(&format!(
+                                "Failed to get baseline diff for review prompt: {e}"
+                            ));
+                            (String::new(), String::new())
+                        }
+                    };
+
+                let refs = PromptContentBuilder::new(ctx.workspace)
+                    .with_plan(plan_content)
+                    .with_diff(changes_content, &baseline_oid_for_prompts)
+                    .build();
+
+                prompt_review_xml_with_references(ctx.template_context, &refs)
             });
 
         // Capture the review prompt for checkpoint/resume (only if newly generated)
@@ -258,6 +280,11 @@ pub fn run_review_phase(
 
         // Run review pass
         let review_result = run_review_pass(ctx, j, review_label, &review_prompt, None)?;
+
+        // Check for auth failure - bail to trigger agent fallback
+        if review_result.auth_failure {
+            anyhow::bail!("Authentication error during review - agent fallback required");
+        }
 
         // Check for early exit (no issues found)
         if review_result.early_exit {
@@ -446,6 +473,9 @@ fn handle_skipped_cycle(
 pub struct ReviewPassResult {
     /// Whether the review found no issues and should exit early.
     pub early_exit: bool,
+    /// Whether an authentication/credential error was detected.
+    /// When true, the caller should trigger agent fallback instead of retrying.
+    pub auth_failure: bool,
 }
 
 /// Result of parsing review output.
@@ -745,7 +775,7 @@ pub fn run_review_pass(
         let attempt_start = Instant::now();
 
         // Run the agent with session continuation for XSD retries
-        let _ = {
+        let xsd_result = {
             let mut runtime = PipelineRuntime {
                 timer: ctx.timer,
                 logger: ctx.logger,
@@ -802,9 +832,20 @@ pub fn run_review_pass(
                 output_validator: Some(validate_output),
                 workspace: ctx.workspace,
             };
-            run_xsd_retry_with_session(&mut xsd_retry_config)
+            run_xsd_retry_with_session(&mut xsd_retry_config)?
         };
         ctx.stats.reviewer_runs_completed += 1;
+
+        // Check for auth error FIRST - if detected, signal for agent fallback
+        // This breaks out of the XSD retry loop immediately
+        if xsd_result.auth_error_detected {
+            ctx.logger
+                .warn("  Auth/credential error detected during review, signaling agent fallback");
+            return Ok(ReviewPassResult {
+                early_exit: false,
+                auth_failure: true,
+            });
+        }
 
         // Extract session info for potential retry (only if we don't have it yet)
         // IMPORTANT: Always extract from attempt 0's log directory, as that's where the
@@ -850,7 +891,10 @@ pub fn run_review_pass(
                 .with_duration(attempt_duration);
                 ctx.execution_history.add_step(step);
 
-                return Ok(ReviewPassResult { early_exit: false });
+                return Ok(ReviewPassResult {
+                    early_exit: false,
+                    auth_failure: false,
+                });
             }
             ParseResult::NoIssuesExplicit => {
                 ctx.logger
@@ -870,7 +914,10 @@ pub fn run_review_pass(
                 .with_duration(attempt_duration);
                 ctx.execution_history.add_step(step);
 
-                return Ok(ReviewPassResult { early_exit: true });
+                return Ok(ReviewPassResult {
+                    early_exit: true,
+                    auth_failure: false,
+                });
             }
             ParseResult::ParseFailed(error_description) => {
                 let step = ExecutionStep::new(
@@ -906,7 +953,10 @@ pub fn run_review_pass(
                     );
                     ctx.workspace.write(issues_path, &failure_marker)?;
                     // Continue with fix pass anyway - the fix agent will see the failure message
-                    return Ok(ReviewPassResult { early_exit: false });
+                    return Ok(ReviewPassResult {
+                        early_exit: false,
+                        auth_failure: false,
+                    });
                 }
 
                 ctx.logger.warn(&format!(
@@ -925,7 +975,10 @@ pub fn run_review_pass(
     }
 
     // Should not reach here, but handle the case
-    Ok(ReviewPassResult { early_exit: false })
+    Ok(ReviewPassResult {
+        early_exit: false,
+        auth_failure: false,
+    })
 }
 
 /// Extract review output using XML extraction and validate with XSD.
@@ -1313,7 +1366,7 @@ pub fn run_fix_pass(
             }
 
             // Run the agent with session continuation for XSD retries
-            let exit_code = {
+            let xsd_result = {
                 let mut runtime = PipelineRuntime {
                     timer: ctx.timer,
                     logger: ctx.logger,
@@ -1373,10 +1426,17 @@ pub fn run_fix_pass(
                     output_validator: Some(validate_output),
                     workspace: ctx.workspace,
                 };
-                run_xsd_retry_with_session(&mut xsd_retry_config)
+                run_xsd_retry_with_session(&mut xsd_retry_config)?
             };
 
             ctx.stats.reviewer_runs_completed += 1;
+
+            // Check for auth error FIRST - if detected, bail with an error that signals agent fallback
+            if xsd_result.auth_error_detected {
+                ctx.logger
+                    .warn("  Auth/credential error detected during fix, signaling agent fallback");
+                anyhow::bail!("Authentication error during fix - agent fallback required");
+            }
 
             // Extract session info for potential retry (only if we don't have it yet)
             let log_dir_path = Path::new(&log_dir);
@@ -1392,7 +1452,7 @@ pub fn run_fix_pass(
             }
 
             // Track if any agent run had an error
-            if exit_code.is_err() || exit_code.ok() != Some(0) {
+            if xsd_result.exit_code != 0 {
                 _had_any_error = true;
             }
             let fix_content = read_last_fix_output(log_dir_path, ctx.workspace);
