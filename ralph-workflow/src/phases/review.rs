@@ -44,8 +44,10 @@ use crate::prompts::{
     prompt_review_xml_with_references, prompt_review_xsd_retry_with_context, ContextLevel,
     PromptContentBuilder,
 };
+use crate::reducer::state::AgentChainState;
 use crate::workspace::Workspace;
 use std::path::Path;
+use std::time::Duration;
 
 mod validation;
 pub use validation::{
@@ -62,6 +64,71 @@ use std::time::Instant;
 pub struct ReviewResult {
     /// Whether the review completed early due to no issues found.
     pub completed_early: bool,
+}
+
+fn is_auth_failure_error(err: &anyhow::Error) -> bool {
+    let msg = err.to_string().to_lowercase();
+    msg.contains("authentication error")
+        || msg.contains("auth/credential")
+        || msg.contains("unauthorized")
+        || msg.contains("credential")
+        || msg.contains("api key")
+}
+
+fn build_agent_chain_state(
+    fallback_config: &crate::agents::fallback::FallbackConfig,
+    role: AgentRole,
+    primary_agent: &str,
+) -> AgentChainState {
+    let mut agents: Vec<String> = fallback_config.get_fallbacks(role).to_vec();
+
+    if !agents.iter().any(|agent| agent == primary_agent) {
+        agents.insert(0, primary_agent.to_string());
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    agents.retain(|agent| seen.insert(agent.clone()));
+
+    if agents.is_empty() {
+        agents.push(primary_agent.to_string());
+    }
+
+    let models_per_agent = agents.iter().map(|_| Vec::new()).collect();
+    let mut chain = AgentChainState::initial()
+        .with_agents(agents, models_per_agent, role)
+        .with_max_cycles(fallback_config.max_cycles);
+
+    if let Some(index) = chain.agents.iter().position(|agent| agent == primary_agent) {
+        chain.current_agent_index = index;
+    }
+
+    chain
+}
+
+fn advance_agent_chain_on_auth_failure(
+    chain: &mut AgentChainState,
+    fallback_config: &crate::agents::fallback::FallbackConfig,
+) -> anyhow::Result<Option<u64>> {
+    let next = chain.switch_to_next_agent();
+    if next.is_exhausted() || next.current_agent().is_none() {
+        anyhow::bail!("Agent fallback chain exhausted after authentication failures");
+    }
+
+    let backoff_delay = if next.retry_cycle > chain.retry_cycle {
+        Some(fallback_config.calculate_backoff(next.retry_cycle))
+    } else {
+        None
+    };
+
+    *chain = next;
+    Ok(backoff_delay)
+}
+
+fn current_agent_from_chain(chain: &AgentChainState) -> anyhow::Result<&str> {
+    chain
+        .current_agent()
+        .map(|agent| agent.as_str())
+        .ok_or_else(|| anyhow::anyhow!("No available agent in fallback chain"))
 }
 
 /// Run the review and fix phase.
@@ -88,6 +155,7 @@ pub fn run_review_phase(
     resume_context: Option<&ResumeContext>,
 ) -> anyhow::Result<ReviewResult> {
     let reviewer_context = ContextLevel::from(ctx.config.reviewer_context);
+    let fallback_config = ctx.registry.fallback_config();
 
     // Skip if no review cycles configured
     if ctx.config.reviewer_reviews == 0 {
@@ -278,13 +346,36 @@ pub fn run_review_phase(
             ));
         }
 
-        // Run review pass
-        let review_result = run_review_pass(ctx, j, review_label, &review_prompt, None)?;
+        let mut agent_chain =
+            build_agent_chain_state(fallback_config, AgentRole::Reviewer, ctx.reviewer_agent);
+        let mut active_agent = current_agent_from_chain(&agent_chain)?;
 
-        // Check for auth failure - bail to trigger agent fallback
-        if review_result.auth_failure {
-            anyhow::bail!("Authentication error during review - agent fallback required");
-        }
+        // Run review pass with auth-aware fallback
+        let review_result = loop {
+            let result = run_review_pass(ctx, j, review_label, &review_prompt, Some(active_agent))?;
+
+            if result.auth_failure {
+                ctx.logger.warn(&format!(
+                    "Auth failure during review with '{}', switching agent",
+                    active_agent
+                ));
+                let backoff_delay =
+                    advance_agent_chain_on_auth_failure(&mut agent_chain, fallback_config)?;
+                active_agent = current_agent_from_chain(&agent_chain)?;
+                if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
+                    ctx.logger.info(&format!(
+                        "Backoff before retrying with '{}': {}ms",
+                        active_agent, delay_ms
+                    ));
+                    ctx.registry
+                        .retry_timer()
+                        .sleep(Duration::from_millis(delay_ms));
+                }
+                continue;
+            }
+
+            break result;
+        };
 
         // Check for early exit (no issues found)
         if review_result.early_exit {
@@ -293,18 +384,41 @@ pub fn run_review_phase(
             });
         }
 
-        // Run fix pass
-        run_fix_pass(
-            ctx,
-            j,
-            reviewer_context,
-            if resuming_into_review {
-                resume_context
-            } else {
-                None
-            },
-            None,
-        )?;
+        // Run fix pass with auth-aware fallback
+        loop {
+            match run_fix_pass(
+                ctx,
+                j,
+                reviewer_context,
+                if resuming_into_review {
+                    resume_context
+                } else {
+                    None
+                },
+                Some(active_agent),
+            ) {
+                Ok(()) => break,
+                Err(err) if is_auth_failure_error(&err) => {
+                    ctx.logger.warn(&format!(
+                        "Auth failure during fix with '{}', switching agent",
+                        active_agent
+                    ));
+                    let backoff_delay =
+                        advance_agent_chain_on_auth_failure(&mut agent_chain, fallback_config)?;
+                    active_agent = current_agent_from_chain(&agent_chain)?;
+                    if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
+                        ctx.logger.info(&format!(
+                            "Backoff before retrying with '{}': {}ms",
+                            active_agent, delay_ms
+                        ));
+                        ctx.registry
+                            .retry_timer()
+                            .sleep(Duration::from_millis(delay_ms));
+                    }
+                }
+                Err(err) => return Err(err),
+            }
+        }
 
         // UPDATE REVIEW BASELINE: Move baseline forward after fixes
         // This ensures the next review cycle sees only new changes
@@ -654,6 +768,7 @@ pub fn run_review_pass(
     _review_prompt: &str, // Unused - we build XML prompt internally
     _agent: Option<&str>,
 ) -> anyhow::Result<ReviewPassResult> {
+    let active_agent = _agent.unwrap_or(ctx.reviewer_agent);
     let issues_path = Path::new(".agent/ISSUES.md");
     let max_xsd_retries = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS as usize;
 
@@ -826,7 +941,7 @@ pub fn run_review_pass(
                 logfile_prefix: &log_dir,
                 runtime: &mut runtime,
                 registry: ctx.registry,
-                primary_agent: _agent.unwrap_or(ctx.reviewer_agent),
+                primary_agent: active_agent,
                 session_info: session_info.as_ref(),
                 retry_num,
                 output_validator: Some(validate_output),
@@ -853,11 +968,11 @@ pub fn run_review_pass(
         if session_info.is_none() {
             let first_attempt_log_dir = format!(".agent/logs/reviewer_review_{j}_attempt_0");
             let log_dir_path = Path::new(&first_attempt_log_dir);
-            if let Some(agent_config) = ctx.registry.resolve_config(ctx.reviewer_agent) {
+            if let Some(agent_config) = ctx.registry.resolve_config(active_agent) {
                 session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                     log_dir_path,
                     agent_config.json_parser,
-                    Some(ctx.reviewer_agent),
+                    Some(active_agent),
                     ctx.workspace,
                 );
             }
@@ -887,7 +1002,7 @@ pub fn run_review_pass(
                         vec![".agent/ISSUES.md".to_string()],
                     ),
                 )
-                .with_agent(ctx.reviewer_agent)
+                .with_agent(active_agent)
                 .with_duration(attempt_duration);
                 ctx.execution_history.add_step(step);
 
@@ -910,7 +1025,7 @@ pub fn run_review_pass(
                     "review",
                     StepOutcome::success(Some("No issues found".to_string()), vec![]),
                 )
-                .with_agent(ctx.reviewer_agent)
+                .with_agent(active_agent)
                 .with_duration(attempt_duration);
                 ctx.execution_history.add_step(step);
 
@@ -929,7 +1044,7 @@ pub fn run_review_pass(
                         true,
                     ),
                 )
-                .with_agent(ctx.reviewer_agent)
+                .with_agent(active_agent)
                 .with_duration(attempt_duration);
                 ctx.execution_history.add_step(step);
 
@@ -1213,6 +1328,7 @@ pub fn run_fix_pass(
     _resume_context: Option<&ResumeContext>,
     _agent: Option<&str>,
 ) -> anyhow::Result<()> {
+    let active_agent = _agent.unwrap_or(ctx.reviewer_agent);
     let fix_start_time = Instant::now();
 
     update_status_with_workspace(ctx.workspace, "Applying fixes", ctx.config.isolation_mode)?;
@@ -1420,7 +1536,7 @@ pub fn run_fix_pass(
                     logfile_prefix: &log_dir,
                     runtime: &mut runtime,
                     registry: ctx.registry,
-                    primary_agent: _agent.unwrap_or(ctx.reviewer_agent),
+                    primary_agent: active_agent,
                     session_info: session_info.as_ref(),
                     retry_num,
                     output_validator: Some(validate_output),
@@ -1441,11 +1557,11 @@ pub fn run_fix_pass(
             // Extract session info for potential retry (only if we don't have it yet)
             let log_dir_path = Path::new(&log_dir);
             if session_info.is_none() {
-                if let Some(agent_config) = ctx.registry.resolve_config(ctx.reviewer_agent) {
+                if let Some(agent_config) = ctx.registry.resolve_config(active_agent) {
                     session_info = crate::pipeline::session::extract_session_info_from_log_prefix(
                         log_dir_path,
                         agent_config.json_parser,
-                        Some(ctx.reviewer_agent),
+                        Some(active_agent),
                         ctx.workspace,
                     );
                 }
@@ -1498,7 +1614,7 @@ pub fn run_fix_pass(
                             "fix",
                             StepOutcome::success(result_elements.summary, vec![]),
                         )
-                        .with_agent(ctx.reviewer_agent)
+                        .with_agent(active_agent)
                         .with_duration(duration);
                         ctx.execution_history.add_step(step);
 
@@ -1551,7 +1667,7 @@ pub fn run_fix_pass(
             true,
         ),
     )
-    .with_agent(ctx.reviewer_agent)
+    .with_agent(active_agent)
     .with_duration(duration);
     ctx.execution_history.add_step(step);
 
@@ -1689,5 +1805,66 @@ fn log_skipped_cycles_feedback(ctx: &PhaseContext<'_>, skipped_cycles: u32) {
                 "No review cycles were completed. Consider checking your git repository state.",
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_auth_failure_error_detects_auth_failure() {
+        let err = anyhow::anyhow!("Authentication error during fix - agent fallback required");
+        assert!(is_auth_failure_error(&err));
+
+        let other = anyhow::anyhow!("some other error");
+        assert!(!is_auth_failure_error(&other));
+    }
+
+    #[test]
+    fn test_advance_agent_chain_on_auth_failure_advances_and_exhausts() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            reviewer: vec!["agent-a".to_string(), "agent-b".to_string()],
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent-a".to_string(), "agent-b".to_string()],
+                vec![Vec::new(), Vec::new()],
+                AgentRole::Reviewer,
+            )
+            .with_max_cycles(1);
+
+        let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
+        assert_eq!(backoff, None);
+        assert_eq!(chain.current_agent().map(String::as_str), Some("agent-b"));
+
+        let exhausted = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config);
+        assert!(exhausted.is_err());
+        assert_eq!(chain.current_agent().map(String::as_str), Some("agent-b"));
+    }
+
+    #[test]
+    fn test_advance_agent_chain_on_auth_failure_applies_backoff_on_cycle() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            reviewer: vec!["solo-agent".to_string()],
+            retry_delay_ms: 1000,
+            backoff_multiplier: 2.0,
+            max_backoff_ms: 60000,
+            max_cycles: 2,
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["solo-agent".to_string()],
+                vec![Vec::new()],
+                AgentRole::Reviewer,
+            )
+            .with_max_cycles(2);
+
+        let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
+        assert_eq!(backoff, Some(2000));
     }
 }
