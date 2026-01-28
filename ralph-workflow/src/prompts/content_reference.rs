@@ -103,11 +103,13 @@ impl PromptContentReference {
 pub enum DiffContentReference {
     /// DIFF is small enough to embed inline.
     Inline(String),
-    /// DIFF is too large; agent should run git diff from start_commit.
-    UseGitDiff {
-        /// The commit hash to diff from (usually the start of the session).
+    /// DIFF is too large; agent should read from a file (with git diff fallback).
+    ReadFromFile {
+        /// Absolute path to the diff file containing the content.
+        path: PathBuf,
+        /// The commit hash to diff from (fallback if file is missing).
         start_commit: String,
-        /// Description of why git diff is needed.
+        /// Description of why file reading is needed.
         description: String,
     },
 }
@@ -116,17 +118,18 @@ impl DiffContentReference {
     /// Create a diff reference, choosing inline vs git command based on size.
     ///
     /// If `diff_content.len() <= MAX_INLINE_CONTENT_SIZE`, the diff is stored inline.
-    /// Otherwise, instructions to use `git diff` are provided.
+    /// Otherwise, instructions to read from a file are provided (with git diff fallback).
     ///
     /// # Arguments
     ///
     /// * `diff_content` - The diff content
     /// * `start_commit` - The commit hash to diff from
-    pub fn from_diff(diff_content: String, start_commit: &str) -> Self {
+    pub fn from_diff(diff_content: String, start_commit: &str, diff_path: &Path) -> Self {
         if diff_content.len() <= MAX_INLINE_CONTENT_SIZE {
             Self::Inline(diff_content)
         } else {
-            Self::UseGitDiff {
+            Self::ReadFromFile {
+                path: diff_path.to_path_buf(),
                 start_commit: start_commit.to_string(),
                 description: format!(
                     "Diff is {} bytes (exceeds {} limit)",
@@ -144,17 +147,21 @@ impl DiffContentReference {
     pub fn render_for_template(&self) -> String {
         match self {
             Self::Inline(content) => content.clone(),
-            Self::UseGitDiff {
+            Self::ReadFromFile {
+                path,
                 start_commit,
                 description,
             } => {
                 format!(
-                    "[DIFF too large to embed - Use git diff instead]\n\
+                    "[DIFF too large to embed - Read from file]\n\
                      {}\n\n\
-                     To see the changes, run:\n\
+                     Read the diff from: {}\n\
+                     If this file is missing or unavailable, run:\n\
                      git diff {}..HEAD\n\n\
                      This shows all changes since the start of this session.",
-                    description, start_commit
+                    description,
+                    path.display(),
+                    start_commit
                 )
             }
         }
@@ -342,24 +349,30 @@ mod tests {
     #[test]
     fn test_small_diff_is_inline() {
         let diff = "+added line\n-removed line".to_string();
-        let reference = DiffContentReference::from_diff(diff.clone(), "abc123");
+        let reference =
+            DiffContentReference::from_diff(diff.clone(), "abc123", Path::new("/backup/diff.txt"));
         assert!(reference.is_inline());
         assert_eq!(reference.render_for_template(), diff);
     }
 
     #[test]
-    fn test_large_diff_uses_git_command() {
+    fn test_large_diff_reads_from_file_with_git_fallback() {
         let diff = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
-        let reference = DiffContentReference::from_diff(diff, "abc123");
+        let reference =
+            DiffContentReference::from_diff(diff, "abc123", Path::new("/backup/diff.txt"));
         assert!(!reference.is_inline());
         let rendered = reference.render_for_template();
+        assert!(rendered.contains("/backup/diff.txt"));
         assert!(rendered.contains("git diff abc123..HEAD"));
     }
 
     #[test]
     fn test_diff_with_empty_start_commit() {
-        let reference =
-            DiffContentReference::from_diff("x".repeat(MAX_INLINE_CONTENT_SIZE + 1), "");
+        let reference = DiffContentReference::from_diff(
+            "x".repeat(MAX_INLINE_CONTENT_SIZE + 1),
+            "",
+            Path::new("/backup/diff.txt"),
+        );
         let rendered = reference.render_for_template();
         assert!(rendered.contains("git diff ..HEAD"));
     }
@@ -367,7 +380,8 @@ mod tests {
     #[test]
     fn test_diff_exactly_max_size_is_inline() {
         let diff = "d".repeat(MAX_INLINE_CONTENT_SIZE);
-        let reference = DiffContentReference::from_diff(diff.clone(), "abc");
+        let reference =
+            DiffContentReference::from_diff(diff.clone(), "abc", Path::new("/backup/diff.txt"));
         assert!(reference.is_inline());
         assert_eq!(reference.render_for_template(), diff);
     }

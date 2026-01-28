@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use super::partials::get_shared_partials;
 use super::template_context::TemplateContext;
 use super::template_engine::Template;
 #[cfg(any(test, feature = "test-utils"))]
@@ -41,6 +42,7 @@ pub fn prompt_developer_iteration(
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
+    let partials = get_shared_partials();
     // Note: iteration, total, and context are accepted for API compatibility
     // but are intentionally not exposed to the agent to prevent context pollution.
     let _ = (iteration, total, context);
@@ -52,7 +54,9 @@ pub fn prompt_developer_iteration(
         ("PLAN", plan_content.to_string()),
     ]);
 
-    template.render(&variables).unwrap_or_else(|_| {
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
         // Embedded fallback template (XML format)
         format!(
             "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n\nOutput format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n"
@@ -83,6 +87,7 @@ pub fn prompt_developer_iteration(
 ///   which prevents accidental deletion.
 #[cfg(test)]
 pub fn prompt_plan(prompt_content: Option<&str>) -> String {
+    let partials = get_shared_partials();
     let template_content = include_str!("templates/planning_xml.txt");
     let template = Template::new(template_content);
     let prompt_md = prompt_content.unwrap_or("No requirements provided");
@@ -98,7 +103,9 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
         ),
     ]);
 
-    template.render(&variables).unwrap_or_else(|_| {
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
         // Embedded fallback template (XML format)
         format!(
             "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n\nOutput format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n"
@@ -128,6 +135,7 @@ pub fn prompt_developer_iteration_with_context(
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
+    let partials = get_shared_partials();
     // Note: iteration, total, and ctx_level are accepted for API compatibility
     // but are intentionally not exposed to the agent to prevent context pollution.
     let _ = (iteration, total, ctx_level);
@@ -145,7 +153,9 @@ pub fn prompt_developer_iteration_with_context(
         ("PLAN", plan_content.to_string()),
     ]);
 
-    template.render(&variables).unwrap_or_else(|_| {
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
         // Embedded fallback template (XML format)
         format!(
             "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\nIMPLEMENTATION PLAN:\n{plan_content}\n\nExecute the next steps from the plan above.\n\nOutput format: <ralph-development-result><ralph-status>completed|partial|failed</ralph-status><ralph-summary>Summary</ralph-summary></ralph-development-result>\n"
@@ -166,6 +176,7 @@ pub fn prompt_developer_iteration_with_context(
 ///   which prevents accidental deletion.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Option<&str>) -> String {
+    let partials = get_shared_partials();
     let template_content = context
         .registry()
         .get_template("planning_xml")
@@ -187,7 +198,9 @@ pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Optio
         ),
     ]);
 
-    template.render(&variables).unwrap_or_else(|_| {
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
         // Embedded fallback template (XML format)
         format!(
             "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\nIdentify critical files and implementation steps.\n\nOutput format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n"
@@ -210,6 +223,7 @@ pub fn prompt_planning_xml_with_context(
     prompt_content: Option<&str>,
     workspace: &dyn Workspace,
 ) -> String {
+    let partials = get_shared_partials();
     // Write the XSD schema file so it's available for the agent to reference
     write_planning_xsd_schema_file(workspace);
 
@@ -231,7 +245,9 @@ pub fn prompt_planning_xml_with_context(
         ),
     ]);
 
-    template.render(&variables).unwrap_or_else(|_| {
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
         format!(
             "PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt_md}\n\n\
              Output format: <ralph-plan><ralph-summary>Summary</ralph-summary><ralph-implementation-steps>Steps</ralph-implementation-steps></ralph-plan>\n"
@@ -254,6 +270,7 @@ pub fn prompt_planning_xml_with_references(
     prompt_ref: &super::content_reference::PromptContentReference,
     workspace: &dyn Workspace,
 ) -> String {
+    let partials = get_shared_partials();
     // Write the XSD schema file so it's available for the agent to reference
     write_planning_xsd_schema_file(workspace);
 
@@ -275,10 +292,12 @@ pub fn prompt_planning_xml_with_references(
         ),
     ]);
 
-    template.render(&variables).unwrap_or_else(|_| {
-        let prompt = prompt_ref.render_for_template();
-        format!("PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt}\n")
-    })
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
+            let prompt = prompt_ref.render_for_template();
+            format!("PLANNING MODE\n\nCreate an implementation plan for:\n\n{prompt}\n")
+        })
 }
 
 /// The XSD schema for plan validation - included at compile time
@@ -349,6 +368,7 @@ pub fn prompt_planning_xsd_retry_with_context(
     last_output: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    let partials = get_shared_partials();
     // Write context files to .agent/tmp/ for the agent to read
     write_planning_xsd_retry_files(workspace, last_output);
 
@@ -372,7 +392,7 @@ pub fn prompt_planning_xsd_retry_with_context(
         ),
     ]);
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
                 "Your previous plan failed XSD validation.\n\nError: {}\n\n\
@@ -398,6 +418,7 @@ pub fn prompt_developer_iteration_xml_with_context(
     prompt_content: &str,
     plan_content: &str,
 ) -> String {
+    let partials = get_shared_partials();
     let template_content = context
         .registry()
         .get_template("developer_iteration_xml")
@@ -416,7 +437,9 @@ pub fn prompt_developer_iteration_xml_with_context(
         ),
     ]);
 
-    template.render(&variables).unwrap_or_else(|_| {
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
         format!(
             "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt_content}\n\n\
              IMPLEMENTATION PLAN:\n{plan_content}\n\n\
@@ -439,6 +462,7 @@ pub fn prompt_developer_iteration_xml_with_references(
     context: &TemplateContext,
     refs: &super::content_builder::PromptContentReferences,
 ) -> String {
+    let partials = get_shared_partials();
     let template_content = context
         .registry()
         .get_template("developer_iteration_xml")
@@ -457,15 +481,17 @@ pub fn prompt_developer_iteration_xml_with_references(
         ),
     ]);
 
-    template.render(&variables).unwrap_or_else(|_| {
-        let prompt = refs.prompt_for_template();
-        let plan = refs.plan_for_template();
-        format!(
-            "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt}\n\n\
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
+            let prompt = refs.prompt_for_template();
+            let plan = refs.plan_for_template();
+            format!(
+                "IMPLEMENTATION MODE\n\nORIGINAL REQUEST:\n{prompt}\n\n\
              IMPLEMENTATION PLAN:\n{plan}\n\n\
              Output format: <ralph-development-result>...</ralph-development-result>\n"
-        )
-    })
+            )
+        })
 }
 
 /// Generate XSD validation retry prompt for developer iteration with error feedback.
@@ -490,6 +516,7 @@ pub fn prompt_developer_iteration_xsd_retry_with_context(
     last_output: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    let partials = get_shared_partials();
     // Write context files to .agent/tmp/ for the agent to read
     write_dev_iteration_xsd_retry_files(workspace, last_output);
 
@@ -515,7 +542,7 @@ pub fn prompt_developer_iteration_xsd_retry_with_context(
         ),
     ]);
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
                 "Your previous development status failed XSD validation.\n\nError: {}\n\n\
@@ -864,6 +891,28 @@ mod tests {
         assert_eq!(regular_plan, with_context_plan);
     }
 
+    #[test]
+    fn test_prompt_developer_iteration_xml_with_context_renders_shared_partials() {
+        let context = TemplateContext::default();
+
+        let result =
+            prompt_developer_iteration_xml_with_context(&context, "test prompt", "test plan");
+
+        assert!(result.contains("test prompt"));
+        assert!(result.contains("test plan"));
+        assert!(result.contains("IMPLEMENTATION MODE"));
+
+        // Shared partials should be expanded
+        assert!(
+            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+            "developer_iteration_xml should render shared/_unattended_mode partial"
+        );
+        assert!(
+            !result.contains("{{>"),
+            "developer_iteration_xml should not contain raw partial directives"
+        );
+    }
+
     // =========================================================================
     // Tests for _with_references variants
     // =========================================================================
@@ -887,6 +936,16 @@ mod tests {
         assert!(result.contains("Small prompt content"));
         assert!(result.contains("Small plan content"));
         assert!(result.contains("IMPLEMENTATION MODE"));
+
+        // Shared partials should be expanded
+        assert!(
+            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+            "developer_iteration_xml should render shared/_unattended_mode partial"
+        );
+        assert!(
+            !result.contains("{{>"),
+            "developer_iteration_xml should not contain raw partial directives"
+        );
     }
 
     #[test]

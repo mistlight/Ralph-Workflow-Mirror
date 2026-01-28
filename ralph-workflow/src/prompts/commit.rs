@@ -2,6 +2,7 @@
 //!
 //! Prompts for commit message generation and fix actions.
 
+use crate::prompts::partials::get_shared_partials;
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use crate::workspace::Workspace;
@@ -60,6 +61,7 @@ fn write_commit_xsd_retry_files_to_workspace(diff: &str, workspace: &dyn Workspa
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
 #[cfg(test)]
 pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str) -> String {
+    let partials = get_shared_partials();
     let template_content = include_str!("templates/fix_mode_xml.txt");
 
     // Extract file paths from ISSUES content to provide explicit list
@@ -81,7 +83,7 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
         ),
     ]);
     Template::new(template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             // Embedded fallback template (XML format)
             format!(
@@ -108,6 +110,7 @@ pub fn prompt_fix_with_context(
     plan_content: &str,
     issues_content: &str,
 ) -> String {
+    let partials = get_shared_partials();
     let template_content = context
         .registry()
         .get_template("fix_mode_xml")
@@ -132,7 +135,7 @@ pub fn prompt_fix_with_context(
         ),
     ]);
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             // Embedded fallback template (XML format)
             format!(
@@ -238,6 +241,7 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
 
     let template_content = include_str!("templates/commit_message_xml.txt");
     let template = Template::new(template_content);
+    let partials = get_shared_partials();
     let variables = HashMap::from([
         ("DIFF", diff_content.to_string()),
         (
@@ -250,7 +254,9 @@ pub fn prompt_generate_commit_message_with_diff(diff: &str) -> String {
         ),
     ]);
 
-    template.render(&variables).unwrap_or_else(|e| {
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|e| {
         eprintln!("Warning: Failed to render commit template: {e}");
         // Last resort: simple inline prompt (no fallback template needed)
         format!(
@@ -290,6 +296,7 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
         .get_template("commit_message_xml")
         .unwrap_or_else(|_| include_str!("templates/commit_message_xml.txt").to_string());
     let template = Template::new(&template_content);
+    let partials = get_shared_partials();
     let variables = HashMap::from([
         ("DIFF", diff_content.to_string()),
         (
@@ -302,7 +309,9 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
         ),
     ]);
 
-    template.render(&variables).unwrap_or_else(|e| {
+    template
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|e| {
         eprintln!("Warning: Failed to render commit template: {e}");
         // Last resort: simple inline prompt (no fallback template needed)
         format!(
@@ -338,7 +347,7 @@ pub fn prompt_simplified_commit_with_context(context: &TemplateContext, diff: &s
         .unwrap_or_else(|_| include_str!("templates/commit_simplified.txt").to_string());
     let variables = HashMap::from([("DIFF", diff_content.to_string())]);
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &get_shared_partials())
         .unwrap_or_else(|_| {
             // Fallback to simple prompt with diff if template rendering fails
             format!(
@@ -368,6 +377,7 @@ pub fn prompt_xsd_retry_with_context(
     xsd_error: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    let partials = get_shared_partials();
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
     let has_changes = !diff_content.is_empty();
@@ -401,7 +411,7 @@ pub fn prompt_xsd_retry_with_context(
         ),
     ]);
     Template::new(&template_content)
-        .render(&variables)
+        .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             // Fallback to simple retry prompt if template rendering fails
             format!(
@@ -441,6 +451,16 @@ mod tests {
         // Should include PROMPT and PLAN context
         assert!(result.contains("test prompt content"));
         assert!(result.contains("test plan content"));
+
+        // Shared partials should be expanded
+        assert!(
+            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+            "fix_mode_xml should render shared/_unattended_mode partial"
+        );
+        assert!(
+            !result.contains("{{>"),
+            "fix_mode_xml should not contain raw partial directives"
+        );
     }
 
     #[test]
@@ -711,6 +731,16 @@ mod tests {
         assert!(result.contains("issues_remain"));
         assert!(result.contains("test prompt content"));
         assert!(result.contains("test plan content"));
+
+        // Shared partials should be expanded
+        assert!(
+            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+            "fix_mode_xml should render shared/_unattended_mode partial"
+        );
+        assert!(
+            !result.contains("{{>"),
+            "fix_mode_xml should not contain raw partial directives"
+        );
     }
 
     #[test]
@@ -741,6 +771,20 @@ mod tests {
         assert!(!result.is_empty());
         assert!(result.contains("DIFF:") || result.contains("diff"));
         assert!(!result.contains("ERROR: Empty diff"));
+
+        // Shared partials should be expanded
+        assert!(
+            result.contains("*** NO-EXECUTE MODE - READ ONLY ***"),
+            "commit_message_xml should render shared/_safety_no_execute partial"
+        );
+        assert!(
+            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+            "commit_message_xml should render shared/_unattended_mode partial"
+        );
+        assert!(
+            !result.contains("{{>"),
+            "commit_message_xml should not contain raw partial directives"
+        );
     }
 
     #[test]
@@ -767,5 +811,30 @@ mod tests {
                 || result.contains("/test/repo/.agent/tmp/commit_message.xsd"),
             "Prompt should contain absolute paths from workspace"
         );
+    }
+
+    #[test]
+    fn test_prompt_xsd_retry_with_context_renders_shared_partials_and_writes_diff() {
+        let context = TemplateContext::default();
+        let workspace = MemoryWorkspace::new_test();
+        let diff = "diff --git a/a.txt b/a.txt\n+line\n";
+
+        let result = prompt_xsd_retry_with_context(&context, diff, "XSD error", &workspace);
+
+        assert!(result.contains("XSD error"));
+
+        // Shared partials should be expanded
+        assert!(
+            result.contains("*** NO-EXECUTE MODE - READ ONLY ***"),
+            "commit_xsd_retry should render shared/_safety_no_execute partial"
+        );
+        assert!(
+            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+            "commit_xsd_retry should render shared/_unattended_mode partial"
+        );
+        assert!(!result.contains("{{>"));
+
+        // Retry context should write the diff to .agent/tmp/diff.txt
+        assert!(workspace.was_written(".agent/tmp/diff.txt"));
     }
 }
