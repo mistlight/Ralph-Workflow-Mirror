@@ -20,6 +20,18 @@
 //! - [`WorkspaceFs`] - Production implementation using the real filesystem
 //! - [`MemoryWorkspace`] - Test implementation with in-memory storage (available with `test-utils` feature)
 //!
+//! # Well-Known Paths
+//!
+//! This module defines constants for all Ralph artifact paths:
+//!
+//! - [`AGENT_DIR`] - `.agent/` directory
+//! - [`PLAN_MD`] - `.agent/PLAN.md`
+//! - [`ISSUES_MD`] - `.agent/ISSUES.md`
+//! - [`PROMPT_MD`] - `PROMPT.md` (repository root)
+//! - [`CHECKPOINT_JSON`] - `.agent/checkpoint.json`
+//!
+//! The [`Workspace`] trait provides convenience methods for these paths (e.g., [`Workspace::plan_md`]).
+//!
 //! # Production Example
 //!
 //! ```ignore
@@ -58,6 +70,10 @@
 //! ws.write(Path::new(".agent/output.txt"), "result")?;
 //! assert!(ws.was_written(".agent/output.txt"));
 //! ```
+//!
+//! # See Also
+//!
+//! - [`crate::executor::ProcessExecutor`] - Similar abstraction for process execution
 
 // ============================================================================
 // Well-known path constants

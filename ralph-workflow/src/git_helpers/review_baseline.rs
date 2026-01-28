@@ -53,7 +53,7 @@ pub enum ReviewBaseline {
 /// - The file cannot be written
 ///
 /// **Note:** This function uses the current working directory to discover the repo.
-/// For explicit path control, use [`update_review_baseline_at`] instead.
+/// For explicit path control, use `update_review_baseline_with_workspace` instead.
 pub fn update_review_baseline() -> io::Result<()> {
     let oid = get_current_head_oid()?;
     write_review_baseline_cwd(&oid)

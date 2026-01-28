@@ -2,12 +2,12 @@
 //!
 //! This module provides a trait-based abstraction for executing external processes,
 //! allowing production code to use real processes and test code to use mocks.
-//! This follows the same pattern as AppEffectHandler for dependency injection.
+//! This follows the same pattern as [`crate::workspace::Workspace`] for dependency injection.
 //!
 //! # Purpose
 //!
 //! - Production: [`RealProcessExecutor`] executes actual commands using `std::process::Command`
-//! - Tests: `MockProcessExecutor` captures calls and returns controlled results
+//! - Tests: [`MockProcessExecutor`] captures calls and returns controlled results (with `test-utils` feature)
 //!
 //! # Benefits
 //!
@@ -16,9 +16,16 @@
 //! - Speed: Tests run faster without subprocess overhead
 //! - Mockability: Full control over process behavior in tests
 //!
+//! # Key Types
+//!
+//! - [`ProcessExecutor`] - The trait abstraction for process execution
+//! - [`AgentSpawnConfig`] - Configuration for spawning agent processes
+//! - [`AgentChildHandle`] - Handle to a spawned agent with streaming output
+//! - [`ProcessOutput`] - Captured output from a completed process
+//!
 //! # Testing with MockProcessExecutor
 //!
-//! The `test-utils` feature enables `MockProcessExecutor` for integration tests:
+//! The `test-utils` feature enables [`MockProcessExecutor`] for integration tests:
 //!
 //! ```ignore
 //! use ralph_workflow::{MockProcessExecutor, ProcessExecutor};
@@ -34,6 +41,10 @@
 //! // Verify the call was captured
 //! assert_eq!(executor.execute_count(), 1);
 //! ```
+//!
+//! # See Also
+//!
+//! - [`crate::workspace::Workspace`] - Similar abstraction for filesystem operations
 
 use crate::agents::JsonParserType;
 use std::collections::HashMap;

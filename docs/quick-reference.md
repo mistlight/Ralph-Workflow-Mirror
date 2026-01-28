@@ -225,9 +225,11 @@ Ralph's streaming system handles real-time AI agent output. These environment va
 ├── NOTES.md             # Agent notes
 ├── commit-message.txt   # Generated commit message
 ├── checkpoint.json      # For --resume
-├── last_prompt.txt      # Last prompt sent to agent
+├── PROMPT.md.backup     # Backup of PROMPT.md (read-only)
 ├── start_commit         # Baseline commit for cumulative diffs
 ├── review_baseline.txt  # Review baseline tracking
+├── config.toml          # Local agent config (optional)
+├── agents.toml          # Legacy agent registry (optional)
 ├── tmp/                 # Temporary files (XSD, XML artifacts)
 └── logs/                # Agent run logs (pipeline.log, per-phase logs)
 ```
@@ -300,4 +302,4 @@ ralph -T
 | Auth errors | Run agent's auth command or set API key |
 | No commit created | Ensure there are meaningful changes |
 
-For more help, run `ralph --diagnose` or see the [full documentation](../README.md#documentation).
+For more help, run `ralph --diagnose` or `ralph --extended-help`.

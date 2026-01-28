@@ -49,6 +49,8 @@ Never mix. AppEffect cannot use Workspace; Effect cannot use `std::fs`.
 | **CCS** | Claude Code Switch - tool for switching between Claude Code profiles |
 | **NDJSON** | Newline-delimited JSON - streaming format used by agent CLIs |
 | **XSD** | XML Schema Definition - used to validate agent XML output |
+| **ProcessExecutor** | Process execution abstraction trait - use `RealProcessExecutor` in production, `MockProcessExecutor` in tests |
+| **Work Guide** | PROMPT.md template for describing tasks to AI agents (e.g., bug-fix, feature-spec, refactor) |
 
 ---
 

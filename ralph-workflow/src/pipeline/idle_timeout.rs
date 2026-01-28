@@ -35,7 +35,7 @@ pub const IDLE_TIMEOUT_SECS: u64 = 300;
 
 /// Shared timestamp for tracking last activity.
 ///
-/// Stores milliseconds since UNIX epoch. Use [`ActivityTracker::new`] to create.
+/// Stores milliseconds since UNIX epoch. Use [`new_activity_timestamp`] to create.
 pub type SharedActivityTimestamp = Arc<AtomicU64>;
 
 /// Creates a new shared activity timestamp initialized to the current time.

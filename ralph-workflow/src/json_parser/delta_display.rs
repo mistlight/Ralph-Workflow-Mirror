@@ -52,7 +52,7 @@
 //! ## Prefix Debouncing
 //!
 //! For scenarios where prefix repetition creates visual noise (e.g., character-by-character
-//! streaming), the [`PrefixDebouncer`] can be used to control prefix display frequency.
+//! streaming), a `PrefixDebouncer` can be used to control prefix display frequency.
 //! It supports both delta-count-based and time-based strategies:
 //!
 //! - **Count-based**: Show prefix every N deltas (default: every delta)

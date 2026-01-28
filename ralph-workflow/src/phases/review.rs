@@ -8,7 +8,7 @@
 //!
 //! # Module Structure
 //!
-//! - [`validation`] - Pre-flight and post-flight validation checks
+//! - `validation` - Pre-flight and post-flight validation checks
 
 /// Maximum continuation attempts for fix passes to prevent infinite loops.
 ///

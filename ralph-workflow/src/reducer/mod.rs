@@ -1,11 +1,22 @@
 //! Reducer-based pipeline architecture.
 //!
-//! This module implements the event-sourced reducer architecture from RFC-004.
+//! This module implements the event-sourced reducer architecture.
 //! It provides:
 //! - Pure state reduction with explicit event transitions
 //! - Immutable pipeline state that doubles as checkpoint
 //! - Event log for debugging and replay
 //! - Effect handlers for side effects (git operations, agent execution)
+//!
+//! # Key Types
+//!
+//! - [`PipelineState`] - Immutable state representing current pipeline progress
+//! - [`PipelineEvent`] - Events that trigger state transitions
+//! - [`reduce`] - Pure function: `(State, Event) → State`
+//! - [`determine_next_effect`] - Pure function: `State → Effect`
+//! - [`EffectHandler`] - Trait for executing effects (impure operations)
+//!
+//! See also: [`CODE_STYLE.md`](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/CODE_STYLE.md)
+//! for the architecture overview.
 //!
 //! # Architecture
 //!

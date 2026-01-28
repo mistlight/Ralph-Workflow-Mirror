@@ -1,23 +1,32 @@
 //! JSON Stream Parsing Module
 //!
 //! Functions for parsing NDJSON (newline-delimited JSON)
-//! streams from Claude, Codex, Gemini, and `OpenCode` CLI tools.
+//! streams from Claude, Codex, Gemini, and OpenCode CLI tools.
+//!
+//! NDJSON is a format where each line contains a complete JSON object.
+//! Agent CLIs emit NDJSON streams for real-time event processing.
 //!
 //! This module uses serde for JSON parsing, which is ~100x faster
 //! than spawning jq for each event.
 //!
-//! For the detailed streaming contract and implementation notes,
-//! see the `README.md` file in this module's directory.
+//! # Key Types
+//!
+//! - [`ClaudeParser`] - Parser for Claude CLI NDJSON output
+//! - [`CodexParser`] - Parser for OpenAI Codex CLI NDJSON output
+//! - [`GeminiParser`] - Parser for Google Gemini CLI NDJSON output
+//! - [`OpenCodeParser`] - Parser for OpenCode CLI NDJSON output
+//!
+//! Parser selection is controlled by [`crate::agents::JsonParserType`].
 //!
 //! # Module Structure
 //!
 //! - [`types`] - Shared types and event structures
-//! - [`stream_classifier`] - Algorithmic detection of partial vs complete events
 //! - [`claude`] - Claude CLI output parser (with streaming support)
-//! - [`codex`] - `OpenAI` Codex CLI output parser (with streaming support)
+//! - [`codex`] - OpenAI Codex CLI output parser (with streaming support)
 //! - [`gemini`] - Google Gemini CLI output parser (with streaming support)
-//! - [`opencode`] - `OpenCode` CLI output parser (with streaming support)
+//! - [`opencode`] - OpenCode CLI output parser (with streaming support)
 //! - [`health`] - Parser health monitoring and graceful degradation
+//! - [`printer`] - Test utilities for output verification (`test-utils` feature)
 //!
 //! # Streaming Support
 //!

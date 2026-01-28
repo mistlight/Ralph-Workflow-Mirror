@@ -134,7 +134,7 @@ impl Logger {
     ///
     /// # Note
     ///
-    /// For pipeline code where a workspace exists, prefer [`with_workspace_log`]
+    /// For pipeline code where a workspace exists, prefer `with_workspace_log`
     /// instead. This method uses `std::fs` directly and is intended for CLI layer
     /// code or legacy compatibility.
     pub fn with_log_file(mut self, path: &str) -> Self {
@@ -515,7 +515,7 @@ pub trait Loggable {
 
     /// Log a success message.
     ///
-    /// Default implementation formats the message with [OK] prefix
+    /// Default implementation formats the message with `[OK]` prefix
     /// and delegates to the `log` method.
     fn success(&self, msg: &str) {
         self.log(&format!("[OK] {msg}"));
@@ -531,7 +531,7 @@ pub trait Loggable {
 
     /// Log an error message.
     ///
-    /// Default implementation formats the message with [ERROR] prefix
+    /// Default implementation formats the message with `[ERROR]` prefix
     /// and delegates to the `log` method.
     fn error(&self, msg: &str) {
         self.log(&format!("[ERROR] {msg}"));

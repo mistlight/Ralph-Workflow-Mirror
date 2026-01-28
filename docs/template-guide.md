@@ -34,17 +34,18 @@ templates/
 ├── commit_message_xml.txt               # Normal commit message (XML format)
 ├── commit_simplified.txt                # Simplified commit strategy
 ├── commit_xsd_retry.txt                 # XSD validation retry (in-session)
+├── conflict_resolution.txt              # Merge conflict resolution
+├── conflict_resolution_fallback.txt     # Fallback conflict resolution
 ├── developer_iteration_xml.txt          # Implementation mode prompt
 ├── developer_iteration_continuation_xml.txt  # Continuation prompt
 ├── developer_iteration_xsd_retry.txt    # Dev XSD validation retry
-├── planning_xml.txt                     # Planning phase prompt
-├── planning_xsd_retry.txt               # Planning XSD validation retry
 ├── fix_mode_xml.txt                     # Fix mode prompt
 ├── fix_mode_xsd_retry.txt               # Fix mode XSD validation retry
+├── planning_xml.txt                     # Planning phase prompt
+├── planning_xsd_retry.txt               # Planning XSD validation retry
 ├── review_xml.txt                       # Code review prompt
 ├── review_xsd_retry.txt                 # Review XSD validation retry
-├── conflict_resolution.txt              # Merge conflict resolution
-└── conflict_resolution_fallback.txt     # Fallback conflict resolution
+└── TEMPLATE_GUIDE.md                    # Internal reference for template developers
 ```
 
 ## Template Syntax
@@ -108,42 +109,7 @@ Each template has access to different variables depending on its context. Below 
 
 ### Commit Templates
 
-All commit templates are used during the commit message generation phase, with different variants used as retries.
-
-#### `commit_message_xml.txt` (main)
-**When used**: Initial commit message generation attempt
-
-| Variable | Description |
-|----------|-------------|
-| `DIFF` | Git diff to generate commit message for |
-
-#### `commit_strict_json.txt`, `commit_strict_json_v2.txt`
-**When used**: When initial attempt fails to produce valid XML output
-
-| Variable | Description |
-|----------|-------------|
-| `DIFF` | Git diff to generate commit message for |
-
-#### `commit_ultra_minimal.txt`, `commit_ultra_minimal_v2.txt`
-**When used**: When stricter prompts also fail
-
-| Variable | Description |
-|----------|-------------|
-| `DIFF` | Git diff to generate commit message for |
-
-#### `commit_file_list_only.txt`
-**When used**: When diff content is too large, fall back to file paths only
-
-| Variable | Description |
-|----------|-------------|
-| `FILE_LIST` | List of changed file paths extracted from diff |
-
-#### `commit_file_list_summary.txt`
-**When used**: When even file list is too large, provide summary only
-
-| Variable | Description |
-|----------|-------------|
-| `FILE_SUMMARY` | Summary statistics of changed files |
+Commit templates are used during the commit message generation phase, with different strategies tried as fallbacks.
 
 #### `commit_message_xml.txt` (Normal Strategy)
 **When used**: First attempt at commit generation
@@ -151,8 +117,6 @@ All commit templates are used during the commit message generation phase, with d
 | Variable | Description |
 |----------|-------------|
 | `DIFF` | Git diff to analyze |
-| `FILES_CHANGED` | List of changed files |
-| `BRANCH_NAME` | Current branch name (optional) |
 
 #### `commit_simplified.txt` (Simplified Strategy)
 **When used**: Second attempt with more direct instructions
@@ -160,17 +124,12 @@ All commit templates are used during the commit message generation phase, with d
 | Variable | Description |
 |----------|-------------|
 | `DIFF` | Git diff to analyze |
-| `FILES_CHANGED` | List of changed files |
-| `BRANCH_NAME` | Current branch name (optional) |
 
 #### `commit_xsd_retry.txt` (XSD Validation Retry)
 **When used**: In-session retry when XSD validation fails
 
 | Variable | Description |
 |----------|-------------|
-| `DIFF` | Git diff to analyze |
-| `FILES_CHANGED` | List of changed files |
-| `BRANCH_NAME` | Current branch name (optional) |
 | `XSD_ERROR` | XSD validation error message |
 
 **Retry Strategy**: The commit generation uses a two-strategy approach (Normal, Simplified) with in-session XSD validation retries. Each strategy allows up to 5 in-session retries when XSD validation fails, with detailed error feedback provided to the agent.
@@ -339,5 +298,6 @@ let variables = HashMap::from([
 If you encounter issues or have questions about template customization:
 
 1. Check the existing template files for examples
-2. Review the source code in `ralph-workflow/src/prompts/`
-3. Open an issue on the Ralph GitHub repository
+2. Review the internal `ralph-workflow/src/prompts/templates/TEMPLATE_GUIDE.md`
+3. Review the source code in `ralph-workflow/src/prompts/`
+4. Open an issue on the Ralph repository

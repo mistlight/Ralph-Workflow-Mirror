@@ -1,9 +1,17 @@
 //! Agent Abstraction Module
 //!
 //! Provides a pluggable agent system for different AI coding assistants
-//! (Claude, Codex, `OpenCode`, Goose, Cline, CCS, etc.)
+//! (Claude, Codex, OpenCode, Goose, Cline, CCS, etc.)
 //!
-//! For detailed compatibility information, see `docs/agent-compatibility.md`.
+//! # Key Types
+//!
+//! - [`AgentRegistry`] - Registry for looking up and managing agent configurations
+//! - [`AgentConfig`] - Configuration for a single agent (command, flags, parser type)
+//! - [`AgentErrorKind`] - Error classification for fault-tolerant execution
+//! - [`JsonParserType`] - Parser selection for agent NDJSON output (Claude, Codex, Gemini, OpenCode, Generic)
+//!
+//! For detailed compatibility information, see
+//! [`docs/agent-compatibility.md`](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/agent-compatibility.md).
 //!
 //! ## Module Structure
 //!

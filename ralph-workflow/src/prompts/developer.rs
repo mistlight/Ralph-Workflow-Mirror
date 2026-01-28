@@ -257,7 +257,7 @@ pub fn prompt_planning_xml_with_context(
 
 /// Generate planning prompt with size-aware content references.
 ///
-/// This version uses [`PromptContentReference`] which automatically handles
+/// This version uses `PromptContentReference` which automatically handles
 /// oversized PROMPT content by referencing the backup file path.
 ///
 /// # Arguments
@@ -450,7 +450,7 @@ pub fn prompt_developer_iteration_xml_with_context(
 
 /// Generate developer iteration prompt with size-aware content references.
 ///
-/// This version uses [`PromptContentReferences`] which automatically handles
+/// This version uses `PromptContentReferences` which automatically handles
 /// oversized content by referencing file paths instead of embedding inline.
 /// Use this when content may exceed CLI argument limits.
 ///

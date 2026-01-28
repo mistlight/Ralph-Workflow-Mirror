@@ -10,9 +10,9 @@
 //!
 //! # Module Structure
 //!
-//! - [`model_flag`] - Model flag resolution and provider detection
-//! - [`runner`] - Pipeline runtime and command execution with fallback
-//! - [`types`] - Pipeline statistics tracking and RAII guards
+//! - `model_flag` - Model flag resolution and provider detection
+//! - `runner` - Pipeline runtime and command execution with fallback
+//! - `types` - Pipeline statistics tracking and RAII guards
 //! - [`session`] - Session extraction and continuation for XSD retries
 //! - [`logfile`] - Unified log file path creation, parsing, and discovery
 

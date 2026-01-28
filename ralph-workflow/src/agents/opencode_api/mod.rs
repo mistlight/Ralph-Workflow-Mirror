@@ -1,7 +1,7 @@
 //! OpenCode API catalog module.
 //!
 //! This module handles fetching, caching, and querying the OpenCode model catalog
-//! from https://models.dev/api.json. The catalog contains available providers and models
+//! from <https://models.dev/api.json>. The catalog contains available providers and models
 //! that OpenCode supports, enabling dynamic agent configuration.
 //!
 //! # Module Structure

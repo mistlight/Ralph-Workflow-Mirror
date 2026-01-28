@@ -11,9 +11,9 @@
 //!
 //! # Module Structure
 //!
-//! - [`extensions`] - Extension to language mapping
-//! - [`signatures`] - Signature file detection for frameworks and package managers
-//! - [`scanner`] - File system scanning utilities
+//! - `extensions` - Extension to language mapping
+//! - `signatures` - Signature file detection for frameworks and package managers
+//! - `scanner` - File system scanning utilities
 
 #![deny(unsafe_code)]
 

@@ -7,11 +7,11 @@
 //!
 //! # Module Structure
 //!
-//! - [`types`] - Type definitions (`ContextLevel`, Role, Action)
-//! - [`developer`] - Developer prompts (iteration, planning)
+//! - `types` - Type definitions (ContextLevel, Role, Action)
+//! - `developer` - Developer prompts (iteration, planning)
 //! - [`reviewer`] - Reviewer prompts (review, comprehensive, security, incremental)
-//! - [`commit`] - Fix and commit message prompts
-//! - [`rebase`] - Conflict resolution prompts for auto-rebase
+//! - `commit` - Fix and commit message prompts
+//! - `rebase` - Conflict resolution prompts for auto-rebase
 //! - [`partials`] - Shared template partials for composition
 
 mod commit;

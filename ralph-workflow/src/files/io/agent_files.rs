@@ -63,7 +63,6 @@ pub fn file_contains_marker(file_path: &Path, marker: &str) -> io::Result<bool> 
 
 /// Ensure required files and directories exist using workspace.
 ///
-/// This is the workspace-based version of [`ensure_files_at`].
 /// Creates the `.agent/logs` and `.agent/tmp` directories if they don't exist.
 /// Also writes XSD schemas to `.agent/tmp/` for agent self-validation.
 ///

@@ -89,7 +89,7 @@ pub fn prompt_review_xml_with_context(
 
 /// Generate review prompt with size-aware content references.
 ///
-/// This version uses [`PromptContentReferences`] which automatically handles
+/// This version uses `PromptContentReferences` which automatically handles
 /// oversized PLAN and DIFF content by referencing file paths or git commands.
 ///
 /// Note: The reviewer is still instructed to read `.agent/PROMPT.md.backup` directly

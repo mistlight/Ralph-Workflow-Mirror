@@ -193,26 +193,7 @@ pub fn check_filesystem_ready_with_workspace(
 /// - `Ok(false)` - File doesn't exist (not an error)
 /// - `Err(...)` - File is locked or not writable
 ///
-/// # Example
-///
-/// ```ignore
-/// // Check if issues.xml is writable before agent runs
-/// match check_xml_file_writable(Path::new(".agent/tmp/issues.xml"), false) {
-///     Ok(true) => println!("File is writable"),
-/// Check and clean up all XML files in .agent/tmp/ directory.
-///
-/// This is useful to run before starting an agent to ensure no stale
-/// XML files from previous runs are blocking operations.
-///
-/// # Arguments
-///
-/// * `tmp_dir` - Path to .agent/tmp/ directory
-/// * `force_cleanup` - If true, delete locked files
-///
-/// # Returns
-///
-///
-/// This is the workspace-based version of `check_xml_file_writable`.
+/// Check if XML file is writable using workspace abstraction.
 ///
 /// Note: In `MemoryWorkspace`, files are always considered writable since there's
 /// no concept of file locking. This function is primarily for testability.

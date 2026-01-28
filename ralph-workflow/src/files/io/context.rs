@@ -163,8 +163,8 @@ pub fn delete_issues_file_for_isolation_at(repo_root: &Path, logger: &Logger) ->
 
 /// Delete ISSUES.md after the final fix iteration completes using workspace.
 ///
-/// This version uses the [`Workspace`] trait for file operations, allowing tests
-/// to use [`MemoryWorkspace`] instead of the real filesystem.
+/// This version uses the [`Workspace`] trait for file operations,
+/// allowing tests to use an in-memory workspace instead of the real filesystem.
 ///
 /// # Arguments
 ///
@@ -204,8 +204,8 @@ fn overwrite_one_liner_with_workspace(
 
 /// Clean context before reviewer phase using workspace.
 ///
-/// This version uses the [`Workspace`] trait for file operations, allowing tests
-/// to use [`MemoryWorkspace`] instead of the real filesystem.
+/// This version uses the [`Workspace`] trait for file operations,
+/// allowing tests to use an in-memory workspace instead of the real filesystem.
 ///
 /// When `isolation_mode` is true (the default), this function does nothing
 /// since STATUS.md, NOTES.md and ISSUES.md should not exist in isolation mode.
@@ -285,8 +285,8 @@ pub fn update_status_at(repo_root: &Path, _status: &str, isolation_mode: bool) -
 
 /// Update the status file with minimal, vague content using workspace.
 ///
-/// This version uses the [`Workspace`] trait for file operations, allowing tests
-/// to use [`MemoryWorkspace`] instead of the real filesystem.
+/// This version uses the [`Workspace`] trait for file operations,
+/// allowing tests to use an in-memory workspace instead of the real filesystem.
 ///
 /// Status is intentionally kept to 1 sentence to prevent context contamination.
 /// When `isolation_mode` is true (the default), this function does nothing

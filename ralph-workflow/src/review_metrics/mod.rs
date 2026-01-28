@@ -6,8 +6,8 @@
 //!
 //! # Module Structure
 //!
-//! - [`severity`] - Issue severity levels (Critical, High, Medium, Low)
-//! - [`metrics`] - Core `ReviewMetrics` struct and parsing logic
+//! - `severity` - Issue severity levels (Critical, High, Medium, Low)
+//! - `metrics` - Core `ReviewMetrics` struct and parsing logic
 
 #![deny(unsafe_code)]
 

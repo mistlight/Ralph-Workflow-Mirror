@@ -3,16 +3,18 @@
 //! Provides git hooks management, a git wrapper for blocking commits during the
 //! agent phase, and basic repository utilities.
 //!
+//! All git operations use libgit2 directly - no git CLI required.
+//!
 //! # Module Structure
 //!
-//! - [`hooks`] - Git hooks installation and removal
+//! - `hooks` - Git hooks installation and removal
 //! - [`identity`] - Git identity resolution with comprehensive fallback chain
-//! - [`repo`] - Basic git repository operations (add, commit, snapshot)
-//! - [`start_commit`] - Starting commit tracking for incremental diffs
-//! - [`review_baseline`] - Per-review-cycle baseline tracking
-//! - [`wrapper`] - Agent phase git wrapper for safe concurrent execution
+//! - `repo` - Basic git repository operations (add, commit, snapshot)
+//! - `start_commit` - Starting commit tracking for incremental diffs
+//! - `review_baseline` - Per-review-cycle baseline tracking
+//! - `wrapper` - Agent phase git wrapper for safe concurrent execution
 //! - [`branch`] - Branch detection and default branch resolution
-//! - [`rebase`] - Rebase operations with fault tolerance
+//! - `rebase` - Rebase operations with fault tolerance
 
 #![deny(unsafe_code)]
 

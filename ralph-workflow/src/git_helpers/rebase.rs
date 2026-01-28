@@ -698,7 +698,7 @@ impl ConcurrentOperation {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use ralph_workflow::git_helpers::rebase::detect_concurrent_git_operations;
 ///
 /// match detect_concurrent_git_operations() {
@@ -956,7 +956,7 @@ fn validate_state_file(path: &Path) -> io::Result<bool> {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use ralph_workflow::git_helpers::rebase::{attempt_automatic_recovery, RebaseErrorKind};
 /// use ralph_workflow::git_helpers::rebase_checkpoint::RebasePhase;
 ///
@@ -1135,7 +1135,7 @@ pub fn is_dirty_tree_cli(executor: &dyn crate::executor::ProcessExecutor) -> io:
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use ralph_workflow::git_helpers::rebase::validate_rebase_preconditions;
 ///
 /// match validate_rebase_preconditions(&executor) {

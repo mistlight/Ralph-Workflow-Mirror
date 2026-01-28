@@ -1,7 +1,7 @@
 //! OpenCode API catalog fetching.
 //!
 //! This module handles HTTP requests to fetch the OpenCode model catalog
-//! from https://models.dev/api.json.
+//! from <https://models.dev/api.json>.
 
 use crate::agents::opencode_api::cache::{save_catalog, CacheError};
 use crate::agents::opencode_api::types::ApiCatalog;

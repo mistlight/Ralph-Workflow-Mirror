@@ -1,7 +1,7 @@
 //! OpenCode API catalog data structures.
 //!
 //! This module defines the types for parsing and representing the OpenCode
-//! model catalog from https://models.dev/api.json.
+//! model catalog from <https://models.dev/api.json>.
 //!
 //! The actual API format is:
 //! ```json
