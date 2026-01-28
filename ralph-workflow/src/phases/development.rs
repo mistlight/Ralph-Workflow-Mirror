@@ -311,6 +311,15 @@ pub struct DevAttemptResult {
     pub auth_failure: bool,
 }
 
+/// Authentication failure during development-related phases.
+#[derive(Debug, thiserror::Error)]
+pub enum AuthFailureError {
+    #[error("Authentication error during planning - agent fallback required")]
+    Planning,
+    #[error("Authentication error during development - agent fallback required")]
+    Development,
+}
+
 /// Run a single development attempt (one session) with XML extraction and XSD validation retry loop.
 ///
 /// This does **not** perform continuation retries. If the agent returns status="partial" or
@@ -709,6 +718,10 @@ pub fn run_development_iteration_with_xml_retry(
         had_any_error |= attempt.had_error;
         last_summary = Some(attempt.summary.clone());
 
+        if attempt.auth_failure {
+            return Err(AuthFailureError::Development.into());
+        }
+
         if attempt.output_valid && matches!(attempt.status, DevelopmentStatus::Completed) {
             return Ok(DevIterationResult {
                 had_error: had_any_error,
@@ -1066,7 +1079,7 @@ pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::
         if xsd_result.auth_error_detected {
             ctx.logger
                 .warn("  Auth/credential error detected during planning, signaling agent fallback");
-            anyhow::bail!("Authentication error during planning - agent fallback required");
+            return Err(AuthFailureError::Planning.into());
         }
 
         // Extract and validate the plan XML

@@ -6,7 +6,7 @@ use crate::reducer::state::{ContinuationState, DevelopmentStatus};
 #[test]
 fn test_development_phase_started_sets_development_phase() {
     let state = create_test_state();
-    let new_state = reduce(state, PipelineEvent::DevelopmentPhaseStarted);
+    let new_state = reduce(state, PipelineEvent::development_phase_started());
 
     assert_eq!(new_state.phase, PipelinePhase::Development);
 }
@@ -14,10 +14,7 @@ fn test_development_phase_started_sets_development_phase() {
 #[test]
 fn test_development_iteration_started_sets_iteration() {
     let state = create_test_state();
-    let new_state = reduce(
-        state,
-        PipelineEvent::DevelopmentIterationStarted { iteration: 3 },
-    );
+    let new_state = reduce(state, PipelineEvent::development_iteration_started(3));
 
     assert_eq!(new_state.iteration, 3);
 }
@@ -46,10 +43,7 @@ fn test_development_iteration_started_resets_agent_chain() {
     assert_eq!(state.agent_chain.current_agent_index, 1);
     assert_eq!(state.agent_chain.retry_cycle, 5);
 
-    let new_state = reduce(
-        state,
-        PipelineEvent::DevelopmentIterationStarted { iteration: 1 },
-    );
+    let new_state = reduce(state, PipelineEvent::development_iteration_started(1));
 
     // Iteration should be set
     assert_eq!(new_state.iteration, 1);
@@ -72,10 +66,7 @@ fn test_development_iteration_completed_increments_iteration() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationCompleted {
-            iteration: 2,
-            output_valid: true,
-        },
+        PipelineEvent::development_iteration_completed(2, true),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -84,10 +75,7 @@ fn test_development_iteration_completed_increments_iteration() {
     // After commit, increment and go to Planning
     let new_state = reduce(
         new_state,
-        PipelineEvent::CommitCreated {
-            hash: "abc123".to_string(),
-            message: "test".to_string(),
-        },
+        PipelineEvent::commit_created("abc123".to_string(), "test".to_string()),
     );
 
     assert_eq!(new_state.iteration, 3); // NOW increment
@@ -112,10 +100,7 @@ fn test_development_iteration_completed_does_not_transition_when_output_invalid(
 
     let new_state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationCompleted {
-            iteration: 0,
-            output_valid: false,
-        },
+        PipelineEvent::development_iteration_completed(0, false),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::Development);
@@ -133,10 +118,7 @@ fn test_development_iteration_completed_stays_in_development_when_more_iteration
     };
     let new_state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationCompleted {
-            iteration: 2,
-            output_valid: true,
-        },
+        PipelineEvent::development_iteration_completed(2, true),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -145,10 +127,7 @@ fn test_development_iteration_completed_stays_in_development_when_more_iteration
     // After commit, go to Planning for next iteration
     let new_state = reduce(
         new_state,
-        PipelineEvent::CommitCreated {
-            hash: "abc".to_string(),
-            message: "test".to_string(),
-        },
+        PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::Planning);
@@ -166,10 +145,7 @@ fn test_development_iteration_completed_transitions_to_review_when_done() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationCompleted {
-            iteration: 2,
-            output_valid: true,
-        },
+        PipelineEvent::development_iteration_completed(2, true),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -177,10 +153,7 @@ fn test_development_iteration_completed_transitions_to_review_when_done() {
     // After commit, go to Review (all dev iterations done)
     let new_state = reduce(
         new_state,
-        PipelineEvent::CommitCreated {
-            hash: "abc".to_string(),
-            message: "test".to_string(),
-        },
+        PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
@@ -204,10 +177,7 @@ fn test_development_iteration_continuation_succeeded_transitions_to_commit_messa
 
     let new_state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationContinuationSucceeded {
-            iteration: 2,
-            total_continuation_attempts: 1,
-        },
+        PipelineEvent::development_iteration_continuation_succeeded(2, 1),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -228,10 +198,7 @@ fn test_development_iteration_completed_with_large_iteration_number() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationCompleted {
-            iteration: u32::MAX - 2,
-            output_valid: true,
-        },
+        PipelineEvent::development_iteration_completed(u32::MAX - 2, true),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -239,10 +206,7 @@ fn test_development_iteration_completed_with_large_iteration_number() {
     // After commit, go to Planning with next iteration (MAX-1)
     let new_state = reduce(
         new_state,
-        PipelineEvent::CommitCreated {
-            hash: "abc".to_string(),
-            message: "test".to_string(),
-        },
+        PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
     );
 
     assert_eq!(new_state.iteration, u32::MAX - 1);
@@ -252,7 +216,7 @@ fn test_development_iteration_completed_with_large_iteration_number() {
 #[test]
 fn test_development_phase_completed_transitions_to_review() {
     let state = create_state_in_phase(PipelinePhase::Development);
-    let new_state = reduce(state, PipelineEvent::DevelopmentPhaseCompleted);
+    let new_state = reduce(state, PipelineEvent::development_phase_completed());
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
 }
@@ -268,10 +232,7 @@ fn test_development_iteration_completed_with_zero_total_iterations() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationCompleted {
-            iteration: 0,
-            output_valid: true,
-        },
+        PipelineEvent::development_iteration_completed(0, true),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
@@ -279,10 +240,7 @@ fn test_development_iteration_completed_with_zero_total_iterations() {
     // After commit, go to Review
     let new_state = reduce(
         new_state,
-        PipelineEvent::CommitCreated {
-            hash: "abc".to_string(),
-            message: "test".to_string(),
-        },
+        PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
@@ -294,9 +252,7 @@ fn test_development_iteration_started_with_max_u32() {
     let state = create_test_state();
     let new_state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationStarted {
-            iteration: u32::MAX,
-        },
+        PipelineEvent::development_iteration_started(u32::MAX),
     );
 
     assert_eq!(new_state.iteration, u32::MAX);
@@ -312,22 +268,13 @@ fn test_development_iteration_with_commit_cycle() {
     assert_eq!(state.iteration, 0);
 
     // After plan generated, transition to Development
-    state = reduce(
-        state,
-        PipelineEvent::PlanGenerationCompleted {
-            iteration: 0,
-            valid: true,
-        },
-    );
+    state = reduce(state, PipelineEvent::plan_generation_completed(0, true));
     assert_eq!(state.phase, PipelinePhase::Development);
 
     // After dev iteration completes, go to CommitMessage
     state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationCompleted {
-            iteration: 0,
-            output_valid: true,
-        },
+        PipelineEvent::development_iteration_completed(0, true),
     );
     assert_eq!(state.phase, PipelinePhase::CommitMessage);
     assert_eq!(state.iteration, 0); // Don't increment yet!
@@ -335,39 +282,24 @@ fn test_development_iteration_with_commit_cycle() {
     // After commit created, go back to Planning for next iteration
     state = reduce(
         state,
-        PipelineEvent::CommitCreated {
-            hash: "abc123".to_string(),
-            message: "test".to_string(),
-        },
+        PipelineEvent::commit_created("abc123".to_string(), "test".to_string()),
     );
     assert_eq!(state.phase, PipelinePhase::Planning);
     assert_eq!(state.iteration, 1); // NOW increment!
 
     // Repeat for iteration 1
-    state = reduce(
-        state,
-        PipelineEvent::PlanGenerationCompleted {
-            iteration: 1,
-            valid: true,
-        },
-    );
+    state = reduce(state, PipelineEvent::plan_generation_completed(1, true));
     assert_eq!(state.phase, PipelinePhase::Development);
 
     state = reduce(
         state,
-        PipelineEvent::DevelopmentIterationCompleted {
-            iteration: 1,
-            output_valid: true,
-        },
+        PipelineEvent::development_iteration_completed(1, true),
     );
     assert_eq!(state.phase, PipelinePhase::CommitMessage);
 
     state = reduce(
         state,
-        PipelineEvent::CommitCreated {
-            hash: "def456".to_string(),
-            message: "test2".to_string(),
-        },
+        PipelineEvent::commit_created("def456".to_string(), "test2".to_string()),
     );
     assert_eq!(state.phase, PipelinePhase::Planning);
     assert_eq!(state.iteration, 2);

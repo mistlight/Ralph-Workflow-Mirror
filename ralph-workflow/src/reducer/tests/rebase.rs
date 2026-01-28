@@ -9,10 +9,7 @@ fn test_rebase_started_sets_in_progress() {
     let state = create_test_state();
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseStarted {
-            phase: RebasePhase::Initial,
-            target_branch: "main".to_string(),
-        },
+        PipelineEvent::rebase_started(RebasePhase::Initial, "main".to_string()),
     );
 
     assert!(matches!(new_state.rebase, RebaseState::InProgress { .. }));
@@ -24,10 +21,7 @@ fn test_rebase_started_stores_target_branch() {
     let target = "develop".to_string();
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseStarted {
-            phase: RebasePhase::Initial,
-            target_branch: target.clone(),
-        },
+        PipelineEvent::rebase_started(RebasePhase::Initial, target.clone()),
     );
 
     if let RebaseState::InProgress {
@@ -52,9 +46,7 @@ fn test_rebase_conflict_detected_transitions_to_conflicted() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictDetected {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_detected(vec![PathBuf::from("file.rs")]),
     );
 
     assert!(matches!(new_state.rebase, RebaseState::Conflicted { .. }));
@@ -72,9 +64,7 @@ fn test_rebase_conflict_detected_stores_files() {
     let files = vec![PathBuf::from("a.rs"), PathBuf::from("b.rs")];
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictDetected {
-            files: files.clone(),
-        },
+        PipelineEvent::rebase_conflict_detected(files.clone()),
     );
 
     if let RebaseState::Conflicted {
@@ -103,9 +93,7 @@ fn test_rebase_conflict_resolved_transitions_to_in_progress() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictResolved {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_resolved(vec![PathBuf::from("file.rs")]),
     );
 
     // After resolving conflict, should transition back to InProgress
@@ -136,10 +124,7 @@ fn test_rebase_succeeded_transitions_to_completed() {
     let new_head_hash = "def456".to_string();
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseSucceeded {
-            phase: RebasePhase::Initial,
-            new_head: new_head_hash.clone(),
-        },
+        PipelineEvent::rebase_succeeded(RebasePhase::Initial, new_head_hash.clone()),
     );
 
     if let RebaseState::Completed { new_head } = new_state.rebase {
@@ -163,10 +148,7 @@ fn test_rebase_failed_resets_to_not_started() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseFailed {
-            phase: RebasePhase::Initial,
-            reason: "Merge conflict".to_string(),
-        },
+        PipelineEvent::rebase_failed(RebasePhase::Initial, "Merge conflict".to_string()),
     );
 
     assert!(matches!(new_state.rebase, RebaseState::NotStarted));
@@ -185,10 +167,7 @@ fn test_rebase_aborted_is_noop() {
     };
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::RebaseAborted {
-            phase: RebasePhase::Initial,
-            restored_to: "abc123".to_string(),
-        },
+        PipelineEvent::rebase_aborted(RebasePhase::Initial, "abc123".to_string()),
     );
 
     // RebaseAborted is currently a no-op - state is preserved
@@ -200,10 +179,7 @@ fn test_rebase_skipped_transitions_to_skipped() {
     let state = create_test_state();
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseSkipped {
-            phase: RebasePhase::Initial,
-            reason: "Not needed".to_string(),
-        },
+        PipelineEvent::rebase_skipped(RebasePhase::Initial, "Not needed".to_string()),
     );
 
     assert!(matches!(new_state.rebase, RebaseState::Skipped));
@@ -221,9 +197,7 @@ fn test_rebase_conflict_detected_from_not_started_preserves_state() {
     };
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::RebaseConflictDetected {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_detected(vec![PathBuf::from("file.rs")]),
     );
 
     // Should preserve NotStarted since we're not InProgress
@@ -240,9 +214,7 @@ fn test_rebase_conflict_detected_from_completed_preserves_state() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictDetected {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_detected(vec![PathBuf::from("file.rs")]),
     );
 
     // Should preserve Completed since we're not InProgress
@@ -261,9 +233,7 @@ fn test_rebase_conflict_detected_from_skipped_preserves_state() {
     };
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::RebaseConflictDetected {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_detected(vec![PathBuf::from("file.rs")]),
     );
 
     // Should preserve Skipped since we're not InProgress
@@ -278,9 +248,7 @@ fn test_rebase_conflict_resolved_from_not_started_preserves_state() {
     };
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::RebaseConflictResolved {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_resolved(vec![PathBuf::from("file.rs")]),
     );
 
     // Should preserve NotStarted since we're not Conflicted
@@ -297,9 +265,7 @@ fn test_rebase_conflict_resolved_from_completed_preserves_state() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictResolved {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_resolved(vec![PathBuf::from("file.rs")]),
     );
 
     // Should preserve Completed since we're not Conflicted
@@ -321,9 +287,7 @@ fn test_rebase_conflict_resolved_from_in_progress_preserves_state() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictResolved {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_resolved(vec![PathBuf::from("file.rs")]),
     );
 
     // Should preserve InProgress since there's no conflict to resolve
@@ -354,9 +318,7 @@ fn test_rebase_conflict_detected_with_empty_file_list() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictDetected {
-            files: vec![], // Empty file list
-        },
+        PipelineEvent::rebase_conflict_detected(vec![]), // Empty file list
     );
 
     // Should still transition to Conflicted even with empty file list
@@ -386,9 +348,7 @@ fn test_rebase_conflict_resolved_with_empty_file_list() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictResolved {
-            files: vec![], // Empty file list
-        },
+        PipelineEvent::rebase_conflict_resolved(vec![]), // Empty file list
     );
 
     // Should still transition to InProgress even with empty file list
@@ -406,9 +366,7 @@ fn test_rebase_conflict_detected_initializes_resolution_attempts_to_zero() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictDetected {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_detected(vec![PathBuf::from("file.rs")]),
     );
 
     if let RebaseState::Conflicted {
@@ -433,9 +391,7 @@ fn test_rebase_conflict_detected_preserves_branch_info() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictDetected {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_detected(vec![PathBuf::from("file.rs")]),
     );
 
     if let RebaseState::Conflicted {
@@ -464,9 +420,7 @@ fn test_rebase_conflict_resolved_preserves_branch_info() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseConflictResolved {
-            files: vec![PathBuf::from("file.rs")],
-        },
+        PipelineEvent::rebase_conflict_resolved(vec![PathBuf::from("file.rs")]),
     );
 
     if let RebaseState::InProgress {
@@ -494,10 +448,7 @@ fn test_rebase_succeeded_from_conflicted_state() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseSucceeded {
-            phase: RebasePhase::PostReview,
-            new_head: "def456".to_string(),
-        },
+        PipelineEvent::rebase_succeeded(RebasePhase::PostReview, "def456".to_string()),
     );
 
     if let RebaseState::Completed { new_head } = new_state.rebase {
@@ -520,10 +471,7 @@ fn test_rebase_failed_from_conflicted_state() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::RebaseFailed {
-            phase: RebasePhase::PostReview,
-            reason: "Too many conflicts".to_string(),
-        },
+        PipelineEvent::rebase_failed(RebasePhase::PostReview, "Too many conflicts".to_string()),
     );
 
     assert!(matches!(new_state.rebase, RebaseState::NotStarted));

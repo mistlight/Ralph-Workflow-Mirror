@@ -11,7 +11,7 @@ use crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS;
 #[test]
 fn test_commit_generation_started_sets_generating_state() {
     let state = create_test_state();
-    let new_state = reduce(state.clone(), PipelineEvent::CommitGenerationStarted);
+    let new_state = reduce(state.clone(), PipelineEvent::commit_generation_started());
 
     // Phase should be preserved
     assert_eq!(new_state.phase, state.phase);
@@ -31,10 +31,7 @@ fn test_commit_message_generated_sets_commit_to_generated() {
     let state = create_test_state();
     let new_state = reduce(
         state,
-        PipelineEvent::CommitMessageGenerated {
-            message: "feat: add feature".to_string(),
-            attempt: 1,
-        },
+        PipelineEvent::commit_message_generated("feat: add feature".to_string(), 1),
     );
 
     assert!(matches!(new_state.commit, CommitState::Generated { .. }));
@@ -46,10 +43,7 @@ fn test_commit_message_generated_stores_message() {
     let message = "fix: resolve bug".to_string();
     let new_state = reduce(
         state,
-        PipelineEvent::CommitMessageGenerated {
-            message: message.clone(),
-            attempt: 1,
-        },
+        PipelineEvent::commit_message_generated(message.clone(), 1),
     );
 
     if let CommitState::Generated {
@@ -67,10 +61,7 @@ fn test_commit_created_sets_commit_to_committed() {
     let state = create_test_state();
     let new_state = reduce(
         state,
-        PipelineEvent::CommitCreated {
-            hash: "abc123".to_string(),
-            message: "feat: test".to_string(),
-        },
+        PipelineEvent::commit_created("abc123".to_string(), "feat: test".to_string()),
     );
 
     assert!(matches!(new_state.commit, CommitState::Committed { .. }));
@@ -81,10 +72,7 @@ fn test_commit_created_transitions_to_final_validation() {
     let state = create_state_in_phase(PipelinePhase::CommitMessage);
     let new_state = reduce(
         state,
-        PipelineEvent::CommitCreated {
-            hash: "abc123".to_string(),
-            message: "feat: test".to_string(),
-        },
+        PipelineEvent::commit_created("abc123".to_string(), "feat: test".to_string()),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
@@ -96,10 +84,7 @@ fn test_commit_created_stores_hash() {
     let hash = "abc123def456".to_string();
     let new_state = reduce(
         state,
-        PipelineEvent::CommitCreated {
-            hash: hash.clone(),
-            message: "test".to_string(),
-        },
+        PipelineEvent::commit_created(hash.clone(), "test".to_string()),
     );
 
     if let CommitState::Committed { hash: stored_hash } = new_state.commit {
@@ -119,10 +104,7 @@ fn test_commit_message_validation_failed_retries() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::CommitMessageValidationFailed {
-            reason: "Invalid format".to_string(),
-            attempt: 1,
-        },
+        PipelineEvent::commit_message_validation_failed("Invalid format".to_string(), 1),
     );
 
     // Should retry with incremented attempt
@@ -155,10 +137,10 @@ fn test_commit_message_validation_failed_exhausts_attempts_with_more_agents() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::CommitMessageValidationFailed {
-            reason: "Invalid format".to_string(),
-            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
-        },
+        PipelineEvent::commit_message_validation_failed(
+            "Invalid format".to_string(),
+            MAX_VALIDATION_RETRY_ATTEMPTS,
+        ),
     );
 
     // Should advance to next agent and reset to attempt 1
@@ -200,10 +182,10 @@ fn test_commit_message_validation_failed_exhausts_all_agents() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::CommitMessageValidationFailed {
-            reason: "Invalid format".to_string(),
-            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
-        },
+        PipelineEvent::commit_message_validation_failed(
+            "Invalid format".to_string(),
+            MAX_VALIDATION_RETRY_ATTEMPTS,
+        ),
     );
 
     // When we try to advance from last agent, switch_to_next_agent() wraps around:
@@ -235,10 +217,10 @@ fn test_commit_message_validation_failed_with_single_agent() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::CommitMessageValidationFailed {
-            reason: "Invalid format".to_string(),
-            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
-        },
+        PipelineEvent::commit_message_validation_failed(
+            "Invalid format".to_string(),
+            MAX_VALIDATION_RETRY_ATTEMPTS,
+        ),
     );
 
     // No more agents to fallback to - should give up
@@ -250,9 +232,7 @@ fn test_commit_skipped_sets_commit_to_skipped() {
     let state = create_test_state();
     let new_state = reduce(
         state,
-        PipelineEvent::CommitSkipped {
-            reason: "No changes".to_string(),
-        },
+        PipelineEvent::commit_skipped("No changes".to_string()),
     );
 
     assert!(matches!(new_state.commit, CommitState::Skipped));
@@ -263,9 +243,7 @@ fn test_commit_skipped_transitions_to_final_validation() {
     let state = create_state_in_phase(PipelinePhase::CommitMessage);
     let new_state = reduce(
         state,
-        PipelineEvent::CommitSkipped {
-            reason: "No changes".to_string(),
-        },
+        PipelineEvent::commit_skipped("No changes".to_string()),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
@@ -282,9 +260,9 @@ fn test_commit_generation_failed_resets_commit_to_not_started() {
     };
     let new_state = reduce(
         state,
-        PipelineEvent::CommitGenerationFailed {
-            reason: "Agent failed to generate valid commit message".to_string(),
-        },
+        PipelineEvent::commit_generation_failed(
+            "Agent failed to generate valid commit message".to_string(),
+        ),
     );
 
     assert!(matches!(new_state.commit, CommitState::NotStarted));
@@ -303,9 +281,7 @@ fn test_checkpoint_saved_preserves_all_state() {
     };
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::CheckpointSaved {
-            trigger: CheckpointTrigger::PhaseTransition,
-        },
+        PipelineEvent::checkpoint_saved(CheckpointTrigger::PhaseTransition),
     );
 
     assert_eq!(new_state.phase, state.phase);
@@ -329,7 +305,7 @@ fn test_checkpoint_saved_with_different_triggers() {
         CheckpointTrigger::BeforeRebase,
         CheckpointTrigger::Interrupt,
     ] {
-        let new_state = reduce(state.clone(), PipelineEvent::CheckpointSaved { trigger });
+        let new_state = reduce(state.clone(), PipelineEvent::checkpoint_saved(trigger));
 
         assert_eq!(new_state.phase, state.phase);
         assert_eq!(new_state.iteration, state.iteration);
@@ -343,10 +319,7 @@ fn test_commit_message_generated_increments_attempt() {
     // Generate first message (attempt 1)
     let new_state = reduce(
         state,
-        PipelineEvent::CommitMessageGenerated {
-            message: "first".to_string(),
-            attempt: 1,
-        },
+        PipelineEvent::commit_message_generated("first".to_string(), 1),
     );
 
     assert!(matches!(new_state.commit, CommitState::Generated { .. }));
@@ -357,10 +330,7 @@ fn test_commit_message_generated_increments_attempt() {
     // Generate second message (attempt 2) - overwrites previous
     let new_state2 = reduce(
         new_state,
-        PipelineEvent::CommitMessageGenerated {
-            message: "second".to_string(),
-            attempt: 2,
-        },
+        PipelineEvent::commit_message_generated("second".to_string(), 2),
     );
 
     assert!(matches!(new_state2.commit, CommitState::Generated { .. }));
@@ -389,9 +359,7 @@ fn test_commit_skipped_returns_to_planning_after_development() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::CommitSkipped {
-            reason: "No changes to commit".to_string(),
-        },
+        PipelineEvent::commit_skipped("No changes to commit".to_string()),
     );
 
     // Should go to Planning for next iteration, not FinalValidation
@@ -414,9 +382,7 @@ fn test_commit_skipped_goes_to_review_after_last_development_iteration() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::CommitSkipped {
-            reason: "No changes to commit".to_string(),
-        },
+        PipelineEvent::commit_skipped("No changes to commit".to_string()),
     );
 
     // Should go to Review after all dev iterations done
@@ -438,9 +404,7 @@ fn test_commit_skipped_returns_to_review_after_fix_attempt() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::CommitSkipped {
-            reason: "No changes to commit".to_string(),
-        },
+        PipelineEvent::commit_skipped("No changes to commit".to_string()),
     );
 
     // Should go to Review for next pass
@@ -462,9 +426,7 @@ fn test_commit_skipped_goes_to_final_validation_after_last_review() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::CommitSkipped {
-            reason: "No changes to commit".to_string(),
-        },
+        PipelineEvent::commit_skipped("No changes to commit".to_string()),
     );
 
     assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
@@ -482,9 +444,7 @@ fn test_commit_skipped_no_previous_phase_goes_to_final_validation() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::CommitSkipped {
-            reason: "No changes to commit".to_string(),
-        },
+        PipelineEvent::commit_skipped("No changes to commit".to_string()),
     );
 
     // Should go to FinalValidation since no previous_phase indicates final commit

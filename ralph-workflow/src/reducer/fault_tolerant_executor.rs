@@ -74,13 +74,13 @@ pub fn execute_agent_fault_tolerantly(
             let error_kind = AgentErrorKind::InternalError;
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(PipelineEvent::AgentInvocationFailed {
+            Ok(PipelineEvent::agent_invocation_failed(
                 role,
-                agent: config.agent_name.to_string(),
-                exit_code: 1,
+                config.agent_name.to_string(),
+                1,
                 error_kind,
                 retriable,
-            })
+            ))
         }
     }
 }
@@ -105,32 +105,32 @@ fn try_agent_execution(
     };
 
     match run_with_prompt(&prompt_cmd, runtime) {
-        Ok(result) if result.exit_code == 0 => Ok(PipelineEvent::AgentInvocationSucceeded {
-            role: config.role,
-            agent: config.agent_name.to_string(),
-        }),
+        Ok(result) if result.exit_code == 0 => Ok(PipelineEvent::agent_invocation_succeeded(
+            config.role,
+            config.agent_name.to_string(),
+        )),
         Ok(result) => {
             let exit_code = result.exit_code;
             let error_kind = classify_agent_error(exit_code, &result.stderr);
 
             // Special handling for rate limit: emit fallback event with prompt context
             if is_rate_limit_error(&error_kind) {
-                return Ok(PipelineEvent::AgentRateLimitFallback {
-                    role: config.role,
-                    agent: config.agent_name.to_string(),
-                    prompt_context: Some(config.prompt.to_string()),
-                });
+                return Ok(PipelineEvent::agent_rate_limit_fallback(
+                    config.role,
+                    config.agent_name.to_string(),
+                    Some(config.prompt.to_string()),
+                ));
             }
 
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(PipelineEvent::AgentInvocationFailed {
-                role: config.role,
-                agent: config.agent_name.to_string(),
+            Ok(PipelineEvent::agent_invocation_failed(
+                config.role,
+                config.agent_name.to_string(),
                 exit_code,
                 error_kind,
                 retriable,
-            })
+            ))
         }
         Err(e) => {
             let error_kind = if let Ok(io_err) = e.downcast::<io::Error>() {
@@ -140,13 +140,13 @@ fn try_agent_execution(
             };
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(PipelineEvent::AgentInvocationFailed {
-                role: config.role,
-                agent: config.agent_name.to_string(),
-                exit_code: 1,
+            Ok(PipelineEvent::agent_invocation_failed(
+                config.role,
+                config.agent_name.to_string(),
+                1,
                 error_kind,
                 retriable,
-            })
+            ))
         }
     }
 }

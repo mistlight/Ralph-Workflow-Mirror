@@ -6,42 +6,36 @@ use super::*;
 fn test_complete_pipeline_phase_flow() {
     let mut state = create_test_state();
 
-    // Planning → Development
-    state = reduce(state, PipelineEvent::PlanningPhaseStarted);
+    // Planning -> Development
+    state = reduce(state, PipelineEvent::planning_phase_started());
     assert_eq!(state.phase, PipelinePhase::Planning);
 
-    state = reduce(state, PipelineEvent::PlanningPhaseCompleted);
+    state = reduce(state, PipelineEvent::planning_phase_completed());
     assert_eq!(state.phase, PipelinePhase::Development);
 
-    // Development → Review
-    state = reduce(state, PipelineEvent::DevelopmentPhaseStarted);
+    // Development -> Review
+    state = reduce(state, PipelineEvent::development_phase_started());
     assert_eq!(state.phase, PipelinePhase::Development);
 
-    state = reduce(state, PipelineEvent::DevelopmentPhaseCompleted);
+    state = reduce(state, PipelineEvent::development_phase_completed());
     assert_eq!(state.phase, PipelinePhase::Review);
 
-    // Review → CommitMessage
-    state = reduce(state, PipelineEvent::ReviewPhaseStarted);
+    // Review -> CommitMessage
+    state = reduce(state, PipelineEvent::review_phase_started());
     assert_eq!(state.phase, PipelinePhase::Review);
 
-    state = reduce(
-        state,
-        PipelineEvent::ReviewPhaseCompleted { early_exit: false },
-    );
+    state = reduce(state, PipelineEvent::review_phase_completed(false));
     assert_eq!(state.phase, PipelinePhase::CommitMessage);
 
-    // CommitMessage → FinalValidation
+    // CommitMessage -> FinalValidation
     state = reduce(
         state,
-        PipelineEvent::CommitCreated {
-            hash: "abc123".to_string(),
-            message: "test".to_string(),
-        },
+        PipelineEvent::commit_created("abc123".to_string(), "test".to_string()),
     );
     assert_eq!(state.phase, PipelinePhase::FinalValidation);
 
-    // FinalValidation → Complete
-    state = reduce(state, PipelineEvent::PipelineCompleted);
+    // FinalValidation -> Complete
+    state = reduce(state, PipelineEvent::pipeline_completed());
     assert_eq!(state.phase, PipelinePhase::Complete);
 }
 
@@ -56,13 +50,13 @@ fn test_phase_transitions_preserve_iteration_count() {
     let original_iteration = state.iteration;
 
     // Transition through phases
-    state = reduce(state, PipelineEvent::PlanningPhaseStarted);
+    state = reduce(state, PipelineEvent::planning_phase_started());
     assert_eq!(state.iteration, original_iteration);
 
-    state = reduce(state, PipelineEvent::PlanningPhaseCompleted);
+    state = reduce(state, PipelineEvent::planning_phase_completed());
     assert_eq!(state.iteration, original_iteration);
 
-    state = reduce(state, PipelineEvent::DevelopmentPhaseStarted);
+    state = reduce(state, PipelineEvent::development_phase_started());
     assert_eq!(state.iteration, original_iteration);
 }
 
@@ -77,19 +71,13 @@ fn test_phase_transitions_preserve_reviewer_pass() {
     let original_pass = state.reviewer_pass;
 
     // Transition to commit phase
-    state = reduce(
-        state,
-        PipelineEvent::ReviewPhaseCompleted { early_exit: false },
-    );
+    state = reduce(state, PipelineEvent::review_phase_completed(false));
     assert_eq!(state.reviewer_pass, original_pass);
 
     // Transition to final validation
     state = reduce(
         state,
-        PipelineEvent::CommitCreated {
-            hash: "abc".to_string(),
-            message: "test".to_string(),
-        },
+        PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
     );
     assert_eq!(state.reviewer_pass, original_pass);
 }
@@ -106,9 +94,7 @@ fn test_pipeline_aborted_from_any_phase() {
         let state = create_state_in_phase(phase);
         let new_state = reduce(
             state,
-            PipelineEvent::PipelineAborted {
-                reason: "User cancelled".to_string(),
-            },
+            PipelineEvent::pipeline_aborted("User cancelled".to_string()),
         );
 
         assert_eq!(new_state.phase, PipelinePhase::Interrupted);
@@ -126,9 +112,7 @@ fn test_commit_skipped_transitions_preserve_phase_history() {
 
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::CommitSkipped {
-            reason: "No changes".to_string(),
-        },
+        PipelineEvent::commit_skipped("No changes".to_string()),
     );
 
     // Should transition to FinalValidation
@@ -151,11 +135,11 @@ fn test_state_preservation_through_agent_events() {
     // Agent events should not modify phase or counters
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::AgentInvocationStarted {
-            role: crate::agents::AgentRole::Developer,
-            agent: "test".to_string(),
-            model: Some("test-model".to_string()),
-        },
+        PipelineEvent::agent_invocation_started(
+            crate::agents::AgentRole::Developer,
+            "test".to_string(),
+            Some("test-model".to_string()),
+        ),
     );
 
     assert_eq!(new_state.phase, state.phase);

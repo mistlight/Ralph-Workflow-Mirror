@@ -30,13 +30,13 @@ fn test_partial_status_triggers_continuation() {
         let state = PipelineState::initial(5, 2);
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationTriggered {
-                iteration: 1,
-                status: DevelopmentStatus::Partial,
-                summary: "Implemented feature X".to_string(),
-                files_changed: Some(vec!["src/lib.rs".to_string()]),
-                next_steps: Some("Add tests".to_string()),
-            },
+            PipelineEvent::development_iteration_continuation_triggered(
+                1,
+                DevelopmentStatus::Partial,
+                "Implemented feature X".to_string(),
+                Some(vec!["src/lib.rs".to_string()]),
+                Some("Add tests".to_string()),
+            ),
         );
 
         assert!(new_state.continuation.is_continuation());
@@ -67,13 +67,13 @@ fn test_failed_status_triggers_continuation() {
         let state = PipelineState::initial(5, 2);
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationTriggered {
-                iteration: 1,
-                status: DevelopmentStatus::Failed,
-                summary: "Build failed due to type errors".to_string(),
-                files_changed: None,
-                next_steps: Some("Fix type errors in module X".to_string()),
-            },
+            PipelineEvent::development_iteration_continuation_triggered(
+                1,
+                DevelopmentStatus::Failed,
+                "Build failed due to type errors".to_string(),
+                None,
+                Some("Fix type errors in module X".to_string()),
+            ),
         );
 
         assert!(new_state.continuation.is_continuation());
@@ -99,10 +99,7 @@ fn test_completed_status_resets_continuation() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationSucceeded {
-                iteration: 1,
-                total_continuation_attempts: 2,
-            },
+            PipelineEvent::development_iteration_continuation_succeeded(1, 2),
         );
 
         assert!(!new_state.continuation.is_continuation());
@@ -123,10 +120,7 @@ fn test_new_iteration_resets_continuation() {
             None,
         );
 
-        let new_state = reduce(
-            state,
-            PipelineEvent::DevelopmentIterationStarted { iteration: 2 },
-        );
+        let new_state = reduce(state, PipelineEvent::development_iteration_started(2));
 
         assert!(!new_state.continuation.is_continuation());
         assert_eq!(new_state.iteration, 2);
@@ -142,26 +136,26 @@ fn test_continuation_state_persists_across_events() {
         // Trigger first continuation
         let state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationTriggered {
-                iteration: 1,
-                status: DevelopmentStatus::Partial,
-                summary: "First attempt".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+            PipelineEvent::development_iteration_continuation_triggered(
+                1,
+                DevelopmentStatus::Partial,
+                "First attempt".to_string(),
+                None,
+                None,
+            ),
         );
         assert_eq!(state.continuation.continuation_attempt, 1);
 
         // Trigger second continuation
         let state = reduce(
             state,
-            PipelineEvent::DevelopmentIterationContinuationTriggered {
-                iteration: 1,
-                status: DevelopmentStatus::Partial,
-                summary: "Second attempt".to_string(),
-                files_changed: None,
-                next_steps: None,
-            },
+            PipelineEvent::development_iteration_continuation_triggered(
+                1,
+                DevelopmentStatus::Partial,
+                "Second attempt".to_string(),
+                None,
+                None,
+            ),
         );
 
         assert_eq!(state.continuation.continuation_attempt, 2);

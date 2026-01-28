@@ -11,10 +11,7 @@ fn test_agent_chain_initialized_for_developer() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentChainInitialized {
-            agents: agents.clone(),
-            role: AgentRole::Developer,
-        },
+        PipelineEvent::agent_chain_initialized(AgentRole::Developer, agents.clone()),
     );
 
     assert_eq!(new_state.agent_chain.agents, agents);
@@ -29,10 +26,7 @@ fn test_agent_chain_initialized_for_reviewer() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentChainInitialized {
-            agents: agents.clone(),
-            role: AgentRole::Reviewer,
-        },
+        PipelineEvent::agent_chain_initialized(AgentRole::Reviewer, agents.clone()),
     );
 
     assert_eq!(new_state.agent_chain.agents, agents);
@@ -43,11 +37,11 @@ fn test_agent_invocation_started_resets_agent_chain() {
     let state = create_test_state();
     let new_state = reduce(
         state,
-        PipelineEvent::AgentInvocationStarted {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            model: Some("model1".to_string()),
-        },
+        PipelineEvent::agent_invocation_started(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            Some("model1".to_string()),
+        ),
     );
 
     // AgentInvocationStarted resets the agent chain
@@ -60,10 +54,7 @@ fn test_agent_invocation_succeeded_preserves_indices() {
     let state = create_test_state();
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::AgentInvocationSucceeded {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-        },
+        PipelineEvent::agent_invocation_succeeded(AgentRole::Developer, "agent1".to_string()),
     );
 
     assert_eq!(
@@ -90,13 +81,13 @@ fn test_agent_invocation_failed_with_retriable_advances_model() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentInvocationFailed {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            exit_code: 1,
-            error_kind: AgentErrorKind::Timeout,
-            retriable: true,
-        },
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::Timeout,
+            true,
+        ),
     );
 
     // Should advance to next model (0 -> 1)
@@ -118,11 +109,11 @@ fn test_agent_fallback_triggered_switches_agent() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentFallbackTriggered {
-            role: AgentRole::Developer,
-            from_agent: "agent1".to_string(),
-            to_agent: "agent2".to_string(),
-        },
+        PipelineEvent::agent_fallback_triggered(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            "agent2".to_string(),
+        ),
     );
 
     // Should switch to next agent (0 -> 1) and reset model (0)
@@ -137,9 +128,7 @@ fn test_agent_chain_exhausted_increments_retry_cycle() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentChainExhausted {
-            role: AgentRole::Developer,
-        },
+        PipelineEvent::agent_chain_exhausted(AgentRole::Developer),
     );
 
     assert_eq!(new_state.agent_chain.retry_cycle, initial_retry_cycle + 1);
@@ -171,9 +160,7 @@ fn test_agent_chain_exhausted_resets_indices() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentChainExhausted {
-            role: AgentRole::Developer,
-        },
+        PipelineEvent::agent_chain_exhausted(AgentRole::Developer),
     );
 
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
@@ -201,12 +188,12 @@ fn test_agent_model_fallback_triggered_advances_to_next_model() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentModelFallbackTriggered {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            from_model: "model1".to_string(),
-            to_model: "model2".to_string(),
-        },
+        PipelineEvent::agent_model_fallback_triggered(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            "model1".to_string(),
+            "model2".to_string(),
+        ),
     );
 
     // Should advance to next model (0 -> 1)
@@ -224,10 +211,7 @@ fn test_agent_retry_cycle_started_is_noop() {
     };
     let new_state = reduce(
         state.clone(),
-        PipelineEvent::AgentRetryCycleStarted {
-            role: AgentRole::Developer,
-            cycle: 2,
-        },
+        PipelineEvent::agent_retry_cycle_started(AgentRole::Developer, 2),
     );
 
     // AgentRetryCycleStarted is a no-op - all state should be preserved
@@ -264,13 +248,13 @@ fn test_agent_invocation_failed_on_last_model_wraps_to_first_model() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentInvocationFailed {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            exit_code: 1,
-            error_kind: AgentErrorKind::Timeout,
-            retriable: true,
-        },
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::Timeout,
+            true,
+        ),
     );
 
     // Should wrap back to first model (1 -> 0)
@@ -299,11 +283,11 @@ fn test_agent_fallback_from_last_agent_wraps_and_increments_cycle() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentFallbackTriggered {
-            role: AgentRole::Developer,
-            from_agent: "agent2".to_string(),
-            to_agent: "agent1".to_string(),
-        },
+        PipelineEvent::agent_fallback_triggered(
+            AgentRole::Developer,
+            "agent2".to_string(),
+            "agent1".to_string(),
+        ),
     );
 
     // Should wrap back to first agent (1 -> 0) and increment retry_cycle (0 -> 1)
@@ -329,13 +313,13 @@ fn test_agent_invocation_failed_non_retriable_switches_agent() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentInvocationFailed {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            exit_code: 1,
-            error_kind: AgentErrorKind::ParsingError,
-            retriable: false,
-        },
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::ParsingError,
+            false,
+        ),
     );
 
     // Non-retriable error should switch to next agent (0 -> 1)
@@ -357,13 +341,13 @@ fn test_agent_invocation_failed_retriable_on_single_model_wraps() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentInvocationFailed {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            exit_code: 1,
-            error_kind: AgentErrorKind::Timeout,
-            retriable: true,
-        },
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::Timeout,
+            true,
+        ),
     );
 
     // With only one model, should wrap back to index 0
@@ -382,10 +366,7 @@ fn test_agent_chain_initialized_for_commit_role() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::AgentChainInitialized {
-            agents: agents.clone(),
-            role: AgentRole::Commit,
-        },
+        PipelineEvent::agent_chain_initialized(AgentRole::Commit, agents.clone()),
     );
 
     assert_eq!(new_state.agent_chain.agents, agents);
@@ -411,10 +392,7 @@ fn test_agent_chain_initialized_resets_retry_cycle() {
     let new_agents = vec!["new-agent1".to_string(), "new-agent2".to_string()];
     let new_state = reduce(
         state,
-        PipelineEvent::AgentChainInitialized {
-            agents: new_agents.clone(),
-            role: AgentRole::Reviewer,
-        },
+        PipelineEvent::agent_chain_initialized(AgentRole::Reviewer, new_agents.clone()),
     );
 
     // CRITICAL: AgentChainInitialized uses reset_for_role() which RESETS retry_cycle to 0
@@ -431,10 +409,7 @@ fn test_agent_chain_initialized_with_empty_list() {
     let state = create_test_state();
     let new_state = reduce(
         state,
-        PipelineEvent::AgentChainInitialized {
-            agents: vec![],
-            role: AgentRole::Developer,
-        },
+        PipelineEvent::agent_chain_initialized(AgentRole::Developer, vec![]),
     );
 
     // Empty agent list should be accepted

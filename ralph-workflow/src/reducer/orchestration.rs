@@ -161,13 +161,7 @@ mod tests {
         };
 
         // Simulate plan generation completing
-        state = reduce(
-            state,
-            PipelineEvent::PlanGenerationCompleted {
-                iteration: 1,
-                valid: true,
-            },
-        );
+        state = reduce(state, PipelineEvent::plan_generation_completed(1, true));
 
         // After plan generation completes, phase should transition to Development
         assert_eq!(
@@ -323,10 +317,7 @@ mod tests {
                     // Complete planning
                     state = reduce(
                         state,
-                        PipelineEvent::PlanGenerationCompleted {
-                            iteration,
-                            valid: true,
-                        },
+                        PipelineEvent::plan_generation_completed(iteration, true),
                     );
                 }
                 Effect::RunDevelopmentIteration { iteration } => {
@@ -334,21 +325,18 @@ mod tests {
                     // Complete the iteration (goes to CommitMessage phase)
                     state = reduce(
                         state,
-                        PipelineEvent::DevelopmentIterationCompleted {
-                            iteration,
-                            output_valid: true,
-                        },
+                        PipelineEvent::development_iteration_completed(iteration, true),
                     );
                 }
                 Effect::GenerateCommitMessage => {
                     // Generate and commit
-                    state = reduce(state, PipelineEvent::CommitGenerationStarted);
+                    state = reduce(state, PipelineEvent::commit_generation_started());
                     state = reduce(
                         state,
-                        PipelineEvent::CommitCreated {
-                            hash: format!("abc{}", iterations_run.len()),
-                            message: "test".to_string(),
-                        },
+                        PipelineEvent::commit_created(
+                            format!("abc{}", iterations_run.len()),
+                            "test".to_string(),
+                        ),
                     );
                 }
                 Effect::SaveCheckpoint { .. } => {
@@ -358,10 +346,10 @@ mod tests {
                 Effect::InitializeAgentChain { .. } => {
                     state = reduce(
                         state,
-                        PipelineEvent::AgentChainInitialized {
-                            role: AgentRole::Developer,
-                            agents: vec!["claude".to_string()],
-                        },
+                        PipelineEvent::agent_chain_initialized(
+                            AgentRole::Developer,
+                            vec!["claude".to_string()],
+                        ),
                     );
                 }
                 _ => panic!("Unexpected effect: {:?}", effect),
@@ -488,13 +476,7 @@ mod tests {
         );
 
         // Simulate review completing with issues found
-        state = reduce(
-            state,
-            PipelineEvent::ReviewCompleted {
-                pass: 0,
-                issues_found: true,
-            },
-        );
+        state = reduce(state, PipelineEvent::review_completed(0, true));
 
         // State should now have issues_found flag set
         assert!(
@@ -511,13 +493,7 @@ mod tests {
         );
 
         // After fix completes, goes to CommitMessage phase
-        state = reduce(
-            state,
-            PipelineEvent::FixAttemptCompleted {
-                pass: 0,
-                changes_made: true,
-            },
-        );
+        state = reduce(state, PipelineEvent::fix_attempt_completed(0, true));
 
         assert!(
             !state.review_issues_found,
@@ -535,13 +511,10 @@ mod tests {
         );
 
         // After commit is created, pass is incremented
-        state = reduce(state, PipelineEvent::CommitGenerationStarted);
+        state = reduce(state, PipelineEvent::commit_generation_started());
         state = reduce(
             state,
-            PipelineEvent::CommitCreated {
-                hash: "abc123".to_string(),
-                message: "fix commit".to_string(),
-            },
+            PipelineEvent::commit_created("abc123".to_string(), "fix commit".to_string()),
         );
 
         assert_eq!(
@@ -582,71 +555,50 @@ mod tests {
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
-                        PipelineEvent::AgentChainInitialized {
-                            role,
-                            agents: vec!["claude".to_string()],
-                        },
+                        PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
                     );
                 }
                 Effect::GeneratePlan { iteration } => {
                     state = reduce(
                         state,
-                        PipelineEvent::PlanGenerationCompleted {
-                            iteration,
-                            valid: true,
-                        },
+                        PipelineEvent::plan_generation_completed(iteration, true),
                     );
                 }
                 Effect::RunDevelopmentIteration { iteration } => {
                     iterations_run.push(iteration);
                     state = reduce(
                         state,
-                        PipelineEvent::DevelopmentIterationCompleted {
-                            iteration,
-                            output_valid: true,
-                        },
+                        PipelineEvent::development_iteration_completed(iteration, true),
                     );
                 }
                 Effect::RunReviewPass { pass } => {
                     review_passes_run.push(pass);
                     state = reduce(
                         state,
-                        PipelineEvent::ReviewCompleted {
-                            pass,
-                            issues_found: true, // Simulate finding issues
-                        },
+                        PipelineEvent::review_completed(pass, true), // Simulate finding issues
                     );
                 }
                 Effect::RunFixAttempt { pass } => {
-                    state = reduce(
-                        state,
-                        PipelineEvent::FixAttemptCompleted {
-                            pass,
-                            changes_made: true,
-                        },
-                    );
+                    state = reduce(state, PipelineEvent::fix_attempt_completed(pass, true));
                 }
                 Effect::GenerateCommitMessage => {
-                    state = reduce(state, PipelineEvent::CommitGenerationStarted);
+                    state = reduce(state, PipelineEvent::commit_generation_started());
                     state = reduce(
                         state,
-                        PipelineEvent::CommitMessageGenerated {
-                            message: "test commit".to_string(),
-                            attempt: 1,
-                        },
+                        PipelineEvent::commit_message_generated("test commit".to_string(), 1),
                     );
                 }
                 Effect::CreateCommit { .. } => {
                     state = reduce(
                         state,
-                        PipelineEvent::CommitCreated {
-                            hash: "abc123".to_string(),
-                            message: "test commit".to_string(),
-                        },
+                        PipelineEvent::commit_created(
+                            "abc123".to_string(),
+                            "test commit".to_string(),
+                        ),
                     );
                 }
                 Effect::ValidateFinalState => {
-                    state = reduce(state, PipelineEvent::PipelineCompleted);
+                    state = reduce(state, PipelineEvent::pipeline_completed());
                 }
                 Effect::SaveCheckpoint { .. } => {
                     // Phase transition checkpoint - continue
@@ -728,42 +680,30 @@ mod tests {
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
-                        PipelineEvent::AgentChainInitialized {
-                            role,
-                            agents: vec!["claude".to_string()],
-                        },
+                        PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
                     );
                 }
                 Effect::RunReviewPass { pass } => {
                     review_passes.push(pass);
                     state = reduce(
                         state,
-                        PipelineEvent::ReviewCompleted {
-                            pass,
-                            issues_found: false, // No issues
-                        },
+                        PipelineEvent::review_completed(pass, false), // No issues
                     );
                 }
                 Effect::GenerateCommitMessage => {
                     state = reduce(
                         state,
-                        PipelineEvent::CommitMessageGenerated {
-                            message: "test".to_string(),
-                            attempt: 1,
-                        },
+                        PipelineEvent::commit_message_generated("test".to_string(), 1),
                     );
                 }
                 Effect::CreateCommit { .. } => {
                     state = reduce(
                         state,
-                        PipelineEvent::CommitCreated {
-                            hash: "abc".to_string(),
-                            message: "test".to_string(),
-                        },
+                        PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
                     );
                 }
                 Effect::ValidateFinalState => {
-                    state = reduce(state, PipelineEvent::PipelineCompleted);
+                    state = reduce(state, PipelineEvent::pipeline_completed());
                     break;
                 }
                 Effect::SaveCheckpoint { .. } => {
@@ -799,20 +739,14 @@ mod tests {
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
-                        PipelineEvent::AgentChainInitialized {
-                            role,
-                            agents: vec!["claude".to_string()],
-                        },
+                        PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
                     );
                 }
                 Effect::RunReviewPass { pass } => {
                     passes_run.push(pass);
                     state = reduce(
                         state,
-                        PipelineEvent::ReviewCompleted {
-                            pass,
-                            issues_found: false, // No issues, no fix needed
-                        },
+                        PipelineEvent::review_completed(pass, false), // No issues, no fix needed
                     );
                 }
                 Effect::SaveCheckpoint { .. } => {
@@ -858,13 +792,7 @@ mod tests {
         assert!(matches!(effect, Effect::RunReviewPass { pass: 0 }));
 
         // Review completes with NO issues
-        state = reduce(
-            state,
-            PipelineEvent::ReviewCompleted {
-                pass: 0,
-                issues_found: false,
-            },
-        );
+        state = reduce(state, PipelineEvent::review_completed(0, false));
 
         assert!(
             !state.review_issues_found,

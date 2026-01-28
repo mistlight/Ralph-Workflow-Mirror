@@ -45,13 +45,13 @@ fn test_agent_sigsegv_caught_by_fault_tolerant_executor() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain_in_development();
 
-        let event = PipelineEvent::AgentInvocationFailed {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            exit_code: 139,
-            error_kind: AgentErrorKind::InternalError,
-            retriable: false,
-        };
+        let event = PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            139,
+            AgentErrorKind::InternalError,
+            false,
+        );
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
 
@@ -68,13 +68,13 @@ fn test_agent_panic_caught_by_fault_tolerant_executor() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain_in_development();
 
-        let event = PipelineEvent::AgentInvocationFailed {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            exit_code: 1,
-            error_kind: AgentErrorKind::InternalError,
-            retriable: false,
-        };
+        let event = PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::InternalError,
+            false,
+        );
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
 
@@ -90,13 +90,13 @@ fn test_network_error_triggers_model_fallback() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain_in_development();
 
-        let event = PipelineEvent::AgentInvocationFailed {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            exit_code: 1,
-            error_kind: AgentErrorKind::Network,
-            retriable: true,
-        };
+        let event = PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::Network,
+            true,
+        );
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
 
@@ -111,13 +111,13 @@ fn test_auth_error_triggers_agent_fallback() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain_in_development();
 
-        let event = PipelineEvent::AgentInvocationFailed {
-            role: AgentRole::Developer,
-            agent: "agent1".to_string(),
-            exit_code: 1,
-            error_kind: AgentErrorKind::Authentication,
-            retriable: false,
-        };
+        let event = PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::Authentication,
+            false,
+        );
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
 
@@ -132,24 +132,21 @@ fn test_pipeline_state_machine_recovers_from_multiple_failures() {
         let mut state = create_state_with_agent_chain_in_development();
 
         let events = vec![
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Authentication,
-                retriable: false,
-            },
-            PipelineEvent::AgentInvocationSucceeded {
-                role: AgentRole::Developer,
-                agent: "agent2".to_string(),
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Authentication,
+                false,
+            ),
+            PipelineEvent::agent_invocation_succeeded(AgentRole::Developer, "agent2".to_string()),
         ];
 
         for event in events {
@@ -169,13 +166,13 @@ fn test_agent_fails_after_10_retries_fallback_to_next_agent() {
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
         );
 
         assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent1");
@@ -199,11 +196,11 @@ fn test_rate_limit_429_triggers_agent_fallback_not_model_fallback() {
         // Simulate 429 rate limit - should switch to next AGENT, not model
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::AgentRateLimitFallback {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                prompt_context: Some("continue this work".to_string()),
-            },
+            PipelineEvent::agent_rate_limit_fallback(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                Some("continue this work".to_string()),
+            ),
         );
 
         // Should switch to next agent
@@ -241,13 +238,13 @@ fn test_network_error_still_triggers_model_fallback() {
         // Network error should still trigger model fallback (same agent)
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Network,
-                retriable: true,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
         );
 
         // Should stay on same agent
@@ -300,10 +297,7 @@ fn test_rate_limit_continuation_prompt_cleared_on_success() {
         // Agent succeeds
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::AgentInvocationSucceeded {
-                role: AgentRole::Developer,
-                agent: "agent2".to_string(),
-            },
+            PipelineEvent::agent_invocation_succeeded(AgentRole::Developer, "agent2".to_string()),
         );
 
         // Continuation prompt should be cleared
@@ -346,9 +340,7 @@ fn test_all_agents_exhausted_pipeline_graceful_abort() {
 
         let exhausted_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::AgentChainExhausted {
-                role: AgentRole::Developer,
-            },
+            PipelineEvent::agent_chain_exhausted(AgentRole::Developer),
         );
 
         assert_eq!(exhausted_state.agent_chain.current_agent_index, 0);
@@ -402,13 +394,13 @@ fn test_pipeline_continues_after_agent_sigsegv() {
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 139,
-                error_kind: AgentErrorKind::InternalError,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                139,
+                AgentErrorKind::InternalError,
+                false,
+            ),
         );
 
         assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
@@ -422,27 +414,27 @@ fn test_pipeline_continues_after_multiple_agent_failures() {
         let mut state = create_state_with_agent_chain_in_development();
 
         let events = vec![
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent1".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::Authentication,
-                retriable: false,
-            },
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent2".to_string(),
-                exit_code: 139,
-                error_kind: AgentErrorKind::InternalError,
-                retriable: false,
-            },
-            PipelineEvent::AgentInvocationFailed {
-                role: AgentRole::Developer,
-                agent: "agent3".to_string(),
-                exit_code: 1,
-                error_kind: AgentErrorKind::FileSystem,
-                retriable: false,
-            },
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Authentication,
+                false,
+            ),
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent2".to_string(),
+                139,
+                AgentErrorKind::InternalError,
+                false,
+            ),
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent3".to_string(),
+                1,
+                AgentErrorKind::FileSystem,
+                false,
+            ),
         ];
 
         for event in events {

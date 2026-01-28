@@ -139,3 +139,9 @@ pub use ui_event::UIEvent;
 
 // Re-export CheckpointTrigger for external use
 pub use event::CheckpointTrigger;
+
+// Re-export category enums for external use
+pub use event::{
+    AgentEvent, CommitEvent, DevelopmentEvent, LifecycleEvent, PlanningEvent, RebaseEvent,
+    ReviewEvent,
+};

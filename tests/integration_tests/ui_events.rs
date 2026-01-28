@@ -131,7 +131,7 @@ fn test_ui_events_do_not_affect_reducer_state() {
         let initial_state = PipelineState::initial(1, 0);
 
         // Create a pipeline event that would normally transition state
-        let event = ralph_workflow::reducer::PipelineEvent::PipelineStarted;
+        let event = ralph_workflow::reducer::PipelineEvent::pipeline_started();
 
         // Reduce state
         let new_state = reduce(initial_state.clone(), event);
