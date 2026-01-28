@@ -883,7 +883,7 @@ fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> Check
         crate::reducer::event::PipelinePhase::FinalValidation => CheckpointPhase::FinalValidation,
         crate::reducer::event::PipelinePhase::Finalizing => CheckpointPhase::FinalValidation,
         crate::reducer::event::PipelinePhase::Complete => CheckpointPhase::Complete,
-        crate::reducer::event::PipelinePhase::Interrupted => CheckpointPhase::Complete,
+        crate::reducer::event::PipelinePhase::Interrupted => CheckpointPhase::Interrupted,
     }
 }
 
@@ -970,6 +970,16 @@ mod tests {
             matches!(result.event, PipelineEvent::FinalizingStarted),
             "ValidateFinalState should return FinalizingStarted to trigger finalization phase, got: {:?}",
             result.event
+        );
+    }
+
+    #[test]
+    fn test_map_to_checkpoint_phase_interrupted_maps_to_interrupted() {
+        use crate::reducer::event::PipelinePhase;
+
+        assert_eq!(
+            map_to_checkpoint_phase(PipelinePhase::Interrupted),
+            CheckpointPhase::Interrupted
         );
     }
 
