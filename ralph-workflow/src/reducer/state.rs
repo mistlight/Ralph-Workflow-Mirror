@@ -65,6 +65,9 @@ pub struct ContinuationState {
     pub previous_next_steps: Option<String>,
     /// Current continuation attempt number (0 = first attempt, 1+ = continuation).
     pub continuation_attempt: u32,
+    /// Count of invalid XML outputs for the current iteration.
+    #[serde(default)]
+    pub invalid_output_attempts: u32,
 }
 
 impl ContinuationState {
@@ -97,6 +100,7 @@ impl ContinuationState {
             previous_files_changed: files_changed,
             previous_next_steps: next_steps,
             continuation_attempt: self.continuation_attempt + 1,
+            invalid_output_attempts: 0,
         }
     }
 }
@@ -420,6 +424,9 @@ pub const MAX_VALIDATION_RETRY_ATTEMPTS: u32 = 100;
 /// This separates XSD retry (can't parse the response) from continuation
 /// (understood the response but work is incomplete).
 pub const MAX_DEV_VALIDATION_RETRY_ATTEMPTS: u32 = 10;
+
+/// Maximum number of invalid XML output reruns before aborting the iteration.
+pub const MAX_DEV_INVALID_OUTPUT_RERUNS: u32 = 2;
 
 /// Commit generation state.
 ///

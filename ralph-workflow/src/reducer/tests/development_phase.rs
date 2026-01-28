@@ -1,7 +1,9 @@
 //! Tests for development phase events (iterations, plan generation).
 
 use super::*;
-use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+use crate::reducer::state::{
+    AgentChainState, ContinuationState, DevelopmentStatus, MAX_DEV_INVALID_OUTPUT_RERUNS,
+};
 
 #[test]
 fn test_development_phase_started_sets_development_phase() {
@@ -104,7 +106,46 @@ fn test_development_iteration_completed_does_not_transition_when_output_invalid(
     );
 
     assert_eq!(new_state.phase, PipelinePhase::Development);
-    assert_eq!(new_state.continuation, continuation);
+    assert_eq!(new_state.continuation.invalid_output_attempts, 1);
+    assert_eq!(
+        new_state.continuation.previous_status,
+        continuation.previous_status
+    );
+}
+
+#[test]
+fn test_development_iteration_invalid_output_retries_then_falls_back() {
+    let agent_chain = AgentChainState::initial().with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![vec![], vec![]],
+        crate::agents::AgentRole::Developer,
+    );
+
+    let mut state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 0,
+        total_iterations: 5,
+        agent_chain,
+        ..create_test_state()
+    };
+
+    for attempt in 1..=MAX_DEV_INVALID_OUTPUT_RERUNS {
+        state = reduce(
+            state,
+            PipelineEvent::development_iteration_completed(0, false),
+        );
+        assert_eq!(state.phase, PipelinePhase::Development);
+        assert_eq!(state.continuation.invalid_output_attempts, attempt);
+    }
+
+    state = reduce(
+        state,
+        PipelineEvent::development_iteration_completed(0, false),
+    );
+
+    assert_eq!(state.phase, PipelinePhase::Development);
+    assert_eq!(state.agent_chain.current_agent_index, 1);
+    assert_eq!(state.continuation.invalid_output_attempts, 0);
 }
 
 #[test]

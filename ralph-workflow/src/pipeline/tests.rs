@@ -685,7 +685,7 @@ fn session_continuation_not_used_on_first_attempt() {
     let exit = crate::pipeline::run_xsd_retry_with_session(&mut xsd_config).unwrap();
 
     // Agent should succeed - on first attempt (retry_num=0), normal fallback is used
-    assert_eq!(exit, 0, "Agent should succeed on first attempt");
+    assert_eq!(exit.exit_code, 0, "Agent should succeed on first attempt");
 }
 
 /// Test that session continuation IS used on retry (retry_num > 0).
@@ -777,7 +777,7 @@ fn session_continuation_used_on_retry() {
 
     // Agent should succeed - on retry (retry_num>0) with session_info, session continuation is used
     assert_eq!(
-        exit, 0,
+        exit.exit_code, 0,
         "Agent should succeed on retry with session continuation"
     );
 }
@@ -870,7 +870,7 @@ fn session_continuation_fallback_when_agent_unsupported() {
     let exit = crate::pipeline::run_xsd_retry_with_session(&mut xsd_config).unwrap();
 
     // Agent should succeed via fallback path since it doesn't support sessions
-    assert_eq!(exit, 0, "Agent should succeed via fallback path");
+    assert_eq!(exit.exit_code, 0, "Agent should succeed via fallback path");
 }
 
 /// Test that session continuation returns the agent's exit code even on crash.
@@ -966,7 +966,7 @@ fn session_continuation_fallback_when_agent_crashes() {
     // When session continuation runs but agent crashes (non-zero exit),
     // we return the exit code so caller can check for valid output.
     assert_eq!(
-        exit, 139,
+        exit.exit_code, 139,
         "Should return crash exit code when session continuation ran but agent crashed"
     );
 }
@@ -1069,7 +1069,7 @@ fn session_continuation_resolves_sanitized_agent_names() {
     // Agent should succeed - this proves that the sanitized name "ccs-test-agent"
     // was resolved to "ccs/test-agent" and session continuation was used
     assert_eq!(
-        exit, 0,
+        exit.exit_code, 0,
         "Agent should succeed with sanitized agent name resolved"
     );
 }
@@ -1160,7 +1160,7 @@ fn session_continuation_e2e_extracts_session_from_logfile() {
     };
 
     let exit = crate::pipeline::run_xsd_retry_with_session(&mut xsd_config).unwrap();
-    assert_eq!(exit, 0, "First agent run should succeed");
+    assert_eq!(exit.exit_code, 0, "First agent run should succeed");
 
     // Extract session info from the log file (this is what happens in production)
     // We pass the known agent name to avoid ambiguity from sanitized log file names
@@ -1230,7 +1230,10 @@ fn session_continuation_e2e_extracts_session_from_logfile() {
     // Retry should succeed - this verifies the full session continuation flow works:
     // 1. Session ID was extracted from the log file
     // 2. Session continuation passed the session ID via --resume flag
-    assert_eq!(exit2, 0, "Retry should succeed with session continuation");
+    assert_eq!(
+        exit2.exit_code, 0,
+        "Retry should succeed with session continuation"
+    );
 }
 
 /// Test that resolve_from_logfile_name works for OpenCode agents.
@@ -1602,4 +1605,188 @@ fn test_error_handling_with_replacement_characters() {
         result.is_ok(),
         "Should complete with replacement characters"
     );
+}
+
+#[test]
+fn run_xsd_retry_with_session_detects_auth_error_from_session_continuation() {
+    use crate::agents::{AgentConfig, JsonParserType};
+    use crate::pipeline::runner::run_xsd_retry_with_session;
+    use crate::pipeline::runner::XsdRetryConfig;
+    use crate::pipeline::session::SessionInfo;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+
+    let mut registry = AgentRegistry::new().unwrap();
+    registry.register(
+        "session-agent",
+        AgentConfig::builder()
+            .cmd("printf")
+            .json_parser(JsonParserType::Claude)
+            .session_flag("-s {}")
+            .build(),
+    );
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let prompt_dir = std::env::temp_dir().join("ralph-test-session-auth-detect");
+    let config = Config {
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
+        verbosity: Verbosity::Quiet,
+        prompt_path: prompt_dir.join("prompt.txt"),
+        ..Config::default()
+    };
+
+    let mock_executor = crate::executor::MockProcessExecutor::new().with_agent_result(
+        "printf",
+        Ok(crate::executor::AgentCommandResult::failure(
+            1,
+            "credential is invalid",
+        )),
+    );
+    let executor_arc =
+        std::sync::Arc::new(mock_executor) as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+    let workspace = MemoryWorkspace::new_test();
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
+        workspace: &workspace,
+    };
+
+    let session_info = SessionInfo {
+        session_id: "ses_test_123".to_string(),
+        agent_name: "session-agent".to_string(),
+        log_file: PathBuf::from("/test/repo/.agent/logs/test.log"),
+    };
+
+    let mut xsd_retry_config = XsdRetryConfig {
+        role: crate::agents::AgentRole::Developer,
+        base_label: "test",
+        prompt: "hello",
+        logfile_prefix: ".agent/logs/test",
+        runtime: &mut runtime,
+        registry: &registry,
+        primary_agent: "session-agent",
+        session_info: Some(&session_info),
+        retry_num: 1,
+        output_validator: None,
+        workspace: &workspace,
+    };
+
+    let result = run_xsd_retry_with_session(&mut xsd_retry_config).unwrap();
+    assert!(
+        result.auth_error_detected,
+        "Expected auth_error_detected from session continuation"
+    );
+}
+
+#[test]
+fn handler_generates_agent_invocation_failed_on_planning_auth_error() {
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::executor::MockProcessExecutor;
+    use crate::phases::context::PhaseContext;
+    use crate::prompts::template_context::TemplateContext;
+    use crate::reducer::effect::{Effect, EffectHandler};
+    use crate::reducer::event::{AgentErrorKind, PipelineEvent};
+    use crate::reducer::handler::MainEffectHandler;
+    use crate::reducer::state::{AgentChainState, PipelineState};
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+
+    let mut registry = AgentRegistry::new().unwrap();
+    registry.register(
+        "session-agent",
+        crate::agents::AgentConfig::builder()
+            .cmd("printf")
+            .json_parser(crate::agents::JsonParserType::Claude)
+            .session_flag("-s {}")
+            .build(),
+    );
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let template_context = TemplateContext::default();
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "# Prompt");
+    let prompt_dir = std::env::temp_dir().join("ralph-test-planning-auth");
+
+    let config = Config {
+        behavior: crate::config::types::BehavioralFlags {
+            interactive: false,
+            auto_detect_stack: false,
+            strict_validation: false,
+        },
+        verbosity: Verbosity::Quiet,
+        prompt_path: prompt_dir.join("prompt.txt"),
+        ..Config::default()
+    };
+
+    let mock_executor = MockProcessExecutor::new().with_agent_result(
+        "printf",
+        Ok(crate::executor::AgentCommandResult::failure(
+            1,
+            "authentication failed",
+        )),
+    );
+    let executor_arc =
+        std::sync::Arc::new(mock_executor) as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "session-agent",
+        reviewer_agent: "session-agent",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: executor_arc.as_ref(),
+        executor_arc: executor_arc.clone(),
+        repo_root: &repo_root,
+        workspace: &workspace,
+    };
+
+    let state = PipelineState {
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["session-agent".to_string()],
+            vec![vec![]],
+            crate::agents::AgentRole::Developer,
+        ),
+        ..PipelineState::initial(1, 0)
+    };
+    let mut handler = MainEffectHandler::new(state);
+    let result = handler
+        .execute(Effect::GeneratePlan { iteration: 1 }, &mut ctx)
+        .unwrap();
+
+    match result.event {
+        PipelineEvent::Agent(crate::reducer::event::AgentEvent::InvocationFailed {
+            role,
+            agent,
+            exit_code: _,
+            error_kind,
+            retriable,
+        }) => {
+            assert_eq!(role, crate::agents::AgentRole::Developer);
+            assert_eq!(agent, "session-agent");
+            assert_eq!(error_kind, AgentErrorKind::Authentication);
+            assert!(!retriable, "auth failures should not be retriable");
+        }
+        other => panic!("expected AgentInvocationFailed event, got: {other:?}"),
+    }
 }

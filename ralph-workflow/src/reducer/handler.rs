@@ -15,7 +15,7 @@ use crate::pipeline::PipelineRuntime;
 use crate::prompts::ContextLevel;
 use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
 use crate::reducer::event::{
-    CheckpointTrigger, ConflictStrategy, PipelineEvent, PipelinePhase, RebasePhase,
+    AgentErrorKind, CheckpointTrigger, ConflictStrategy, PipelineEvent, PipelinePhase, RebasePhase,
 };
 use crate::reducer::fault_tolerant_executor::{
     execute_agent_fault_tolerantly, AgentExecutionConfig,
@@ -69,6 +69,23 @@ impl MainEffectHandler {
             from: Some(self.state.phase),
             to,
         }
+    }
+
+    fn is_auth_failure(err: &anyhow::Error) -> bool {
+        if err.chain().any(|cause| {
+            cause
+                .downcast_ref::<development::AuthFailureError>()
+                .is_some()
+        }) {
+            return true;
+        }
+
+        let msg = err.to_string().to_lowercase();
+        msg.contains("authentication error")
+            || msg.contains("auth/credential")
+            || msg.contains("unauthorized")
+            || msg.contains("credential")
+            || msg.contains("api key")
     }
 
     fn execute_effect(
@@ -218,7 +235,19 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        match development::run_planning_step(ctx, iteration) {
+        // Planning must honor the reducer-selected agent chain.
+        // We achieve this by running the planning phase with a temporary PhaseContext
+        // whose `developer_agent` is set to the current agent in `state.agent_chain`.
+        let effective_agent = self
+            .state
+            .agent_chain
+            .current_agent()
+            .map(|s| s.as_str())
+            .unwrap_or(ctx.developer_agent);
+
+        match with_overridden_developer_agent(ctx, effective_agent, |inner_ctx| {
+            development::run_planning_step(inner_ctx, iteration)
+        }) {
             Ok(_) => {
                 // Validate plan was created
                 let plan_path = Path::new(".agent/PLAN.md");
@@ -263,9 +292,27 @@ impl MainEffectHandler {
 
                 Ok(EffectResult::with_ui(event, ui_events))
             }
-            Err(_) => Ok(EffectResult::event(
-                PipelineEvent::plan_generation_completed(iteration, false),
-            )),
+            Err(err) => {
+                if Self::is_auth_failure(&err) {
+                    let current_agent = self
+                        .state
+                        .agent_chain
+                        .current_agent()
+                        .cloned()
+                        .unwrap_or_else(|| ctx.developer_agent.to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Developer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::Authentication,
+                        false,
+                    )));
+                }
+
+                Ok(EffectResult::event(
+                    PipelineEvent::plan_generation_completed(iteration, false),
+                ))
+            }
         }
     }
 
@@ -303,70 +350,78 @@ impl MainEffectHandler {
             let _ = cleanup_continuation_context_file(ctx);
         }
 
-        // If the agent repeatedly fails to produce valid XML even after in-session
-        // XSD retries, rerun the attempt a small number of times without consuming
-        // the continuation budget (which is reserved for valid partial/failed work).
-        const MAX_INVALID_OUTPUT_RERUNS: u32 = 2;
+        // Run a single development attempt (one session) with XSD retry.
+        let attempt = development::run_development_attempt_with_xml_retry(
+            ctx,
+            iteration,
+            developer_context,
+            false,
+            None::<&ResumeContext>,
+            dev_agent.as_deref(),
+            continuation_state,
+        );
 
-        let mut invalid_reruns: u32 = 0;
-        let attempt = loop {
-            // Run a single development attempt (one session) with XSD retry.
-            let attempt = development::run_development_attempt_with_xml_retry(
-                ctx,
-                iteration,
-                developer_context,
-                false,
-                None::<&ResumeContext>,
-                dev_agent.as_deref(),
-                continuation_state,
-            );
-
-            let attempt = match attempt {
-                Ok(a) => a,
-                Err(err) => {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                        format!("Development attempt failed: {err}"),
-                    )));
-                }
-            };
-
-            match decide_dev_iteration_next_step(
-                continuation_state.continuation_attempt,
-                max_continuations,
-                &attempt,
-            ) {
-                DevIterationNextStep::RetryInvalidOutput
-                    if invalid_reruns < MAX_INVALID_OUTPUT_RERUNS =>
-                {
-                    invalid_reruns += 1;
-                    ctx.logger.info(&format!(
-                        "Development output invalid after XSD retries; rerunning attempt without consuming continuation budget ({}/{})",
-                        invalid_reruns, MAX_INVALID_OUTPUT_RERUNS
-                    ));
-                    continue;
-                }
-                DevIterationNextStep::RetryInvalidOutput => {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                        format!(
-                            "Development output remained invalid after XSD retries and {} reruns. Last summary={}",
-                            MAX_INVALID_OUTPUT_RERUNS,
-                            attempt.summary
-                        ),
-                    )));
-                }
-                _ => break attempt,
+        let attempt = match attempt {
+            Ok(a) => a,
+            Err(err) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    format!("Development attempt failed: {err}"),
+                )));
             }
         };
 
+        // Check for auth failure - trigger agent fallback immediately
+        if attempt.auth_failure {
+            let current_agent = dev_agent.clone().unwrap_or_else(|| "unknown".to_string());
+            return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                current_agent,
+                1,
+                AgentErrorKind::Authentication,
+                false,
+            )));
+        }
+
+        let next_step = decide_dev_iteration_next_step(
+            continuation_state.continuation_attempt,
+            max_continuations,
+            &attempt,
+        );
+
+        if matches!(next_step, DevIterationNextStep::RetryInvalidOutput) {
+            let mut ui_events = vec![UIEvent::IterationProgress {
+                current: iteration,
+                total: self.state.total_iterations,
+            }];
+
+            // Try to read development result XML for semantic rendering.
+            let dev_xml_path = Path::new(".agent/tmp/development_result.xml");
+            let processed_path = Path::new(".agent/tmp/development_result.xml.processed");
+            if let Some(xml_content) = ctx
+                .workspace
+                .read(dev_xml_path)
+                .ok()
+                .or_else(|| ctx.workspace.read(processed_path).ok())
+            {
+                ui_events.push(UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::DevelopmentResult,
+                    content: xml_content,
+                    context: Some(XmlOutputContext {
+                        iteration: Some(iteration),
+                        pass: None,
+                        snippets: Vec::new(),
+                    }),
+                });
+            }
+
+            return Ok(EffectResult::with_ui(
+                PipelineEvent::development_iteration_completed(iteration, false),
+                ui_events,
+            ));
+        }
+
         // If we reached completed, the iteration can transition to commit.
-        if matches!(
-            decide_dev_iteration_next_step(
-                continuation_state.continuation_attempt,
-                max_continuations,
-                &attempt
-            ),
-            DevIterationNextStep::Completed
-        ) {
+        if matches!(next_step, DevIterationNextStep::Completed) {
             let _ = cleanup_continuation_context_file(ctx);
 
             let event = if continuation_state.is_continuation() {
@@ -409,11 +464,7 @@ impl MainEffectHandler {
         }
 
         // Not completed (valid output): partial/failed status triggers a continuation attempt.
-        let next_attempt = match decide_dev_iteration_next_step(
-            continuation_state.continuation_attempt,
-            max_continuations,
-            &attempt,
-        ) {
+        let next_attempt = match next_step {
             DevIterationNextStep::Continue {
                 next_continuation_attempt,
             } => next_continuation_attempt,
@@ -430,7 +481,6 @@ impl MainEffectHandler {
                 )));
             }
             DevIterationNextStep::RetryInvalidOutput | DevIterationNextStep::Completed => {
-                // Completed is handled above. Invalid output is handled by the rerun loop above.
                 unreachable!("Unexpected dev iteration next step after invalid-output handling")
             }
         };
@@ -489,7 +539,23 @@ impl MainEffectHandler {
 
         match review::run_review_pass(ctx, pass, &review_label, "", review_agent.as_deref()) {
             Ok(result) => {
-                let event = PipelineEvent::review_completed(pass, !result.early_exit);
+                // Check for auth failure - trigger agent fallback
+                if result.auth_failure {
+                    let current_agent = review_agent.unwrap_or_else(|| "unknown".to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Reviewer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::Authentication,
+                        false,
+                    )));
+                }
+
+                let event = if result.early_exit {
+                    PipelineEvent::review_phase_completed(true)
+                } else {
+                    PipelineEvent::review_completed(pass, true)
+                };
 
                 // Build UI events
                 let mut ui_events = vec![
@@ -569,9 +635,22 @@ impl MainEffectHandler {
 
                 Ok(EffectResult::with_ui(event, ui_events))
             }
-            Err(_) => Ok(EffectResult::event(PipelineEvent::fix_attempt_completed(
-                pass, false,
-            ))),
+            Err(err) => {
+                if Self::is_auth_failure(&err) {
+                    let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Reviewer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::Authentication,
+                        false,
+                    )));
+                }
+
+                Ok(EffectResult::event(PipelineEvent::fix_attempt_completed(
+                    pass, false,
+                )))
+            }
         }
     }
 
@@ -936,6 +1015,55 @@ impl MainEffectHandler {
 
         Ok(EffectResult::with_ui(event, vec![ui_event]))
     }
+}
+
+fn with_overridden_developer_agent<R>(
+    ctx: &mut PhaseContext<'_>,
+    developer_agent: &str,
+    run: impl for<'a> FnOnce(&mut PhaseContext<'a>) -> R,
+) -> R {
+    // PhaseContext owns some state (run_context/execution_history/prompt_history).
+    // To override `developer_agent` without leaking lifetimes, we temporarily move
+    // those owned values into a new PhaseContext with a shorter lifetime.
+    let run_context = std::mem::take(&mut ctx.run_context);
+    let execution_history = std::mem::take(&mut ctx.execution_history);
+    let prompt_history = std::mem::take(&mut ctx.prompt_history);
+
+    let (result, run_context, execution_history, prompt_history) = {
+        let mut inner_ctx = PhaseContext {
+            config: ctx.config,
+            registry: ctx.registry,
+            logger: ctx.logger,
+            colors: ctx.colors,
+            timer: &mut *ctx.timer,
+            stats: &mut *ctx.stats,
+            developer_agent,
+            reviewer_agent: ctx.reviewer_agent,
+            review_guidelines: ctx.review_guidelines,
+            template_context: ctx.template_context,
+            run_context,
+            execution_history,
+            prompt_history,
+            executor: ctx.executor,
+            executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+            repo_root: ctx.repo_root,
+            workspace: ctx.workspace,
+        };
+
+        let result = run(&mut inner_ctx);
+        (
+            result,
+            inner_ctx.run_context,
+            inner_ctx.execution_history,
+            inner_ctx.prompt_history,
+        )
+    };
+
+    ctx.run_context = run_context;
+    ctx.execution_history = execution_history;
+    ctx.prompt_history = prompt_history;
+
+    result
 }
 
 fn collect_review_issue_snippets(
@@ -1779,6 +1907,7 @@ mod tests {
             summary: "invalid xml".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(0, 2, &attempt);
@@ -1798,6 +1927,7 @@ mod tests {
             summary: "partial".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(0, 2, &attempt);
@@ -1822,6 +1952,7 @@ mod tests {
             summary: "partial".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(1, 2, &attempt);
@@ -1846,6 +1977,7 @@ mod tests {
             summary: "partial".to_string(),
             files_changed: None,
             next_steps: None,
+            auth_failure: false,
         };
 
         let next = decide_dev_iteration_next_step(2, 2, &attempt);
@@ -1856,5 +1988,69 @@ mod tests {
                 next_continuation_attempt: 3
             }
         );
+    }
+
+    #[test]
+    fn test_with_overridden_developer_agent_overrides_only_inner_ctx() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::workspace::MemoryWorkspace;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new_test();
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
+            as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+        let repo_root = PathBuf::from("/test/repo");
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "primary-agent",
+            reviewer_agent: "reviewer-agent",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: &*executor_arc,
+            executor_arc: std::sync::Arc::clone(&executor_arc),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let orig_dev = ctx.developer_agent;
+        ctx.prompt_history
+            .insert("existing".to_string(), "value".to_string());
+
+        let res = with_overridden_developer_agent(&mut ctx, "fallback-agent", |inner| {
+            assert_eq!(inner.developer_agent, "fallback-agent");
+            inner
+                .prompt_history
+                .insert("new".to_string(), "prompt".to_string());
+            inner.record_developer_iteration();
+            7
+        });
+
+        assert_eq!(res, 7);
+        assert_eq!(ctx.developer_agent, orig_dev);
+        assert!(ctx.prompt_history.contains_key("existing"));
+        assert!(ctx.prompt_history.contains_key("new"));
     }
 }
