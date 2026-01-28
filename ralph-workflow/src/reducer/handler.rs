@@ -139,6 +139,16 @@ impl MainEffectHandler {
 
         let model_name = self.state.agent_chain.current_model();
 
+        // Use continuation prompt if available (from rate-limited predecessor)
+        // This allows continuing the same work without starting over when an
+        // agent hits 429 and we fallback to the next agent in the chain.
+        let effective_prompt = self
+            .state
+            .agent_chain
+            .rate_limit_continuation_prompt
+            .clone()
+            .unwrap_or(prompt);
+
         ctx.logger.info(&format!(
             "Executing with agent: {}, model: {:?}",
             effective_agent, model_name
@@ -171,7 +181,7 @@ impl MainEffectHandler {
             cmd_str: &agent_config.cmd,
             parser_type: agent_config.json_parser,
             env_vars: &agent_config.env_vars,
-            prompt: &prompt,
+            prompt: &effective_prompt,
             display_name: &effective_agent,
             logfile: &logfile,
         };

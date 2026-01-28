@@ -66,7 +66,8 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         | PipelineEvent::AgentChainExhausted { .. }
         | PipelineEvent::AgentModelFallbackTriggered { .. }
         | PipelineEvent::AgentRetryCycleStarted { .. }
-        | PipelineEvent::AgentChainInitialized { .. } => reduce_agent_event(state, event),
+        | PipelineEvent::AgentChainInitialized { .. }
+        | PipelineEvent::AgentRateLimitFallback { .. } => reduce_agent_event(state, event),
 
         // Rebase events
         PipelineEvent::RebaseStarted { .. }
@@ -279,13 +280,29 @@ fn reduce_review_event(state: PipelineState, event: PipelineEvent) -> PipelineSt
 fn reduce_agent_event(state: PipelineState, event: PipelineEvent) -> PipelineState {
     match event {
         PipelineEvent::AgentInvocationStarted { .. } => state,
-        PipelineEvent::AgentInvocationSucceeded { .. } => state,
+        // Clear continuation prompt on success
+        PipelineEvent::AgentInvocationSucceeded { .. } => PipelineState {
+            agent_chain: state.agent_chain.clear_continuation_prompt(),
+            ..state
+        },
+        // Rate limit (429): immediate agent fallback, preserve prompt context
+        // Unlike other retriable errors, rate limits indicate the provider is
+        // temporarily exhausted, so we switch to the next agent immediately
+        // to continue work without delay.
+        PipelineEvent::AgentRateLimitFallback { prompt_context, .. } => PipelineState {
+            agent_chain: state
+                .agent_chain
+                .switch_to_next_agent_with_prompt(prompt_context),
+            ..state
+        },
+        // Other retriable errors (Network, Timeout): try next model
         PipelineEvent::AgentInvocationFailed {
             retriable: true, ..
         } => PipelineState {
             agent_chain: state.agent_chain.advance_to_next_model(),
             ..state
         },
+        // Non-retriable errors: switch agent
         PipelineEvent::AgentInvocationFailed {
             retriable: false, ..
         } => PipelineState {
@@ -849,7 +866,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reduce_model_fallback_triggers_fallback_event() {
+    fn test_reduce_model_fallback_triggers_for_network_error() {
         let state = create_test_state();
         let initial_model_index = state.agent_chain.current_model_index;
         let agent_name = state.agent_chain.current_agent().unwrap().clone();
@@ -860,12 +877,83 @@ mod tests {
                 role: AgentRole::Developer,
                 agent: agent_name,
                 exit_code: 1,
-                error_kind: AgentErrorKind::RateLimit,
+                error_kind: AgentErrorKind::Network,
                 retriable: true,
             },
         );
 
         assert!(new_state.agent_chain.current_model_index > initial_model_index);
+    }
+
+    #[test]
+    fn test_rate_limit_fallback_switches_agent() {
+        let state = create_test_state();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentRateLimitFallback {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                prompt_context: Some("test prompt".to_string()),
+            },
+        );
+
+        // Should switch to next agent
+        assert!(
+            new_state.agent_chain.current_agent_index > initial_agent_index,
+            "Rate limit should trigger agent fallback, not model fallback"
+        );
+        // Should preserve prompt
+        assert_eq!(
+            new_state.agent_chain.rate_limit_continuation_prompt,
+            Some("test prompt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_rate_limit_fallback_with_no_prompt_context() {
+        let state = create_test_state();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentRateLimitFallback {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+                prompt_context: None,
+            },
+        );
+
+        // Should still switch to next agent
+        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+        // Prompt context should be None
+        assert!(new_state
+            .agent_chain
+            .rate_limit_continuation_prompt
+            .is_none());
+    }
+
+    #[test]
+    fn test_success_clears_rate_limit_continuation_prompt() {
+        let mut state = create_test_state();
+        state.agent_chain.rate_limit_continuation_prompt = Some("old prompt".to_string());
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::AgentInvocationSucceeded {
+                role: AgentRole::Developer,
+                agent: "agent1".to_string(),
+            },
+        );
+
+        assert!(
+            new_state
+                .agent_chain
+                .rate_limit_continuation_prompt
+                .is_none(),
+            "Success should clear rate limit continuation prompt"
+        );
     }
 
     #[test]

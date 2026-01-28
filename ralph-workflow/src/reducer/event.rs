@@ -136,6 +136,19 @@ pub enum PipelineEvent {
         role: AgentRole,
         agents: Vec<String>,
     },
+    /// Agent hit rate limit (429) - should fallback to next agent immediately.
+    ///
+    /// Unlike other retriable errors (Network, Timeout), rate limits indicate
+    /// the current provider is temporarily exhausted. Rather than waiting and
+    /// retrying the same agent, we immediately switch to the next agent in the
+    /// chain to continue work without delay.
+    AgentRateLimitFallback {
+        role: AgentRole,
+        agent: String,
+        /// The prompt that was being executed when rate limit was hit.
+        /// This allows the next agent to continue the same work.
+        prompt_context: Option<String>,
+    },
 
     RebaseStarted {
         phase: RebasePhase,
