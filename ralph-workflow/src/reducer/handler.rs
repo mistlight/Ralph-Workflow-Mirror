@@ -500,16 +500,28 @@ impl MainEffectHandler {
         ));
 
         // Write continuation context for the next attempt.
-        write_continuation_context_file(ctx, iteration, next_attempt, &attempt)?;
-        ctx.logger
-            .info("Continuation context written to .agent/tmp/continuation_context.md");
+        // NOTE: this uses the same implementation as Effect::WriteContinuationContext.
+        let status = attempt.status.clone();
+        let summary = attempt.summary.clone();
+        let files_changed = attempt.files_changed.clone();
+        let next_steps = attempt.next_steps.clone();
+
+        let context_data = crate::reducer::effect::ContinuationContextData {
+            iteration,
+            attempt: next_attempt,
+            status: status.clone(),
+            summary: summary.clone(),
+            files_changed: files_changed.clone(),
+            next_steps: next_steps.clone(),
+        };
+        write_continuation_context_to_workspace(ctx.workspace, ctx.logger, &context_data)?;
 
         let event = PipelineEvent::development_iteration_continuation_triggered(
             iteration,
-            attempt.status,
-            attempt.summary,
-            attempt.files_changed,
-            attempt.next_steps,
+            status,
+            summary,
+            files_changed,
+            next_steps,
         );
 
         let mut ui_events = vec![UIEvent::IterationProgress {
@@ -546,6 +558,18 @@ impl MainEffectHandler {
         // Get current reviewer agent from agent chain
         let review_agent = self.state.agent_chain.current_agent().cloned();
 
+        // Keep invalid-output attempt tracking deterministic by sourcing it from state.
+        let invalid_output_attempt = self.state.continuation.invalid_output_attempts;
+
+        let is_review_output_validation_failure = |workspace: &dyn Workspace| -> bool {
+            let marker = "# Review Output XSD Validation Failure";
+            workspace
+                .read(Path::new(".agent/ISSUES.md"))
+                .ok()
+                .map(|s| s.starts_with(marker))
+                .unwrap_or(false)
+        };
+
         match review::run_review_pass(ctx, pass, &review_label, "", review_agent.as_deref()) {
             Ok(result) => {
                 // Check for auth failure - trigger agent fallback
@@ -561,8 +585,12 @@ impl MainEffectHandler {
                 }
 
                 let event = if result.early_exit {
-                    PipelineEvent::review_phase_completed(true)
+                    PipelineEvent::review_pass_completed_clean(pass)
+                } else if is_review_output_validation_failure(ctx.workspace) {
+                    // The review phase wrote the XSD failure marker; treat it as invalid output.
+                    PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt)
                 } else {
+                    // Successful parse with issues found.
                     PipelineEvent::review_completed(pass, true)
                 };
 
@@ -598,9 +626,22 @@ impl MainEffectHandler {
 
                 Ok(EffectResult::with_ui(event, ui_events))
             }
-            Err(_) => Ok(EffectResult::event(PipelineEvent::review_completed(
-                pass, false,
-            ))),
+            Err(err) => {
+                if Self::is_auth_failure(&err) {
+                    let current_agent = review_agent.unwrap_or_else(|| "unknown".to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Reviewer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::Authentication,
+                        false,
+                    )));
+                }
+
+                Ok(EffectResult::event(
+                    PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt),
+                ))
+            }
         }
     }
 
@@ -1259,52 +1300,6 @@ fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Resu
     if ctx.workspace.exists(path) {
         ctx.workspace.remove(path)?;
     }
-    Ok(())
-}
-
-fn write_continuation_context_file(
-    ctx: &mut PhaseContext<'_>,
-    iteration: u32,
-    continuation_attempt: u32,
-    attempt: &development::DevAttemptResult,
-) -> anyhow::Result<()> {
-    let tmp_dir = Path::new(".agent/tmp");
-    if !ctx.workspace.exists(tmp_dir) {
-        ctx.workspace.create_dir_all(tmp_dir)?;
-    }
-
-    let mut content = String::new();
-    content.push_str("# Development Continuation Context\n\n");
-    content.push_str(&format!("- Iteration: {iteration}\n"));
-    content.push_str(&format!("- Continuation attempt: {continuation_attempt}\n"));
-    content.push_str(&format!("- Previous status: {}\n\n", attempt.status));
-
-    content.push_str("## Previous summary\n\n");
-    content.push_str(&attempt.summary);
-    content.push('\n');
-
-    if let Some(ref files) = attempt.files_changed {
-        content.push_str("\n## Files changed\n\n");
-        for file in files {
-            content.push_str("- ");
-            content.push_str(file);
-            content.push('\n');
-        }
-    }
-
-    if let Some(ref next_steps) = attempt.next_steps {
-        content.push_str("\n## Recommended next steps\n\n");
-        content.push_str(next_steps);
-        content.push('\n');
-    }
-
-    content.push_str("\n## Reference files (do not modify)\n\n");
-    content.push_str("- PROMPT.md\n");
-    content.push_str("- .agent/PLAN.md\n");
-
-    ctx.workspace
-        .write(Path::new(".agent/tmp/continuation_context.md"), &content)?;
-
     Ok(())
 }
 

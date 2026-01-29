@@ -316,12 +316,20 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             phase: super::event::PipelinePhase::Review,
             reviewer_pass: 0,
             review_issues_found: false,
+            continuation: super::state::ContinuationState {
+                invalid_output_attempts: 0,
+                ..state.continuation
+            },
             ..state
         },
         ReviewEvent::PassStarted { pass } => PipelineState {
             reviewer_pass: pass,
             review_issues_found: false,
             agent_chain: state.agent_chain.reset(),
+            continuation: super::state::ContinuationState {
+                invalid_output_attempts: 0,
+                ..state.continuation
+            },
             ..state
         },
         ReviewEvent::Completed { pass, issues_found } => {
@@ -335,11 +343,19 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                 phase: next_phase,
                 reviewer_pass: next_pass,
                 review_issues_found: issues_found,
+                continuation: super::state::ContinuationState {
+                    invalid_output_attempts: 0,
+                    ..state.continuation
+                },
                 ..state
             }
         }
         ReviewEvent::FixAttemptStarted { .. } => PipelineState {
             agent_chain: state.agent_chain.reset(),
+            continuation: super::state::ContinuationState {
+                invalid_output_attempts: 0,
+                ..state.continuation
+            },
             ..state
         },
         ReviewEvent::FixAttemptCompleted { pass, .. } => PipelineState {
@@ -348,47 +364,61 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             reviewer_pass: pass,
             review_issues_found: false,
             commit: super::state::CommitState::NotStarted,
+            continuation: super::state::ContinuationState {
+                invalid_output_attempts: 0,
+                ..state.continuation
+            },
             ..state
         },
         ReviewEvent::PhaseCompleted { .. } => PipelineState {
             phase: super::event::PipelinePhase::CommitMessage,
+            continuation: super::state::ContinuationState {
+                invalid_output_attempts: 0,
+                ..state.continuation
+            },
             ..state
         },
         ReviewEvent::PassCompletedClean { pass } => {
-            // Clean pass completion - advance to next pass or transition to CommitMessage
-            let next_pass = pass + 1;
-            if next_pass >= state.total_reviewer_passes {
-                PipelineState {
-                    phase: super::event::PipelinePhase::CommitMessage,
-                    reviewer_pass: next_pass,
-                    review_issues_found: false,
-                    ..state
-                }
-            } else {
-                PipelineState {
-                    reviewer_pass: next_pass,
-                    review_issues_found: false,
-                    ..state
-                }
+            // Clean pass means no issues found; review phase can exit early.
+            // This is intentionally distinct from Completed { issues_found: false }.
+            PipelineState {
+                phase: super::event::PipelinePhase::CommitMessage,
+                previous_phase: None,
+                reviewer_pass: pass + 1,
+                review_issues_found: false,
+                commit: super::state::CommitState::NotStarted,
+                continuation: super::state::ContinuationState {
+                    invalid_output_attempts: 0,
+                    ..state.continuation
+                },
+                ..state
             }
         }
         ReviewEvent::OutputValidationFailed { pass, attempt } => {
-            // Policy: After MAX_REVIEW_INVALID_OUTPUT_RERUNS, switch to next agent.
-            // Mirrors development phase behavior for consistency.
+            // Policy: The reducer maintains retry state for determinism.
+            // Handlers should emit `attempt` from state (checkpoint-resume safe).
             const MAX_REVIEW_INVALID_OUTPUT_RERUNS: u32 = 2;
+
             if attempt >= MAX_REVIEW_INVALID_OUTPUT_RERUNS {
                 let new_agent_chain = state.agent_chain.switch_to_next_agent();
                 PipelineState {
                     phase: super::event::PipelinePhase::Review,
                     reviewer_pass: pass,
                     agent_chain: new_agent_chain,
+                    continuation: super::state::ContinuationState {
+                        invalid_output_attempts: 0,
+                        ..state.continuation
+                    },
                     ..state
                 }
             } else {
-                // Stay in Review for retry
                 PipelineState {
                     phase: super::event::PipelinePhase::Review,
                     reviewer_pass: pass,
+                    continuation: super::state::ContinuationState {
+                        invalid_output_attempts: attempt + 1,
+                        ..state.continuation
+                    },
                     ..state
                 }
             }
@@ -1502,6 +1532,64 @@ mod tests {
             PipelinePhase::Development,
             "Should stay in Development phase for retry"
         );
+    }
+
+    // =========================================================================
+    // Review output validation / clean pass tests
+    // =========================================================================
+
+    #[test]
+    fn test_review_output_validation_failed_increments_state_counter() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+        state.total_reviewer_passes = 2;
+
+        let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+
+        assert_eq!(new_state.phase, PipelinePhase::Review);
+        assert_eq!(new_state.reviewer_pass, 0);
+        assert_eq!(new_state.continuation.invalid_output_attempts, 1);
+    }
+
+    #[test]
+    fn test_review_output_validation_failed_switches_agent_after_limit() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+        state.total_reviewer_passes = 2;
+        // Simulate reaching the retry limit before this failure.
+        state.continuation.invalid_output_attempts = 2;
+
+        let new_state = reduce(
+            state,
+            // `attempt` should be sourced from state for determinism.
+            PipelineEvent::review_output_validation_failed(0, 2),
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::Review);
+        assert_eq!(new_state.reviewer_pass, 0);
+        assert_eq!(
+            new_state.continuation.invalid_output_attempts, 0,
+            "Counter should reset when switching agents"
+        );
+        assert!(
+            new_state.agent_chain.current_agent_index > 0,
+            "Should switch to next agent after max invalid output attempts"
+        );
+    }
+
+    #[test]
+    fn test_review_pass_completed_clean_exits_review_phase() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+        state.total_reviewer_passes = 2;
+
+        let new_state = reduce(state, PipelineEvent::review_pass_completed_clean(0));
+
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert_eq!(new_state.review_issues_found, false);
     }
 
     // =========================================================================
