@@ -416,3 +416,34 @@ fn test_agent_chain_initialized_with_empty_list() {
     assert_eq!(new_state.agent_chain.agents.len(), 0);
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
 }
+
+#[test]
+fn test_agent_chain_initialized_contains_full_fallback_chain() {
+    // When AgentChainInitialized event is emitted, it should contain
+    // all agents from the fallback config, not just a single agent
+    let state = create_test_state();
+    let agents = vec![
+        "codex".to_string(),
+        "opencode".to_string(),
+        "claude".to_string(),
+    ];
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::agent_chain_initialized(AgentRole::Reviewer, agents.clone()),
+    );
+
+    assert_eq!(
+        new_state.agent_chain.agents, agents,
+        "Agent chain should contain all agents from the fallback config"
+    );
+    assert_eq!(
+        new_state.agent_chain.current_agent_index, 0,
+        "Agent chain should start at index 0"
+    );
+    assert_eq!(
+        new_state.agent_chain.current_agent().map(String::as_str),
+        Some("codex"),
+        "Current agent should be the first in the chain"
+    );
+}

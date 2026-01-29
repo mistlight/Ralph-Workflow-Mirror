@@ -999,25 +999,34 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         role: AgentRole,
     ) -> Result<EffectResult> {
-        let agents = match role {
-            AgentRole::Developer => vec![ctx.developer_agent.to_string()],
-            AgentRole::Reviewer => vec![ctx.reviewer_agent.to_string()],
-            AgentRole::Commit => {
-                if let Some(commit_agent) = get_primary_commit_agent(ctx) {
-                    vec![commit_agent]
-                } else {
-                    vec![]
+        let fallback_config = ctx.registry.fallback_config();
+
+        // Get the full fallback chain for this role from the FallbackConfig
+        let mut agents = fallback_config.get_fallbacks(role).to_vec();
+
+        // If no fallbacks configured, fall back to context agent
+        if agents.is_empty() {
+            let fallback_agent = match role {
+                AgentRole::Developer => ctx.developer_agent.to_string(),
+                AgentRole::Reviewer => ctx.reviewer_agent.to_string(),
+                AgentRole::Commit => {
+                    if let Some(commit_agent) = get_primary_commit_agent(ctx) {
+                        commit_agent
+                    } else {
+                        return Ok(EffectResult::event(PipelineEvent::agent_chain_initialized(
+                            role,
+                            vec![],
+                        )));
+                    }
                 }
-            }
-        };
-
-        let _models_per_agent: Vec<Vec<String>> = agents.iter().map(|_| vec![]).collect();
-
-        let max_cycles = self.state.agent_chain.max_cycles;
+            };
+            agents.push(fallback_agent);
+        }
 
         ctx.logger.info(&format!(
-            "Initializing agent chain with {} cycles",
-            max_cycles
+            "Agent fallback chain for {:?}: {}",
+            role,
+            agents.join(", ")
         ));
 
         let event = PipelineEvent::agent_chain_initialized(role, agents);

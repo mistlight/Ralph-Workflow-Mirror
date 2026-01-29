@@ -82,27 +82,22 @@ fn build_agent_chain_state(
 ) -> AgentChainState {
     let mut agents: Vec<String> = fallback_config.get_fallbacks(role).to_vec();
 
-    if !agents.iter().any(|agent| agent == primary_agent) {
-        agents.insert(0, primary_agent.to_string());
+    // If no fallbacks configured, use the primary_agent as fallback
+    if agents.is_empty() {
+        agents.push(primary_agent.to_string());
     }
 
     let mut seen = std::collections::HashSet::new();
     agents.retain(|agent| seen.insert(agent.clone()));
 
-    if agents.is_empty() {
-        agents.push(primary_agent.to_string());
-    }
-
     let models_per_agent = agents.iter().map(|_| Vec::new()).collect();
-    let mut chain = AgentChainState::initial()
+
+    // IMPORTANT: Always start at index 0 (the first/preferred agent in the fallback chain)
+    // Do NOT adjust the index to match primary_agent - the fallback chain is configured
+    // with the preferred agent first, and we should respect that ordering.
+    AgentChainState::initial()
         .with_agents(agents, models_per_agent, role)
-        .with_max_cycles(fallback_config.max_cycles);
-
-    if let Some(index) = chain.agents.iter().position(|agent| agent == primary_agent) {
-        chain.current_agent_index = index;
-    }
-
-    chain
+        .with_max_cycles(fallback_config.max_cycles)
 }
 
 fn advance_agent_chain_on_auth_failure(
@@ -1866,5 +1861,72 @@ mod tests {
 
         let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
         assert_eq!(backoff, Some(2000));
+    }
+
+    #[test]
+    fn test_build_agent_chain_state_starts_at_index_zero() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            reviewer: vec![
+                "codex".to_string(),
+                "opencode".to_string(),
+                "claude".to_string(),
+            ],
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+
+        // Even when primary_agent is "claude" (third in chain),
+        // the chain should start at index 0 (codex)
+        let chain = build_agent_chain_state(&fallback_config, AgentRole::Reviewer, "claude");
+
+        assert_eq!(
+            chain.current_agent_index, 0,
+            "Fallback chain should ALWAYS start at index 0, not skip to primary_agent"
+        );
+        assert_eq!(
+            chain.current_agent().map(String::as_str),
+            Some("codex"),
+            "First agent should be codex (the first in the fallback chain)"
+        );
+        assert_eq!(
+            chain.agents,
+            vec!["codex", "opencode", "claude"],
+            "Agent chain should match the configured fallback order"
+        );
+    }
+
+    #[test]
+    fn test_build_agent_chain_state_uses_fallback_chain_order() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            reviewer: vec![
+                "preferred-agent".to_string(),
+                "fallback-1".to_string(),
+                "fallback-2".to_string(),
+            ],
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+
+        // primary_agent is "fallback-2" but chain should still start at preferred-agent
+        let chain = build_agent_chain_state(&fallback_config, AgentRole::Reviewer, "fallback-2");
+
+        assert_eq!(chain.current_agent_index, 0);
+        assert_eq!(
+            chain.current_agent().map(String::as_str),
+            Some("preferred-agent")
+        );
+    }
+
+    #[test]
+    fn test_build_agent_chain_state_uses_primary_agent_when_no_fallback_configured() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            reviewer: vec![], // Empty fallback chain
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+
+        // When no fallbacks configured, primary_agent should be used
+        let chain = build_agent_chain_state(&fallback_config, AgentRole::Reviewer, "claude");
+
+        assert_eq!(chain.current_agent_index, 0);
+        assert_eq!(chain.current_agent().map(String::as_str), Some("claude"));
+        assert_eq!(chain.agents, vec!["claude"]);
     }
 }
