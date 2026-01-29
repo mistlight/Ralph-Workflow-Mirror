@@ -1,6 +1,0 @@
-<ralph-commit>
-<ralph-subject>refactor(commit): simplify extraction pattern detection</ralph-subject>
-<ralph-body>Merge extraction pattern detection with XML extraction to reduce duplication.
-When XML tags are not found, use raw content for XSD validation to provide
-clear error messages for AI retry instead of failing immediately.</ralph-body>
-</ralph-commit>

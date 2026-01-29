@@ -23,6 +23,7 @@ See **[CODE_STYLE.md](CODE_STYLE.md)** for design principles and testing philoso
 - **NO temporary .md files** in root or doc folders
 - **NO new files** in root/doc directories unless explicitly about documentation
 - **DO** update outdated documentation when encountered
+- **ALL temporary files MUST go in `tmp/` at the repo root** (gitignored); use a unique subdir like `tmp/ralph-workflow-*` if needed
 
 ---
 

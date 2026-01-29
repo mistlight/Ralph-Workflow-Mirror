@@ -35,6 +35,17 @@ wt-*/
 
 # Temporary files
 .tmp/
+/tmp/
 *PLAN.md
 
 .plan
+
+# Local AI/agent artifacts (never commit)
+/.claude/settings.local.json
+/.claude_commit_message.xml
+/.commit_message.json
+/commit_message.txt
+/transform_resume.py
+
+# Editor/agent backups
+**/*.bak
