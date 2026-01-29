@@ -382,13 +382,8 @@ impl MainEffectHandler {
             )));
         }
 
-        let next_step = decide_dev_iteration_next_step(
-            continuation_state.continuation_attempt,
-            max_continuations,
-            &attempt,
-        );
-
-        if matches!(next_step, DevIterationNextStep::RetryInvalidOutput) {
+        // Check if output is invalid (XSD/XML parsing failed) - emit event, let reducer decide
+        if !attempt.output_valid {
             let mut ui_events = vec![UIEvent::IterationProgress {
                 current: iteration,
                 total: self.state.total_iterations,
@@ -414,14 +409,23 @@ impl MainEffectHandler {
                 });
             }
 
+            // Emit OutputValidationFailed - reducer decides whether to retry or switch agents
             return Ok(EffectResult::with_ui(
-                PipelineEvent::development_iteration_completed(iteration, false),
+                PipelineEvent::development_output_validation_failed(
+                    iteration,
+                    continuation_state.invalid_output_attempts,
+                ),
                 ui_events,
             ));
         }
 
         // If we reached completed, the iteration can transition to commit.
-        if matches!(next_step, DevIterationNextStep::Completed) {
+        if attempt.output_valid
+            && matches!(
+                attempt.status,
+                crate::reducer::state::DevelopmentStatus::Completed
+            )
+        {
             let _ = cleanup_continuation_context_file(ctx);
 
             let event = if continuation_state.is_continuation() {
@@ -464,26 +468,19 @@ impl MainEffectHandler {
         }
 
         // Not completed (valid output): partial/failed status triggers a continuation attempt.
-        let next_attempt = match next_step {
-            DevIterationNextStep::Continue {
-                next_continuation_attempt,
-            } => next_continuation_attempt,
-            DevIterationNextStep::Abort { .. } => {
-                let _ = cleanup_continuation_context_file(ctx);
-                let total_valid_attempts = 1 + max_continuations;
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    format!(
-                        "Development did not reach status='completed' after {} total valid attempts. Last status={:?}. Last summary={}",
-                        total_valid_attempts,
-                        attempt.status,
-                        attempt.summary
-                    ),
-                )));
-            }
-            DevIterationNextStep::RetryInvalidOutput | DevIterationNextStep::Completed => {
-                unreachable!("Unexpected dev iteration next step after invalid-output handling")
-            }
-        };
+        // Check if continuation budget is exhausted - emit event, let reducer decide
+        let next_attempt = continuation_state.continuation_attempt + 1;
+        if next_attempt > max_continuations {
+            let _ = cleanup_continuation_context_file(ctx);
+            // Emit ContinuationBudgetExhausted - reducer decides whether to abort or fallback
+            return Ok(EffectResult::event(
+                PipelineEvent::development_continuation_budget_exhausted(
+                    iteration,
+                    next_attempt,
+                    attempt.status.clone(),
+                ),
+            ));
+        }
 
         ctx.logger.info(&format!(
             "Triggering development continuation attempt {}/{} (previous status={})",
@@ -1285,46 +1282,6 @@ fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> Check
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DevIterationNextStep {
-    Completed,
-    RetryInvalidOutput,
-    Continue { next_continuation_attempt: u32 },
-    Abort { next_continuation_attempt: u32 },
-}
-
-fn decide_dev_iteration_next_step(
-    continuation_attempt: u32,
-    max_continuations: u32,
-    attempt: &crate::phases::development::DevAttemptResult,
-) -> DevIterationNextStep {
-    if !attempt.output_valid {
-        return DevIterationNextStep::RetryInvalidOutput;
-    }
-
-    if attempt.output_valid
-        && matches!(
-            attempt.status,
-            crate::reducer::state::DevelopmentStatus::Completed
-        )
-    {
-        return DevIterationNextStep::Completed;
-    }
-
-    let next_attempt = continuation_attempt + 1;
-    // Config semantics: max_continuations counts *continuation attempts* beyond the initial
-    // attempt (where continuation_attempt == 0). So next_attempt is allowed as long as it does
-    // not exceed max_continuations.
-    if next_attempt > max_continuations {
-        DevIterationNextStep::Abort {
-            next_continuation_attempt: next_attempt,
-        }
-    } else {
-        DevIterationNextStep::Continue {
-            next_continuation_attempt: next_attempt,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -1892,101 +1849,6 @@ mod tests {
             calls[0].prompt,
             "fresh",
             "invoke_agent should not override a new prompt with a stale rate_limit_continuation_prompt"
-        );
-    }
-
-    #[test]
-    fn test_decide_dev_iteration_next_step_invalid_output_does_not_consume_continuation_budget() {
-        use crate::phases::development::DevAttemptResult;
-        use crate::reducer::state::DevelopmentStatus;
-
-        let attempt = DevAttemptResult {
-            had_error: true,
-            output_valid: false,
-            status: DevelopmentStatus::Failed,
-            summary: "invalid xml".to_string(),
-            files_changed: None,
-            next_steps: None,
-            auth_failure: false,
-        };
-
-        let next = decide_dev_iteration_next_step(0, 2, &attempt);
-
-        assert_eq!(next, DevIterationNextStep::RetryInvalidOutput);
-    }
-
-    #[test]
-    fn test_decide_dev_iteration_next_step_partial_consumes_continuation_budget() {
-        use crate::phases::development::DevAttemptResult;
-        use crate::reducer::state::DevelopmentStatus;
-
-        let attempt = DevAttemptResult {
-            had_error: false,
-            output_valid: true,
-            status: DevelopmentStatus::Partial,
-            summary: "partial".to_string(),
-            files_changed: None,
-            next_steps: None,
-            auth_failure: false,
-        };
-
-        let next = decide_dev_iteration_next_step(0, 2, &attempt);
-
-        assert_eq!(
-            next,
-            DevIterationNextStep::Continue {
-                next_continuation_attempt: 1
-            }
-        );
-    }
-
-    #[test]
-    fn test_decide_dev_iteration_next_step_partial_allows_max_continuations() {
-        use crate::phases::development::DevAttemptResult;
-        use crate::reducer::state::DevelopmentStatus;
-
-        let attempt = DevAttemptResult {
-            had_error: false,
-            output_valid: true,
-            status: DevelopmentStatus::Partial,
-            summary: "partial".to_string(),
-            files_changed: None,
-            next_steps: None,
-            auth_failure: false,
-        };
-
-        let next = decide_dev_iteration_next_step(1, 2, &attempt);
-
-        assert_eq!(
-            next,
-            DevIterationNextStep::Continue {
-                next_continuation_attempt: 2
-            }
-        );
-    }
-
-    #[test]
-    fn test_decide_dev_iteration_next_step_partial_aborts_when_next_exceeds_max_continuations() {
-        use crate::phases::development::DevAttemptResult;
-        use crate::reducer::state::DevelopmentStatus;
-
-        let attempt = DevAttemptResult {
-            had_error: false,
-            output_valid: true,
-            status: DevelopmentStatus::Partial,
-            summary: "partial".to_string(),
-            files_changed: None,
-            next_steps: None,
-            auth_failure: false,
-        };
-
-        let next = decide_dev_iteration_next_step(2, 2, &attempt);
-
-        assert_eq!(
-            next,
-            DevIterationNextStep::Abort {
-                next_continuation_attempt: 3
-            }
         );
     }
 

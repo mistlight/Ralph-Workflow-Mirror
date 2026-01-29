@@ -148,6 +148,29 @@ pub enum DevelopmentEvent {
         /// Number of continuation attempts it took.
         total_continuation_attempts: u32,
     },
+    /// Output validation failed (XSD/XML parsing error).
+    ///
+    /// Emitted when development output cannot be parsed or fails XSD validation.
+    /// The reducer decides whether to retry (same agent) or switch agents based
+    /// on the attempt count in state.
+    OutputValidationFailed {
+        /// Current iteration number.
+        iteration: u32,
+        /// Current invalid output attempt number.
+        attempt: u32,
+    },
+    /// Continuation attempts exhausted without reaching completed status.
+    ///
+    /// Emitted when development iteration has used all allowed continuation
+    /// attempts but still hasn't reached status="completed".
+    ContinuationBudgetExhausted {
+        /// Current iteration number.
+        iteration: u32,
+        /// Total continuation attempts made.
+        total_attempts: u32,
+        /// Last status received (Partial or Failed).
+        last_status: DevelopmentStatus,
+    },
 }
 
 /// Review phase events.
@@ -617,6 +640,24 @@ impl PipelineEvent {
         Self::Development(DevelopmentEvent::ContinuationSucceeded {
             iteration,
             total_continuation_attempts,
+        })
+    }
+
+    /// Create a DevelopmentOutputValidationFailed event.
+    pub fn development_output_validation_failed(iteration: u32, attempt: u32) -> Self {
+        Self::Development(DevelopmentEvent::OutputValidationFailed { iteration, attempt })
+    }
+
+    /// Create a DevelopmentContinuationBudgetExhausted event.
+    pub fn development_continuation_budget_exhausted(
+        iteration: u32,
+        total_attempts: u32,
+        last_status: DevelopmentStatus,
+    ) -> Self {
+        Self::Development(DevelopmentEvent::ContinuationBudgetExhausted {
+            iteration,
+            total_attempts,
+            last_status,
         })
     }
 

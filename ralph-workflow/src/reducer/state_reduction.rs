@@ -244,6 +244,48 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                 ..state
             }
         }
+        DevelopmentEvent::OutputValidationFailed { iteration, attempt } => {
+            // Policy: After MAX_DEV_INVALID_OUTPUT_RERUNS, switch to next agent.
+            // This keeps invalid output retry logic in the reducer, not the handler.
+            if attempt >= super::state::MAX_DEV_INVALID_OUTPUT_RERUNS {
+                let new_agent_chain = state.agent_chain.switch_to_next_agent();
+                PipelineState {
+                    phase: super::event::PipelinePhase::Development,
+                    iteration,
+                    agent_chain: new_agent_chain,
+                    continuation: ContinuationState {
+                        invalid_output_attempts: 0,
+                        ..state.continuation
+                    },
+                    ..state
+                }
+            } else {
+                // Stay in Development, increment attempt counter
+                PipelineState {
+                    phase: super::event::PipelinePhase::Development,
+                    iteration,
+                    continuation: ContinuationState {
+                        invalid_output_attempts: attempt + 1,
+                        ..state.continuation
+                    },
+                    ..state
+                }
+            }
+        }
+        DevelopmentEvent::ContinuationBudgetExhausted {
+            iteration,
+            total_attempts: _,
+            last_status: _,
+        } => {
+            // Policy: Abort pipeline when continuations exhausted.
+            // Future enhancement: Could try fallback agent instead.
+            PipelineState {
+                phase: super::event::PipelinePhase::Interrupted,
+                iteration,
+                continuation: ContinuationState::new(),
+                ..state
+            }
+        }
     }
 }
 
@@ -1329,6 +1371,276 @@ mod tests {
         assert_eq!(
             state.continuation.previous_summary,
             Some("Second attempt".to_string())
+        );
+    }
+
+    // =========================================================================
+    // OutputValidationFailed event tests
+    // =========================================================================
+
+    #[test]
+    fn test_output_validation_failed_retries_within_limit() {
+        let state = create_test_state();
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, 0),
+        );
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+        assert_eq!(new_state.continuation.invalid_output_attempts, 1);
+        assert_eq!(new_state.agent_chain.current_agent_index, 0);
+    }
+
+    #[test]
+    fn test_output_validation_failed_increments_attempt_counter() {
+        let mut state = create_test_state();
+        state.continuation.invalid_output_attempts = 1;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, 1),
+        );
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+        assert_eq!(new_state.continuation.invalid_output_attempts, 2);
+        assert_eq!(new_state.agent_chain.current_agent_index, 0);
+    }
+
+    #[test]
+    fn test_output_validation_failed_switches_agent_at_limit() {
+        use crate::reducer::state::MAX_DEV_INVALID_OUTPUT_RERUNS;
+
+        let state = create_test_state();
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, MAX_DEV_INVALID_OUTPUT_RERUNS),
+        );
+        assert_eq!(new_state.continuation.invalid_output_attempts, 0);
+        assert!(
+            new_state.agent_chain.current_agent_index > 0,
+            "Should switch to next agent after max invalid output attempts"
+        );
+    }
+
+    #[test]
+    fn test_output_validation_failed_resets_counter_on_agent_switch() {
+        use crate::reducer::state::MAX_DEV_INVALID_OUTPUT_RERUNS;
+
+        let mut state = create_test_state();
+        state.continuation.invalid_output_attempts = MAX_DEV_INVALID_OUTPUT_RERUNS;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, MAX_DEV_INVALID_OUTPUT_RERUNS),
+        );
+        assert_eq!(
+            new_state.continuation.invalid_output_attempts, 0,
+            "Counter should reset when switching agents"
+        );
+    }
+
+    #[test]
+    fn test_output_validation_failed_stays_in_development_phase() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Development;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, 0),
+        );
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::Development,
+            "Should stay in Development phase for retry"
+        );
+    }
+
+    // =========================================================================
+    // ContinuationBudgetExhausted event tests
+    // =========================================================================
+
+    #[test]
+    fn test_continuation_budget_exhausted_transitions_to_interrupted() {
+        use crate::reducer::state::DevelopmentStatus;
+
+        let state = create_test_state();
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_continuation_budget_exhausted(
+                0,
+                3,
+                DevelopmentStatus::Partial,
+            ),
+        );
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::Interrupted,
+            "Should transition to Interrupted when continuation budget exhausted"
+        );
+    }
+
+    #[test]
+    fn test_continuation_budget_exhausted_resets_continuation_state() {
+        use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+        let mut state = create_test_state();
+        state.continuation = ContinuationState::new().trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Work".to_string(),
+            None,
+            None,
+        );
+        assert!(state.continuation.is_continuation());
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_continuation_budget_exhausted(
+                0,
+                3,
+                DevelopmentStatus::Partial,
+            ),
+        );
+        assert!(
+            !new_state.continuation.is_continuation(),
+            "Continuation state should be reset"
+        );
+    }
+
+    #[test]
+    fn test_continuation_budget_exhausted_preserves_iteration() {
+        use crate::reducer::state::DevelopmentStatus;
+
+        let mut state = create_test_state();
+        state.iteration = 5;
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_continuation_budget_exhausted(
+                5,
+                3,
+                DevelopmentStatus::Failed,
+            ),
+        );
+        assert_eq!(
+            new_state.iteration, 5,
+            "Should preserve the iteration number"
+        );
+    }
+
+    // =========================================================================
+    // Event sequence tests for determinism
+    // =========================================================================
+
+    #[test]
+    fn test_event_sequence_output_validation_retry_then_success() {
+        use crate::reducer::state::MAX_DEV_INVALID_OUTPUT_RERUNS;
+
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Development;
+
+        // Simulate: validation fail -> validation fail -> success
+        state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, 0),
+        );
+        assert_eq!(state.continuation.invalid_output_attempts, 1);
+        assert_eq!(state.phase, PipelinePhase::Development);
+
+        state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, 1),
+        );
+        assert_eq!(state.continuation.invalid_output_attempts, 2);
+
+        // Still within limit (MAX_DEV_INVALID_OUTPUT_RERUNS is 2)
+        if 2 < MAX_DEV_INVALID_OUTPUT_RERUNS {
+            assert_eq!(
+                state.agent_chain.current_agent_index, 0,
+                "Should not switch agents yet"
+            );
+        }
+
+        // Now succeed
+        state = reduce(
+            state,
+            PipelineEvent::development_iteration_completed(0, true),
+        );
+        assert_eq!(state.phase, PipelinePhase::CommitMessage);
+    }
+
+    #[test]
+    fn test_event_sequence_validation_failures_trigger_agent_switch() {
+        use crate::reducer::state::MAX_DEV_INVALID_OUTPUT_RERUNS;
+
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Development;
+
+        // First validation failure
+        state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, 0),
+        );
+
+        // Second validation failure
+        state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, 1),
+        );
+
+        // Third validation failure - should trigger agent switch
+        state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, MAX_DEV_INVALID_OUTPUT_RERUNS),
+        );
+
+        // After max failures, should switch agents and reset counter
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 0,
+            "Counter should reset"
+        );
+        assert!(
+            state.agent_chain.current_agent_index > 0 || state.agent_chain.retry_cycle > 0,
+            "Should have advanced to next agent or started retry cycle"
+        );
+    }
+
+    #[test]
+    fn test_determinism_same_events_same_state() {
+        use crate::reducer::state::DevelopmentStatus;
+
+        // Create two identical initial states
+        let state1 = create_test_state();
+        let state2 = create_test_state();
+
+        // Apply the same sequence of events
+        let events = vec![
+            PipelineEvent::development_iteration_started(0),
+            PipelineEvent::development_output_validation_failed(0, 0),
+            PipelineEvent::development_iteration_continuation_triggered(
+                0,
+                DevelopmentStatus::Partial,
+                "Work".to_string(),
+                None,
+                None,
+            ),
+        ];
+
+        let mut final1 = state1;
+        let mut final2 = state2;
+
+        for event in events {
+            final1 = reduce(final1, event.clone());
+            final2 = reduce(final2, event);
+        }
+
+        // States should be identical
+        assert_eq!(final1.iteration, final2.iteration);
+        assert_eq!(final1.phase, final2.phase);
+        assert_eq!(
+            final1.continuation.continuation_attempt,
+            final2.continuation.continuation_attempt
+        );
+        assert_eq!(
+            final1.continuation.invalid_output_attempts,
+            final2.continuation.invalid_output_attempts
         );
     }
 }
