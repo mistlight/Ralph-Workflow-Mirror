@@ -240,7 +240,7 @@ Full documentation is available on [Codeberg](https://codeberg.org/mistlight/Ral
 - **[Git Workflow](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/git-workflow.md)** - How Ralph handles commits and diffs
 - **[Template Guide](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/docs/template-guide.md)** - PROMPT.md Work Guides and agent prompt customization
 
-**Note:** Links point to the source repository. When viewing on crates.io, visit the repository for full documentation.
+**Note:** When viewing on crates.io, these links point to the source repository on Codeberg.
 
 ## FAQ
 

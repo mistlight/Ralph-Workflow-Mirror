@@ -151,8 +151,8 @@ ralph --interactive             # Prompt if PROMPT.md missing
 
 ### Configuration
 ```bash
-ralph --init-global             # Create ~/.config/ralph-workflow.toml
-ralph --init-legacy             # Create .agent/agents.toml (legacy)
+ralph --init                    # Smart init (creates config or PROMPT.md as needed)
+ralph --init feature-spec       # Create PROMPT.md from a Work Guide
 ```
 
 ## Review Depth Levels (Advanced)
@@ -242,8 +242,8 @@ git clone https://codeberg.org/mistlight/RalphWithReviewer.git
 cd RalphWithReviewer
 cargo install --path ralph-workflow --locked
 
-# 2. Create config
-ralph --init-global
+# 2. Create config (smart init detects what you need)
+ralph --init
 
 # 3. Install AI agents (choose one)
 npm install -g @anthropic/claude-code  # Claude Code

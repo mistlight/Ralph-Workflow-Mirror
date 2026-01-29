@@ -62,14 +62,24 @@
 //!
 //! # Key Modules
 //!
-//! - [`agents`] - Agent configuration, registry, and CCS (Claude Code Switch) support
+//! **Core Architecture:**
 //! - [`reducer`] - Core state machine with pure reducers and effect handlers
-//! - [`phases`] - Pipeline phase implementations (development, review, commit)
+//! - [`app`] - CLI layer operating before repo root is known (`AppEffect`)
+//! - [`phases`] - Pipeline phase implementations (planning, development, review, commit)
+//!
+//! **I/O Abstractions:**
 //! - [`workspace`] - Filesystem abstraction (`WorkspaceFs` production, `MemoryWorkspace` testing)
-//! - [`executor`] - Process execution abstraction for dependency injection
+//! - [`executor`] - Process execution abstraction for agent spawning
+//!
+//! **Agent Infrastructure:**
+//! - [`agents`] - Agent configuration, registry, and CCS (Claude Code Switch) support
 //! - [`json_parser`] - NDJSON streaming parsers for Claude, Codex, Gemini, OpenCode
-//! - [`git_helpers`] - Git operations using libgit2 (no CLI dependency)
 //! - [`prompts`] - Template system for agent prompts
+//!
+//! **Supporting:**
+//! - [`git_helpers`] - Git operations using libgit2 (no CLI dependency)
+//! - [`checkpoint`] - Pipeline state persistence for `--resume` support
+//! - [`config`] - Configuration loading and verbosity levels
 //!
 //! # Error Handling
 //!

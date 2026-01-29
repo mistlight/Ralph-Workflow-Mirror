@@ -47,6 +47,13 @@
 //! - **Verbose (2)**: Default - shows more detail including tool inputs and full accumulated text
 //! - **Full (3)**: No truncation, show all content
 //! - **Debug (4)**: Maximum verbosity, includes raw JSON output
+//!
+//! # Internal Modules
+//!
+//! The `stream_classifier` module is internal and handles automatic detection
+//! of streaming vs. non-streaming output. It is not exposed in the public API.
+//!
+//! For detailed streaming contract documentation, see `README.md` in this directory.
 
 pub mod claude;
 #[cfg(test)]
