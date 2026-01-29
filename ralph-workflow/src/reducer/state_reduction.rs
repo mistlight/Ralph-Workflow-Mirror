@@ -325,7 +325,13 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
         ReviewEvent::PassStarted { pass } => PipelineState {
             reviewer_pass: pass,
             review_issues_found: false,
-            agent_chain: state.agent_chain.reset(),
+            agent_chain: if pass == state.reviewer_pass {
+                // If orchestration re-emits PassStarted for the same pass (e.g., retry after
+                // OutputValidationFailed), preserve the agent selection so fallback is effective.
+                state.agent_chain.clone()
+            } else {
+                state.agent_chain.reset()
+            },
             continuation: if pass == state.reviewer_pass {
                 // If orchestration re-emits PassStarted for the same pass (e.g., retry after
                 // OutputValidationFailed), do not reset the invalid-output attempt counter.
@@ -1654,6 +1660,30 @@ mod tests {
         assert_eq!(
             new_state.continuation.invalid_output_attempts, 1,
             "Retrying the same pass should not clear invalid output attempt counter"
+        );
+    }
+
+    #[test]
+    fn test_review_pass_started_preserves_agent_chain_on_retry() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+        state.total_reviewer_passes = 2;
+
+        // Simulate switching agents due to repeated output validation failures.
+        state.continuation.invalid_output_attempts = 2;
+        let state = reduce(state, PipelineEvent::review_output_validation_failed(0, 2));
+        assert!(
+            state.agent_chain.current_agent_index > 0,
+            "Precondition: review_output_validation_failed should have switched agents"
+        );
+
+        // Orchestration can re-emit PassStarted for the same pass during retries.
+        let new_state = reduce(state.clone(), PipelineEvent::review_pass_started(0));
+
+        assert_eq!(
+            new_state.agent_chain.current_agent_index, state.agent_chain.current_agent_index,
+            "Retrying the same pass should preserve the current agent selection"
         );
     }
 

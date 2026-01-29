@@ -484,15 +484,48 @@ impl MainEffectHandler {
         let next_attempt = continuation_state.continuation_attempt + 1;
         if next_attempt > max_continuations {
             let _ = cleanup_continuation_context_file(ctx);
-            // Continuation budget exhausted: abort with a human-readable reason so logs/UI can
-            // surface why the pipeline was interrupted.
+            // Continuation budget exhausted: emit an event and let the reducer/orchestration
+            // decide whether to abort, switch agents, or interrupt.
             let reason = development_continuation_budget_exhausted_abort_reason(
                 iteration,
                 next_attempt,
                 max_continuations,
                 attempt.status.clone(),
             );
-            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(reason)));
+            ctx.logger.warn(&reason);
+
+            let event = PipelineEvent::development_continuation_budget_exhausted(
+                iteration,
+                next_attempt,
+                attempt.status.clone(),
+            );
+
+            let mut ui_events = vec![UIEvent::IterationProgress {
+                current: iteration,
+                total: self.state.total_iterations,
+            }];
+
+            // Try to read development result XML for semantic rendering.
+            let dev_xml_path = Path::new(".agent/tmp/development_result.xml");
+            let processed_path = Path::new(".agent/tmp/development_result.xml.processed");
+            if let Some(xml_content) = ctx
+                .workspace
+                .read(dev_xml_path)
+                .ok()
+                .or_else(|| ctx.workspace.read(processed_path).ok())
+            {
+                ui_events.push(UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::DevelopmentResult,
+                    content: xml_content,
+                    context: Some(XmlOutputContext {
+                        iteration: Some(iteration),
+                        pass: None,
+                        snippets: Vec::new(),
+                    }),
+                });
+            }
+
+            return Ok(EffectResult::with_ui(event, ui_events));
         }
 
         ctx.logger.info(&format!(
@@ -641,9 +674,22 @@ impl MainEffectHandler {
                     )));
                 }
 
-                Ok(EffectResult::event(
-                    PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt),
-                ))
+                // Only treat XSD/output validation failures as output validation failures.
+                // Other errors are real execution problems (I/O, workspace, internal failures)
+                // and should not be retried as if the agent output was invalid.
+                let xsd_validation_failed = is_review_output_validation_failure(ctx.workspace);
+                if xsd_validation_failed {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::review_output_validation_failed(
+                            pass,
+                            invalid_output_attempt,
+                        ),
+                    ));
+                }
+
+                Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    format!("Review pass failed (pass={pass}): {err}",),
+                )))
             }
         }
     }
@@ -1317,20 +1363,28 @@ fn classify_review_pass_event(
         return PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt);
     }
 
-    if let Some(xml) = issues_xml {
-        if let Ok(validated) = validate_issues_xml(xml) {
-            let no_issues = validated.issues.is_empty() && validated.no_issues_found.is_some();
-            if no_issues {
-                if early_exit {
-                    return PipelineEvent::review_phase_completed(true);
-                }
-                return PipelineEvent::review_pass_completed_clean(pass);
-            }
+    // Absence of issues XML, or invalid issues XML, is an output validation failure.
+    // Do NOT treat it as "issues found" because that can incorrectly trigger fix attempts.
+    let Some(xml) = issues_xml else {
+        return PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt);
+    };
+
+    let validated = match validate_issues_xml(xml) {
+        Ok(v) => v,
+        Err(_) => {
+            return PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt);
         }
+    };
+
+    let no_issues = validated.issues.is_empty() && validated.no_issues_found.is_some();
+    if no_issues {
+        if early_exit {
+            return PipelineEvent::review_phase_completed(true);
+        }
+        return PipelineEvent::review_pass_completed_clean(pass);
     }
 
-    // Default: treat as issues found (review produced a valid pass result and did not signal
-    // output validation failure).
+    // Valid, parsed output with issues.
     PipelineEvent::review_completed(pass, true)
 }
 
@@ -2058,8 +2112,8 @@ mod tests {
     #[test]
     fn test_classify_review_pass_event_issues_found_emits_completed_with_issues_found_true() {
         let xml = r#"<ralph-issues>
- <ralph-issue>Something is wrong</ralph-issue>
- </ralph-issues>"#;
+  <ralph-issue>Something is wrong</ralph-issue>
+  </ralph-issues>"#;
 
         let event = classify_review_pass_event(3, 0, false, false, Some(xml));
 
@@ -2068,6 +2122,35 @@ mod tests {
             PipelineEvent::Review(crate::reducer::event::ReviewEvent::Completed {
                 pass: 3,
                 issues_found: true
+            })
+        ));
+    }
+
+    #[test]
+    fn test_classify_review_pass_event_missing_issues_xml_emits_output_validation_failed() {
+        let event = classify_review_pass_event(1, 4, false, false, None);
+
+        assert!(matches!(
+            event,
+            PipelineEvent::Review(crate::reducer::event::ReviewEvent::OutputValidationFailed {
+                pass: 1,
+                attempt: 4
+            })
+        ));
+    }
+
+    #[test]
+    fn test_classify_review_pass_event_invalid_issues_xml_emits_output_validation_failed() {
+        // Invalid XML should be treated as output validation failure, not "issues found".
+        let invalid_xml = r#"<ralph-issues><ralph-issue>oops"#;
+
+        let event = classify_review_pass_event(2, 1, false, false, Some(invalid_xml));
+
+        assert!(matches!(
+            event,
+            PipelineEvent::Review(crate::reducer::event::ReviewEvent::OutputValidationFailed {
+                pass: 2,
+                attempt: 1
             })
         ));
     }
