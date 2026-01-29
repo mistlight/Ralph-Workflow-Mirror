@@ -347,14 +347,33 @@ impl MainEffectHandler {
         let max_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
 
         // Defensive guard: if checkpoint state already exceeds the configured limit,
-        // abort rather than looping indefinitely.
+        // emit a domain event and let the reducer/orchestration decide the policy.
         if continuation_state.continuation_attempt > max_continuations {
-            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                format!(
-                    "Development continuation attempts exhausted (continuation_attempt={}, max_continuations={})",
-                    continuation_state.continuation_attempt, max_continuations
+            let _ = cleanup_continuation_context_file(ctx);
+
+            let last_status = continuation_state
+                .previous_status
+                .clone()
+                .unwrap_or(crate::reducer::state::DevelopmentStatus::Failed);
+            let reason = development_continuation_budget_exhausted_abort_reason(
+                iteration,
+                continuation_state.continuation_attempt,
+                max_continuations,
+                last_status.clone(),
+            );
+            ctx.logger.warn(&reason);
+
+            return Ok(EffectResult::with_ui(
+                PipelineEvent::development_continuation_budget_exhausted(
+                    iteration,
+                    continuation_state.continuation_attempt,
+                    last_status,
                 ),
-            )));
+                vec![UIEvent::IterationProgress {
+                    current: iteration,
+                    total: self.state.total_iterations,
+                }],
+            ));
         }
 
         // Clean stale continuation context when starting a fresh attempt.
@@ -488,7 +507,7 @@ impl MainEffectHandler {
             // decide whether to abort, switch agents, or interrupt.
             let reason = development_continuation_budget_exhausted_abort_reason(
                 iteration,
-                next_attempt,
+                continuation_state.continuation_attempt,
                 max_continuations,
                 attempt.status.clone(),
             );
@@ -496,7 +515,7 @@ impl MainEffectHandler {
 
             let event = PipelineEvent::development_continuation_budget_exhausted(
                 iteration,
-                next_attempt,
+                continuation_state.continuation_attempt,
                 attempt.status.clone(),
             );
 
@@ -1116,10 +1135,7 @@ impl MainEffectHandler {
     }
 
     fn cleanup_continuation_context(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
-        let path = Path::new(".agent/tmp/continuation_context.md");
-        if ctx.workspace.exists(path) {
-            ctx.workspace.remove(path)?;
-        }
+        cleanup_continuation_context_file(ctx)?;
         Ok(EffectResult::event(
             PipelineEvent::development_continuation_context_cleaned(),
         ))
@@ -1377,6 +1393,12 @@ fn classify_review_pass_event(
     };
 
     let no_issues = validated.issues.is_empty() && validated.no_issues_found.is_some();
+
+    // Invariant: early_exit is only valid when the output explicitly declares no issues.
+    // If we see early_exit alongside issues, treat it as invalid output so orchestration can retry.
+    if early_exit && !no_issues {
+        return PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt);
+    }
     if no_issues {
         if early_exit {
             return PipelineEvent::review_phase_completed(true);
@@ -1390,12 +1412,12 @@ fn classify_review_pass_event(
 
 fn development_continuation_budget_exhausted_abort_reason(
     iteration: u32,
-    next_attempt: u32,
+    total_attempts: u32,
     max_continuations: u32,
     last_status: crate::reducer::state::DevelopmentStatus,
 ) -> String {
     format!(
-        "Development continuation attempts exhausted (iteration={iteration}, next_attempt={next_attempt}, max_continuations={max_continuations}, last_status={last_status})"
+        "Development continuation attempts exhausted (iteration={iteration}, total_attempts={total_attempts}, max_continuations={max_continuations}, last_status={last_status})"
     )
 }
 
@@ -2127,6 +2149,25 @@ mod tests {
     }
 
     #[test]
+    fn test_classify_review_pass_event_early_exit_with_issues_emits_output_validation_failed() {
+        // Invariant: early_exit is only valid when no issues are present.
+        // If we see early_exit with issues, treat it as invalid output and retry.
+        let xml = r#"<ralph-issues>
+  <ralph-issue>Something is wrong</ralph-issue>
+  </ralph-issues>"#;
+
+        let event = classify_review_pass_event(5, 2, true, false, Some(xml));
+
+        assert!(matches!(
+            event,
+            PipelineEvent::Review(crate::reducer::event::ReviewEvent::OutputValidationFailed {
+                pass: 5,
+                attempt: 2
+            })
+        ));
+    }
+
+    #[test]
     fn test_classify_review_pass_event_missing_issues_xml_emits_output_validation_failed() {
         let event = classify_review_pass_event(1, 4, false, false, None);
 
@@ -2161,15 +2202,82 @@ mod tests {
 
         let reason = development_continuation_budget_exhausted_abort_reason(
             7,
-            3,
+            2,
             2,
             DevelopmentStatus::Partial,
         );
 
         assert!(reason.contains("continuation"));
         assert!(reason.contains("iteration=7"));
-        assert!(reason.contains("next_attempt=3"));
+        assert!(reason.contains("total_attempts=2"));
         assert!(reason.contains("max_continuations=2"));
         assert!(reason.contains("last_status=partial"));
+    }
+
+    #[test]
+    fn test_run_development_iteration_when_continuation_attempt_exceeds_budget_emits_budget_exhausted_event(
+    ) {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::ExecutionHistory;
+        use crate::checkpoint::RunContext;
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::reducer::event::DevelopmentEvent;
+        use crate::reducer::state::{DevelopmentStatus, PipelineState};
+        use crate::workspace::MemoryWorkspace;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new_test();
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
+            as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+        let repo_root = PathBuf::from("/test/repo");
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "primary-agent",
+            reviewer_agent: "reviewer-agent",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: &*executor_arc,
+            executor_arc: std::sync::Arc::clone(&executor_arc),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let mut state = PipelineState::initial(1, 0);
+        state.total_iterations = 10;
+        state.continuation.previous_status = Some(DevelopmentStatus::Partial);
+        state.continuation.continuation_attempt = 3; // default max_dev_continuations is 2
+
+        let mut handler = MainEffectHandler::new(state);
+        let result = handler.run_development_iteration(&mut ctx, 0).unwrap();
+
+        assert!(matches!(
+            result.event,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationBudgetExhausted {
+                iteration: 0,
+                total_attempts: 3,
+                last_status: DevelopmentStatus::Partial
+            })
+        ));
     }
 }

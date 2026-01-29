@@ -110,12 +110,20 @@ pub enum Effect {
     /// This effect is emitted when a development iteration returns
     /// partial/failed status and needs to continue. The context file
     /// provides the next attempt with information about what was done.
+    ///
+    /// Note: The current reducer orchestration does not always schedule this
+    /// effect; the main handler may write the continuation context directly
+    /// during `Effect::RunDevelopmentIteration` for compatibility.
     WriteContinuationContext(ContinuationContextData),
 
     /// Clean up continuation context file.
     ///
     /// Emitted when an iteration completes successfully or when
     /// starting a fresh iteration (to remove stale context).
+    ///
+    /// Note: The current reducer orchestration does not always schedule this
+    /// effect; the main handler may clean the continuation context directly
+    /// during `Effect::RunDevelopmentIteration` for compatibility.
     CleanupContinuationContext,
 }
 
