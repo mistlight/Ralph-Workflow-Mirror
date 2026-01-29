@@ -25,6 +25,7 @@ use super::event::{
     RebaseEvent, ReviewEvent,
 };
 use super::state::{CommitState, ContinuationState, PipelineState, RebaseState};
+use crate::agents::AgentRole;
 
 /// Pure reducer - no side effects, exhaustive match.
 ///
@@ -316,6 +317,15 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             phase: super::event::PipelinePhase::Review,
             reviewer_pass: 0,
             review_issues_found: false,
+            // IMPORTANT: entering Review must not reuse a populated developer chain.
+            // Clearing the chain ensures orchestration deterministically emits
+            // InitializeAgentChain for AgentRole::Reviewer.
+            agent_chain: {
+                let mut chain = super::state::AgentChainState::initial();
+                // Preserve configured max cycles across phases.
+                chain.max_cycles = state.agent_chain.max_cycles;
+                chain.reset_for_role(AgentRole::Reviewer)
+            },
             continuation: super::state::ContinuationState {
                 invalid_output_attempts: 0,
                 ..state.continuation
@@ -774,6 +784,38 @@ mod tests {
             ),
             ..PipelineState::initial(5, 2)
         }
+    }
+
+    #[test]
+    fn test_review_phase_started_clears_agent_chain_for_reviewer_role() {
+        use crate::reducer::orchestration::determine_next_effect;
+
+        // Simulate typical state after Development where the agent chain is populated
+        // for developer runs.
+        let state = create_test_state();
+
+        // Enter Review phase.
+        let review_state = reduce(state, PipelineEvent::review_phase_started());
+
+        // The reviewer phase must not reuse the developer chain.
+        assert!(
+            review_state.agent_chain.agents.is_empty(),
+            "Review phase should clear populated agent_chain to force reviewer initialization"
+        );
+        assert_eq!(
+            review_state.agent_chain.current_role,
+            AgentRole::Reviewer,
+            "Review phase should set agent_chain role to Reviewer"
+        );
+
+        // Orchestration should deterministically emit InitializeAgentChain for reviewers.
+        let effect = determine_next_effect(&review_state);
+        assert!(matches!(
+            effect,
+            crate::reducer::effect::Effect::InitializeAgentChain {
+                role: AgentRole::Reviewer
+            }
+        ));
     }
 
     #[test]

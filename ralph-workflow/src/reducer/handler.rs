@@ -381,6 +381,9 @@ impl MainEffectHandler {
             let _ = cleanup_continuation_context_file(ctx);
         }
 
+        // Clear any stale XML outputs before running the attempt.
+        clear_stale_development_result_xml(ctx.workspace, ctx.logger);
+
         // Run a single development attempt (one session) with XSD retry.
         let attempt = development::run_development_attempt_with_xml_retry(
             ctx,
@@ -607,6 +610,9 @@ impl MainEffectHandler {
 
     fn run_review_pass(&mut self, ctx: &mut PhaseContext<'_>, pass: u32) -> Result<EffectResult> {
         let review_label = format!("review_{}", pass);
+
+        // Clear any stale XML outputs before running the pass.
+        clear_stale_review_issues_xml(ctx.workspace, ctx.logger);
 
         // Get current reviewer agent from agent chain
         let review_agent = self.state.agent_chain.current_agent().cloned();
@@ -1368,6 +1374,32 @@ fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Resu
     Ok(())
 }
 
+fn clear_stale_development_result_xml(workspace: &dyn Workspace, logger: &crate::logger::Logger) {
+    for path in [
+        Path::new(".agent/tmp/development_result.xml"),
+        Path::new(".agent/tmp/development_result.xml.processed"),
+    ] {
+        if workspace.exists(path) {
+            if let Err(err) = workspace.remove(path) {
+                logger.warn(&format!("Failed to remove stale {}: {err}", path.display()));
+            }
+        }
+    }
+}
+
+fn clear_stale_review_issues_xml(workspace: &dyn Workspace, logger: &crate::logger::Logger) {
+    for path in [
+        Path::new(".agent/tmp/issues.xml"),
+        Path::new(".agent/tmp/issues.xml.processed"),
+    ] {
+        if workspace.exists(path) {
+            if let Err(err) = workspace.remove(path) {
+                logger.warn(&format!("Failed to remove stale {}: {err}", path.display()));
+            }
+        }
+    }
+}
+
 fn classify_review_pass_event(
     pass: u32,
     invalid_output_attempt: u32,
@@ -1613,6 +1645,42 @@ mod tests {
             workspace.exists(Path::new(".agent/tmp/keep.txt")),
             "non-xml file should not be deleted"
         );
+    }
+
+    #[test]
+    fn test_clear_stale_development_result_xml_removes_files() {
+        use crate::logger::{Colors, Logger};
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        use std::path::Path;
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_dir(".agent/tmp")
+            .with_file(".agent/tmp/development_result.xml", "<stale/>")
+            .with_file(".agent/tmp/development_result.xml.processed", "<stale/>");
+        let logger = Logger::new(Colors { enabled: false });
+
+        clear_stale_development_result_xml(&workspace, &logger);
+
+        assert!(!workspace.exists(Path::new(".agent/tmp/development_result.xml")));
+        assert!(!workspace.exists(Path::new(".agent/tmp/development_result.xml.processed")));
+    }
+
+    #[test]
+    fn test_clear_stale_review_issues_xml_removes_files() {
+        use crate::logger::{Colors, Logger};
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        use std::path::Path;
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_dir(".agent/tmp")
+            .with_file(".agent/tmp/issues.xml", "<stale/>")
+            .with_file(".agent/tmp/issues.xml.processed", "<stale/>");
+        let logger = Logger::new(Colors { enabled: false });
+
+        clear_stale_review_issues_xml(&workspace, &logger);
+
+        assert!(!workspace.exists(Path::new(".agent/tmp/issues.xml")));
+        assert!(!workspace.exists(Path::new(".agent/tmp/issues.xml.processed")));
     }
 
     /// Test that save_checkpoint uses workspace for file operations.
