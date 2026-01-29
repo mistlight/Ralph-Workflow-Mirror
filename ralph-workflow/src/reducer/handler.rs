@@ -1382,6 +1382,9 @@ fn clear_stale_review_issues_xml(workspace: &dyn Workspace, logger: &crate::logg
     for path in [
         Path::new(".agent/tmp/issues.xml"),
         Path::new(".agent/tmp/issues.xml.processed"),
+        // Also clear the markdown marker used to signal review output validation failures.
+        // This prevents a stale marker from a previous run from misclassifying the current pass.
+        Path::new(".agent/ISSUES.md"),
     ] {
         if workspace.exists(path) {
             if let Err(err) = workspace.remove(path) {
@@ -1704,6 +1707,26 @@ mod tests {
 
         assert!(!workspace.exists(Path::new(".agent/tmp/issues.xml")));
         assert!(!workspace.exists(Path::new(".agent/tmp/issues.xml.processed")));
+    }
+
+    #[test]
+    fn test_clear_stale_review_issues_xml_removes_stale_issues_marker_file() {
+        use crate::logger::{Colors, Logger};
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        use std::path::Path;
+
+        let workspace = MemoryWorkspace::new_test().with_file(
+            ".agent/ISSUES.md",
+            "# Review Output XSD Validation Failure\n\nstale marker from previous run",
+        );
+        let logger = Logger::new(Colors { enabled: false });
+
+        clear_stale_review_issues_xml(&workspace, &logger);
+
+        assert!(
+            !workspace.exists(Path::new(".agent/ISSUES.md")),
+            "ISSUES.md marker should be cleared at start of review pass"
+        );
     }
 
     #[test]
