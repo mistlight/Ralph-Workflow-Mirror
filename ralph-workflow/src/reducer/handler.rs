@@ -620,15 +620,6 @@ impl MainEffectHandler {
         // Keep invalid-output attempt tracking deterministic by sourcing it from state.
         let invalid_output_attempt = self.state.continuation.invalid_output_attempts;
 
-        let is_review_output_validation_failure = |workspace: &dyn Workspace| -> bool {
-            let marker = "# Review Output XSD Validation Failure";
-            workspace
-                .read(Path::new(".agent/ISSUES.md"))
-                .ok()
-                .map(|s| s.starts_with(marker))
-                .unwrap_or(false)
-        };
-
         match review::run_review_pass(ctx, pass, &review_label, "", review_agent.as_deref()) {
             Ok(result) => {
                 // Check for auth failure - trigger agent fallback
@@ -643,7 +634,8 @@ impl MainEffectHandler {
                     )));
                 }
 
-                let xsd_validation_failed = is_review_output_validation_failure(ctx.workspace);
+                let xsd_validation_failed =
+                    is_review_output_validation_failure_marker(ctx.workspace);
                 let issues_xml_content = ctx
                     .workspace
                     .read(Path::new(".agent/tmp/issues.xml"))
@@ -699,11 +691,10 @@ impl MainEffectHandler {
                     )));
                 }
 
-                // Only treat XSD/output validation failures as output validation failures.
-                // Other errors are real execution problems (I/O, workspace, internal failures)
-                // and should not be retried as if the agent output was invalid.
-                let xsd_validation_failed = is_review_output_validation_failure(ctx.workspace);
-                if xsd_validation_failed {
+                // Policy: emit OutputValidationFailed for deterministic retry/fallback when we can
+                // attribute the error to missing/invalid review output artifacts.
+                // Reserve pipeline_aborted for non-output-validation failures.
+                if is_review_output_validation_failure_on_review_err(ctx.workspace) {
                     return Ok(EffectResult::event(
                         PipelineEvent::review_output_validation_failed(
                             pass,
@@ -1398,6 +1389,36 @@ fn clear_stale_review_issues_xml(workspace: &dyn Workspace, logger: &crate::logg
             }
         }
     }
+}
+
+fn is_review_output_validation_failure_marker(workspace: &dyn Workspace) -> bool {
+    let marker = "# Review Output XSD Validation Failure";
+    workspace
+        .read(Path::new(".agent/ISSUES.md"))
+        .ok()
+        .map(|s| s.starts_with(marker))
+        .unwrap_or(false)
+}
+
+fn is_review_output_validation_failure_on_review_err(workspace: &dyn Workspace) -> bool {
+    if is_review_output_validation_failure_marker(workspace) {
+        return true;
+    }
+
+    let issues_xml_content = workspace
+        .read(Path::new(".agent/tmp/issues.xml"))
+        .ok()
+        .or_else(|| {
+            workspace
+                .read(Path::new(".agent/tmp/issues.xml.processed"))
+                .ok()
+        });
+
+    let Some(xml) = issues_xml_content else {
+        return true;
+    };
+
+    validate_issues_xml(&xml).is_err()
 }
 
 fn classify_review_pass_event(
@@ -2261,6 +2282,31 @@ mod tests {
                 pass: 2,
                 attempt: 1
             })
+        ));
+    }
+
+    #[test]
+    fn test_is_review_output_validation_failure_on_review_err_when_issues_xml_missing() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test();
+
+        assert!(is_review_output_validation_failure_on_review_err(
+            &workspace
+        ));
+    }
+
+    #[test]
+    fn test_is_review_output_validation_failure_on_review_err_when_issues_xml_invalid() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test().with_file(
+            ".agent/tmp/issues.xml",
+            r#"<ralph-issues><ralph-issue>oops"#,
+        );
+
+        assert!(is_review_output_validation_failure_on_review_err(
+            &workspace
         ));
     }
 

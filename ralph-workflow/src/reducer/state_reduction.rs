@@ -432,6 +432,7 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             if next_phase == super::event::PipelinePhase::CommitMessage {
                 PipelineState {
                     phase: next_phase,
+                    previous_phase: None,
                     reviewer_pass: next_pass,
                     review_issues_found: false,
                     commit: super::state::CommitState::NotStarted,
@@ -1687,6 +1688,21 @@ mod tests {
         );
         assert_eq!(new_state.reviewer_pass, 1);
         assert_eq!(new_state.review_issues_found, false);
+    }
+
+    #[test]
+    fn test_review_pass_completed_clean_on_last_pass_clears_previous_phase() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+        state.total_reviewer_passes = 1;
+        state.previous_phase = Some(PipelinePhase::Development);
+
+        let new_state = reduce(state, PipelineEvent::review_pass_completed_clean(0));
+
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert_eq!(new_state.previous_phase, None);
+        assert!(matches!(new_state.commit, CommitState::NotStarted));
     }
 
     #[test]
