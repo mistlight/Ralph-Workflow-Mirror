@@ -24,6 +24,20 @@ use serde::{Deserialize, Serialize};
 use super::event::{CheckpointTrigger, ConflictStrategy, PipelineEvent, RebasePhase};
 use super::ui_event::UIEvent;
 
+/// Data for continuation context writing.
+///
+/// Groups parameters for [`Effect::WriteContinuationContext`] to avoid
+/// exceeding the function argument limit.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ContinuationContextData {
+    pub iteration: u32,
+    pub attempt: u32,
+    pub status: super::state::DevelopmentStatus,
+    pub summary: String,
+    pub files_changed: Option<Vec<String>>,
+    pub next_steps: Option<String>,
+}
+
 /// Effects represent side-effect operations.
 ///
 /// The reducer determines which effect to execute next based on state.
@@ -90,6 +104,19 @@ pub enum Effect {
     /// write permissions on PROMPT.md so users can edit it normally
     /// after Ralph exits.
     RestorePromptPermissions,
+
+    /// Write continuation context file for next development attempt.
+    ///
+    /// This effect is emitted when a development iteration returns
+    /// partial/failed status and needs to continue. The context file
+    /// provides the next attempt with information about what was done.
+    WriteContinuationContext(ContinuationContextData),
+
+    /// Clean up continuation context file.
+    ///
+    /// Emitted when an iteration completes successfully or when
+    /// starting a fresh iteration (to remove stale context).
+    CleanupContinuationContext,
 }
 
 /// Result of executing an effect.

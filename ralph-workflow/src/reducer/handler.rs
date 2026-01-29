@@ -135,6 +135,18 @@ impl MainEffectHandler {
             Effect::CleanupContext => self.cleanup_context(ctx),
 
             Effect::RestorePromptPermissions => self.restore_prompt_permissions(ctx),
+
+            Effect::WriteContinuationContext(ref data) => {
+                write_continuation_context_to_workspace(ctx.workspace, ctx.logger, data)?;
+                Ok(EffectResult::event(
+                    PipelineEvent::development_continuation_context_written(
+                        data.iteration,
+                        data.attempt,
+                    ),
+                ))
+            }
+
+            Effect::CleanupContinuationContext => self.cleanup_continuation_context(ctx),
         }
     }
 
@@ -1012,6 +1024,65 @@ impl MainEffectHandler {
 
         Ok(EffectResult::with_ui(event, vec![ui_event]))
     }
+
+    fn cleanup_continuation_context(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+        let path = Path::new(".agent/tmp/continuation_context.md");
+        if ctx.workspace.exists(path) {
+            ctx.workspace.remove(path)?;
+        }
+        Ok(EffectResult::event(
+            PipelineEvent::development_continuation_context_cleaned(),
+        ))
+    }
+}
+
+/// Write continuation context to workspace.
+///
+/// This is extracted as a helper to keep the handler method concise.
+fn write_continuation_context_to_workspace(
+    workspace: &dyn Workspace,
+    logger: &crate::logger::Logger,
+    data: &crate::reducer::effect::ContinuationContextData,
+) -> Result<()> {
+    let tmp_dir = Path::new(".agent/tmp");
+    if !workspace.exists(tmp_dir) {
+        workspace.create_dir_all(tmp_dir)?;
+    }
+
+    let mut content = String::new();
+    content.push_str("# Development Continuation Context\n\n");
+    content.push_str(&format!("- Iteration: {}\n", data.iteration));
+    content.push_str(&format!("- Continuation attempt: {}\n", data.attempt));
+    content.push_str(&format!("- Previous status: {}\n\n", data.status));
+
+    content.push_str("## Previous summary\n\n");
+    content.push_str(&data.summary);
+    content.push('\n');
+
+    if let Some(ref files) = data.files_changed {
+        content.push_str("\n## Files changed\n\n");
+        for file in files {
+            content.push_str("- ");
+            content.push_str(file);
+            content.push('\n');
+        }
+    }
+
+    if let Some(ref steps) = data.next_steps {
+        content.push_str("\n## Recommended next steps\n\n");
+        content.push_str(steps);
+        content.push('\n');
+    }
+
+    content.push_str("\n## Reference files (do not modify)\n\n");
+    content.push_str("- PROMPT.md\n");
+    content.push_str("- .agent/PLAN.md\n");
+
+    workspace.write(Path::new(".agent/tmp/continuation_context.md"), &content)?;
+
+    logger.info("Continuation context written to .agent/tmp/continuation_context.md");
+
+    Ok(())
 }
 
 fn with_overridden_developer_agent<R>(
@@ -1281,7 +1352,6 @@ fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> Check
         crate::reducer::event::PipelinePhase::Interrupted => CheckpointPhase::Interrupted,
     }
 }
-
 
 #[cfg(test)]
 mod tests {

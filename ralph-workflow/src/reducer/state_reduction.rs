@@ -286,6 +286,18 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                 ..state
             }
         }
+        DevelopmentEvent::ContinuationContextWritten {
+            iteration,
+            attempt: _,
+        } => {
+            // Context file was written, state remains unchanged.
+            // The continuation state is already set by ContinuationTriggered.
+            PipelineState { iteration, ..state }
+        }
+        DevelopmentEvent::ContinuationContextCleaned => {
+            // Context file was cleaned up, no state change needed.
+            state
+        }
     }
 }
 
@@ -342,6 +354,45 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             phase: super::event::PipelinePhase::CommitMessage,
             ..state
         },
+        ReviewEvent::PassCompletedClean { pass } => {
+            // Clean pass completion - advance to next pass or transition to CommitMessage
+            let next_pass = pass + 1;
+            if next_pass >= state.total_reviewer_passes {
+                PipelineState {
+                    phase: super::event::PipelinePhase::CommitMessage,
+                    reviewer_pass: next_pass,
+                    review_issues_found: false,
+                    ..state
+                }
+            } else {
+                PipelineState {
+                    reviewer_pass: next_pass,
+                    review_issues_found: false,
+                    ..state
+                }
+            }
+        }
+        ReviewEvent::OutputValidationFailed { pass, attempt } => {
+            // Policy: After MAX_REVIEW_INVALID_OUTPUT_RERUNS, switch to next agent.
+            // Mirrors development phase behavior for consistency.
+            const MAX_REVIEW_INVALID_OUTPUT_RERUNS: u32 = 2;
+            if attempt >= MAX_REVIEW_INVALID_OUTPUT_RERUNS {
+                let new_agent_chain = state.agent_chain.switch_to_next_agent();
+                PipelineState {
+                    phase: super::event::PipelinePhase::Review,
+                    reviewer_pass: pass,
+                    agent_chain: new_agent_chain,
+                    ..state
+                }
+            } else {
+                // Stay in Review for retry
+                PipelineState {
+                    phase: super::event::PipelinePhase::Review,
+                    reviewer_pass: pass,
+                    ..state
+                }
+            }
+        }
     }
 }
 

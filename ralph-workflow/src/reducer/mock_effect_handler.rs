@@ -364,6 +364,19 @@ src/lib.rs</ralph-files-changed>
                 }];
                 (PipelineEvent::prompt_permissions_restored(), ui)
             }
+
+            Effect::WriteContinuationContext(ref data) => (
+                PipelineEvent::development_continuation_context_written(
+                    data.iteration,
+                    data.attempt,
+                ),
+                vec![],
+            ),
+
+            Effect::CleanupContinuationContext => (
+                PipelineEvent::development_continuation_context_cleaned(),
+                vec![],
+            ),
         };
 
         // Capture UI events

@@ -345,3 +345,116 @@ fn test_development_iteration_with_commit_cycle() {
     assert_eq!(state.phase, PipelinePhase::Planning);
     assert_eq!(state.iteration, 2);
 }
+
+// =========================================================================
+// ContinuationContextWritten and ContinuationContextCleaned event tests
+// =========================================================================
+
+#[test]
+fn test_continuation_context_written_preserves_state() {
+    let mut state = create_test_state();
+    state.iteration = 2;
+    state.continuation = ContinuationState::new().trigger_continuation(
+        DevelopmentStatus::Partial,
+        "partial work".to_string(),
+        Some(vec!["file.rs".to_string()]),
+        Some("next steps".to_string()),
+    );
+
+    let new_state = reduce(
+        state.clone(),
+        PipelineEvent::development_continuation_context_written(2, 1),
+    );
+
+    // Iteration should be set from event
+    assert_eq!(new_state.iteration, 2);
+    // Continuation state should be preserved (already set by ContinuationTriggered)
+    assert!(new_state.continuation.is_continuation());
+    assert_eq!(new_state.continuation.continuation_attempt, 1);
+}
+
+#[test]
+fn test_continuation_context_written_sets_iteration_from_event() {
+    let mut state = create_test_state();
+    state.iteration = 99; // Different from event
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::development_continuation_context_written(5, 2),
+    );
+
+    // Should use iteration from event
+    assert_eq!(new_state.iteration, 5);
+}
+
+#[test]
+fn test_continuation_context_cleaned_preserves_state() {
+    let mut state = create_test_state();
+    state.phase = PipelinePhase::Development;
+    state.iteration = 3;
+
+    let new_state = reduce(
+        state.clone(),
+        PipelineEvent::development_continuation_context_cleaned(),
+    );
+
+    // State should be unchanged
+    assert_eq!(new_state.phase, state.phase);
+    assert_eq!(new_state.iteration, state.iteration);
+}
+
+#[test]
+fn test_continuation_context_event_sequence() {
+    // Test the full sequence: ContinuationTriggered -> WriteContinuationContext -> ContinuationContextWritten
+    let state = create_test_state();
+
+    // 1. ContinuationTriggered sets continuation state
+    let state = reduce(
+        state,
+        PipelineEvent::development_iteration_continuation_triggered(
+            0,
+            DevelopmentStatus::Partial,
+            "Did some work".to_string(),
+            Some(vec!["src/lib.rs".to_string()]),
+            Some("Continue with more".to_string()),
+        ),
+    );
+    assert!(state.continuation.is_continuation());
+    assert_eq!(state.continuation.continuation_attempt, 1);
+
+    // 2. ContinuationContextWritten confirms the write (state already set)
+    let state = reduce(
+        state,
+        PipelineEvent::development_continuation_context_written(0, 1),
+    );
+    // State should still be valid
+    assert!(state.continuation.is_continuation());
+    assert_eq!(state.continuation.continuation_attempt, 1);
+}
+
+#[test]
+fn test_continuation_context_cleanup_sequence() {
+    // Test cleanup on success: ContinuationSucceeded -> cleanup
+    let mut state = create_test_state();
+    state.continuation = ContinuationState::new().trigger_continuation(
+        DevelopmentStatus::Partial,
+        "work".to_string(),
+        None,
+        None,
+    );
+    state.phase = PipelinePhase::Development;
+
+    // ContinuationSucceeded resets continuation state
+    let state = reduce(
+        state,
+        PipelineEvent::development_iteration_continuation_succeeded(0, 1),
+    );
+    assert!(!state.continuation.is_continuation());
+
+    // ContinuationContextCleaned is a no-op on state
+    let state = reduce(
+        state,
+        PipelineEvent::development_continuation_context_cleaned(),
+    );
+    assert!(!state.continuation.is_continuation());
+}

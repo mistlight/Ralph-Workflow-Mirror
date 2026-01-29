@@ -291,3 +291,133 @@ fn test_review_completed_increments_large_pass_number() {
     assert_eq!(new_state.reviewer_pass, 1000);
     assert_eq!(new_state.phase, PipelinePhase::Review); // Not done yet (1000 < 1001)
 }
+
+// =========================================================================
+// PassCompletedClean and OutputValidationFailed event tests
+// =========================================================================
+
+#[test]
+fn test_review_pass_completed_clean_increments_pass() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 3,
+        review_issues_found: false,
+        ..create_test_state()
+    };
+    let new_state = reduce(state, PipelineEvent::review_pass_completed_clean(0));
+
+    assert_eq!(new_state.reviewer_pass, 1);
+    assert!(!new_state.review_issues_found);
+}
+
+#[test]
+fn test_review_pass_completed_clean_on_last_pass_transitions_to_commit() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 2,
+        total_reviewer_passes: 3,
+        review_issues_found: false,
+        ..create_test_state()
+    };
+    let new_state = reduce(state, PipelineEvent::review_pass_completed_clean(2));
+
+    // 2 + 1 = 3, 3 >= 3, should transition to CommitMessage
+    assert_eq!(new_state.reviewer_pass, 3);
+    assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+}
+
+#[test]
+fn test_review_output_validation_failed_retries_within_limit() {
+    let agent_chain = crate::reducer::state::AgentChainState::initial().with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![vec![], vec![]],
+        crate::agents::AgentRole::Reviewer,
+    );
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        agent_chain,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+
+    assert_eq!(new_state.phase, PipelinePhase::Review);
+    // Should stay on same agent when within retry limit
+    assert_eq!(new_state.agent_chain.current_agent_index, 0);
+}
+
+#[test]
+fn test_review_output_validation_failed_switches_agent_at_limit() {
+    let agent_chain = crate::reducer::state::AgentChainState::initial().with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![vec![], vec![]],
+        crate::agents::AgentRole::Reviewer,
+    );
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        agent_chain,
+        ..create_test_state()
+    };
+
+    // MAX_REVIEW_INVALID_OUTPUT_RERUNS is 2, so at attempt 2 we should switch
+    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 2));
+
+    assert_eq!(new_state.phase, PipelinePhase::Review);
+    // Should switch to next agent
+    assert_eq!(
+        new_state.agent_chain.current_agent_index, 1,
+        "Should switch to next agent after max invalid output attempts"
+    );
+}
+
+#[test]
+fn test_review_output_validation_failed_stays_in_review_phase() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 1,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(1, 0));
+
+    assert_eq!(
+        new_state.phase,
+        PipelinePhase::Review,
+        "Should stay in Review phase for retry"
+    );
+    assert_eq!(new_state.reviewer_pass, 1, "Should preserve reviewer_pass");
+}
+
+#[test]
+fn test_review_output_validation_event_sequence_retry_then_success() {
+    let agent_chain = crate::reducer::state::AgentChainState::initial().with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![vec![], vec![]],
+        crate::agents::AgentRole::Reviewer,
+    );
+    let mut state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 2,
+        agent_chain,
+        ..create_test_state()
+    };
+
+    // First validation failure - retry
+    state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+    assert_eq!(state.phase, PipelinePhase::Review);
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+
+    // Second validation failure - retry
+    state = reduce(state, PipelineEvent::review_output_validation_failed(0, 1));
+    assert_eq!(state.phase, PipelinePhase::Review);
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+
+    // Success after retries
+    state = reduce(state, PipelineEvent::review_completed(0, false));
+    assert_eq!(state.phase, PipelinePhase::Review);
+    assert_eq!(state.reviewer_pass, 1);
+}

@@ -171,6 +171,20 @@ pub enum DevelopmentEvent {
         /// Last status received (Partial or Failed).
         last_status: DevelopmentStatus,
     },
+    /// Continuation context file was written successfully.
+    ///
+    /// Emitted after WriteContinuationContext effect completes. The reducer
+    /// clears the `needs_context_write` flag on this event.
+    ContinuationContextWritten {
+        /// Current iteration number.
+        iteration: u32,
+        /// Current continuation attempt number.
+        attempt: u32,
+    },
+    /// Continuation context file was cleaned up.
+    ///
+    /// Emitted after CleanupContinuationContext effect completes.
+    ContinuationContextCleaned,
 }
 
 /// Review phase events.
@@ -218,6 +232,25 @@ pub enum ReviewEvent {
     PhaseCompleted {
         /// Whether the phase exited early (before all passes).
         early_exit: bool,
+    },
+    /// Review pass found no issues - clean exit.
+    ///
+    /// Emitted when a review pass completes with no issues found.
+    /// This is distinct from `Completed { issues_found: false }` in that
+    /// it explicitly signals a clean pass for UI/logging purposes.
+    PassCompletedClean {
+        /// The pass number that completed.
+        pass: u32,
+    },
+    /// Review output validation failed (XSD/XML parsing error).
+    ///
+    /// Emitted when review output cannot be parsed. Reducer decides
+    /// whether to retry or switch agents.
+    OutputValidationFailed {
+        /// The pass number.
+        pass: u32,
+        /// Current invalid output attempt number.
+        attempt: u32,
     },
 }
 
@@ -661,6 +694,16 @@ impl PipelineEvent {
         })
     }
 
+    /// Create a DevelopmentContinuationContextWritten event.
+    pub fn development_continuation_context_written(iteration: u32, attempt: u32) -> Self {
+        Self::Development(DevelopmentEvent::ContinuationContextWritten { iteration, attempt })
+    }
+
+    /// Create a DevelopmentContinuationContextCleaned event.
+    pub fn development_continuation_context_cleaned() -> Self {
+        Self::Development(DevelopmentEvent::ContinuationContextCleaned)
+    }
+
     // Review constructors
     /// Create a ReviewPhaseStarted event.
     pub fn review_phase_started() -> Self {
@@ -690,6 +733,16 @@ impl PipelineEvent {
     /// Create a ReviewPhaseCompleted event.
     pub fn review_phase_completed(early_exit: bool) -> Self {
         Self::Review(ReviewEvent::PhaseCompleted { early_exit })
+    }
+
+    /// Create a ReviewPassCompletedClean event.
+    pub fn review_pass_completed_clean(pass: u32) -> Self {
+        Self::Review(ReviewEvent::PassCompletedClean { pass })
+    }
+
+    /// Create a ReviewOutputValidationFailed event.
+    pub fn review_output_validation_failed(pass: u32, attempt: u32) -> Self {
+        Self::Review(ReviewEvent::OutputValidationFailed { pass, attempt })
     }
 
     // Agent constructors
