@@ -326,9 +326,16 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             reviewer_pass: pass,
             review_issues_found: false,
             agent_chain: state.agent_chain.reset(),
-            continuation: super::state::ContinuationState {
-                invalid_output_attempts: 0,
-                ..state.continuation
+            continuation: if pass == state.reviewer_pass {
+                // If orchestration re-emits PassStarted for the same pass (e.g., retry after
+                // OutputValidationFailed), do not reset the invalid-output attempt counter.
+                // The reducer owns retry accounting for determinism.
+                state.continuation
+            } else {
+                super::state::ContinuationState {
+                    invalid_output_attempts: 0,
+                    ..state.continuation
+                }
             },
             ..state
         },
@@ -339,15 +346,31 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             } else {
                 state.phase
             };
-            PipelineState {
-                phase: next_phase,
-                reviewer_pass: next_pass,
-                review_issues_found: issues_found,
-                continuation: super::state::ContinuationState {
-                    invalid_output_attempts: 0,
-                    ..state.continuation
-                },
-                ..state
+
+            if next_phase == super::event::PipelinePhase::CommitMessage {
+                PipelineState {
+                    phase: next_phase,
+                    previous_phase: None,
+                    reviewer_pass: next_pass,
+                    review_issues_found: issues_found,
+                    commit: super::state::CommitState::NotStarted,
+                    continuation: super::state::ContinuationState {
+                        invalid_output_attempts: 0,
+                        ..state.continuation
+                    },
+                    ..state
+                }
+            } else {
+                PipelineState {
+                    phase: next_phase,
+                    reviewer_pass: next_pass,
+                    review_issues_found: issues_found,
+                    continuation: super::state::ContinuationState {
+                        invalid_output_attempts: 0,
+                        ..state.continuation
+                    },
+                    ..state
+                }
             }
         }
         ReviewEvent::FixAttemptStarted { .. } => PipelineState {
@@ -372,6 +395,8 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
         },
         ReviewEvent::PhaseCompleted { .. } => PipelineState {
             phase: super::event::PipelinePhase::CommitMessage,
+            previous_phase: None,
+            commit: super::state::CommitState::NotStarted,
             continuation: super::state::ContinuationState {
                 invalid_output_attempts: 0,
                 ..state.continuation
@@ -379,19 +404,38 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             ..state
         },
         ReviewEvent::PassCompletedClean { pass } => {
-            // Clean pass means no issues found; review phase can exit early.
-            // This is intentionally distinct from Completed { issues_found: false }.
-            PipelineState {
-                phase: super::event::PipelinePhase::CommitMessage,
-                previous_phase: None,
-                reviewer_pass: pass + 1,
-                review_issues_found: false,
-                commit: super::state::CommitState::NotStarted,
-                continuation: super::state::ContinuationState {
-                    invalid_output_attempts: 0,
-                    ..state.continuation
-                },
-                ..state
+            // Clean pass means no issues found in this pass.
+            // Advance to the next pass when more passes remain.
+            let next_pass = pass + 1;
+            let next_phase = if next_pass >= state.total_reviewer_passes {
+                super::event::PipelinePhase::CommitMessage
+            } else {
+                super::event::PipelinePhase::Review
+            };
+
+            if next_phase == super::event::PipelinePhase::CommitMessage {
+                PipelineState {
+                    phase: next_phase,
+                    reviewer_pass: next_pass,
+                    review_issues_found: false,
+                    commit: super::state::CommitState::NotStarted,
+                    continuation: super::state::ContinuationState {
+                        invalid_output_attempts: 0,
+                        ..state.continuation
+                    },
+                    ..state
+                }
+            } else {
+                PipelineState {
+                    phase: next_phase,
+                    reviewer_pass: next_pass,
+                    review_issues_found: false,
+                    continuation: super::state::ContinuationState {
+                        invalid_output_attempts: 0,
+                        ..state.continuation
+                    },
+                    ..state
+                }
             }
         }
         ReviewEvent::OutputValidationFailed { pass, attempt } => {
@@ -1588,8 +1632,73 @@ mod tests {
 
         let new_state = reduce(state, PipelineEvent::review_pass_completed_clean(0));
 
-        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::Review,
+            "Clean pass should not exit review when passes remain"
+        );
+        assert_eq!(new_state.reviewer_pass, 1);
         assert_eq!(new_state.review_issues_found, false);
+    }
+
+    #[test]
+    fn test_review_pass_started_does_not_reset_invalid_output_attempts_on_retry() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+        state.continuation.invalid_output_attempts = 1;
+
+        let new_state = reduce(state, PipelineEvent::review_pass_started(0));
+
+        assert_eq!(new_state.reviewer_pass, 0);
+        assert_eq!(
+            new_state.continuation.invalid_output_attempts, 1,
+            "Retrying the same pass should not clear invalid output attempt counter"
+        );
+    }
+
+    #[test]
+    fn test_review_pass_started_resets_invalid_output_attempts_for_new_pass() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+        state.continuation.invalid_output_attempts = 2;
+
+        let new_state = reduce(state, PipelineEvent::review_pass_started(1));
+
+        assert_eq!(new_state.reviewer_pass, 1);
+        assert_eq!(new_state.continuation.invalid_output_attempts, 0);
+    }
+
+    #[test]
+    fn test_review_phase_completed_resets_commit_state() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Review;
+        state.commit = CommitState::Committed {
+            hash: "abc123".to_string(),
+        };
+
+        let new_state = reduce(state, PipelineEvent::review_phase_completed(true));
+
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert!(matches!(new_state.commit, CommitState::NotStarted));
+        assert_eq!(new_state.previous_phase, None);
+    }
+
+    #[test]
+    fn test_review_completed_no_issues_on_last_pass_resets_commit_state() {
+        let mut state = create_test_state();
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+        state.total_reviewer_passes = 1;
+        state.commit = CommitState::Committed {
+            hash: "abc123".to_string(),
+        };
+
+        let new_state = reduce(state, PipelineEvent::review_completed(0, false));
+
+        assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
+        assert!(matches!(new_state.commit, CommitState::NotStarted));
     }
 
     // =========================================================================

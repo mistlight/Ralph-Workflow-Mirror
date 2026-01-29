@@ -484,14 +484,15 @@ impl MainEffectHandler {
         let next_attempt = continuation_state.continuation_attempt + 1;
         if next_attempt > max_continuations {
             let _ = cleanup_continuation_context_file(ctx);
-            // Emit ContinuationBudgetExhausted - reducer decides whether to abort or fallback
-            return Ok(EffectResult::event(
-                PipelineEvent::development_continuation_budget_exhausted(
-                    iteration,
-                    next_attempt,
-                    attempt.status.clone(),
-                ),
-            ));
+            // Continuation budget exhausted: abort with a human-readable reason so logs/UI can
+            // surface why the pipeline was interrupted.
+            let reason = development_continuation_budget_exhausted_abort_reason(
+                iteration,
+                next_attempt,
+                max_continuations,
+                attempt.status.clone(),
+            );
+            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(reason)));
         }
 
         ctx.logger.info(&format!(
@@ -584,15 +585,24 @@ impl MainEffectHandler {
                     )));
                 }
 
-                let event = if result.early_exit {
-                    PipelineEvent::review_pass_completed_clean(pass)
-                } else if is_review_output_validation_failure(ctx.workspace) {
-                    // The review phase wrote the XSD failure marker; treat it as invalid output.
-                    PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt)
-                } else {
-                    // Successful parse with issues found.
-                    PipelineEvent::review_completed(pass, true)
-                };
+                let xsd_validation_failed = is_review_output_validation_failure(ctx.workspace);
+                let issues_xml_content = ctx
+                    .workspace
+                    .read(Path::new(".agent/tmp/issues.xml"))
+                    .ok()
+                    .or_else(|| {
+                        ctx.workspace
+                            .read(Path::new(".agent/tmp/issues.xml.processed"))
+                            .ok()
+                    });
+
+                let event = classify_review_pass_event(
+                    pass,
+                    invalid_output_attempt,
+                    result.early_exit,
+                    xsd_validation_failed,
+                    issues_xml_content.as_deref(),
+                );
 
                 // Build UI events
                 let mut ui_events = vec![
@@ -604,14 +614,7 @@ impl MainEffectHandler {
                 ];
 
                 // Try to read issues XML for semantic rendering
-                let issues_xml_path = Path::new(".agent/tmp/issues.xml");
-                let processed_path = Path::new(".agent/tmp/issues.xml.processed");
-                if let Some(xml_content) = ctx
-                    .workspace
-                    .read(issues_xml_path)
-                    .ok()
-                    .or_else(|| ctx.workspace.read(processed_path).ok())
-                {
+                if let Some(xml_content) = issues_xml_content {
                     let snippets = collect_review_issue_snippets(ctx.workspace, &xml_content);
                     ui_events.push(UIEvent::XmlOutput {
                         xml_type: XmlOutputType::ReviewIssues,
@@ -1303,6 +1306,45 @@ fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Resu
     Ok(())
 }
 
+fn classify_review_pass_event(
+    pass: u32,
+    invalid_output_attempt: u32,
+    early_exit: bool,
+    xsd_validation_failed: bool,
+    issues_xml: Option<&str>,
+) -> PipelineEvent {
+    if xsd_validation_failed {
+        return PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt);
+    }
+
+    if let Some(xml) = issues_xml {
+        if let Ok(validated) = validate_issues_xml(xml) {
+            let no_issues = validated.issues.is_empty() && validated.no_issues_found.is_some();
+            if no_issues {
+                if early_exit {
+                    return PipelineEvent::review_phase_completed(true);
+                }
+                return PipelineEvent::review_pass_completed_clean(pass);
+            }
+        }
+    }
+
+    // Default: treat as issues found (review produced a valid pass result and did not signal
+    // output validation failure).
+    PipelineEvent::review_completed(pass, true)
+}
+
+fn development_continuation_budget_exhausted_abort_reason(
+    iteration: u32,
+    next_attempt: u32,
+    max_continuations: u32,
+    last_status: crate::reducer::state::DevelopmentStatus,
+) -> String {
+    format!(
+        "Development continuation attempts exhausted (iteration={iteration}, next_attempt={next_attempt}, max_continuations={max_continuations}, last_status={last_status})"
+    )
+}
+
 /// Save checkpoint from current pipeline state.
 fn save_checkpoint_from_state(
     state: &PipelineState,
@@ -1979,5 +2021,72 @@ mod tests {
         assert_eq!(ctx.developer_agent, orig_dev);
         assert!(ctx.prompt_history.contains_key("existing"));
         assert!(ctx.prompt_history.contains_key("new"));
+    }
+
+    #[test]
+    fn test_classify_review_pass_event_no_issues_without_early_exit_emits_clean_pass() {
+        let xml = r#"<ralph-issues>
+ <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
+ </ralph-issues>"#;
+
+        let event = classify_review_pass_event(0, 0, false, false, Some(xml));
+
+        assert!(matches!(
+            event,
+            PipelineEvent::Review(crate::reducer::event::ReviewEvent::PassCompletedClean {
+                pass: 0
+            })
+        ));
+    }
+
+    #[test]
+    fn test_classify_review_pass_event_no_issues_with_early_exit_emits_phase_completed() {
+        let xml = r#"<ralph-issues>
+ <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
+ </ralph-issues>"#;
+
+        let event = classify_review_pass_event(0, 0, true, false, Some(xml));
+
+        assert!(matches!(
+            event,
+            PipelineEvent::Review(crate::reducer::event::ReviewEvent::PhaseCompleted {
+                early_exit: true
+            })
+        ));
+    }
+
+    #[test]
+    fn test_classify_review_pass_event_issues_found_emits_completed_with_issues_found_true() {
+        let xml = r#"<ralph-issues>
+ <ralph-issue>Something is wrong</ralph-issue>
+ </ralph-issues>"#;
+
+        let event = classify_review_pass_event(3, 0, false, false, Some(xml));
+
+        assert!(matches!(
+            event,
+            PipelineEvent::Review(crate::reducer::event::ReviewEvent::Completed {
+                pass: 3,
+                issues_found: true
+            })
+        ));
+    }
+
+    #[test]
+    fn test_development_continuation_budget_exhausted_abort_reason_is_informative() {
+        use crate::reducer::state::DevelopmentStatus;
+
+        let reason = development_continuation_budget_exhausted_abort_reason(
+            7,
+            3,
+            2,
+            DevelopmentStatus::Partial,
+        );
+
+        assert!(reason.contains("continuation"));
+        assert!(reason.contains("iteration=7"));
+        assert!(reason.contains("next_attempt=3"));
+        assert!(reason.contains("max_continuations=2"));
+        assert!(reason.contains("last_status=partial"));
     }
 }
