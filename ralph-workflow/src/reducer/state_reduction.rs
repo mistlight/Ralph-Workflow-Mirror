@@ -326,10 +326,9 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                 chain.max_cycles = state.agent_chain.max_cycles;
                 chain.reset_for_role(AgentRole::Reviewer)
             },
-            continuation: super::state::ContinuationState {
-                invalid_output_attempts: 0,
-                ..state.continuation
-            },
+            // Entering Review must reset continuation state to avoid leaking
+            // development continuation context into review/fix/rebase logic.
+            continuation: super::state::ContinuationState::new(),
             ..state
         },
         ReviewEvent::PassStarted { pass } => PipelineState {
@@ -817,6 +816,31 @@ mod tests {
                 role: AgentRole::Reviewer
             }
         ));
+    }
+
+    #[test]
+    fn test_review_phase_started_resets_continuation_state() {
+        use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+        let state = PipelineState {
+            continuation: ContinuationState {
+                previous_status: Some(DevelopmentStatus::Partial),
+                previous_summary: Some("prev summary".to_string()),
+                previous_files_changed: Some(vec!["src/lib.rs".to_string()]),
+                previous_next_steps: Some("next steps".to_string()),
+                continuation_attempt: 2,
+                invalid_output_attempts: 3,
+            },
+            ..create_test_state()
+        };
+
+        let review_state = reduce(state, PipelineEvent::review_phase_started());
+
+        assert_eq!(
+            review_state.continuation,
+            ContinuationState::new(),
+            "Entering Review should reset continuation state to avoid cross-phase leakage"
+        );
     }
 
     #[test]

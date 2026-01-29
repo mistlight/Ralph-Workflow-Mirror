@@ -1414,8 +1414,10 @@ fn is_review_output_validation_failure_on_review_err(workspace: &dyn Workspace) 
                 .ok()
         });
 
+    // Missing issues XML is not a strong signal of an output validation failure.
+    // review::run_review_pass can fail before writing any output artifacts (process/runtime/I/O).
     let Some(xml) = issues_xml_content else {
-        return true;
+        return false;
     };
 
     validate_issues_xml(&xml).is_err()
@@ -1702,6 +1704,52 @@ mod tests {
 
         assert!(!workspace.exists(Path::new(".agent/tmp/issues.xml")));
         assert!(!workspace.exists(Path::new(".agent/tmp/issues.xml.processed")));
+    }
+
+    #[test]
+    fn test_is_review_output_validation_failure_on_review_err_missing_artifacts_is_not_validation_failure(
+    ) {
+        use crate::workspace::MemoryWorkspace;
+
+        // Missing output artifacts can happen when review fails before writing any output.
+        // This must not be treated as an output validation failure (which would trigger retries).
+        let workspace = MemoryWorkspace::new_test();
+
+        assert!(
+            !is_review_output_validation_failure_on_review_err(&workspace),
+            "Missing issues.xml/marker should not be classified as output validation failure"
+        );
+    }
+
+    #[test]
+    fn test_is_review_output_validation_failure_on_review_err_marker_is_validation_failure() {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test().with_file(
+            ".agent/ISSUES.md",
+            "# Review Output XSD Validation Failure\n\nvalidation failed",
+        );
+
+        assert!(
+            is_review_output_validation_failure_on_review_err(&workspace),
+            "Marker should be classified as output validation failure"
+        );
+    }
+
+    #[test]
+    fn test_is_review_output_validation_failure_on_review_err_invalid_issues_xml_is_validation_failure(
+    ) {
+        use crate::workspace::MemoryWorkspace;
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_dir(".agent/tmp")
+            // Intentionally invalid against the issues XSD.
+            .with_file(".agent/tmp/issues.xml", "<ralph-issues />");
+
+        assert!(
+            is_review_output_validation_failure_on_review_err(&workspace),
+            "Invalid issues XML should be classified as output validation failure"
+        );
     }
 
     /// Test that save_checkpoint uses workspace for file operations.
@@ -2286,12 +2334,12 @@ mod tests {
     }
 
     #[test]
-    fn test_is_review_output_validation_failure_on_review_err_when_issues_xml_missing() {
+    fn test_is_review_output_validation_failure_on_review_err_when_issues_xml_missing_is_false() {
         use crate::workspace::MemoryWorkspace;
 
         let workspace = MemoryWorkspace::new_test();
 
-        assert!(is_review_output_validation_failure_on_review_err(
+        assert!(!is_review_output_validation_failure_on_review_err(
             &workspace
         ));
     }
