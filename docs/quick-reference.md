@@ -219,19 +219,19 @@ Ralph's streaming system handles real-time AI agent output. These environment va
 
 ```
 .agent/
-├── PLAN.md              # Current iteration plan (orchestrator-written)
-├── ISSUES.md            # Issues found during review (orchestrator-written)
-├── STATUS.md            # Current status
-├── NOTES.md             # Agent notes
+├── PLAN.md              # Implementation plan (orchestrator-written)
+├── ISSUES.md            # Review findings (orchestrator-written)
+├── STATUS.md            # Current pipeline status
+├── NOTES.md             # Agent notes (ephemeral)
 ├── commit-message.txt   # Generated commit message
-├── checkpoint.json      # For --resume
+├── checkpoint.json      # Resume state (for --resume)
 ├── PROMPT.md.backup     # Backup of PROMPT.md (read-only)
-├── start_commit         # Baseline commit for cumulative diffs
+├── start_commit         # Baseline commit SHA for cumulative diffs
 ├── review_baseline.txt  # Review baseline tracking
 ├── config.toml          # Local agent config (optional)
 ├── agents.toml          # Legacy agent registry (optional)
-├── tmp/                 # Temporary files (XSD, XML artifacts)
-└── logs/                # Agent run logs (pipeline.log, per-phase logs)
+├── tmp/                 # Temporary files (XSD schemas, XML artifacts)
+└── logs/                # Agent logs (pipeline.log, per-phase logs)
 ```
 
 ## Quick Setup

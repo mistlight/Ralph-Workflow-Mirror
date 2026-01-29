@@ -44,8 +44,7 @@ templates/
 ├── planning_xml.txt                          # Planning phase prompt
 ├── planning_xsd_retry.txt                    # Planning XSD validation retry
 ├── review_xml.txt                            # Code review prompt
-├── review_xsd_retry.txt                      # Review XSD validation retry
-└── TEMPLATE_GUIDE.md                         # Internal reference for template developers
+└── review_xsd_retry.txt                      # Review XSD validation retry
 ```
 
 ## Template Syntax

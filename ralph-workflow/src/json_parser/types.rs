@@ -30,7 +30,7 @@
 //! # See Also
 //!
 //! - [`crate::json_parser`] module docs for parser architecture overview
-//! - [`crate::json_parser::stream_classifier`] for event type classification
+//! - `stream_classifier` module (internal) for event type classification
 
 use crate::common::truncate_text;
 use regex::Regex;

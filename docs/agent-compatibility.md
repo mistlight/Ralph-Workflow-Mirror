@@ -45,7 +45,7 @@ These agents have been tested and work well with Ralph's review process:
 
 **Configuration**:
 ```toml
-# In ~/.config/ralph/agents.toml or .agent/agents.toml
+# In ~/.config/ralph-workflow.toml or .agent/config.toml
 [agents.claude]
 name = "claude"
 command = "claude"
@@ -211,7 +211,7 @@ display_name = "GLM (Direct via Claude)"
 ralph --developer-agent glm-direct
 
 # Add to agent chain for automatic fallback
-# In ~/.config/ralph/agents.toml:
+# In ~/.config/ralph-workflow.toml:
 [agent_chain]
 developer = ["glm-direct", "claude", "codex"]
 ```
