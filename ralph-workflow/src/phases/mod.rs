@@ -56,14 +56,20 @@
 //! [`crate::reducer::determine_next_effect`]. Phase modules are invoked by
 //! effect handlers, returning events that update pipeline state.
 //!
-//! **Important**: Phase modules do NOT make control flow decisions. They execute
+//! **Important**: Phase modules do NOT make control-flow decisions. They execute
 //! their assigned task and return events. All decisions about phase transitions,
 //! agent fallback, and retry behavior are made by the reducer based on events.
 //!
-//! Phase modules must NOT:
+//! # Phase Module Responsibilities
+//!
+//! Phase modules execute tasks and emit events. They do NOT:
+//! - Make control flow decisions (no "if condition then skip phase")
 //! - Read legacy artifact files to recover missing results
 //! - Skip or advance phases based on file existence checks
 //! - Perform implicit agent selection or fallback logic
+//! - Trigger agent fallback directly (only the reducer does this)
+//!
+//! All phase transitions are made by the reducer based on events emitted by effects.
 //!
 //! # Note on Re-exports
 //!

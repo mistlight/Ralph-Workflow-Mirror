@@ -12,9 +12,13 @@
 //! The reducer state is the **single source of truth** for all pipeline decisions:
 //!
 //! - **Phase transitions**: Only happen via reducer events, never via file checks
-//! - **Agent fallback**: Triggered by reducer events, not ad-hoc error handling
+//! - **Agent selection**: Determined by `state.agent_chain`, not config lookups
+//! - **Agent fallback**: Triggered by reducer events (`AgentFallbackTriggered`, `AgentInvocationFailed`)
 //! - **XSD retry**: Tracked in `ContinuationState.invalid_output_attempts`, not hidden logic
 //! - **Pipeline completion**: Determined by `state.phase == Complete`, not file existence
+//!
+//! **Invariant**: No phase module or effect handler makes control-flow decisions.
+//! All decisions happen via events processed by [`reduce`], which returns new state.
 //!
 //! All effects are determined by [`determine_next_effect`], a pure function of state.
 //! No external file checks or configuration lookups influence effect determination.

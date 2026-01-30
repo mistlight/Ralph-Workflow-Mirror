@@ -10,6 +10,19 @@
 //! - [`EffectHandler`] - Trait for executing effects (impure code lives here)
 //! - [`EffectResult`] - Contains both pipeline event and optional UI events
 //!
+//! # Single-Task Effect Principle
+//!
+//! Each Effect variant represents exactly **one** logical operation. Effects must NOT:
+//! - Perform multiple unrelated file operations
+//! - Combine "decide" and "do" in one effect
+//! - Bundle agent execution with parsing, retry, or output writing
+//!
+//! If an effect needs multiple responsibilities, split it into separate effects.
+//! The effect handler executes effects atomically; all coordination happens via
+//! reducer state and events.
+//!
+//! This principle is tested in `reducer_legacy_rejection.rs::test_effects_are_single_task`.
+//!
 //! # Design
 //!
 //! This separation keeps business logic pure (in reducers) while isolating
