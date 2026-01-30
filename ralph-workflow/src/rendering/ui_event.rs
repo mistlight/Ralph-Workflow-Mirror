@@ -3,7 +3,6 @@
 //! This is the single entrypoint for all UI event rendering.
 //! The event loop calls `render_ui_event()` and displays the result.
 
-use crate::reducer::event::PipelinePhase;
 use crate::reducer::ui_event::UIEvent;
 
 /// Render a UIEvent to a displayable string.
@@ -13,7 +12,7 @@ use crate::reducer::ui_event::UIEvent;
 pub fn render_ui_event(event: &UIEvent) -> String {
     match event {
         UIEvent::PhaseTransition { to, .. } => {
-            format!("{} {}", phase_emoji(to), to)
+            format!("{} {}", UIEvent::phase_emoji(to), to)
         }
         UIEvent::IterationProgress { current, total } => {
             format!("🔄 Development iteration {}/{}", current, total)
@@ -32,23 +31,10 @@ pub fn render_ui_event(event: &UIEvent) -> String {
     }
 }
 
-/// Get emoji indicator for phase.
-fn phase_emoji(phase: &PipelinePhase) -> &'static str {
-    match phase {
-        PipelinePhase::Planning => "📋",
-        PipelinePhase::Development => "🔨",
-        PipelinePhase::Review => "👀",
-        PipelinePhase::CommitMessage => "📝",
-        PipelinePhase::FinalValidation => "✅",
-        PipelinePhase::Finalizing => "🔄",
-        PipelinePhase::Complete => "🎉",
-        PipelinePhase::Interrupted => "⏸️",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reducer::event::PipelinePhase;
     use crate::reducer::ui_event::{XmlOutputContext, XmlOutputType};
 
     #[test]
@@ -110,8 +96,8 @@ mod tests {
     }
 
     #[test]
-    fn test_phase_emoji_all_phases() {
-        // Verify all phases have non-empty emojis
+    fn test_phase_emoji_via_ui_event() {
+        // Verify all phases have non-empty emojis via UIEvent::phase_emoji
         let phases = [
             PipelinePhase::Planning,
             PipelinePhase::Development,
@@ -123,7 +109,7 @@ mod tests {
             PipelinePhase::Interrupted,
         ];
         for phase in phases {
-            let emoji = phase_emoji(&phase);
+            let emoji = UIEvent::phase_emoji(&phase);
             assert!(!emoji.is_empty(), "Phase {:?} should have an emoji", phase);
         }
     }
