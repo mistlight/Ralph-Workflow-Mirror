@@ -1,6 +1,6 @@
 {# ============================================================================ #}
 {# Template: fix_mode_xml.txt                                                   #}
-{# Version: 1.1                                                                 #}
+{# Version: 1.2                                                                 #}
 {# ============================================================================ #}
 {#                                                                             #}
 {# PURPOSE:                                                                    #}
@@ -71,22 +71,19 @@ Fix the issues listed above. For each issue:
 
 CRITICAL CONSTRAINTS:
 - You MUST read files before editing them
-- If specific files are listed above, you may ONLY modify those files
-- If no specific files are listed, you MAY modify any files needed
+- If specific files are listed above, use them as a starting point, it's possible 
+  you may have to edit a completely different file
 - You MUST NOT modify the ISSUES content - it is provided for reference only
-- Stay focused on fixing the listed issues - don't expand scope
 
 FAULT TOLERANCE:
 - If an issue description lacks file references, you may explore LIMITEDLY to
   find the relevant code (use grep to find function/class names mentioned)
-- Once you locate the code, stop exploring and focus on fixing
-- Do NOT explore beyond what's necessary to fix the issues
 
 FIX GUIDELINES:
 - Fix problems at the root cause, not with surface-level patches
 - Follow existing code patterns and conventions
-- Keep fixes minimal and focused
 - Add tests if the issue was a missed test case
+- Getting rid of tech debt is necessary to fix a bug, you **MUST** do so.
 
 ═══════════════════════════════════════════════════════════════════════════════
 OUTPUT FORMAT
