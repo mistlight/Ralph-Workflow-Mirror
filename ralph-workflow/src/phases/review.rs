@@ -214,8 +214,7 @@ pub fn run_review_pass(
             };
 
             // Output validator: checks if reviewer produced valid output
-            // Priority: 1) File-based XML at .agent/tmp/issues.xml
-            //           2) JSON result events in log files
+            // Required: File-based XML at .agent/tmp/issues.xml
             let validate_output: crate::pipeline::OutputValidator =
                 |ws: &dyn crate::workspace::Workspace,
                  log_dir_path: &Path,
@@ -228,14 +227,8 @@ pub fn run_review_pass(
                         return Ok(true); // Valid XML file exists
                     }
 
-                    // Try JSON log extraction (streaming output mode)
-                    // Agents that stream output write to logs instead of XML files
-                    use crate::files::result_extraction::extract_last_result;
-                    match extract_last_result(ws, log_dir_path) {
-                        Ok(Some(_)) => Ok(true), // Valid JSON output exists
-                        Ok(None) => Ok(false),   // No valid output found
-                        Err(_) => Ok(true), // On error, assume success (let extraction handle validation)
-                    }
+                    let _ = log_dir_path;
+                    Ok(false)
                 };
 
             let base_label = format!(
