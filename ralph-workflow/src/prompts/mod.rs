@@ -44,7 +44,7 @@ mod types;
 // Re-export ResumeContext for use in prompts
 pub use crate::checkpoint::restore::ResumeContext;
 
-// Re-export all public items for backward compatibility
+// Re-export public items for API convenience
 #[cfg(any(test, feature = "test-utils"))]
 pub use commit::prompt_fix_with_context;
 pub use commit::{

@@ -109,11 +109,11 @@ use std::cell::RefCell;
 /// All messages include timestamps and appropriate icons.
 pub struct Logger {
     colors: Colors,
-    /// Path for direct filesystem logging (legacy mode)
+    /// Path for direct filesystem logging (CLI layer before workspace available).
     log_file: Option<String>,
-    /// Workspace for abstracted file logging
+    /// Workspace for abstracted file logging (preferred when workspace is available).
     workspace: Option<Arc<dyn Workspace>>,
-    /// Relative path within workspace for log file
+    /// Relative path within workspace for log file.
     workspace_log_path: Option<String>,
 }
 
@@ -179,7 +179,7 @@ impl Logger {
             return;
         }
 
-        // Fall back to direct filesystem logging (legacy mode)
+        // Fall back to direct filesystem logging (CLI layer before workspace available)
         if let Some(ref path) = self.log_file {
             if let Some(parent) = Path::new(path).parent() {
                 let _ = fs::create_dir_all(parent);

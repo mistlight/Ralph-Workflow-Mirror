@@ -39,7 +39,7 @@ pub mod protection;
 pub mod llm_output_extraction;
 pub mod result_extraction;
 
-// Re-exports from new domain structure for backward compatibility
+// Re-exports from domain submodules for API convenience
 pub use io::{
     clean_context_for_reviewer, clean_context_for_reviewer_with_workspace,
     cleanup_generated_files_with_workspace, create_prompt_backup,

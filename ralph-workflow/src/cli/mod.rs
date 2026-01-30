@@ -23,7 +23,7 @@ pub mod presets;
 mod providers;
 pub mod reducer;
 
-// Re-export all public items for backward compatibility
+// Re-export public items for API convenience
 pub use args::Args;
 pub use completions::handle_generate_completion;
 pub use handlers::{

@@ -70,16 +70,16 @@ pub struct CliArgsSnapshot {
     pub review_depth: Option<String>,
     /// Whether to skip automatic rebase
     pub skip_rebase: bool,
-    /// Isolation mode: when false, NOTES.md and ISSUES.md persist between iterations
-    /// Default is true for backward compatibility with v1/v2 checkpoints.
+    /// Isolation mode: when false, NOTES.md and ISSUES.md persist between iterations.
+    /// Default is true (isolation enabled).
     #[serde(default = "default_isolation_mode")]
     pub isolation_mode: bool,
-    /// Verbosity level (0=Quiet, 1=Normal, 2=Verbose, 3=Full, 4=Debug)
-    /// Default is 2 (Verbose) for backward compatibility.
+    /// Verbosity level (0=Quiet, 1=Normal, 2=Verbose, 3=Full, 4=Debug).
+    /// Default is 2 (Verbose).
     #[serde(default = "default_verbosity")]
     pub verbosity: u8,
-    /// Show streaming quality metrics at the end of agent output
-    /// Default is false for backward compatibility.
+    /// Show streaming quality metrics at the end of agent output.
+    /// Default is false.
     #[serde(default)]
     pub show_streaming_metrics: bool,
     /// JSON parser override for the reviewer agent (claude, codex, gemini, opencode, generic)
@@ -212,16 +212,16 @@ pub struct AgentConfigSnapshot {
     pub yolo_flag: Option<String>,
     /// Whether this agent can commit
     pub can_commit: bool,
-    /// Model override (e.g., "-m opencode/glm-4.7-free")
-    /// Default is None for backward compatibility with v1/v2 checkpoints.
+    /// Model override (e.g., "-m opencode/glm-4.7-free").
+    /// Default is None (use agent's configured model).
     #[serde(default)]
     pub model_override: Option<String>,
-    /// Provider override (e.g., "opencode", "anthropic")
-    /// Default is None for backward compatibility with v1/v2 checkpoints.
+    /// Provider override (e.g., "opencode", "anthropic").
+    /// Default is None (use agent's configured provider).
     #[serde(default)]
     pub provider_override: Option<String>,
-    /// Context level (0=minimal, 1=normal)
-    /// Default is 1 (normal context) for backward compatibility with v1/v2 checkpoints.
+    /// Context level (0=minimal, 1=normal).
+    /// Default is 1 (normal context).
     #[serde(default = "default_context_level")]
     pub context_level: u8,
 }
@@ -401,9 +401,9 @@ pub enum PipelinePhase {
     Development,
     /// Review-fix cycles phase (N iterations of review + fix)
     Review,
-    /// Fix phase (deprecated: kept for backward compatibility with old checkpoints)
+    /// Fix phase (deprecated: kept for v3 checkpoint migration to Review phase).
     Fix,
-    /// Verification review phase (deprecated: kept for backward compatibility with old checkpoints)
+    /// Verification review phase (deprecated: kept for v3 checkpoint migration to Review phase).
     ReviewAgain,
     /// Commit message generation
     CommitMessage,

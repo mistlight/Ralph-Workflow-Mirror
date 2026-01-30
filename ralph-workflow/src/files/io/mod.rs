@@ -28,7 +28,7 @@ pub mod agent_files;
 pub mod backup;
 pub mod context;
 
-// Re-exports for backward compatibility
+// Re-exports from submodules for API convenience
 pub use agent_files::{
     cleanup_generated_files_with_workspace, delete_commit_message_file_with_workspace,
     delete_plan_file_with_workspace, ensure_files_with_workspace, file_contains_marker,
