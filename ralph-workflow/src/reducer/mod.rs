@@ -132,6 +132,13 @@ pub mod orchestration;
 pub mod state;
 pub mod state_reduction;
 pub mod ui_event;
+#[deprecated(
+    since = "0.0.0",
+    note = "use ralph_workflow::rendering::xml instead"
+)]
+pub mod xml_renderer {
+    pub use crate::rendering::xml::*;
+}
 
 #[cfg(test)]
 mod orchestration_tests;
