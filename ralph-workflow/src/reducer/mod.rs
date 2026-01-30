@@ -132,7 +132,6 @@ pub mod orchestration;
 pub mod state;
 pub mod state_reduction;
 pub mod ui_event;
-pub mod xml_renderer;
 
 #[cfg(test)]
 mod orchestration_tests;
