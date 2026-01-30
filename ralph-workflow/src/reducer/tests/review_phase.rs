@@ -421,3 +421,295 @@ fn test_review_output_validation_event_sequence_retry_then_success() {
     assert_eq!(state.phase, PipelinePhase::Review);
     assert_eq!(state.reviewer_pass, 1);
 }
+
+// =========================================================================
+// Agent chain clearing on phase transition tests (BUG: agent chain not cleared)
+// =========================================================================
+
+/// Test that verifies the agent chain is cleared when transitioning from Development
+/// to Review phase via CommitCreated.
+///
+/// This is a regression test for the bug where the developer agent chain was carried
+/// over to the Review phase, causing the wrong agent to be used for review.
+#[test]
+fn test_commit_created_clears_agent_chain_when_transitioning_to_review() {
+    use crate::reducer::orchestration::determine_next_effect;
+
+    // Setup: state in Development phase with developer agent chain
+    let developer_chain = crate::reducer::state::AgentChainState::initial()
+        .with_agents(
+            vec!["dev-agent-1".to_string(), "dev-agent-2".to_string()],
+            vec![vec![], vec![]],
+            crate::agents::AgentRole::Developer,
+        )
+        .with_max_cycles(3);
+
+    let mut state = PipelineState {
+        phase: PipelinePhase::Development,
+        previous_phase: Some(PipelinePhase::Development),
+        iteration: 4, // Last iteration (total is 5, so 4 is index of 5th iteration)
+        total_iterations: 5,
+        total_reviewer_passes: 2,
+        agent_chain: developer_chain,
+        commit: CommitState::Generated {
+            message: "test commit".to_string(),
+        },
+        ..create_test_state()
+    };
+
+    // Verify developer chain is populated
+    assert!(!state.agent_chain.agents.is_empty());
+    assert_eq!(
+        state.agent_chain.current_agent(),
+        Some(&"dev-agent-1".to_string())
+    );
+    assert_eq!(
+        state.agent_chain.current_role,
+        crate::agents::AgentRole::Developer
+    );
+
+    // Simulate commit created after last development iteration
+    state = reduce(
+        state,
+        PipelineEvent::commit_created("abc123".to_string(), "test commit".to_string()),
+    );
+
+    // After commit on last iteration, should transition to Review phase
+    assert_eq!(
+        state.phase,
+        PipelinePhase::Review,
+        "Should transition to Review phase after last development iteration commit"
+    );
+
+    // CRITICAL: The agent chain should be cleared so orchestration emits InitializeAgentChain
+    assert!(
+        state.agent_chain.agents.is_empty(),
+        "Agent chain should be cleared when transitioning from Development to Review"
+    );
+
+    // Orchestration should now emit InitializeAgentChain for Reviewer
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::InitializeAgentChain {
+                role: crate::agents::AgentRole::Reviewer
+            }
+        ),
+        "Orchestration should emit InitializeAgentChain for Reviewer, got {:?}",
+        effect
+    );
+}
+
+/// Test that orchestration uses the correct agent from state.agent_chain for review,
+/// not ctx.reviewer_agent.
+///
+/// This test simulates the full flow:
+/// 1. Initialize reviewer agent chain with specific agents
+/// 2. Verify that RunReviewPass is emitted (not InitializeAgentChain)
+/// 3. Verify the first agent in the chain is used (not a fallback)
+#[test]
+fn test_review_uses_agent_from_state_chain_not_context() {
+    use crate::reducer::orchestration::determine_next_effect;
+
+    // Setup: state in Review phase with reviewer agent chain already initialized
+    let reviewer_chain = crate::reducer::state::AgentChainState::initial()
+        .with_agents(
+            vec![
+                "codex".to_string(),
+                "opencode".to_string(),
+                "claude".to_string(),
+            ],
+            vec![vec![], vec![], vec![]],
+            crate::agents::AgentRole::Reviewer,
+        )
+        .with_max_cycles(3);
+
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 2,
+        agent_chain: reviewer_chain,
+        ..create_test_state()
+    };
+
+    // Verify chain is populated with correct first agent
+    assert!(!state.agent_chain.agents.is_empty());
+    assert_eq!(
+        state.agent_chain.current_agent(),
+        Some(&"codex".to_string()),
+        "First agent should be 'codex' (from fallback chain), not 'claude'"
+    );
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+
+    // Orchestration should emit RunReviewPass (since chain is populated)
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::RunReviewPass { pass: 0 }
+        ),
+        "Orchestration should emit RunReviewPass, got {:?}",
+        effect
+    );
+}
+
+/// Test that auth failure during review advances the agent chain via events.
+#[test]
+fn test_auth_failure_during_review_advances_agent_chain() {
+    use crate::reducer::event::AgentErrorKind;
+
+    // Setup: state in Review phase with reviewer agent chain
+    let reviewer_chain = crate::reducer::state::AgentChainState::initial()
+        .with_agents(
+            vec![
+                "codex".to_string(),
+                "opencode".to_string(),
+                "claude".to_string(),
+            ],
+            vec![vec![], vec![], vec![]],
+            crate::agents::AgentRole::Reviewer,
+        )
+        .with_max_cycles(3);
+
+    let mut state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 2,
+        agent_chain: reviewer_chain,
+        ..create_test_state()
+    };
+
+    // Verify starting with first agent
+    assert_eq!(
+        state.agent_chain.current_agent(),
+        Some(&"codex".to_string())
+    );
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+
+    // Simulate auth failure - should advance to next agent
+    state = reduce(
+        state,
+        PipelineEvent::agent_invocation_failed(
+            crate::agents::AgentRole::Reviewer,
+            "codex".to_string(),
+            1,
+            AgentErrorKind::Authentication,
+            false, // Not retriable - switch to next agent
+        ),
+    );
+
+    // Should have advanced to next agent
+    assert_eq!(
+        state.agent_chain.current_agent(),
+        Some(&"opencode".to_string()),
+        "Should advance to next agent after auth failure"
+    );
+    assert_eq!(state.agent_chain.current_agent_index, 1);
+
+    // Simulate another auth failure
+    state = reduce(
+        state,
+        PipelineEvent::agent_invocation_failed(
+            crate::agents::AgentRole::Reviewer,
+            "opencode".to_string(),
+            1,
+            AgentErrorKind::Authentication,
+            false,
+        ),
+    );
+
+    // Should have advanced to third agent
+    assert_eq!(
+        state.agent_chain.current_agent(),
+        Some(&"claude".to_string()),
+        "Should advance to third agent after second auth failure"
+    );
+    assert_eq!(state.agent_chain.current_agent_index, 2);
+}
+
+/// Test that the full pipeline flow uses the correct reviewer agent order.
+///
+/// This is an end-to-end test of the Development -> Review transition to verify
+/// the reviewer agent chain is properly initialized.
+#[test]
+fn test_full_pipeline_flow_uses_correct_reviewer_agent() {
+    use crate::reducer::orchestration::determine_next_effect;
+
+    // Start with a state that simulates post-development with dev agent chain
+    let dev_chain = crate::reducer::state::AgentChainState::initial()
+        .with_agents(
+            vec!["claude".to_string()], // Developer uses "claude"
+            vec![vec![]],
+            crate::agents::AgentRole::Developer,
+        )
+        .with_max_cycles(3);
+
+    let mut state = PipelineState {
+        phase: PipelinePhase::Development,
+        previous_phase: Some(PipelinePhase::Development),
+        iteration: 4, // Last iteration
+        total_iterations: 5,
+        total_reviewer_passes: 2,
+        agent_chain: dev_chain,
+        commit: CommitState::Generated {
+            message: "test".to_string(),
+        },
+        ..create_test_state()
+    };
+
+    // Create commit to transition to Review
+    state = reduce(
+        state,
+        PipelineEvent::commit_created("abc123".to_string(), "test".to_string()),
+    );
+    assert_eq!(state.phase, PipelinePhase::Review);
+
+    // Orchestration should request agent chain initialization
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::InitializeAgentChain {
+                role: crate::agents::AgentRole::Reviewer
+            }
+        ),
+        "Should request reviewer chain initialization, got {:?}",
+        effect
+    );
+
+    // Simulate initializing the reviewer chain with different agents
+    state = reduce(
+        state,
+        PipelineEvent::agent_chain_initialized(
+            crate::agents::AgentRole::Reviewer,
+            vec![
+                "codex".to_string(),
+                "opencode".to_string(),
+                "claude".to_string(),
+            ],
+        ),
+    );
+
+    // Verify reviewer chain is now populated with correct agents
+    assert_eq!(
+        state.agent_chain.current_agent(),
+        Some(&"codex".to_string()),
+        "First reviewer agent should be 'codex', not 'claude'"
+    );
+    assert_eq!(
+        state.agent_chain.current_role,
+        crate::agents::AgentRole::Reviewer
+    );
+
+    // Now orchestration should emit RunReviewPass
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::RunReviewPass { pass: 0 }
+        ),
+        "Should emit RunReviewPass, got {:?}",
+        effect
+    );
+}

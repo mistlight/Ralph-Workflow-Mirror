@@ -348,8 +348,13 @@ pub fn run_review_phase(
                 }
             }
 
-            let attempt =
-                run_review_pass(ctx, j, review_label, &review_prompt, Some(active_agent.as_str()))?;
+            let attempt = run_review_pass(
+                ctx,
+                j,
+                review_label,
+                &review_prompt,
+                Some(active_agent.as_str()),
+            )?;
             if attempt.auth_failure {
                 ctx.logger.warn(&format!(
                     "Auth failure during review with '{}', switching agent",
@@ -1878,10 +1883,7 @@ mod tests {
         };
         let mut chain = build_review_agent_chain_state(&fallback_config, "codex");
         let _ = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
-        assert_eq!(
-            chain.current_agent().map(String::as_str),
-            Some("opencode")
-        );
+        assert_eq!(chain.current_agent().map(String::as_str), Some("opencode"));
 
         let (reset_chain, active_agent) =
             initialize_review_cycle_agent_chain(&fallback_config, "codex").unwrap();

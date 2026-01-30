@@ -645,6 +645,18 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
         CommitEvent::Created { hash, .. } => {
             let (next_phase, next_iter, next_reviewer_pass) =
                 compute_post_commit_transition(&state);
+            // When transitioning from Development to Review, clear the agent chain
+            // so orchestration will emit InitializeAgentChain for Reviewer role.
+            // This ensures the reviewer fallback chain is used, not the developer chain.
+            let agent_chain = if next_phase == super::event::PipelinePhase::Review
+                && state.previous_phase == Some(super::event::PipelinePhase::Development)
+            {
+                let mut chain = super::state::AgentChainState::initial();
+                chain.max_cycles = state.agent_chain.max_cycles;
+                chain.reset_for_role(crate::agents::AgentRole::Reviewer)
+            } else {
+                state.agent_chain.clone()
+            };
             PipelineState {
                 commit: CommitState::Committed { hash },
                 phase: next_phase,
@@ -652,6 +664,7 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
                 iteration: next_iter,
                 reviewer_pass: next_reviewer_pass,
                 context_cleaned: false,
+                agent_chain,
                 ..state
             }
         }
@@ -662,6 +675,18 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
         CommitEvent::Skipped { .. } => {
             let (next_phase, next_iter, next_reviewer_pass) =
                 compute_post_commit_transition(&state);
+            // When transitioning from Development to Review, clear the agent chain
+            // so orchestration will emit InitializeAgentChain for Reviewer role.
+            // This ensures the reviewer fallback chain is used, not the developer chain.
+            let agent_chain = if next_phase == super::event::PipelinePhase::Review
+                && state.previous_phase == Some(super::event::PipelinePhase::Development)
+            {
+                let mut chain = super::state::AgentChainState::initial();
+                chain.max_cycles = state.agent_chain.max_cycles;
+                chain.reset_for_role(crate::agents::AgentRole::Reviewer)
+            } else {
+                state.agent_chain.clone()
+            };
             PipelineState {
                 commit: CommitState::Skipped,
                 phase: next_phase,
@@ -669,6 +694,7 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
                 iteration: next_iter,
                 reviewer_pass: next_reviewer_pass,
                 context_cleaned: false,
+                agent_chain,
                 ..state
             }
         }
