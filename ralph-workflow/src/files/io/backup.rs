@@ -490,8 +490,8 @@ pub fn write_diff_backup_with_workspace(
 
 // Note: Old tests using with_temp_cwd have been removed since production
 // code now uses workspace-based functions (_with_workspace variants).
-// The old std::fs functions are kept for backward compatibility but are
-// not tested here. See workspace_tests module below for the active tests.
+// The non-workspace functions have been removed. See workspace_tests module
+// below for the active tests covering current behavior.
 
 /// Tests for workspace-based backup functions
 #[cfg(all(test, feature = "test-utils"))]

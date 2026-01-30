@@ -234,7 +234,7 @@ pub struct SessionInfo {
 ///
 /// This function finds log files and extracts the session ID from the content
 /// based on the JSON parser type. The agent name can be provided directly (preferred)
-/// or extracted from the log file name (fallback for backwards compatibility).
+/// or extracted from the log file name (fallback when name is unavailable).
 ///
 /// # Arguments
 ///

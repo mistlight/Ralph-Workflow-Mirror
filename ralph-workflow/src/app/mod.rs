@@ -330,7 +330,7 @@ pub fn run_with_config(
     config: crate::config::Config,
     registry: AgentRegistry,
 ) -> anyhow::Result<()> {
-    // Use real path resolver and effect handler by default for backward compatibility
+    // Use real path resolver and effect handler by default
     let mut handler = effect_handler::RealAppEffectHandler::new();
     run_with_config_and_resolver(
         args,

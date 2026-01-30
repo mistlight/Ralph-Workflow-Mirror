@@ -320,8 +320,8 @@ mod tests {
     // =========================================================================
     //
     // Note: Old tests using with_temp_cwd have been removed since production
-    // code now uses workspace-based functions. The old std::fs functions
-    // are kept for backward compatibility but are not tested here.
+    // code now uses workspace-based functions. The non-workspace functions
+    // have been removed; these workspace-based tests cover current behavior.
 
     #[test]
     fn test_delete_issues_file_for_isolation_with_workspace() {

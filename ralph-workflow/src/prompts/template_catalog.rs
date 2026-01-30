@@ -54,9 +54,9 @@ pub fn list_all_templates() -> Vec<&'static EmbeddedTemplate> {
     templates
 }
 
-/// Get all templates as a map for backwards compatibility.
+/// Get all templates as a map.
 ///
-/// This matches the format used by the CLI template management code.
+/// Returns templates in the format used by CLI template management code.
 #[must_use]
 pub fn get_templates_map() -> HashMap<String, (String, String)> {
     let mut map = HashMap::new();

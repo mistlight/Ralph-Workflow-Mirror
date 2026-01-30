@@ -11,8 +11,9 @@ use super::state::{PipelineState, RebaseState};
 
 /// Convert v3 checkpoint to reducer PipelineState.
 ///
-/// Migrates existing checkpoint structure to new state format,
-/// ensuring backward compatibility with saved checkpoints.
+/// Migrates v3 checkpoint structure to reducer state format. Only v3 format
+/// is supported; legacy formats (v1, v2) are rejected at the checkpoint
+/// loading layer before this conversion is called.
 impl From<PipelineCheckpoint> for PipelineState {
     fn from(checkpoint: PipelineCheckpoint) -> Self {
         let rebase_state = migrate_rebase_state(&checkpoint.rebase_state);
@@ -35,7 +36,7 @@ impl From<PipelineCheckpoint> for PipelineState {
                 .execution_history
                 .map(|h| h.steps)
                 .unwrap_or_default(),
-            // Default to no continuation in progress (backward compatibility)
+            // Default to no continuation in progress (v3 checkpoints predate continuation)
             continuation: super::state::ContinuationState::new(),
         }
     }

@@ -655,8 +655,8 @@ fn try_session_continuation(
 ) -> SessionContinuationResult {
     // The agent name from session_info should already be the registry name
     // (e.g., "ccs/glm", "opencode/anthropic/claude-sonnet-4") when passed from
-    // the calling code. For backwards compatibility and robustness, we still try
-    // to resolve it in case it's a sanitized name from an old log file.
+    // the calling code. For robustness, we still try to resolve it in case
+    // it's a sanitized name from log file parsing.
     let registry_name = config
         .registry
         .resolve_from_logfile_name(&session_info.agent_name)

@@ -351,8 +351,8 @@ impl FileSystemState {
             });
         }
 
-        // Verify checksum for existing files - use old verify method that reads from CWD
-        // This is deprecated but kept for backward compatibility
+        // Verify checksum for existing files using CWD-relative path.
+        // This is CLI-layer code that operates before workspace is available (see CLAUDE.md).
         if snapshot.exists {
             // Read file and verify checksum manually since we don't have workspace
             let content = std::fs::read(path_obj);

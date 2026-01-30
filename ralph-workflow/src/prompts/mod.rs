@@ -419,7 +419,7 @@ pub fn prompt_for_agent(
     let resume_note = if let Some(resume_ctx) = &config.resume_context {
         generate_resume_note(resume_ctx)
     } else if config.is_resume {
-        // Fallback for backward compatibility when no rich context is available
+        // Fallback when no rich ResumeContext is available (uses simpler note)
         "\nNOTE: This session is resuming from a previous run. Previous progress is preserved in git history. You can check 'git log' for context about what was done before.\n\n".to_string()
     } else {
         String::new()

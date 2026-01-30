@@ -108,7 +108,7 @@ fn get_review_baseline_info_impl(
     Ok((baseline_oid, commits_since, is_stale))
 }
 
-/// Write the review baseline to disk (CWD-based, for backward compatibility).
+/// Write the review baseline to disk (CWD-based, for CLI-layer use).
 fn write_review_baseline_cwd(oid: &str) -> io::Result<()> {
     let workspace = WorkspaceFs::new(std::env::current_dir()?);
     write_review_baseline_with_workspace(&workspace, oid)

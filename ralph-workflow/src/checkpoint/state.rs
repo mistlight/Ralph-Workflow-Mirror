@@ -401,9 +401,9 @@ pub enum PipelinePhase {
     Development,
     /// Review-fix cycles phase (N iterations of review + fix)
     Review,
-    /// Fix phase (deprecated: kept for v3 checkpoint migration to Review phase).
+    /// Fix phase (v3 checkpoints only; migrates to Review in reducer state).
     Fix,
-    /// Verification review phase (deprecated: kept for v3 checkpoint migration to Review phase).
+    /// Verification review phase (v3 checkpoints only; migrates to Review in reducer state).
     ReviewAgain,
     /// Commit message generation
     CommitMessage,
@@ -1120,7 +1120,7 @@ mod tests {
     }
 
     // =========================================================================
-    // Original tests using real filesystem (kept for backward compatibility)
+    // Test helper functions (real filesystem usage allowed per CLAUDE.md docs)
     // =========================================================================
 
     /// Helper function to create a checkpoint for testing.
