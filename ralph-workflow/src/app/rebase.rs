@@ -451,7 +451,7 @@ pub(crate) fn try_resolve_conflicts(
         conflicted_files.len()
     ));
 
-    let conflicts = collect_conflict_info_or_error(conflicted_files, ctx.logger)?;
+    let conflicts = collect_conflict_info_or_error(conflicted_files, ctx.workspace, ctx.logger)?;
 
     // Use stored_or_generate pattern for hardened resume
     let prompt_key = format!("{}_conflict_resolution", phase.to_lowercase());
@@ -545,11 +545,12 @@ fn handle_error_resolution(
 /// Collect conflict information from conflicted files.
 fn collect_conflict_info_or_error(
     conflicted_files: &[String],
+    workspace: &dyn crate::workspace::Workspace,
     logger: &Logger,
 ) -> anyhow::Result<std::collections::HashMap<String, crate::prompts::FileConflict>> {
-    use crate::prompts::collect_conflict_info;
+    use crate::prompts::collect_conflict_info_with_workspace;
 
-    match collect_conflict_info(conflicted_files) {
+    match collect_conflict_info_with_workspace(workspace, conflicted_files) {
         Ok(c) => Ok(c),
         Err(e) => {
             logger.error(&format!("Failed to collect conflict info: {e}"));

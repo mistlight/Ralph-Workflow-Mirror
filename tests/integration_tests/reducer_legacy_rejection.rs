@@ -948,11 +948,11 @@ fn test_effects_are_single_task() {
             );
         }
 
-        // Verify we covered all variants (17 at time of writing)
+        // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            17,
-            "Expected 17 Effect variants; update this test if variants were added or removed"
+            19,
+            "Expected 19 Effect variants; update this test if variants were added or removed"
         );
     });
 }
@@ -1429,23 +1429,65 @@ fn test_phase_transitions_only_via_reducer_events() {
 // .PROCESSED ARCHIVE TESTS (NO FALLBACK READS)
 // ============================================================================
 
-/// Test that .processed files are archive-only and never used as fallback reads.
+/// Test that `.processed` files are archive-only and never used as fallback reads.
+///
+/// This applies to all canonical XML outputs. If the primary XML is missing, the
+/// pipeline must NOT consult the archived `.processed` file.
 #[test]
-fn test_processed_files_are_archive_only() {
+fn test_processed_files_are_archive_only_for_all_outputs() {
     use ralph_workflow::files::llm_output_extraction::file_based_extraction::try_extract_from_file_with_workspace;
     use ralph_workflow::workspace::MemoryWorkspace;
 
     with_default_timeout(|| {
-        let workspace = MemoryWorkspace::new_test()
-            .with_file(".agent/tmp/plan.xml.processed", "<plan>archived</plan>");
+        let cases = [
+            (".agent/tmp/plan.xml", "<plan>archived</plan>"),
+            (".agent/tmp/issues.xml", "<issues>archived</issues>"),
+            (
+                ".agent/tmp/development_result.xml",
+                "<development>archived</development>",
+            ),
+            (".agent/tmp/fix_result.xml", "<fix>archived</fix>"),
+            (
+                ".agent/tmp/commit_message.xml",
+                "<commit_message>archived</commit_message>",
+            ),
+        ];
 
-        // Primary path missing, .processed present -> should NOT be used.
-        let result =
-            try_extract_from_file_with_workspace(&workspace, Path::new(".agent/tmp/plan.xml"));
+        let mut workspace = MemoryWorkspace::new_test();
+        for (primary_path, content) in cases {
+            workspace = workspace.with_file(&format!("{primary_path}.processed"), content);
+        }
+
+        for (primary_path, _) in cases {
+            let result = try_extract_from_file_with_workspace(&workspace, Path::new(primary_path));
+            assert!(
+                result.is_none(),
+                "{primary_path}.processed must not be used as a fallback input"
+            );
+        }
+    });
+}
+
+/// Test that legacy `commit.xml` is not used as a fallback when commit message XML is missing.
+#[test]
+fn test_legacy_commit_xml_is_not_used_for_commit_message_extraction() {
+    use ralph_workflow::files::llm_output_extraction::file_based_extraction::try_extract_from_file_with_workspace;
+    use ralph_workflow::workspace::MemoryWorkspace;
+
+    with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test().with_file(
+            ".agent/tmp/commit.xml",
+            "<commit><message>legacy</message></commit>",
+        );
+
+        let result = try_extract_from_file_with_workspace(
+            &workspace,
+            Path::new(".agent/tmp/commit_message.xml"),
+        );
 
         assert!(
             result.is_none(),
-            ".processed files are archives only; no fallback reads allowed"
+            "commit_message.xml missing must not fall back to legacy commit.xml"
         );
     });
 }

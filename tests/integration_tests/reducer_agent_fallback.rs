@@ -367,10 +367,11 @@ fn test_success_clears_continuation_prompt() {
     });
 }
 
-/// Test that exhausted agent chain triggers checkpoint save.
+/// Test that exhausted agent chain emits an explicit abort effect.
 ///
 /// When the agent chain is exhausted (all agents tried, max cycles reached),
-/// orchestration should return SaveCheckpoint effect.
+/// orchestration must emit an explicit terminal effect. The pipeline must not
+/// stall by repeatedly checkpointing.
 #[test]
 fn test_exhausted_chain_triggers_checkpoint() {
     with_default_timeout(|| {
@@ -392,8 +393,8 @@ fn test_exhausted_chain_triggers_checkpoint() {
 
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::SaveCheckpoint { .. }),
-            "Exhausted chain should trigger checkpoint save, got {:?}",
+            matches!(effect, Effect::AbortPipeline { .. }),
+            "Exhausted chain should abort explicitly, got {:?}",
             effect
         );
     });

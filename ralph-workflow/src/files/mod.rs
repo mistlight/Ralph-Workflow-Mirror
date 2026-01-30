@@ -41,15 +41,12 @@ pub mod result_extraction;
 
 // Re-exports from domain submodules for API convenience
 pub use io::{
-    clean_context_for_reviewer, clean_context_for_reviewer_with_workspace,
-    cleanup_generated_files_with_workspace, create_prompt_backup,
+    clean_context_for_reviewer_with_workspace, cleanup_generated_files_with_workspace,
     create_prompt_backup_with_workspace, delete_commit_message_file_with_workspace,
-    delete_issues_file_for_isolation, delete_issues_file_for_isolation_with_workspace,
-    delete_plan_file_with_workspace, ensure_files_with_workspace, file_contains_marker,
-    file_contains_marker_with_workspace, make_prompt_read_only,
-    make_prompt_read_only_with_workspace, make_prompt_writable,
-    make_prompt_writable_with_workspace, read_commit_message_file_with_workspace,
-    reset_context_for_isolation, setup_xsd_schemas_with_workspace, update_status,
+    delete_issues_file_for_isolation_with_workspace, delete_plan_file_with_workspace,
+    ensure_files_with_workspace, file_contains_marker, file_contains_marker_with_workspace,
+    make_prompt_read_only_with_workspace, make_prompt_writable_with_workspace,
+    read_commit_message_file_with_workspace, setup_xsd_schemas_with_workspace,
     update_status_with_workspace, verify_file_not_corrupted_with_workspace,
     write_commit_message_file_with_workspace, write_diff_backup_with_workspace,
     write_file_atomic_with_workspace,

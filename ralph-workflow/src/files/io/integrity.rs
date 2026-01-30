@@ -4,65 +4,13 @@
 //! corruption (e.g. zero-length or binary files) in small, text-based agent
 //! artifacts like `PLAN.md` and `commit-message.txt`.
 
-use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
-use tempfile::NamedTempFile;
 
 use crate::workspace::Workspace;
 
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-
 /// Maximum reasonable file size for agent text files (10MB).
 pub const MAX_AGENT_FILE_SIZE: u64 = 10 * 1024 * 1024;
-
-/// Write file content atomically using a temp file + rename pattern.
-///
-/// This ensures the file is either fully written or not written at all,
-/// preventing partial writes or corruption from crashes/interruptions.
-///
-/// Uses `tempfile::NamedTempFile` which creates secure, unpredictable
-/// temporary file names to prevent symlink attacks.
-///
-/// # Security
-///
-/// On Unix systems, the temp file is created with mode 0600 (owner read/write
-/// only) to prevent other users from reading sensitive content before the
-/// atomic rename completes.
-///
-/// # Note
-///
-/// This is a crate-internal function. For public API, use `write_file_atomic_with_workspace`.
-pub(crate) fn write_file_atomic(path: &Path, content: &str) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    // Create a NamedTempFile in the same directory as the target file.
-    // This ensures atomic rename works (same filesystem).
-    let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
-    let mut temp_file = NamedTempFile::new_in(parent_dir)?;
-
-    // Set restrictive permissions on temp file (0600 = owner read/write only)
-    // This prevents other users from reading the temp file before rename
-    #[cfg(unix)]
-    {
-        let mut perms = fs::metadata(temp_file.path())?.permissions();
-        perms.set_mode(0o600);
-        fs::set_permissions(temp_file.path(), perms)?;
-    }
-
-    // Write content to the temp file
-    temp_file.write_all(content.as_bytes())?;
-    temp_file.flush()?;
-    temp_file.as_file().sync_all()?;
-
-    // Persist the temp file to the target location (atomic rename)
-    temp_file.persist(path)?;
-
-    Ok(())
-}
 
 /// Write file content atomically using the workspace abstraction.
 ///

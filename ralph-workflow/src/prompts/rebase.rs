@@ -13,9 +13,9 @@
 
 use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
+use crate::workspace::Workspace;
 use std::collections::HashMap;
 use std::fmt::Write;
-use std::fs;
 use std::path::Path;
 
 /// Structure representing a single file conflict.
@@ -418,17 +418,15 @@ pub fn collect_branch_info(
 ///
 /// Returns `Ok(HashMap)` mapping file paths to conflict information,
 /// or an error if a file cannot be read.
-pub fn collect_conflict_info(
+pub fn collect_conflict_info_with_workspace(
+    workspace: &dyn Workspace,
     conflicted_paths: &[String],
 ) -> std::io::Result<HashMap<String, FileConflict>> {
     let mut conflicts = HashMap::new();
 
     for path in conflicted_paths {
-        // Read the current file content with conflict markers
-        let current_content = fs::read_to_string(path)?;
-
-        // Extract conflict markers
-        let conflict_content = crate::git_helpers::get_conflict_markers_for_file(Path::new(path))?;
+        let current_content = workspace.read(Path::new(path))?;
+        let conflict_content = extract_conflict_sections_from_content(&current_content);
 
         conflicts.insert(
             path.clone(),
@@ -440,6 +438,71 @@ pub fn collect_conflict_info(
     }
 
     Ok(conflicts)
+}
+
+fn extract_conflict_sections_from_content(content: &str) -> String {
+    let mut conflict_sections = Vec::new();
+    let lines: Vec<&str> = content.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        if lines[i].trim_start().starts_with("<<<<<<<") {
+            let mut section = Vec::new();
+            section.push(lines[i]);
+
+            i += 1;
+            while i < lines.len() && !lines[i].trim_start().starts_with("=======") {
+                section.push(lines[i]);
+                i += 1;
+            }
+
+            if i < lines.len() {
+                section.push(lines[i]);
+                i += 1;
+            }
+
+            while i < lines.len() && !lines[i].trim_start().starts_with(">>>>>>>") {
+                section.push(lines[i]);
+                i += 1;
+            }
+
+            if i < lines.len() {
+                section.push(lines[i]);
+                i += 1;
+            }
+
+            conflict_sections.push(section.join("\n"));
+        } else {
+            i += 1;
+        }
+    }
+
+    if conflict_sections.is_empty() {
+        String::new()
+    } else {
+        conflict_sections.join("\n\n")
+    }
+}
+
+#[cfg(test)]
+mod conflict_info_tests {
+    use super::*;
+    use crate::workspace::MemoryWorkspace;
+
+    #[test]
+    fn collect_conflict_info_with_workspace_reads_files_via_workspace() {
+        let content = "<<<<<<< ours\nfn a() {}\n=======\nfn b() {}\n>>>>>>> theirs\n";
+        let workspace = MemoryWorkspace::new_test().with_file("src/lib.rs", content);
+
+        let conflicts = collect_conflict_info_with_workspace(&workspace, &["src/lib.rs".into()])
+            .expect("should collect conflict info");
+
+        let c = conflicts.get("src/lib.rs").expect("missing conflict entry");
+        assert_eq!(c.current_content, content);
+        assert!(c.conflict_content.contains("<<<<<<<"));
+        assert!(c.conflict_content.contains("======="));
+        assert!(c.conflict_content.contains(">>>>>>>"));
+    }
 }
 
 #[cfg(test)]

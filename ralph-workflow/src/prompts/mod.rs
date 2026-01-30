@@ -58,7 +58,8 @@ pub use developer::{
 #[cfg(any(test, feature = "test-utils"))]
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
 pub use rebase::{
-    build_conflict_resolution_prompt_with_context, collect_conflict_info, FileConflict,
+    build_conflict_resolution_prompt_with_context, collect_conflict_info_with_workspace,
+    FileConflict,
 };
 pub use review::{
     prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context, prompt_review_xml_with_context,

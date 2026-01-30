@@ -232,3 +232,32 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
         );
     });
 }
+
+/// Test that `.processed` XML files are archive-only.
+///
+/// This test lives alongside other "no hidden behavior" invariants: the pipeline must
+/// not consult `.processed` files as fallback inputs.
+#[test]
+fn test_processed_xml_files_are_never_used_as_inputs() {
+    with_default_timeout(|| {
+        use ralph_workflow::files::llm_output_extraction::file_based_extraction::try_extract_from_file_with_workspace;
+        use ralph_workflow::workspace::MemoryWorkspace;
+        use std::path::Path;
+
+        let workspace = MemoryWorkspace::new_test().with_file(
+            ".agent/tmp/development_result.xml.processed",
+            "<development>archived</development>",
+        );
+
+        // Primary missing, archive present -> must not be used.
+        let result = try_extract_from_file_with_workspace(
+            &workspace,
+            Path::new(".agent/tmp/development_result.xml"),
+        );
+
+        assert!(
+            result.is_none(),
+            "archived .processed XML must not be used as a fallback input"
+        );
+    });
+}

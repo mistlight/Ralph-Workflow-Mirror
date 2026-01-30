@@ -43,15 +43,13 @@ pub use integrity::{
 };
 
 pub use backup::{
-    create_prompt_backup, create_prompt_backup_with_workspace, make_prompt_read_only,
-    make_prompt_read_only_with_workspace, make_prompt_writable,
+    create_prompt_backup_with_workspace, make_prompt_read_only_with_workspace,
     make_prompt_writable_with_workspace, write_diff_backup_with_workspace,
 };
 
 pub use context::{
-    clean_context_for_reviewer, clean_context_for_reviewer_with_workspace,
-    delete_issues_file_for_isolation, delete_issues_file_for_isolation_with_workspace,
-    reset_context_for_isolation, update_status, update_status_with_workspace,
+    clean_context_for_reviewer_with_workspace, delete_issues_file_for_isolation_with_workspace,
+    update_status_with_workspace,
 };
 
-pub use recovery::{auto_repair, auto_repair_with_workspace, RecoveryStatus, StateValidation};
+pub use recovery::{auto_repair_with_workspace, RecoveryStatus};
