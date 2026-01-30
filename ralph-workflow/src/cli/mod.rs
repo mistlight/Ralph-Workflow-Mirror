@@ -4,7 +4,7 @@
 //! - [`Args`] struct with clap configuration for command-line argument parsing
 //! - `Preset` enum for preset agent configurations
 //! - CLI handler functions for `--list-agents`, `--list-providers`, `--diagnose`
-//! - Config initialization handlers for `--init`, `--init-global`, `--init-legacy`
+//! - Config initialization handlers for `--init`, `--init-global`
 //! - Interactive template selection for PROMPT.md creation
 //!
 //! # Module Structure
@@ -13,7 +13,7 @@
 //! - [`presets`] - Preset enum and `apply_args_to_config`
 //! - `providers` - Provider listing and info display
 //! - `handlers` - Command handlers (list-agents, diagnose, dry-run, template-selection)
-//! - `init` - Config initialization handlers (--init, --init-global, --init-legacy)
+//! - `init` - Config initialization handlers (--init, --init-global)
 
 mod args;
 mod completions;

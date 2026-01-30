@@ -281,7 +281,12 @@ impl MainEffectHandler {
                 if is_valid {
                     ui_events.push(self.phase_transition_ui(PipelinePhase::Development));
 
-                    // Try to read plan XML for semantic rendering
+                    // Try to read plan XML for semantic rendering.
+                    // NOTE: The .processed fallback is NOT legacy behavior - it's the
+                    // current XML archiving mechanism. When XML passes validation,
+                    // archive_xml_file() renames it to .processed for debugging while
+                    // marking it as processed. Reading .processed allows replaying
+                    // archived state during resume.
                     let plan_xml_path = Path::new(".agent/tmp/plan.xml");
                     let processed_path = Path::new(".agent/tmp/plan.xml.processed");
                     if let Some(xml_content) = ctx
@@ -424,6 +429,8 @@ impl MainEffectHandler {
             }];
 
             // Try to read development result XML for semantic rendering.
+            // NOTE: The .processed fallback is the current XML archiving mechanism,
+            // NOT legacy behavior. See comment in handle_generate_plan for details.
             let dev_xml_path = Path::new(".agent/tmp/development_result.xml");
             let processed_path = Path::new(".agent/tmp/development_result.xml.processed");
             if let Some(xml_content) = ctx

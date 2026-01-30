@@ -83,8 +83,7 @@ pub mod validation;
 // Re-export public types for crate-level access
 pub use ccs::is_ccs_ref;
 pub use config::{
-    global_agents_config_path, AgentConfig, AgentConfigBuilder, AgentsConfigFile, ConfigInitResult,
-    ConfigSource,
+    AgentConfig, AgentConfigBuilder, AgentsConfigFile, ConfigInitResult, ConfigSource,
 };
 pub use error::{contains_glm_model, is_glm_like_agent, AgentErrorKind};
 pub use fallback::AgentRole;

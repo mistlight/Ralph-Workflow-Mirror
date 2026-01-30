@@ -426,20 +426,8 @@ impl From<AgentConfigToml> for AgentConfig {
     }
 }
 
-/// Get the global config directory for Ralph.
-///
-/// Returns `~/.config/ralph` on Unix and `%APPDATA%\ralph` on Windows.
-/// Returns None if the home directory cannot be determined.
-pub fn global_config_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("ralph"))
-}
-
-/// Get the global agents.toml path.
-///
-/// Returns `~/.config/ralph/agents.toml` on Unix.
-pub fn global_agents_config_path() -> Option<PathBuf> {
-    global_config_dir().map(|d| d.join("agents.toml"))
-}
+// Note: Legacy global config directory functions (global_config_dir, global_agents_config_path)
+// have been removed. Use unified config path from the config module instead.
 
 /// Root TOML configuration structure.
 #[derive(Debug, Clone, Deserialize)]
@@ -667,12 +655,8 @@ mod tests {
         assert!(config.agents.contains_key("codex"));
     }
 
-    #[test]
-    fn test_global_config_path() {
-        if let Some(path) = global_agents_config_path() {
-            assert!(path.ends_with("agents.toml"));
-        }
-    }
+    // Note: test_global_config_path was removed along with global_agents_config_path function.
+    // Legacy agent config paths are no longer supported.
 
     #[test]
     fn test_build_cmd_with_session() {

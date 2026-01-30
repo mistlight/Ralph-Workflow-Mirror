@@ -151,7 +151,7 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
 
     // Initialize configuration and agent registry
     let Some(init_result) = initialize_config(&args, colors, &logger)? else {
-        return Ok(()); // Early exit (--init/--init-global/--init-legacy)
+        return Ok(()); // Early exit (--init/--init-global)
     };
 
     let config_init::ConfigInitResult {

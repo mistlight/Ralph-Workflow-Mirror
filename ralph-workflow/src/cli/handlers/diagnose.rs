@@ -10,7 +10,7 @@
 //! because it runs before the pipeline context exists and performs read-only
 //! diagnostic operations that don't modify state.
 
-use crate::agents::{global_agents_config_path, AgentRegistry, AgentRole, ConfigSource};
+use crate::agents::{AgentRegistry, AgentRole, ConfigSource};
 use crate::checkpoint::load_checkpoint;
 use crate::config::Config;
 use crate::diagnostics::run_diagnostics;
@@ -152,10 +152,8 @@ fn print_config_info(
         config.review_depth,
         config.review_depth.description()
     );
-    if let Some(global_path) = global_agents_config_path() {
-        println!("  Legacy global agents.toml: {}", global_path.display());
-        println!("  Legacy global exists: {}", global_path.exists());
-    }
+    // Note: Legacy agent config files (.agent/agents.toml, ~/.config/ralph/agents.toml)
+    // are no longer supported. Use unified config file instead.
     if !config_sources.is_empty() {
         println!("  Loaded sources:");
         for src in config_sources {

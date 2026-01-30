@@ -180,6 +180,18 @@ pub fn has_valid_xml_output(workspace: &dyn Workspace, xml_path: &Path) -> bool 
 /// but clearly marked as already processed. If a `.processed` file already exists,
 /// it is overwritten.
 ///
+/// # Design Note
+///
+/// This `.processed` archiving mechanism is the **current** (non-legacy) behavior
+/// for XML file management. It serves two purposes:
+///
+/// 1. **Debugging**: Preserves validated XML for post-run analysis
+/// 2. **Resume support**: Allows handlers to read archived XML when replaying
+///    state during pipeline resume (via `.or_else(|| read(.processed))` fallbacks)
+///
+/// The `.processed` fallback pattern in reducer handlers is intentional and should
+/// NOT be confused with legacy artifact fallbacks (which have been removed).
+///
 /// # Arguments
 ///
 /// * `workspace` - Workspace abstraction for filesystem access

@@ -14,10 +14,7 @@
 //! network calls or environment variable dependencies.
 
 use crate::agents::opencode_api::{CatalogLoader, RealCatalogLoader};
-use crate::agents::{
-    global_agents_config_path, validation as agent_validation, AgentRegistry, AgentRole,
-    ConfigSource,
-};
+use crate::agents::{validation as agent_validation, AgentRegistry, AgentRole, ConfigSource};
 use crate::cli::{
     apply_args_to_config, handle_extended_help, handle_generate_completion,
     handle_init_global_with, handle_init_prompt_with, handle_list_work_guides,
@@ -26,7 +23,6 @@ use crate::cli::{
 use crate::config::{
     loader, unified_config_path, Config, ConfigEnvironment, RealConfigEnvironment, UnifiedConfig,
 };
-use crate::git_helpers::get_repo_root;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use std::path::PathBuf;
@@ -204,44 +200,13 @@ fn load_agent_registry<L: CatalogLoader>(
 
     let mut sources = Vec::new();
 
-    // Backwards compatibility: load legacy agent config files only when unified config
-    // isn't present (this matches the deprecation warning behavior in config loader).
-    if unified.is_none() {
-        if let Some(global_path) = global_agents_config_path() {
-            if global_path.exists() {
-                let loaded = registry.load_from_file(&global_path).map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to load legacy global agent config {}: {}",
-                        global_path.display(),
-                        e
-                    )
-                })?;
-                sources.push(ConfigSource {
-                    path: global_path,
-                    agents_loaded: loaded,
-                });
-            }
-        }
-
-        let repo_root = get_repo_root().ok();
-        let project_path = repo_root.map_or_else(
-            || PathBuf::from(".agent/agents.toml"),
-            |root| root.join(".agent/agents.toml"),
-        );
-        if project_path.exists() {
-            let loaded = registry.load_from_file(&project_path).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to load legacy per-repo agent config {}: {}",
-                    project_path.display(),
-                    e
-                )
-            })?;
-            sources.push(ConfigSource {
-                path: project_path,
-                agents_loaded: loaded,
-            });
-        }
-    }
+    // Agent configuration is loaded ONLY from:
+    // 1. Built-in defaults (from AgentRegistry::new())
+    // 2. Unified config file (~/.config/ralph-workflow.toml)
+    // 3. OpenCode API catalog (for opencode/* references)
+    //
+    // Legacy agent config files (.agent/agents.toml, ~/.config/ralph/agents.toml)
+    // are no longer supported. Use --init-global to create a unified config.
 
     if let Some(unified_cfg) = unified {
         let loaded = registry.apply_unified_config(unified_cfg);

@@ -1,8 +1,7 @@
 //! Configuration initialization handlers.
 //!
-//! This module handles the `--init`, `--init-global`, legacy `--init-legacy` flags,
-//! and `--init-prompt` flag for creating default agent configuration files
-//! and PROMPT.md from templates.
+//! This module handles the `--init`, `--init-global`, and `--init-prompt` flags
+//! for creating default unified configuration files and PROMPT.md from templates.
 //!
 //! # Dependency Injection
 //!
