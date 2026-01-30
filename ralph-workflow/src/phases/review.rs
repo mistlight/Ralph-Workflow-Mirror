@@ -44,8 +44,8 @@ use crate::prompts::{
     prompt_review_xml_with_references, prompt_review_xsd_retry_with_context, ContextLevel,
     PromptContentBuilder,
 };
-use crate::workspace::Workspace;
 use crate::reducer::state::AgentChainState;
+use crate::workspace::Workspace;
 use std::path::Path;
 
 mod validation;
@@ -89,10 +89,6 @@ fn build_agent_chain_list(
     let mut seen = std::collections::HashSet::new();
     agents.retain(|agent| seen.insert(agent.clone()));
 
-    if !seen.contains(primary_agent) {
-        agents.push(primary_agent.to_string());
-    }
-
     agents
 }
 
@@ -133,17 +129,6 @@ fn current_agent_from_chain(chain: &AgentChainState) -> anyhow::Result<&str> {
         .current_agent()
         .map(|agent| agent.as_str())
         .ok_or_else(|| anyhow::anyhow!("No available agent in fallback chain"))
-}
-
-fn initial_review_agent(
-    fallback_config: &crate::agents::fallback::FallbackConfig,
-    primary_agent: &str,
-) -> String {
-    let agents = build_agent_chain_list(fallback_config, AgentRole::Reviewer, primary_agent);
-    agents
-        .first()
-        .cloned()
-        .unwrap_or_else(|| primary_agent.to_string())
 }
 
 /// Run the review and fix phase.
@@ -366,7 +351,8 @@ pub fn run_review_phase(
                 }
             }
 
-            let attempt = run_review_pass(ctx, j, review_label, &review_prompt, Some(active_agent))?;
+            let attempt =
+                run_review_pass(ctx, j, review_label, &review_prompt, Some(active_agent))?;
             if attempt.auth_failure {
                 ctx.logger.warn(&format!(
                     "Auth failure during review with '{}', switching agent",
@@ -1832,7 +1818,6 @@ mod tests {
         assert!(!is_auth_failure_error(&other));
     }
 
-
     #[test]
     fn test_build_agent_chain_list_starts_with_first_configured_agent() {
         let fallback_config = crate::agents::fallback::FallbackConfig {
@@ -1886,7 +1871,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_agent_chain_list_appends_primary_when_missing() {
+    fn test_build_agent_chain_list_does_not_append_primary_when_fallbacks_configured() {
         let fallback_config = crate::agents::fallback::FallbackConfig {
             reviewer: vec!["codex".to_string(), "opencode".to_string()],
             ..crate::agents::fallback::FallbackConfig::default()
@@ -1894,7 +1879,7 @@ mod tests {
 
         let agents = build_agent_chain_list(&fallback_config, AgentRole::Reviewer, "claude");
 
-        assert_eq!(agents, vec!["codex", "opencode", "claude"]);
+        assert_eq!(agents, vec!["codex", "opencode"]);
     }
 
     #[test]
@@ -1931,26 +1916,5 @@ mod tests {
 
         let exhausted = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config);
         assert!(exhausted.is_err());
-    }
-
-    #[test]
-    fn test_initial_review_agent_prefers_fallback_first_agent() {
-        let fallback_config = crate::agents::fallback::FallbackConfig {
-            reviewer: vec!["codex".to_string(), "claude".to_string()],
-            ..crate::agents::fallback::FallbackConfig::default()
-        };
-
-        let agent = initial_review_agent(&fallback_config, "claude");
-
-        assert_eq!(agent, "codex");
-    }
-
-    #[test]
-    fn test_initial_review_agent_falls_back_to_primary_when_no_fallbacks() {
-        let fallback_config = crate::agents::fallback::FallbackConfig::default();
-
-        let agent = initial_review_agent(&fallback_config, "claude");
-
-        assert_eq!(agent, "claude");
     }
 }
