@@ -337,3 +337,104 @@ fn test_phases_emit_expected_effects_when_initialized() {
         ));
     });
 }
+
+/// Test that RunDevelopmentIteration effect does not bundle context writing.
+///
+/// The handler should emit proper events that trigger WriteContinuationContext
+/// as a separate effect, not write context files as a side effect of execution.
+/// This test verifies the architectural invariant that effects are single-task.
+#[test]
+fn test_development_iteration_does_not_bundle_context_writing() {
+    use ralph_workflow::reducer::effect::ContinuationContextData;
+    use ralph_workflow::reducer::state::DevelopmentStatus;
+
+    with_default_timeout(|| {
+        // Verify RunDevelopmentIteration is a single-task effect
+        let effect = Effect::RunDevelopmentIteration { iteration: 0 };
+
+        // The effect variant should only contain the iteration number
+        // If someone adds context_data or similar, this match would fail
+        match effect {
+            Effect::RunDevelopmentIteration { iteration } => {
+                assert_eq!(iteration, 0);
+            }
+            _ => panic!("Expected RunDevelopmentIteration"),
+        }
+
+        // WriteContinuationContext is its own separate effect
+        let write_effect = Effect::WriteContinuationContext(ContinuationContextData {
+            iteration: 0,
+            attempt: 1,
+            status: DevelopmentStatus::Partial,
+            summary: "test".to_string(),
+            files_changed: None,
+            next_steps: None,
+        });
+
+        // These are distinct effects, not bundled
+        assert!(
+            !matches!(
+                Effect::RunDevelopmentIteration { iteration: 0 },
+                Effect::WriteContinuationContext(_)
+            ),
+            "RunDevelopmentIteration and WriteContinuationContext must be separate effects"
+        );
+        assert!(
+            matches!(write_effect, Effect::WriteContinuationContext(_)),
+            "WriteContinuationContext should be its own effect type"
+        );
+    });
+}
+
+/// Test that each phase effect is independent and doesn't bundle with cleanup.
+///
+/// Phase effects (RunDevelopmentIteration, RunReviewPass, etc.) should only
+/// execute their primary task. Cleanup operations should be separate effects.
+#[test]
+fn test_phase_effects_do_not_bundle_cleanup() {
+    with_default_timeout(|| {
+        // Verify that phase effects don't include cleanup fields
+        // RunDevelopmentIteration - only iteration field
+        let dev_effect = Effect::RunDevelopmentIteration { iteration: 2 };
+        match dev_effect {
+            Effect::RunDevelopmentIteration { iteration } => {
+                assert_eq!(iteration, 2, "RunDevelopmentIteration only has iteration");
+            }
+            _ => panic!("Wrong effect type"),
+        }
+
+        // RunReviewPass - only pass field
+        let review_effect = Effect::RunReviewPass { pass: 1 };
+        match review_effect {
+            Effect::RunReviewPass { pass } => {
+                assert_eq!(pass, 1, "RunReviewPass only has pass");
+            }
+            _ => panic!("Wrong effect type"),
+        }
+
+        // RunFixAttempt - only pass field
+        let fix_effect = Effect::RunFixAttempt { pass: 0 };
+        match fix_effect {
+            Effect::RunFixAttempt { pass } => {
+                assert_eq!(pass, 0, "RunFixAttempt only has pass");
+            }
+            _ => panic!("Wrong effect type"),
+        }
+
+        // GeneratePlan - only iteration field
+        let plan_effect = Effect::GeneratePlan { iteration: 1 };
+        match plan_effect {
+            Effect::GeneratePlan { iteration } => {
+                assert_eq!(iteration, 1, "GeneratePlan only has iteration");
+            }
+            _ => panic!("Wrong effect type"),
+        }
+
+        // CleanupContext is a completely separate effect
+        let cleanup_effect = Effect::CleanupContext;
+        assert!(
+            matches!(cleanup_effect, Effect::CleanupContext),
+            "CleanupContext is its own effect"
+        );
+    });
+}

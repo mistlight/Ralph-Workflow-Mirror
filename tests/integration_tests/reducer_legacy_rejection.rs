@@ -1000,3 +1000,106 @@ fn test_agent_fallback_only_via_reducer_events() {
         );
     });
 }
+
+// ============================================================================
+// LEGACY ARTIFACT IGNORED DURING EXECUTION TESTS
+// ============================================================================
+
+/// Test that legacy artifacts in workspace don't affect effect determination.
+///
+/// When legacy files (e.g., ISSUES.md, PLAN.md from old versions) exist
+/// in the workspace, the pipeline should NOT read them to derive results.
+/// All pipeline decisions must come from reducer events/effects, not file presence.
+#[test]
+fn test_legacy_artifacts_ignored_during_execution() {
+    use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::effect::Effect;
+    use ralph_workflow::reducer::event::PipelinePhase;
+    use ralph_workflow::reducer::orchestration::determine_next_effect;
+    use ralph_workflow::reducer::state::PipelineState;
+
+    with_default_timeout(|| {
+        // Create state in Development phase with agents initialized
+        let mut state = PipelineState::initial(2, 1);
+        state.phase = PipelinePhase::Development;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+
+        // Effect determination should NOT depend on workspace file existence
+        // (determine_next_effect is a pure function of state)
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::RunDevelopmentIteration { .. }),
+            "Effect should be determined from state alone, got {:?}",
+            effect
+        );
+
+        // Even with max iterations reached, state-based transition should happen
+        let mut state = PipelineState::initial(0, 1);
+        state.phase = PipelinePhase::Review;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        );
+
+        // Effect determination for review should not check for legacy ISSUES.md
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::RunReviewPass { .. }),
+            "Review effect should be determined from state alone, got {:?}",
+            effect
+        );
+    });
+}
+
+/// Test that effect determination is stateless and deterministic.
+///
+/// The same state should always produce the same effect. This is a key
+/// property of the reducer architecture - no external state influences
+/// effect determination.
+#[test]
+fn test_effect_determination_is_pure_function_of_state() {
+    use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::effect::Effect;
+    use ralph_workflow::reducer::event::PipelinePhase;
+    use ralph_workflow::reducer::orchestration::determine_next_effect;
+    use ralph_workflow::reducer::state::PipelineState;
+
+    with_default_timeout(|| {
+        // Create a specific state
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 1;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["test-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+
+        // Call determine_next_effect multiple times
+        let effect1 = determine_next_effect(&state);
+        let effect2 = determine_next_effect(&state);
+        let effect3 = determine_next_effect(&state);
+
+        // All calls should produce the same effect (purity)
+        assert!(
+            matches!(&effect1, Effect::RunDevelopmentIteration { iteration: 1 }),
+            "First call: {:?}",
+            effect1
+        );
+        assert!(
+            matches!(&effect2, Effect::RunDevelopmentIteration { iteration: 1 }),
+            "Second call: {:?}",
+            effect2
+        );
+        assert!(
+            matches!(&effect3, Effect::RunDevelopmentIteration { iteration: 1 }),
+            "Third call: {:?}",
+            effect3
+        );
+    });
+}

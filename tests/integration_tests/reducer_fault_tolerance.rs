@@ -445,3 +445,124 @@ fn test_pipeline_continues_after_multiple_agent_failures() {
         assert_eq!(state.phase, PipelinePhase::Development);
     });
 }
+
+// ============================================================================
+// XSD RETRY STATE TRACKING TESTS
+// ============================================================================
+
+/// Test that XSD retry decisions come from reducer state, not implicit logic.
+///
+/// The invalid_output_attempts counter in ContinuationState must be the
+/// single source of truth for XSD retry decisions. This test verifies
+/// that the reducer correctly updates this counter and triggers agent
+/// fallback at the right threshold.
+#[test]
+fn test_xsd_retry_decisions_from_reducer_state_only() {
+    use ralph_workflow::reducer::state::{PipelineState, MAX_DEV_INVALID_OUTPUT_RERUNS};
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        // Set up state with multiple agents for fallback
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Development;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["agent-1".to_string(), "agent-2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+
+        // Verify counter starts at 0
+        assert_eq!(state.continuation.invalid_output_attempts, 0);
+
+        // Process validation failures up to threshold
+        for i in 0..MAX_DEV_INVALID_OUTPUT_RERUNS {
+            state = reduce(
+                state,
+                PipelineEvent::development_output_validation_failed(0, i),
+            );
+            assert_eq!(
+                state.continuation.invalid_output_attempts,
+                i + 1,
+                "Counter should increment on each failure"
+            );
+            // Agent should NOT change until threshold exceeded
+            assert_eq!(
+                state.agent_chain.current_agent(),
+                Some(&"agent-1".to_string()),
+                "Agent should not change until threshold exceeded"
+            );
+        }
+
+        // One more failure should trigger agent advancement
+        state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, MAX_DEV_INVALID_OUTPUT_RERUNS),
+        );
+
+        // Counter should reset after agent switch
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 0,
+            "Counter should reset after agent advancement"
+        );
+
+        // Agent should have advanced
+        assert_eq!(
+            state.agent_chain.current_agent(),
+            Some(&"agent-2".to_string()),
+            "Agent should advance after max retries"
+        );
+    });
+}
+
+/// Test that XSD retry state is distinct from agent invocation failure state.
+///
+/// XSD validation failures (bad XML output) and agent invocation failures
+/// (crashes, auth errors) are tracked separately. This test verifies the
+/// reducer treats them as independent failure modes.
+#[test]
+fn test_xsd_retry_state_independent_of_invocation_failures() {
+    use ralph_workflow::reducer::state::PipelineState;
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Development;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["agent-1".to_string(), "agent-2".to_string()],
+            vec![vec!["model-a".to_string(), "model-b".to_string()], vec![]],
+            AgentRole::Developer,
+        );
+
+        // Start with XSD validation failure
+        state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, 0),
+        );
+        assert_eq!(state.continuation.invalid_output_attempts, 1);
+        assert_eq!(state.agent_chain.current_agent_index, 0, "Same agent");
+
+        // Then get a network error (retriable) - should advance model, not agent
+        state = reduce(
+            state,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent-1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
+        );
+
+        // Network error should advance model, but XSD counter remains
+        assert_eq!(state.agent_chain.current_agent_index, 0, "Same agent");
+        assert!(
+            state.agent_chain.current_model_index > 0,
+            "Model should advance"
+        );
+        // XSD counter should NOT be affected by invocation failures
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 1,
+            "XSD counter should remain independent"
+        );
+    });
+}
