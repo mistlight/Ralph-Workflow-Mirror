@@ -77,14 +77,12 @@ fn log_prefix_search_results(
     parent: &Path,
     prefix: &str,
 ) {
-    use crate::files::result_extraction::file_finder::{
-        find_log_files_with_prefix, find_subdirs_with_prefix,
-    };
+    use crate::files::result_extraction::file_finder::find_log_files_with_prefix;
 
     logger.info(&format!("Debug: Parent directory: {}", parent.display()));
     logger.info(&format!("Debug: Log prefix: '{prefix}'"));
 
-    // Check for prefix-based log files (PRIMARY mode)
+    // Check for prefix-based log files
     let prefix_files_result: std::io::Result<Vec<std::path::PathBuf>> =
         find_log_files_with_prefix(workspace, parent, prefix);
     match prefix_files_result {
@@ -102,27 +100,6 @@ fn log_prefix_search_results(
         }
         Err(e) => {
             logger.info(&format!("Debug: Error searching for prefix files: {e}"));
-        }
-    }
-
-    // Check for subdirectory fallback
-    let subdirs_result: std::io::Result<Vec<std::path::PathBuf>> =
-        find_subdirs_with_prefix(workspace, parent, prefix);
-    match subdirs_result {
-        Ok(subdirs) if !subdirs.is_empty() => {
-            logger.info(&format!(
-                "Debug: Found {} subdirectory(s) matching prefix",
-                subdirs.len()
-            ));
-            for subdir in &subdirs {
-                logger.info(&format!("Debug:   - {}", subdir.display()));
-            }
-        }
-        Ok(_) => {
-            logger.info("Debug: No matching subdirectories found");
-        }
-        Err(e) => {
-            logger.info(&format!("Debug: Error searching for subdirs: {e}"));
         }
     }
 }
@@ -572,7 +549,8 @@ pub fn run_review_pass(
 ///
 /// 1. File-based XML at `.agent/tmp/issues.xml` (preferred for agents that write XML directly)
 /// 2. JSON result events in log files
-/// 3. Legacy ISSUES.md file (fallback)
+///
+/// Legacy ISSUES.md fallback has been removed. Agents must produce XML output.
 fn extract_and_validate_review_output_xml(
     ctx: &mut PhaseContext<'_>,
     log_dir: &str,
@@ -594,40 +572,19 @@ fn extract_and_validate_review_output_xml(
     let raw_content = if let Some(content) = extraction.raw_content {
         content
     } else {
-        // JSON extraction failed - check for legacy agent-written ISSUES.md
+        // JSON extraction failed - no legacy fallback
         if ctx.config.verbosity.is_debug() {
             ctx.logger
                 .info("No JSON result event found in reviewer logs");
             log_extraction_diagnostics(ctx.logger, ctx.workspace, log_dir);
         }
 
-        // Priority 3: Check for legacy agent-written ISSUES.md
-        if ctx.workspace.exists(issues_path) {
-            if let Ok(content) = ctx.workspace.read(issues_path) {
-                if !content.trim().is_empty() {
-                    ctx.logger
-                        .info("Using agent-written ISSUES.md (legacy mode)");
-                    content
-                } else {
-                    return Ok(ParseResult::ParseFailed(
-                        "Agent wrote an empty ISSUES.md file. Expected XML output with <ralph-issues> tags."
-                            .to_string(),
-                    ));
-                }
-            } else {
-                return Ok(ParseResult::ParseFailed(
-                    "No review output captured. The agent may have failed to produce any output."
-                        .to_string(),
-                ));
-            }
-        } else {
-            // All three sources failed
-            return Ok(ParseResult::ParseFailed(
-                "No review output captured. Agent did not write to .agent/tmp/issues.xml, \
-                 no JSON result found in logs, and no ISSUES.md file exists."
-                    .to_string(),
-            ));
-        }
+        // Legacy ISSUES.md fallback removed - fail with clear error
+        return Ok(ParseResult::ParseFailed(
+            "No review output captured. Agent did not write to .agent/tmp/issues.xml \
+             and no JSON result found in logs. Ensure the agent produces valid XML output."
+                .to_string(),
+        ));
     };
 
     // Extract XML from raw content (handles embedded XML in text)

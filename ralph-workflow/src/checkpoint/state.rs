@@ -656,214 +656,40 @@ impl PipelineCheckpoint {
     }
 }
 
-/// Try to load a checkpoint, handling v1, v2, and v3 formats.
+/// Load a checkpoint from a string.
+///
+/// Only v3 (current) checkpoint format is supported. Legacy formats (v1, v2, pre-v1)
+/// are no longer auto-migrated and will result in an error.
 fn load_checkpoint_with_fallback(
     content: &str,
 ) -> Result<PipelineCheckpoint, Box<dyn std::error::Error>> {
-    // Try v3 format first (current)
+    // Only accept v3 format (current)
     match serde_json::from_str::<PipelineCheckpoint>(content) {
-        Ok(mut checkpoint) => {
+        Ok(checkpoint) => {
             // Accept v3 (current) or higher
             if checkpoint.version >= 3 {
                 return Ok(checkpoint);
             }
-            // v2 or v1 checkpoint parsed successfully as v3 struct - upgrade version
-            // and add v3 defaults
-            checkpoint.version = CHECKPOINT_VERSION;
-            return Ok(checkpoint);
+            // Reject older versions
+            Err(format!(
+                "Invalid checkpoint format: version {} is no longer supported. \
+                 Only version 3 (current) is accepted. \
+                 Delete .agent/checkpoint.json and start a fresh pipeline run.",
+                checkpoint.version
+            )
+            .into())
         }
-        Err(_e) => {
-            // First parse attempt failed, try v2 format below
+        Err(e) => {
+            // Parsing failed - likely legacy format
+            Err(format!(
+                "Invalid checkpoint format: {}. \
+                 Legacy checkpoint formats are no longer supported. \
+                 Delete .agent/checkpoint.json and start a fresh pipeline run.",
+                e
+            )
+            .into())
         }
     }
-
-    // If v3 struct parsing failed, try v2 format and migrate to v3
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    struct V2Checkpoint {
-        version: u32,
-        phase: PipelinePhase,
-        iteration: u32,
-        total_iterations: u32,
-        reviewer_pass: u32,
-        total_reviewer_passes: u32,
-        timestamp: String,
-        developer_agent: String,
-        reviewer_agent: String,
-        cli_args: CliArgsSnapshot,
-        developer_agent_config: AgentConfigSnapshot,
-        reviewer_agent_config: AgentConfigSnapshot,
-        rebase_state: RebaseState,
-        config_path: Option<String>,
-        config_checksum: Option<String>,
-        working_dir: String,
-        prompt_md_checksum: Option<String>,
-        git_user_name: Option<String>,
-        git_user_email: Option<String>,
-        run_id: String,
-        parent_run_id: Option<String>,
-        resume_count: u32,
-        actual_developer_runs: u32,
-        actual_reviewer_runs: u32,
-    }
-
-    if let Ok(v2) = serde_json::from_str::<V2Checkpoint>(content) {
-        // Migrate v2 to v3: add new hardened resume fields (empty defaults)
-        // Note: working_dir from v2 checkpoint is preserved
-        return Ok(PipelineCheckpoint {
-            version: CHECKPOINT_VERSION,
-            phase: v2.phase,
-            iteration: v2.iteration,
-            total_iterations: v2.total_iterations,
-            reviewer_pass: v2.reviewer_pass,
-            total_reviewer_passes: v2.total_reviewer_passes,
-            timestamp: v2.timestamp,
-            developer_agent: v2.developer_agent,
-            reviewer_agent: v2.reviewer_agent,
-            cli_args: v2.cli_args,
-            developer_agent_config: v2.developer_agent_config,
-            reviewer_agent_config: v2.reviewer_agent_config,
-            rebase_state: v2.rebase_state,
-            config_path: v2.config_path,
-            config_checksum: v2.config_checksum,
-            working_dir: v2.working_dir,
-            prompt_md_checksum: v2.prompt_md_checksum,
-            git_user_name: v2.git_user_name,
-            git_user_email: v2.git_user_email,
-            run_id: v2.run_id,
-            parent_run_id: v2.parent_run_id,
-            resume_count: v2.resume_count,
-            actual_developer_runs: v2.actual_developer_runs,
-            actual_reviewer_runs: v2.actual_reviewer_runs,
-            // New v3 fields - use empty defaults for migrated checkpoints
-            execution_history: None,
-            file_system_state: None,
-            prompt_history: None,
-            env_snapshot: None,
-        });
-    }
-
-    // Try v1 format and migrate to v3
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    struct V1Checkpoint {
-        version: u32,
-        phase: PipelinePhase,
-        iteration: u32,
-        total_iterations: u32,
-        reviewer_pass: u32,
-        total_reviewer_passes: u32,
-        timestamp: String,
-        developer_agent: String,
-        reviewer_agent: String,
-        cli_args: CliArgsSnapshot,
-        developer_agent_config: AgentConfigSnapshot,
-        reviewer_agent_config: AgentConfigSnapshot,
-        rebase_state: RebaseState,
-        config_path: Option<String>,
-        config_checksum: Option<String>,
-        working_dir: String,
-        prompt_md_checksum: Option<String>,
-        git_user_name: Option<String>,
-        git_user_email: Option<String>,
-    }
-
-    if let Ok(v1) = serde_json::from_str::<V1Checkpoint>(content) {
-        // Migrate v1 to v3: generate new run_id, set defaults for new fields
-        let new_run_id = uuid::Uuid::new_v4().to_string();
-        return Ok(PipelineCheckpoint {
-            version: CHECKPOINT_VERSION,
-            phase: v1.phase,
-            iteration: v1.iteration,
-            total_iterations: v1.total_iterations,
-            reviewer_pass: v1.reviewer_pass,
-            total_reviewer_passes: v1.total_reviewer_passes,
-            timestamp: v1.timestamp,
-            developer_agent: v1.developer_agent,
-            reviewer_agent: v1.reviewer_agent,
-            cli_args: v1.cli_args,
-            developer_agent_config: v1.developer_agent_config,
-            reviewer_agent_config: v1.reviewer_agent_config,
-            rebase_state: v1.rebase_state,
-            config_path: v1.config_path,
-            config_checksum: v1.config_checksum,
-            working_dir: v1.working_dir,
-            prompt_md_checksum: v1.prompt_md_checksum,
-            git_user_name: v1.git_user_name,
-            git_user_email: v1.git_user_email,
-            // New v2 fields - use defaults for migrated checkpoints
-            run_id: new_run_id,
-            parent_run_id: None,
-            resume_count: 0,
-            actual_developer_runs: v1.iteration,
-            actual_reviewer_runs: v1.reviewer_pass,
-            // New v3 fields - use empty defaults for migrated checkpoints
-            execution_history: None,
-            file_system_state: None,
-            prompt_history: None,
-            env_snapshot: None,
-        });
-    }
-
-    // Try truly legacy format (pre-v1)
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    struct LegacyCheckpoint {
-        phase: PipelinePhase,
-        iteration: u32,
-        total_iterations: u32,
-        reviewer_pass: u32,
-        total_reviewer_passes: u32,
-        timestamp: String,
-        developer_agent: String,
-        reviewer_agent: String,
-    }
-
-    if let Ok(legacy) = serde_json::from_str::<LegacyCheckpoint>(content) {
-        let new_run_id = uuid::Uuid::new_v4().to_string();
-        return Ok(PipelineCheckpoint {
-            version: CHECKPOINT_VERSION,
-            phase: legacy.phase,
-            iteration: legacy.iteration,
-            total_iterations: legacy.total_iterations,
-            reviewer_pass: legacy.reviewer_pass,
-            total_reviewer_passes: legacy.total_reviewer_passes,
-            timestamp: legacy.timestamp,
-            developer_agent: legacy.developer_agent.clone(),
-            reviewer_agent: legacy.reviewer_agent.clone(),
-            cli_args: CliArgsSnapshotBuilder::new(0, 0, None, false, true).build(),
-            developer_agent_config: AgentConfigSnapshot::new(
-                legacy.developer_agent.clone(),
-                String::new(),
-                String::new(),
-                None,
-                false,
-            ),
-            reviewer_agent_config: AgentConfigSnapshot::new(
-                legacy.reviewer_agent.clone(),
-                String::new(),
-                String::new(),
-                None,
-                false,
-            ),
-            rebase_state: RebaseState::default(),
-            config_path: None,
-            config_checksum: None,
-            working_dir: String::new(),
-            prompt_md_checksum: None,
-            git_user_name: None,
-            git_user_email: None,
-            run_id: new_run_id,
-            parent_run_id: None,
-            resume_count: 0,
-            actual_developer_runs: legacy.iteration,
-            actual_reviewer_runs: legacy.reviewer_pass,
-            // New v3 fields - use empty defaults for migrated checkpoints
-            execution_history: None,
-            file_system_state: None,
-            prompt_history: None,
-            env_snapshot: None,
-        });
-    }
-
-    Err("Invalid checkpoint format".into())
 }
 
 /// Get current timestamp in "YYYY-MM-DD HH:MM:SS" format.
@@ -919,14 +745,14 @@ pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
 ///
 /// # Errors
 ///
-/// Returns an error if the checkpoint file exists but cannot be read
-/// or contains invalid JSON.
+/// Returns an error if the checkpoint file exists but cannot be read,
+/// contains invalid JSON, or is in an unsupported format.
 ///
 /// # Note
 ///
-/// This function handles both new format (v1) and legacy checkpoints
-/// for backward compatibility. Legacy checkpoints are migrated to the
-/// new format automatically.
+/// Only v3 (current) checkpoint format is supported. Legacy checkpoint
+/// formats (v1, v2, pre-v1) are no longer auto-migrated and will result
+/// in an error. Users must delete the checkpoint and start fresh.
 pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
     let checkpoint = checkpoint_path();
     let path = Path::new(&checkpoint);
@@ -1228,8 +1054,8 @@ mod tests {
         }
 
         #[test]
-        fn test_load_checkpoint_with_workspace_preserves_working_dir() {
-            // Test that loading a v1 checkpoint preserves the working_dir field from JSON
+        fn test_load_checkpoint_rejects_v1_format() {
+            // Test that loading a v1 checkpoint is rejected (legacy migration removed)
             let json = r#"{
                 "version": 1,
                 "phase": "Development",
@@ -1278,12 +1104,17 @@ mod tests {
 
             let workspace = MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", json);
 
-            let loaded = load_checkpoint_with_workspace(&workspace)
-                .unwrap()
-                .expect("should load checkpoint");
-            assert_eq!(
-                loaded.working_dir, "/some/other/directory",
-                "working_dir should be preserved from JSON"
+            let result = load_checkpoint_with_workspace(&workspace);
+            assert!(
+                result.is_err(),
+                "v1 checkpoint should be rejected: {:?}",
+                result
+            );
+            let err = result.unwrap_err();
+            assert!(
+                err.to_string().contains("no longer supported"),
+                "Error should mention legacy not supported: {}",
+                err
             );
         }
     }

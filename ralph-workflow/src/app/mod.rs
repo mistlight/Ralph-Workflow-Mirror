@@ -440,21 +440,6 @@ pub fn run_with_config_and_resolver<
         return Ok(());
     }
 
-    // Handle --init-legacy flag: legacy per-repo agents.toml creation and exit
-    if args.legacy_init.init_legacy {
-        let repo_root = match handler.execute(effect::AppEffect::GitGetRepoRoot) {
-            effect::AppEffectResult::Path(p) => Some(p),
-            _ => None,
-        };
-        let legacy_path = repo_root.map_or_else(
-            || std::path::PathBuf::from(".agent/agents.toml"),
-            |root| root.join(".agent/agents.toml"),
-        );
-        if crate::cli::handle_init_legacy(colors, &legacy_path)? {
-            return Ok(());
-        }
-    }
-
     // Use provided config directly (no env var loading)
     let config_path = std::path::PathBuf::from("test-config");
 
@@ -655,21 +640,6 @@ where
     // Handle --init-global flag
     if args.unified_init.init_global && handle_init_global_with(colors, path_resolver)? {
         return Ok(());
-    }
-
-    // Handle --init-legacy flag
-    if args.legacy_init.init_legacy {
-        let repo_root = match app_handler.execute(effect::AppEffect::GitGetRepoRoot) {
-            effect::AppEffectResult::Path(p) => Some(p),
-            _ => None,
-        };
-        let legacy_path = repo_root.map_or_else(
-            || std::path::PathBuf::from(".agent/agents.toml"),
-            |root| root.join(".agent/agents.toml"),
-        );
-        if crate::cli::handle_init_legacy(colors, &legacy_path)? {
-            return Ok(());
-        }
     }
 
     // Use provided config directly

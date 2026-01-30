@@ -12,13 +12,10 @@
 //!
 //! # Log File Resolution
 //!
-//! The extraction supports two modes:
-//! 1. **Directory mode**: If `log_path` is a directory, scan all files in it
-//! 2. **Prefix mode**: If `log_path` is not a directory, treat it as a prefix and
-//!    search for files matching `{prefix}_*.log` in the parent directory
+//! The extraction uses prefix mode: treat `log_path` as a prefix and search for
+//! files matching `{prefix}_*.log` in the parent directory.
 //!
-//! This dual-mode support handles both legacy directory-based logs and the current
-//! prefix-based naming convention (e.g., `.agent/logs/planning_1_glm_0.log`).
+//! Example: For `.agent/logs/planning_1`, search for `.agent/logs/planning_1_*.log`.
 //!
 //! Note: Many functions in this module are currently unused in production
 //! (XML extraction is used instead). Kept for potential future use and test compatibility.
@@ -148,8 +145,9 @@ mod tests {
         let plan = "# Plan\n\n## Step 1\nImplement the feature\n\n## Step 2\nAdd tests";
         let log = log_lines(&[&system_event("starting"), &result_event(plan)]);
 
+        // Use prefix-based naming: planning_1_agent_0.log in parent directory
         let workspace =
-            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1_agent_0.log", &log);
         let log_dir = PathBuf::from("/test/repo/planning_1");
 
         let result = extract_plan(&workspace, &log_dir).unwrap();
@@ -161,8 +159,9 @@ mod tests {
     #[test]
     fn test_extract_invalid_but_present_content() {
         let log = result_event("Hello world");
+        // Use prefix-based naming: planning_1_agent_0.log in parent directory
         let workspace =
-            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1_agent_0.log", &log);
         let log_dir = PathBuf::from("/test/repo/planning_1");
 
         let result = extract_plan(&workspace, &log_dir).unwrap();
@@ -175,8 +174,9 @@ mod tests {
     #[test]
     fn test_extract_no_result_events() {
         let log = log_lines(&[&system_event("starting"), &tool_event("read_file")]);
+        // Use prefix-based naming: planning_1_agent_0.log in parent directory
         let workspace =
-            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1_agent_0.log", &log);
         let log_dir = PathBuf::from("/test/repo/planning_1");
 
         let result = extract_plan(&workspace, &log_dir).unwrap();
@@ -189,8 +189,9 @@ mod tests {
         // Mix of invalid JSON and one valid result event
         let valid_result = result_event("# Valid Plan\n\nStep 1: Create feature");
         let log = format!("not json\n{{\"invalid json\n{valid_result}");
+        // Use prefix-based naming: planning_1_agent_0.log in parent directory
         let workspace =
-            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1_agent_0.log", &log);
         let log_dir = PathBuf::from("/test/repo/planning_1");
 
         let result = extract_plan(&workspace, &log_dir).unwrap();
@@ -211,8 +212,9 @@ mod tests {
     fn test_extract_valid_issues() {
         let issues = "# Issues\n\nCritical:\n- [ ] Fix security bug";
         let log = result_event(issues);
+        // Use prefix-based naming: reviewer_1_agent_0.log in parent directory
         let workspace =
-            MemoryWorkspace::new_test().with_file("/test/repo/reviewer_1/output.log", &log);
+            MemoryWorkspace::new_test().with_file("/test/repo/reviewer_1_agent_0.log", &log);
         let log_dir = PathBuf::from("/test/repo/reviewer_1");
 
         let result = extract_issues(&workspace, &log_dir).unwrap();
@@ -223,8 +225,9 @@ mod tests {
     #[test]
     fn test_extract_no_issues_found() {
         let log = result_event("No issues found. The code looks good.");
+        // Use prefix-based naming: reviewer_1_agent_0.log in parent directory
         let workspace =
-            MemoryWorkspace::new_test().with_file("/test/repo/reviewer_1/output.log", &log);
+            MemoryWorkspace::new_test().with_file("/test/repo/reviewer_1_agent_0.log", &log);
         let log_dir = PathBuf::from("/test/repo/reviewer_1");
 
         let result = extract_issues(&workspace, &log_dir).unwrap();
@@ -239,8 +242,9 @@ mod tests {
             &result_event("First result"),
             &result_event("# Final Plan\n\nStep 1: Implement feature"),
         ]);
+        // Use prefix-based naming: planning_1_agent_0.log in parent directory
         let workspace =
-            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1_agent_0.log", &log);
         let log_dir = PathBuf::from("/test/repo/planning_1");
 
         let result = extract_plan(&workspace, &log_dir).unwrap();
@@ -261,8 +265,9 @@ mod tests {
             &result_event(partial),
             &result_event(short),
         ]);
+        // Use prefix-based naming: planning_1_agent_0.log in parent directory
         let workspace =
-            MemoryWorkspace::new_test().with_file("/test/repo/planning_1/output.log", &log);
+            MemoryWorkspace::new_test().with_file("/test/repo/planning_1_agent_0.log", &log);
         let log_dir = PathBuf::from("/test/repo/planning_1");
 
         let result = extract_plan(&workspace, &log_dir).unwrap();
@@ -345,7 +350,8 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_directory_mode_backwards_compatible() {
+    fn test_extract_directory_mode_no_longer_supported() {
+        // Directory mode is no longer supported - only prefix mode works
         let plan = "# Plan\n\n## Summary\nTest from directory";
         let log = result_event(plan);
         let workspace =
@@ -353,8 +359,11 @@ mod tests {
         let log_dir = PathBuf::from("/test/repo/planning_1");
 
         let result = extract_plan(&workspace, &log_dir).unwrap();
-        assert!(result.raw_content.is_some());
-        assert!(result.raw_content.unwrap().contains("Test from directory"));
+        // Directory mode is removed - should not find content
+        assert!(
+            result.raw_content.is_none(),
+            "Directory mode is no longer supported"
+        );
     }
 
     #[test]
@@ -422,14 +431,12 @@ mod tests {
     }
 
     // =====================================================
-    // SUBDIRECTORY FALLBACK TESTS
-    // (For legacy logs where agent names with "/" created nested dirs)
+    // SUBDIRECTORY FALLBACK TESTS (LEGACY MODE REMOVED)
     // =====================================================
 
     #[test]
-    fn test_extract_from_subdirectory_fallback() {
-        // Nested structure like: planning_1_ccs/glm_0.log
-        // Simulates agent name "ccs/glm"
+    fn test_subdirectory_fallback_no_longer_supported() {
+        // Subdirectory fallback is no longer supported - only flat prefix mode works
         let plan = "# Plan\n\n## Summary\nPlan from nested subdirectory";
         let log = result_event(plan);
         let workspace =
@@ -438,11 +445,11 @@ mod tests {
         let prefix = PathBuf::from("/test/repo/planning_1");
         let result = extract_plan(&workspace, &prefix).unwrap();
 
+        // Subdirectory fallback is removed - should not find content
         assert!(
-            result.raw_content.is_some(),
-            "Should find content from subdirectory fallback"
+            result.raw_content.is_none(),
+            "Subdirectory fallback is no longer supported"
         );
-        assert!(result.raw_content.unwrap().contains("nested subdirectory"));
     }
 
     // =====================================================

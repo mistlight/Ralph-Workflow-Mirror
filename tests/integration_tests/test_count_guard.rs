@@ -141,6 +141,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("reducer_resume_tests.rs"),
     },
     SourceFile {
+        path: "reducer_legacy_rejection.rs",
+        contents: include_str!("reducer_legacy_rejection.rs"),
+    },
+    SourceFile {
         path: "reducer_state_machine.rs",
         contents: include_str!("reducer_state_machine.rs"),
     },

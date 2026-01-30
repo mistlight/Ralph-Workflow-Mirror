@@ -121,14 +121,6 @@ pub use files::llm_output_extraction::validate_development_result_xml;
 pub use files::llm_output_extraction::validate_fix_result_xml;
 pub use files::llm_output_extraction::validate_issues_xml;
 
-// Deprecated: Use UIEvent::XmlOutput for user-facing XML display.
-// This re-export is kept for backward compatibility with tests and debugging.
-#[deprecated(
-    since = "0.8.0",
-    note = "Use UIEvent::XmlOutput for user-facing XML display. This function is kept for debugging/logging only."
-)]
-pub use files::llm_output_extraction::format_xml_for_display;
-
 // Re-export process executor types for dependency injection.
 // See [`executor`] module for documentation.
 pub use executor::{

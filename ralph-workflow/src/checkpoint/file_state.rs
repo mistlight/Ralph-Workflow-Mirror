@@ -34,37 +34,7 @@ impl FileSystemState {
         Self::default()
     }
 
-    /// Capture the current state with an optional executor.
-    ///
-    /// If executor is None, uses RealProcessExecutor (production default).
-    ///
-    /// # Note
-    ///
-    /// This function requires an explicit executor parameter to enable proper
-    /// dependency injection for testing. For production code, pass
-    /// `Some(&RealProcessExecutor::new())`.
-    ///
-    /// # Deprecated
-    ///
-    /// This function uses CWD-relative paths. Prefer `capture_with_workspace` for new code.
-    #[deprecated(
-        since = "0.5.0",
-        note = "Uses CWD-relative paths. Use capture_with_workspace instead."
-    )]
-    pub fn capture_with_optional_executor(executor: Option<&dyn ProcessExecutor>) -> Self {
-        // Use capture_current_with_executor_impl to avoid calling deprecated function
-        match executor {
-            Some(exec) => Self::capture_current_with_executor_impl(exec),
-            None => {
-                // Create a temporary executor and capture the state
-                // This is only used in code paths where no executor is available
-                let real_executor = RealProcessExecutor::new();
-                Self::capture_current_with_executor_impl(&real_executor)
-            }
-        }
-    }
-
-    /// Internal implementation of capture_with_optional_executor (non-deprecated).
+    /// Internal implementation for CWD-relative file state capture.
     ///
     /// This is a crate-internal function that uses CWD-relative paths. It exists to support
     /// CLI-layer code that operates before a workspace is available. New pipeline code
@@ -81,7 +51,7 @@ impl FileSystemState {
         }
     }
 
-    /// Internal implementation of capture_current_with_executor (non-deprecated).
+    /// Internal implementation for CWD-relative file state capture with executor.
     ///
     /// This is a crate-internal function that uses CWD-relative paths. It exists to support
     /// CLI-layer code that operates before a workspace is available. New pipeline code
@@ -183,28 +153,6 @@ impl FileSystemState {
         state
     }
 
-    /// Capture the current state of key files with a provided process executor.
-    ///
-    /// This includes files that are critical for pipeline execution:
-    /// - PROMPT.md: The primary task description
-    /// - .agent/PLAN.md: The implementation plan (if exists)
-    /// - .agent/ISSUES.md: Review findings (if exists)
-    /// - .agent/config.toml: Agent configuration (if exists)
-    /// - .agent/start_commit: Baseline commit reference (if exists)
-    /// - .agent/NOTES.md: Development notes (if exists)
-    /// - .agent/status: Pipeline status file (if exists)
-    ///
-    /// # Deprecated
-    ///
-    /// This function uses CWD-relative paths. Prefer `capture_with_workspace` for new code.
-    #[deprecated(
-        since = "0.5.0",
-        note = "Uses CWD-relative paths. Use capture_with_workspace instead."
-    )]
-    pub fn capture_current_with_executor(executor: &dyn ProcessExecutor) -> Self {
-        Self::capture_current_with_executor_impl(executor)
-    }
-
     /// Capture a single file's state using a workspace.
     pub fn capture_file_with_workspace(&mut self, workspace: &dyn Workspace, path: &str) {
         let path_ref = Path::new(path);
@@ -223,9 +171,9 @@ impl FileSystemState {
         self.files.insert(path.to_string(), snapshot);
     }
 
-    /// Internal implementation of file capture (non-deprecated).
+    /// Internal implementation of file capture using CWD-relative paths.
     ///
-    /// This is the core logic used by both deprecated and non-deprecated variants.
+    /// This is the core logic used by capture_current_with_executor_impl.
     fn capture_file_impl(&mut self, path: &str) {
         let path_obj = Path::new(path);
         let snapshot = if path_obj.exists() {
@@ -241,19 +189,6 @@ impl FileSystemState {
         };
 
         self.files.insert(path.to_string(), snapshot);
-    }
-
-    /// Capture a single file's state.
-    ///
-    /// # Deprecated
-    ///
-    /// This function uses CWD-relative paths. Prefer `capture_file_with_workspace` for new code.
-    #[deprecated(
-        since = "0.5.0",
-        note = "Uses CWD-relative paths. Use capture_file_with_workspace instead."
-    )]
-    pub fn capture_file(&mut self, path: &str) {
-        self.capture_file_impl(path);
     }
 
     /// Capture git HEAD state and working tree status.
@@ -302,21 +237,6 @@ impl FileSystemState {
                 }
             }
         }
-    }
-
-    /// Validate the current file system state against this snapshot.
-    ///
-    /// Returns a list of validation errors. Empty list means all checks passed.
-    ///
-    /// # Deprecated
-    ///
-    /// This function uses CWD-relative paths. Prefer `validate_with_workspace` for new code.
-    #[deprecated(
-        since = "0.5.0",
-        note = "Uses CWD-relative paths. Use validate_with_workspace instead."
-    )]
-    pub fn validate(&self) -> Vec<ValidationError> {
-        self.validate_with_executor_impl(None)
     }
 
     /// Validate the current file system state against this snapshot using a workspace.
@@ -376,17 +296,6 @@ impl FileSystemState {
         }
 
         errors
-    }
-
-    #[deprecated(
-        since = "0.5.0",
-        note = "Uses CWD-relative paths. Use validate_with_workspace instead."
-    )]
-    pub fn validate_with_executor(
-        &self,
-        executor: Option<&dyn ProcessExecutor>,
-    ) -> Vec<ValidationError> {
-        self.validate_with_executor_impl(executor)
     }
 
     /// Validate a single file against its snapshot using a workspace.

@@ -5,8 +5,7 @@
 //! using a scoring function.
 
 use crate::files::result_extraction::{
-    file_finder::{find_log_files_with_prefix, find_subdirs_with_prefix},
-    scoring::score_result,
+    file_finder::find_log_files_with_prefix, scoring::score_result,
 };
 use crate::workspace::Workspace;
 
@@ -85,53 +84,14 @@ pub fn extract_result_from_file(
 
     Ok(best_result)
 }
-
-/// Extract from a directory by scanning all files in it.
-///
-/// Selects the best result across all files using the scoring function to handle
-/// retry scenarios where multiple log files may exist. Prefers structured plans
-/// over simple longest strings.
-pub fn extract_from_directory(
-    workspace: &dyn Workspace,
-    log_dir: &Path,
-) -> io::Result<Option<String>> {
-    let log_entries = match workspace.read_dir(log_dir) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e),
-    };
-
-    let mut best_result: Option<String> = None;
-    let mut best_score: u32 = 0;
-
-    for entry in log_entries {
-        let path = entry.path();
-        if !entry.is_file() {
-            continue;
-        }
-
-        if let Some(result) = extract_result_from_file(workspace, path)? {
-            let result_score = score_result(&result);
-            // Select the result with the highest score across all files
-            if result_score > best_score {
-                best_score = result_score;
-                best_result = Some(result);
-            }
-        }
-    }
-
-    Ok(best_result)
-}
-
 /// Extract the best "result" event from agent JSON logs.
 ///
-/// Supports four modes, checked in order:
+/// Supports two modes, checked in order:
 /// 1. **Prefix mode**: Treat `log_path` as a prefix and search for files matching
-///    `{prefix}_*.log` in the parent directory (primary mode for current code)
-/// 2. **Subdirectory fallback**: If no files found, check for subdirectories matching
-///    `{prefix}_*` (handles legacy logs where agent names with "/" created nested dirs)
-/// 3. **Directory mode**: If `log_path` is a directory, scan all files in it (legacy)
-/// 4. **Exact file fallback**: Check if the exact path exists as a file
+///    `{prefix}_*.log` in the parent directory (primary mode)
+/// 2. **Exact file fallback**: Check if the exact path exists as a file
+///
+/// Legacy modes (subdirectory fallback, directory mode) have been removed.
 ///
 /// The "best" result is determined by selecting the content with the highest score,
 /// which handles cases where agents emit multiple partial result events during streaming
@@ -140,18 +100,11 @@ pub fn extract_from_directory(
 /// # Arguments
 ///
 /// * `workspace` - Workspace for file operations
-/// * `log_path` - Path to the log directory OR log file prefix
+/// * `log_path` - Path to the log file prefix
 ///
 /// # Returns
 ///
 /// The raw content from the best result event, or None if no result found.
-///
-/// # Note
-///
-/// Prefix mode is checked FIRST to prevent old directories from shadowing new
-/// prefix-based log files. For example, if `.agent/logs/rebase_conflict_resolution/`
-/// exists as an empty directory (from old runs), we still want to find
-/// `.agent/logs/rebase_conflict_resolution_ccs-glm_0.log` files.
 pub fn extract_last_result(
     workspace: &dyn Workspace,
     log_path: &Path,
@@ -163,10 +116,9 @@ pub fn extract_last_result(
         return Ok(None);
     }
 
-    // Strategy 1: Prefix mode (PRIMARY - checked first to avoid directory shadowing)
-    // This prevents old directories from shadowing new prefix-based log files.
-    // For example, if `.agent/logs/rebase_conflict_resolution/` exists as a directory,
-    // we still want to find `.agent/logs/rebase_conflict_resolution_ccs-glm_0.log`.
+    // Strategy 1: Prefix mode (PRIMARY)
+    // Search for files matching `{prefix}_*.log` in the parent directory.
+    // This is the current naming convention for agent log files.
     let log_files = find_log_files_with_prefix(workspace, parent, prefix)?;
 
     if !log_files.is_empty() {
@@ -187,24 +139,11 @@ pub fn extract_last_result(
         }
     }
 
-    // Strategy 2: Check for subdirectories matching prefix pattern
-    // This handles the legacy case where agent names with "/" created nested directories
-    // (e.g., "planning_1_ccs/glm_0.log" instead of "planning_1_ccs-glm_0.log")
-    let subdirs = find_subdirs_with_prefix(workspace, parent, prefix)?;
-    for subdir in subdirs {
-        if let Some(result) = extract_from_directory(workspace, &subdir)? {
-            return Ok(Some(result));
-        }
-    }
+    // Legacy strategies removed:
+    // - Subdirectory fallback (agent names with "/" creating nested directories)
+    // - Directory mode (logs stored directly in directory)
 
-    // Strategy 3: Directory mode (LEGACY - checked after prefix mode)
-    // Only used if log_path is actually a directory and no prefix-based files were found.
-    // This is the old behavior where logs were stored directly in the directory.
-    if workspace.is_dir(log_path) {
-        return extract_from_directory(workspace, log_path);
-    }
-
-    // Strategy 4: Exact file fallback
+    // Strategy 2: Exact file fallback
     // Check if the exact path exists as a file.
     if workspace.is_file(log_path) {
         return extract_result_from_file(workspace, log_path);

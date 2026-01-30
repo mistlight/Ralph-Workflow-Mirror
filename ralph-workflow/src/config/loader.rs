@@ -79,8 +79,7 @@ pub fn load_config_from_path(
     let config = if let Some(ref unified_cfg) = unified {
         config_from_unified(unified_cfg, &mut warnings)
     } else {
-        // No unified config - check for legacy configs
-        check_legacy_configs(&mut warnings);
+        // No unified config - use defaults (legacy config discovery removed)
         default_config()
     };
 
@@ -137,8 +136,7 @@ pub fn load_config_from_path_with_env(
     let config = if let Some(ref unified_cfg) = unified {
         config_from_unified(unified_cfg, &mut warnings)
     } else {
-        // No unified config - check for legacy configs (env-aware version)
-        check_legacy_configs_with_env(&mut warnings, env);
+        // No unified config - use defaults (legacy config discovery removed)
         default_config()
     };
 
@@ -534,58 +532,6 @@ fn parse_env_u8(name: &str, warnings: &mut Vec<String>, max: u8) -> Option<u8> {
             ));
             None
         }
-    }
-}
-
-/// Check for legacy config files and add deprecation warnings.
-///
-/// **Note:** This function uses `std::fs` directly via `path.exists()`.
-/// For testable code, use [`check_legacy_configs_with_env`] instead.
-fn check_legacy_configs(warnings: &mut Vec<String>) {
-    // Check for old global config
-    if let Some(config_dir) = dirs::config_dir() {
-        let old_global = config_dir.join("ralph").join("agents.toml");
-        if old_global.exists() {
-            warnings.push(format!(
-                "DEPRECATION: Found legacy config at {}. \
-                 Please migrate to ~/.config/ralph-workflow.toml",
-                old_global.display()
-            ));
-        }
-    }
-
-    // Check for project-level config
-    let project_config = PathBuf::from(".agent/agents.toml");
-    if project_config.exists() && unified_config_path().is_some() && !unified_config_exists() {
-        warnings.push(
-            "DEPRECATION: Found legacy per-repo config at .agent/agents.toml. \
-             Please migrate to ~/.config/ralph-workflow.toml."
-                .to_string(),
-        );
-    }
-}
-
-/// Check for legacy config files using a [`ConfigEnvironment`].
-///
-/// This is the testable version of [`check_legacy_configs`].
-fn check_legacy_configs_with_env(warnings: &mut Vec<String>, env: &dyn ConfigEnvironment) {
-    // Check for old global config
-    // Note: We can't check dirs::config_dir() with ConfigEnvironment, so we skip that check
-    // in the testable version. The legacy global config check is best tested via integration tests.
-
-    // Check for project-level config
-    let project_config = PathBuf::from(".agent/agents.toml");
-    if env.file_exists(&project_config)
-        && env.unified_config_path().is_some()
-        && !env
-            .unified_config_path()
-            .is_some_and(|p| env.file_exists(&p))
-    {
-        warnings.push(
-            "DEPRECATION: Found legacy per-repo config at .agent/agents.toml. \
-             Please migrate to ~/.config/ralph-workflow.toml."
-                .to_string(),
-        );
     }
 }
 

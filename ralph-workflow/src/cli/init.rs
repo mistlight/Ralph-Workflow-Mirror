@@ -12,7 +12,6 @@
 //! For convenience, wrapper functions without the resolver parameter are provided
 //! that use [`RealConfigEnvironment`] internally.
 
-use crate::agents::{AgentsConfigFile, ConfigInitResult};
 use crate::config::{ConfigEnvironment, RealConfigEnvironment};
 use crate::logger::Colors;
 use crate::templates::{get_template, list_templates, ALL_TEMPLATES};
@@ -115,43 +114,6 @@ pub fn handle_init_global_with<R: ConfigEnvironment>(
 pub fn handle_init_global(colors: Colors) -> anyhow::Result<bool> {
     handle_init_global_with(colors, &RealConfigEnvironment)
 }
-
-/// Handle the legacy `--init-legacy` flag.
-///
-/// Creates a local agents.toml file at the specified path if it doesn't exist.
-pub fn handle_init_legacy(colors: Colors, agents_config_path: &Path) -> anyhow::Result<bool> {
-    match AgentsConfigFile::ensure_config_exists(agents_config_path) {
-        Ok(ConfigInitResult::Created) => {
-            println!(
-                "{}Created {}{}{}\n",
-                colors.green(),
-                colors.bold(),
-                agents_config_path.display(),
-                colors.reset()
-            );
-            println!("Edit the file to customize agent configurations, then run ralph again.");
-            println!("Or run ralph now to use the default settings.");
-            Ok(true)
-        }
-        Ok(ConfigInitResult::AlreadyExists) => {
-            println!(
-                "{}Config file already exists:{} {}",
-                colors.yellow(),
-                colors.reset(),
-                agents_config_path.display()
-            );
-            println!("Edit the file to customize, or delete it to regenerate from defaults.");
-            Ok(true)
-        }
-        Err(e) => Err(anyhow::anyhow!(
-            "Failed to create config file {}: {}",
-            agents_config_path.display(),
-            e
-        )),
-    }
-}
-
-// NOTE: legacy per-repo agents.toml creation is handled by `--init-legacy` only.
 
 /// Prompt the user to confirm overwriting an existing PROMPT.md.
 ///

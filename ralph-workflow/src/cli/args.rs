@@ -113,7 +113,7 @@ pub struct UnifiedInitFlags {
     /// See --help for details on the difference.
     #[arg(
         long,
-        conflicts_with_all = ["init_global", "init_config", "init_legacy", "init_prompt"],
+        conflicts_with_all = ["init_global", "init_config", "init_prompt"],
         help = "Smart init: create config or PROMPT.md (infers from current state)",
         value_name = "TEMPLATE",
         num_args = 0..=1,
@@ -135,7 +135,7 @@ pub struct UnifiedInitFlags {
     /// Initialize unified config file and exit (explicit alias for config creation)
     #[arg(
         long,
-        conflicts_with_all = ["init", "init_global", "init_legacy", "init_prompt"],
+        conflicts_with_all = ["init", "init_global", "init_prompt"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
         hide = true
     )]
@@ -144,24 +144,11 @@ pub struct UnifiedInitFlags {
     /// Initialize unified config file and exit
     #[arg(
         long,
-        conflicts_with_all = ["init", "init_config", "init_legacy", "init_prompt"],
+        conflicts_with_all = ["init", "init_config", "init_prompt"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
         hide = true
     )]
     pub init_global: bool,
-}
-
-/// Legacy initialization flag.
-#[derive(Parser, Debug, Default)]
-pub struct LegacyInitFlag {
-    /// Initialize legacy per-repo agents.toml and exit
-    #[arg(
-        long,
-        conflicts_with_all = ["init", "init_global", "init_prompt"],
-        help = "(Legacy) Create .agent/agents.toml with default settings (not recommended)",
-        hide = true
-    )]
-    pub init_legacy: bool,
 }
 
 /// Agent listing flags.
@@ -518,10 +505,6 @@ pub struct Args {
     /// Unified config initialization flags
     #[command(flatten)]
     pub unified_init: UnifiedInitFlags,
-
-    /// Legacy initialization flag
-    #[command(flatten)]
-    pub legacy_init: LegacyInitFlag,
 
     /// Agent listing flags
     #[command(flatten)]

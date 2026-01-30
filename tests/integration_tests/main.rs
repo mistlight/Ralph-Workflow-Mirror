@@ -39,6 +39,7 @@ mod git;
 mod logger;
 mod opencode_parser_tests;
 mod reducer_fault_tolerance;
+mod reducer_legacy_rejection;
 mod reducer_rebase_state_machine;
 mod reducer_resume_tests;
 mod reducer_state_machine;

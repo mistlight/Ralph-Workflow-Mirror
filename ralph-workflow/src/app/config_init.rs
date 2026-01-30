@@ -20,7 +20,7 @@ use crate::agents::{
 };
 use crate::cli::{
     apply_args_to_config, handle_extended_help, handle_generate_completion,
-    handle_init_global_with, handle_init_legacy, handle_init_prompt_with, handle_list_work_guides,
+    handle_init_global_with, handle_init_prompt_with, handle_list_work_guides,
     handle_smart_init_with, Args,
 };
 use crate::config::{
@@ -49,7 +49,7 @@ pub struct ConfigInitResult {
 /// 1. Loads config from unified config file (~/.config/ralph-workflow.toml)
 /// 2. Applies environment variable overrides
 /// 3. Applies CLI arguments to config
-/// 4. Handles --list-work-guides, --init-prompt, --init/--init-global (unified), and --init-legacy if set
+/// 4. Handles --list-work-guides, --init-prompt, --init/--init-global if set
 /// 5. Loads agent registry from built-ins + unified config
 /// 6. Selects default agents from fallback chains
 ///
@@ -176,18 +176,6 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
     // Handle --init-global flag: create unified config if it doesn't exist and exit
     if args.unified_init.init_global && handle_init_global_with(colors, path_resolver)? {
         return Ok(None);
-    }
-
-    // Handle --init-legacy flag: legacy per-repo agents.toml creation and exit
-    if args.legacy_init.init_legacy {
-        let repo_root = get_repo_root().ok();
-        let legacy_path = repo_root.map_or_else(
-            || PathBuf::from(".agent/agents.toml"),
-            |root| root.join(".agent/agents.toml"),
-        );
-        if handle_init_legacy(colors, &legacy_path)? {
-            return Ok(None);
-        }
     }
 
     // Initialize agent registry with built-in defaults + unified config.

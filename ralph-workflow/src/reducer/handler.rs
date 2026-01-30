@@ -1282,15 +1282,13 @@ fn read_commit_message_xml(workspace: &dyn Workspace) -> Option<String> {
     let primary_path = Path::new(xml_paths::COMMIT_MESSAGE_XML);
     let primary_processed_path =
         PathBuf::from(format!("{}.processed", xml_paths::COMMIT_MESSAGE_XML));
-    let legacy_path = Path::new(".agent/tmp/commit.xml");
-    let legacy_processed_path = Path::new(".agent/tmp/commit.xml.processed");
 
+    // Only read from primary path (and .processed for archived files after validation)
+    // Legacy paths (.agent/tmp/commit.xml) are no longer supported
     workspace
         .read(primary_path)
         .ok()
         .or_else(|| workspace.read(&primary_processed_path).ok())
-        .or_else(|| workspace.read(legacy_path).ok())
-        .or_else(|| workspace.read(legacy_processed_path).ok())
 }
 
 fn parse_issue_location(issue: &str) -> Option<(String, u32, u32)> {
@@ -1950,28 +1948,31 @@ mod tests {
     }
 
     #[test]
-    fn test_read_commit_message_xml_falls_back_to_legacy_commit_xml() {
+    fn test_read_commit_message_xml_reads_primary_path() {
         use crate::workspace::MemoryWorkspace;
 
+        let workspace = MemoryWorkspace::new_test()
+            .with_dir(".agent/tmp")
+            .with_file(".agent/tmp/commit_message.xml", "<commit/>");
+
+        let xml = read_commit_message_xml(&workspace).expect("expected xml");
+        assert_eq!(xml, "<commit/>");
+    }
+
+    #[test]
+    fn test_read_commit_message_xml_ignores_legacy_commit_xml() {
+        use crate::workspace::MemoryWorkspace;
+
+        // Legacy commit.xml should no longer be read
         let workspace = MemoryWorkspace::new_test()
             .with_dir(".agent/tmp")
             .with_file(".agent/tmp/commit.xml", "<legacy/>");
 
-        let xml = read_commit_message_xml(&workspace).expect("expected xml");
-        assert_eq!(xml, "<legacy/>");
-    }
-
-    #[test]
-    fn test_read_commit_message_xml_prefers_commit_message_xml() {
-        use crate::workspace::MemoryWorkspace;
-
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/tmp")
-            .with_file(".agent/tmp/commit.xml", "<legacy/>")
-            .with_file(".agent/tmp/commit_message.xml", "<preferred/>");
-
-        let xml = read_commit_message_xml(&workspace).expect("expected xml");
-        assert_eq!(xml, "<preferred/>");
+        let result = read_commit_message_xml(&workspace);
+        assert!(
+            result.is_none(),
+            "Should not read from legacy commit.xml path"
+        );
     }
 
     #[test]
