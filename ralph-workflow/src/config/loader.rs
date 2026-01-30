@@ -9,11 +9,10 @@
 //! 2. **Override layer**: Environment variables (RALPH_*)
 //! 3. **CLI arguments**: Final override (handled at CLI layer)
 //!
-//! # Migration Support
+//! # Legacy Configs
 //!
-//! For backwards compatibility, the loader also checks legacy config locations
-//! (`~/.config/ralph/agents.toml` and `.agent/agents.toml`) and emits
-//! deprecation warnings when they are used.
+//! Legacy config discovery is intentionally not supported. Only the unified
+//! config path is consulted, and missing config files fall back to defaults.
 use super::parser::parse_env_bool;
 use super::path_resolver::ConfigEnvironment;
 use super::types::{Config, ReviewDepth, Verbosity};
