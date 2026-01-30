@@ -7,7 +7,7 @@
 //! # Note on Semantic Rendering
 //!
 //! For user-facing output, prefer using `UIEvent::XmlOutput` which routes
-//! through the semantic renderers in `reducer::xml_renderer`. Those renderers
+//! through the semantic renderers in `rendering::xml`. Those renderers
 //! provide user-friendly output (status emojis, structured layout) rather
 //! than raw pretty-printed XML.
 //!

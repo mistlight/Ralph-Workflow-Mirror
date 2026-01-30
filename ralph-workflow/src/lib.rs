@@ -107,6 +107,7 @@ pub mod pipeline;
 pub mod platform;
 pub mod prompts;
 pub mod reducer;
+pub mod rendering;
 pub mod review_metrics;
 pub mod templates;
 pub mod workspace;

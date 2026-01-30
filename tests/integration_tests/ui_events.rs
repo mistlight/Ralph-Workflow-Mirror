@@ -657,3 +657,156 @@ fn test_xml_output_type_all_variants() {
         }
     });
 }
+
+// =========================================================================
+// Single Writer Enforcement Tests
+// =========================================================================
+
+/// Tests the single-writer principle: XML output is rendered semantically via
+/// UIEvent::XmlOutput and the centralized rendering module only.
+///
+/// This verifies that:
+/// 1. render_ui_event() produces semantic output (user-friendly status, not raw XML)
+/// 2. The rendering module is the single entrypoint for UIEvent formatting
+/// 3. Phase code does not produce competing raw XML output
+#[test]
+fn test_single_writer_xml_output_via_ui_event_only() {
+    with_default_timeout(|| {
+        use ralph_workflow::rendering::render_ui_event;
+
+        let xml_content = r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Test summary for single-writer verification</ralph-summary>
+</ralph-development-result>"#;
+
+        let event = UIEvent::XmlOutput {
+            xml_type: XmlOutputType::DevelopmentResult,
+            content: xml_content.to_string(),
+            context: Some(XmlOutputContext {
+                iteration: Some(1),
+                pass: None,
+                snippets: Vec::new(),
+            }),
+        };
+
+        let rendered = render_ui_event(&event);
+
+        // The single writer renders semantically, not as raw XML
+        assert!(
+            !rendered.contains("<ralph-development-result>"),
+            "Single writer should produce semantic output, not raw XML. Got: {}",
+            rendered
+        );
+        assert!(
+            !rendered.contains("<ralph-status>"),
+            "Single writer should not emit raw XML status tags. Got: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("✅") || rendered.to_lowercase().contains("completed"),
+            "Single writer should produce user-friendly status. Got: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("Test summary for single-writer verification"),
+            "Single writer should include content from XML. Got: {}",
+            rendered
+        );
+
+        // Verify UIEvent::format_for_display() delegates to render_ui_event()
+        // (same output confirms single entrypoint)
+        let format_display_output = event.format_for_display();
+        assert_eq!(
+            rendered, format_display_output,
+            "format_for_display() must delegate to render_ui_event()"
+        );
+    });
+}
+
+/// Tests that the centralized renderer routes all XmlOutputType variants
+/// through the single entrypoint (render_ui_event). Well-formed XML produces
+/// semantic output; malformed XML gracefully falls back to raw display with
+/// a warning, but still through the single writer.
+#[test]
+fn test_single_writer_handles_all_xml_output_types() {
+    with_default_timeout(|| {
+        use ralph_workflow::rendering::render_ui_event;
+
+        // Well-formed XML: semantic rendering produces user-friendly output
+        let wellformed_cases = [
+            (
+                XmlOutputType::DevelopmentResult,
+                r#"<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>done</ralph-summary>
+</ralph-development-result>"#,
+                "✅", // expected indicator in output
+            ),
+            (
+                XmlOutputType::ReviewIssues,
+                // Note: <ralph-no-issues-found> must be nested inside <ralph-issues>
+                r#"<ralph-issues>
+<ralph-no-issues-found>All code is approved</ralph-no-issues-found>
+</ralph-issues>"#,
+                "✅", // approval checkmark
+            ),
+            (
+                XmlOutputType::CommitMessage,
+                r#"<ralph-commit>
+<ralph-subject>test: add feature</ralph-subject>
+<ralph-body>Body text</ralph-body>
+</ralph-commit>"#,
+                "test: add feature", // subject should appear
+            ),
+        ];
+
+        for (xml_type, content, expected_indicator) in wellformed_cases {
+            let event = UIEvent::XmlOutput {
+                xml_type: xml_type.clone(),
+                content: content.to_string(),
+                context: Some(XmlOutputContext::default()),
+            };
+
+            let via_render = render_ui_event(&event);
+            let via_format = event.format_for_display();
+
+            // Both paths must produce identical output (single writer)
+            assert_eq!(
+                via_render, via_format,
+                "format_for_display must delegate to render_ui_event for {:?}",
+                xml_type
+            );
+
+            // Well-formed XML produces semantic output with expected indicator
+            assert!(
+                via_render.contains(expected_indicator),
+                "Single writer should produce semantic output with '{}' for {:?}. Got: {}",
+                expected_indicator,
+                xml_type,
+                via_render
+            );
+        }
+
+        // Malformed XML: graceful fallback still goes through single writer
+        let malformed_event = UIEvent::XmlOutput {
+            xml_type: XmlOutputType::DevelopmentResult,
+            content: "<incomplete>".to_string(),
+            context: None,
+        };
+
+        let fallback_render = render_ui_event(&malformed_event);
+        let fallback_format = malformed_event.format_for_display();
+
+        // Even fallback must go through single writer
+        assert_eq!(
+            fallback_render, fallback_format,
+            "Malformed XML fallback must also go through single writer"
+        );
+        // Fallback shows warning indicator
+        assert!(
+            fallback_render.contains("⚠️") || fallback_render.contains("Unable to parse"),
+            "Fallback should indicate parsing issue. Got: {}",
+            fallback_render
+        );
+    });
+}

@@ -3,14 +3,15 @@
 use crate::agents::{is_glm_like_agent, JsonParserType};
 use crate::common::{format_argv_for_log, split_command, truncate_text};
 use crate::config::Config;
+use crate::logger::argv_requests_json;
 use crate::logger::Colors;
 use crate::logger::Logger;
-use crate::logger::{argv_requests_json, format_generic_json_for_display};
 use crate::pipeline::idle_timeout::{
     monitor_idle_timeout, new_activity_timestamp, ActivityTrackingReader, MonitorResult,
     SharedActivityTimestamp, IDLE_TIMEOUT_SECS,
 };
 use crate::pipeline::Timer;
+use crate::rendering::json_pretty::format_generic_json_for_display;
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;

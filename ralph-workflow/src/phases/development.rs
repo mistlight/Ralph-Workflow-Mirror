@@ -17,7 +17,6 @@ use crate::files::llm_output_extraction::{
     validate_plan_xml, xml_paths, PlanElements,
 };
 use crate::files::{delete_plan_file_with_workspace, update_status_with_workspace};
-use crate::format_xml_for_display;
 use crate::git_helpers::{git_snapshot, CommitResultFallback};
 use crate::logger::print_progress;
 use crate::phases::commit::commit_with_generated_message;
@@ -702,8 +701,9 @@ pub fn run_development_attempt_with_xml_retry(
 
         match validate_development_result_xml(&xml_to_validate) {
             Ok(result_elements) => {
-                // XSD validation passed - format and log the result
-                let formatted_xml = format_xml_for_display(&xml_to_validate);
+                // XSD validation passed
+                // Note: User-facing XML display is handled via UIEvent::XmlOutput
+                // in the reducer effect handler, not here. This avoids duplicate output.
 
                 // Archive the XML file for debugging (moves to .xml.processed)
                 archive_xml_file_with_workspace(
@@ -717,8 +717,6 @@ pub fn run_development_attempt_with_xml_retry(
                 } else {
                     ctx.logger.success("Status extracted and validated (XML)");
                 }
-
-                ctx.logger.info(&format!("\n{}", formatted_xml));
 
                 let files_changed = result_elements
                     .files_changed
