@@ -25,7 +25,7 @@ use crate::reducer::ui_event::{UIEvent, XmlCodeSnippet, XmlOutputContext, XmlOut
 use crate::workspace::Workspace;
 use anyhow::Result;
 use regex::Regex;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Main effect handler implementation.
 ///
@@ -282,19 +282,11 @@ impl MainEffectHandler {
                     ui_events.push(self.phase_transition_ui(PipelinePhase::Development));
 
                     // Try to read plan XML for semantic rendering.
-                    // NOTE: The .processed fallback is NOT legacy behavior - it's the
-                    // current XML archiving mechanism. When XML passes validation,
-                    // archive_xml_file() renames it to .processed for debugging while
-                    // marking it as processed. Reading .processed allows replaying
-                    // archived state during resume.
-                    let plan_xml_path = Path::new(".agent/tmp/plan.xml");
-                    let processed_path = Path::new(".agent/tmp/plan.xml.processed");
-                    if let Some(xml_content) = ctx
-                        .workspace
-                        .read(plan_xml_path)
-                        .ok()
-                        .or_else(|| ctx.workspace.read(processed_path).ok())
-                    {
+                    // Try to read plan XML for semantic rendering via helper.
+                    if let Some(xml_content) = read_xml_with_processed_fallback(
+                        ctx.workspace,
+                        Path::new(xml_paths::PLAN_XML),
+                    ) {
                         ui_events.push(UIEvent::XmlOutput {
                             xml_type: XmlOutputType::DevelopmentPlan,
                             content: xml_content,
@@ -428,17 +420,11 @@ impl MainEffectHandler {
                 total: self.state.total_iterations,
             }];
 
-            // Try to read development result XML for semantic rendering.
-            // NOTE: The .processed fallback is the current XML archiving mechanism,
-            // NOT legacy behavior. See comment in handle_generate_plan for details.
-            let dev_xml_path = Path::new(".agent/tmp/development_result.xml");
-            let processed_path = Path::new(".agent/tmp/development_result.xml.processed");
-            if let Some(xml_content) = ctx
-                .workspace
-                .read(dev_xml_path)
-                .ok()
-                .or_else(|| ctx.workspace.read(processed_path).ok())
-            {
+            // Try to read development result XML for semantic rendering via helper.
+            if let Some(xml_content) = read_xml_with_processed_fallback(
+                ctx.workspace,
+                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+            ) {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
                     content: xml_content,
@@ -485,15 +471,11 @@ impl MainEffectHandler {
 
             let mut ui_events = vec![ui_event];
 
-            // Try to read development result XML for semantic rendering.
-            let dev_xml_path = Path::new(".agent/tmp/development_result.xml");
-            let processed_path = Path::new(".agent/tmp/development_result.xml.processed");
-            if let Some(xml_content) = ctx
-                .workspace
-                .read(dev_xml_path)
-                .ok()
-                .or_else(|| ctx.workspace.read(processed_path).ok())
-            {
+            // Try to read development result XML for semantic rendering via helper.
+            if let Some(xml_content) = read_xml_with_processed_fallback(
+                ctx.workspace,
+                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+            ) {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
                     content: xml_content,
@@ -534,15 +516,11 @@ impl MainEffectHandler {
                 total: self.state.total_iterations,
             }];
 
-            // Try to read development result XML for semantic rendering.
-            let dev_xml_path = Path::new(".agent/tmp/development_result.xml");
-            let processed_path = Path::new(".agent/tmp/development_result.xml.processed");
-            if let Some(xml_content) = ctx
-                .workspace
-                .read(dev_xml_path)
-                .ok()
-                .or_else(|| ctx.workspace.read(processed_path).ok())
-            {
+            // Try to read development result XML for semantic rendering via helper.
+            if let Some(xml_content) = read_xml_with_processed_fallback(
+                ctx.workspace,
+                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+            ) {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
                     content: xml_content,
@@ -592,15 +570,11 @@ impl MainEffectHandler {
             total: self.state.total_iterations,
         }];
 
-        // Try to read development result XML for semantic rendering.
-        let dev_xml_path = Path::new(".agent/tmp/development_result.xml");
-        let processed_path = Path::new(".agent/tmp/development_result.xml.processed");
-        if let Some(xml_content) = ctx
-            .workspace
-            .read(dev_xml_path)
-            .ok()
-            .or_else(|| ctx.workspace.read(processed_path).ok())
-        {
+        // Try to read development result XML for semantic rendering via helper.
+        if let Some(xml_content) = read_xml_with_processed_fallback(
+            ctx.workspace,
+            Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+        ) {
             ui_events.push(UIEvent::XmlOutput {
                 xml_type: XmlOutputType::DevelopmentResult,
                 content: xml_content,
@@ -643,15 +617,10 @@ impl MainEffectHandler {
 
                 let xsd_validation_failed =
                     is_review_output_validation_failure_marker(ctx.workspace);
-                let issues_xml_content = ctx
-                    .workspace
-                    .read(Path::new(".agent/tmp/issues.xml"))
-                    .ok()
-                    .or_else(|| {
-                        ctx.workspace
-                            .read(Path::new(".agent/tmp/issues.xml.processed"))
-                            .ok()
-                    });
+                let issues_xml_content = read_xml_with_processed_fallback(
+                    ctx.workspace,
+                    Path::new(xml_paths::ISSUES_XML),
+                );
 
                 let event = classify_review_pass_event(
                     pass,
@@ -734,16 +703,12 @@ impl MainEffectHandler {
             Ok(_) => {
                 let event = PipelineEvent::fix_attempt_completed(pass, true);
 
-                // Build UI events - try to read fix result XML for semantic rendering
+                // Build UI events - try to read fix result XML for semantic rendering via helper.
                 let mut ui_events = vec![];
-                let fix_xml_path = Path::new(".agent/tmp/fix_result.xml");
-                let processed_path = Path::new(".agent/tmp/fix_result.xml.processed");
-                if let Some(xml_content) = ctx
-                    .workspace
-                    .read(fix_xml_path)
-                    .ok()
-                    .or_else(|| ctx.workspace.read(processed_path).ok())
-                {
+                if let Some(xml_content) = read_xml_with_processed_fallback(
+                    ctx.workspace,
+                    Path::new(xml_paths::FIX_RESULT_XML),
+                ) {
                     ui_events.push(UIEvent::XmlOutput {
                         xml_type: XmlOutputType::FixResult,
                         content: xml_content,
@@ -1286,16 +1251,47 @@ fn collect_review_issue_snippets(
 }
 
 fn read_commit_message_xml(workspace: &dyn Workspace) -> Option<String> {
-    let primary_path = Path::new(xml_paths::COMMIT_MESSAGE_XML);
-    let primary_processed_path =
-        PathBuf::from(format!("{}.processed", xml_paths::COMMIT_MESSAGE_XML));
+    read_xml_with_processed_fallback(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML))
+}
 
-    // Only read from primary path (and .processed for archived files after validation)
-    // Legacy paths (.agent/tmp/commit.xml) are no longer supported
+/// Read XML content from primary path with `.processed` fallback for resume support.
+///
+/// This helper consolidates the `.processed` fallback pattern used throughout the
+/// handler. The pattern is NOT legacy behavior - it's the current XML archiving
+/// mechanism for resume support.
+///
+/// # Design Rationale
+///
+/// When XML passes validation, [`archive_xml_file_with_workspace`] renames it to
+/// `.processed` for debugging while marking it as processed. Reading `.processed`
+/// allows replaying archived state during resume.
+///
+/// # Removed Legacy Behaviors
+///
+/// The following fallbacks have been REMOVED and must NOT be reintroduced:
+/// - JSON log extraction (agents must write XML files)
+/// - Legacy `commit.xml` path (only `commit_message.xml` is supported)
+/// - Directory-mode log scanning (only prefix-based matching)
+/// - Subdirectory fallback for agent names with "/"
+///
+/// # Arguments
+///
+/// * `workspace` - Workspace abstraction for filesystem access
+/// * `primary_path` - The primary path to the XML file (e.g., `.agent/tmp/plan.xml`)
+///
+/// # Returns
+///
+/// The content of the XML file if found at either the primary path or the
+/// `.processed` path, `None` otherwise.
+fn read_xml_with_processed_fallback(
+    workspace: &dyn Workspace,
+    primary_path: &Path,
+) -> Option<String> {
+    let processed_path = primary_path.with_extension("xml.processed");
     workspace
         .read(primary_path)
         .ok()
-        .or_else(|| workspace.read(&primary_processed_path).ok())
+        .or_else(|| workspace.read(&processed_path).ok())
 }
 
 fn parse_issue_location(issue: &str) -> Option<(String, u32, u32)> {
@@ -1422,14 +1418,8 @@ fn is_review_output_validation_failure_on_review_err(workspace: &dyn Workspace) 
         return true;
     }
 
-    let issues_xml_content = workspace
-        .read(Path::new(".agent/tmp/issues.xml"))
-        .ok()
-        .or_else(|| {
-            workspace
-                .read(Path::new(".agent/tmp/issues.xml.processed"))
-                .ok()
-        });
+    let issues_xml_content =
+        read_xml_with_processed_fallback(workspace, Path::new(xml_paths::ISSUES_XML));
 
     // Missing issues XML is not a strong signal of an output validation failure.
     // review::run_review_pass can fail before writing any output artifacts (process/runtime/I/O).

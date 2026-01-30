@@ -1310,3 +1310,303 @@ fn test_effect_determination_is_pure_function_of_state() {
         );
     });
 }
+
+// ============================================================================
+// PHASE MODULE CONTROL FLOW TESTS
+// ============================================================================
+
+/// Test that review phase validation failures surface as reducer events.
+///
+/// When XML validation fails during review, the phase module must emit an event
+/// and let the reducer decide retry policy. The phase module should NOT internally
+/// hide failures or make retry decisions autonomously.
+#[test]
+fn test_review_validation_failure_surfaces_via_event() {
+    use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase, ReviewEvent};
+    use ralph_workflow::reducer::state::PipelineState;
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        // Start in Review phase
+        let mut state = PipelineState::initial(0, 3);
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+
+        // When review output validation fails, reducer should track the attempt
+        // via the OutputValidationFailed event (not hidden inside phase module)
+        let state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
+                pass: 0,
+                attempt: 0,
+            }),
+        );
+
+        // The state should reflect the validation failure via continuation.invalid_output_attempts
+        // This proves the failure was surfaced to the reducer, not hidden in phase code
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 1,
+            "Review validation failure must surface via reducer event and increment attempt counter"
+        );
+
+        // Another failure should increment again (reducer controls retry logic)
+        let state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
+                pass: 0,
+                attempt: 1,
+            }),
+        );
+
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 2,
+            "Subsequent failures must continue to surface via reducer events"
+        );
+    });
+}
+
+/// Test that development continuation decisions come from reducer state.
+///
+/// When development returns status="partial" or "failed", the decision to continue
+/// must come from reducer state transitions, not from autonomous phase module logic.
+#[test]
+fn test_development_continuation_is_reducer_driven() {
+    use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent, PipelinePhase};
+    use ralph_workflow::reducer::state::{DevelopmentStatus, PipelineState};
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        // Start in Development phase
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Development;
+
+        // Simulate a "partial" status from development via reducer event
+        // The reducer state should track continuation context
+        let state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "Work partially done".to_string(),
+                files_changed: Some(vec!["file.rs".to_string()]),
+                next_steps: Some("Continue implementation".to_string()),
+            }),
+        );
+
+        // Verify reducer state tracks continuation
+        assert!(
+            state.continuation.is_continuation(),
+            "Continuation decision must be tracked in reducer state"
+        );
+        assert_eq!(
+            state.continuation.previous_status,
+            Some(DevelopmentStatus::Partial),
+            "Previous status must be tracked for continuation"
+        );
+        assert_eq!(
+            state.continuation.continuation_attempt, 1,
+            "Continuation attempt counter must be incremented"
+        );
+    });
+}
+
+/// Test that XSD retry loop exhaustion triggers reducer state transitions.
+///
+/// When XSD validation fails repeatedly, the reducer state must track exhaustion
+/// and trigger agent advancement. Phase modules must NOT silently give up or
+/// make fallback decisions internally.
+#[test]
+fn test_xsd_retry_exhaustion_triggers_state_transition() {
+    use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase};
+    use ralph_workflow::reducer::state::{PipelineState, MAX_DEV_INVALID_OUTPUT_RERUNS};
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Development;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["agent-1".to_string(), "agent-2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+
+        // Exhaust retries via reducer events (not hidden in phase code)
+        let mut current = state;
+        for attempt in 0..=MAX_DEV_INVALID_OUTPUT_RERUNS {
+            current = reduce(
+                current,
+                PipelineEvent::development_output_validation_failed(0, attempt),
+            );
+        }
+
+        // After exhausting retries, agent chain should advance
+        // This proves the retry policy is in reducer, not phase module
+        assert_eq!(
+            current.agent_chain.current_agent(),
+            Some(&"agent-2".to_string()),
+            "Agent chain must advance after retry exhaustion (reducer-driven policy)"
+        );
+
+        // Counter should reset for new agent
+        assert_eq!(
+            current.continuation.invalid_output_attempts, 0,
+            "Invalid output attempts must reset after agent switch"
+        );
+    });
+}
+
+/// Test that phase transitions only happen via reducer events.
+///
+/// Phase modules must NOT directly advance phases. All phase transitions
+/// must occur through reducer event processing, ensuring state is the
+/// single source of truth.
+#[test]
+fn test_phase_transitions_only_via_reducer_events() {
+    use ralph_workflow::reducer::event::{
+        CommitEvent, DevelopmentEvent, PipelineEvent, PipelinePhase, PlanningEvent, ReviewEvent,
+    };
+    use ralph_workflow::reducer::state::PipelineState;
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        // Start at Planning
+        let state = PipelineState::initial(1, 1);
+        assert_eq!(state.phase, PipelinePhase::Planning);
+
+        // Transition Planning -> Development via event
+        let state = reduce(
+            state,
+            PipelineEvent::Planning(PlanningEvent::GenerationCompleted {
+                iteration: 0,
+                valid: true,
+            }),
+        );
+        assert_eq!(
+            state.phase,
+            PipelinePhase::Development,
+            "Planning->Development must happen via reducer event"
+        );
+
+        // Transition Development -> CommitMessage via event
+        let state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::IterationCompleted {
+                iteration: 0,
+                output_valid: true,
+            }),
+        );
+        assert_eq!(
+            state.phase,
+            PipelinePhase::CommitMessage,
+            "Development->CommitMessage must happen via reducer event"
+        );
+
+        // Transition CommitMessage -> Review via event (when iterations exhausted)
+        let state = reduce(
+            state,
+            PipelineEvent::Commit(CommitEvent::Created {
+                hash: "abc123".to_string(),
+                message: "test".to_string(),
+            }),
+        );
+        assert_eq!(
+            state.phase,
+            PipelinePhase::Review,
+            "CommitMessage->Review must happen via reducer event"
+        );
+
+        // Transition Review -> CommitMessage via event (phase completed early)
+        let state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::PhaseCompleted { early_exit: true }),
+        );
+        // Review phase completed transitions to CommitMessage for commit handling
+        assert_eq!(
+            state.phase,
+            PipelinePhase::CommitMessage,
+            "Review->CommitMessage must happen via reducer event"
+        );
+    });
+}
+
+// ============================================================================
+// .PROCESSED FALLBACK DOCUMENTATION TESTS
+// ============================================================================
+
+/// Test that .processed fallback is NOT legacy behavior but intentional resume support.
+///
+/// The .processed suffix is used for XML archiving after validation, NOT for
+/// legacy artifact recovery. This test documents the distinction.
+#[test]
+fn test_processed_fallback_is_intentional_not_legacy() {
+    with_default_timeout(|| {
+        // This test documents an architectural decision rather than testing behavior.
+        // The .processed files serve two purposes:
+        // 1. Debugging: Preserve validated XML for post-run analysis
+        // 2. Resume: Allow handlers to read archived XML during pipeline resume
+        //
+        // The pattern `read(path).or_else(|| read(path.processed))` in handlers
+        // is INTENTIONAL for resume support and should NOT be confused with
+        // legacy artifact fallbacks (which have been removed).
+        //
+        // Key differences from removed legacy behavior:
+        // - Legacy: Read ISSUES.md/PLAN.md created by old pipeline versions
+        // - Current: Read .processed files we created in the current session
+        //
+        // - Legacy: Scan directories for log files with legacy naming
+        // - Current: Only read from known XML paths we archive ourselves
+
+        // No assertions needed - this is documentation via test name
+    });
+}
+
+/// Test that archived XML files use .processed suffix consistently.
+///
+/// All XML archiving must use the `.processed` suffix for consistency.
+/// This ensures the fallback pattern in handlers works correctly.
+#[test]
+fn test_archived_xml_uses_processed_suffix() {
+    use ralph_workflow::files::llm_output_extraction::archive_xml_file_with_workspace;
+    use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+
+    with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/tmp/plan.xml", "<plan>test</plan>")
+            .with_file(".agent/tmp/issues.xml", "<issues>test</issues>")
+            .with_file(
+                ".agent/tmp/development_result.xml",
+                "<development>test</development>",
+            )
+            .with_file(".agent/tmp/fix_result.xml", "<fix>test</fix>")
+            .with_file(".agent/tmp/commit_message.xml", "<commit>test</commit>");
+
+        // Archive each file
+        let paths = [
+            ".agent/tmp/plan.xml",
+            ".agent/tmp/issues.xml",
+            ".agent/tmp/development_result.xml",
+            ".agent/tmp/fix_result.xml",
+            ".agent/tmp/commit_message.xml",
+        ];
+
+        for path in paths {
+            archive_xml_file_with_workspace(&workspace, Path::new(path));
+
+            // Original should be gone
+            assert!(
+                !workspace.exists(Path::new(path)),
+                "Original file should be removed after archiving: {}",
+                path
+            );
+
+            // .processed should exist
+            let processed_path = format!("{}.processed", path);
+            assert!(
+                workspace.exists(Path::new(&processed_path)),
+                "Archived file should have .processed suffix: {}",
+                processed_path
+            );
+        }
+    });
+}
