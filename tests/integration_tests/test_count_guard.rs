@@ -125,6 +125,14 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("opencode_parser_tests.rs"),
     },
     SourceFile {
+        path: "reducer_agent_fallback.rs",
+        contents: include_str!("reducer_agent_fallback.rs"),
+    },
+    SourceFile {
+        path: "reducer_effect_invariants.rs",
+        contents: include_str!("reducer_effect_invariants.rs"),
+    },
+    SourceFile {
         path: "reducer_fault_tolerance.rs",
         contents: include_str!("reducer_fault_tolerance.rs"),
     },
