@@ -4,8 +4,11 @@
 //! ensuring the environment matches the checkpoint and detecting configuration changes.
 
 use crate::agents::AgentRegistry;
-use crate::checkpoint::state::{calculate_file_checksum, AgentConfigSnapshot, PipelineCheckpoint};
+use crate::checkpoint::state::{
+    calculate_file_checksum_with_workspace, AgentConfigSnapshot, PipelineCheckpoint,
+};
 use crate::config::Config;
+use crate::workspace::Workspace;
 use std::path::Path;
 
 /// Result of checkpoint validation.
@@ -70,6 +73,7 @@ impl ValidationResult {
 /// * `checkpoint` - The checkpoint to validate
 /// * `current_config` - Current configuration to compare against
 /// * `registry` - Agent registry for agent validation
+/// * `workspace` - Workspace for explicit path resolution
 ///
 /// # Returns
 ///
@@ -78,14 +82,15 @@ pub fn validate_checkpoint(
     checkpoint: &PipelineCheckpoint,
     current_config: &Config,
     registry: &AgentRegistry,
+    workspace: &dyn Workspace,
 ) -> ValidationResult {
     let mut result = ValidationResult::ok();
 
     // Validate working directory
-    result = result.merge(validate_working_directory(checkpoint));
+    result = result.merge(validate_working_directory(checkpoint, workspace));
 
     // Validate PROMPT.md checksum
-    result = result.merge(validate_prompt_md(checkpoint));
+    result = result.merge(validate_prompt_md(checkpoint, workspace));
 
     // Validate agent configurations
     result = result.merge(validate_agent_config(
@@ -109,16 +114,19 @@ pub fn validate_checkpoint(
 }
 
 /// Validate that the working directory matches the checkpoint.
-pub fn validate_working_directory(checkpoint: &PipelineCheckpoint) -> ValidationResult {
+///
+/// Uses the workspace root for current working directory comparison.
+pub fn validate_working_directory(
+    checkpoint: &PipelineCheckpoint,
+    workspace: &dyn Workspace,
+) -> ValidationResult {
     if checkpoint.working_dir.is_empty() {
         return ValidationResult::ok().with_warning(
             "Checkpoint has no working directory recorded (legacy checkpoint)".to_string(),
         );
     }
 
-    let current_dir = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let current_dir = workspace.root().to_string_lossy().to_string();
 
     if current_dir != checkpoint.working_dir {
         return ValidationResult::error(format!(
@@ -131,13 +139,17 @@ pub fn validate_working_directory(checkpoint: &PipelineCheckpoint) -> Validation
 }
 
 /// Validate that PROMPT.md hasn't changed since checkpoint.
-pub fn validate_prompt_md(checkpoint: &PipelineCheckpoint) -> ValidationResult {
+pub fn validate_prompt_md(
+    checkpoint: &PipelineCheckpoint,
+    workspace: &dyn Workspace,
+) -> ValidationResult {
     let Some(ref saved_checksum) = checkpoint.prompt_md_checksum else {
         return ValidationResult::ok()
             .with_warning("Checkpoint has no PROMPT.md checksum (legacy checkpoint)");
     };
 
-    let current_checksum = calculate_file_checksum(Path::new("PROMPT.md"));
+    let current_checksum =
+        calculate_file_checksum_with_workspace(workspace, Path::new("PROMPT.md"));
 
     match current_checksum {
         Some(current) if current == *saved_checksum => ValidationResult::ok(),
@@ -233,9 +245,10 @@ pub fn validate_iteration_counts(
 mod tests {
     use super::*;
     use crate::checkpoint::state::{CheckpointParams, CliArgsSnapshot, PipelinePhase, RebaseState};
+    use crate::workspace::MemoryWorkspace;
 
     fn make_test_checkpoint() -> PipelineCheckpoint {
-        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "claude".into(), "-p".into(), None, true);
         let rev_config =
@@ -261,6 +274,10 @@ mod tests {
             resume_count: 0,
             actual_developer_runs: 2,
             actual_reviewer_runs: 0,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
         })
     }
 
@@ -313,8 +330,9 @@ mod tests {
     fn test_validate_working_directory_empty() {
         let mut checkpoint = make_test_checkpoint();
         checkpoint.working_dir = String::new();
+        let workspace = MemoryWorkspace::new_test();
 
-        let result = validate_working_directory(&checkpoint);
+        let result = validate_working_directory(&checkpoint, &workspace);
         assert!(result.is_valid);
         assert_eq!(result.warnings.len(), 1);
         assert!(result.warnings[0].contains("legacy checkpoint"));
@@ -324,8 +342,9 @@ mod tests {
     fn test_validate_working_directory_mismatch() {
         let mut checkpoint = make_test_checkpoint();
         checkpoint.working_dir = "/some/other/directory".to_string();
+        let workspace = MemoryWorkspace::new_test();
 
-        let result = validate_working_directory(&checkpoint);
+        let result = validate_working_directory(&checkpoint, &workspace);
         assert!(
             !result.is_valid,
             "Should fail validation on working_dir mismatch"
@@ -338,8 +357,9 @@ mod tests {
     fn test_validate_prompt_md_no_checksum() {
         let mut checkpoint = make_test_checkpoint();
         checkpoint.prompt_md_checksum = None;
+        let workspace = MemoryWorkspace::new_test();
 
-        let result = validate_prompt_md(&checkpoint);
+        let result = validate_prompt_md(&checkpoint, &workspace);
         assert!(result.is_valid);
         assert_eq!(result.warnings.len(), 1);
         assert!(result.warnings[0].contains("legacy checkpoint"));

@@ -915,8 +915,7 @@ fn make_checkpoint_json_with_resume_count(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "feat: add feature",
-                "review_depth": "standard",
-                "skip_rebase": false
+                "review_depth": "standard"
             }},
             "developer_agent_config": {{
                 "name": "claude",
@@ -980,8 +979,7 @@ fn make_comprehensive_v3_checkpoint(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "feat: add feature X",
-                "review_depth": "standard",
-                "skip_rebase": false
+                "review_depth": "standard"
             }},
             "developer_agent_config": {{
                 "name": "claude",
@@ -1064,8 +1062,7 @@ fn make_checkpoint_with_git_commit_oid(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": true
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -1157,8 +1154,7 @@ fn make_checkpoint_with_all_new_fields(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": true
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -1246,8 +1242,7 @@ fn make_checkpoint_without_new_fields(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": true
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -1325,8 +1320,7 @@ fn make_checkpoint_with_detailed_execution_history(working_dir: &str) -> String 
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": true
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",

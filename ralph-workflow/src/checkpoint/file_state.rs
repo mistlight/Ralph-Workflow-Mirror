@@ -177,9 +177,9 @@ impl FileSystemState {
     fn capture_file_impl(&mut self, path: &str) {
         let path_obj = Path::new(path);
         let snapshot = if path_obj.exists() {
-            if let Some(checksum) = crate::checkpoint::state::calculate_file_checksum(path_obj) {
-                let metadata = std::fs::metadata(path_obj);
-                let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+            if let Ok(content) = std::fs::read(path_obj) {
+                let checksum = crate::checkpoint::state::calculate_checksum_from_bytes(&content);
+                let size = content.len() as u64;
                 FileSnapshot::new(path, checksum, size, true)
             } else {
                 FileSnapshot::not_found(path)

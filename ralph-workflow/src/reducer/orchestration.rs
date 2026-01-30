@@ -7,13 +7,17 @@ use super::event::{CheckpointTrigger, PipelinePhase};
 use super::state::{CommitState, PipelineState};
 
 use crate::agents::AgentRole;
-use crate::reducer::effect::Effect;
+use crate::reducer::effect::{ContinuationContextData, Effect};
 
 /// Determine the next effect to execute based on current state.
 ///
 /// This function is pure - it only reads state and returns an effect.
 /// The actual execution happens in the effect handler.
 pub fn determine_next_effect(state: &PipelineState) -> Effect {
+    if state.continuation.context_cleanup_pending {
+        return Effect::CleanupContinuationContext;
+    }
+
     match state.phase {
         PipelinePhase::Planning => {
             if state.agent_chain.agents.is_empty() {
@@ -33,6 +37,30 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         }
 
         PipelinePhase::Development => {
+            if state.continuation.context_write_pending {
+                let status = state
+                    .continuation
+                    .previous_status
+                    .clone()
+                    .unwrap_or(super::state::DevelopmentStatus::Failed);
+                let summary = state
+                    .continuation
+                    .previous_summary
+                    .clone()
+                    .unwrap_or_default();
+                let files_changed = state.continuation.previous_files_changed.clone();
+                let next_steps = state.continuation.previous_next_steps.clone();
+
+                return Effect::WriteContinuationContext(ContinuationContextData {
+                    iteration: state.iteration,
+                    attempt: state.continuation.continuation_attempt,
+                    status,
+                    summary,
+                    files_changed,
+                    next_steps,
+                });
+            }
+
             if state.agent_chain.agents.is_empty() {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Developer,
@@ -313,6 +341,12 @@ mod tests {
                     // Context cleanup before planning
                     state = reduce(state, PipelineEvent::ContextCleaned);
                 }
+                Effect::CleanupContinuationContext => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::development_continuation_context_cleaned(),
+                    );
+                }
                 Effect::GeneratePlan { iteration } => {
                     // Complete planning
                     state = reduce(
@@ -551,6 +585,12 @@ mod tests {
             match effect {
                 Effect::CleanupContext => {
                     state = reduce(state, PipelineEvent::ContextCleaned);
+                }
+                Effect::CleanupContinuationContext => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::development_continuation_context_cleaned(),
+                    );
                 }
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(

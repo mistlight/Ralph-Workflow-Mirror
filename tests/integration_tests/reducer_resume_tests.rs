@@ -29,7 +29,6 @@ fn create_minimal_cli_args() -> CliArgsSnapshot {
         developer_iters: 1,
         reviewer_reviews: 1,
         review_depth: None,
-        skip_rebase: false,
         isolation_mode: true,
         verbosity: 2,
         show_streaming_metrics: false,

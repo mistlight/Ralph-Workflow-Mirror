@@ -2,11 +2,12 @@
 //!
 //! This module provides validation of Ralph setup without running any agents.
 
-use crate::checkpoint::{checkpoint_exists, load_checkpoint};
+use crate::checkpoint::{checkpoint_exists_with_workspace, load_checkpoint_with_workspace};
 use crate::config::Config;
-use crate::files::validate_prompt_md;
+use crate::files::validate_prompt_md_with_workspace;
 use crate::language_detector::detect_stack_summary;
 use crate::logger::Logger;
+use crate::workspace::Workspace;
 use std::path::Path;
 
 /// Handle --dry-run command.
@@ -25,6 +26,7 @@ use std::path::Path;
 /// * `developer_agent` - Name of the developer agent
 /// * `reviewer_agent` - Name of the reviewer agent
 /// * `repo_root` - Path to the repository root
+/// * `workspace` - Workspace for explicit file operations
 ///
 /// # Returns
 ///
@@ -36,12 +38,14 @@ pub fn handle_dry_run(
     developer_agent: &str,
     reviewer_agent: &str,
     repo_root: &Path,
+    workspace: &dyn Workspace,
 ) -> anyhow::Result<()> {
     logger.header("DRY RUN: Validation", crate::logger::Colors::cyan);
 
     // Validate PROMPT.md using the utility function
     // Dry run is non-interactive by definition
-    let validation = validate_prompt_md(config.behavior.strict_validation, false);
+    let validation =
+        validate_prompt_md_with_workspace(workspace, config.behavior.strict_validation, false);
 
     // Report errors first
     for err in &validation.errors {
@@ -75,9 +79,9 @@ pub fn handle_dry_run(
     logger.success(&format!("Reviewer passes: {}", config.reviewer_reviews));
 
     // Check for checkpoint
-    if checkpoint_exists() {
+    if checkpoint_exists_with_workspace(workspace) {
         logger.info("Checkpoint found - can resume with --resume");
-        if let Ok(Some(cp)) = load_checkpoint() {
+        if let Ok(Some(cp)) = load_checkpoint_with_workspace(workspace) {
             logger.info(&format!("  Phase: {}", cp.phase));
             logger.info(&format!("  Progress: {}", cp.description()));
             logger.info(&format!("  Saved at: {}", cp.timestamp));

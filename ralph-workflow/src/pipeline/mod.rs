@@ -1,7 +1,7 @@
 //! Pipeline Execution Module
 //!
 //! This module contains the core pipeline execution infrastructure for running
-//! AI agents with fault-tolerant fallback chains and real-time output streaming.
+//! AI agents with real-time output streaming.
 //!
 //! # Key Types
 //!
@@ -9,41 +9,28 @@
 //! - [`AgentPhaseGuard`] - RAII guard for phase cleanup on success/failure
 //! - [`Timer`] - Execution duration tracking with phase support
 //! - [`PipelineRuntime`] - Runtime context for agent execution
-//! - [`FallbackConfig`] - Configuration for agent fallback behavior
 //!
 //! # Features
 //!
-//! - **Fault-tolerant execution** - Agents fall back to alternatives on failure
-//! - **XSD validation retries** - Invalid XML triggers in-session retries
-//! - **Session continuation** - Reuse agent sessions for XSD retry efficiency
+//! - **Single-attempt execution** - One agent invocation per effect
 //! - **Real-time streaming** - Live output from agents during execution
 //! - **Log management** - Structured logging to `.agent/logs/`
 //!
 //! # Module Structure
 //!
-//! - `runner` - Pipeline runtime and command execution with fallback
 //! - `types` - Pipeline statistics tracking and RAII guards
-//! - [`session`] - Session extraction and continuation for XSD retries
 //! - [`logfile`] - Unified log file path creation, parsing, and discovery
 //! - [`idle_timeout`] - Timeout handling for stuck agents
 
 #![deny(unsafe_code)]
 
 mod clipboard;
-mod fallback;
 pub mod idle_timeout;
 pub mod logfile;
-mod model_flag;
 mod prompt;
-mod runner;
-pub mod session;
 mod types;
 
-pub use fallback::OutputValidator;
 pub use prompt::{run_with_prompt, PipelineRuntime, PromptCommand};
-pub use runner::{
-    run_with_fallback_and_validator, run_xsd_retry_with_session, FallbackConfig, XsdRetryConfig,
-};
 pub use types::{AgentPhaseGuard, Stats};
 
 // ===== Timer Utilities =====
@@ -153,6 +140,3 @@ mod timer_tests {
         assert!(timer.phase_elapsed() < timer.elapsed());
     }
 }
-
-#[cfg(test)]
-mod tests;

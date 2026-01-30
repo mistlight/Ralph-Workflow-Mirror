@@ -7,8 +7,8 @@ use crate::agents::AgentRegistry;
 use crate::checkpoint::execution_history::ExecutionHistory;
 use crate::checkpoint::file_state::FileSystemState;
 use crate::checkpoint::state::{
-    AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot, PipelineCheckpoint, PipelinePhase,
-    RebaseState,
+    calculate_file_checksum_with_workspace, AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot,
+    PipelineCheckpoint, PipelinePhase, RebaseState,
 };
 use crate::checkpoint::RunContext;
 use crate::config::{Config, ReviewDepth};
@@ -51,8 +51,6 @@ pub struct CheckpointBuilder {
     // Hardened resume fields
     execution_history: Option<ExecutionHistory>,
     prompt_history: Option<std::collections::HashMap<String, String>>,
-    // Optional skip_rebase flag for CLI args capture
-    skip_rebase: Option<bool>,
     // Process executor for external process execution
     executor: Option<Arc<dyn ProcessExecutor>>,
 }
@@ -84,7 +82,6 @@ impl CheckpointBuilder {
             run_context: None,
             execution_history: None,
             prompt_history: None,
-            skip_rebase: None,
             executor: None,
         }
     }
@@ -148,12 +145,6 @@ impl CheckpointBuilder {
         self
     }
 
-    /// Set the skip_rebase flag for CLI args capture.
-    pub fn skip_rebase(mut self, value: bool) -> Self {
-        self.skip_rebase = Some(value);
-        self
-    }
-
     /// Set the process executor for external process execution.
     pub fn with_executor(mut self, executor: Arc<dyn ProcessExecutor>) -> Self {
         self.executor = Some(executor);
@@ -163,13 +154,10 @@ impl CheckpointBuilder {
     /// Capture CLI arguments from a Config.
     pub fn capture_cli_args(mut self, config: &Config) -> Self {
         let review_depth_str = review_depth_to_string(config.review_depth);
-        let skip_rebase = self.skip_rebase.unwrap_or(false);
-
         let snapshot = crate::checkpoint::state::CliArgsSnapshotBuilder::new(
             config.developer_iters,
             config.reviewer_reviews,
             review_depth_str,
-            skip_rebase,
             config.isolation_mode,
         )
         .verbosity(config.verbosity as u8)
@@ -324,6 +312,30 @@ impl CheckpointBuilder {
         // Use provided run context or generate a new one
         let run_context = self.run_context.unwrap_or_default();
 
+        let working_dir = workspace
+            .map(|ws| ws.root().to_string_lossy().to_string())
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string())
+            })
+            .unwrap_or_default();
+
+        let prompt_md_checksum = workspace.and_then(|ws| {
+            calculate_file_checksum_with_workspace(ws, std::path::Path::new("PROMPT.md"))
+        });
+
+        let (config_path, config_checksum) = if let Some(path) = self.config_path {
+            let path_string = path.to_string_lossy().to_string();
+            let checksum = workspace.and_then(|ws| {
+                let relative = path.strip_prefix(ws.root()).ok().unwrap_or(&path);
+                calculate_file_checksum_with_workspace(ws, relative)
+            });
+            (Some(path_string), checksum)
+        } else {
+            (None, None)
+        };
+
         let mut checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
             phase,
             iteration: self.iteration,
@@ -343,11 +355,11 @@ impl CheckpointBuilder {
             resume_count: run_context.resume_count,
             actual_developer_runs: run_context.actual_developer_runs.max(self.iteration),
             actual_reviewer_runs: run_context.actual_reviewer_runs.max(self.reviewer_pass),
+            working_dir,
+            prompt_md_checksum,
+            config_path,
+            config_checksum,
         });
-
-        if let Some(path) = self.config_path {
-            checkpoint = checkpoint.with_config(Some(path));
-        }
 
         // Populate execution history
         checkpoint.execution_history = self.execution_history;
@@ -402,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_builder_basic() {
-        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -454,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_prompt_history() {
-        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -489,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_prompt_history_multiple() {
-        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -541,7 +553,7 @@ mod tests {
             let workspace =
                 MemoryWorkspace::new_test().with_file("PROMPT.md", "# Test prompt content");
 
-            let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+            let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
             let dev_config =
                 AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
             let rev_config =
@@ -576,7 +588,7 @@ mod tests {
                 .with_file(".agent/PLAN.md", "# Plan")
                 .with_file(".agent/ISSUES.md", "# Issues");
 
-            let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+            let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
             let dev_config =
                 AgentConfigSnapshot::new("dev".into(), "cmd".into(), "-o".into(), None, true);
             let rev_config =

@@ -107,36 +107,6 @@ pub fn try_extract_from_file_with_workspace(
     Some(trimmed.to_string())
 }
 
-/// Combined extraction: try file first, then fall back to response extraction.
-///
-/// This function implements the two-tier extraction strategy:
-/// 1. First, check if XML was written to the designated file
-/// 2. If not found, fall back to extracting XML from the response content
-///
-/// # Arguments
-///
-/// * `workspace` - Workspace abstraction for filesystem access
-/// * `xml_path` - Path to check for file-based XML
-/// * `response_content` - The response content to fall back to
-/// * `extractor` - Function to extract XML from response content
-pub fn extract_xml_with_file_fallback_with_workspace<F>(
-    workspace: &dyn Workspace,
-    xml_path: &Path,
-    response_content: &str,
-    extractor: F,
-) -> Option<String>
-where
-    F: Fn(&str) -> Option<String>,
-{
-    // Try file-based extraction first
-    if let Some(xml) = try_extract_from_file_with_workspace(workspace, xml_path) {
-        return Some(xml);
-    }
-
-    // Fall back to response extraction
-    extractor(response_content)
-}
-
 /// Check if a file contains valid XML output.
 ///
 /// Returns `true` if the file exists, is non-empty, and starts with '<'.
@@ -180,17 +150,7 @@ pub fn has_valid_xml_output(workspace: &dyn Workspace, xml_path: &Path) -> bool 
 /// but clearly marked as already processed. If a `.processed` file already exists,
 /// it is overwritten.
 ///
-/// # Design Note
-///
-/// This `.processed` archiving mechanism is the **current** (non-legacy) behavior
-/// for XML file management. It serves two purposes:
-///
-/// 1. **Debugging**: Preserves validated XML for post-run analysis
-/// 2. **Resume support**: Allows handlers to read archived XML when replaying
-///    state during pipeline resume (via `.or_else(|| read(.processed))` fallbacks)
-///
-/// The `.processed` fallback pattern in reducer handlers is intentional and should
-/// NOT be confused with legacy artifact fallbacks (which have been removed).
+/// `.processed` files are archives only and are never used as fallback inputs.
 ///
 /// # Arguments
 ///
@@ -264,59 +224,6 @@ mod tests {
         let xml = result.unwrap();
         assert!(xml.starts_with('<'));
         assert!(xml.ends_with('>'));
-    }
-
-    #[test]
-    fn test_extract_xml_with_file_fallback_prefers_file() {
-        let workspace =
-            MemoryWorkspace::new_test().with_file("file.xml", "<from-file>content</from-file>");
-
-        let response = "<from-response>other</from-response>";
-        let result = extract_xml_with_file_fallback_with_workspace(
-            &workspace,
-            Path::new("file.xml"),
-            response,
-            |_| Some("<from-extractor>fallback</from-extractor>".to_string()),
-        );
-
-        assert!(result.is_some());
-        assert!(result.unwrap().contains("<from-file>"));
-    }
-
-    #[test]
-    fn test_extract_xml_with_file_fallback_uses_extractor() {
-        let workspace = MemoryWorkspace::new_test();
-
-        let response = "response content";
-        let result = extract_xml_with_file_fallback_with_workspace(
-            &workspace,
-            Path::new("missing.xml"),
-            response,
-            |content| {
-                if content == "response content" {
-                    Some("<extracted>from response</extracted>".to_string())
-                } else {
-                    None
-                }
-            },
-        );
-
-        assert!(result.is_some());
-        assert!(result.unwrap().contains("<extracted>"));
-    }
-
-    #[test]
-    fn test_extract_xml_with_file_fallback_returns_none() {
-        let workspace = MemoryWorkspace::new_test();
-
-        let result = extract_xml_with_file_fallback_with_workspace(
-            &workspace,
-            Path::new("missing.xml"),
-            "no xml here",
-            |_| None,
-        );
-
-        assert!(result.is_none());
     }
 
     #[test]

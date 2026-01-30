@@ -10,6 +10,8 @@
 
 use std::sync::Mutex;
 
+use crate::workspace::Workspace;
+
 /// Global interrupt context for checkpoint saving on interrupt.
 ///
 /// This is set during pipeline initialization and used by the interrupt
@@ -37,6 +39,8 @@ pub struct InterruptContext {
     pub execution_history: crate::checkpoint::ExecutionHistory,
     /// Prompt history for deterministic resume
     pub prompt_history: std::collections::HashMap<String, String>,
+    /// Workspace for checkpoint persistence
+    pub workspace: std::sync::Arc<dyn Workspace>,
 }
 
 /// Set the global interrupt context.
@@ -118,10 +122,11 @@ pub fn setup_interrupt_handler() {
 ///
 /// * `context` - The interrupt context containing the current pipeline state
 fn save_interrupt_checkpoint(context: &InterruptContext) -> anyhow::Result<()> {
-    use crate::checkpoint::{save_checkpoint, PipelinePhase};
+    use crate::checkpoint::PipelinePhase;
+    use crate::checkpoint::{load_checkpoint_with_workspace, save_checkpoint_with_workspace};
 
     // Read checkpoint from file if exists, update it with Interrupted phase
-    if let Ok(Some(mut checkpoint)) = crate::checkpoint::load_checkpoint() {
+    if let Ok(Some(mut checkpoint)) = load_checkpoint_with_workspace(&*context.workspace) {
         // Store the original phase for reference (it will be overwritten below)
         let _original_phase = context.phase;
 
@@ -135,7 +140,7 @@ fn save_interrupt_checkpoint(context: &InterruptContext) -> anyhow::Result<()> {
         checkpoint.actual_reviewer_runs = context.run_context.actual_reviewer_runs;
         checkpoint.execution_history = Some(context.execution_history.clone());
         checkpoint.prompt_history = Some(context.prompt_history.clone());
-        save_checkpoint(&checkpoint)?;
+        save_checkpoint_with_workspace(&*context.workspace, &checkpoint)?;
     } else {
         // No checkpoint exists yet - this is early interruption
         // We can't save a full checkpoint without config/registry access
@@ -149,9 +154,12 @@ fn save_interrupt_checkpoint(context: &InterruptContext) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace::MemoryWorkspace;
+    use std::sync::Arc;
 
     #[test]
     fn test_interrupt_context_creation() {
+        let workspace = Arc::new(MemoryWorkspace::new_test());
         let context = InterruptContext {
             phase: crate::checkpoint::PipelinePhase::Development,
             iteration: 2,
@@ -161,6 +169,7 @@ mod tests {
             run_context: crate::checkpoint::RunContext::new(),
             execution_history: crate::checkpoint::ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
+            workspace,
         };
 
         assert_eq!(context.phase, crate::checkpoint::PipelinePhase::Development);
@@ -170,6 +179,7 @@ mod tests {
 
     #[test]
     fn test_set_and_clear_interrupt_context() {
+        let workspace = Arc::new(MemoryWorkspace::new_test());
         let context = InterruptContext {
             phase: crate::checkpoint::PipelinePhase::Planning,
             iteration: 1,
@@ -179,6 +189,7 @@ mod tests {
             run_context: crate::checkpoint::RunContext::new(),
             execution_history: crate::checkpoint::ExecutionHistory::new(),
             prompt_history: std::collections::HashMap::new(),
+            workspace,
         };
 
         set_interrupt_context(context);

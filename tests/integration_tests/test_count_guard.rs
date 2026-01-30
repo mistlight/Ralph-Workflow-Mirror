@@ -81,10 +81,6 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("commit/mod.rs"),
     },
     SourceFile {
-        path: "codex_parser_tests.rs",
-        contents: include_str!("codex_parser_tests.rs"),
-    },
-    SourceFile {
         path: "common/mod.rs",
         contents: include_str!("common/mod.rs"),
     },
@@ -111,10 +107,6 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "logger/mod.rs",
         contents: include_str!("logger/mod.rs"),
-    },
-    SourceFile {
-        path: "logger/json_event_extraction.rs",
-        contents: include_str!("logger/json_event_extraction.rs"),
     },
     SourceFile {
         path: "logger/test_logger_tests.rs",
@@ -167,10 +159,6 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "review_xml_validation.rs",
         contents: include_str!("review_xml_validation.rs"),
-    },
-    SourceFile {
-        path: "review_xsd_retry_session.rs",
-        contents: include_str!("review_xsd_retry_session.rs"),
     },
     SourceFile {
         path: "test_count_guard.rs",

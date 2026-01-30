@@ -5,7 +5,7 @@
 //! - commit-message.txt management
 //! - PROMPT.md validation
 //! - Isolation mode file cleanup
-//! - Result extraction from agent JSON logs
+//! - File path extraction from ISSUES content
 //! - File integrity verification and checksums
 //! - Error recovery and state repair
 //! - Real-time file system monitoring for PROMPT.md protection
@@ -17,7 +17,7 @@
 //! - [`io`] - File I/O operations (agent files, recovery, backup, context)
 //! - [`protection`] - File protection and integrity (validation, integrity, monitoring)
 //! - [`llm_output_extraction`] - LLM output extraction (commit message, JSON extraction)
-//! - [`result_extraction`] - Plan and issue extraction from logs
+//! - [`result_extraction`] - File path extraction from ISSUES content
 //!
 //! # Isolation Mode
 //!
@@ -58,7 +58,3 @@ pub use io::{
 #[cfg(test)]
 pub use protection::restore_prompt_if_needed;
 pub use protection::{validate_prompt_md, validate_prompt_md_with_workspace};
-#[cfg(any(test, feature = "test-utils"))]
-pub use result_extraction::extract_issues;
-#[cfg(any(test, feature = "test-utils"))]
-pub use result_extraction::extract_plan;

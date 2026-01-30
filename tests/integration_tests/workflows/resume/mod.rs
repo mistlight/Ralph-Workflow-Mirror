@@ -44,8 +44,7 @@ pub(crate) fn make_checkpoint_json(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -108,8 +107,7 @@ pub(crate) fn make_checkpoint_with_execution_history(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -172,8 +170,7 @@ pub(crate) fn make_checkpoint_with_file_system_state(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -236,8 +233,7 @@ pub(crate) fn make_checkpoint_with_prompt_history(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",

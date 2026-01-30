@@ -7,30 +7,11 @@ use crate::prompts::template_context::TemplateContext;
 use crate::prompts::template_engine::Template;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
-use std::path::Path;
 
 #[cfg(any(test, feature = "test-utils"))]
 use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::files::result_extraction::extract_file_paths_from_issues;
-
-/// The XSD schema for commit message validation - included at compile time
-const COMMIT_MESSAGE_XSD_SCHEMA: &str =
-    include_str!("../files/llm_output_extraction/commit_message.xsd");
-
-/// Write XSD retry context files for commit message to `.agent/tmp/` directory.
-///
-/// Uses Workspace to write files to the correct location regardless of CWD.
-fn write_commit_xsd_retry_files_to_workspace(diff: &str, workspace: &dyn Workspace) {
-    if workspace.create_dir_all(Path::new(".agent/tmp")).is_err() {
-        return;
-    }
-    let _ = workspace.write(
-        Path::new(".agent/tmp/commit_message.xsd"),
-        COMMIT_MESSAGE_XSD_SCHEMA,
-    );
-    let _ = workspace.write(Path::new(".agent/tmp/diff.txt"), diff);
-}
 
 /// Generate fix prompt (applies to either role).
 ///
@@ -321,113 +302,11 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
     })
 }
 
-/// Generate simplified commit prompt using template registry.
-///
-/// This version uses the template registry which supports user template overrides.
-/// It provides a more direct and concise version of the commit prompt.
-///
-/// # Arguments
-///
-/// * `context` - Template context containing the template registry
-/// * `diff` - The git diff to generate a commit message for
-pub fn prompt_simplified_commit_with_context(context: &TemplateContext, diff: &str) -> String {
-    // Check if diff is empty or whitespace-only
-    let diff_content = diff.trim();
-    let has_changes = !diff_content.is_empty();
-
-    if !has_changes {
-        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
-                meaningful changes should be checked before requesting a commit message."
-            .to_string();
-    }
-
-    let template_content = context
-        .registry()
-        .get_template("commit_simplified")
-        .unwrap_or_else(|_| include_str!("templates/commit_simplified.txt").to_string());
-    let variables = HashMap::from([("DIFF", diff_content.to_string())]);
-    Template::new(&template_content)
-        .render_with_partials(&variables, &get_shared_partials())
-        .unwrap_or_else(|_| {
-            // Fallback to simple prompt with diff if template rendering fails
-            format!(
-                "Generate a commit message for this diff:\n\n{}\n\n\
-                 Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>",
-                diff_content
-            )
-        })
-}
-
-/// Generate XSD validation retry prompt with error feedback.
-///
-/// This prompt is used when an AI agent produces XML that fails XSD validation.
-/// It provides clear, actionable error feedback to help the agent fix the issue.
-/// The XSD schema and diff are written to files at `.agent/tmp/` to avoid
-/// bloating the prompt. The agent should read these files.
-///
-/// # Arguments
-///
-/// * `context` - Template context containing the template registry
-/// * `diff` - The git diff to generate a commit message for
-/// * `xsd_error` - The XSD validation error message to include in the prompt
-/// * `workspace` - Workspace for resolving absolute paths and writing files (accepts any Workspace implementation)
-pub fn prompt_xsd_retry_with_context(
-    context: &TemplateContext,
-    diff: &str,
-    xsd_error: &str,
-    workspace: &dyn Workspace,
-) -> String {
-    let partials = get_shared_partials();
-    // Check if diff is empty or whitespace-only
-    let diff_content = diff.trim();
-    let has_changes = !diff_content.is_empty();
-
-    if !has_changes {
-        return "ERROR: Empty diff provided. This indicates a bug in the caller - \
-                meaningful changes should be checked before requesting a commit message."
-            .to_string();
-    }
-
-    // Write context files to .agent/tmp/ for the agent to read
-    write_commit_xsd_retry_files_to_workspace(diff_content, workspace);
-
-    let template_content = context
-        .registry()
-        .get_template("commit_xsd_retry")
-        .unwrap_or_else(|_| include_str!("templates/commit_xsd_retry.txt").to_string());
-    let variables = HashMap::from([
-        ("XSD_ERROR", xsd_error.to_string()),
-        (
-            "COMMIT_MESSAGE_XML_PATH",
-            workspace.absolute_str(".agent/tmp/commit_message.xml"),
-        ),
-        (
-            "COMMIT_MESSAGE_XSD_PATH",
-            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
-        ),
-        (
-            "DIFF_TXT_PATH",
-            workspace.absolute_str(".agent/tmp/diff.txt"),
-        ),
-    ]);
-    Template::new(&template_content)
-        .render_with_partials(&variables, &partials)
-        .unwrap_or_else(|_| {
-            // Fallback to simple retry prompt if template rendering fails
-            format!(
-                "Your previous commit message failed validation.\n\nError: {}\n\n\
-                 Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/diff.txt for the diff.\n\
-                 Please fix it and output a valid commit message in XML format conforming to the XSD schema.\n"
-                ,
-                xsd_error
-            )
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::workspace::MemoryWorkspace;
+    use regex::Regex;
 
     #[test]
     fn test_prompt_fix() {
@@ -753,11 +632,21 @@ mod tests {
 
     #[test]
     fn test_context_based_fix_matches_regular() {
-        let context = TemplateContext::default();
+        let context = TemplateContext::new(
+            crate::prompts::template_registry::TemplateRegistry::new(None),
+        );
         let regular = prompt_fix("prompt", "plan", "issues");
         let with_context = prompt_fix_with_context(&context, "prompt", "plan", "issues");
-        // Both should produce equivalent output
-        assert_eq!(regular, with_context);
+        // Normalize absolute paths to avoid cross-test current_dir races.
+        let normalize_paths = |input: &str| {
+            let xml_re = Regex::new(r"[^\s`]*\.agent/tmp/fix_result\.xml").expect("xml regex");
+            let xsd_re = Regex::new(r"[^\s`]*\.agent/tmp/fix_result\.xsd").expect("xsd regex");
+            let normalized = xml_re.replace_all(input, "<FIX_RESULT_XML_PATH>");
+            let normalized = xsd_re.replace_all(&normalized, "<FIX_RESULT_XSD_PATH>");
+            normalized.into_owned()
+        };
+        // Both should produce equivalent output aside from absolute path prefixes.
+        assert_eq!(normalize_paths(&regular), normalize_paths(&with_context));
     }
 
     #[test]
@@ -811,30 +700,5 @@ mod tests {
                 || result.contains("/test/repo/.agent/tmp/commit_message.xsd"),
             "Prompt should contain absolute paths from workspace"
         );
-    }
-
-    #[test]
-    fn test_prompt_xsd_retry_with_context_renders_shared_partials_and_writes_diff() {
-        let context = TemplateContext::default();
-        let workspace = MemoryWorkspace::new_test();
-        let diff = "diff --git a/a.txt b/a.txt\n+line\n";
-
-        let result = prompt_xsd_retry_with_context(&context, diff, "XSD error", &workspace);
-
-        assert!(result.contains("XSD error"));
-
-        // Shared partials should be expanded
-        assert!(
-            result.contains("*** NO-EXECUTE MODE - READ ONLY ***"),
-            "commit_xsd_retry should render shared/_safety_no_execute partial"
-        );
-        assert!(
-            result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
-            "commit_xsd_retry should render shared/_unattended_mode partial"
-        );
-        assert!(!result.contains("{{>"));
-
-        // Retry context should write the diff to .agent/tmp/diff.txt
-        assert!(workspace.was_written(".agent/tmp/diff.txt"));
     }
 }

@@ -110,6 +110,12 @@ fn test_development_runs_exactly_n_iterations() {
             Effect::CleanupContext => {
                 state = reduce(state, PipelineEvent::ContextCleaned);
             }
+            Effect::CleanupContinuationContext => {
+                state = reduce(
+                    state,
+                    PipelineEvent::development_continuation_context_cleaned(),
+                );
+            }
             Effect::GeneratePlan { iteration } => {
                 state = reduce(
                     state,
@@ -429,6 +435,12 @@ fn test_complete_pipeline_flow() {
             }
             Effect::CleanupContext => {
                 state = reduce(state, PipelineEvent::ContextCleaned);
+            }
+            Effect::CleanupContinuationContext => {
+                state = reduce(
+                    state,
+                    PipelineEvent::development_continuation_context_cleaned(),
+                );
             }
             Effect::GeneratePlan { iteration } => {
                 state = reduce(

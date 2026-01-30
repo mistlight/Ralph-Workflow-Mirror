@@ -47,10 +47,7 @@ pub use crate::checkpoint::restore::ResumeContext;
 // Re-export public items for API convenience
 #[cfg(any(test, feature = "test-utils"))]
 pub use commit::prompt_fix_with_context;
-pub use commit::{
-    prompt_generate_commit_message_with_diff_with_context, prompt_simplified_commit_with_context,
-    prompt_xsd_retry_with_context,
-};
+pub use commit::prompt_generate_commit_message_with_diff_with_context;
 
 pub use developer::{
     prompt_developer_iteration_continuation_xml, prompt_developer_iteration_xml_with_context,

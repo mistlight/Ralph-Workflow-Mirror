@@ -1,8 +1,8 @@
-//! Tests documenting intentional handler behaviors that are NOT reducer-driven.
+//! Tests documenting explicit reducer-driven behavior and the absence of hidden paths.
 //!
-//! These tests act as architectural documentation for behaviors that appear
-//! "hidden" but are explicitly allowed because they are idempotent preparation
-//! or validation helpers with no reducer control-flow impact.
+//! These tests act as architectural documentation for the reducer-only pipeline:
+//! - No handler-level "helpfulness" (cleanup, fallback, or retry loops)
+//! - All retries, fallbacks, and phase transitions are driven by reducer events
 //!
 //! # Integration Test Style Guide
 //!
@@ -11,35 +11,30 @@
 
 use crate::test_timeout::with_default_timeout;
 
-/// Test that handler cleanup operations are intentional and non-policy decisions.
+/// Test that handler cleanup operations are reducer-driven effects, not hidden helpers.
 #[test]
-fn test_handler_cleanup_is_documented_intentional() {
+fn test_handler_cleanup_requires_effect() {
     with_default_timeout(|| {
-        // This test documents that handler-level cleanup is intentional:
-        // - clear_stale_development_result_xml
-        // - clear_stale_review_issues_xml
-        // - cleanup_continuation_context_file
-        //
-        // These are idempotent preparation steps that do not affect reducer policy.
+        // Cleanup must be driven by explicit effects (e.g., CleanupContext,
+        // CleanupContinuationContext). Handlers must not perform hidden cleanup
+        // beyond the effect being executed.
     });
 }
 
-/// Test that XSD retry loop is an intentional handler optimization.
+/// Test that XSD retry loops are NOT embedded in handlers.
 #[test]
-fn test_xsd_retry_loop_is_documented_intentional() {
+fn test_xsd_retry_loops_are_removed() {
     with_default_timeout(|| {
-        // The XSD retry loop in run_xsd_retry_with_session is intentional because:
-        // - Session continuation requires in-process state
-        // - Each retry shares session context with the agent
-        // - The loop is bounded and surfaces final results via reducer events
+        // XSD retries must be driven by reducer events/state (attempt counters).
+        // Handlers should execute a single attempt per effect.
     });
 }
 
-/// Test that marker file checks are validation helpers, not control flow.
+/// Test that marker file checks do not influence control flow.
 #[test]
 fn test_marker_file_check_is_documented_intentional() {
     with_default_timeout(|| {
-        // Marker file checks (e.g., ISSUES.md validation markers) are
-        // validation helpers. Reducer decides retry vs success.
+        // Marker files must not alter phase progression or retry decisions.
+        // Only reducer events may change control flow.
     });
 }

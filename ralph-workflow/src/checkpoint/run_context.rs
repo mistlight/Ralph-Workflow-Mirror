@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn test_run_context_from_checkpoint() {
         // Create a mock checkpoint
-        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -129,6 +129,10 @@ mod tests {
             resume_count: 1,
             actual_developer_runs: 2,
             actual_reviewer_runs: 0,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
         });
 
         let run_ctx = RunContext::from_checkpoint(&checkpoint);

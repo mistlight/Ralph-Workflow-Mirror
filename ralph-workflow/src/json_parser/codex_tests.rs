@@ -2,9 +2,7 @@
 
 use super::*;
 use crate::config::Verbosity;
-use crate::files::result_extraction::extract_last_result;
 use crate::logger::Colors;
-use crate::workspace::MemoryWorkspace;
 
 #[test]
 fn test_parse_codex_thread_started() {
@@ -193,44 +191,6 @@ fn test_codex_result_event_debug_mode() {
     assert!(output.is_some());
     let out = output.unwrap();
     assert!(out.contains("Debug result content"));
-}
-
-/// Test that synthetic result events can be extracted from log files.
-///
-/// This test simulates the full flow: Codex parser writes events to log file,
-/// including the synthetic result event, and then extraction retrieves it.
-#[test]
-fn test_codex_synthetic_result_event_extraction() {
-    use std::path::PathBuf;
-
-    // Build the log content that would be written by the parser
-    let log_content = concat!(
-        r#"{"type":"thread.started","thread_id":"thread123"}"#,
-        "\n",
-        r#"{"type":"turn.started"}"#,
-        "\n",
-        r#"{"type":"item.started","item":{"type":"agent_message","text":"I'll craft a prioritized checklist"}}"#,
-        "\n",
-        r#"{"type":"item.completed","item":{"type":"agent_message","text":"I'll craft a prioritized checklist with about ten items"}}"#,
-        "\n",
-        r#"{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":50}}"#,
-        "\n",
-        r#"{"type":"result","result":"I'll craft a prioritized checklist with about ten items across four levels."}"#,
-        "\n"
-    );
-
-    // Create workspace with the log file pre-populated
-    let workspace = MemoryWorkspace::new_test().with_file("/test/repo/codex_test.log", log_content);
-    let log_path = PathBuf::from("/test/repo/codex_test.log");
-
-    // Verify extraction can find the result event
-    let result = extract_last_result(&workspace, &log_path).unwrap();
-    assert!(
-        result.is_some(),
-        "Expected to find result event from Codex parser"
-    );
-    let result_content = result.unwrap();
-    assert!(result_content.contains("prioritized checklist"));
 }
 
 /// Test that Codex parser correctly identifies Result events as control events.

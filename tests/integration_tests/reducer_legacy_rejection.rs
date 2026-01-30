@@ -24,7 +24,6 @@
 use std::path::Path;
 
 use ralph_workflow::checkpoint::load_checkpoint_with_workspace;
-use ralph_workflow::files::result_extraction::extract_last_result;
 use ralph_workflow::workspace::MemoryWorkspace;
 
 use crate::test_timeout::with_default_timeout;
@@ -209,8 +208,7 @@ fn test_checkpoint_accepts_v3_format() {
             "reviewer_agent": "test-agent",
             "cli_args": {
                 "developer_iters": 5,
-                "reviewer_reviews": 2,
-                "skip_rebase": false
+                "reviewer_reviews": 2
             },
             "developer_agent_config": {
                 "name": "test-agent",
@@ -286,8 +284,7 @@ fn test_checkpoint_rejects_legacy_fix_phase() {
             "reviewer_agent": "test-agent",
             "cli_args": {
                 "developer_iters": 5,
-                "reviewer_reviews": 2,
-                "skip_rebase": false
+                "reviewer_reviews": 2
             },
             "developer_agent_config": {
                 "name": "test-agent",
@@ -362,8 +359,7 @@ fn test_checkpoint_rejects_legacy_review_again_phase() {
             "reviewer_agent": "test-agent",
             "cli_args": {
                 "developer_iters": 5,
-                "reviewer_reviews": 2,
-                "skip_rebase": false
+                "reviewer_reviews": 2
             },
             "developer_agent_config": {
                 "name": "test-agent",
@@ -417,117 +413,6 @@ fn test_checkpoint_rejects_legacy_review_again_phase() {
                 || err.contains("legacy")
                 || err.contains("no longer supported"),
             "Error should mention ReviewAgain or legacy: {err}"
-        );
-    });
-}
-
-// ============================================================================
-// RESULT EXTRACTION TESTS
-// ============================================================================
-
-/// Test that result extraction ignores legacy directory mode.
-///
-/// When a directory exists at the log path (legacy behavior), extraction
-/// should NOT scan the directory. Only prefix-based file matching should work.
-#[test]
-fn test_result_extraction_ignores_directory_mode() {
-    with_default_timeout(|| {
-        // Create a workspace with a directory at the log path (legacy)
-        // and a file inside it
-        // Note: result field must be a string, not an object
-        let result_event = "{\"type\":\"result\",\"result\":\"# Plan\\n\\n## Summary\\nLegacy directory content\"}";
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/logs/planning_1")
-            .with_file(".agent/logs/planning_1/output.log", result_event);
-
-        let log_path = Path::new(".agent/logs/planning_1");
-        let result = extract_last_result(&workspace, log_path).unwrap();
-
-        // Legacy directory mode should be ignored
-        assert!(
-            result.is_none(),
-            "Should not extract from directory (legacy mode removed)"
-        );
-    });
-}
-
-/// Test that result extraction ignores subdirectory fallback.
-///
-/// Legacy logs where agent names with "/" created nested directories
-/// (e.g., "planning_1_ccs/glm_0.log") should no longer be found.
-#[test]
-fn test_result_extraction_ignores_subdirectory_fallback() {
-    with_default_timeout(|| {
-        // Create a workspace with nested subdirectory structure (legacy)
-        // Note: result field must be a string, not an object
-        let result_event = "{\"type\":\"result\",\"result\":\"# Plan\\n\\n## Summary\\nNested subdirectory content\"}";
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/logs")
-            .with_file(".agent/logs/planning_1_ccs/glm_0.log", result_event);
-
-        let log_path = Path::new(".agent/logs/planning_1");
-        let result = extract_last_result(&workspace, log_path).unwrap();
-
-        // Legacy subdirectory fallback should be ignored
-        assert!(
-            result.is_none(),
-            "Should not extract from subdirectory fallback (legacy mode removed)"
-        );
-    });
-}
-
-/// Test that result extraction works with current prefix mode.
-///
-/// The primary extraction mode uses prefix-based file matching:
-/// `{prefix}_*.log` files in the parent directory.
-#[test]
-fn test_result_extraction_uses_prefix_mode() {
-    with_default_timeout(|| {
-        // Create a workspace with prefix-based log file (current convention)
-        // Note: result field must be a string, not an object
-        let result_event =
-            "{\"type\":\"result\",\"result\":\"# Plan\\n\\n## Summary\\nPrefix mode content\"}";
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/logs")
-            .with_file(".agent/logs/planning_1_claude_0.log", result_event);
-
-        let log_path = Path::new(".agent/logs/planning_1");
-        let result = extract_last_result(&workspace, log_path).unwrap();
-
-        // Prefix mode should work
-        assert!(
-            result.is_some(),
-            "Should extract from prefix-based log file"
-        );
-        assert!(
-            result.unwrap().contains("Prefix mode content"),
-            "Should contain expected content"
-        );
-    });
-}
-
-/// Test that exact file fallback still works.
-///
-/// If the exact path exists as a file, it should be read (this is Strategy 4,
-/// now Strategy 2 after removing legacy modes).
-#[test]
-fn test_result_extraction_exact_file_fallback() {
-    with_default_timeout(|| {
-        // Create a workspace with exact file at log path
-        // Note: result field must be a string, not an object
-        let result_event =
-            "{\"type\":\"result\",\"result\":\"# Plan\\n\\n## Summary\\nExact file content\"}";
-        let workspace =
-            MemoryWorkspace::new_test().with_file(".agent/logs/exact.log", result_event);
-
-        let log_path = Path::new(".agent/logs/exact.log");
-        let result = extract_last_result(&workspace, log_path).unwrap();
-
-        // Exact file fallback should still work
-        assert!(result.is_some(), "Should extract from exact file path");
-        assert!(
-            result.unwrap().contains("Exact file content"),
-            "Should contain expected content"
         );
     });
 }
@@ -1531,53 +1416,27 @@ fn test_phase_transitions_only_via_reducer_events() {
 }
 
 // ============================================================================
-// .PROCESSED FALLBACK DOCUMENTATION TESTS
+// .PROCESSED ARCHIVE TESTS (NO FALLBACK READS)
 // ============================================================================
 
-/// Test that .processed fallback is clearly distinguished from removed legacy paths.
-///
-/// # Removed Legacy Behaviors (Must NOT Return)
-///
-/// | Pattern | What It Did | Why Removed |
-/// |---------|-------------|-------------|
-/// | JSON log extraction | Read agent logs for result | Agents must write XML |
-/// | Legacy commit.xml path | Read .agent/tmp/commit.xml | Only commit_message.xml |
-/// | Directory-mode scanning | Scan directory for logs | Only prefix matching |
-/// | Subdirectory fallback | Look in nested dirs | Only flat .agent/logs/ |
-/// | ISSUES.md result extraction | Read markdown for issues | Only issues.xml |
-/// | PLAN.md result extraction | Read markdown for plan | Only plan.xml |
-///
-/// # Intentional .processed Pattern (Must Stay)
-///
-/// The `.processed` suffix is used for XML archiving after validation:
-/// 1. Agent writes `plan.xml`
-/// 2. Handler validates and archives to `plan.xml.processed`
-/// 3. On resume, handler can read from `.processed` if primary missing
-///
-/// This is NOT legacy because:
-/// - We create the `.processed` files ourselves
-/// - It's for resume support, not old version compatibility
-/// - The files have identical format to primary path
+/// Test that .processed files are archive-only and never used as fallback reads.
 #[test]
-fn test_processed_vs_legacy_distinction() {
-    with_default_timeout(|| {
-        // This test documents an architectural decision rather than testing behavior.
-        // The .processed files serve two purposes:
-        // 1. Debugging: Preserve validated XML for post-run analysis
-        // 2. Resume: Allow handlers to read archived XML during pipeline resume
-        //
-        // The pattern `read(path).or_else(|| read(path.processed))` in handlers
-        // is INTENTIONAL for resume support and should NOT be confused with
-        // legacy artifact fallbacks (which have been removed).
-        //
-        // Key differences from removed legacy behavior:
-        // - Legacy: Read ISSUES.md/PLAN.md created by old pipeline versions
-        // - Current: Read .processed files we created in the current session
-        //
-        // - Legacy: Scan directories for log files with legacy naming
-        // - Current: Only read from known XML paths we archive ourselves
+fn test_processed_files_are_archive_only() {
+    use ralph_workflow::files::llm_output_extraction::file_based_extraction::try_extract_from_file_with_workspace;
+    use ralph_workflow::workspace::MemoryWorkspace;
 
-        // No assertions needed - this is documentation via test name and docstring
+    with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/tmp/plan.xml.processed", "<plan>archived</plan>");
+
+        // Primary path missing, .processed present -> should NOT be used.
+        let result =
+            try_extract_from_file_with_workspace(&workspace, Path::new(".agent/tmp/plan.xml"));
+
+        assert!(
+            result.is_none(),
+            ".processed files are archives only; no fallback reads allowed"
+        );
     });
 }
 

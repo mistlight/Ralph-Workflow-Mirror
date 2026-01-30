@@ -10,36 +10,11 @@
 //! - **Reducer**: Pure state transitions, policy decisions, phase progression
 //! - **Handler**: Effect execution, I/O, cleanup, validation
 //!
-//! ## Intentional Handler Behaviors (NOT Reducer-Driven)
+//! ## Handler Scope
 //!
-//! The following behaviors are intentionally handled at the effect handler level
-//! rather than being driven by reducer events/effects:
-//!
-//! ### 1. Pre-Phase Cleanup Operations
-//!
-//! - `clear_stale_development_result_xml()` - clears XML before dev iteration
-//! - `clear_stale_review_issues_xml()` - clears XML before review pass
-//! - `cleanup_continuation_context_file()` - removes stale context files
-//!
-//! These are handler responsibilities because:
-//! - They are idempotent preparation steps, not policy decisions
-//! - Failure is non-fatal (logged but doesn't change control flow)
-//! - Making them separate effects would add overhead without benefit
-//!
-//! ### 2. Marker File Validation Helpers
-//!
-//! - `is_review_output_validation_failure_marker()` - checks for failure markers
-//! - `is_review_output_validation_failure_on_review_err()` - validates XML state
-//!
-//! These are handler responsibilities because:
-//! - They inform event emission, but the reducer makes the decision
-//! - They are validation, not control flow
-//!
-//! ### 3. XML Archiving (.processed suffix)
-//!
-//! The `.processed` fallback pattern (`read_xml_with_processed_fallback`) is an
-//! intentional handler optimization for resume support, NOT a legacy fallback.
-//! See function documentation for details.
+//! Handlers execute exactly one effect and emit events. They must not perform
+//! hidden cleanup, fallback, or retry logic beyond the effect being executed.
+//! XML `.processed` files are archives only and are never read as inputs.
 //!
 //! ## Reducer-Driven Behaviors (Handler Must NOT Decide)
 //!
@@ -328,10 +303,9 @@ impl MainEffectHandler {
 
                     // Try to read plan XML for semantic rendering.
                     // Try to read plan XML for semantic rendering via helper.
-                    if let Some(xml_content) = read_xml_with_processed_fallback(
-                        ctx.workspace,
-                        Path::new(xml_paths::PLAN_XML),
-                    ) {
+                    if let Some(xml_content) =
+                        read_xml_if_present(ctx.workspace, Path::new(xml_paths::PLAN_XML))
+                    {
                         ui_events.push(UIEvent::XmlOutput {
                             xml_type: XmlOutputType::DevelopmentPlan,
                             content: xml_content,
@@ -391,8 +365,6 @@ impl MainEffectHandler {
         // Defensive guard: if checkpoint state already exceeds the configured limit,
         // emit a domain event and let the reducer/orchestration decide the policy.
         if continuation_state.continuation_attempt > max_continuations {
-            let _ = cleanup_continuation_context_file(ctx);
-
             let last_status = continuation_state
                 .previous_status
                 .clone()
@@ -418,16 +390,8 @@ impl MainEffectHandler {
             ));
         }
 
-        // Clean stale continuation context when starting a fresh attempt.
-        if continuation_state.continuation_attempt == 0 {
-            let _ = cleanup_continuation_context_file(ctx);
-        }
-
-        // Clear any stale XML outputs before running the attempt.
-        clear_stale_development_result_xml(ctx.workspace, ctx.logger);
-
-        // Run a single development attempt (one session) with XSD retry.
-        let attempt = development::run_development_attempt_with_xml_retry(
+        // Run a single development attempt (one session) with validation.
+        let attempt = development::run_development_attempt(
             ctx,
             iteration,
             developer_context,
@@ -458,6 +422,17 @@ impl MainEffectHandler {
             )));
         }
 
+        if attempt.had_error {
+            let current_agent = dev_agent.clone().unwrap_or_else(|| "unknown".to_string());
+            return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                current_agent,
+                1,
+                AgentErrorKind::InternalError,
+                false,
+            )));
+        }
+
         // Check if output is invalid (XSD/XML parsing failed) - emit event, let reducer decide
         if !attempt.output_valid {
             let mut ui_events = vec![UIEvent::IterationProgress {
@@ -466,10 +441,9 @@ impl MainEffectHandler {
             }];
 
             // Try to read development result XML for semantic rendering via helper.
-            if let Some(xml_content) = read_xml_with_processed_fallback(
-                ctx.workspace,
-                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-            ) {
+            if let Some(xml_content) =
+                read_xml_if_present(ctx.workspace, Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
+            {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
                     content: xml_content,
@@ -498,8 +472,6 @@ impl MainEffectHandler {
                 crate::reducer::state::DevelopmentStatus::Completed
             )
         {
-            let _ = cleanup_continuation_context_file(ctx);
-
             let event = if continuation_state.is_continuation() {
                 PipelineEvent::development_iteration_continuation_succeeded(
                     iteration,
@@ -517,10 +489,9 @@ impl MainEffectHandler {
             let mut ui_events = vec![ui_event];
 
             // Try to read development result XML for semantic rendering via helper.
-            if let Some(xml_content) = read_xml_with_processed_fallback(
-                ctx.workspace,
-                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-            ) {
+            if let Some(xml_content) =
+                read_xml_if_present(ctx.workspace, Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
+            {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
                     content: xml_content,
@@ -539,7 +510,6 @@ impl MainEffectHandler {
         // Check if continuation budget is exhausted - emit event, let reducer decide
         let next_attempt = continuation_state.continuation_attempt + 1;
         if next_attempt > max_continuations {
-            let _ = cleanup_continuation_context_file(ctx);
             // Continuation budget exhausted: emit an event and let the reducer/orchestration
             // decide whether to abort, switch agents, or interrupt.
             let reason = development_continuation_budget_exhausted_abort_reason(
@@ -562,10 +532,9 @@ impl MainEffectHandler {
             }];
 
             // Try to read development result XML for semantic rendering via helper.
-            if let Some(xml_content) = read_xml_with_processed_fallback(
-                ctx.workspace,
-                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-            ) {
+            if let Some(xml_content) =
+                read_xml_if_present(ctx.workspace, Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
+            {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
                     content: xml_content,
@@ -585,22 +554,10 @@ impl MainEffectHandler {
             next_attempt, max_continuations, attempt.status
         ));
 
-        // Write continuation context for the next attempt.
-        // NOTE: this uses the same implementation as Effect::WriteContinuationContext.
         let status = attempt.status.clone();
         let summary = attempt.summary.clone();
         let files_changed = attempt.files_changed.clone();
         let next_steps = attempt.next_steps.clone();
-
-        let context_data = crate::reducer::effect::ContinuationContextData {
-            iteration,
-            attempt: next_attempt,
-            status: status.clone(),
-            summary: summary.clone(),
-            files_changed: files_changed.clone(),
-            next_steps: next_steps.clone(),
-        };
-        write_continuation_context_to_workspace(ctx.workspace, ctx.logger, &context_data)?;
 
         let event = PipelineEvent::development_iteration_continuation_triggered(
             iteration,
@@ -616,10 +573,9 @@ impl MainEffectHandler {
         }];
 
         // Try to read development result XML for semantic rendering via helper.
-        if let Some(xml_content) = read_xml_with_processed_fallback(
-            ctx.workspace,
-            Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-        ) {
+        if let Some(xml_content) =
+            read_xml_if_present(ctx.workspace, Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
+        {
             ui_events.push(UIEvent::XmlOutput {
                 xml_type: XmlOutputType::DevelopmentResult,
                 content: xml_content,
@@ -636,9 +592,6 @@ impl MainEffectHandler {
 
     fn run_review_pass(&mut self, ctx: &mut PhaseContext<'_>, pass: u32) -> Result<EffectResult> {
         let review_label = format!("review_{}", pass);
-
-        // Clear any stale XML outputs before running the pass.
-        clear_stale_review_issues_xml(ctx.workspace, ctx.logger);
 
         // Get current reviewer agent from agent chain
         let review_agent = self.state.agent_chain.current_agent().cloned();
@@ -660,20 +613,33 @@ impl MainEffectHandler {
                     )));
                 }
 
-                let xsd_validation_failed =
-                    is_review_output_validation_failure_marker(ctx.workspace);
-                let issues_xml_content = read_xml_with_processed_fallback(
-                    ctx.workspace,
-                    Path::new(xml_paths::ISSUES_XML),
-                );
+                if result.agent_failed {
+                    let current_agent = review_agent.unwrap_or_else(|| "unknown".to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Reviewer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::InternalError,
+                        false,
+                    )));
+                }
 
-                let event = classify_review_pass_event(
-                    pass,
-                    invalid_output_attempt,
-                    result.early_exit,
-                    xsd_validation_failed,
-                    issues_xml_content.as_deref(),
-                );
+                if !result.output_valid {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::review_output_validation_failed(
+                            pass,
+                            invalid_output_attempt,
+                        ),
+                    ));
+                }
+
+                let event = if result.issues_found {
+                    PipelineEvent::review_completed(pass, true)
+                } else if result.early_exit {
+                    PipelineEvent::review_pass_completed_clean(pass)
+                } else {
+                    PipelineEvent::review_completed(pass, false)
+                };
 
                 // Build UI events
                 let mut ui_events = vec![
@@ -685,7 +651,9 @@ impl MainEffectHandler {
                 ];
 
                 // Try to read issues XML for semantic rendering
-                if let Some(xml_content) = issues_xml_content {
+                if let Some(xml_content) =
+                    read_xml_if_present(ctx.workspace, Path::new(xml_paths::ISSUES_XML))
+                {
                     let snippets = collect_review_issue_snippets(ctx.workspace, &xml_content);
                     ui_events.push(UIEvent::XmlOutput {
                         xml_type: XmlOutputType::ReviewIssues,
@@ -712,20 +680,13 @@ impl MainEffectHandler {
                     )));
                 }
 
-                // Policy: emit OutputValidationFailed for deterministic retry/fallback when we can
-                // attribute the error to missing/invalid review output artifacts.
-                // Reserve pipeline_aborted for non-output-validation failures.
-                if is_review_output_validation_failure_on_review_err(ctx.workspace) {
-                    return Ok(EffectResult::event(
-                        PipelineEvent::review_output_validation_failed(
-                            pass,
-                            invalid_output_attempt,
-                        ),
-                    ));
-                }
-
-                Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    format!("Review pass failed (pass={pass}): {err}",),
+                let current_agent = review_agent.unwrap_or_else(|| "unknown".to_string());
+                Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                    AgentRole::Reviewer,
+                    current_agent,
+                    1,
+                    AgentErrorKind::InternalError,
+                    false,
                 )))
             }
         }
@@ -745,15 +706,44 @@ impl MainEffectHandler {
             None::<&ResumeContext>,
             fix_agent.as_deref(),
         ) {
-            Ok(_) => {
-                let event = PipelineEvent::fix_attempt_completed(pass, true);
+            Ok(result) => {
+                if result.auth_failure {
+                    let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Reviewer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::Authentication,
+                        false,
+                    )));
+                }
 
-                // Build UI events - try to read fix result XML for semantic rendering via helper.
+                if result.agent_failed {
+                    let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
+                    return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                        AgentRole::Reviewer,
+                        current_agent,
+                        1,
+                        AgentErrorKind::InternalError,
+                        false,
+                    )));
+                }
+
+                if !result.output_valid {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::review_output_validation_failed(
+                            pass,
+                            self.state.continuation.invalid_output_attempts,
+                        ),
+                    ));
+                }
+
+                let event = PipelineEvent::fix_attempt_completed(pass, result.changes_made);
+
                 let mut ui_events = vec![];
-                if let Some(xml_content) = read_xml_with_processed_fallback(
-                    ctx.workspace,
-                    Path::new(xml_paths::FIX_RESULT_XML),
-                ) {
+                if let Some(xml_content) =
+                    read_xml_if_present(ctx.workspace, Path::new(xml_paths::FIX_RESULT_XML))
+                {
                     ui_events.push(UIEvent::XmlOutput {
                         xml_type: XmlOutputType::FixResult,
                         content: xml_content,
@@ -779,8 +769,13 @@ impl MainEffectHandler {
                     )));
                 }
 
-                Ok(EffectResult::event(PipelineEvent::fix_attempt_completed(
-                    pass, false,
+                let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
+                Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                    AgentRole::Reviewer,
+                    current_agent,
+                    1,
+                    AgentErrorKind::InternalError,
+                    false,
                 )))
             }
         }
@@ -904,53 +899,54 @@ impl MainEffectHandler {
         // Get commit agent first to avoid borrow conflicts
         let commit_agent = get_primary_commit_agent(ctx).unwrap_or_else(|| "commit".to_string());
 
-        let mut runtime = PipelineRuntime {
-            timer: ctx.timer,
-            logger: ctx.logger,
-            colors: ctx.colors,
-            config: ctx.config,
-            executor: ctx.executor,
-            executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
-            workspace: ctx.workspace,
-        };
+        let attempt_result = commit::run_commit_attempt(ctx, attempt, &diff, &commit_agent)?;
 
-        match commit::generate_commit_message(
-            &diff,
-            ctx.registry,
-            &mut runtime,
-            &commit_agent,
-            ctx.template_context,
-            ctx.workspace,
-            &ctx.prompt_history,
-        ) {
-            Ok(result) => {
-                let event =
-                    PipelineEvent::commit_message_generated(result.message.clone(), attempt);
+        if attempt_result.auth_failure {
+            return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                AgentRole::Commit,
+                commit_agent,
+                1,
+                AgentErrorKind::Authentication,
+                false,
+            )));
+        }
 
-                // Build UI events
-                let mut ui_events = vec![
-                    // Emit phase transition UI event
-                    self.phase_transition_ui(PipelinePhase::CommitMessage),
-                ];
+        if attempt_result.had_error {
+            return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
+                AgentRole::Commit,
+                commit_agent,
+                1,
+                AgentErrorKind::InternalError,
+                false,
+            )));
+        }
 
-                // Try to read commit message XML for semantic rendering
-                if let Some(xml_content) = read_commit_message_xml(ctx.workspace) {
-                    ui_events.push(UIEvent::XmlOutput {
-                        xml_type: XmlOutputType::CommitMessage,
-                        content: xml_content,
-                        context: None,
-                    });
-                }
-
-                Ok(EffectResult::with_ui(event, ui_events))
-            }
-            Err(_) => Ok(EffectResult::event(
-                PipelineEvent::commit_message_generated(
-                    "chore: automated commit".to_string(),
+        if !attempt_result.output_valid {
+            return Ok(EffectResult::event(
+                PipelineEvent::commit_message_validation_failed(
+                    attempt_result.validation_detail,
                     attempt,
                 ),
-            )),
+            ));
         }
+
+        let message = attempt_result
+            .message
+            .expect("commit attempt reported output_valid=true but message was missing");
+
+        let event = PipelineEvent::commit_message_generated(message.clone(), attempt);
+
+        let mut ui_events = vec![self.phase_transition_ui(PipelinePhase::CommitMessage)];
+
+        if let Some(xml_content) = read_commit_message_xml(ctx.workspace) {
+            ui_events.push(UIEvent::XmlOutput {
+                xml_type: XmlOutputType::CommitMessage,
+                content: xml_content,
+                context: None,
+            });
+        }
+
+        Ok(EffectResult::with_ui(event, ui_events))
     }
 
     fn create_commit(
@@ -1296,47 +1292,16 @@ fn collect_review_issue_snippets(
 }
 
 fn read_commit_message_xml(workspace: &dyn Workspace) -> Option<String> {
-    read_xml_with_processed_fallback(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML))
+    read_xml_if_present(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML))
 }
 
-/// Read XML content from primary path with `.processed` fallback for resume support.
+/// Read XML content from the primary path only.
 ///
-/// This helper consolidates the `.processed` fallback pattern used throughout the
-/// handler. The pattern is NOT legacy behavior - it's the current XML archiving
-/// mechanism for resume support.
-///
-/// # Design Rationale
-///
-/// When XML passes validation, [`archive_xml_file_with_workspace`] renames it to
-/// `.processed` for debugging while marking it as processed. Reading `.processed`
-/// allows replaying archived state during resume.
-///
-/// # Removed Legacy Behaviors
-///
-/// The following fallbacks have been REMOVED and must NOT be reintroduced:
-/// - JSON log extraction (agents must write XML files)
-/// - Legacy `commit.xml` path (only `commit_message.xml` is supported)
-/// - Directory-mode log scanning (only prefix-based matching)
-/// - Subdirectory fallback for agent names with "/"
-///
-/// # Arguments
-///
-/// * `workspace` - Workspace abstraction for filesystem access
-/// * `primary_path` - The primary path to the XML file (e.g., `.agent/tmp/plan.xml`)
-///
-/// # Returns
-///
-/// The content of the XML file if found at either the primary path or the
-/// `.processed` path, `None` otherwise.
-fn read_xml_with_processed_fallback(
-    workspace: &dyn Workspace,
-    primary_path: &Path,
-) -> Option<String> {
-    let processed_path = primary_path.with_extension("xml.processed");
-    workspace
-        .read(primary_path)
-        .ok()
-        .or_else(|| workspace.read(&processed_path).ok())
+/// The reducer/effect pipeline requires agents to write XML to the canonical
+/// `.agent/tmp/*.xml` paths. Archived `.processed` files are debug artifacts and
+/// must not be used as fallback inputs.
+fn read_xml_if_present(workspace: &dyn Workspace, primary_path: &Path) -> Option<String> {
+    workspace.read(primary_path).ok()
 }
 
 fn parse_issue_location(issue: &str) -> Option<(String, u32, u32)> {
@@ -1420,103 +1385,6 @@ fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Resu
     Ok(())
 }
 
-fn clear_stale_development_result_xml(workspace: &dyn Workspace, logger: &crate::logger::Logger) {
-    for path in [
-        Path::new(".agent/tmp/development_result.xml"),
-        Path::new(".agent/tmp/development_result.xml.processed"),
-    ] {
-        if workspace.exists(path) {
-            if let Err(err) = workspace.remove(path) {
-                logger.warn(&format!("Failed to remove stale {}: {err}", path.display()));
-            }
-        }
-    }
-}
-
-fn clear_stale_review_issues_xml(workspace: &dyn Workspace, logger: &crate::logger::Logger) {
-    for path in [
-        Path::new(".agent/tmp/issues.xml"),
-        Path::new(".agent/tmp/issues.xml.processed"),
-        // Also clear the markdown marker used to signal review output validation failures.
-        // This prevents a stale marker from a previous run from misclassifying the current pass.
-        Path::new(".agent/ISSUES.md"),
-    ] {
-        if workspace.exists(path) {
-            if let Err(err) = workspace.remove(path) {
-                logger.warn(&format!("Failed to remove stale {}: {err}", path.display()));
-            }
-        }
-    }
-}
-
-fn is_review_output_validation_failure_marker(workspace: &dyn Workspace) -> bool {
-    let marker = "# Review Output XSD Validation Failure";
-    workspace
-        .read(Path::new(".agent/ISSUES.md"))
-        .ok()
-        .map(|s| s.starts_with(marker))
-        .unwrap_or(false)
-}
-
-fn is_review_output_validation_failure_on_review_err(workspace: &dyn Workspace) -> bool {
-    if is_review_output_validation_failure_marker(workspace) {
-        return true;
-    }
-
-    let issues_xml_content =
-        read_xml_with_processed_fallback(workspace, Path::new(xml_paths::ISSUES_XML));
-
-    // Missing issues XML is not a strong signal of an output validation failure.
-    // review::run_review_pass can fail before writing any output artifacts (process/runtime/I/O).
-    let Some(xml) = issues_xml_content else {
-        return false;
-    };
-
-    validate_issues_xml(&xml).is_err()
-}
-
-fn classify_review_pass_event(
-    pass: u32,
-    invalid_output_attempt: u32,
-    early_exit: bool,
-    xsd_validation_failed: bool,
-    issues_xml: Option<&str>,
-) -> PipelineEvent {
-    if xsd_validation_failed {
-        return PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt);
-    }
-
-    // Absence of issues XML, or invalid issues XML, is an output validation failure.
-    // Do NOT treat it as "issues found" because that can incorrectly trigger fix attempts.
-    let Some(xml) = issues_xml else {
-        return PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt);
-    };
-
-    let validated = match validate_issues_xml(xml) {
-        Ok(v) => v,
-        Err(_) => {
-            return PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt);
-        }
-    };
-
-    let no_issues = validated.issues.is_empty() && validated.no_issues_found.is_some();
-
-    // Invariant: early_exit is only valid when the output explicitly declares no issues.
-    // If we see early_exit alongside issues, treat it as invalid output so orchestration can retry.
-    if early_exit && !no_issues {
-        return PipelineEvent::review_output_validation_failed(pass, invalid_output_attempt);
-    }
-    if no_issues {
-        if early_exit {
-            return PipelineEvent::review_phase_completed(true);
-        }
-        return PipelineEvent::review_pass_completed_clean(pass);
-    }
-
-    // Valid, parsed output with issues.
-    PipelineEvent::review_completed(pass, true)
-}
-
 fn development_continuation_budget_exhausted_abort_reason(
     iteration: u32,
     total_attempts: u32,
@@ -1552,7 +1420,7 @@ fn save_checkpoint_from_state(
         .with_execution_history(ctx.execution_history.clone())
         .with_prompt_history(ctx.clone_prompt_history());
 
-    if let Some(checkpoint) = builder.build() {
+    if let Some(checkpoint) = builder.build_with_workspace(ctx.workspace) {
         let _ = save_checkpoint_with_workspace(ctx.workspace, &checkpoint);
     }
 
@@ -1795,108 +1663,6 @@ mod tests {
         assert!(
             workspace.exists(Path::new(".agent/tmp/keep.txt")),
             "non-xml file should not be deleted"
-        );
-    }
-
-    #[test]
-    fn test_clear_stale_development_result_xml_removes_files() {
-        use crate::logger::{Colors, Logger};
-        use crate::workspace::{MemoryWorkspace, Workspace};
-        use std::path::Path;
-
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/tmp")
-            .with_file(".agent/tmp/development_result.xml", "<stale/>")
-            .with_file(".agent/tmp/development_result.xml.processed", "<stale/>");
-        let logger = Logger::new(Colors { enabled: false });
-
-        clear_stale_development_result_xml(&workspace, &logger);
-
-        assert!(!workspace.exists(Path::new(".agent/tmp/development_result.xml")));
-        assert!(!workspace.exists(Path::new(".agent/tmp/development_result.xml.processed")));
-    }
-
-    #[test]
-    fn test_clear_stale_review_issues_xml_removes_files() {
-        use crate::logger::{Colors, Logger};
-        use crate::workspace::{MemoryWorkspace, Workspace};
-        use std::path::Path;
-
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/tmp")
-            .with_file(".agent/tmp/issues.xml", "<stale/>")
-            .with_file(".agent/tmp/issues.xml.processed", "<stale/>");
-        let logger = Logger::new(Colors { enabled: false });
-
-        clear_stale_review_issues_xml(&workspace, &logger);
-
-        assert!(!workspace.exists(Path::new(".agent/tmp/issues.xml")));
-        assert!(!workspace.exists(Path::new(".agent/tmp/issues.xml.processed")));
-    }
-
-    #[test]
-    fn test_clear_stale_review_issues_xml_removes_stale_issues_marker_file() {
-        use crate::logger::{Colors, Logger};
-        use crate::workspace::{MemoryWorkspace, Workspace};
-        use std::path::Path;
-
-        let workspace = MemoryWorkspace::new_test().with_file(
-            ".agent/ISSUES.md",
-            "# Review Output XSD Validation Failure\n\nstale marker from previous run",
-        );
-        let logger = Logger::new(Colors { enabled: false });
-
-        clear_stale_review_issues_xml(&workspace, &logger);
-
-        assert!(
-            !workspace.exists(Path::new(".agent/ISSUES.md")),
-            "ISSUES.md marker should be cleared at start of review pass"
-        );
-    }
-
-    #[test]
-    fn test_is_review_output_validation_failure_on_review_err_missing_artifacts_is_not_validation_failure(
-    ) {
-        use crate::workspace::MemoryWorkspace;
-
-        // Missing output artifacts can happen when review fails before writing any output.
-        // This must not be treated as an output validation failure (which would trigger retries).
-        let workspace = MemoryWorkspace::new_test();
-
-        assert!(
-            !is_review_output_validation_failure_on_review_err(&workspace),
-            "Missing issues.xml/marker should not be classified as output validation failure"
-        );
-    }
-
-    #[test]
-    fn test_is_review_output_validation_failure_on_review_err_marker_is_validation_failure() {
-        use crate::workspace::MemoryWorkspace;
-
-        let workspace = MemoryWorkspace::new_test().with_file(
-            ".agent/ISSUES.md",
-            "# Review Output XSD Validation Failure\n\nvalidation failed",
-        );
-
-        assert!(
-            is_review_output_validation_failure_on_review_err(&workspace),
-            "Marker should be classified as output validation failure"
-        );
-    }
-
-    #[test]
-    fn test_is_review_output_validation_failure_on_review_err_invalid_issues_xml_is_validation_failure(
-    ) {
-        use crate::workspace::MemoryWorkspace;
-
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/tmp")
-            // Intentionally invalid against the issues XSD.
-            .with_file(".agent/tmp/issues.xml", "<ralph-issues />");
-
-        assert!(
-            is_review_output_validation_failure_on_review_err(&workspace),
-            "Invalid issues XML should be classified as output validation failure"
         );
     }
 
@@ -2385,128 +2151,6 @@ mod tests {
         assert_eq!(ctx.developer_agent, orig_dev);
         assert!(ctx.prompt_history.contains_key("existing"));
         assert!(ctx.prompt_history.contains_key("new"));
-    }
-
-    #[test]
-    fn test_classify_review_pass_event_no_issues_without_early_exit_emits_clean_pass() {
-        let xml = r#"<ralph-issues>
- <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
- </ralph-issues>"#;
-
-        let event = classify_review_pass_event(0, 0, false, false, Some(xml));
-
-        assert!(matches!(
-            event,
-            PipelineEvent::Review(crate::reducer::event::ReviewEvent::PassCompletedClean {
-                pass: 0
-            })
-        ));
-    }
-
-    #[test]
-    fn test_classify_review_pass_event_no_issues_with_early_exit_emits_phase_completed() {
-        let xml = r#"<ralph-issues>
- <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
- </ralph-issues>"#;
-
-        let event = classify_review_pass_event(0, 0, true, false, Some(xml));
-
-        assert!(matches!(
-            event,
-            PipelineEvent::Review(crate::reducer::event::ReviewEvent::PhaseCompleted {
-                early_exit: true
-            })
-        ));
-    }
-
-    #[test]
-    fn test_classify_review_pass_event_issues_found_emits_completed_with_issues_found_true() {
-        let xml = r#"<ralph-issues>
-  <ralph-issue>Something is wrong</ralph-issue>
-  </ralph-issues>"#;
-
-        let event = classify_review_pass_event(3, 0, false, false, Some(xml));
-
-        assert!(matches!(
-            event,
-            PipelineEvent::Review(crate::reducer::event::ReviewEvent::Completed {
-                pass: 3,
-                issues_found: true
-            })
-        ));
-    }
-
-    #[test]
-    fn test_classify_review_pass_event_early_exit_with_issues_emits_output_validation_failed() {
-        // Invariant: early_exit is only valid when no issues are present.
-        // If we see early_exit with issues, treat it as invalid output and retry.
-        let xml = r#"<ralph-issues>
-  <ralph-issue>Something is wrong</ralph-issue>
-  </ralph-issues>"#;
-
-        let event = classify_review_pass_event(5, 2, true, false, Some(xml));
-
-        assert!(matches!(
-            event,
-            PipelineEvent::Review(crate::reducer::event::ReviewEvent::OutputValidationFailed {
-                pass: 5,
-                attempt: 2
-            })
-        ));
-    }
-
-    #[test]
-    fn test_classify_review_pass_event_missing_issues_xml_emits_output_validation_failed() {
-        let event = classify_review_pass_event(1, 4, false, false, None);
-
-        assert!(matches!(
-            event,
-            PipelineEvent::Review(crate::reducer::event::ReviewEvent::OutputValidationFailed {
-                pass: 1,
-                attempt: 4
-            })
-        ));
-    }
-
-    #[test]
-    fn test_classify_review_pass_event_invalid_issues_xml_emits_output_validation_failed() {
-        // Invalid XML should be treated as output validation failure, not "issues found".
-        let invalid_xml = r#"<ralph-issues><ralph-issue>oops"#;
-
-        let event = classify_review_pass_event(2, 1, false, false, Some(invalid_xml));
-
-        assert!(matches!(
-            event,
-            PipelineEvent::Review(crate::reducer::event::ReviewEvent::OutputValidationFailed {
-                pass: 2,
-                attempt: 1
-            })
-        ));
-    }
-
-    #[test]
-    fn test_is_review_output_validation_failure_on_review_err_when_issues_xml_missing_is_false() {
-        use crate::workspace::MemoryWorkspace;
-
-        let workspace = MemoryWorkspace::new_test();
-
-        assert!(!is_review_output_validation_failure_on_review_err(
-            &workspace
-        ));
-    }
-
-    #[test]
-    fn test_is_review_output_validation_failure_on_review_err_when_issues_xml_invalid() {
-        use crate::workspace::MemoryWorkspace;
-
-        let workspace = MemoryWorkspace::new_test().with_file(
-            ".agent/tmp/issues.xml",
-            r#"<ralph-issues><ralph-issue>oops"#,
-        );
-
-        assert!(is_review_output_validation_failure_on_review_err(
-            &workspace
-        ));
     }
 
     #[test]

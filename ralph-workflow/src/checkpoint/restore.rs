@@ -341,7 +341,7 @@ mod tests {
     };
 
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32, pass: u32) -> PipelineCheckpoint {
-        let cli_args = CliArgsSnapshot::new(5, 3, None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 3, None, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -367,6 +367,10 @@ mod tests {
             resume_count: 0,
             actual_developer_runs: iteration,
             actual_reviewer_runs: pass,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
         })
     }
 

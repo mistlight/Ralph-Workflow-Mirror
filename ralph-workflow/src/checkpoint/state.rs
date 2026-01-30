@@ -10,30 +10,16 @@
 //! - "Fix" (use "Development" instead)
 //! - "ReviewAgain" (use "Review" instead)
 //!
-//! # Backwards Compatibility Note
+//! # Backwards Compatibility
 //!
-//! The `CliArgsSnapshot::skip_rebase` field is preserved for backwards compatibility
-//! with existing checkpoints. The `--skip-rebase` CLI flag was removed in this version
-//! because rebase is now disabled by default (use `--with-rebase` to enable).
-//!
-//! ## Deprecation Timeline
-//!
-//! - **Current**: Field preserved for checkpoint loading compatibility
-//! - **Next Major Version**: Field will be removed; checkpoints with skip_rebase
-//!   will require re-creation via fresh pipeline run
-//!
-//! ## Migration Path
-//!
-//! Users with old checkpoints containing `skip_rebase=false` should:
-//! 1. Complete or delete the existing checkpoint
-//! 2. Start a new pipeline run with `--with-rebase` if rebase is desired
+//! Legacy checkpoint formats are not supported. Users must delete old
+//! checkpoints and start a fresh pipeline run.
 
 use chrono::Local;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::fs;
 use std::io;
 use std::path::Path;
 
@@ -64,14 +50,6 @@ fn checkpoint_path() -> String {
     format!("{AGENT_DIR}/{CHECKPOINT_FILE}")
 }
 
-/// Calculate SHA-256 checksum of a file's contents.
-///
-/// Returns None if the file doesn't exist or cannot be read.
-pub(crate) fn calculate_file_checksum(path: &Path) -> Option<String> {
-    let content = fs::read(path).ok()?;
-    Some(calculate_checksum_from_bytes(&content))
-}
-
 /// Calculate SHA-256 checksum from bytes.
 ///
 /// This is the core checksum calculation used by both file-based and
@@ -94,14 +72,6 @@ pub struct CliArgsSnapshot {
     pub reviewer_reviews: u32,
     /// Review depth level (if specified)
     pub review_depth: Option<String>,
-    /// Whether to skip automatic rebase.
-    ///
-    /// **DEPRECATED:** This field exists only for backwards compatibility with existing
-    /// checkpoints. The `--skip-rebase` CLI flag was removed; rebase is now disabled
-    /// by default (use `--with-rebase` to enable). See module-level documentation for
-    /// deprecation timeline. When `skip_rebase=false` is loaded from a checkpoint,
-    /// the resume command reconstructs the `--with-rebase` flag.
-    pub skip_rebase: bool,
     /// Isolation mode: when false, NOTES.md and ISSUES.md persist between iterations.
     /// Default is true (isolation enabled).
     #[serde(default = "default_isolation_mode")]
@@ -137,7 +107,6 @@ pub struct CliArgsSnapshotBuilder {
     developer_iters: u32,
     reviewer_reviews: u32,
     review_depth: Option<String>,
-    skip_rebase: bool,
     isolation_mode: bool,
     verbosity: u8,
     show_streaming_metrics: bool,
@@ -150,14 +119,12 @@ impl CliArgsSnapshotBuilder {
         developer_iters: u32,
         reviewer_reviews: u32,
         review_depth: Option<String>,
-        skip_rebase: bool,
         isolation_mode: bool,
     ) -> Self {
         Self {
             developer_iters,
             reviewer_reviews,
             review_depth,
-            skip_rebase,
             isolation_mode,
             verbosity: 2,
             show_streaming_metrics: false,
@@ -189,7 +156,6 @@ impl CliArgsSnapshotBuilder {
             developer_iters: self.developer_iters,
             reviewer_reviews: self.reviewer_reviews,
             review_depth: self.review_depth,
-            skip_rebase: self.skip_rebase,
             isolation_mode: self.isolation_mode,
             verbosity: self.verbosity,
             show_streaming_metrics: self.show_streaming_metrics,
@@ -208,7 +174,6 @@ impl CliArgsSnapshot {
         developer_iters: u32,
         reviewer_reviews: u32,
         review_depth: Option<String>,
-        skip_rebase: bool,
         isolation_mode: bool,
         verbosity: u8,
         show_streaming_metrics: bool,
@@ -218,7 +183,6 @@ impl CliArgsSnapshot {
             developer_iters,
             reviewer_reviews,
             review_depth,
-            skip_rebase,
             isolation_mode,
         )
         .verbosity(verbosity)
@@ -394,6 +358,14 @@ pub struct CheckpointParams<'a> {
     pub actual_developer_runs: u32,
     /// Actual completed reviewer passes
     pub actual_reviewer_runs: u32,
+    /// Working directory at checkpoint time (repo root)
+    pub working_dir: String,
+    /// PROMPT.md checksum captured at checkpoint time
+    pub prompt_md_checksum: Option<String>,
+    /// Config path stored with checkpoint (if any)
+    pub config_path: Option<String>,
+    /// Config checksum stored with checkpoint (if any)
+    pub config_checksum: Option<String>,
 }
 
 /// Rebase state tracking.
@@ -630,14 +602,6 @@ impl PipelineCheckpoint {
     ///
     /// * `params` - All checkpoint parameters bundled in a struct
     pub fn from_params(params: CheckpointParams<'_>) -> Self {
-        // Get current working directory
-        let working_dir = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        // Calculate PROMPT.md checksum if it exists
-        let prompt_md_checksum = calculate_file_checksum(Path::new("PROMPT.md"));
-
         Self {
             version: CHECKPOINT_VERSION,
             phase: params.phase,
@@ -652,10 +616,10 @@ impl PipelineCheckpoint {
             developer_agent_config: params.developer_agent_config,
             reviewer_agent_config: params.reviewer_agent_config,
             rebase_state: params.rebase_state,
-            config_path: None,     // Will be set by caller if needed
-            config_checksum: None, // Will be set by caller if needed
-            working_dir,
-            prompt_md_checksum,
+            config_path: params.config_path,
+            config_checksum: params.config_checksum,
+            working_dir: params.working_dir,
+            prompt_md_checksum: params.prompt_md_checksum,
             git_user_name: params.git_user_name.map(String::from),
             git_user_email: params.git_user_email.map(String::from),
             // New v2 fields
@@ -735,15 +699,6 @@ impl PipelineCheckpoint {
             }
         }
     }
-
-    /// Set the config path and calculate its checksum.
-    pub fn with_config(mut self, path: Option<std::path::PathBuf>) -> Self {
-        if let Some(p) = path {
-            self.config_path = Some(p.to_string_lossy().to_string());
-            self.config_checksum = calculate_file_checksum(&p);
-        }
-        self
-    }
 }
 
 /// Load a checkpoint from a string.
@@ -787,111 +742,11 @@ pub fn timestamp() -> String {
     Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-/// Save a pipeline checkpoint to disk.
-///
-/// Writes the checkpoint atomically by writing to a temp file first,
-/// then renaming to the final path. This prevents corruption if the
-/// process is interrupted during the write.
-///
-/// # Errors
-///
-/// Returns an error if serialization fails or the file cannot be written.
-pub fn save_checkpoint(checkpoint: &PipelineCheckpoint) -> io::Result<()> {
-    let json = serde_json::to_string_pretty(checkpoint).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Failed to serialize checkpoint: {e}"),
-        )
-    })?;
-
-    // Ensure the .agent directory exists before attempting to write
-    fs::create_dir_all(AGENT_DIR)?;
-
-    // Write atomically by writing to temp file then renaming
-    let checkpoint_path_str = checkpoint_path();
-    let temp_path = format!("{checkpoint_path_str}.tmp");
-
-    // Ensure temp file is cleaned up even if write or rename fails
-    let write_result = fs::write(&temp_path, &json);
-    if write_result.is_err() {
-        let _ = fs::remove_file(&temp_path);
-        return write_result;
-    }
-
-    let rename_result = fs::rename(&temp_path, &checkpoint_path_str);
-    if rename_result.is_err() {
-        let _ = fs::remove_file(&temp_path);
-        return rename_result;
-    }
-
-    Ok(())
-}
-
-/// Load an existing checkpoint if one exists.
-///
-/// Returns `Ok(Some(checkpoint))` if a valid checkpoint was loaded,
-/// `Ok(None)` if no checkpoint file exists, or an error if the file
-/// exists but cannot be parsed.
-///
-/// # Errors
-///
-/// Returns an error if the checkpoint file exists but cannot be read,
-/// contains invalid JSON, or is in an unsupported format.
-///
-/// # Note
-///
-/// Only v3 (current) checkpoint format is supported. Legacy checkpoint
-/// formats (v1, v2, pre-v1) are no longer auto-migrated and will result
-/// in an error. Users must delete the checkpoint and start fresh.
-pub fn load_checkpoint() -> io::Result<Option<PipelineCheckpoint>> {
-    let checkpoint = checkpoint_path();
-    let path = Path::new(&checkpoint);
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let content = fs::read_to_string(path)?;
-    let loaded_checkpoint = load_checkpoint_with_fallback(&content).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Failed to parse checkpoint: {e}"),
-        )
-    })?;
-
-    Ok(Some(loaded_checkpoint))
-}
-
-/// Delete the checkpoint file.
-///
-/// Called on successful pipeline completion to clean up the checkpoint.
-/// Does nothing if the checkpoint file doesn't exist.
-///
-/// # Errors
-///
-/// Returns an error if the file exists but cannot be deleted.
-pub fn clear_checkpoint() -> io::Result<()> {
-    let checkpoint = checkpoint_path();
-    let path = Path::new(&checkpoint);
-    if path.exists() {
-        fs::remove_file(path)?;
-    }
-    Ok(())
-}
-
-/// Check if a checkpoint exists.
-///
-/// Returns `true` if a checkpoint file exists, `false` otherwise.
-pub fn checkpoint_exists() -> bool {
-    Path::new(&checkpoint_path()).exists()
-}
-
 // ============================================================================
 // Workspace-based checkpoint functions (for testability with MemoryWorkspace)
 // ============================================================================
 
 /// Calculate SHA-256 checksum of a file using the workspace.
-///
-/// This is the workspace-based version of `calculate_file_checksum`.
 ///
 /// # Arguments
 ///
@@ -909,19 +764,10 @@ pub fn calculate_file_checksum_with_workspace(
 
 /// Save a pipeline checkpoint using the workspace.
 ///
-/// This is the workspace-based version of `save_checkpoint`.
-///
 /// # Arguments
 ///
 /// * `workspace` - The workspace for file operations
 /// * `checkpoint` - The checkpoint to save
-///
-/// # Note
-///
-/// Unlike the original `save_checkpoint`, this version does NOT use atomic
-/// writes (temp file + rename) since the Workspace trait doesn't support
-/// rename operations. For production code requiring atomicity, use the
-/// original `save_checkpoint()`.
 pub fn save_checkpoint_with_workspace(
     workspace: &dyn Workspace,
     checkpoint: &PipelineCheckpoint,
@@ -936,13 +782,11 @@ pub fn save_checkpoint_with_workspace(
     // Ensure the .agent directory exists
     workspace.create_dir_all(Path::new(AGENT_DIR))?;
 
-    // Write checkpoint file
-    workspace.write(Path::new(&checkpoint_path()), &json)
+    // Write checkpoint file atomically
+    workspace.write_atomic(Path::new(&checkpoint_path()), &json)
 }
 
 /// Load an existing checkpoint using the workspace.
-///
-/// This is the workspace-based version of `load_checkpoint`.
 ///
 /// Returns `Ok(Some(checkpoint))` if a valid checkpoint was loaded,
 /// `Ok(None)` if no checkpoint file exists, or an error if the file
@@ -970,8 +814,6 @@ pub fn load_checkpoint_with_workspace(
 
 /// Delete the checkpoint file using the workspace.
 ///
-/// This is the workspace-based version of `clear_checkpoint`.
-///
 /// Does nothing if the checkpoint file doesn't exist.
 pub fn clear_checkpoint_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     let checkpoint_path_str = checkpoint_path();
@@ -984,8 +826,6 @@ pub fn clear_checkpoint_with_workspace(workspace: &dyn Workspace) -> io::Result<
 }
 
 /// Check if a checkpoint exists using the workspace.
-///
-/// This is the workspace-based version of `checkpoint_exists`.
 pub fn checkpoint_exists_with_workspace(workspace: &dyn Workspace) -> bool {
     workspace.exists(Path::new(&checkpoint_path()))
 }
@@ -1009,7 +849,7 @@ mod tests {
             phase: PipelinePhase,
             iteration: u32,
         ) -> PipelineCheckpoint {
-            let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+            let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
             let dev_config =
                 AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
             let rev_config =
@@ -1034,6 +874,10 @@ mod tests {
                 resume_count: 0,
                 actual_developer_runs: iteration,
                 actual_reviewer_runs: 0,
+                working_dir: "/test/repo".to_string(),
+                prompt_md_checksum: None,
+                config_path: None,
+                config_checksum: None,
             })
         }
 
@@ -1160,8 +1004,7 @@ mod tests {
                     "developer_iters": 1,
                     "reviewer_reviews": 0,
                     "commit_msg": "",
-                    "review_depth": null,
-                    "skip_rebase": false
+                    "review_depth": null
                 },
                 "developer_agent_config": {
                     "name": "test-agent",
@@ -1224,8 +1067,7 @@ mod tests {
                     "developer_iters": 1,
                     "reviewer_reviews": 0,
                     "commit_msg": "",
-                    "review_depth": null,
-                    "skip_rebase": false
+                    "review_depth": null
                 },
                 "developer_agent_config": {
                     "name": "test-agent",
@@ -1309,7 +1151,7 @@ mod tests {
 
     /// Helper function to create a checkpoint for testing.
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32) -> PipelineCheckpoint {
-        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -1334,6 +1176,10 @@ mod tests {
             resume_count: 0,
             actual_developer_runs: iteration,
             actual_reviewer_runs: 0,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
         })
     }
 
@@ -1375,7 +1221,7 @@ mod tests {
 
     #[test]
     fn test_checkpoint_from_params() {
-        let cli_args = CliArgsSnapshot::new(5, 2, None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 2, None, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -1400,6 +1246,10 @@ mod tests {
             resume_count: 0,
             actual_developer_runs: 2,
             actual_reviewer_runs: 0,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
         });
 
         assert_eq!(checkpoint.phase, PipelinePhase::Development);
@@ -1431,7 +1281,7 @@ mod tests {
             total_reviewer_passes: 3,
             developer_agent: "claude",
             reviewer_agent: "codex",
-            cli_args: CliArgsSnapshot::new(5, 3, None, false, true, 2, false, None),
+            cli_args: CliArgsSnapshot::new(5, 3, None, true, 2, false, None),
             developer_agent_config: AgentConfigSnapshot::new(
                 "claude".into(),
                 "cmd".into(),
@@ -1454,6 +1304,10 @@ mod tests {
             resume_count: 0,
             actual_developer_runs: 5,
             actual_reviewer_runs: 0,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
         });
         assert_eq!(checkpoint.description(), "Initial review");
 
@@ -1465,7 +1319,7 @@ mod tests {
             total_reviewer_passes: 3,
             developer_agent: "claude",
             reviewer_agent: "codex",
-            cli_args: CliArgsSnapshot::new(5, 3, None, false, true, 2, false, None),
+            cli_args: CliArgsSnapshot::new(5, 3, None, true, 2, false, None),
             developer_agent_config: AgentConfigSnapshot::new(
                 "claude".into(),
                 "cmd".into(),
@@ -1488,6 +1342,10 @@ mod tests {
             resume_count: 0,
             actual_developer_runs: 5,
             actual_reviewer_runs: 2,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
         });
         assert_eq!(checkpoint.description(), "Verification review 2/3");
     }
@@ -1503,16 +1361,7 @@ mod tests {
             total_reviewer_passes: 2,
             developer_agent: "aider",
             reviewer_agent: "opencode",
-            cli_args: CliArgsSnapshot::new(
-                5,
-                2,
-                Some("standard".into()),
-                false,
-                true,
-                2,
-                false,
-                None,
-            ),
+            cli_args: CliArgsSnapshot::new(5, 2, Some("standard".into()), false, 2, false, None),
             developer_agent_config: AgentConfigSnapshot::new(
                 "aider".into(),
                 "aider".into(),
@@ -1537,6 +1386,10 @@ mod tests {
             resume_count: 0,
             actual_developer_runs: 3,
             actual_reviewer_runs: 1,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
         });
 
         let json = serde_json::to_string(&checkpoint).unwrap();
@@ -1565,7 +1418,6 @@ mod tests {
             3,
             Some("comprehensive".into()),
             true,
-            true,
             3,
             true,
             Some("claude".to_string()),
@@ -1574,7 +1426,6 @@ mod tests {
         assert_eq!(snapshot.developer_iters, 10);
         assert_eq!(snapshot.reviewer_reviews, 3);
         assert_eq!(snapshot.review_depth, Some("comprehensive".to_string()));
-        assert!(snapshot.skip_rebase);
         assert!(snapshot.isolation_mode);
         assert_eq!(snapshot.verbosity, 3);
         assert!(snapshot.show_streaming_metrics);

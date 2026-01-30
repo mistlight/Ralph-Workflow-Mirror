@@ -148,13 +148,21 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
     match event {
         DevelopmentEvent::PhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Development,
+            continuation: super::state::ContinuationState {
+                context_write_pending: false,
+                context_cleanup_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         DevelopmentEvent::IterationStarted { iteration } => PipelineState {
             iteration,
             agent_chain: state.agent_chain.reset(),
             // Reset continuation state when starting a new iteration
-            continuation: state.continuation.reset(),
+            continuation: super::state::ContinuationState {
+                context_cleanup_pending: true,
+                ..state.continuation.reset()
+            },
             ..state
         },
         DevelopmentEvent::IterationCompleted {
@@ -170,7 +178,10 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                     commit: super::state::CommitState::NotStarted,
                     context_cleaned: false,
                     // Reset continuation state on successful completion
-                    continuation: ContinuationState::new(),
+                    continuation: ContinuationState {
+                        context_cleanup_pending: true,
+                        ..ContinuationState::new()
+                    },
                     ..state
                 }
             } else {
@@ -241,7 +252,10 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                 iteration,
                 commit: super::state::CommitState::NotStarted,
                 context_cleaned: false,
-                continuation: ContinuationState::new(),
+                continuation: ContinuationState {
+                    context_cleanup_pending: true,
+                    ..ContinuationState::new()
+                },
                 ..state
             }
         }
@@ -283,7 +297,10 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
             PipelineState {
                 phase: super::event::PipelinePhase::Interrupted,
                 iteration,
-                continuation: ContinuationState::new(),
+                continuation: ContinuationState {
+                    context_cleanup_pending: true,
+                    ..ContinuationState::new()
+                },
                 ..state
             }
         }
@@ -293,11 +310,24 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
         } => {
             // Context file was written, state remains unchanged.
             // The continuation state is already set by ContinuationTriggered.
-            PipelineState { iteration, ..state }
+            PipelineState {
+                iteration,
+                continuation: super::state::ContinuationState {
+                    context_write_pending: false,
+                    ..state.continuation
+                },
+                ..state
+            }
         }
         DevelopmentEvent::ContinuationContextCleaned => {
             // Context file was cleaned up, no state change needed.
-            state
+            PipelineState {
+                continuation: super::state::ContinuationState {
+                    context_cleanup_pending: false,
+                    ..state.continuation
+                },
+                ..state
+            }
         }
     }
 }
@@ -856,6 +886,7 @@ mod tests {
                 previous_next_steps: Some("next steps".to_string()),
                 continuation_attempt: 2,
                 invalid_output_attempts: 3,
+                ..ContinuationState::new()
             },
             ..create_test_state()
         };

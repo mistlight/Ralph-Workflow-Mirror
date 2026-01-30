@@ -5,6 +5,9 @@
 
 use crate::agents::AgentRole;
 use crate::checkpoint::execution_history::ExecutionStep;
+use crate::checkpoint::{
+    PipelineCheckpoint, PipelinePhase as CheckpointPhase, RebaseState as CheckpointRebaseState,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -68,6 +71,12 @@ pub struct ContinuationState {
     /// Count of invalid XML outputs for the current iteration.
     #[serde(default)]
     pub invalid_output_attempts: u32,
+    /// Whether a continuation context write is pending.
+    #[serde(default)]
+    pub context_write_pending: bool,
+    /// Whether a continuation context cleanup is pending.
+    #[serde(default)]
+    pub context_cleanup_pending: bool,
 }
 
 impl ContinuationState {
@@ -101,6 +110,8 @@ impl ContinuationState {
             previous_next_steps: next_steps,
             continuation_attempt: self.continuation_attempt + 1,
             invalid_output_attempts: 0,
+            context_write_pending: true,
+            context_cleanup_pending: false,
         }
     }
 }
@@ -187,6 +198,78 @@ impl PipelineState {
         self.rebase
             .current_head()
             .unwrap_or_else(|| "HEAD".to_string())
+    }
+}
+
+impl From<PipelineCheckpoint> for PipelineState {
+    fn from(checkpoint: PipelineCheckpoint) -> Self {
+        let rebase_state = map_checkpoint_rebase_state(&checkpoint.rebase_state);
+        let agent_chain = AgentChainState::initial();
+
+        PipelineState {
+            phase: map_checkpoint_phase(checkpoint.phase),
+            previous_phase: None,
+            iteration: checkpoint.iteration,
+            total_iterations: checkpoint.total_iterations,
+            reviewer_pass: checkpoint.reviewer_pass,
+            total_reviewer_passes: checkpoint.total_reviewer_passes,
+            review_issues_found: false,
+            context_cleaned: false,
+            agent_chain,
+            rebase: rebase_state,
+            commit: CommitState::NotStarted,
+            execution_history: checkpoint
+                .execution_history
+                .map(|h| h.steps)
+                .unwrap_or_default(),
+            continuation: ContinuationState::new(),
+        }
+    }
+}
+
+fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
+    match phase {
+        CheckpointPhase::Rebase => PipelinePhase::Planning,
+        CheckpointPhase::Planning => PipelinePhase::Planning,
+        CheckpointPhase::Development => PipelinePhase::Development,
+        CheckpointPhase::Review => PipelinePhase::Review,
+        CheckpointPhase::CommitMessage => PipelinePhase::CommitMessage,
+        CheckpointPhase::FinalValidation => PipelinePhase::FinalValidation,
+        CheckpointPhase::Complete => PipelinePhase::Complete,
+        CheckpointPhase::PreRebase => PipelinePhase::Planning,
+        CheckpointPhase::PreRebaseConflict => PipelinePhase::Planning,
+        CheckpointPhase::PostRebase => PipelinePhase::CommitMessage,
+        CheckpointPhase::PostRebaseConflict => PipelinePhase::CommitMessage,
+        CheckpointPhase::Interrupted => PipelinePhase::Interrupted,
+    }
+}
+
+fn map_checkpoint_rebase_state(rebase_state: &CheckpointRebaseState) -> RebaseState {
+    match rebase_state {
+        CheckpointRebaseState::NotStarted => RebaseState::NotStarted,
+        CheckpointRebaseState::PreRebaseInProgress { upstream_branch } => RebaseState::InProgress {
+            original_head: "HEAD".to_string(),
+            target_branch: upstream_branch.clone(),
+        },
+        CheckpointRebaseState::PreRebaseCompleted { commit_oid } => RebaseState::Completed {
+            new_head: commit_oid.clone(),
+        },
+        CheckpointRebaseState::PostRebaseInProgress { upstream_branch } => {
+            RebaseState::InProgress {
+                original_head: "HEAD".to_string(),
+                target_branch: upstream_branch.clone(),
+            }
+        }
+        CheckpointRebaseState::PostRebaseCompleted { commit_oid } => RebaseState::Completed {
+            new_head: commit_oid.clone(),
+        },
+        CheckpointRebaseState::HasConflicts { files } => RebaseState::Conflicted {
+            original_head: "HEAD".to_string(),
+            target_branch: "main".to_string(),
+            files: files.iter().map(PathBuf::from).collect(),
+            resolution_attempts: 0,
+        },
+        CheckpointRebaseState::Failed { .. } => RebaseState::Skipped,
     }
 }
 
@@ -465,6 +548,7 @@ impl CommitState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::checkpoint::state::{AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot};
 
     #[test]
     fn test_pipeline_state_initial() {
@@ -569,6 +653,71 @@ mod tests {
         assert!(state.is_terminal());
         assert_eq!(state.current_head(), Some("def456".to_string()));
         assert!(!state.is_in_progress());
+    }
+
+    fn make_checkpoint_for_state(
+        phase: CheckpointPhase,
+        rebase_state: CheckpointRebaseState,
+    ) -> PipelineCheckpoint {
+        let run_id = uuid::Uuid::new_v4().to_string();
+        PipelineCheckpoint::from_params(CheckpointParams {
+            phase,
+            iteration: 2,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            developer_agent: "claude",
+            reviewer_agent: "codex",
+            cli_args: CliArgsSnapshot::new(5, 2, None, true, 2, false, None),
+            developer_agent_config: AgentConfigSnapshot::new(
+                "claude".into(),
+                "cmd".into(),
+                "-o".into(),
+                None,
+                true,
+            ),
+            reviewer_agent_config: AgentConfigSnapshot::new(
+                "codex".into(),
+                "cmd".into(),
+                "-o".into(),
+                None,
+                true,
+            ),
+            rebase_state,
+            git_user_name: None,
+            git_user_email: None,
+            run_id: &run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: 2,
+            actual_reviewer_runs: 0,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
+        })
+    }
+
+    #[test]
+    fn test_pipeline_state_from_checkpoint_phase_mapping() {
+        let checkpoint = make_checkpoint_for_state(
+            CheckpointPhase::Development,
+            CheckpointRebaseState::NotStarted,
+        );
+        let state: PipelineState = checkpoint.into();
+        assert_eq!(state.phase, PipelinePhase::Development);
+    }
+
+    #[test]
+    fn test_pipeline_state_from_checkpoint_rebase_conflicts() {
+        let checkpoint = make_checkpoint_for_state(
+            CheckpointPhase::PreRebaseConflict,
+            CheckpointRebaseState::HasConflicts {
+                files: vec!["file1.rs".to_string()],
+            },
+        );
+        let state: PipelineState = checkpoint.into();
+        assert!(matches!(state.rebase, RebaseState::Conflicted { .. }));
     }
 
     #[test]

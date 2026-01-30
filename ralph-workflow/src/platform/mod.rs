@@ -1,18 +1,13 @@
 //! Platform detection and installation guidance
 //!
-//! Provides OS-specific suggestions for installing missing dependencies.
-
-mod binary_guidance;
+//! Provides OS-specific detection for platform-dependent behavior.
 mod detection;
-mod known_binaries;
-
-pub use binary_guidance::InstallGuidance;
 
 /// Detected platform type
 ///
-/// This enum is `pub(crate)` because it is only used internally by the
-/// `InstallGuidance` functionality. External code should use `InstallGuidance`
-/// which handles platform detection automatically.
+/// This enum is `pub(crate)` because it is only used internally by
+/// platform-specific helpers (e.g. clipboard handling). External code
+/// should rely on higher-level helpers rather than matching on platform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
     /// macOS with Homebrew available

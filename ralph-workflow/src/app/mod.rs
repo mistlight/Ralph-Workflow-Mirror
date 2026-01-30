@@ -173,6 +173,9 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
 
     // Handle --diagnose
     if args.recovery.diagnose {
+        let diagnose_workspace = crate::workspace::WorkspaceFs::new(
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        );
         handle_diagnose(
             colors,
             &config,
@@ -180,6 +183,7 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
             &config_path,
             &config_sources,
             &*executor,
+            &diagnose_workspace,
         );
         return Ok(());
     }
@@ -443,7 +447,22 @@ pub fn run_with_config_and_resolver<
 
     // Handle --diagnose
     if args.recovery.diagnose {
-        handle_diagnose(colors, &config, &registry, &config_path, &[], &*executor);
+        let fallback_workspace = crate::workspace::WorkspaceFs::new(
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        );
+        let diagnose_workspace = workspace
+            .as_ref()
+            .map(|w| w.as_ref())
+            .unwrap_or(&fallback_workspace);
+        handle_diagnose(
+            colors,
+            &config,
+            &registry,
+            &config_path,
+            &[],
+            &*executor,
+            diagnose_workspace,
+        );
         return Ok(());
     }
 
@@ -633,7 +652,22 @@ where
 
     // Handle --diagnose
     if args.recovery.diagnose {
-        handle_diagnose(colors, &config, &registry, &config_path, &[], &*executor);
+        let fallback_workspace = crate::workspace::WorkspaceFs::new(
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        );
+        let diagnose_workspace = workspace
+            .as_ref()
+            .map(|w| w.as_ref())
+            .unwrap_or(&fallback_workspace);
+        handle_diagnose(
+            colors,
+            &config,
+            &registry,
+            &config_path,
+            &[],
+            &*executor,
+            diagnose_workspace,
+        );
         return Ok(());
     }
 
@@ -940,6 +974,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
             &developer_display,
             &reviewer_display,
             &repo_root,
+            &*workspace,
         )?;
         return Ok(None);
     }
@@ -1165,6 +1200,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         &ctx.logger,
         &ctx.developer_agent,
         &ctx.reviewer_agent,
+        &*ctx.workspace,
     );
 
     // If interactive resume didn't happen, check for --resume flag
@@ -1177,6 +1213,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             &ctx.logger,
             &ctx.developer_display,
             &ctx.reviewer_display,
+            &*ctx.workspace,
         ),
     };
 
@@ -1291,23 +1328,14 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         &phase_ctx.execution_history,
         &phase_ctx.prompt_history,
         &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
     );
 
     // Ensure interrupt context is cleared on completion
     let _interrupt_guard = defer_clear_interrupt_context();
 
-    // Determine if we should run rebase based on checkpoint or current args
-    let should_run_rebase = if let Some(ref checkpoint) = resume_checkpoint {
-        // Use checkpoint's skip_rebase value if it has meaningful cli_args
-        if checkpoint.cli_args.developer_iters > 0 || checkpoint.cli_args.reviewer_reviews > 0 {
-            !checkpoint.cli_args.skip_rebase
-        } else {
-            // Fallback to current args
-            ctx.args.rebase_flags.with_rebase
-        }
-    } else {
-        ctx.args.rebase_flags.with_rebase
-    };
+    // Determine if we should run rebase based on current args only.
+    let should_run_rebase = ctx.args.rebase_flags.with_rebase;
 
     // Run pre-development rebase (only if explicitly requested via --with-rebase)
     if should_run_rebase {
@@ -1319,6 +1347,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             config.developer_iters,
             config.reviewer_reviews,
             &run_context,
+            std::sync::Arc::clone(&ctx.workspace),
         );
     } else {
         // Save initial checkpoint when rebase is disabled
@@ -1326,7 +1355,6 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             let builder = CheckpointBuilder::new()
                 .phase(PipelinePhase::Planning, 0, config.developer_iters)
                 .reviewer_pass(0, config.reviewer_reviews)
-                .skip_rebase(true) // Rebase is disabled
                 .capture_from_context(
                     &config,
                     &ctx.registry,
@@ -1339,7 +1367,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
                 .with_execution_history(phase_ctx.execution_history.clone())
                 .with_prompt_history(phase_ctx.clone_prompt_history());
 
-            if let Some(checkpoint) = builder.build() {
+            if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
                 let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
             }
         }
@@ -1350,6 +1378,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             config.developer_iters,
             config.reviewer_reviews,
             &run_context,
+            std::sync::Arc::clone(&ctx.workspace),
         );
     }
 
@@ -1419,7 +1448,6 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled {
-        let skip_rebase = !ctx.args.rebase_flags.with_rebase;
         let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::Complete,
@@ -1427,7 +1455,6 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
                 config.developer_iters,
             )
             .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
-            .skip_rebase(skip_rebase)
             .capture_from_context(
                 &config,
                 &ctx.registry,
@@ -1442,7 +1469,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             .with_execution_history(execution_history_before)
             .with_prompt_history(prompt_history_before);
 
-        if let Some(checkpoint) = builder.build() {
+        if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
             let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
         }
     }
@@ -1462,7 +1489,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             stats: &stats,
         },
         prompt_monitor,
-        Some(&*ctx.workspace),
+        &*ctx.workspace,
     );
     Ok(())
 }
@@ -1499,6 +1526,7 @@ where
         &ctx.logger,
         &ctx.developer_agent,
         &ctx.reviewer_agent,
+        &*ctx.workspace,
     );
 
     // If interactive resume didn't happen, check for --resume flag
@@ -1511,6 +1539,7 @@ where
             &ctx.logger,
             &ctx.developer_display,
             &ctx.reviewer_display,
+            &*ctx.workspace,
         ),
     };
 
@@ -1599,6 +1628,7 @@ where
         &phase_ctx.execution_history,
         &phase_ctx.prompt_history,
         &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
     );
 
     // Ensure interrupt context is cleared on completion
@@ -1649,7 +1679,6 @@ where
 
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled {
-        let skip_rebase = !ctx.args.rebase_flags.with_rebase;
         let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::Complete,
@@ -1657,7 +1686,6 @@ where
                 config.developer_iters,
             )
             .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
-            .skip_rebase(skip_rebase)
             .capture_from_context(
                 &config,
                 &ctx.registry,
@@ -1672,7 +1700,7 @@ where
             .with_execution_history(execution_history_before)
             .with_prompt_history(prompt_history_before);
 
-        if let Some(checkpoint) = builder.build() {
+        if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
             let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
         }
     }
@@ -1692,7 +1720,7 @@ where
             stats: &stats,
         },
         prompt_monitor,
-        Some(&*ctx.workspace),
+        &*ctx.workspace,
     );
     Ok(())
 }
@@ -1708,6 +1736,7 @@ fn setup_interrupt_context_for_pipeline(
     execution_history: &crate::checkpoint::ExecutionHistory,
     prompt_history: &std::collections::HashMap<String, String>,
     run_context: &crate::checkpoint::RunContext,
+    workspace: std::sync::Arc<dyn crate::workspace::Workspace>,
 ) {
     use crate::interrupt::{set_interrupt_context, InterruptContext};
 
@@ -1730,6 +1759,7 @@ fn setup_interrupt_context_for_pipeline(
         run_context: run_context.clone(),
         execution_history: execution_history.clone(),
         prompt_history: prompt_history.clone(),
+        workspace,
     };
 
     set_interrupt_context(context);
@@ -1745,6 +1775,7 @@ fn update_interrupt_context_from_phase(
     total_iterations: u32,
     total_reviewer_passes: u32,
     run_context: &crate::checkpoint::RunContext,
+    workspace: std::sync::Arc<dyn crate::workspace::Workspace>,
 ) {
     use crate::interrupt::{set_interrupt_context, InterruptContext};
 
@@ -1771,6 +1802,7 @@ fn update_interrupt_context_from_phase(
         run_context: run_context.clone(),
         execution_history: phase_ctx.execution_history.clone(),
         prompt_history: phase_ctx.clone_prompt_history(),
+        workspace,
     };
 
     set_interrupt_context(context);

@@ -8,7 +8,7 @@
 //! it goes through the effect system for proper testability.
 
 use crate::banner::{print_final_summary, PipelineSummary};
-use crate::checkpoint::{clear_checkpoint, clear_checkpoint_with_workspace};
+use crate::checkpoint::clear_checkpoint_with_workspace;
 use crate::config::Config;
 use crate::files::protection::monitoring::PromptMonitor;
 use crate::logger::Colors;
@@ -30,7 +30,7 @@ pub struct RuntimeStats<'a> {
 ///
 /// # Arguments
 ///
-/// * `workspace` - Optional workspace for file operations (enables testability)
+/// * `workspace` - Workspace for file operations (enables testability)
 pub fn finalize_pipeline(
     agent_phase_guard: &mut AgentPhaseGuard,
     logger: &Logger,
@@ -38,7 +38,7 @@ pub fn finalize_pipeline(
     config: &Config,
     runtime: RuntimeStats<'_>,
     prompt_monitor: Option<PromptMonitor>,
-    workspace: Option<&dyn Workspace>,
+    workspace: &dyn Workspace,
 ) {
     // Stop the PROMPT.md monitor if it was started
     if let Some(monitor) = prompt_monitor {
@@ -69,12 +69,7 @@ pub fn finalize_pipeline(
     print_final_summary(colors, &summary, logger);
 
     if config.features.checkpoint_enabled {
-        let result = if let Some(ws) = workspace {
-            clear_checkpoint_with_workspace(ws)
-        } else {
-            clear_checkpoint()
-        };
-        if let Err(err) = result {
+        if let Err(err) = clear_checkpoint_with_workspace(workspace) {
             logger.warn(&format!("Failed to clear checkpoint: {err}"));
         }
     }

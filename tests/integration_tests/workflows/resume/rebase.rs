@@ -232,8 +232,7 @@ fn make_checkpoint_json(working_dir: &str, phase: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -291,8 +290,7 @@ fn make_checkpoint_json_with_execution_history(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -350,8 +348,7 @@ fn make_checkpoint_json_with_prompt_history(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",

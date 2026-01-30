@@ -12,7 +12,7 @@
 //! ```ignore
 //! use ralph::checkpoint::{
 //!     CheckpointBuilder, PipelineCheckpoint, PipelinePhase,
-//!     save_checkpoint, load_checkpoint,
+//!     save_checkpoint_with_workspace, load_checkpoint_with_workspace,
 //! };
 //!
 //! // Create a checkpoint using the builder
@@ -24,10 +24,10 @@
 //!     .build()
 //!     .expect("checkpoint should build");
 //!
-//! save_checkpoint(&checkpoint)?;
+//! save_checkpoint_with_workspace(&workspace, &checkpoint)?;
 //!
 //! // Load and resume
-//! if let Some(checkpoint) = load_checkpoint()? {
+//! if let Some(checkpoint) = load_checkpoint_with_workspace(&workspace)? {
 //!     println!("Resuming from: {}", checkpoint.description());
 //! }
 //! ```
@@ -47,9 +47,8 @@ pub use file_state::FileSystemState;
 pub use restore::apply_checkpoint_to_config;
 pub use run_context::RunContext;
 pub use state::{
-    calculate_file_checksum_with_workspace, checkpoint_exists, checkpoint_exists_with_workspace,
-    clear_checkpoint, clear_checkpoint_with_workspace, load_checkpoint,
-    load_checkpoint_with_workspace, save_checkpoint, save_checkpoint_with_workspace, timestamp,
-    PipelineCheckpoint, PipelinePhase, RebaseState,
+    calculate_file_checksum_with_workspace, checkpoint_exists_with_workspace,
+    clear_checkpoint_with_workspace, load_checkpoint_with_workspace,
+    save_checkpoint_with_workspace, timestamp, PipelineCheckpoint, PipelinePhase, RebaseState,
 };
 pub use validation::validate_checkpoint;

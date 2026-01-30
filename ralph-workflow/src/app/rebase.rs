@@ -35,8 +35,6 @@ pub(crate) struct ConflictResolutionContext<'a> {
 ///
 /// Represents the different ways conflict resolution can succeed or fail.
 pub(crate) enum ConflictResolutionResult {
-    /// Agent provided JSON output with resolved file contents
-    WithJson(String),
     /// Agent resolved conflicts by editing files directly (no JSON output)
     FileEditsOnly,
     /// Resolution failed completely
@@ -121,7 +119,7 @@ fn save_pre_rebase_checkpoint(
     let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
     let builder = create_checkpoint_builder(ctx, phase_ctx, run_context, PipelinePhase::PreRebase);
 
-    if let Some(mut checkpoint) = builder.build() {
+    if let Some(mut checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
         checkpoint.rebase_state = RebaseState::PreRebaseInProgress {
             upstream_branch: default_branch,
         };
@@ -204,7 +202,7 @@ fn handle_rebase_conflicts(
         workspace: &*ctx.workspace,
     };
 
-    match try_resolve_conflicts_with_fallback(
+    match try_resolve_conflicts(
         &conflicted_files,
         resolution_ctx,
         phase_ctx,
@@ -249,7 +247,7 @@ fn save_conflict_checkpoint(
         PipelinePhase::PreRebaseConflict,
     );
 
-    if let Some(mut checkpoint) = builder.build() {
+    if let Some(mut checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
         checkpoint.rebase_state = RebaseState::HasConflicts {
             files: conflicted_files.to_vec(),
         };
@@ -393,7 +391,6 @@ fn save_post_rebase_checkpoint(
     let builder = CheckpointBuilder::new()
         .phase(PipelinePhase::Planning, 0, ctx.config.developer_iters)
         .reviewer_pass(0, ctx.config.reviewer_reviews)
-        .skip_rebase(true) // Pre-rebase is done
         .capture_from_context(
             &ctx.config,
             &ctx.registry,
@@ -406,7 +403,7 @@ fn save_post_rebase_checkpoint(
         .with_execution_history(phase_ctx.execution_history.clone())
         .with_prompt_history(phase_ctx.clone_prompt_history());
 
-    if let Some(checkpoint) = builder.build() {
+    if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
         let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
     }
 }
@@ -434,11 +431,11 @@ fn create_checkpoint_builder(
         .with_prompt_history(phase_ctx.clone_prompt_history())
 }
 
-/// Attempt to resolve rebase conflicts with AI fallback.
+/// Attempt to resolve rebase conflicts with AI.
 ///
 /// This function accepts `PhaseContext` to capture prompts and track
 /// execution history for hardened resume functionality.
-pub(crate) fn try_resolve_conflicts_with_fallback(
+pub(crate) fn try_resolve_conflicts(
     conflicted_files: &[String],
     ctx: ConflictResolutionContext<'_>,
     phase_ctx: &mut PhaseContext<'_>,
@@ -481,42 +478,9 @@ pub(crate) fn try_resolve_conflicts_with_fallback(
         std::sync::Arc::clone(&ctx.executor_arc),
         ctx.workspace,
     ) {
-        Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
-            handle_json_resolution(&resolved_content, ctx.logger, ctx.workspace)
-        }
         Ok(ConflictResolutionResult::FileEditsOnly) => handle_file_edits_resolution(ctx.logger),
         Ok(ConflictResolutionResult::Failed) => handle_failed_resolution(ctx.logger, executor),
         Err(e) => handle_error_resolution(ctx.logger, executor, e),
-    }
-}
-
-/// Handle resolution that returned JSON output.
-fn handle_json_resolution(
-    resolved_content: &str,
-    logger: &Logger,
-    workspace: &dyn crate::workspace::Workspace,
-) -> anyhow::Result<bool> {
-    // Attempt to parse and write files
-    match parse_and_validate_resolved_files(resolved_content, logger) {
-        Ok(resolved_files) => {
-            write_resolved_files(&resolved_files, workspace, logger)?;
-        }
-        Err(_) => {
-            // JSON parsing failed - this is expected and normal
-            // We verify conflicts via LibGit2 state, not JSON parsing
-        }
-    }
-
-    // Verify all conflicts are resolved via LibGit2 (authoritative source)
-    let remaining_conflicts = get_conflicted_files()?;
-    if remaining_conflicts.is_empty() {
-        Ok(true)
-    } else {
-        logger.warn(&format!(
-            "{} conflicts remain after AI resolution",
-            remaining_conflicts.len()
-        ));
-        Ok(false)
     }
 }
 
@@ -626,7 +590,7 @@ fn build_enhanced_resolution_prompt(
     )
 }
 
-/// Run AI agent to resolve conflicts with fallback mechanism.
+/// Run AI agent to resolve conflicts with a single attempt.
 fn run_ai_conflict_resolution(
     resolution_prompt: &str,
     config: &crate::config::Config,
@@ -636,11 +600,7 @@ fn run_ai_conflict_resolution(
     workspace: &dyn crate::workspace::Workspace,
 ) -> anyhow::Result<ConflictResolutionResult> {
     use crate::agents::AgentRegistry;
-    use crate::files::result_extraction::extract_last_result;
-    use crate::pipeline::{
-        run_with_fallback_and_validator, FallbackConfig, OutputValidator, PipelineRuntime,
-    };
-    use std::io;
+    use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
     use std::path::Path;
 
     let log_dir = ".agent/logs/rebase_conflict_resolution";
@@ -659,127 +619,34 @@ fn run_ai_conflict_resolution(
         workspace,
     };
 
-    let validate_output: OutputValidator = |ws: &dyn crate::workspace::Workspace,
-                                            log_dir_path: &Path,
-                                            validation_logger: &crate::logger::Logger|
-     -> io::Result<bool> {
-        match extract_last_result(ws, log_dir_path) {
-            Ok(Some(_)) => Ok(true),
-            Ok(None) => match crate::git_helpers::get_conflicted_files() {
-                Ok(conflicts) if conflicts.is_empty() => {
-                    validation_logger
-                        .info("Agent resolved conflicts without JSON output (file edits only)");
-                    Ok(true)
-                }
-                Ok(conflicts) => {
-                    validation_logger.warn(&format!(
-                        "{} conflict(s) remain unresolved",
-                        conflicts.len()
-                    ));
-                    Ok(false)
-                }
-                Err(e) => {
-                    validation_logger.warn(&format!("Failed to check for conflicts: {e}"));
-                    Ok(false)
-                }
-            },
-            Err(e) => {
-                validation_logger.warn(&format!("Output validation check failed: {e}"));
-                Ok(false)
-            }
-        }
-    };
+    workspace.create_dir_all(Path::new(log_dir))?;
 
-    let mut fallback_config = FallbackConfig {
-        role: crate::agents::AgentRole::Reviewer,
-        base_label: "conflict resolution",
+    let agent_config = registry
+        .resolve_config(reviewer_agent)
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", reviewer_agent))?;
+    let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
+
+    let prompt_cmd = PromptCommand {
+        label: reviewer_agent,
+        display_name: reviewer_agent,
+        cmd_str: &cmd_str,
         prompt: resolution_prompt,
-        logfile_prefix: log_dir,
-        runtime: &mut runtime,
-        registry: &registry,
-        primary_agent: reviewer_agent,
-        output_validator: Some(validate_output),
-        workspace,
+        logfile: ".agent/logs/rebase_conflict_resolution/conflict_resolution.log",
+        parser_type: agent_config.json_parser,
+        env_vars: &agent_config.env_vars,
     };
 
-    let exit_code = run_with_fallback_and_validator(&mut fallback_config)?;
-
-    if exit_code != 0 {
+    let result = run_with_prompt(&prompt_cmd, &mut runtime)?;
+    if result.exit_code != 0 {
         return Ok(ConflictResolutionResult::Failed);
     }
 
     let remaining_conflicts = crate::git_helpers::get_conflicted_files()?;
-
     if remaining_conflicts.is_empty() {
-        match extract_last_result(workspace, Path::new(log_dir)) {
-            Ok(Some(content)) => Ok(ConflictResolutionResult::WithJson(content)),
-            _ => Ok(ConflictResolutionResult::FileEditsOnly),
-        }
+        Ok(ConflictResolutionResult::FileEditsOnly)
     } else {
         Ok(ConflictResolutionResult::Failed)
     }
-}
-
-/// Parse and validate the resolved files from AI output.
-///
-/// JSON parsing failures are expected and handled gracefully - LibGit2 state
-/// is used for verification, not JSON output. This function only parses the
-/// JSON to write resolved files if available.
-fn parse_and_validate_resolved_files(
-    resolved_content: &str,
-    logger: &Logger,
-) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
-    let json: serde_json::Value = serde_json::from_str(resolved_content).map_err(|_e| {
-        // Agent did not provide JSON output - fall back to LibGit2 verification
-        // This is expected and normal, not an error condition
-        anyhow::anyhow!("Agent did not provide JSON output (will verify via Git state)")
-    })?;
-
-    let resolved_files = match json.get("resolved_files") {
-        Some(v) if v.is_object() => v.as_object().unwrap(),
-        _ => {
-            logger.info("Agent output missing 'resolved_files' object");
-            anyhow::bail!("Agent output missing 'resolved_files' object");
-        }
-    };
-
-    if resolved_files.is_empty() {
-        logger.info("No resolved files in JSON output");
-        anyhow::bail!("No files were resolved by the agent");
-    }
-
-    Ok(resolved_files.clone())
-}
-
-/// Write resolved files to disk and stage them.
-///
-/// Uses workspace abstraction for file operations, enabling testing with
-/// `MemoryWorkspace`.
-fn write_resolved_files(
-    resolved_files: &serde_json::Map<String, serde_json::Value>,
-    workspace: &dyn crate::workspace::Workspace,
-    logger: &Logger,
-) -> anyhow::Result<usize> {
-    use std::path::Path;
-
-    let mut files_written = 0;
-    for (path, content) in resolved_files {
-        if let Some(content_str) = content.as_str() {
-            workspace.write(Path::new(path), content_str).map_err(|e| {
-                logger.error(&format!("Failed to write {path}: {e}"));
-                anyhow::anyhow!("Failed to write {path}: {e}")
-            })?;
-            logger.info(&format!("Resolved and wrote: {path}"));
-            files_written += 1;
-            // Stage the resolved file
-            if let Err(e) = crate::git_helpers::git_add_all() {
-                logger.warn(&format!("Failed to stage {path}: {e}"));
-            }
-        }
-    }
-
-    logger.success(&format!("Successfully resolved {files_written} file(s)"));
-    Ok(files_written)
 }
 
 /// Wrapper for conflict resolution without PhaseContext.
@@ -837,7 +704,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         workspace: &workspace,
     };
 
-    try_resolve_conflicts_with_fallback(
+    try_resolve_conflicts(
         conflicted_files,
         ctx,
         &mut phase_ctx,

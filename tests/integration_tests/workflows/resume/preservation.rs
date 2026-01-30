@@ -237,126 +237,8 @@ fn ralph_resume_shows_prompt_replay_info() {
 }
 
 // ============================================================================
-// skip_rebase Backwards Compatibility Tests
-// ============================================================================
-
-/// Test that skip_rebase=false in checkpoint reconstructs --with-rebase on resume.
-///
-/// This tests the backwards compatibility behavior documented in checkpoint/state.rs.
-/// When this test is removed, the skip_rebase field can also be removed.
-///
-/// # Deprecation Context
-///
-/// The `--skip-rebase` CLI flag was removed because rebase is now disabled by
-/// default. Users should use `--with-rebase` to enable rebase. However, existing
-/// checkpoints may have `skip_rebase=false` (meaning rebase was enabled).
-///
-/// When resuming such checkpoints, the resume command must reconstruct the
-/// `--with-rebase` flag to preserve the original intent.
-///
-/// # Migration Path
-///
-/// When removing this backwards compatibility:
-/// 1. Remove `CliArgsSnapshot::skip_rebase` field
-/// 2. Remove `CheckpointBuilder::skip_rebase` method
-/// 3. Remove logic in `app/resume.rs` lines 386-390
-/// 4. Remove this test
-#[test]
-fn test_skip_rebase_false_reconstructs_with_rebase_flag() {
-    with_default_timeout(|| {
-        // This test documents the backwards compatibility behavior:
-        // Old checkpoints have skip_rebase=false when rebase was enabled.
-        // On resume, this should reconstruct the --with-rebase flag.
-        //
-        // We verify this by checking that:
-        // 1. Checkpoints with skip_rebase=false load successfully
-        // 2. The resume logic recognizes the field and would add --with-rebase
-        //
-        // Note: We don't actually test the flag reconstruction here because
-        // MockAppEffectHandler doesn't expose the reconstructed args. Instead,
-        // we verify the checkpoint loads correctly (proving the field is preserved).
-        let checkpoint_json = make_checkpoint_json_with_rebase_enabled(MOCK_REPO_PATH);
-
-        let mut handler = MockAppEffectHandler::new()
-            .with_head_oid("a".repeat(40))
-            .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file(".agent/checkpoint.json", &checkpoint_json);
-
-        let config = create_test_config_struct();
-        let executor = mock_executor_with_success();
-
-        // Run with --resume
-        // This exercises the backwards compatibility path in app/resume.rs:386-390
-        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
-    });
-}
-
-// ============================================================================
 // Helper Functions
 // ============================================================================
-
-/// Create a checkpoint with skip_rebase=false (legacy: rebase was enabled).
-///
-/// This helper creates a checkpoint that would have been created when
-/// the user ran with rebase enabled (before --skip-rebase was removed).
-fn make_checkpoint_json_with_rebase_enabled(working_dir: &str) -> String {
-    format!(
-        r#"{{
-            "version": 3,
-            "phase": "Complete",
-            "iteration": 1,
-            "total_iterations": 1,
-            "reviewer_pass": 0,
-            "total_reviewer_passes": 0,
-            "timestamp": "2024-01-01 12:00:00",
-            "developer_agent": "test-agent",
-            "reviewer_agent": "test-agent",
-            "cli_args": {{
-                "developer_iters": 0,
-                "reviewer_reviews": 0,
-                "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
-            }},
-            "developer_agent_config": {{
-                "name": "test-agent",
-                "cmd": "echo",
-                "output_flag": "",
-                "yolo_flag": null,
-                "can_commit": false,
-                "model_override": null,
-                "provider_override": null,
-                "context_level": 1
-            }},
-            "reviewer_agent_config": {{
-                "name": "test-agent",
-                "cmd": "echo",
-                "output_flag": "",
-                "yolo_flag": null,
-                "can_commit": false,
-                "model_override": null,
-                "provider_override": null,
-                "context_level": 1
-            }},
-            "rebase_state": "Completed",
-            "config_path": null,
-            "config_checksum": null,
-            "working_dir": "{}",
-            "prompt_md_checksum": null,
-            "git_user_name": null,
-            "git_user_email": null,
-            "run_id": "00000000-0000-0000-0000-000000000001",
-            "parent_run_id": null,
-            "resume_count": 0,
-            "actual_developer_runs": 1,
-            "actual_reviewer_runs": 0,
-            "execution_history": null,
-            "file_system_state": null,
-            "prompt_history": null
-        }}"#,
-        working_dir
-    )
-}
 
 fn make_checkpoint_json_with_git_identity(working_dir: &str) -> String {
     format!(
@@ -374,8 +256,7 @@ fn make_checkpoint_json_with_git_identity(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -433,8 +314,7 @@ fn make_checkpoint_json_with_model_overrides(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -492,8 +372,7 @@ fn make_checkpoint_json_with_checksum(working_dir: &str, checksum: &str) -> Stri
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",

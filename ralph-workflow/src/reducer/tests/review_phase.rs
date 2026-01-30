@@ -930,8 +930,19 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
         state.agent_chain.agents
     );
 
-    // === STEP 4: Orchestration requests agent chain initialization ===
-    let effect = determine_next_effect(&state);
+    // === STEP 4: Orchestration cleans continuation context if needed ===
+    let mut effect = determine_next_effect(&state);
+    if matches!(
+        effect,
+        crate::reducer::effect::Effect::CleanupContinuationContext
+    ) {
+        state = reduce(
+            state,
+            PipelineEvent::development_continuation_context_cleaned(),
+        );
+        effect = determine_next_effect(&state);
+    }
+
     assert!(
         matches!(
             effect,

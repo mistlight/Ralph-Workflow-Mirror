@@ -3,7 +3,8 @@
 //! Validates the structure and content of PROMPT.md files to ensure
 //! they have the required sections for the pipeline to work effectively.
 
-use crate::workspace::Workspace;
+use crate::workspace::{Workspace, WorkspaceFs};
+#[cfg(test)]
 use std::fs;
 use std::io::IsTerminal;
 use std::path::Path;
@@ -170,51 +171,6 @@ pub fn restore_prompt_if_needed() -> anyhow::Result<bool> {
     );
 }
 
-/// Attempt to restore PROMPT.md from backup files.
-///
-/// Tries to restore from backup files in order:
-/// 1. `.agent/PROMPT.md.backup`
-/// 2. `.agent/PROMPT.md.backup.1`
-/// 3. `.agent/PROMPT.md.backup.2`
-///
-/// # Returns
-///
-/// `Some(String)` with the backup source name if restored, `None` otherwise.
-fn try_restore_from_backup(prompt_path: &Path) -> Option<String> {
-    let backup_paths = [
-        (
-            Path::new(".agent/PROMPT.md.backup"),
-            ".agent/PROMPT.md.backup",
-        ),
-        (
-            Path::new(".agent/PROMPT.md.backup.1"),
-            ".agent/PROMPT.md.backup.1",
-        ),
-        (
-            Path::new(".agent/PROMPT.md.backup.2"),
-            ".agent/PROMPT.md.backup.2",
-        ),
-    ];
-
-    for (backup_path, name) in backup_paths {
-        if backup_path.exists() {
-            let Ok(backup_content) = fs::read_to_string(backup_path) else {
-                continue;
-            };
-
-            if backup_content.trim().is_empty() {
-                continue;
-            }
-
-            if fs::copy(backup_path, prompt_path).is_ok() {
-                return Some(name.to_string());
-            }
-        }
-    }
-
-    None
-}
-
 /// Check content for Goal section.
 fn check_goal_section(content: &str) -> bool {
     content.contains("## Goal") || content.contains("# Goal")
@@ -235,6 +191,8 @@ fn check_acceptance_section(content: &str) -> bool {
 /// - Goal section (## Goal or # Goal)
 /// - Acceptance section (## Acceptance, Acceptance Criteria, or acceptance)
 ///
+/// Uses a `WorkspaceFs` rooted at the current directory for all file operations.
+///
 /// # Auto-Restore
 ///
 /// If PROMPT.md is missing but `.agent/PROMPT.md.backup` exists, the backup is
@@ -250,86 +208,9 @@ fn check_acceptance_section(content: &str) -> bool {
 ///
 /// A `PromptValidationResult` containing validation findings.
 pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationResult {
-    let prompt_path = Path::new("PROMPT.md");
-    let file_exists = prompt_path.exists();
-    let mut result = PromptValidationResult {
-        file_state: if file_exists {
-            FileState::Empty
-        } else {
-            FileState::Missing
-        },
-        has_goal: false,
-        has_acceptance: false,
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-
-    if !result.exists() {
-        // Try to restore from backup
-        if let Some(source) = try_restore_from_backup(prompt_path) {
-            result.file_state = FileState::Empty;
-            result.warnings.push(format!(
-                "PROMPT.md was missing and was automatically restored from {source}"
-            ));
-        } else {
-            // No backup available
-            if interactive && std::io::stdout().is_terminal() {
-                result.errors.push(
-                    "PROMPT.md not found. Use 'ralph --init <template>' to create one.".to_string(),
-                );
-            } else {
-                result.errors.push(
-                    "PROMPT.md not found. Run 'ralph --list-work-guides' to see available Work Guides, \
-                     then 'ralph --init <template>' to create one."
-                        .to_string(),
-                );
-            }
-            return result;
-        }
-    }
-
-    let content = match fs::read_to_string(prompt_path) {
-        Ok(c) => c,
-        Err(e) => {
-            result.errors.push(format!("Failed to read PROMPT.md: {e}"));
-            return result;
-        }
-    };
-
-    result.file_state = if content.trim().is_empty() {
-        FileState::Empty
-    } else {
-        FileState::Present
-    };
-
-    if !result.has_content() {
-        result.errors.push("PROMPT.md is empty".to_string());
-        return result;
-    }
-
-    // Check for Goal section
-    result.has_goal = check_goal_section(&content);
-    if !result.has_goal {
-        let msg = "PROMPT.md missing '## Goal' section".to_string();
-        if strict {
-            result.errors.push(msg);
-        } else {
-            result.warnings.push(msg);
-        }
-    }
-
-    // Check for Acceptance section
-    result.has_acceptance = check_acceptance_section(&content);
-    if !result.has_acceptance {
-        let msg = "PROMPT.md missing acceptance checks section".to_string();
-        if strict {
-            result.errors.push(msg);
-        } else {
-            result.warnings.push(msg);
-        }
-    }
-
-    result
+    let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let workspace = WorkspaceFs::new(root);
+    validate_prompt_md_with_workspace(&workspace, strict, interactive)
 }
 
 /// Validate PROMPT.md structure and content using workspace abstraction.
