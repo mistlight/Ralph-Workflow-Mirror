@@ -1591,6 +1591,82 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_initialize_agent_chain_uses_fallback_config_chain() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::{Config, UnifiedConfig};
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let mut registry = AgentRegistry::new().unwrap();
+        let toml_str = r#"
+            [agent_chain]
+            reviewer = ["reviewer-a", "reviewer-b", "reviewer-c"]
+            commit = ["commit-a", "commit-b"]
+        "#;
+        let unified: UnifiedConfig = toml::from_str(toml_str).unwrap();
+        registry.apply_unified_config(&unified);
+
+        let config = Config::default();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
+            as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace = MemoryWorkspace::new_test();
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "dev-primary",
+            reviewer_agent: "review-primary",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor_arc,
+            executor_arc: std::sync::Arc::clone(&executor_arc),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let state = PipelineState::initial(1, 1);
+        let mut handler = super::MainEffectHandler::new(state);
+
+        let result = handler
+            .initialize_agent_chain(&mut ctx, AgentRole::Reviewer)
+            .unwrap();
+
+        match result.event {
+            PipelineEvent::Agent(crate::reducer::event::AgentEvent::ChainInitialized {
+                role,
+                agents,
+            }) => {
+                assert_eq!(role, AgentRole::Reviewer);
+                assert_eq!(
+                    agents,
+                    vec!["reviewer-a", "reviewer-b", "reviewer-c"],
+                    "handler should emit full reviewer fallback chain from config"
+                );
+            }
+            other => panic!("expected Agent::ChainInitialized event, got: {:?}", other),
+        }
+    }
+
     /// Test that cleanup_context uses workspace for file operations.
     ///
     /// This verifies that cleanup_context:
