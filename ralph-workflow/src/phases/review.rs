@@ -120,6 +120,15 @@ fn current_agent_from_chain(chain: &AgentChainState) -> anyhow::Result<&str> {
         .ok_or_else(|| anyhow::anyhow!("No available agent in fallback chain"))
 }
 
+fn initialize_review_cycle_agent_chain(
+    fallback_config: &crate::agents::fallback::FallbackConfig,
+    primary_agent: &str,
+) -> anyhow::Result<(AgentChainState, String)> {
+    let chain = build_review_agent_chain_state(fallback_config, primary_agent);
+    let active_agent = current_agent_from_chain(&chain)?.to_string();
+    Ok((chain, active_agent))
+}
+
 /// Run the review and fix phase.
 ///
 /// This phase runs `reviewer_reviews` review-fix cycles. Each cycle:
@@ -145,8 +154,6 @@ pub fn run_review_phase(
 ) -> anyhow::Result<ReviewResult> {
     let reviewer_context = ContextLevel::from(ctx.config.reviewer_context);
     let fallback_config = ctx.registry.fallback_config();
-    let mut agent_chain = build_review_agent_chain_state(fallback_config, ctx.reviewer_agent);
-    let mut active_agent = current_agent_from_chain(&agent_chain)?;
 
     // Skip if no review cycles configured
     if ctx.config.reviewer_reviews == 0 {
@@ -216,6 +223,9 @@ pub fn run_review_phase(
             j, ctx.config.reviewer_reviews
         ));
         print_progress(j, ctx.config.reviewer_reviews, "Review-Fix cycles");
+
+        let (mut agent_chain, mut active_agent) =
+            initialize_review_cycle_agent_chain(fallback_config, ctx.reviewer_agent)?;
 
         // Display baseline information
         match get_baseline_summary() {
@@ -320,7 +330,7 @@ pub fn run_review_phase(
                 ctx.workspace,
                 ctx.logger,
                 j,
-                active_agent,
+                active_agent.as_str(),
                 ctx.config.reviewer_model.as_deref(),
             ) {
                 PreflightResult::Ok => {
@@ -339,7 +349,7 @@ pub fn run_review_phase(
             }
 
             let attempt =
-                run_review_pass(ctx, j, review_label, &review_prompt, Some(active_agent))?;
+                run_review_pass(ctx, j, review_label, &review_prompt, Some(active_agent.as_str()))?;
             if attempt.auth_failure {
                 ctx.logger.warn(&format!(
                     "Auth failure during review with '{}', switching agent",
@@ -347,7 +357,7 @@ pub fn run_review_phase(
                 ));
                 let backoff_delay =
                     advance_agent_chain_on_auth_failure(&mut agent_chain, fallback_config)?;
-                active_agent = current_agent_from_chain(&agent_chain)?;
+                active_agent = current_agent_from_chain(&agent_chain)?.to_string();
                 if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
                     ctx.logger.info(&format!(
                         "Backoff before retrying with '{}': {}ms",
@@ -379,7 +389,7 @@ pub fn run_review_phase(
                 } else {
                     None
                 },
-                Some(active_agent),
+                Some(active_agent.as_str()),
             ) {
                 Ok(()) => break,
                 Err(err) => {
@@ -390,7 +400,7 @@ pub fn run_review_phase(
                         ));
                         let backoff_delay =
                             advance_agent_chain_on_auth_failure(&mut agent_chain, fallback_config)?;
-                        active_agent = current_agent_from_chain(&agent_chain)?;
+                        active_agent = current_agent_from_chain(&agent_chain)?.to_string();
                         if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
                             ctx.logger.info(&format!(
                                 "Backoff before retrying with '{}': {}ms",
@@ -1858,5 +1868,28 @@ mod tests {
         let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
         assert_eq!(chain.current_agent().map(String::as_str), Some("agent-b"));
         assert!(backoff.is_none());
+    }
+
+    #[test]
+    fn test_initialize_review_cycle_agent_chain_resets_to_first_agent() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            reviewer: vec!["codex".to_string(), "opencode".to_string()],
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+        let mut chain = build_review_agent_chain_state(&fallback_config, "codex");
+        let _ = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
+        assert_eq!(
+            chain.current_agent().map(String::as_str),
+            Some("opencode")
+        );
+
+        let (reset_chain, active_agent) =
+            initialize_review_cycle_agent_chain(&fallback_config, "codex").unwrap();
+        assert_eq!(active_agent, "codex");
+        assert_eq!(
+            reset_chain.current_agent().map(String::as_str),
+            Some("codex")
+        );
+        assert_eq!(reset_chain.current_agent_index, 0);
     }
 }
