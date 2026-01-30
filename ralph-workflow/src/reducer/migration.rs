@@ -43,14 +43,15 @@ impl From<PipelineCheckpoint> for PipelineState {
 }
 
 /// Migrate checkpoint phase to reducer phase.
+///
+/// Note: Legacy phases (Fix, ReviewAgain) are rejected at the checkpoint
+/// deserialization layer before this function is called.
 fn migrate_phase(phase: CheckpointPhase) -> PipelinePhase {
     match phase {
         CheckpointPhase::Rebase => PipelinePhase::Planning,
         CheckpointPhase::Planning => PipelinePhase::Planning,
         CheckpointPhase::Development => PipelinePhase::Development,
         CheckpointPhase::Review => PipelinePhase::Review,
-        CheckpointPhase::Fix => PipelinePhase::Review,
-        CheckpointPhase::ReviewAgain => PipelinePhase::Review,
         CheckpointPhase::CommitMessage => PipelinePhase::CommitMessage,
         CheckpointPhase::FinalValidation => PipelinePhase::FinalValidation,
         CheckpointPhase::Complete => PipelinePhase::Complete,

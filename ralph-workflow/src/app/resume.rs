@@ -476,8 +476,6 @@ fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
                 Some("complete review cycle".to_string())
             }
         }
-        PipelinePhase::Fix => Some("address issues from code review".to_string()),
-        PipelinePhase::ReviewAgain => Some("complete verification review".to_string()),
         PipelinePhase::PostRebase => Some("complete post-development rebase".to_string()),
         PipelinePhase::PostRebaseConflict => Some("resolve post-rebase conflicts".to_string()),
         PipelinePhase::CommitMessage => Some("finalize commit message".to_string()),
@@ -1189,8 +1187,6 @@ fn get_phase_emoji(phase: PipelinePhase) -> &'static str {
         PipelinePhase::Planning => "📋",
         PipelinePhase::Development => "🔨",
         PipelinePhase::Review => "👀",
-        PipelinePhase::Fix => "🔧",
-        PipelinePhase::ReviewAgain => "🔍",
         PipelinePhase::CommitMessage => "📝",
         PipelinePhase::FinalValidation => "✅",
         PipelinePhase::Complete => "🎉",

@@ -493,8 +493,8 @@ mod tests {
     #[test]
     fn test_extract_session_info_requires_known_agent_name() {
         let content = r#"{"type":"step_start","timestamp":1,"sessionID":"ses_44f9562d4ffe"}"#;
-        let workspace = MemoryWorkspace::new_test()
-            .with_file(".agent/logs/planning_1_opencode.log", content);
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/logs/planning_1_opencode.log", content);
 
         let result = extract_session_info_from_log_prefix(
             Path::new(".agent/logs/planning_1"),
@@ -509,8 +509,8 @@ mod tests {
     #[test]
     fn test_extract_session_info_uses_known_agent_name() {
         let content = r#"{"type":"step_start","timestamp":1,"sessionID":"ses_44f9562d4ffe"}"#;
-        let workspace = MemoryWorkspace::new_test()
-            .with_file(".agent/logs/planning_1_opencode.log", content);
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/logs/planning_1_opencode.log", content);
 
         let result = extract_session_info_from_log_prefix(
             Path::new(".agent/logs/planning_1"),
@@ -527,8 +527,8 @@ mod tests {
     #[test]
     fn test_extract_session_info_with_required_agent_name() {
         let content = r#"{"type":"step_start","timestamp":1,"sessionID":"ses_44f9562d4ffe"}"#;
-        let workspace = MemoryWorkspace::new_test()
-            .with_file(".agent/logs/planning_1_opencode.log", content);
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/logs/planning_1_opencode.log", content);
 
         let result = extract_session_info_from_log_prefix_with_agent_name(
             Path::new(".agent/logs/planning_1"),

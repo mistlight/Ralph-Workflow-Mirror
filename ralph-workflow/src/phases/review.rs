@@ -27,7 +27,6 @@ use crate::files::llm_output_extraction::{
 };
 use crate::files::result_extraction::extract_file_paths_from_issues;
 use crate::files::{delete_issues_file_for_isolation_with_workspace, update_status_with_workspace};
-use crate::logger::Logger;
 use crate::pipeline::{run_xsd_retry_with_session, PipelineRuntime, XsdRetryConfig};
 use crate::prompts::{
     get_stored_or_generate_prompt, prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context,
@@ -741,31 +740,23 @@ pub fn run_fix_pass(
                     workspace: ctx.workspace,
                 };
 
-                // Output validator: checks if fixer produced valid output
-                // Priority: 1) File-based XML at .agent/tmp/fix_result.xml
-                //           2) JSON result events in log files
+                // Output validator: checks if fixer produced valid XML output
+                // Requires file-based XML at .agent/tmp/fix_result.xml
+                // JSON log extraction fallback has been removed - agents must write XML files
                 let validate_output: crate::pipeline::OutputValidator =
                     |ws: &dyn crate::workspace::Workspace,
-                     log_dir_path: &Path,
+                     _log_dir_path: &Path,
                      _logger: &crate::logger::Logger|
                      -> std::io::Result<bool> {
                         use crate::files::llm_output_extraction::{
                             has_valid_xml_output, xml_paths,
                         };
 
-                        // First, check if XML file was written directly (file-based mode)
-                        if has_valid_xml_output(ws, Path::new(xml_paths::FIX_RESULT_XML)) {
-                            return Ok(true); // Valid XML file exists
-                        }
-
-                        // Try JSON log extraction (streaming output mode)
-                        // Agents that stream output write to logs instead of XML files
-                        use crate::files::result_extraction::extract_last_result;
-                        match extract_last_result(ws, log_dir_path) {
-                            Ok(Some(_)) => Ok(true), // Valid JSON output exists
-                            Ok(None) => Ok(false),   // No valid output found
-                            Err(_) => Ok(true), // On error, assume success (let extraction handle validation)
-                        }
+                        // Check if XML file was written directly (required)
+                        Ok(has_valid_xml_output(
+                            ws,
+                            Path::new(xml_paths::FIX_RESULT_XML),
+                        ))
                     };
 
                 let base_label = format!(

@@ -6,7 +6,7 @@
 use super::ccs_env::{load_ccs_env_vars, CcsEnvVarsError};
 use super::fallback::FallbackConfig;
 use super::parser::JsonParserType;
-use crate::workspace::WorkspaceFs;
+use crate::workspace::{Workspace, WorkspaceFs};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io;

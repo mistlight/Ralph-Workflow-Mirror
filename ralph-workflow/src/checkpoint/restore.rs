@@ -52,12 +52,6 @@ impl ResumeContext {
                 self.reviewer_pass + 1,
                 self.total_reviewer_passes
             ),
-            PipelinePhase::Fix => "Fix".to_string(),
-            PipelinePhase::ReviewAgain => format!(
-                "Verification review {}/{}",
-                self.reviewer_pass + 1,
-                self.total_reviewer_passes
-            ),
             PipelinePhase::CommitMessage => "Commit Message Generation".to_string(),
             PipelinePhase::FinalValidation => "Final Validation".to_string(),
             PipelinePhase::Complete => "Complete".to_string(),
@@ -233,9 +227,7 @@ pub fn calculate_start_iteration(checkpoint: &PipelineCheckpoint, max_iterations
 /// The pass number to start from (1-indexed).
 pub fn calculate_start_reviewer_pass(checkpoint: &PipelineCheckpoint, max_passes: u32) -> u32 {
     match checkpoint.phase {
-        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
-            checkpoint.reviewer_pass.clamp(1, max_passes.max(1))
-        }
+        PipelinePhase::Review => checkpoint.reviewer_pass.clamp(1, max_passes.max(1)),
         // For earlier phases, start from the beginning
         PipelinePhase::Planning
         | PipelinePhase::Development
@@ -265,11 +257,8 @@ fn phase_rank(phase: PipelinePhase) -> u32 {
         PipelinePhase::FinalValidation => 4,
         PipelinePhase::Complete => 5,
         PipelinePhase::Interrupted => 6,
-        // Fix and other intermediate phases map to Review
-        PipelinePhase::Fix
-        | PipelinePhase::ReviewAgain
-        | PipelinePhase::PreRebase
-        | PipelinePhase::PreRebaseConflict => 2,
+        // Pre-rebase phases map to Review rank
+        PipelinePhase::PreRebase | PipelinePhase::PreRebaseConflict => 2,
         // Rebase phases map between Development and Review
         PipelinePhase::Rebase | PipelinePhase::PostRebase | PipelinePhase::PostRebaseConflict => 2,
     }
@@ -495,41 +484,5 @@ mod tests {
         };
 
         assert_eq!(ctx.phase_name(), "Review (pass 2/3)");
-    }
-
-    #[test]
-    fn test_resume_context_phase_name_review_again() {
-        let ctx = ResumeContext {
-            phase: PipelinePhase::ReviewAgain,
-            iteration: 5,
-            total_iterations: 5,
-            reviewer_pass: 2,
-            total_reviewer_passes: 3,
-            resume_count: 1,
-            rebase_state: RebaseState::default(),
-            run_id: "test".to_string(),
-            prompt_history: None,
-            execution_history: None,
-        };
-
-        assert_eq!(ctx.phase_name(), "Verification review 3/3");
-    }
-
-    #[test]
-    fn test_resume_context_phase_name_fix() {
-        let ctx = ResumeContext {
-            phase: PipelinePhase::Fix,
-            iteration: 5,
-            total_iterations: 5,
-            reviewer_pass: 1,
-            total_reviewer_passes: 3,
-            resume_count: 0,
-            rebase_state: RebaseState::default(),
-            run_id: "test".to_string(),
-            prompt_history: None,
-            execution_history: None,
-        };
-
-        assert_eq!(ctx.phase_name(), "Fix");
     }
 }

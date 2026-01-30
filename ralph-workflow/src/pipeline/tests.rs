@@ -354,6 +354,8 @@ fn test_glm_reviewer_command_includes_print_flag() {
 /// Test that GLM reviewer with exit code 1 triggers fallback without retries.
 ///
 /// Uses MockProcessExecutor to avoid spawning real processes.
+/// NOTE: Uses `/bin/cat` as the fallback command because `is_agent_available`
+/// checks if the command exists in PATH via `which::which()`.
 #[test]
 fn test_glm_reviewer_fallback_on_exit_code_1() {
     // Set up registry with GLM agent that fails and a fallback that succeeds
@@ -375,10 +377,12 @@ fn test_glm_reviewer_fallback_on_exit_code_1() {
             ..Default::default()
         },
     );
+    // Use /bin/cat as the fallback command - it exists in PATH so is_agent_available returns true
+    // The MockProcessExecutor will intercept the actual execution
     aliases.insert(
         "ok".to_string(),
         crate::config::CcsAliasConfig {
-            cmd: "mock-ok-agent".to_string(),
+            cmd: "/bin/cat".to_string(),
             ..Default::default()
         },
     );
@@ -410,7 +414,7 @@ fn test_glm_reviewer_fallback_on_exit_code_1() {
 
     // Configure MockProcessExecutor:
     // - GLM agent fails with exit code 1 and error message
-    // - OK agent succeeds
+    // - OK agent (using /bin/cat command) succeeds
     let mock_executor = crate::executor::MockProcessExecutor::new()
         .with_output("git", "")
         .with_output("cargo", "")
@@ -422,7 +426,7 @@ fn test_glm_reviewer_fallback_on_exit_code_1() {
             )),
         )
         .with_agent_result(
-            "mock-ok-agent",
+            "/bin/cat",
             Ok(crate::executor::AgentCommandResult::success()),
         );
 

@@ -4,8 +4,8 @@
 //! for saving and loading pipeline state.
 
 use chrono::Local;
-use serde::{Deserialize, Serialize};
 use serde::de::{self, Visitor};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -402,10 +402,6 @@ pub enum PipelinePhase {
     Development,
     /// Review-fix cycles phase (N iterations of review + fix)
     Review,
-    /// Fix phase (legacy checkpoints; migrated to Development on load).
-    Fix,
-    /// Verification review phase (legacy checkpoints; migrated to Review on load).
-    ReviewAgain,
     /// Commit message generation
     CommitMessage,
     /// Final validation phase
@@ -455,8 +451,12 @@ impl<'de> Deserialize<'de> for PipelinePhase {
                     "PostRebase" => Ok(PipelinePhase::PostRebase),
                     "PostRebaseConflict" => Ok(PipelinePhase::PostRebaseConflict),
                     "Interrupted" => Ok(PipelinePhase::Interrupted),
-                    "Fix" => Ok(PipelinePhase::Development),
-                    "ReviewAgain" => Ok(PipelinePhase::Review),
+                    // Legacy phases are no longer supported - reject with clear error
+                    "Fix" | "ReviewAgain" => Err(E::custom(format!(
+                        "Legacy phase '{}' is no longer supported. \
+                         Delete .agent/checkpoint.json and start a fresh pipeline run.",
+                        value
+                    ))),
                     _ => Err(E::unknown_variant(
                         value,
                         &[
@@ -464,8 +464,6 @@ impl<'de> Deserialize<'de> for PipelinePhase {
                             "Planning",
                             "Development",
                             "Review",
-                            "Fix",
-                            "ReviewAgain",
                             "CommitMessage",
                             "FinalValidation",
                             "Complete",
@@ -491,8 +489,6 @@ impl std::fmt::Display for PipelinePhase {
             Self::Planning => write!(f, "Planning"),
             Self::Development => write!(f, "Development"),
             Self::Review => write!(f, "Review"),
-            Self::Fix => write!(f, "Fix"),
-            Self::ReviewAgain => write!(f, "Verification Review"),
             Self::CommitMessage => write!(f, "Commit Message Generation"),
             Self::FinalValidation => write!(f, "Final Validation"),
             Self::Complete => write!(f, "Complete"),
@@ -674,13 +670,6 @@ impl PipelineCheckpoint {
                     "Initial review".to_string()
                 }
             }
-            PipelinePhase::Fix => "Applying fixes".to_string(),
-            PipelinePhase::ReviewAgain => {
-                format!(
-                    "Verification review {}/{}",
-                    self.reviewer_pass, self.total_reviewer_passes
-                )
-            }
             PipelinePhase::CommitMessage => "Commit message generation".to_string(),
             PipelinePhase::FinalValidation => "Final validation".to_string(),
             PipelinePhase::Complete => "Pipeline complete".to_string(),
@@ -729,16 +718,15 @@ impl PipelineCheckpoint {
 /// Load a checkpoint from a string.
 ///
 /// Only v3 (current) checkpoint format is supported. Legacy formats (v1, v2, pre-v1)
-/// are no longer auto-migrated and will result in an error.
+/// and legacy phases (Fix, ReviewAgain) are no longer supported and will result in an error.
 fn load_checkpoint_with_fallback(
     content: &str,
 ) -> Result<PipelineCheckpoint, Box<dyn std::error::Error>> {
     // Only accept v3 format (current)
     match serde_json::from_str::<PipelineCheckpoint>(content) {
-        Ok(mut checkpoint) => {
+        Ok(checkpoint) => {
             // Accept v3 (current) or higher
             if checkpoint.version >= 3 {
-                checkpoint.phase = normalize_legacy_phase(checkpoint.phase);
                 return Ok(checkpoint);
             }
             // Reject older versions
@@ -751,7 +739,7 @@ fn load_checkpoint_with_fallback(
             .into())
         }
         Err(e) => {
-            // Parsing failed - likely legacy format
+            // Parsing failed - likely legacy format or legacy phase
             Err(format!(
                 "Invalid checkpoint format: {}. \
                  Legacy checkpoint formats are no longer supported. \
@@ -760,14 +748,6 @@ fn load_checkpoint_with_fallback(
             )
             .into())
         }
-    }
-}
-
-fn normalize_legacy_phase(phase: PipelinePhase) -> PipelinePhase {
-    match phase {
-        PipelinePhase::Fix => PipelinePhase::Development,
-        PipelinePhase::ReviewAgain => PipelinePhase::Review,
-        _ => phase,
     }
 }
 
@@ -1198,7 +1178,7 @@ mod tests {
         }
 
         #[test]
-        fn test_load_checkpoint_migrates_legacy_phase_variants() {
+        fn test_load_checkpoint_rejects_legacy_phase_variants() {
             let base_json = r#"{
                 "version": 3,
                 "phase": "%PHASE%",
@@ -1245,30 +1225,50 @@ mod tests {
                 "git_user_email": null
             }"#;
 
-            for (phase_label, expected_phase) in [
-                ("Fix", PipelinePhase::Development),
-                ("ReviewAgain", PipelinePhase::Review),
-            ] {
+            for phase_label in ["Fix", "ReviewAgain"] {
                 let json = base_json.replace("%PHASE%", phase_label);
                 let workspace =
                     MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", &json);
 
-                let result = load_checkpoint_with_workspace(&workspace)
-                    .expect("load should succeed")
-                    .expect("checkpoint should exist");
-                assert_eq!(result.phase, expected_phase);
+                let result = load_checkpoint_with_workspace(&workspace);
+                assert!(
+                    result.is_err(),
+                    "Legacy phase '{}' should be rejected",
+                    phase_label
+                );
+                let err = result.unwrap_err();
+                assert!(
+                    err.to_string().contains("no longer supported"),
+                    "Error for '{}' should mention 'no longer supported': {}",
+                    phase_label,
+                    err
+                );
             }
         }
 
         #[test]
-        fn test_pipeline_phase_deserialize_migrates_legacy_variants() {
-            let fix: PipelinePhase = serde_json::from_str("\"Fix\"")
-                .expect("should deserialize legacy Fix phase");
-            assert_eq!(fix, PipelinePhase::Development);
+        fn test_pipeline_phase_deserialize_rejects_legacy_variants() {
+            let fix_result: Result<PipelinePhase, _> = serde_json::from_str("\"Fix\"");
+            assert!(fix_result.is_err(), "Fix phase should be rejected");
+            let err = fix_result.unwrap_err().to_string();
+            assert!(
+                err.contains("no longer supported"),
+                "Error should mention 'no longer supported': {}",
+                err
+            );
 
-            let review_again: PipelinePhase = serde_json::from_str("\"ReviewAgain\"")
-                .expect("should deserialize legacy ReviewAgain phase");
-            assert_eq!(review_again, PipelinePhase::Review);
+            let review_again_result: Result<PipelinePhase, _> =
+                serde_json::from_str("\"ReviewAgain\"");
+            assert!(
+                review_again_result.is_err(),
+                "ReviewAgain phase should be rejected"
+            );
+            let err = review_again_result.unwrap_err().to_string();
+            assert!(
+                err.contains("no longer supported"),
+                "Error should mention 'no longer supported': {}",
+                err
+            );
         }
     }
 

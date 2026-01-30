@@ -215,16 +215,6 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
                 context.total_reviewer_passes
             ));
         }
-        crate::checkpoint::state::PipelinePhase::ReviewAgain => {
-            note.push_str(&format!(
-                "Resuming VERIFICATION REVIEW phase (pass {} of {})\n",
-                context.reviewer_pass + 1,
-                context.total_reviewer_passes
-            ));
-        }
-        crate::checkpoint::state::PipelinePhase::Fix => {
-            note.push_str("Resuming FIX phase\n");
-        }
         _ => {
             note.push_str(&format!("Resuming from phase: {}\n", context.phase_name()));
         }
@@ -327,12 +317,8 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
         crate::checkpoint::state::PipelinePhase::Development => {
             note.push_str("Continue working on the implementation tasks from your plan.\n");
         }
-        crate::checkpoint::state::PipelinePhase::Review
-        | crate::checkpoint::state::PipelinePhase::ReviewAgain => {
+        crate::checkpoint::state::PipelinePhase::Review => {
             note.push_str("Review the code changes and provide feedback.\n");
-        }
-        crate::checkpoint::state::PipelinePhase::Fix => {
-            note.push_str("Focus on addressing the issues identified in the review.\n");
         }
         _ => {}
     }
@@ -895,46 +881,6 @@ mod tests {
         assert!(result.contains("REVIEW phase"));
         assert!(result.contains("pass 2 of 3"));
         assert!(result.contains("has been resumed 2 time"));
-    }
-
-    #[test]
-    fn test_prompt_with_rich_resume_context_fix() {
-        use crate::checkpoint::state::{PipelinePhase, RebaseState};
-
-        let template_context = TemplateContext::default();
-
-        // Create a resume context for fix phase
-        let resume_context = ResumeContext {
-            phase: PipelinePhase::Fix,
-            iteration: 5,
-            total_iterations: 5,
-            reviewer_pass: 1,
-            total_reviewer_passes: 3,
-            resume_count: 0,
-            rebase_state: RebaseState::NotStarted,
-            run_id: "test-run-id".to_string(),
-            prompt_history: None,
-            execution_history: None,
-        };
-
-        let result = prompt_for_agent(
-            Role::Reviewer,
-            Action::Fix,
-            ContextLevel::Normal,
-            &template_context,
-            PromptConfig::new()
-                .with_resume_context(resume_context)
-                .with_prompt_plan_and_issues(
-                    "test prompt".to_string(),
-                    "test plan".to_string(),
-                    "test issues".to_string(),
-                ),
-        );
-
-        // Should include rich resume context for fix
-        assert!(result.contains("SESSION RESUME CONTEXT"));
-        assert!(result.contains("FIX phase"));
-        assert!(result.contains("Focus on addressing the issues"));
     }
 
     #[test]

@@ -1714,9 +1714,7 @@ fn setup_interrupt_context_for_pipeline(
     // Determine initial iteration based on phase
     let (iteration, reviewer_pass) = match phase {
         PipelinePhase::Development => (1, 0),
-        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
-            (total_iterations, 1)
-        }
+        PipelinePhase::Review => (total_iterations, 1),
         PipelinePhase::PostRebase | PipelinePhase::CommitMessage => {
             (total_iterations, total_reviewer_passes)
         }
@@ -1757,9 +1755,7 @@ fn update_interrupt_context_from_phase(
             let iter = run_context.actual_developer_runs.max(1);
             (iter, 0)
         }
-        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
-            (total_iterations, run_context.actual_reviewer_runs.max(1))
-        }
+        PipelinePhase::Review => (total_iterations, run_context.actual_reviewer_runs.max(1)),
         PipelinePhase::PostRebase | PipelinePhase::CommitMessage => {
             (total_iterations, total_reviewer_passes)
         }

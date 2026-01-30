@@ -23,9 +23,7 @@
 mod file_extraction;
 pub mod file_finder;
 mod json_extraction;
-mod plan_extraction;
 mod scoring;
-mod text_extraction;
 mod types;
 mod validation;
 

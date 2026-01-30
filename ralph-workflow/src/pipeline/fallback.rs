@@ -394,37 +394,14 @@ pub fn try_agent_with_retries(
             }
         } else if is_glm_agent && result.exit_code == 1 {
             // GLM quirk: exit code 1 may indicate success with valid output
-            // If output validator confirms valid output, treat as success. Otherwise:
-            // - If validator exists and fails: treat as error (trust validator).
-            // - If no validator: try to detect valid output in the logs before classifying an error.
+            // If output validator confirms valid output, treat as success.
+            // JSON log extraction fallback has been removed - agents must write XML files.
             if let Some(true) = validate_agent_output(config, runtime, result.exit_code) {
                 runtime.logger.info(&format!(
                     "GLM-like agent '{}' exited with code 1 but produced valid output - treating as success",
                     config.display_name
                 ));
                 return Ok(TryAgentResult::Success);
-            }
-
-            if config.output_validator.is_none() {
-                use crate::files::result_extraction::extract_last_result;
-
-                let log_prefix_path = std::path::Path::new(config.logfile_prefix);
-                let logfile_path = std::path::Path::new(config.logfile);
-                let logfile_no_ext = logfile_path.with_extension("");
-
-                let has_valid_output = [log_prefix_path, logfile_path, logfile_no_ext.as_path()]
-                    .into_iter()
-                    .any(|path| {
-                        extract_last_result(config.workspace, path).is_ok_and(|v| v.is_some())
-                    });
-
-                if has_valid_output {
-                    runtime.logger.info(&format!(
-                        "GLM-like agent '{}' exited with code 1 but produced valid output in logs - treating as success",
-                        config.display_name
-                    ));
-                    return Ok(TryAgentResult::Success);
-                }
             }
         }
 
