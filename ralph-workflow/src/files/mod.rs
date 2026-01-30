@@ -58,6 +58,7 @@ pub use io::{
 #[cfg(test)]
 pub use protection::restore_prompt_if_needed;
 pub use protection::{validate_prompt_md, validate_prompt_md_with_workspace};
+#[cfg(any(test, feature = "test-utils"))]
 pub use result_extraction::extract_issues;
 #[cfg(any(test, feature = "test-utils"))]
 pub use result_extraction::extract_plan;

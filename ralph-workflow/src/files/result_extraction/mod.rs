@@ -1,8 +1,12 @@
 //! Result extraction from agent JSON logs.
 //!
 //! This module provides utilities to extract structured output from agent JSON logs.
-//! The orchestrator uses this to capture plan and issues content from agent output,
-//! ensuring that file writing is always controlled by the orchestrator.
+//!
+//! # Production vs Test Usage
+//!
+//! - **Production**: Uses `extract_last_result()` for log parsing (e.g., rebase conflict resolution)
+//! - **Test-only**: `extract_plan()` and `extract_issues()` are gated behind `test-utils` feature
+//!   since production now uses XML extraction via `llm_output_extraction` module
 //!
 //! # Design Principles
 //!
@@ -16,9 +20,6 @@
 //! files matching `{prefix}_*.log` in the parent directory.
 //!
 //! Example: For `.agent/logs/planning_1`, search for `.agent/logs/planning_1_*.log`.
-//!
-//! Note: Many functions in this module are currently unused in production
-//! (XML extraction is used instead). Kept for potential future use and test compatibility.
 
 mod file_extraction;
 pub mod file_finder;
@@ -32,8 +33,11 @@ pub use json_extraction::extract_last_result;
 pub use types::ExtractionResult;
 pub use validation::validate_issues_content;
 
+#[cfg(any(test, feature = "test-utils"))]
 use crate::workspace::Workspace;
+#[cfg(any(test, feature = "test-utils"))]
 use std::io;
+#[cfg(any(test, feature = "test-utils"))]
 use std::path::Path;
 
 /// Extract and validate plan content from agent logs.
@@ -81,6 +85,7 @@ pub fn extract_plan(workspace: &dyn Workspace, log_dir: &Path) -> io::Result<Ext
 /// - The raw content (if any result event was found)
 /// - Validation status (whether it looks like valid issues)
 /// - Warning message (if validation failed)
+#[cfg(any(test, feature = "test-utils"))]
 pub fn extract_issues(workspace: &dyn Workspace, log_dir: &Path) -> io::Result<ExtractionResult> {
     let raw_content = extract_last_result(workspace, log_dir)?;
 

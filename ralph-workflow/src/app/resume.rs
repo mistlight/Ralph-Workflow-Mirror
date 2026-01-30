@@ -383,9 +383,10 @@ fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
         parts.push(format!("--review-depth {}", depth));
     }
 
-    // Add --skip-rebase if true
-    if cli.skip_rebase {
-        parts.push("--skip-rebase".to_string());
+    // Add --with-rebase if rebase was enabled (skip_rebase=false means rebase was enabled)
+    // Note: skip_rebase is preserved in checkpoints for backwards compatibility
+    if !cli.skip_rebase {
+        parts.push("--with-rebase".to_string());
     }
 
     // Add --no-isolation if false (isolation_mode defaults to true)

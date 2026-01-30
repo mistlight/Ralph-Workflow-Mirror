@@ -2,6 +2,19 @@
 //!
 //! This module contains the checkpoint data structures and file operations
 //! for saving and loading pipeline state.
+//!
+//! # Checkpoint Format
+//!
+//! Only version 3 checkpoints are supported. Earlier versions (v1, v2) are explicitly
+//! rejected during loading. The following legacy phases are also rejected:
+//! - "Fix" (use "Development" instead)
+//! - "ReviewAgain" (use "Review" instead)
+//!
+//! # Backwards Compatibility Note
+//!
+//! The `CliArgsSnapshot::skip_rebase` field is preserved for backwards compatibility
+//! with existing checkpoints. The `--skip-rebase` CLI flag was removed in this version
+//! because rebase is now disabled by default (use `--with-rebase` to enable).
 
 use chrono::Local;
 use serde::de::{self, Visitor};

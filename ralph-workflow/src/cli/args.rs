@@ -453,18 +453,6 @@ pub struct RebaseFlags {
         hide = true
     )]
     pub rebase_only: bool,
-
-    /// Skip automatic rebase before/after pipeline (deprecated: use default behavior or --with-rebase)
-    #[arg(
-        long,
-        help = "Skip automatic rebase to main branch before and after pipeline",
-        hide = true
-    )]
-    #[deprecated(
-        since = "0.4.2",
-        note = "Rebase is now disabled by default; use --with-rebase to enable"
-    )]
-    pub skip_rebase: bool,
 }
 
 /// Ralph: PROMPT-driven agent orchestrator for git repos

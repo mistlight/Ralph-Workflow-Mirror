@@ -278,10 +278,7 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
 
 /// Apply agent selection environment variables.
 fn apply_agent_selection_env(config: &mut Config, warnings: &mut Vec<String>) {
-    let developer_agent = env::var("RALPH_DEVELOPER_AGENT")
-        .or_else(|_| env::var("RALPH_DRIVER_AGENT"))
-        .ok();
-    if let Some(val) = developer_agent {
+    if let Ok(val) = env::var("RALPH_DEVELOPER_AGENT") {
         let trimmed = val.trim();
         if trimmed.is_empty() {
             warnings.push("Env var RALPH_DEVELOPER_AGENT is empty; ignoring.".to_string());
