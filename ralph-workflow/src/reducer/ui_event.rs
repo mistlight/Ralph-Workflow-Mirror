@@ -107,29 +107,11 @@ impl UIEvent {
     }
 
     /// Format event for terminal display.
+    ///
+    /// This method delegates to the rendering module for actual formatting.
+    /// Prefer calling `rendering::render_ui_event()` directly in new code.
     pub fn format_for_display(&self) -> String {
-        match self {
-            UIEvent::PhaseTransition { to, .. } => {
-                format!("{} {}", Self::phase_emoji(to), to)
-            }
-            UIEvent::IterationProgress { current, total } => {
-                format!("🔄 Development iteration {}/{}", current, total)
-            }
-            UIEvent::ReviewProgress { pass, total } => {
-                format!("👁 Review pass {}/{}", pass, total)
-            }
-            UIEvent::AgentActivity { agent, message } => {
-                format!("🤖 [{}] {}", agent, message)
-            }
-            UIEvent::XmlOutput {
-                xml_type,
-                content,
-                context,
-            } => {
-                // Delegate to semantic XML renderer
-                crate::reducer::xml_renderer::render_xml(xml_type, content, context)
-            }
-        }
+        crate::rendering::render_ui_event(self)
     }
 }
 

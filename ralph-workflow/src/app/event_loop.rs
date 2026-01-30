@@ -122,7 +122,8 @@ where
 
         // Display UI events (does not affect state)
         for ui_event in &result.ui_events {
-            ctx.logger.info(&ui_event.format_for_display());
+            ctx.logger
+                .info(&crate::rendering::render_ui_event(ui_event));
         }
 
         // Apply pipeline event to state (reducer remains pure)
@@ -185,7 +186,8 @@ fn run_event_loop_internal(
 
         // Display UI events (does not affect state)
         for ui_event in &result.ui_events {
-            ctx.logger.info(&ui_event.format_for_display());
+            ctx.logger
+                .info(&crate::rendering::render_ui_event(ui_event));
         }
 
         // Apply pipeline event to state (reducer remains pure)
