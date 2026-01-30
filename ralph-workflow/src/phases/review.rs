@@ -44,8 +44,7 @@ use crate::prompts::{
     prompt_review_xml_with_references, prompt_review_xsd_retry_with_context, ContextLevel,
     PromptContentBuilder,
 };
-use crate::reducer::event::AgentErrorKind;
-use crate::reducer::{reduce, PipelineEvent, PipelineState};
+use crate::reducer::state::AgentChainState;
 use crate::workspace::Workspace;
 use std::path::Path;
 use std::time::Duration;
@@ -98,58 +97,50 @@ fn initialize_agent_chain_state(
     fallback_config: &crate::agents::fallback::FallbackConfig,
     role: AgentRole,
     primary_agent: &str,
-    total_iterations: u32,
-    total_reviewer_passes: u32,
-) -> PipelineState {
+) -> AgentChainState {
     let agents = build_agent_chain_list(fallback_config, role, primary_agent);
-    let mut state = PipelineState::initial(total_iterations, total_reviewer_passes);
-    state.agent_chain = state
-        .agent_chain
-        .with_max_cycles(fallback_config.max_cycles);
-    reduce(state, PipelineEvent::agent_chain_initialized(role, agents))
+    let models_per_agent = agents.iter().map(|_| Vec::new()).collect();
+
+    AgentChainState::initial()
+        .with_agents(agents, models_per_agent, role)
+        .with_max_cycles(fallback_config.max_cycles)
 }
 
 fn advance_agent_chain_on_auth_failure(
-    state: &mut PipelineState,
+    chain: &mut AgentChainState,
     fallback_config: &crate::agents::fallback::FallbackConfig,
 ) -> anyhow::Result<Option<u64>> {
-    let current_agent = state
-        .agent_chain
-        .current_agent()
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("No available agent in fallback chain"))?;
-    let previous_retry_cycle = state.agent_chain.retry_cycle;
-    let next_state = reduce(
-        state.clone(),
-        PipelineEvent::agent_invocation_failed(
-            AgentRole::Reviewer,
-            current_agent,
-            1,
-            AgentErrorKind::Authentication,
-            false,
-        ),
-    );
-
-    if next_state.agent_chain.is_exhausted() || next_state.agent_chain.current_agent().is_none() {
+    let next = chain.switch_to_next_agent();
+    if next.is_exhausted() || next.current_agent().is_none() {
         anyhow::bail!("Agent fallback chain exhausted after authentication failures");
     }
 
-    let backoff_delay = if next_state.agent_chain.retry_cycle > previous_retry_cycle {
-        Some(fallback_config.calculate_backoff(next_state.agent_chain.retry_cycle))
+    let backoff_delay = if next.retry_cycle > chain.retry_cycle {
+        Some(fallback_config.calculate_backoff(next.retry_cycle))
     } else {
         None
     };
 
-    *state = next_state;
+    *chain = next;
     Ok(backoff_delay)
 }
 
-fn current_agent_from_state(state: &PipelineState) -> anyhow::Result<&str> {
-    state
-        .agent_chain
+fn current_agent_from_chain(chain: &AgentChainState) -> anyhow::Result<&str> {
+    chain
         .current_agent()
         .map(|agent| agent.as_str())
         .ok_or_else(|| anyhow::anyhow!("No available agent in fallback chain"))
+}
+
+fn initial_review_agent(
+    fallback_config: &crate::agents::fallback::FallbackConfig,
+    primary_agent: &str,
+) -> String {
+    let agents = build_agent_chain_list(fallback_config, AgentRole::Reviewer, primary_agent);
+    agents
+        .first()
+        .cloned()
+        .unwrap_or_else(|| primary_agent.to_string())
 }
 
 /// Run the review and fix phase.
@@ -269,12 +260,14 @@ pub fn run_review_phase(
             }
         }
 
+        let initial_reviewer_agent = initial_review_agent(fallback_config, ctx.reviewer_agent);
+
         // PRE-FLIGHT VALIDATION: Check environment before running review
         match pre_flight_review_check(
             ctx.workspace,
             ctx.logger,
             j,
-            ctx.reviewer_agent,
+            &initial_reviewer_agent,
             ctx.config.reviewer_model.as_deref(),
         ) {
             PreflightResult::Ok => {
@@ -359,7 +352,7 @@ pub fn run_review_phase(
         if ctx.config.verbosity.is_debug() {
             ctx.logger.info(&format!(
                 "Review prompt variant: '{}' for agent '{}'",
-                review_label, ctx.reviewer_agent
+                review_label, initial_reviewer_agent
             ));
             ctx.logger.info(&format!(
                 "Review prompt length: {} characters",
@@ -367,14 +360,9 @@ pub fn run_review_phase(
             ));
         }
 
-        let mut agent_chain_state = initialize_agent_chain_state(
-            fallback_config,
-            AgentRole::Reviewer,
-            ctx.reviewer_agent,
-            ctx.config.developer_iters,
-            ctx.config.reviewer_reviews,
-        );
-        let mut active_agent = current_agent_from_state(&agent_chain_state)?;
+        let mut agent_chain_state =
+            initialize_agent_chain_state(fallback_config, AgentRole::Reviewer, ctx.reviewer_agent);
+        let mut active_agent = current_agent_from_chain(&agent_chain_state)?;
 
         // Run review pass with auth-aware fallback
         let review_result = loop {
@@ -387,7 +375,7 @@ pub fn run_review_phase(
                 ));
                 let backoff_delay =
                     advance_agent_chain_on_auth_failure(&mut agent_chain_state, fallback_config)?;
-                active_agent = current_agent_from_state(&agent_chain_state)?;
+                active_agent = current_agent_from_chain(&agent_chain_state)?;
                 if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
                     ctx.logger.info(&format!(
                         "Backoff before retrying with '{}': {}ms",
@@ -433,7 +421,7 @@ pub fn run_review_phase(
                         &mut agent_chain_state,
                         fallback_config,
                     )?;
-                    active_agent = current_agent_from_state(&agent_chain_state)?;
+                    active_agent = current_agent_from_chain(&agent_chain_state)?;
                     if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
                         ctx.logger.info(&format!(
                             "Backoff before retrying with '{}': {}ms",
@@ -1857,20 +1845,20 @@ mod tests {
             ..crate::agents::fallback::FallbackConfig::default()
         };
 
-        let mut state =
-            initialize_agent_chain_state(&fallback_config, AgentRole::Reviewer, "agent-a", 0, 1);
+        let mut chain =
+            initialize_agent_chain_state(&fallback_config, AgentRole::Reviewer, "agent-a");
 
-        let backoff = advance_agent_chain_on_auth_failure(&mut state, &fallback_config).unwrap();
+        let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
         assert_eq!(backoff, None);
         assert_eq!(
-            state.agent_chain.current_agent().map(String::as_str),
+            chain.current_agent().map(String::as_str),
             Some("agent-b")
         );
 
-        let exhausted = advance_agent_chain_on_auth_failure(&mut state, &fallback_config);
+        let exhausted = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config);
         assert!(exhausted.is_err());
         assert_eq!(
-            state.agent_chain.current_agent().map(String::as_str),
+            chain.current_agent().map(String::as_str),
             Some("agent-b")
         );
     }
@@ -1886,10 +1874,10 @@ mod tests {
             ..crate::agents::fallback::FallbackConfig::default()
         };
 
-        let mut state =
-            initialize_agent_chain_state(&fallback_config, AgentRole::Reviewer, "solo-agent", 0, 1);
+        let mut chain =
+            initialize_agent_chain_state(&fallback_config, AgentRole::Reviewer, "solo-agent");
 
-        let backoff = advance_agent_chain_on_auth_failure(&mut state, &fallback_config).unwrap();
+        let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
         assert_eq!(backoff, Some(2000));
     }
 
@@ -1943,5 +1931,45 @@ mod tests {
         let agents = build_agent_chain_list(&fallback_config, AgentRole::Reviewer, "claude");
 
         assert_eq!(agents, vec!["claude"]);
+    }
+
+    #[test]
+    fn test_initialize_agent_chain_state_starts_at_first_agent() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            reviewer: vec![
+                "codex".to_string(),
+                "opencode".to_string(),
+                "claude".to_string(),
+            ],
+            max_cycles: 3,
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+
+        let chain = initialize_agent_chain_state(&fallback_config, AgentRole::Reviewer, "claude");
+
+        assert_eq!(chain.current_agent_index, 0);
+        assert_eq!(chain.current_agent().map(String::as_str), Some("codex"));
+        assert_eq!(chain.max_cycles, 3);
+    }
+
+    #[test]
+    fn test_initial_review_agent_prefers_fallback_first_agent() {
+        let fallback_config = crate::agents::fallback::FallbackConfig {
+            reviewer: vec!["codex".to_string(), "claude".to_string()],
+            ..crate::agents::fallback::FallbackConfig::default()
+        };
+
+        let agent = initial_review_agent(&fallback_config, "claude");
+
+        assert_eq!(agent, "codex");
+    }
+
+    #[test]
+    fn test_initial_review_agent_falls_back_to_primary_when_no_fallbacks() {
+        let fallback_config = crate::agents::fallback::FallbackConfig::default();
+
+        let agent = initial_review_agent(&fallback_config, "claude");
+
+        assert_eq!(agent, "claude");
     }
 }
