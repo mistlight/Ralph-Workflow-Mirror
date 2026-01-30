@@ -44,10 +44,8 @@ use crate::prompts::{
     prompt_review_xml_with_references, prompt_review_xsd_retry_with_context, ContextLevel,
     PromptContentBuilder,
 };
-use crate::reducer::state::AgentChainState;
 use crate::workspace::Workspace;
 use std::path::Path;
-use std::time::Duration;
 
 mod validation;
 pub use validation::{
@@ -90,46 +88,11 @@ fn build_agent_chain_list(
     let mut seen = std::collections::HashSet::new();
     agents.retain(|agent| seen.insert(agent.clone()));
 
-    agents
-}
-
-fn initialize_agent_chain_state(
-    fallback_config: &crate::agents::fallback::FallbackConfig,
-    role: AgentRole,
-    primary_agent: &str,
-) -> AgentChainState {
-    let agents = build_agent_chain_list(fallback_config, role, primary_agent);
-    let models_per_agent = agents.iter().map(|_| Vec::new()).collect();
-
-    AgentChainState::initial()
-        .with_agents(agents, models_per_agent, role)
-        .with_max_cycles(fallback_config.max_cycles)
-}
-
-fn advance_agent_chain_on_auth_failure(
-    chain: &mut AgentChainState,
-    fallback_config: &crate::agents::fallback::FallbackConfig,
-) -> anyhow::Result<Option<u64>> {
-    let next = chain.switch_to_next_agent();
-    if next.is_exhausted() || next.current_agent().is_none() {
-        anyhow::bail!("Agent fallback chain exhausted after authentication failures");
+    if !seen.contains(primary_agent) {
+        agents.push(primary_agent.to_string());
     }
 
-    let backoff_delay = if next.retry_cycle > chain.retry_cycle {
-        Some(fallback_config.calculate_backoff(next.retry_cycle))
-    } else {
-        None
-    };
-
-    *chain = next;
-    Ok(backoff_delay)
-}
-
-fn current_agent_from_chain(chain: &AgentChainState) -> anyhow::Result<&str> {
-    chain
-        .current_agent()
-        .map(|agent| agent.as_str())
-        .ok_or_else(|| anyhow::anyhow!("No available agent in fallback chain"))
+    agents
 }
 
 fn initial_review_agent(
@@ -360,36 +323,15 @@ pub fn run_review_phase(
             ));
         }
 
-        let mut agent_chain_state =
-            initialize_agent_chain_state(fallback_config, AgentRole::Reviewer, ctx.reviewer_agent);
-        let mut active_agent = current_agent_from_chain(&agent_chain_state)?;
+        let active_agent = initial_reviewer_agent.as_str();
 
-        // Run review pass with auth-aware fallback
-        let review_result = loop {
-            let result = run_review_pass(ctx, j, review_label, &review_prompt, Some(active_agent))?;
-
-            if result.auth_failure {
-                ctx.logger.warn(&format!(
-                    "Auth failure during review with '{}', switching agent",
-                    active_agent
-                ));
-                let backoff_delay =
-                    advance_agent_chain_on_auth_failure(&mut agent_chain_state, fallback_config)?;
-                active_agent = current_agent_from_chain(&agent_chain_state)?;
-                if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
-                    ctx.logger.info(&format!(
-                        "Backoff before retrying with '{}': {}ms",
-                        active_agent, delay_ms
-                    ));
-                    ctx.registry
-                        .retry_timer()
-                        .sleep(Duration::from_millis(delay_ms));
-                }
-                continue;
-            }
-
-            break result;
-        };
+        let review_result =
+            run_review_pass(ctx, j, review_label, &review_prompt, Some(active_agent))?;
+        if review_result.auth_failure {
+            return Err(anyhow::anyhow!(
+                "Authentication error during review - agent fallback required"
+            ));
+        }
 
         // Check for early exit (no issues found)
         if review_result.early_exit {
@@ -398,42 +340,24 @@ pub fn run_review_phase(
             });
         }
 
-        // Run fix pass with auth-aware fallback
-        loop {
-            match run_fix_pass(
-                ctx,
-                j,
-                reviewer_context,
-                if resuming_into_review {
-                    resume_context
-                } else {
-                    None
-                },
-                Some(active_agent),
-            ) {
-                Ok(()) => break,
-                Err(err) if is_auth_failure_error(&err) => {
-                    ctx.logger.warn(&format!(
-                        "Auth failure during fix with '{}', switching agent",
-                        active_agent
-                    ));
-                    let backoff_delay = advance_agent_chain_on_auth_failure(
-                        &mut agent_chain_state,
-                        fallback_config,
-                    )?;
-                    active_agent = current_agent_from_chain(&agent_chain_state)?;
-                    if let Some(delay_ms) = backoff_delay.filter(|d| *d > 0) {
-                        ctx.logger.info(&format!(
-                            "Backoff before retrying with '{}': {}ms",
-                            active_agent, delay_ms
-                        ));
-                        ctx.registry
-                            .retry_timer()
-                            .sleep(Duration::from_millis(delay_ms));
-                    }
-                }
-                Err(err) => return Err(err),
+        if let Err(err) = run_fix_pass(
+            ctx,
+            j,
+            reviewer_context,
+            if resuming_into_review {
+                resume_context
+            } else {
+                None
+            },
+            Some(active_agent),
+        ) {
+            if is_auth_failure_error(&err) {
+                ctx.logger.warn(&format!(
+                    "Auth failure during fix with '{}'",
+                    active_agent
+                ));
             }
+            return Err(err);
         }
 
         // UPDATE REVIEW BASELINE: Move baseline forward after fixes
@@ -1837,49 +1761,6 @@ mod tests {
         assert!(!is_auth_failure_error(&other));
     }
 
-    #[test]
-    fn test_advance_agent_chain_on_auth_failure_advances_and_exhausts() {
-        let fallback_config = crate::agents::fallback::FallbackConfig {
-            reviewer: vec!["agent-a".to_string(), "agent-b".to_string()],
-            max_cycles: 1,
-            ..crate::agents::fallback::FallbackConfig::default()
-        };
-
-        let mut chain =
-            initialize_agent_chain_state(&fallback_config, AgentRole::Reviewer, "agent-a");
-
-        let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
-        assert_eq!(backoff, None);
-        assert_eq!(
-            chain.current_agent().map(String::as_str),
-            Some("agent-b")
-        );
-
-        let exhausted = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config);
-        assert!(exhausted.is_err());
-        assert_eq!(
-            chain.current_agent().map(String::as_str),
-            Some("agent-b")
-        );
-    }
-
-    #[test]
-    fn test_advance_agent_chain_on_auth_failure_applies_backoff_on_cycle() {
-        let fallback_config = crate::agents::fallback::FallbackConfig {
-            reviewer: vec!["solo-agent".to_string()],
-            retry_delay_ms: 1000,
-            backoff_multiplier: 2.0,
-            max_backoff_ms: 60000,
-            max_cycles: 2,
-            ..crate::agents::fallback::FallbackConfig::default()
-        };
-
-        let mut chain =
-            initialize_agent_chain_state(&fallback_config, AgentRole::Reviewer, "solo-agent");
-
-        let backoff = advance_agent_chain_on_auth_failure(&mut chain, &fallback_config).unwrap();
-        assert_eq!(backoff, Some(2000));
-    }
 
     #[test]
     fn test_build_agent_chain_list_starts_with_first_configured_agent() {
@@ -1934,23 +1815,17 @@ mod tests {
     }
 
     #[test]
-    fn test_initialize_agent_chain_state_starts_at_first_agent() {
+    fn test_build_agent_chain_list_appends_primary_when_missing() {
         let fallback_config = crate::agents::fallback::FallbackConfig {
-            reviewer: vec![
-                "codex".to_string(),
-                "opencode".to_string(),
-                "claude".to_string(),
-            ],
-            max_cycles: 3,
+            reviewer: vec!["codex".to_string(), "opencode".to_string()],
             ..crate::agents::fallback::FallbackConfig::default()
         };
 
-        let chain = initialize_agent_chain_state(&fallback_config, AgentRole::Reviewer, "claude");
+        let agents = build_agent_chain_list(&fallback_config, AgentRole::Reviewer, "claude");
 
-        assert_eq!(chain.current_agent_index, 0);
-        assert_eq!(chain.current_agent().map(String::as_str), Some("codex"));
-        assert_eq!(chain.max_cycles, 3);
+        assert_eq!(agents, vec!["codex", "opencode", "claude"]);
     }
+
 
     #[test]
     fn test_initial_review_agent_prefers_fallback_first_agent() {
