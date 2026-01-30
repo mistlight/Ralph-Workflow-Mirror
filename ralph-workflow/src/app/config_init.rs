@@ -17,8 +17,7 @@ use crate::agents::opencode_api::{CatalogLoader, RealCatalogLoader};
 use crate::agents::{validation as agent_validation, AgentRegistry, AgentRole, ConfigSource};
 use crate::cli::{
     apply_args_to_config, handle_extended_help, handle_generate_completion,
-    handle_init_global_with, handle_init_prompt_with, handle_list_work_guides,
-    handle_smart_init_with, Args,
+    handle_init_global_with, handle_list_work_guides, handle_smart_init_with, Args,
 };
 use crate::config::{
     loader, unified_config_path, Config, ConfigEnvironment, RealConfigEnvironment, UnifiedConfig,
@@ -138,18 +137,6 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
     // Handle --list-work-guides / --list-templates flag: display available Work Guides and exit
     if args.work_guide_list.list_work_guides && handle_list_work_guides(colors) {
         return Ok(None);
-    }
-
-    // Handle --init-prompt flag: create PROMPT.md from template and exit
-    if let Some(ref template_name) = args.init_prompt {
-        if handle_init_prompt_with(
-            template_name,
-            args.unified_init.force_init,
-            colors,
-            path_resolver,
-        )? {
-            return Ok(None);
-        }
     }
 
     // Handle smart --init flag: intelligently determine what to initialize

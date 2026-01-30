@@ -113,7 +113,7 @@ pub struct UnifiedInitFlags {
     /// See --help for details on the difference.
     #[arg(
         long,
-        conflicts_with_all = ["init_global", "init_config", "init_prompt"],
+        conflicts_with_all = ["init_global", "init_config"],
         help = "Smart init: create config or PROMPT.md (infers from current state)",
         value_name = "TEMPLATE",
         num_args = 0..=1,
@@ -123,11 +123,11 @@ pub struct UnifiedInitFlags {
     )]
     pub init: Option<String>,
 
-    /// Force overwrite existing PROMPT.md when using --init or --init-prompt
+    /// Force overwrite existing PROMPT.md when using --init
     #[arg(
         long = "force-overwrite",
         visible_alias = "overwrite",
-        help = "Overwrite existing PROMPT.md without prompting (use with --init or --init-prompt)",
+        help = "Overwrite existing PROMPT.md without prompting (use with --init)",
         hide = true
     )]
     pub force_init: bool,
@@ -135,7 +135,7 @@ pub struct UnifiedInitFlags {
     /// Initialize unified config file and exit (explicit alias for config creation)
     #[arg(
         long,
-        conflicts_with_all = ["init", "init_global", "init_prompt"],
+        conflicts_with_all = ["init", "init_global"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
         hide = true
     )]
@@ -144,7 +144,7 @@ pub struct UnifiedInitFlags {
     /// Initialize unified config file and exit
     #[arg(
         long,
-        conflicts_with_all = ["init", "init_config", "init_prompt"],
+        conflicts_with_all = ["init", "init_config"],
         help = "Create ~/.config/ralph-workflow.toml with default settings (recommended)",
         hide = true
     )]
@@ -695,26 +695,6 @@ pub struct Args {
     /// and does not change the global CWD. This enables test parallelism.
     #[arg(skip)]
     pub working_dir_override: Option<std::path::PathBuf>,
-
-    /// Initialize PROMPT.md from a Work Guide and exit
-    ///
-    /// This is a legacy alias for `--init <template>`. Consider using `--init` instead.
-    ///
-    /// Work Guides describe YOUR work to the AI (e.g., bug-fix, feature-spec).
-    /// These are different from Agent Prompts which configure AI behavior.
-    ///
-    /// Available Work Guides:
-    /// quick, bug-fix, feature-spec, refactor, test, docs, cli-tool, web-api,
-    /// performance-optimization, security-audit, api-integration, database-migration,
-    /// dependency-update, data-pipeline, ui-component, code-review, debug-triage,
-    /// release, tech-debt, onboarding
-    #[arg(
-        long,
-        value_name = "TEMPLATE",
-        help = "Create PROMPT.md from a Work Guide (use --list-work-guides to see options)",
-        hide = true
-    )]
-    pub init_prompt: Option<String>,
 
     /// Interactive mode: prompt to create PROMPT.md from template when missing
     #[arg(

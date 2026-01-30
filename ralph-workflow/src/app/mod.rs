@@ -379,8 +379,8 @@ pub fn run_with_config_and_resolver<
     workspace: Option<std::sync::Arc<dyn crate::workspace::Workspace>>,
 ) -> anyhow::Result<()> {
     use crate::cli::{
-        handle_extended_help, handle_init_global_with, handle_init_prompt_with,
-        handle_list_work_guides, handle_smart_init_with,
+        handle_extended_help, handle_init_global_with, handle_list_work_guides,
+        handle_smart_init_with,
     };
 
     let colors = Colors::new();
@@ -404,18 +404,6 @@ pub fn run_with_config_and_resolver<
     // Handle --list-work-guides / --list-templates flag
     if args.work_guide_list.list_work_guides && handle_list_work_guides(colors) {
         return Ok(());
-    }
-
-    // Handle --init-prompt flag: create PROMPT.md from template and exit
-    if let Some(ref template_name) = args.init_prompt {
-        if handle_init_prompt_with(
-            template_name,
-            args.unified_init.force_init,
-            colors,
-            path_resolver,
-        )? {
-            return Ok(());
-        }
     }
 
     // Handle smart --init flag: intelligently determine what to initialize
@@ -581,8 +569,8 @@ where
         ..
     } = params;
     use crate::cli::{
-        handle_extended_help, handle_init_global_with, handle_init_prompt_with,
-        handle_list_work_guides, handle_smart_init_with,
+        handle_extended_help, handle_init_global_with, handle_list_work_guides,
+        handle_smart_init_with,
     };
 
     let colors = Colors::new();
@@ -606,18 +594,6 @@ where
     // Handle --list-work-guides / --list-templates flag
     if args.work_guide_list.list_work_guides && handle_list_work_guides(colors) {
         return Ok(());
-    }
-
-    // Handle --init-prompt flag
-    if let Some(ref template_name) = args.init_prompt {
-        if handle_init_prompt_with(
-            template_name,
-            args.unified_init.force_init,
-            colors,
-            path_resolver,
-        )? {
-            return Ok(());
-        }
     }
 
     // Handle smart --init flag

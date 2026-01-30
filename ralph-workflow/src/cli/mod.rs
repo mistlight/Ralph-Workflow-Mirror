@@ -32,8 +32,8 @@ pub use handlers::{
     prompt_template_selection,
 };
 pub use init::{
-    handle_extended_help, handle_init_global, handle_init_global_with, handle_init_prompt,
-    handle_init_prompt_with, handle_list_work_guides, handle_smart_init, handle_smart_init_with,
+    handle_extended_help, handle_init_global, handle_init_global_with, handle_list_work_guides,
+    handle_smart_init, handle_smart_init_with,
 };
 pub use presets::apply_args_to_config;
 pub use providers::handle_list_providers;

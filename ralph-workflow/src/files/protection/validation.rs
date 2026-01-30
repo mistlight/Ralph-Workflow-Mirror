@@ -275,8 +275,7 @@ pub fn validate_prompt_md(strict: bool, interactive: bool) -> PromptValidationRe
             // No backup available
             if interactive && std::io::stdout().is_terminal() {
                 result.errors.push(
-                    "PROMPT.md not found. Use 'ralph --init-prompt <template>' to create one."
-                        .to_string(),
+                    "PROMPT.md not found. Use 'ralph --init <template>' to create one.".to_string(),
                 );
             } else {
                 result.errors.push(
@@ -377,8 +376,7 @@ pub fn validate_prompt_md_with_workspace(
             // No backup available
             if interactive && std::io::stdout().is_terminal() {
                 result.errors.push(
-                    "PROMPT.md not found. Use 'ralph --init-prompt <template>' to create one."
-                        .to_string(),
+                    "PROMPT.md not found. Use 'ralph --init <template>' to create one.".to_string(),
                 );
             } else {
                 result.errors.push(
