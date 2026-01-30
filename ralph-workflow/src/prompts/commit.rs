@@ -440,8 +440,11 @@ mod tests {
         // Agent should NOT modify the ISSUES content - it is provided for reference only
         assert!(result.contains("MUST NOT modify the ISSUES content"));
         assert!(result.contains("provided for reference only"));
-        // Agent SHOULD modify source code files to fix issues
-        assert!(result.contains("MAY modify"));
+        // Fix prompt should encourage fixing root cause (incl. necessary refactors)
+        assert!(
+            result.contains("Getting rid of tech debt is necessary to fix a bug"),
+            "Fix prompt should instruct agent to do necessary refactors"
+        );
         assert!(result.contains("FIX MODE"));
         // Agent should return status as XML output
         assert!(result.contains("<ralph-fix-result>"));
@@ -723,7 +726,10 @@ mod tests {
         assert!(result.contains("test issues content"));
         assert!(result.contains("MUST NOT modify the ISSUES content"));
         assert!(result.contains("provided for reference only"));
-        assert!(result.contains("MAY modify"));
+        assert!(
+            result.contains("Getting rid of tech debt is necessary to fix a bug"),
+            "Fix prompt should instruct agent to do necessary refactors"
+        );
         assert!(result.contains("FIX MODE"));
         assert!(result.contains("<ralph-fix-result>"));
         assert!(result.contains("<ralph-status>"));
