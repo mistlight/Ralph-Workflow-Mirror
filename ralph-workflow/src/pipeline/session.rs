@@ -233,16 +233,15 @@ pub struct SessionInfo {
 /// Find log files matching a prefix pattern and extract session info.
 ///
 /// This function finds log files and extracts the session ID from the content
-/// based on the JSON parser type. The agent name can be provided directly (preferred)
-/// or extracted from the log file name (fallback when name is unavailable).
+/// based on the JSON parser type. The agent name must be provided directly; log
+/// file name extraction is no longer supported.
 ///
 /// # Arguments
 ///
 /// * `log_prefix` - The log file prefix (e.g., `.agent/logs/planning_1`)
 /// * `parser_type` - The JSON parser type to determine session ID format
-/// * `known_agent_name` - Optional agent registry name (e.g., "opencode/zai-coding-plan/glm-4.7").
-///   If provided, this is used directly instead of extracting from the log file name.
-///   This is preferred because log file names use sanitized names (slashes → hyphens)
+/// * `known_agent_name` - Agent registry name (e.g., "opencode/zai-coding-plan/glm-4.7").
+///   This is required because log file names use sanitized names (slashes → hyphens)
 ///   which can be ambiguous for agents with hyphenated provider names.
 /// * `workspace` - Workspace for file operations
 ///
@@ -257,6 +256,8 @@ pub fn extract_session_info_from_log_prefix(
     workspace: &dyn crate::workspace::Workspace,
 ) -> Option<SessionInfo> {
     use crate::agents::JsonParserType;
+
+    let agent_name = known_agent_name?;
 
     // Get all log files matching the prefix
     let parent = log_prefix.parent().unwrap_or(Path::new("."));
@@ -287,17 +288,7 @@ pub fn extract_session_info_from_log_prefix(
     // Sort by filename for deterministic ordering
     log_files.sort();
 
-    // Use the known agent name if provided
-    let agent_name = if let Some(name) = known_agent_name {
-        name.to_string()
-    } else {
-        // If no known agent name, try to extract from the first log file
-        if let Some(first_log) = log_files.first() {
-            super::logfile::extract_agent_name_from_logfile(first_log, log_prefix)?
-        } else {
-            return None;
-        }
-    };
+    let agent_name = agent_name.to_string();
 
     // Try to extract session ID from each log file
     // The first file with a valid session ID wins
@@ -328,6 +319,8 @@ pub fn extract_session_info_from_log_prefix(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::JsonParserType;
+    use crate::workspace::MemoryWorkspace;
 
     // ===== SessionState tests =====
 
@@ -466,6 +459,42 @@ mod tests {
         let result = extract_session_id_from_json_line(line, "sessionID");
         // Empty string should be allowed by extraction but filtered by caller
         assert_eq!(result, None); // Empty fails the all() check
+    }
+
+    // ===== Session info extraction tests =====
+
+    #[test]
+    fn test_extract_session_info_requires_known_agent_name() {
+        let content = r#"{"type":"step_start","timestamp":1,"sessionID":"ses_44f9562d4ffe"}"#;
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/logs/planning_1_opencode.log", content);
+
+        let result = extract_session_info_from_log_prefix(
+            Path::new(".agent/logs/planning_1"),
+            JsonParserType::OpenCode,
+            None,
+            &workspace,
+        );
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_session_info_uses_known_agent_name() {
+        let content = r#"{"type":"step_start","timestamp":1,"sessionID":"ses_44f9562d4ffe"}"#;
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/logs/planning_1_opencode.log", content);
+
+        let result = extract_session_info_from_log_prefix(
+            Path::new(".agent/logs/planning_1"),
+            JsonParserType::OpenCode,
+            Some("opencode/anthropic/claude-sonnet-4"),
+            &workspace,
+        )
+        .expect("session info should be extracted");
+
+        assert_eq!(result.session_id, "ses_44f9562d4ffe");
+        assert_eq!(result.agent_name, "opencode/anthropic/claude-sonnet-4");
     }
 
     // ===== Agent name extraction tests =====

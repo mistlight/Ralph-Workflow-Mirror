@@ -19,10 +19,9 @@ const MAX_CONTINUATION_ATTEMPTS: usize = 100;
 
 use crate::agents::AgentRole;
 use crate::checkpoint::restore::ResumeContext;
-use crate::files::extract_issues;
 use crate::files::llm_output_extraction::xsd_validation::XsdValidationError;
 use crate::files::llm_output_extraction::{
-    archive_xml_file_with_workspace, extract_fix_result_xml, extract_issues_xml,
+    archive_xml_file_with_workspace, extract_fix_result_xml,
     extract_xml_with_file_fallback_with_workspace, try_extract_from_file_with_workspace,
     validate_fix_result_xml, validate_issues_xml, xml_paths, IssuesElements,
 };
@@ -67,19 +66,6 @@ enum ParseResult {
     NoIssuesExplicit,
     /// Failed to parse - includes error description for re-prompting
     ParseFailed(String),
-}
-
-/// Log diagnostic information when JSON extraction fails.
-///
-/// Reports the expected log path without scanning directories. The agent is
-/// responsible for writing valid XML output to the designated path. If
-/// extraction fails, the user should verify the agent configuration.
-fn log_extraction_diagnostics(logger: &Logger, log_dir: &str) {
-    logger.info(&format!(
-        "No JSON result event found. Expected log prefix: {log_dir}"
-    ));
-    logger.info("Ensure the agent produces valid XML output to .agent/tmp/issues.xml");
-    logger.info("or includes result events in its JSON log output.");
 }
 
 /// Run the review pass for a single cycle.
@@ -430,10 +416,10 @@ pub fn run_review_pass(
 ///
 /// # Extraction Priority
 ///
-/// 1. File-based XML at `.agent/tmp/issues.xml` (preferred for agents that write XML directly)
-/// 2. JSON result events in log files
+/// 1. File-based XML at `.agent/tmp/issues.xml` (required)
 ///
-/// Legacy ISSUES.md fallback has been removed. Agents must produce XML output.
+/// Legacy log extraction and ISSUES.md fallback have been removed. Agents must
+/// produce XML output via the reducer/effect path.
 fn extract_and_validate_review_output_xml(
     ctx: &mut PhaseContext<'_>,
     log_dir: &str,
@@ -449,56 +435,18 @@ fn extract_and_validate_review_output_xml(
         return validate_and_process_issues_xml(ctx, &xml_content, issues_path);
     }
 
-    // Priority 2: Try JSON log extraction
-    let extraction = extract_issues(ctx.workspace, Path::new(log_dir))?;
-
-    let raw_content = if let Some(content) = extraction.raw_content {
-        content
-    } else {
-        // JSON extraction failed - no legacy fallback
-        if ctx.config.verbosity.is_debug() {
-            ctx.logger
-                .info("No JSON result event found in reviewer logs");
-            log_extraction_diagnostics(ctx.logger, log_dir);
-        }
-
-        // Legacy ISSUES.md fallback removed - fail with clear error
-        return Ok(ParseResult::ParseFailed(
-            "No review output captured. Agent did not write to .agent/tmp/issues.xml \
-             and no JSON result found in logs. Ensure the agent produces valid XML output."
-                .to_string(),
+    if ctx.config.verbosity.is_debug() {
+        ctx.logger.info(&format!(
+            "Review output missing at .agent/tmp/issues.xml; expected log prefix: {log_dir}"
         ));
-    };
+    }
 
-    // Extract XML from raw content (handles embedded XML in text)
-    let xml_content = match extract_issues_xml(&raw_content) {
-        Some(xml) => xml,
-        None => {
-            // No XML found - assume entire output is XML and validate to get specific error
-            ctx.logger
-                .warn("No XML tags found in output, assuming entire output is XML for validation");
-
-            // Try to validate the raw content as XML to get specific error message
-            match validate_issues_xml(&raw_content) {
-                Ok(_) => {
-                    // Unexpectedly valid - might be a bug in extraction, but accept it
-                    ctx.logger.info(
-                        "Raw content validated as XML despite no tags found (extraction bug?)",
-                    );
-                    raw_content
-                }
-                Err(e) => {
-                    // Return the specific XSD error
-                    return Ok(ParseResult::ParseFailed(format!(
-                        "XSD validation failed: {}",
-                        e.format_for_ai_retry()
-                    )));
-                }
-            }
-        }
-    };
-
-    validate_and_process_issues_xml(ctx, &xml_content, issues_path)
+    // Legacy JSON log extraction removed - fail with clear error
+    Ok(ParseResult::ParseFailed(
+        "No review output captured. Agent did not write to .agent/tmp/issues.xml. \
+         Ensure the agent produces valid XML output via the configured effects."
+            .to_string(),
+    ))
 }
 
 /// Helper to validate XML and process the result for issues extraction.

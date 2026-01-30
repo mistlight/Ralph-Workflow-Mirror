@@ -473,8 +473,9 @@ fn run_with_fallback_internal(config: &mut FallbackConfig<'_, '_>) -> std::io::R
 // It must be completely fault-tolerant:
 //
 // 1. If session continuation produces output (regardless of exit code) -> use it
-// 2. If it fails for ANY reason (segfault, crash, invalid session, I/O error,
-//    timeout, or any other failure) -> silently fall back to normal behavior
+// 2. If it fails for runtime reasons (segfault, crash, invalid session ID, I/O error,
+//    timeout, or any other failure) -> fall back to normal behavior
+// 3. If session info is invalid (unknown agent registry name) -> surface an error
 //
 // The fallback chain must NEVER be affected by session continuation failures.
 // Even a segfaulting agent during session continuation must not break anything.
@@ -495,6 +496,9 @@ pub enum SessionContinuationResult {
     /// Session continuation detected an auth/credential error.
     /// The caller should trigger agent fallback (switch to next agent).
     AuthError,
+    /// Session continuation could not be attempted due to invalid session info.
+    /// The caller should surface the error to avoid silent fallback.
+    InvalidSessionInfo { message: String },
     /// Session continuation failed to run or was not attempted.
     /// The caller should fall back to normal `run_with_fallback`.
     Fallback,
@@ -605,6 +609,12 @@ pub fn run_xsd_retry_with_session(
                         auth_error_detected: true,
                     });
                 }
+                SessionContinuationResult::InvalidSessionInfo { message } => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        message,
+                    ));
+                }
                 SessionContinuationResult::Fallback => {
                     // Session continuation failed to start - fall through to normal behavior
                     config
@@ -653,21 +663,20 @@ fn try_session_continuation(
     config: &mut XsdRetryConfig<'_, '_>,
     session_info: &crate::pipeline::session::SessionInfo,
 ) -> SessionContinuationResult {
-    // The agent name from session_info should already be the registry name
-    // (e.g., "ccs/glm", "opencode/anthropic/claude-sonnet-4") when passed from
-    // the calling code. For robustness, we still try to resolve it in case
-    // it's a sanitized name from log file parsing.
-    let registry_name = config
-        .registry
-        .resolve_from_logfile_name(&session_info.agent_name)
-        .unwrap_or_else(|| session_info.agent_name.clone());
+    // The agent name from session_info must be the registry name
+    // (e.g., "ccs/glm", "opencode/anthropic/claude-sonnet-4").
+    let registry_name = &session_info.agent_name;
 
     // Check if the agent supports session continuation
-    let agent_config = match config.registry.resolve_config(&registry_name) {
+    let agent_config = match config.registry.resolve_config(registry_name) {
         Some(cfg) => cfg,
         None => {
-            // Agent not found - fall back silently
-            return SessionContinuationResult::Fallback;
+            return SessionContinuationResult::InvalidSessionInfo {
+                message: format!(
+                    "Session continuation failed: unknown agent registry name '{}'",
+                    session_info.agent_name
+                ),
+            };
         }
     };
 

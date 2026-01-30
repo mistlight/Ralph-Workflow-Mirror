@@ -5,6 +5,7 @@
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
+use serde::de::{self, Visitor};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -391,7 +392,7 @@ pub enum RebaseState {
 ///
 /// These phases represent the major stages of the Ralph pipeline.
 /// Checkpoints are saved at phase boundaries to enable resume functionality.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum PipelinePhase {
     /// Rebase phase (synchronizing with upstream branch)
     Rebase,
@@ -401,9 +402,9 @@ pub enum PipelinePhase {
     Development,
     /// Review-fix cycles phase (N iterations of review + fix)
     Review,
-    /// Fix phase (v3 checkpoints only; migrates to Review in reducer state).
+    /// Fix phase (legacy checkpoints only; no longer supported for resume).
     Fix,
-    /// Verification review phase (v3 checkpoints only; migrates to Review in reducer state).
+    /// Verification review phase (legacy checkpoints only; no longer supported for resume).
     ReviewAgain,
     /// Commit message generation
     CommitMessage,
@@ -421,6 +422,66 @@ pub enum PipelinePhase {
     PostRebaseConflict,
     /// Pipeline was interrupted (e.g., by Ctrl+C)
     Interrupted,
+}
+
+impl<'de> Deserialize<'de> for PipelinePhase {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct PhaseVisitor;
+
+        impl<'de> Visitor<'de> for PhaseVisitor {
+            type Value = PipelinePhase;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a valid pipeline phase")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<PipelinePhase, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    "Rebase" => Ok(PipelinePhase::Rebase),
+                    "Planning" => Ok(PipelinePhase::Planning),
+                    "Development" => Ok(PipelinePhase::Development),
+                    "Review" => Ok(PipelinePhase::Review),
+                    "CommitMessage" => Ok(PipelinePhase::CommitMessage),
+                    "FinalValidation" => Ok(PipelinePhase::FinalValidation),
+                    "Complete" => Ok(PipelinePhase::Complete),
+                    "PreRebase" => Ok(PipelinePhase::PreRebase),
+                    "PreRebaseConflict" => Ok(PipelinePhase::PreRebaseConflict),
+                    "PostRebase" => Ok(PipelinePhase::PostRebase),
+                    "PostRebaseConflict" => Ok(PipelinePhase::PostRebaseConflict),
+                    "Interrupted" => Ok(PipelinePhase::Interrupted),
+                    "Fix" | "ReviewAgain" => Err(E::custom(format!(
+                        "legacy phase '{}' is no longer supported",
+                        value
+                    ))),
+                    _ => Err(E::unknown_variant(
+                        value,
+                        &[
+                            "Rebase",
+                            "Planning",
+                            "Development",
+                            "Review",
+                            "CommitMessage",
+                            "FinalValidation",
+                            "Complete",
+                            "PreRebase",
+                            "PreRebaseConflict",
+                            "PostRebase",
+                            "PostRebaseConflict",
+                            "Interrupted",
+                        ],
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(PhaseVisitor)
+    }
 }
 
 impl std::fmt::Display for PipelinePhase {
@@ -1117,6 +1178,66 @@ mod tests {
                 err
             );
         }
+
+        #[test]
+        fn test_load_checkpoint_rejects_legacy_phase_variants() {
+            let json = r#"{
+                "version": 3,
+                "phase": "Fix",
+                "iteration": 1,
+                "total_iterations": 1,
+                "reviewer_pass": 0,
+                "total_reviewer_passes": 0,
+                "timestamp": "2024-01-01 12:00:00",
+                "developer_agent": "test-agent",
+                "reviewer_agent": "test-agent",
+                "cli_args": {
+                    "developer_iters": 1,
+                    "reviewer_reviews": 0,
+                    "commit_msg": "",
+                    "review_depth": null,
+                    "skip_rebase": false
+                },
+                "developer_agent_config": {
+                    "name": "test-agent",
+                    "cmd": "echo",
+                    "output_flag": "",
+                    "yolo_flag": null,
+                    "can_commit": false,
+                    "model_override": null,
+                    "provider_override": null,
+                    "context_level": 1
+                },
+                "reviewer_agent_config": {
+                    "name": "test-agent",
+                    "cmd": "echo",
+                    "output_flag": "",
+                    "yolo_flag": null,
+                    "can_commit": false,
+                    "model_override": null,
+                    "provider_override": null,
+                    "context_level": 1
+                },
+                "rebase_state": "NotStarted",
+                "config_path": null,
+                "config_checksum": null,
+                "working_dir": "/some/other/directory",
+                "prompt_md_checksum": null,
+                "git_user_name": null,
+                "git_user_email": null
+            }"#;
+
+            let workspace = MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", json);
+
+            let result = load_checkpoint_with_workspace(&workspace);
+            assert!(result.is_err(), "legacy phase should be rejected");
+            let err = result.unwrap_err();
+            assert!(
+                err.to_string().contains("Legacy checkpoint formats"),
+                "Error should mention legacy not supported: {}",
+                err
+            );
+        }
     }
 
     // =========================================================================
@@ -1167,11 +1288,6 @@ mod tests {
         assert_eq!(format!("{}", PipelinePhase::Planning), "Planning");
         assert_eq!(format!("{}", PipelinePhase::Development), "Development");
         assert_eq!(format!("{}", PipelinePhase::Review), "Review");
-        assert_eq!(format!("{}", PipelinePhase::Fix), "Fix");
-        assert_eq!(
-            format!("{}", PipelinePhase::ReviewAgain),
-            "Verification Review"
-        );
         assert_eq!(
             format!("{}", PipelinePhase::CommitMessage),
             "Commit Message Generation"
@@ -1245,7 +1361,7 @@ mod tests {
 
         let run_id = uuid::Uuid::new_v4().to_string();
         let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
-            phase: PipelinePhase::ReviewAgain,
+            phase: PipelinePhase::Review,
             iteration: 5,
             total_iterations: 5,
             reviewer_pass: 2,
@@ -1276,14 +1392,14 @@ mod tests {
             actual_developer_runs: 5,
             actual_reviewer_runs: 2,
         });
-        assert_eq!(checkpoint.description(), "Verification review 2/3");
+        assert_eq!(checkpoint.description(), "Initial review");
     }
 
     #[test]
     fn test_checkpoint_serialization() {
         let run_id = uuid::Uuid::new_v4().to_string();
         let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
-            phase: PipelinePhase::Fix,
+            phase: PipelinePhase::Review,
             iteration: 3,
             total_iterations: 5,
             reviewer_pass: 1,
@@ -1327,7 +1443,7 @@ mod tests {
         });
 
         let json = serde_json::to_string(&checkpoint).unwrap();
-        assert!(json.contains("Fix"));
+        assert!(json.contains("Review"));
         assert!(json.contains("aider"));
         assert!(json.contains("opencode"));
         assert!(json.contains("\"version\":"));
