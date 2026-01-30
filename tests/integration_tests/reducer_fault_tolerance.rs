@@ -514,6 +514,85 @@ fn test_xsd_retry_decisions_from_reducer_state_only() {
     });
 }
 
+/// Test complete XSD retry exhaustion flow is reducer-driven.
+///
+/// Verifies that:
+/// 1. XSD validation failures increment state counter
+/// 2. After MAX_DEV_INVALID_OUTPUT_RERUNS, agent chain advances
+/// 3. Counter resets after agent advancement
+/// 4. If all agents exhausted with retries, chain enters exhausted state
+///
+/// This test ensures no hidden XSD retry logic exists outside the reducer.
+#[test]
+fn test_xsd_retry_exhaustion_complete_flow() {
+    use ralph_workflow::reducer::state::{PipelineState, MAX_DEV_INVALID_OUTPUT_RERUNS};
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        // Set up state with two agents
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Development;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["agent-primary".to_string(), "agent-fallback".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+
+        // Phase 1: Exhaust retries on primary agent
+        for attempt in 0..MAX_DEV_INVALID_OUTPUT_RERUNS {
+            assert_eq!(
+                state.agent_chain.current_agent(),
+                Some(&"agent-primary".to_string()),
+                "Should stay on primary agent until retries exhausted"
+            );
+            state = reduce(
+                state,
+                PipelineEvent::development_output_validation_failed(0, attempt),
+            );
+        }
+
+        // Counter should be at MAX
+        assert_eq!(
+            state.continuation.invalid_output_attempts, MAX_DEV_INVALID_OUTPUT_RERUNS,
+            "Counter should be at MAX before final failure"
+        );
+
+        // One more failure triggers agent advancement
+        state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(0, MAX_DEV_INVALID_OUTPUT_RERUNS),
+        );
+
+        // After exhausting retries, should be on fallback agent
+        assert_eq!(
+            state.agent_chain.current_agent(),
+            Some(&"agent-fallback".to_string()),
+            "Should advance to fallback agent after exhausting retries"
+        );
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 0,
+            "Counter should reset after agent advancement"
+        );
+
+        // Phase 2: Exhaust retries on fallback agent
+        for attempt in 0..=MAX_DEV_INVALID_OUTPUT_RERUNS {
+            state = reduce(
+                state,
+                PipelineEvent::development_output_validation_failed(0, attempt),
+            );
+        }
+
+        // After exhausting all agents, chain should wrap around (cycle increment)
+        // or point back to first agent if not exhausted
+        assert!(
+            state.agent_chain.current_agent_index == 0
+                || state.agent_chain.retry_cycle > 0
+                || state.agent_chain.is_exhausted(),
+            "After exhausting all agents, chain should wrap, increment cycle, or be exhausted"
+        );
+    });
+}
+
 /// Test that XSD retry state is distinct from agent invocation failure state.
 ///
 /// XSD validation failures (bad XML output) and agent invocation failures

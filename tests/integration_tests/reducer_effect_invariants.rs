@@ -438,3 +438,60 @@ fn test_phase_effects_do_not_bundle_cleanup() {
         );
     });
 }
+
+/// Test that effect determination is deterministic across ALL phases.
+///
+/// For every phase, calling determine_next_effect multiple times with the
+/// same state must produce the same effect. This proves no external state
+/// (filesystem, time, randomness) influences effect determination.
+#[test]
+fn test_effect_determination_deterministic_all_phases() {
+    with_default_timeout(|| {
+        let phases_to_test = vec![
+            (PipelinePhase::Planning, AgentRole::Developer),
+            (PipelinePhase::Development, AgentRole::Developer),
+            (PipelinePhase::Review, AgentRole::Reviewer),
+            (PipelinePhase::CommitMessage, AgentRole::Developer),
+            (PipelinePhase::FinalValidation, AgentRole::Developer),
+            (PipelinePhase::Finalizing, AgentRole::Developer),
+            (PipelinePhase::Complete, AgentRole::Developer),
+        ];
+
+        for (phase, role) in phases_to_test {
+            let mut state = PipelineState::initial(3, 2);
+            state.phase = phase;
+            state.context_cleaned = true;
+
+            // Initialize agent chain for phases that need it
+            if phase != PipelinePhase::Complete
+                && phase != PipelinePhase::Finalizing
+                && phase != PipelinePhase::FinalValidation
+                && phase != PipelinePhase::CommitMessage
+            {
+                state.agent_chain =
+                    state
+                        .agent_chain
+                        .with_agents(vec!["agent".to_string()], vec![vec![]], role);
+            }
+
+            // Call determine_next_effect 3 times
+            let effect1 = determine_next_effect(&state);
+            let effect2 = determine_next_effect(&state);
+            let effect3 = determine_next_effect(&state);
+
+            // All must be equal (using Debug format for comparison since Effect doesn't impl PartialEq)
+            assert_eq!(
+                format!("{:?}", effect1),
+                format!("{:?}", effect2),
+                "Effect determination must be deterministic for phase {:?}",
+                phase
+            );
+            assert_eq!(
+                format!("{:?}", effect2),
+                format!("{:?}", effect3),
+                "Effect determination must be deterministic for phase {:?}",
+                phase
+            );
+        }
+    });
+}

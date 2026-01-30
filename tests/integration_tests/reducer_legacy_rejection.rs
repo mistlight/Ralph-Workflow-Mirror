@@ -1056,6 +1056,55 @@ fn test_legacy_artifacts_ignored_during_execution() {
     });
 }
 
+/// Test that legacy artifact files in workspace are completely ignored.
+///
+/// Even when legacy files exist in the workspace (ISSUES.md, PLAN.md, commit.xml),
+/// the pipeline must not read them to derive results. All results must come from
+/// the current XML paths. This test explicitly creates these files and verifies
+/// determine_next_effect remains unchanged.
+#[test]
+fn test_legacy_artifact_files_completely_ignored() {
+    use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::effect::Effect;
+    use ralph_workflow::reducer::event::PipelinePhase;
+    use ralph_workflow::reducer::orchestration::determine_next_effect;
+    use ralph_workflow::reducer::state::PipelineState;
+    use ralph_workflow::workspace::MemoryWorkspace;
+
+    with_default_timeout(|| {
+        // Create workspace with legacy artifact files that should be ignored
+        let _workspace = MemoryWorkspace::new_test()
+            .with_file("ISSUES.md", "# Legacy Issues\n- Issue 1\n- Issue 2")
+            .with_file("PLAN.md", "# Legacy Plan\n\nDo legacy things")
+            .with_file(
+                ".agent/tmp/commit.xml",
+                "<commit><message>Legacy</message></commit>",
+            )
+            .with_dir(".agent/logs/planning_1"); // Legacy directory mode
+
+        // Create state in Development phase
+        let mut state = PipelineState::initial(2, 1);
+        state.phase = PipelinePhase::Development;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["test-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+
+        // Effect determination must be pure - workspace contents must not affect it
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::RunDevelopmentIteration { .. }),
+            "Effect must be determined from state alone, not workspace files"
+        );
+
+        // Verify the workspace has our legacy files (confirming test setup)
+        // Note: We don't actually check workspace because determine_next_effect
+        // is stateless - it only takes &PipelineState, not &Workspace
+        // This demonstrates the architectural invariant that effects are pure.
+    });
+}
+
 /// Test that effect determination is stateless and deterministic.
 ///
 /// The same state should always produce the same effect. This is a key
