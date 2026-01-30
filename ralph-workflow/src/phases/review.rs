@@ -35,7 +35,6 @@ use crate::prompts::{
     prompt_review_xml_with_references, prompt_review_xsd_retry_with_context, ContextLevel,
     PromptContentBuilder,
 };
-use crate::workspace::Workspace;
 use std::path::Path;
 
 mod validation;
@@ -70,134 +69,17 @@ enum ParseResult {
     ParseFailed(String),
 }
 
-/// Log prefix-based file search results.
-fn log_prefix_search_results(
-    logger: &Logger,
-    workspace: &dyn Workspace,
-    parent: &Path,
-    prefix: &str,
-) {
-    use crate::files::result_extraction::file_finder::find_log_files_with_prefix;
-
-    logger.info(&format!("Debug: Parent directory: {}", parent.display()));
-    logger.info(&format!("Debug: Log prefix: '{prefix}'"));
-
-    // Check for prefix-based log files
-    let prefix_files_result: std::io::Result<Vec<std::path::PathBuf>> =
-        find_log_files_with_prefix(workspace, parent, prefix);
-    match prefix_files_result {
-        Ok(files) if !files.is_empty() => {
-            logger.info(&format!(
-                "Debug: Found {} prefix-matched file(s)",
-                files.len()
-            ));
-            for file in &files {
-                logger.info(&format!("Debug:   - {}", file.display()));
-            }
-        }
-        Ok(_) => {
-            logger.info("Debug: No prefix-matched log files found");
-        }
-        Err(e) => {
-            logger.info(&format!("Debug: Error searching for prefix files: {e}"));
-        }
-    }
-}
-
-/// Log directory contents and file details.
-fn log_directory_details(logger: &Logger, workspace: &dyn Workspace, log_dir_path: &Path) {
-    // Count log files in the directory
-    match workspace.read_dir(log_dir_path) {
-        Ok(entries) => {
-            let file_count = entries.len();
-            logger.info(&format!(
-                "Debug: Log directory exists with {file_count} file(s)"
-            ));
-            // List files for diagnosis
-            for entry in &entries {
-                logger.info(&format!("Debug:   - {}", entry.path().display()));
-            }
-        }
-        Err(e) => {
-            logger.info(&format!("Debug: Error reading log directory: {e}"));
-        }
-    }
-
-    // Try to read first log file content for diagnosis
-    if let Ok(entries) = workspace.read_dir(log_dir_path) {
-        if let Some(first_entry) = entries.first() {
-            logger.info(&format!(
-                "Debug: Reading first file for diagnosis: {}",
-                first_entry.path().display()
-            ));
-            match workspace.read(first_entry.path()) {
-                Ok(content) => {
-                    let preview: String = content.chars().take(300).collect();
-                    logger.info(&format!(
-                        "Debug: First log file preview (300 chars):\n{preview}"
-                    ));
-                    let line_count = content.lines().count();
-                    logger.info(&format!("Debug: Log file has {line_count} line(s)"));
-
-                    // Check if file contains JSON events
-                    let json_count = content
-                        .lines()
-                        .filter(|line| line.trim().starts_with('{'))
-                        .count();
-                    logger.info(&format!("Debug: Found {json_count} JSON line(s)"));
-
-                    // Check for result events
-                    let result_count = content
-                        .lines()
-                        .filter(|line| {
-                            line.contains(r#""type":"result""#)
-                                || line.contains(r#""type": "result""#)
-                        })
-                        .count();
-                    logger.info(&format!("Debug: Found {result_count} result event line(s)"));
-                }
-                Err(e) => {
-                    logger.info(&format!("Debug: Error reading file content: {e}"));
-                }
-            }
-        }
-    }
-}
-
 /// Log diagnostic information when JSON extraction fails.
 ///
-/// Provides detailed debug logging about log file search strategies,
-/// file contents, and why extraction might have failed.
-fn log_extraction_diagnostics(logger: &Logger, workspace: &dyn Workspace, log_dir: &str) {
-    let log_dir_path = Path::new(log_dir);
-
-    // Show the exact log path being searched
-    logger.info(&format!("Debug: Log path searched: {log_dir}"));
-
-    // Extract parent and prefix for prefix-mode search info
-    let parent = log_dir_path.parent().unwrap_or_else(|| Path::new("."));
-    let prefix = log_dir_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-
-    if !prefix.is_empty() {
-        log_prefix_search_results(logger, workspace, parent, prefix);
-    }
-
-    // Check if log path exists as directory
-    if workspace.exists(log_dir_path) {
-        if workspace.is_dir(log_dir_path) {
-            log_directory_details(logger, workspace, log_dir_path);
-        } else {
-            logger.info(&format!(
-                "Debug: Path exists but is not a directory: {}",
-                log_dir_path.display()
-            ));
-        }
-    } else {
-        logger.info(&format!("Debug: Log path does not exist: {log_dir}"));
-    }
+/// Reports the expected log path without scanning directories. The agent is
+/// responsible for writing valid XML output to the designated path. If
+/// extraction fails, the user should verify the agent configuration.
+fn log_extraction_diagnostics(logger: &Logger, log_dir: &str) {
+    logger.info(&format!(
+        "No JSON result event found. Expected log prefix: {log_dir}"
+    ));
+    logger.info("Ensure the agent produces valid XML output to .agent/tmp/issues.xml");
+    logger.info("or includes result events in its JSON log output.");
 }
 
 /// Run the review pass for a single cycle.
@@ -577,7 +459,7 @@ fn extract_and_validate_review_output_xml(
         if ctx.config.verbosity.is_debug() {
             ctx.logger
                 .info("No JSON result event found in reviewer logs");
-            log_extraction_diagnostics(ctx.logger, ctx.workspace, log_dir);
+            log_extraction_diagnostics(ctx.logger, log_dir);
         }
 
         // Legacy ISSUES.md fallback removed - fail with clear error

@@ -7,6 +7,18 @@
 //! - Event log for debugging and replay
 //! - Effect handlers for side effects (git operations, agent execution)
 //!
+//! # Single Source of Truth
+//!
+//! The reducer state is the **single source of truth** for all pipeline decisions:
+//!
+//! - **Phase transitions**: Only happen via reducer events, never via file checks
+//! - **Agent fallback**: Triggered by reducer events, not ad-hoc error handling
+//! - **XSD retry**: Tracked in `ContinuationState.invalid_output_attempts`, not hidden logic
+//! - **Pipeline completion**: Determined by `state.phase == Complete`, not file existence
+//!
+//! All effects are determined by [`determine_next_effect`], a pure function of state.
+//! No external file checks or configuration lookups influence effect determination.
+//!
 //! # Key Types
 //!
 //! - [`PipelineState`] - Immutable state representing current pipeline progress
