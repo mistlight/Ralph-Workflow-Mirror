@@ -3,6 +3,51 @@
 //! This module implements the EffectHandler trait to execute pipeline side effects
 //! through the reducer architecture. Effect handlers perform actual work (agent
 //! invocation, git operations, file I/O) and emit events.
+//!
+//! # Handler Responsibilities vs Reducer Responsibilities
+//!
+//! The reducer architecture separates concerns:
+//! - **Reducer**: Pure state transitions, policy decisions, phase progression
+//! - **Handler**: Effect execution, I/O, cleanup, validation
+//!
+//! ## Intentional Handler Behaviors (NOT Reducer-Driven)
+//!
+//! The following behaviors are intentionally handled at the effect handler level
+//! rather than being driven by reducer events/effects:
+//!
+//! ### 1. Pre-Phase Cleanup Operations
+//!
+//! - `clear_stale_development_result_xml()` - clears XML before dev iteration
+//! - `clear_stale_review_issues_xml()` - clears XML before review pass
+//! - `cleanup_continuation_context_file()` - removes stale context files
+//!
+//! These are handler responsibilities because:
+//! - They are idempotent preparation steps, not policy decisions
+//! - Failure is non-fatal (logged but doesn't change control flow)
+//! - Making them separate effects would add overhead without benefit
+//!
+//! ### 2. Marker File Validation Helpers
+//!
+//! - `is_review_output_validation_failure_marker()` - checks for failure markers
+//! - `is_review_output_validation_failure_on_review_err()` - validates XML state
+//!
+//! These are handler responsibilities because:
+//! - They inform event emission, but the reducer makes the decision
+//! - They are validation, not control flow
+//!
+//! ### 3. XML Archiving (.processed suffix)
+//!
+//! The `.processed` fallback pattern (`read_xml_with_processed_fallback`) is an
+//! intentional handler optimization for resume support, NOT a legacy fallback.
+//! See function documentation for details.
+//!
+//! ## Reducer-Driven Behaviors (Handler Must NOT Decide)
+//!
+//! The handler must NOT make decisions about:
+//! - Phase transitions (only emit events, reducer decides)
+//! - Agent fallback (only report failures, reducer decides)
+//! - Retry policies (only execute, reducer tracks attempts)
+//! - Continuation budget (only report exhaustion, reducer decides)
 
 use crate::agents::AgentRole;
 use crate::checkpoint::{

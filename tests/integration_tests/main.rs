@@ -41,6 +41,7 @@ mod opencode_parser_tests;
 mod reducer_agent_fallback;
 mod reducer_effect_invariants;
 mod reducer_fault_tolerance;
+mod reducer_hidden_behavior;
 mod reducer_legacy_rejection;
 mod reducer_rebase_state_machine;
 mod reducer_resume_tests;

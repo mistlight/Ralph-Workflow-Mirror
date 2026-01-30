@@ -1141,7 +1141,7 @@ ADVANCED OPTIONS
     -i, --interactive            Prompt for PROMPT.md if missing
 
   Git Control:
-    --skip-rebase                Skip automatic rebase to main branch
+    --with-rebase                Enable automatic rebase to main branch (disabled by default)
     --rebase-only                Only rebase, then exit (no pipeline)
     --git-user-name <name>       Override git user name for commits
     --git-user-email <email>     Override git user email for commits

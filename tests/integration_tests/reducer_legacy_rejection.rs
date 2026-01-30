@@ -1534,12 +1534,32 @@ fn test_phase_transitions_only_via_reducer_events() {
 // .PROCESSED FALLBACK DOCUMENTATION TESTS
 // ============================================================================
 
-/// Test that .processed fallback is NOT legacy behavior but intentional resume support.
+/// Test that .processed fallback is clearly distinguished from removed legacy paths.
 ///
-/// The .processed suffix is used for XML archiving after validation, NOT for
-/// legacy artifact recovery. This test documents the distinction.
+/// # Removed Legacy Behaviors (Must NOT Return)
+///
+/// | Pattern | What It Did | Why Removed |
+/// |---------|-------------|-------------|
+/// | JSON log extraction | Read agent logs for result | Agents must write XML |
+/// | Legacy commit.xml path | Read .agent/tmp/commit.xml | Only commit_message.xml |
+/// | Directory-mode scanning | Scan directory for logs | Only prefix matching |
+/// | Subdirectory fallback | Look in nested dirs | Only flat .agent/logs/ |
+/// | ISSUES.md result extraction | Read markdown for issues | Only issues.xml |
+/// | PLAN.md result extraction | Read markdown for plan | Only plan.xml |
+///
+/// # Intentional .processed Pattern (Must Stay)
+///
+/// The `.processed` suffix is used for XML archiving after validation:
+/// 1. Agent writes `plan.xml`
+/// 2. Handler validates and archives to `plan.xml.processed`
+/// 3. On resume, handler can read from `.processed` if primary missing
+///
+/// This is NOT legacy because:
+/// - We create the `.processed` files ourselves
+/// - It's for resume support, not old version compatibility
+/// - The files have identical format to primary path
 #[test]
-fn test_processed_fallback_is_intentional_not_legacy() {
+fn test_processed_vs_legacy_distinction() {
     with_default_timeout(|| {
         // This test documents an architectural decision rather than testing behavior.
         // The .processed files serve two purposes:
@@ -1557,7 +1577,7 @@ fn test_processed_fallback_is_intentional_not_legacy() {
         // - Legacy: Scan directories for log files with legacy naming
         // - Current: Only read from known XML paths we archive ourselves
 
-        // No assertions needed - this is documentation via test name
+        // No assertions needed - this is documentation via test name and docstring
     });
 }
 

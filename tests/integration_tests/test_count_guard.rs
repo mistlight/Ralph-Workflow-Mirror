@@ -137,6 +137,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("reducer_fault_tolerance.rs"),
     },
     SourceFile {
+        path: "reducer_hidden_behavior.rs",
+        contents: include_str!("reducer_hidden_behavior.rs"),
+    },
+    SourceFile {
         path: "reducer_rebase_state_machine.rs",
         contents: include_str!("reducer_rebase_state_machine.rs"),
     },

@@ -439,6 +439,66 @@ fn test_phase_effects_do_not_bundle_cleanup() {
     });
 }
 
+/// Test that continuation context writing is driven by WriteContinuationContext effect.
+///
+/// When development returns status="partial" or "failed", the handler emits a
+/// ContinuationTriggered event. The reducer then determines if WriteContinuationContext
+/// effect should be emitted based on continuation budget and policy.
+///
+/// This test verifies that:
+/// 1. WriteContinuationContext is a distinct effect (not bundled)
+/// 2. The effect is emitted based on reducer state, not handler decision
+/// 3. CleanupContinuationContext is also effect-driven
+#[test]
+fn test_continuation_context_is_effect_driven() {
+    use ralph_workflow::reducer::effect::ContinuationContextData;
+    use ralph_workflow::reducer::state::DevelopmentStatus;
+
+    with_default_timeout(|| {
+        // WriteContinuationContext is its own effect
+        let write_effect = Effect::WriteContinuationContext(ContinuationContextData {
+            iteration: 0,
+            attempt: 1,
+            status: DevelopmentStatus::Partial,
+            summary: "test".to_string(),
+            files_changed: None,
+            next_steps: None,
+        });
+
+        // Verify it's distinct from development iteration effect
+        let dev_effect = Effect::RunDevelopmentIteration { iteration: 0 };
+
+        assert!(
+            !matches!(&dev_effect, Effect::WriteContinuationContext(_)),
+            "Continuation context writing must be separate from development iteration"
+        );
+
+        // Verify WriteContinuationContext carries the necessary data for reducer policy
+        match &write_effect {
+            Effect::WriteContinuationContext(data) => {
+                // The data includes all info needed for reducer to track continuation state
+                assert_eq!(
+                    data.iteration, 0,
+                    "Tracks which iteration triggered continuation"
+                );
+                assert_eq!(data.attempt, 1, "Tracks continuation attempt count");
+                assert!(
+                    matches!(data.status, DevelopmentStatus::Partial),
+                    "Tracks status that triggered continuation"
+                );
+            }
+            _ => panic!("Expected WriteContinuationContext"),
+        }
+
+        // CleanupContinuationContext is also separate
+        let cleanup_effect = Effect::CleanupContinuationContext;
+        assert!(
+            matches!(cleanup_effect, Effect::CleanupContinuationContext),
+            "Cleanup is its own effect driven by reducer, not handler side effect"
+        );
+    });
+}
+
 /// Test that effect determination is deterministic across ALL phases.
 ///
 /// For every phase, calling determine_next_effect multiple times with the

@@ -550,6 +550,40 @@ pub struct XsdRetryConfig<'a, 'b> {
 /// - The agent doesn't support session continuation
 /// - Session continuation fails to even start (I/O error, panic, etc.)
 ///
+/// # Architectural Note: Why This Is Not Reducer-Driven
+///
+/// This function runs multiple XSD validation retries within a single effect
+/// execution, which means the reducer doesn't see intermediate retry attempts.
+/// This is an intentional architectural decision, NOT a legacy bypass, because:
+///
+/// ## Session Continuation Requires In-Process State
+///
+/// AI agents like Claude support "session continuation" where the agent retains
+/// memory of the conversation. This requires:
+/// 1. The session ID to be passed to subsequent invocations
+/// 2. The session state to be maintained in process
+/// 3. Quick retry turnaround without full reducer roundtrip
+///
+/// Making each XSD retry a separate effect would:
+/// - Lose session context (AI would forget the conversation)
+/// - Add significant overhead for common validation failures
+/// - Complicate state management (session IDs would need to be in PipelineState)
+///
+/// ## Bounded Retry With Final Event
+///
+/// The retry loop is bounded by `MAX_*_VALIDATION_RETRY_ATTEMPTS` and the final
+/// result (success, validation failure, auth error) is surfaced via reducer event:
+/// - `OutputValidationFailed` if XSD validation exhausts retries
+/// - `InvocationFailed` if auth error detected
+/// - Success event if validation passes
+///
+/// ## What IS Reducer-Driven
+///
+/// - Agent selection: Handler reads from `state.agent_chain.current_agent()`
+/// - Retry count tracking: `continuation.invalid_output_attempts` in reducer state
+/// - Agent fallback: Triggered by reducer event, not hidden in retry loop
+/// - Phase transitions: Only via reducer events
+///
 /// # Important: Quirky Agent Behavior
 ///
 /// Some AI agents return non-zero exit codes but still produce valid XML output.

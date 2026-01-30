@@ -15,6 +15,18 @@
 //! The `CliArgsSnapshot::skip_rebase` field is preserved for backwards compatibility
 //! with existing checkpoints. The `--skip-rebase` CLI flag was removed in this version
 //! because rebase is now disabled by default (use `--with-rebase` to enable).
+//!
+//! ## Deprecation Timeline
+//!
+//! - **Current**: Field preserved for checkpoint loading compatibility
+//! - **Next Major Version**: Field will be removed; checkpoints with skip_rebase
+//!   will require re-creation via fresh pipeline run
+//!
+//! ## Migration Path
+//!
+//! Users with old checkpoints containing `skip_rebase=false` should:
+//! 1. Complete or delete the existing checkpoint
+//! 2. Start a new pipeline run with `--with-rebase` if rebase is desired
 
 use chrono::Local;
 use serde::de::{self, Visitor};
@@ -82,7 +94,13 @@ pub struct CliArgsSnapshot {
     pub reviewer_reviews: u32,
     /// Review depth level (if specified)
     pub review_depth: Option<String>,
-    /// Whether to skip automatic rebase
+    /// Whether to skip automatic rebase.
+    ///
+    /// **DEPRECATED:** This field exists only for backwards compatibility with existing
+    /// checkpoints. The `--skip-rebase` CLI flag was removed; rebase is now disabled
+    /// by default (use `--with-rebase` to enable). See module-level documentation for
+    /// deprecation timeline. When `skip_rebase=false` is loaded from a checkpoint,
+    /// the resume command reconstructs the `--with-rebase` flag.
     pub skip_rebase: bool,
     /// Isolation mode: when false, NOTES.md and ISSUES.md persist between iterations.
     /// Default is true (isolation enabled).
