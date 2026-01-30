@@ -649,6 +649,10 @@ fn test_handler_reads_correct_agent_from_state_after_chain_initialized() {
                 "opencode".to_string(),
                 "claude".to_string(),
             ],
+            3,
+            1000,
+            2.0,
+            60000,
         ),
     );
 
@@ -732,6 +736,10 @@ fn test_full_pipeline_flow_uses_correct_reviewer_agent() {
                 "opencode".to_string(),
                 "claude".to_string(),
             ],
+            3,
+            1000,
+            2.0,
+            60000,
         ),
     );
 
@@ -807,6 +815,10 @@ fn test_event_loop_state_consistency_for_review_agent() {
             "opencode".to_string(),
             "claude".to_string(),
         ],
+        3,
+        1000,
+        2.0,
+        60000,
     );
 
     // Event loop: reduce state with the event
@@ -964,6 +976,10 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
                 "opencode".to_string(),
                 "claude".to_string(),
             ],
+            3,
+            1000,
+            2.0,
+            60000,
         ),
     );
 

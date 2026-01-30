@@ -11,7 +11,14 @@ fn test_agent_chain_initialized_for_developer() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::agent_chain_initialized(AgentRole::Developer, agents.clone()),
+        PipelineEvent::agent_chain_initialized(
+            AgentRole::Developer,
+            agents.clone(),
+            3,
+            1000,
+            2.0,
+            60000,
+        ),
     );
 
     assert_eq!(new_state.agent_chain.agents, agents);
@@ -26,7 +33,14 @@ fn test_agent_chain_initialized_for_reviewer() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::agent_chain_initialized(AgentRole::Reviewer, agents.clone()),
+        PipelineEvent::agent_chain_initialized(
+            AgentRole::Reviewer,
+            agents.clone(),
+            3,
+            1000,
+            2.0,
+            60000,
+        ),
     );
 
     assert_eq!(new_state.agent_chain.agents, agents);
@@ -366,7 +380,14 @@ fn test_agent_chain_initialized_for_commit_role() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::agent_chain_initialized(AgentRole::Commit, agents.clone()),
+        PipelineEvent::agent_chain_initialized(
+            AgentRole::Commit,
+            agents.clone(),
+            3,
+            1000,
+            2.0,
+            60000,
+        ),
     );
 
     assert_eq!(new_state.agent_chain.agents, agents);
@@ -392,7 +413,14 @@ fn test_agent_chain_initialized_resets_retry_cycle() {
     let new_agents = vec!["new-agent1".to_string(), "new-agent2".to_string()];
     let new_state = reduce(
         state,
-        PipelineEvent::agent_chain_initialized(AgentRole::Reviewer, new_agents.clone()),
+        PipelineEvent::agent_chain_initialized(
+            AgentRole::Reviewer,
+            new_agents.clone(),
+            3,
+            1000,
+            2.0,
+            60000,
+        ),
     );
 
     // CRITICAL: AgentChainInitialized uses reset_for_role() which RESETS retry_cycle to 0
@@ -409,7 +437,7 @@ fn test_agent_chain_initialized_with_empty_list() {
     let state = create_test_state();
     let new_state = reduce(
         state,
-        PipelineEvent::agent_chain_initialized(AgentRole::Developer, vec![]),
+        PipelineEvent::agent_chain_initialized(AgentRole::Developer, vec![], 3, 1000, 2.0, 60000),
     );
 
     // Empty agent list should be accepted
@@ -430,7 +458,14 @@ fn test_agent_chain_initialized_contains_full_fallback_chain() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::agent_chain_initialized(AgentRole::Reviewer, agents.clone()),
+        PipelineEvent::agent_chain_initialized(
+            AgentRole::Reviewer,
+            agents.clone(),
+            3,
+            1000,
+            2.0,
+            60000,
+        ),
     );
 
     assert_eq!(

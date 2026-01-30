@@ -12,17 +12,7 @@ use crate::common::{
 };
 use crate::test_timeout::with_default_timeout;
 
-use super::MOCK_REPO_PATH;
-
-/// Standard PROMPT.md content for tests - matches the required format.
-const STANDARD_PROMPT: &str = r#"## Goal
-
-Do something.
-
-## Acceptance
-
-- Tests pass
-"#;
+use super::{MOCK_REPO_PATH, STANDARD_PROMPT, STANDARD_PROMPT_CHECKSUM};
 
 // ============================================================================
 // Rebase State Preservation Tests
@@ -258,7 +248,7 @@ fn make_checkpoint_json(working_dir: &str, phase: &str) -> String {
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "00000000-0000-0000-0000-000000000001",
@@ -270,7 +260,7 @@ fn make_checkpoint_json(working_dir: &str, phase: &str) -> String {
             "file_system_state": null,
             "prompt_history": null
         }}"#,
-        phase, working_dir
+        phase, working_dir, STANDARD_PROMPT_CHECKSUM
     )
 }
 
@@ -316,7 +306,7 @@ fn make_checkpoint_json_with_execution_history(working_dir: &str) -> String {
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-rebase-conflict",
@@ -328,7 +318,7 @@ fn make_checkpoint_json_with_execution_history(working_dir: &str) -> String {
             "file_system_state": null,
             "prompt_history": null
         }}"#,
-        working_dir
+        working_dir, STANDARD_PROMPT_CHECKSUM
     )
 }
 
@@ -374,7 +364,7 @@ fn make_checkpoint_json_with_prompt_history(working_dir: &str) -> String {
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-prompt-history",
@@ -386,6 +376,6 @@ fn make_checkpoint_json_with_prompt_history(working_dir: &str) -> String {
             "file_system_state": null,
             "prompt_history": {{"postrebase_conflict_resolution": "Resolve conflicts"}}
         }}"#,
-        working_dir
+        working_dir, STANDARD_PROMPT_CHECKSUM
     )
 }

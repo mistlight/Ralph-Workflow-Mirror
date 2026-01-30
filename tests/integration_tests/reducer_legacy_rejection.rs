@@ -871,6 +871,8 @@ fn test_effects_are_single_task() {
                 Effect::GenerateCommitMessage => "Generate ONE commit message",
                 Effect::CreateCommit { .. } => "Create ONE commit",
                 Effect::SkipCommit { .. } => "Skip commit ONCE",
+                Effect::BackoffWait { .. } => "Wait ONE backoff delay",
+                Effect::AbortPipeline { .. } => "Abort pipeline ONCE",
                 Effect::ValidateFinalState => "Validate final state ONCE",
                 Effect::SaveCheckpoint { .. } => "Save ONE checkpoint",
                 Effect::CleanupContext => "Clean context ONCE",
@@ -908,6 +910,14 @@ fn test_effects_are_single_task() {
                 message: "test".to_string(),
             },
             Effect::SkipCommit {
+                reason: "test".to_string(),
+            },
+            Effect::BackoffWait {
+                role: AgentRole::Developer,
+                cycle: 1,
+                duration_ms: 1,
+            },
+            Effect::AbortPipeline {
                 reason: "test".to_string(),
             },
             Effect::ValidateFinalState,

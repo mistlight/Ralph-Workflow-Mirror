@@ -68,8 +68,7 @@ use crate::files::{
     update_status_with_workspace, validate_prompt_md_with_workspace,
 };
 use crate::git_helpers::{
-    abort_rebase, continue_rebase, get_conflicted_files, is_main_or_master_branch,
-    reset_start_commit, RebaseResult,
+    abort_rebase, continue_rebase, get_conflicted_files, is_main_or_master_branch, RebaseResult,
 };
 #[cfg(not(feature = "test-utils"))]
 use crate::git_helpers::{
@@ -447,13 +446,10 @@ pub fn run_with_config_and_resolver<
 
     // Handle --diagnose
     if args.recovery.diagnose {
-        let fallback_workspace = crate::workspace::WorkspaceFs::new(
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
-        );
         let diagnose_workspace = workspace
             .as_ref()
             .map(|w| w.as_ref())
-            .unwrap_or(&fallback_workspace);
+            .ok_or_else(|| anyhow::anyhow!("--diagnose requires workspace context"))?;
         handle_diagnose(
             colors,
             &config,
@@ -652,13 +648,10 @@ where
 
     // Handle --diagnose
     if args.recovery.diagnose {
-        let fallback_workspace = crate::workspace::WorkspaceFs::new(
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
-        );
         let diagnose_workspace = workspace
             .as_ref()
             .map(|w| w.as_ref())
-            .unwrap_or(&fallback_workspace);
+            .ok_or_else(|| anyhow::anyhow!("--diagnose requires workspace context"))?;
         handle_diagnose(
             colors,
             &config,
@@ -857,40 +850,7 @@ fn handle_plumbing_commands<H: effect::AppEffectHandler>(
                 logger.error(&format!("Failed to reset starting commit: {e}"));
                 anyhow::bail!("Failed to reset starting commit");
             }
-            other => {
-                // Fallback to old implementation for other result types
-                // This allows gradual migration
-                drop(other);
-                match reset_start_commit() {
-                    Ok(result) => {
-                        let short_oid = &result.oid[..8.min(result.oid.len())];
-                        if result.fell_back_to_head {
-                            logger.success(&format!(
-                                "Starting commit reference reset to current HEAD ({})",
-                                short_oid
-                            ));
-                            logger.info("On main/master branch - using HEAD as baseline");
-                        } else if let Some(ref branch) = result.default_branch {
-                            logger.success(&format!(
-                                "Starting commit reference reset to merge-base with '{}' ({})",
-                                branch, short_oid
-                            ));
-                            logger.info("Baseline set to common ancestor with default branch");
-                        } else {
-                            logger.success(&format!(
-                                "Starting commit reference reset ({})",
-                                short_oid
-                            ));
-                        }
-                        logger.info(".agent/start_commit has been updated");
-                        Ok(true)
-                    }
-                    Err(e) => {
-                        logger.error(&format!("Failed to reset starting commit: {e}"));
-                        anyhow::bail!("Failed to reset starting commit");
-                    }
-                }
-            }
+            other => anyhow::bail!("unexpected result from GitResetStartCommit: {other:?}"),
         };
     }
 
@@ -1214,7 +1174,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             &ctx.developer_display,
             &ctx.reviewer_display,
             &*ctx.workspace,
-        ),
+        )?,
     };
 
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
@@ -1540,7 +1500,7 @@ where
             &ctx.developer_display,
             &ctx.reviewer_display,
             &*ctx.workspace,
-        ),
+        )?,
     };
 
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);

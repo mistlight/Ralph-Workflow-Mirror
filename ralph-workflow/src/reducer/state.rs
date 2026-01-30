@@ -147,6 +147,12 @@ pub struct PipelineState {
     pub rebase: RebaseState,
     pub commit: CommitState,
     pub execution_history: Vec<ExecutionStep>,
+    /// Count of CheckpointSaved events applied to state.
+    ///
+    /// This is a reducer-visible record of checkpoint saves, intended for
+    /// observability and tests that enforce checkpointing happens via effects.
+    #[serde(default)]
+    pub checkpoint_saved_count: u32,
     /// Continuation state for development iterations.
     ///
     /// Tracks context from previous attempts when status is "partial" or "failed"
@@ -183,6 +189,7 @@ impl PipelineState {
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
             execution_history: Vec::new(),
+            checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
         }
     }
@@ -222,6 +229,7 @@ impl From<PipelineCheckpoint> for PipelineState {
                 .execution_history
                 .map(|h| h.steps)
                 .unwrap_or_default(),
+            checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
         }
     }
@@ -287,6 +295,18 @@ pub struct AgentChainState {
     pub current_model_index: usize,
     pub retry_cycle: u32,
     pub max_cycles: u32,
+    /// Base delay between retry cycles in milliseconds.
+    #[serde(default = "default_retry_delay_ms")]
+    pub retry_delay_ms: u64,
+    /// Multiplier for exponential backoff.
+    #[serde(default = "default_backoff_multiplier")]
+    pub backoff_multiplier: f64,
+    /// Maximum backoff delay in milliseconds.
+    #[serde(default = "default_max_backoff_ms")]
+    pub max_backoff_ms: u64,
+    /// Pending backoff delay (milliseconds) that must be waited before continuing.
+    #[serde(default)]
+    pub backoff_pending_ms: Option<u64>,
     pub current_role: AgentRole,
     /// Prompt context preserved from rate-limited agent for continuation.
     ///
@@ -294,6 +314,18 @@ pub struct AgentChainState {
     /// can continue the same work instead of starting from scratch.
     #[serde(default)]
     pub rate_limit_continuation_prompt: Option<String>,
+}
+
+const fn default_retry_delay_ms() -> u64 {
+    1000
+}
+
+const fn default_backoff_multiplier() -> f64 {
+    2.0
+}
+
+const fn default_max_backoff_ms() -> u64 {
+    60000
 }
 
 impl AgentChainState {
@@ -305,6 +337,10 @@ impl AgentChainState {
             current_model_index: 0,
             retry_cycle: 0,
             max_cycles: 3,
+            retry_delay_ms: default_retry_delay_ms(),
+            backoff_multiplier: default_backoff_multiplier(),
+            max_backoff_ms: default_max_backoff_ms(),
+            backoff_pending_ms: None,
             current_role: AgentRole::Developer,
             rate_limit_continuation_prompt: None,
         }
@@ -328,6 +364,18 @@ impl AgentChainState {
     /// over with exponential backoff.
     pub fn with_max_cycles(mut self, max_cycles: u32) -> Self {
         self.max_cycles = max_cycles;
+        self
+    }
+
+    pub fn with_backoff_policy(
+        mut self,
+        retry_delay_ms: u64,
+        backoff_multiplier: f64,
+        max_backoff_ms: u64,
+    ) -> Self {
+        self.retry_delay_ms = retry_delay_ms;
+        self.backoff_multiplier = backoff_multiplier;
+        self.max_backoff_ms = max_backoff_ms;
         self
     }
 
@@ -370,10 +418,16 @@ impl AgentChainState {
         if new.current_agent_index + 1 < new.agents.len() {
             new.current_agent_index += 1;
             new.current_model_index = 0;
+            new.backoff_pending_ms = None;
         } else {
             new.current_agent_index = 0;
             new.current_model_index = 0;
             new.retry_cycle += 1;
+            if new.is_exhausted() {
+                new.backoff_pending_ms = None;
+            } else {
+                new.backoff_pending_ms = Some(new.calculate_backoff_delay_ms_for_retry_cycle());
+            }
         }
         new
     }
@@ -430,6 +484,7 @@ impl AgentChainState {
         new.current_agent_index = 0;
         new.current_model_index = 0;
         new.retry_cycle = 0;
+        new.backoff_pending_ms = None;
         new.rate_limit_continuation_prompt = None;
         new
     }
@@ -438,6 +493,7 @@ impl AgentChainState {
         let mut new = self.clone();
         new.current_agent_index = 0;
         new.current_model_index = 0;
+        new.backoff_pending_ms = None;
         new.rate_limit_continuation_prompt = None;
         new
     }
@@ -447,8 +503,106 @@ impl AgentChainState {
         new.current_agent_index = 0;
         new.current_model_index = 0;
         new.retry_cycle += 1;
+        if new.is_exhausted() {
+            new.backoff_pending_ms = None;
+        } else {
+            new.backoff_pending_ms = Some(new.calculate_backoff_delay_ms_for_retry_cycle());
+        }
         new
     }
+
+    pub fn clear_backoff_pending(&self) -> Self {
+        let mut new = self.clone();
+        new.backoff_pending_ms = None;
+        new
+    }
+
+    fn calculate_backoff_delay_ms_for_retry_cycle(&self) -> u64 {
+        // The first retry cycle should use the base delay.
+        let cycle_index = self.retry_cycle.saturating_sub(1);
+        calculate_backoff_delay_ms(
+            self.retry_delay_ms,
+            self.backoff_multiplier,
+            self.max_backoff_ms,
+            cycle_index,
+        )
+    }
+}
+
+// Backoff computation helpers.
+// These mirror the semantics in `crate::agents::fallback::FallbackConfig::calculate_backoff`
+// but live in reducer state so orchestration can derive BackoffWait effects purely.
+
+const IEEE_754_EXP_BIAS: i32 = 1023;
+const IEEE_754_EXP_MASK: u64 = 0x7FF;
+const IEEE_754_MANTISSA_MASK: u64 = 0x000F_FFFF_FFFF_FFFF;
+const IEEE_754_IMPLICIT_ONE: u64 = 1u64 << 52;
+
+fn f64_to_u64_via_bits(value: f64) -> u64 {
+    if !value.is_finite() || value < 0.0 {
+        return 0;
+    }
+    let bits = value.to_bits();
+    let exp_biased = ((bits >> 52) & IEEE_754_EXP_MASK) as i32;
+    let mantissa = bits & IEEE_754_MANTISSA_MASK;
+    if exp_biased == 0 {
+        return 0;
+    }
+    let exp = exp_biased - IEEE_754_EXP_BIAS;
+    if exp < 0 {
+        return 0;
+    }
+    let full_mantissa = mantissa | IEEE_754_IMPLICIT_ONE;
+    let shift = 52i32 - exp;
+    if shift <= 0 {
+        u64::MAX
+    } else if shift < 64 {
+        full_mantissa >> shift
+    } else {
+        0
+    }
+}
+
+fn multiplier_hundredths(backoff_multiplier: f64) -> u64 {
+    const EPSILON: f64 = 0.0001;
+    let m = backoff_multiplier;
+    if (m - 1.0).abs() < EPSILON {
+        return 100;
+    } else if (m - 1.5).abs() < EPSILON {
+        return 150;
+    } else if (m - 2.0).abs() < EPSILON {
+        return 200;
+    } else if (m - 2.5).abs() < EPSILON {
+        return 250;
+    } else if (m - 3.0).abs() < EPSILON {
+        return 300;
+    } else if (m - 4.0).abs() < EPSILON {
+        return 400;
+    } else if (m - 5.0).abs() < EPSILON {
+        return 500;
+    } else if (m - 10.0).abs() < EPSILON {
+        return 1000;
+    }
+
+    let clamped = m.clamp(0.0, 1000.0);
+    let multiplied = clamped * 100.0;
+    let rounded = multiplied.round();
+    f64_to_u64_via_bits(rounded)
+}
+
+fn calculate_backoff_delay_ms(
+    retry_delay_ms: u64,
+    backoff_multiplier: f64,
+    max_backoff_ms: u64,
+    cycle: u32,
+) -> u64 {
+    let mult_hundredths = multiplier_hundredths(backoff_multiplier);
+    let mut delay_hundredths = retry_delay_ms.saturating_mul(100);
+    for _ in 0..cycle {
+        delay_hundredths = delay_hundredths.saturating_mul(mult_hundredths);
+        delay_hundredths = delay_hundredths.saturating_div(100);
+    }
+    delay_hundredths.div_euclid(100).min(max_backoff_ms)
 }
 
 /// Rebase operation state.
@@ -523,6 +677,9 @@ pub const MAX_DEV_VALIDATION_RETRY_ATTEMPTS: u32 = 10;
 
 /// Maximum number of invalid XML output reruns before aborting the iteration.
 pub const MAX_DEV_INVALID_OUTPUT_RERUNS: u32 = 2;
+
+/// Maximum number of invalid planning output reruns before switching agents.
+pub const MAX_PLAN_INVALID_OUTPUT_RERUNS: u32 = 2;
 
 /// Commit generation state.
 ///

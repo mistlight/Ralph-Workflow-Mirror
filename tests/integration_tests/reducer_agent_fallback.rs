@@ -279,6 +279,10 @@ fn test_chain_initialized_event_populates_state() {
             PipelineEvent::agent_chain_initialized(
                 AgentRole::Developer,
                 vec!["claude".to_string(), "codex".to_string()],
+                3,
+                1000,
+                2.0,
+                60000,
             ),
         );
 

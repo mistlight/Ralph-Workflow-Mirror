@@ -166,7 +166,14 @@ impl MockEffectHandler {
                     _ => vec![],
                 };
                 (
-                    PipelineEvent::agent_chain_initialized(role, vec!["mock_agent".to_string()]),
+                    PipelineEvent::agent_chain_initialized(
+                        role,
+                        vec!["mock_agent".to_string()],
+                        3,
+                        1000,
+                        2.0,
+                        60000,
+                    ),
                     ui,
                 )
             }
@@ -342,6 +349,17 @@ src/lib.rs</ralph-files-changed>
             ),
 
             Effect::SkipCommit { reason } => (PipelineEvent::commit_skipped(reason), vec![]),
+
+            Effect::BackoffWait {
+                role,
+                cycle,
+                duration_ms: _,
+            } => (
+                PipelineEvent::agent_retry_cycle_started(role, cycle),
+                vec![],
+            ),
+
+            Effect::AbortPipeline { reason } => (PipelineEvent::pipeline_aborted(reason), vec![]),
 
             Effect::ValidateFinalState => {
                 let ui = vec![UIEvent::PhaseTransition {

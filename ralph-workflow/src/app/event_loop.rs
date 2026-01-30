@@ -6,8 +6,7 @@
 
 use crate::phases::PhaseContext;
 use crate::reducer::{
-    determine_next_effect, reduce, CheckpointTrigger, EffectHandler, MainEffectHandler,
-    PipelineEvent, PipelineState,
+    determine_next_effect, reduce, EffectHandler, MainEffectHandler, PipelineState,
 };
 use anyhow::Result;
 
@@ -133,13 +132,6 @@ where
         state = new_state;
 
         events_processed += 1;
-
-        if config.enable_checkpointing {
-            let checkpoint_event = PipelineEvent::CheckpointSaved {
-                trigger: CheckpointTrigger::PhaseTransition,
-            };
-            state = reduce(state, checkpoint_event);
-        }
     }
 
     if events_processed >= config.max_iterations {
@@ -197,13 +189,6 @@ fn run_event_loop_internal(
         state = new_state;
 
         events_processed += 1;
-
-        if config.enable_checkpointing {
-            let checkpoint_event = PipelineEvent::CheckpointSaved {
-                trigger: CheckpointTrigger::PhaseTransition,
-            };
-            state = reduce(state, checkpoint_event);
-        }
     }
 
     if events_processed >= config.max_iterations {

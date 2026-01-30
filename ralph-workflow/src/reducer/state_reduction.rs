@@ -63,7 +63,13 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
             context_cleaned: true,
             ..state
         },
-        PipelineEvent::CheckpointSaved { .. } => state,
+        PipelineEvent::CheckpointSaved { .. } => {
+            let checkpoint_saved_count = state.checkpoint_saved_count.saturating_add(1);
+            PipelineState {
+                checkpoint_saved_count,
+                ..state
+            }
+        }
         PipelineEvent::FinalizingStarted => PipelineState {
             phase: super::event::PipelinePhase::Finalizing,
             ..state
@@ -111,10 +117,18 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
     match event {
         PlanningEvent::PhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Planning,
+            continuation: ContinuationState {
+                invalid_output_attempts: 0,
+                ..state.continuation
+            },
             ..state
         },
         PlanningEvent::PhaseCompleted => PipelineState {
             phase: super::event::PipelinePhase::Development,
+            continuation: ContinuationState {
+                invalid_output_attempts: 0,
+                ..state.continuation
+            },
             ..state
         },
         PlanningEvent::GenerationStarted { .. } => state,
@@ -122,12 +136,42 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
             if valid {
                 PipelineState {
                     phase: super::event::PipelinePhase::Development,
+                    continuation: ContinuationState {
+                        invalid_output_attempts: 0,
+                        ..state.continuation
+                    },
                     ..state
                 }
             } else {
                 // Do not proceed to Development without a valid plan.
                 PipelineState {
                     phase: super::event::PipelinePhase::Planning,
+                    ..state
+                }
+            }
+        }
+
+        PlanningEvent::OutputValidationFailed { iteration, attempt } => {
+            if attempt >= super::state::MAX_PLAN_INVALID_OUTPUT_RERUNS {
+                let new_agent_chain = state.agent_chain.switch_to_next_agent();
+                PipelineState {
+                    phase: super::event::PipelinePhase::Planning,
+                    iteration,
+                    agent_chain: new_agent_chain,
+                    continuation: ContinuationState {
+                        invalid_output_attempts: 0,
+                        ..state.continuation
+                    },
+                    ..state
+                }
+            } else {
+                PipelineState {
+                    phase: super::event::PipelinePhase::Planning,
+                    iteration,
+                    continuation: ContinuationState {
+                        invalid_output_attempts: attempt + 1,
+                        ..state.continuation
+                    },
                     ..state
                 }
             }
@@ -569,13 +613,25 @@ fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState 
             agent_chain: state.agent_chain.advance_to_next_model(),
             ..state
         },
-        AgentEvent::RetryCycleStarted { .. } => state,
-        AgentEvent::ChainInitialized { role, agents } => {
+        AgentEvent::RetryCycleStarted { .. } => PipelineState {
+            agent_chain: state.agent_chain.clear_backoff_pending(),
+            ..state
+        },
+        AgentEvent::ChainInitialized {
+            role,
+            agents,
+            max_cycles,
+            retry_delay_ms,
+            backoff_multiplier,
+            max_backoff_ms,
+        } => {
             let models_per_agent = agents.iter().map(|_| vec![]).collect();
             PipelineState {
                 agent_chain: state
                     .agent_chain
                     .with_agents(agents, models_per_agent, role)
+                    .with_max_cycles(max_cycles)
+                    .with_backoff_policy(retry_delay_ms, backoff_multiplier, max_backoff_ms)
                     .reset_for_role(role),
                 ..state
             }
@@ -681,11 +737,25 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
             let agent_chain = if next_phase == super::event::PipelinePhase::Review
                 && state.previous_phase == Some(super::event::PipelinePhase::Development)
             {
-                let mut chain = super::state::AgentChainState::initial();
-                chain.max_cycles = state.agent_chain.max_cycles;
-                chain.reset_for_role(crate::agents::AgentRole::Reviewer)
+                super::state::AgentChainState::initial()
+                    .with_max_cycles(state.agent_chain.max_cycles)
+                    .with_backoff_policy(
+                        state.agent_chain.retry_delay_ms,
+                        state.agent_chain.backoff_multiplier,
+                        state.agent_chain.max_backoff_ms,
+                    )
+                    .reset_for_role(crate::agents::AgentRole::Reviewer)
             } else {
                 state.agent_chain.clone()
+            };
+
+            let continuation = if next_phase == super::event::PipelinePhase::Planning {
+                ContinuationState {
+                    invalid_output_attempts: 0,
+                    ..state.continuation
+                }
+            } else {
+                state.continuation.clone()
             };
             PipelineState {
                 commit: CommitState::Committed { hash },
@@ -695,6 +765,7 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
                 reviewer_pass: next_reviewer_pass,
                 context_cleaned: false,
                 agent_chain,
+                continuation,
                 ..state
             }
         }
@@ -711,11 +782,25 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
             let agent_chain = if next_phase == super::event::PipelinePhase::Review
                 && state.previous_phase == Some(super::event::PipelinePhase::Development)
             {
-                let mut chain = super::state::AgentChainState::initial();
-                chain.max_cycles = state.agent_chain.max_cycles;
-                chain.reset_for_role(crate::agents::AgentRole::Reviewer)
+                super::state::AgentChainState::initial()
+                    .with_max_cycles(state.agent_chain.max_cycles)
+                    .with_backoff_policy(
+                        state.agent_chain.retry_delay_ms,
+                        state.agent_chain.backoff_multiplier,
+                        state.agent_chain.max_backoff_ms,
+                    )
+                    .reset_for_role(crate::agents::AgentRole::Reviewer)
             } else {
                 state.agent_chain.clone()
+            };
+
+            let continuation = if next_phase == super::event::PipelinePhase::Planning {
+                ContinuationState {
+                    invalid_output_attempts: 0,
+                    ..state.continuation
+                }
+            } else {
+                state.continuation.clone()
             };
             PipelineState {
                 commit: CommitState::Skipped,
@@ -725,6 +810,7 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
                 reviewer_pass: next_reviewer_pass,
                 context_cleaned: false,
                 agent_chain,
+                continuation,
                 ..state
             }
         }
@@ -2164,6 +2250,10 @@ mod tests {
                     "opencode".to_string(),
                     "claude".to_string(),
                 ],
+                3,
+                1000,
+                2.0,
+                60000,
             ),
         );
 

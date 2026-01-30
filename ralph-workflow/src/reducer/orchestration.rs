@@ -18,6 +18,23 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         return Effect::CleanupContinuationContext;
     }
 
+    if !state.agent_chain.agents.is_empty() && state.agent_chain.is_exhausted() {
+        return Effect::AbortPipeline {
+            reason: format!(
+                "Agent chain exhausted for role {:?} in phase {:?} (cycle {})",
+                state.agent_chain.current_role, state.phase, state.agent_chain.retry_cycle
+            ),
+        };
+    }
+
+    if let Some(duration_ms) = state.agent_chain.backoff_pending_ms {
+        return Effect::BackoffWait {
+            role: state.agent_chain.current_role,
+            cycle: state.agent_chain.retry_cycle,
+            duration_ms,
+        };
+    }
+
     match state.phase {
         PipelinePhase::Planning => {
             if state.agent_chain.agents.is_empty() {
@@ -66,11 +83,6 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     role: AgentRole::Developer,
                 };
             }
-            if state.agent_chain.is_exhausted() {
-                return Effect::SaveCheckpoint {
-                    trigger: CheckpointTrigger::PhaseTransition,
-                };
-            }
 
             if state.iteration < state.total_iterations {
                 Effect::RunDevelopmentIteration {
@@ -87,11 +99,6 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             if state.agent_chain.agents.is_empty() {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Reviewer,
-                };
-            }
-            if state.agent_chain.is_exhausted() {
-                return Effect::SaveCheckpoint {
-                    trigger: CheckpointTrigger::PhaseTransition,
                 };
             }
 
@@ -114,16 +121,24 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             }
         }
 
-        PipelinePhase::CommitMessage => match state.commit {
-            CommitState::NotStarted => Effect::GenerateCommitMessage,
-            CommitState::Generated { ref message } => Effect::CreateCommit {
-                message: message.clone(),
-            },
-            CommitState::Committed { .. } | CommitState::Skipped => Effect::SaveCheckpoint {
-                trigger: CheckpointTrigger::PhaseTransition,
-            },
-            CommitState::Generating { .. } => Effect::GenerateCommitMessage,
-        },
+        PipelinePhase::CommitMessage => {
+            // Commit phase requires explicit agent chain initialization like other phases
+            if state.agent_chain.agents.is_empty() {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Commit,
+                };
+            }
+            match state.commit {
+                CommitState::NotStarted => Effect::GenerateCommitMessage,
+                CommitState::Generated { ref message } => Effect::CreateCommit {
+                    message: message.clone(),
+                },
+                CommitState::Committed { .. } | CommitState::Skipped => Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::PhaseTransition,
+                },
+                CommitState::Generating { .. } => Effect::GenerateCommitMessage,
+            }
+        }
 
         PipelinePhase::FinalValidation => Effect::ValidateFinalState,
 
@@ -279,7 +294,7 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
+        assert!(matches!(effect, Effect::AbortPipeline { .. }));
     }
 
     #[test]
@@ -383,6 +398,10 @@ mod tests {
                         PipelineEvent::agent_chain_initialized(
                             AgentRole::Developer,
                             vec!["claude".to_string()],
+                            3,
+                            1000,
+                            2.0,
+                            60000,
                         ),
                     );
                 }
@@ -448,7 +467,7 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
+        assert!(matches!(effect, Effect::AbortPipeline { .. }));
     }
 
     #[test]
@@ -595,7 +614,14 @@ mod tests {
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
-                        PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
+                        PipelineEvent::agent_chain_initialized(
+                            role,
+                            vec!["claude".to_string()],
+                            3,
+                            1000,
+                            2.0,
+                            60000,
+                        ),
                     );
                 }
                 Effect::GeneratePlan { iteration } => {
@@ -720,7 +746,14 @@ mod tests {
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
-                        PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
+                        PipelineEvent::agent_chain_initialized(
+                            role,
+                            vec!["claude".to_string()],
+                            3,
+                            1000,
+                            2.0,
+                            60000,
+                        ),
                     );
                 }
                 Effect::RunReviewPass { pass } => {
@@ -779,7 +812,14 @@ mod tests {
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
-                        PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
+                        PipelineEvent::agent_chain_initialized(
+                            role,
+                            vec!["claude".to_string()],
+                            3,
+                            1000,
+                            2.0,
+                            60000,
+                        ),
                     );
                 }
                 Effect::RunReviewPass { pass } => {
@@ -854,10 +894,34 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_effect_commit_message_not_started() {
+    fn test_determine_effect_commit_message_empty_chain() {
+        // When agent chain is empty, commit phase should request initialization
         let state = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
+            agent_chain: AgentChainState::initial(),
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Commit
+            }
+        ));
+    }
+
+    #[test]
+    fn test_determine_effect_commit_message_not_started() {
+        // With initialized agent chain, commit phase should generate message
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: CommitState::NotStarted,
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["commit-agent".to_string()],
+                vec![vec![]],
+                AgentRole::Commit,
+            ),
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
@@ -871,6 +935,11 @@ mod tests {
             commit: CommitState::Generated {
                 message: "test commit message".to_string(),
             },
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["commit-agent".to_string()],
+                vec![vec![]],
+                AgentRole::Commit,
+            ),
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);

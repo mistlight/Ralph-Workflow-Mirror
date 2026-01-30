@@ -116,13 +116,16 @@ pub fn validate_checkpoint(
 /// Validate that the working directory matches the checkpoint.
 ///
 /// Uses the workspace root for current working directory comparison.
+/// Rejects legacy checkpoints that have no working directory.
 pub fn validate_working_directory(
     checkpoint: &PipelineCheckpoint,
     workspace: &dyn Workspace,
 ) -> ValidationResult {
     if checkpoint.working_dir.is_empty() {
-        return ValidationResult::ok().with_warning(
-            "Checkpoint has no working directory recorded (legacy checkpoint)".to_string(),
+        return ValidationResult::error(
+            "Checkpoint has no working directory recorded. Legacy checkpoints are not supported. \
+             Delete the checkpoint and restart the pipeline."
+                .to_string(),
         );
     }
 
@@ -139,13 +142,18 @@ pub fn validate_working_directory(
 }
 
 /// Validate that PROMPT.md hasn't changed since checkpoint.
+///
+/// Rejects legacy checkpoints that have no PROMPT.md checksum.
 pub fn validate_prompt_md(
     checkpoint: &PipelineCheckpoint,
     workspace: &dyn Workspace,
 ) -> ValidationResult {
     let Some(ref saved_checksum) = checkpoint.prompt_md_checksum else {
-        return ValidationResult::ok()
-            .with_warning("Checkpoint has no PROMPT.md checksum (legacy checkpoint)");
+        return ValidationResult::error(
+            "Checkpoint has no PROMPT.md checksum. Legacy checkpoints are not supported. \
+             Delete the checkpoint and restart the pipeline."
+                .to_string(),
+        );
     };
 
     let current_checksum =
@@ -164,14 +172,20 @@ pub fn validate_prompt_md(
 }
 
 /// Validate that an agent configuration matches the current registry.
+///
+/// Rejects legacy checkpoints that have empty agent commands.
 pub fn validate_agent_config(
     saved_config: &AgentConfigSnapshot,
     agent_name: &str,
     registry: &AgentRegistry,
 ) -> ValidationResult {
-    // Skip validation if the saved config has empty command (legacy/minimal checkpoint)
+    // Reject legacy checkpoints with empty commands
     if saved_config.cmd.is_empty() {
-        return ValidationResult::ok();
+        return ValidationResult::error(format!(
+            "Checkpoint has empty agent command for '{}'. Legacy checkpoints are not supported. \
+             Delete the checkpoint and restart the pipeline.",
+            agent_name
+        ));
     }
 
     let Some(current_config) = registry.resolve_config(agent_name) else {
@@ -327,15 +341,18 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_working_directory_empty() {
+    fn test_validate_working_directory_empty_rejects_legacy() {
         let mut checkpoint = make_test_checkpoint();
         checkpoint.working_dir = String::new();
         let workspace = MemoryWorkspace::new_test();
 
         let result = validate_working_directory(&checkpoint, &workspace);
-        assert!(result.is_valid);
-        assert_eq!(result.warnings.len(), 1);
-        assert!(result.warnings[0].contains("legacy checkpoint"));
+        assert!(
+            !result.is_valid,
+            "Empty working_dir should reject legacy checkpoint"
+        );
+        assert_eq!(result.errors.len(), 1);
+        assert!(result.errors[0].contains("Legacy checkpoints are not supported"));
     }
 
     #[test]
@@ -354,14 +371,17 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_prompt_md_no_checksum() {
+    fn test_validate_prompt_md_no_checksum_rejects_legacy() {
         let mut checkpoint = make_test_checkpoint();
         checkpoint.prompt_md_checksum = None;
         let workspace = MemoryWorkspace::new_test();
 
         let result = validate_prompt_md(&checkpoint, &workspace);
-        assert!(result.is_valid);
-        assert_eq!(result.warnings.len(), 1);
-        assert!(result.warnings[0].contains("legacy checkpoint"));
+        assert!(
+            !result.is_valid,
+            "Missing PROMPT.md checksum should reject legacy checkpoint"
+        );
+        assert_eq!(result.errors.len(), 1);
+        assert!(result.errors[0].contains("Legacy checkpoints are not supported"));
     }
 }

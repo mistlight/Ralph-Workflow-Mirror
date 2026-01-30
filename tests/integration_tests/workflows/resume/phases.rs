@@ -12,17 +12,7 @@ use crate::common::{
 };
 use crate::test_timeout::with_default_timeout;
 
-use super::{make_checkpoint_json, MOCK_REPO_PATH};
-
-/// Standard prompt content for tests - matches the required PROMPT.md format.
-const STANDARD_PROMPT: &str = r#"## Goal
-
-Test resume functionality.
-
-## Acceptance
-
-- Tests pass
-"#;
+use super::{make_checkpoint_json, MOCK_REPO_PATH, STANDARD_PROMPT};
 
 // ============================================================================
 // Phase Resume Tests
@@ -63,7 +53,7 @@ fn ralph_resume_from_planning_phase() {
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
             .with_file(".agent/checkpoint.json", &checkpoint_json)
-            .with_file("PROMPT.md", "Test prompt\n")
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/commit-message.txt", "feat: test\n");
 
@@ -82,7 +72,8 @@ fn ralph_resume_from_development_phase() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file(".agent/checkpoint.json", &checkpoint_json);
+            .with_file(".agent/checkpoint.json", &checkpoint_json)
+            .with_file("PROMPT.md", STANDARD_PROMPT);
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
@@ -100,7 +91,7 @@ fn ralph_resume_from_review_phase() {
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
             .with_file(".agent/checkpoint.json", &checkpoint_json)
-            .with_file("PROMPT.md", "Test prompt\n")
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/commit-message.txt", "feat: test\n")
             .with_file(".agent/ISSUES.md", "No issues\n");
@@ -120,7 +111,8 @@ fn ralph_resume_from_complete_phase() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file(".agent/checkpoint.json", &checkpoint_json);
+            .with_file(".agent/checkpoint.json", &checkpoint_json)
+            .with_file("PROMPT.md", STANDARD_PROMPT);
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
@@ -142,7 +134,8 @@ fn ralph_resume_passes_context_to_developer_agent() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file(".agent/checkpoint.json", &checkpoint_json);
+            .with_file(".agent/checkpoint.json", &checkpoint_json)
+            .with_file("PROMPT.md", STANDARD_PROMPT);
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();

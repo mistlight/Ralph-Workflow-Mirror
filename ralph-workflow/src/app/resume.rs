@@ -571,8 +571,9 @@ pub enum ValidationOutcome {
 ///
 /// # Returns
 ///
-/// `Some(ResumeResult)` if a valid checkpoint was found and loaded,
-/// `None` if no checkpoint exists or --resume was not specified.
+/// `Ok(Some(ResumeResult))` if a valid checkpoint was found and loaded,
+/// `Ok(None)` if no checkpoint exists or --resume was not specified.
+/// `Err(_)` if --resume was specified and checkpoint validation failed.
 pub fn handle_resume_with_validation(
     args: &crate::cli::Args,
     config: &Config,
@@ -581,7 +582,7 @@ pub fn handle_resume_with_validation(
     developer_agent: &str,
     reviewer_agent: &str,
     workspace: &dyn Workspace,
-) -> Option<ResumeResult> {
+) -> anyhow::Result<Option<ResumeResult>> {
     // Handle --inspect-checkpoint flag
     if args.recovery.inspect_checkpoint {
         match load_checkpoint_with_workspace(workspace) {
@@ -602,7 +603,7 @@ pub fn handle_resume_with_validation(
     }
 
     if !args.recovery.resume {
-        return None;
+        return Ok(None);
     }
 
     match load_checkpoint_with_workspace(workspace) {
@@ -622,11 +623,16 @@ pub fn handle_resume_with_validation(
             }
 
             if !validation.is_valid {
+                // When --resume is explicitly specified and validation fails, return an error.
+                // The user explicitly asked to resume, so failing validation is a hard error.
                 logger.error("Checkpoint validation failed. Cannot resume.");
                 logger.info(
                     "Delete .agent/checkpoint.json and start fresh, or fix the issues above.",
                 );
-                return None;
+                return Err(anyhow::anyhow!(
+                    "Checkpoint validation failed: {}",
+                    validation.errors.join("; ")
+                ));
             }
 
             // Verify agents match (additional agent-specific warnings)
@@ -659,19 +665,22 @@ pub fn handle_resume_with_validation(
                 ValidationOutcome::Passed
             };
 
-            if matches!(validation_outcome, ValidationOutcome::Failed(_)) {
-                return None;
+            if let ValidationOutcome::Failed(reason) = validation_outcome {
+                return Err(anyhow::anyhow!(
+                    "File system state validation failed: {}",
+                    reason
+                ));
             }
 
-            Some(ResumeResult { checkpoint })
+            Ok(Some(ResumeResult { checkpoint }))
         }
         Ok(None) => {
             logger.warn("No checkpoint found. Starting fresh pipeline...");
-            None
+            Ok(None)
         }
         Err(e) => {
-            logger.warn(&format!("Failed to load checkpoint (starting fresh): {e}"));
-            None
+            // When --resume is specified but checkpoint fails to load, that's an error
+            Err(anyhow::anyhow!("Failed to load checkpoint: {e}"))
         }
     }
 }
@@ -690,7 +699,7 @@ fn validate_file_system_state(
     strategy: crate::checkpoint::recovery::RecoveryStrategy,
     workspace: &dyn Workspace,
 ) -> ValidationOutcome {
-    let errors = file_system_state.validate_with_executor_impl(None);
+    let errors = file_system_state.validate_with_workspace(workspace, None);
 
     if errors.is_empty() {
         logger.info("File system state validation passed.");

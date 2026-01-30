@@ -24,6 +24,10 @@ Test resume functionality.
 - Tests pass
 "#;
 
+/// SHA256 checksum of STANDARD_PROMPT above.
+const STANDARD_PROMPT_CHECKSUM: &str =
+    "e10f15e8e6da0c359d9d266370dcefe7e11270c48b63144f1d443249b9eb5738";
+
 // ============================================================================
 // Configuration Preservation Tests
 // ============================================================================
@@ -282,7 +286,7 @@ fn make_checkpoint_json_with_git_identity(working_dir: &str) -> String {
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": "Checkpoint User",
             "git_user_email": "checkpoint@example.com",
             "run_id": "00000000-0000-0000-0000-000000000001",
@@ -294,7 +298,7 @@ fn make_checkpoint_json_with_git_identity(working_dir: &str) -> String {
             "file_system_state": null,
             "prompt_history": null
         }}"#,
-        working_dir
+        working_dir, STANDARD_PROMPT_CHECKSUM
     )
 }
 
@@ -340,7 +344,7 @@ fn make_checkpoint_json_with_model_overrides(working_dir: &str) -> String {
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "00000000-0000-0000-0000-000000000001",
@@ -352,7 +356,7 @@ fn make_checkpoint_json_with_model_overrides(working_dir: &str) -> String {
             "file_system_state": null,
             "prompt_history": null
         }}"#,
-        working_dir
+        working_dir, STANDARD_PROMPT_CHECKSUM
     )
 }
 

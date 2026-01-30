@@ -103,6 +103,25 @@ pub enum Effect {
         reason: String,
     },
 
+    /// Wait for a retry-cycle backoff delay.
+    ///
+    /// This effect is emitted when the reducer determines the agent chain has
+    /// entered a new retry cycle and a backoff delay must be applied before
+    /// attempting more work.
+    BackoffWait {
+        role: AgentRole,
+        cycle: u32,
+        duration_ms: u64,
+    },
+
+    /// Abort the pipeline with a reason.
+    ///
+    /// This provides an explicit terminal effect for unrecoverable situations
+    /// (e.g., exhausted agent chain) so the pipeline never stalls on checkpoints.
+    AbortPipeline {
+        reason: String,
+    },
+
     ValidateFinalState,
 
     SaveCheckpoint {

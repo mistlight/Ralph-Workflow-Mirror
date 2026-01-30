@@ -148,6 +148,24 @@ impl MainEffectHandler {
 
             Effect::SkipCommit { reason } => self.skip_commit(ctx, reason),
 
+            Effect::BackoffWait {
+                role,
+                cycle,
+                duration_ms,
+            } => {
+                use std::time::Duration;
+                ctx.registry
+                    .retry_timer()
+                    .sleep(Duration::from_millis(duration_ms));
+                Ok(EffectResult::event(
+                    PipelineEvent::agent_retry_cycle_started(role, cycle),
+                ))
+            }
+
+            Effect::AbortPipeline { reason } => {
+                Ok(EffectResult::event(PipelineEvent::pipeline_aborted(reason)))
+            }
+
             Effect::ValidateFinalState => self.validate_final_state(ctx),
 
             Effect::SaveCheckpoint { trigger } => self.save_checkpoint(ctx, trigger),
@@ -292,7 +310,15 @@ impl MainEffectHandler {
 
                 let is_valid = plan_exists && !plan_content.trim().is_empty();
 
-                let event = PipelineEvent::plan_generation_completed(iteration, is_valid);
+                let event = if is_valid {
+                    PipelineEvent::plan_generation_completed(iteration, true)
+                } else {
+                    // Planning invalid output attempt count is tracked in reducer state.
+                    PipelineEvent::planning_output_validation_failed(
+                        iteration,
+                        self.state.continuation.invalid_output_attempts,
+                    )
+                };
 
                 // Build UI events
                 let mut ui_events = vec![];
@@ -338,7 +364,10 @@ impl MainEffectHandler {
                 }
 
                 Ok(EffectResult::event(
-                    PipelineEvent::plan_generation_completed(iteration, false),
+                    PipelineEvent::planning_output_validation_failed(
+                        iteration,
+                        self.state.continuation.invalid_output_attempts,
+                    ),
                 ))
             }
         }
@@ -896,8 +925,13 @@ impl MainEffectHandler {
             )));
         }
 
-        // Get commit agent first to avoid borrow conflicts
-        let commit_agent = get_primary_commit_agent(ctx).unwrap_or_else(|| "commit".to_string());
+        // Get commit agent from reducer-managed agent chain (required by InitializeAgentChain effect)
+        let commit_agent = self
+            .state
+            .agent_chain
+            .current_agent()
+            .cloned()
+            .expect("commit agent should be initialized via InitializeAgentChain effect");
 
         let attempt_result = commit::run_commit_attempt(ctx, attempt, &diff, &commit_agent)?;
 
@@ -1029,6 +1063,10 @@ impl MainEffectHandler {
                         return Ok(EffectResult::event(PipelineEvent::agent_chain_initialized(
                             role,
                             vec![],
+                            fallback_config.max_cycles,
+                            fallback_config.retry_delay_ms,
+                            fallback_config.backoff_multiplier,
+                            fallback_config.max_backoff_ms,
                         )));
                     }
                 }
@@ -1042,7 +1080,14 @@ impl MainEffectHandler {
             agents.join(", ")
         ));
 
-        let event = PipelineEvent::agent_chain_initialized(role, agents);
+        let event = PipelineEvent::agent_chain_initialized(
+            role,
+            agents,
+            fallback_config.max_cycles,
+            fallback_config.retry_delay_ms,
+            fallback_config.backoff_multiplier,
+            fallback_config.max_backoff_ms,
+        );
 
         // Emit phase transition when entering a new major phase
         let ui_events = match role {
@@ -1563,6 +1608,7 @@ mod tests {
             PipelineEvent::Agent(crate::reducer::event::AgentEvent::ChainInitialized {
                 role,
                 agents,
+                ..
             }) => {
                 assert_eq!(role, AgentRole::Reviewer);
                 assert_eq!(

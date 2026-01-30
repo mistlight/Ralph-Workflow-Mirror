@@ -5,7 +5,9 @@
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
+use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};
+use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 
 fn create_state_with_agent_chain_in_development() -> PipelineState {
@@ -36,6 +38,7 @@ fn create_state_with_agent_chain_in_development() -> PipelineState {
         rebase: RebaseState::NotStarted,
         commit: CommitState::NotStarted,
         continuation: ContinuationState::new(),
+        checkpoint_saved_count: 0,
         execution_history: Vec::new(),
     }
 }
@@ -291,6 +294,7 @@ fn test_rate_limit_continuation_prompt_cleared_on_success() {
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
             continuation: ContinuationState::new(),
+            checkpoint_saved_count: 0,
             execution_history: Vec::new(),
         };
 
@@ -335,6 +339,7 @@ fn test_all_agents_exhausted_pipeline_graceful_abort() {
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
             continuation: ContinuationState::new(),
+            checkpoint_saved_count: 0,
             execution_history: Vec::new(),
         };
 
@@ -377,12 +382,51 @@ fn test_agent_exhaustion_transitions_to_next_phase() {
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
             continuation: ContinuationState::new(),
+            checkpoint_saved_count: 0,
             execution_history: Vec::new(),
         };
 
         assert_eq!(state.phase, PipelinePhase::Development);
         assert!(state.agent_chain.is_exhausted());
         assert_eq!(state.agent_chain.retry_cycle, 1);
+    });
+}
+
+/// Test that retry-cycle backoff is emitted as an explicit effect.
+///
+/// When an agent chain wraps into a new retry cycle, the reducer must record that
+/// a backoff wait is pending, and orchestration must emit a BackoffWait effect
+/// before attempting more work.
+#[test]
+fn test_retry_cycle_backoff_is_explicit_effect() {
+    with_default_timeout(|| {
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Development;
+        state.agent_chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent1".to_string()],
+                vec![vec!["model1".to_string()]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(3);
+
+        // Exhaust once to start retry cycle. This should mark backoff pending.
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_chain_exhausted(AgentRole::Developer),
+        );
+
+        assert!(
+            state.agent_chain.backoff_pending_ms.is_some(),
+            "starting a retry cycle must mark backoff pending"
+        );
+
+        // Orchestration should emit a wait effect before any further work.
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::BackoffWait { .. }),
+            "expected BackoffWait, got {effect:?}"
+        );
     });
 }
 

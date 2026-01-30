@@ -266,38 +266,6 @@ impl FileSystemState {
         errors
     }
 
-    /// Validate the current file system state against this snapshot with a provided executor.
-    ///
-    /// Returns a list of validation errors. Empty list means all checks passed.
-    ///
-    /// # Note
-    ///
-    /// This is a crate-internal function that uses CWD-relative paths. It exists to support
-    /// CLI-layer code that operates before a workspace is available. New pipeline code
-    /// should use `validate_with_workspace` instead.
-    pub(crate) fn validate_with_executor_impl(
-        &self,
-        executor: Option<&dyn ProcessExecutor>,
-    ) -> Vec<ValidationError> {
-        let mut errors = Vec::new();
-
-        // Validate each tracked file
-        for (path, snapshot) in &self.files {
-            if let Err(e) = self.validate_file_impl(path, snapshot) {
-                errors.push(e);
-            }
-        }
-
-        // Validate git state if we captured it and executor was provided
-        if let Some(exec) = executor {
-            if let Err(e) = self.validate_git_state_with_executor(exec) {
-                errors.push(e);
-            }
-        }
-
-        errors
-    }
-
     /// Validate a single file against its snapshot using a workspace.
     fn validate_file_with_workspace(
         &self,
@@ -325,54 +293,6 @@ impl FileSystemState {
             return Err(ValidationError::FileContentChanged {
                 path: path.to_string(),
             });
-        }
-
-        Ok(())
-    }
-
-    /// Internal implementation of validate_file (non-deprecated).
-    fn validate_file_impl(
-        &self,
-        path: &str,
-        snapshot: &FileSnapshot,
-    ) -> Result<(), ValidationError> {
-        let path_obj = Path::new(path);
-
-        // Check existence
-        if snapshot.exists && !path_obj.exists() {
-            return Err(ValidationError::FileMissing {
-                path: path.to_string(),
-            });
-        }
-
-        if !snapshot.exists && path_obj.exists() {
-            return Err(ValidationError::FileUnexpectedlyExists {
-                path: path.to_string(),
-            });
-        }
-
-        // Verify checksum for existing files using CWD-relative path.
-        // This is CLI-layer code that operates before workspace is available (see CLAUDE.md).
-        if snapshot.exists {
-            // Read file and verify checksum manually since we don't have workspace
-            let content = std::fs::read(path_obj);
-            let matches = match content {
-                Ok(bytes) => {
-                    if bytes.len() as u64 != snapshot.size {
-                        false
-                    } else {
-                        let checksum =
-                            crate::checkpoint::state::calculate_checksum_from_bytes(&bytes);
-                        checksum == snapshot.checksum
-                    }
-                }
-                Err(_) => false,
-            };
-            if !matches {
-                return Err(ValidationError::FileContentChanged {
-                    path: path.to_string(),
-                });
-            }
         }
 
         Ok(())
