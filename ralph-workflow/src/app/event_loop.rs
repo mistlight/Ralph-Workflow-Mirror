@@ -44,7 +44,7 @@ pub struct EventLoopResult {
 /// 4. Repeating until a terminal state is reached or max iterations exceeded
 ///
 /// The entire event loop is wrapped in panic recovery to ensure the pipeline
-/// never crashes due to agent failures (including segmentation faults).
+/// never crashes due to agent failures (panics only; aborts/segfaults cannot be recovered).
 ///
 /// # Arguments
 ///
@@ -113,8 +113,31 @@ where
 
     ctx.logger.info("Starting reducer-based event loop");
 
-    while !state.is_complete() && events_processed < config.max_iterations {
+    while events_processed < config.max_iterations {
         let effect = determine_next_effect(&state);
+
+        let allow_terminal_checkpoint =
+            matches!(state.phase, crate::reducer::event::PipelinePhase::Complete)
+                && matches!(
+                    effect,
+                    crate::reducer::effect::Effect::SaveCheckpoint { .. }
+                )
+                && state.checkpoint_saved_count == 0;
+
+        if state.is_complete() && !allow_terminal_checkpoint {
+            break;
+        }
+
+        if !config.enable_checkpointing {
+            if let crate::reducer::effect::Effect::SaveCheckpoint { trigger } = effect {
+                let event = crate::reducer::PipelineEvent::checkpoint_saved(trigger);
+                let new_state = reduce(state, event.clone());
+                handler.update_state(new_state.clone());
+                state = new_state;
+                events_processed += 1;
+                continue;
+            }
+        }
 
         // Execute returns EffectResult with both PipelineEvent and UIEvents
         let result = handler.execute(effect, ctx)?;
@@ -170,8 +193,31 @@ fn run_event_loop_internal(
 
     ctx.logger.info("Starting reducer-based event loop");
 
-    while !state.is_complete() && events_processed < config.max_iterations {
+    while events_processed < config.max_iterations {
         let effect = determine_next_effect(&state);
+
+        let allow_terminal_checkpoint =
+            matches!(state.phase, crate::reducer::event::PipelinePhase::Complete)
+                && matches!(
+                    effect,
+                    crate::reducer::effect::Effect::SaveCheckpoint { .. }
+                )
+                && state.checkpoint_saved_count == 0;
+
+        if state.is_complete() && !allow_terminal_checkpoint {
+            break;
+        }
+
+        if !config.enable_checkpointing {
+            if let crate::reducer::effect::Effect::SaveCheckpoint { trigger } = effect {
+                let event = crate::reducer::PipelineEvent::checkpoint_saved(trigger);
+                let new_state = reduce(state, event.clone());
+                handler.state = new_state.clone();
+                state = new_state;
+                events_processed += 1;
+                continue;
+            }
+        }
 
         // Execute returns EffectResult with both PipelineEvent and UIEvents
         let result = handler.execute(effect, ctx)?;

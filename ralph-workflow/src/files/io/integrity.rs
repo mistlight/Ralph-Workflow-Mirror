@@ -172,8 +172,8 @@ pub fn check_xml_file_writable_with_workspace(
         return Ok(false);
     }
 
-    // In workspace context, files are always writable
-    // (MemoryWorkspace doesn't track file locks)
+    let content = workspace.read(xml_path)?;
+    workspace.write(xml_path, &content)?;
     Ok(true)
 }
 

@@ -16,7 +16,7 @@ use crate::logger::{Colors, Logger};
 use crate::phases::PhaseContext;
 use crate::prompts::{get_stored_or_generate_prompt, template_context::TemplateContext};
 
-use super::context::PipelineContext;
+use crate::workspace::Workspace;
 
 /// Context for conflict resolution operations.
 ///
@@ -24,6 +24,7 @@ use super::context::PipelineContext;
 /// AI-assisted conflict resolution during rebase operations.
 pub(crate) struct ConflictResolutionContext<'a> {
     pub config: &'a crate::config::Config,
+    pub registry: &'a crate::agents::AgentRegistry,
     pub template_context: &'a TemplateContext,
     pub logger: &'a Logger,
     pub colors: Colors,
@@ -39,6 +40,11 @@ pub(crate) enum ConflictResolutionResult {
     FileEditsOnly,
     /// Resolution failed completely
     Failed,
+}
+
+pub(crate) enum InitialRebaseOutcome {
+    Succeeded { new_head: String },
+    Skipped { reason: String },
 }
 
 /// Run rebase to the default branch.
@@ -72,26 +78,52 @@ pub fn run_rebase_to_default(
 /// Uses a state machine for fault tolerance and automatic recovery from
 /// interruptions or failures.
 pub fn run_initial_rebase(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
     executor: &dyn ProcessExecutor,
-) -> anyhow::Result<()> {
-    ctx.logger.header("Pre-development rebase", Colors::cyan);
+) -> anyhow::Result<InitialRebaseOutcome> {
+    phase_ctx
+        .logger
+        .header("Pre-development rebase", Colors::cyan);
 
     record_rebase_start(phase_ctx);
-    save_pre_rebase_checkpoint(ctx, phase_ctx, run_context)?;
+    save_pre_rebase_checkpoint(phase_ctx, run_context)?;
 
-    match run_rebase_to_default(&ctx.logger, ctx.colors, &*ctx.executor) {
-        Ok(RebaseResult::Success) => handle_rebase_success(ctx, phase_ctx, run_context),
+    match run_rebase_to_default(phase_ctx.logger, *phase_ctx.colors, executor) {
+        Ok(RebaseResult::Success) => {
+            handle_rebase_success(phase_ctx, run_context)?;
+            Ok(InitialRebaseOutcome::Succeeded {
+                new_head: read_repo_head_or_unknown(phase_ctx.workspace),
+            })
+        }
         Ok(RebaseResult::NoOp { reason }) => {
-            handle_rebase_noop(ctx, phase_ctx, run_context, &reason)
+            handle_rebase_noop(phase_ctx, run_context, &reason)?;
+            Ok(InitialRebaseOutcome::Skipped { reason })
         }
         Ok(RebaseResult::Conflicts(_)) => {
-            handle_rebase_conflicts(ctx, phase_ctx, run_context, executor)
+            let resolved = handle_rebase_conflicts(phase_ctx, run_context, executor)?;
+            if resolved {
+                Ok(InitialRebaseOutcome::Succeeded {
+                    new_head: read_repo_head_or_unknown(phase_ctx.workspace),
+                })
+            } else {
+                Ok(InitialRebaseOutcome::Skipped {
+                    reason: "Rebase conflicts unresolved".to_string(),
+                })
+            }
         }
-        Ok(RebaseResult::Failed(err)) => handle_rebase_failed(ctx, phase_ctx, err),
-        Err(e) => handle_rebase_error(ctx, phase_ctx, e),
+        Ok(RebaseResult::Failed(err)) => {
+            handle_rebase_failed(phase_ctx, err)?;
+            Ok(InitialRebaseOutcome::Skipped {
+                reason: "Rebase failed".to_string(),
+            })
+        }
+        Err(e) => {
+            handle_rebase_error(phase_ctx, e)?;
+            Ok(InitialRebaseOutcome::Skipped {
+                reason: "Rebase error".to_string(),
+            })
+        }
     }
 }
 
@@ -108,22 +140,21 @@ fn record_rebase_start(phase_ctx: &mut PhaseContext<'_>) {
 
 /// Save checkpoint at the start of pre-rebase phase.
 fn save_pre_rebase_checkpoint(
-    ctx: &PipelineContext,
     phase_ctx: &PhaseContext<'_>,
     run_context: &RunContext,
 ) -> anyhow::Result<()> {
-    if !ctx.config.features.checkpoint_enabled {
+    if !phase_ctx.config.features.checkpoint_enabled {
         return Ok(());
     }
 
     let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
-    let builder = create_checkpoint_builder(ctx, phase_ctx, run_context, PipelinePhase::PreRebase);
+    let builder = create_checkpoint_builder(phase_ctx, run_context, PipelinePhase::PreRebase);
 
-    if let Some(mut checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
+    if let Some(mut checkpoint) = builder.build_with_workspace(phase_ctx.workspace) {
         checkpoint.rebase_state = RebaseState::PreRebaseInProgress {
             upstream_branch: default_branch,
         };
-        let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+        let _ = save_checkpoint_with_workspace(phase_ctx.workspace, &checkpoint);
     }
 
     Ok(())
@@ -131,11 +162,10 @@ fn save_pre_rebase_checkpoint(
 
 /// Handle successful rebase completion.
 fn handle_rebase_success(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
 ) -> anyhow::Result<()> {
-    ctx.logger.success("Rebase completed successfully");
+    phase_ctx.logger.success("Rebase completed successfully");
 
     let step = ExecutionStep::new(
         "PreRebase",
@@ -145,18 +175,19 @@ fn handle_rebase_success(
     );
     phase_ctx.execution_history.add_step(step);
 
-    save_post_rebase_checkpoint(ctx, phase_ctx, run_context);
+    save_post_rebase_checkpoint(phase_ctx, run_context);
     Ok(())
 }
 
 /// Handle rebase that was not needed.
 fn handle_rebase_noop(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
     reason: &str,
 ) -> anyhow::Result<()> {
-    ctx.logger.info(&format!("No rebase needed: {reason}"));
+    phase_ctx
+        .logger
+        .info(&format!("No rebase needed: {reason}"));
 
     let step = ExecutionStep::new(
         "PreRebase",
@@ -166,40 +197,41 @@ fn handle_rebase_noop(
     );
     phase_ctx.execution_history.add_step(step);
 
-    save_post_rebase_checkpoint(ctx, phase_ctx, run_context);
+    save_post_rebase_checkpoint(phase_ctx, run_context);
     Ok(())
 }
 
 /// Handle rebase conflicts by attempting AI resolution.
 fn handle_rebase_conflicts(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
     executor: &dyn ProcessExecutor,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let conflicted_files = get_conflicted_files()?;
     if conflicted_files.is_empty() {
-        ctx.logger
+        phase_ctx
+            .logger
             .warn("Rebase reported conflicts but no conflicted files found");
         let _ = abort_rebase(executor);
-        return Ok(());
+        return Ok(false);
     }
 
     record_conflict_detected(phase_ctx, conflicted_files.len());
-    save_conflict_checkpoint(ctx, phase_ctx, run_context, &conflicted_files);
+    save_conflict_checkpoint(phase_ctx, run_context, &conflicted_files);
 
-    ctx.logger.warn(&format!(
+    phase_ctx.logger.warn(&format!(
         "Rebase resulted in {} conflict(s), attempting AI resolution",
         conflicted_files.len()
     ));
 
     let resolution_ctx = ConflictResolutionContext {
-        config: &ctx.config,
-        template_context: &ctx.template_context,
-        logger: &ctx.logger,
-        colors: ctx.colors,
-        executor_arc: std::sync::Arc::clone(&ctx.executor),
-        workspace: &*ctx.workspace,
+        config: phase_ctx.config,
+        registry: phase_ctx.registry,
+        template_context: phase_ctx.template_context,
+        logger: phase_ctx.logger,
+        colors: *phase_ctx.colors,
+        executor_arc: std::sync::Arc::clone(&phase_ctx.executor_arc),
+        workspace: phase_ctx.workspace,
     };
 
     match try_resolve_conflicts(
@@ -209,9 +241,18 @@ fn handle_rebase_conflicts(
         "PreRebase",
         executor,
     ) {
-        Ok(true) => handle_conflicts_resolved(ctx, phase_ctx, run_context, executor),
-        Ok(false) => handle_resolution_failed(ctx, phase_ctx, executor),
-        Err(e) => handle_resolution_error(ctx, phase_ctx, executor, e),
+        Ok(true) => {
+            handle_conflicts_resolved(phase_ctx, run_context, executor)?;
+            Ok(true)
+        }
+        Ok(false) => {
+            handle_resolution_failed(phase_ctx, executor)?;
+            Ok(false)
+        }
+        Err(e) => {
+            handle_resolution_error(phase_ctx, executor, e)?;
+            Ok(false)
+        }
     }
 }
 
@@ -231,43 +272,39 @@ fn record_conflict_detected(phase_ctx: &mut PhaseContext<'_>, conflict_count: us
 
 /// Save checkpoint for conflict state.
 fn save_conflict_checkpoint(
-    ctx: &PipelineContext,
     phase_ctx: &PhaseContext<'_>,
     run_context: &RunContext,
     conflicted_files: &[String],
 ) {
-    if !ctx.config.features.checkpoint_enabled {
+    if !phase_ctx.config.features.checkpoint_enabled {
         return;
     }
 
-    let builder = create_checkpoint_builder(
-        ctx,
-        phase_ctx,
-        run_context,
-        PipelinePhase::PreRebaseConflict,
-    );
+    let builder =
+        create_checkpoint_builder(phase_ctx, run_context, PipelinePhase::PreRebaseConflict);
 
-    if let Some(mut checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
+    if let Some(mut checkpoint) = builder.build_with_workspace(phase_ctx.workspace) {
         checkpoint.rebase_state = RebaseState::HasConflicts {
             files: conflicted_files.to_vec(),
         };
-        let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+        let _ = save_checkpoint_with_workspace(phase_ctx.workspace, &checkpoint);
     }
 }
 
 /// Handle successful conflict resolution.
 fn handle_conflicts_resolved(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
     executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<()> {
-    ctx.logger
+    phase_ctx
+        .logger
         .info("Continuing rebase after conflict resolution");
 
     match continue_rebase(executor) {
         Ok(()) => {
-            ctx.logger
+            phase_ctx
+                .logger
                 .success("Rebase completed successfully after AI resolution");
 
             let step = ExecutionStep::new(
@@ -278,11 +315,13 @@ fn handle_conflicts_resolved(
             );
             phase_ctx.execution_history.add_step(step);
 
-            save_post_rebase_checkpoint(ctx, phase_ctx, run_context);
+            save_post_rebase_checkpoint(phase_ctx, run_context);
             Ok(())
         }
         Err(e) => {
-            ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
+            phase_ctx
+                .logger
+                .warn(&format!("Failed to continue rebase: {e}"));
             let _ = abort_rebase(executor);
 
             let step = ExecutionStep::new(
@@ -302,11 +341,11 @@ fn handle_conflicts_resolved(
 
 /// Handle failed AI conflict resolution.
 fn handle_resolution_failed(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<()> {
-    ctx.logger
+    phase_ctx
+        .logger
         .warn("AI conflict resolution failed, aborting rebase");
     let _ = abort_rebase(executor);
 
@@ -322,12 +361,13 @@ fn handle_resolution_failed(
 
 /// Handle error during conflict resolution.
 fn handle_resolution_error(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     executor: &dyn ProcessExecutor,
     e: anyhow::Error,
 ) -> anyhow::Result<()> {
-    ctx.logger.error(&format!("Conflict resolution error: {e}"));
+    phase_ctx
+        .logger
+        .error(&format!("Conflict resolution error: {e}"));
     let _ = abort_rebase(executor);
 
     let step = ExecutionStep::new(
@@ -342,12 +382,11 @@ fn handle_resolution_error(
 
 /// Handle rebase failure.
 fn handle_rebase_failed(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     err: RebaseErrorKind,
 ) -> anyhow::Result<()> {
-    ctx.logger.error(&format!("Rebase failed: {err}"));
-    let _ = abort_rebase(&*ctx.executor);
+    phase_ctx.logger.error(&format!("Rebase failed: {err}"));
+    let _ = abort_rebase(phase_ctx.executor);
 
     let step = ExecutionStep::new(
         "PreRebase",
@@ -360,12 +399,9 @@ fn handle_rebase_failed(
 }
 
 /// Handle rebase error.
-fn handle_rebase_error(
-    ctx: &PipelineContext,
-    phase_ctx: &mut PhaseContext<'_>,
-    e: std::io::Error,
-) -> anyhow::Result<()> {
-    ctx.logger
+fn handle_rebase_error(phase_ctx: &mut PhaseContext<'_>, e: std::io::Error) -> anyhow::Result<()> {
+    phase_ctx
+        .logger
         .warn(&format!("Rebase failed, continuing without rebase: {e}"));
 
     let step = ExecutionStep::new(
@@ -379,54 +415,49 @@ fn handle_rebase_error(
 }
 
 /// Save checkpoint after successful rebase completion.
-fn save_post_rebase_checkpoint(
-    ctx: &PipelineContext,
-    phase_ctx: &PhaseContext<'_>,
-    run_context: &RunContext,
-) {
-    if !ctx.config.features.checkpoint_enabled {
+fn save_post_rebase_checkpoint(phase_ctx: &PhaseContext<'_>, run_context: &RunContext) {
+    if !phase_ctx.config.features.checkpoint_enabled {
         return;
     }
 
     let builder = CheckpointBuilder::new()
-        .phase(PipelinePhase::Planning, 0, ctx.config.developer_iters)
-        .reviewer_pass(0, ctx.config.reviewer_reviews)
+        .phase(PipelinePhase::Planning, 0, phase_ctx.config.developer_iters)
+        .reviewer_pass(0, phase_ctx.config.reviewer_reviews)
         .capture_from_context(
-            &ctx.config,
-            &ctx.registry,
-            &ctx.developer_agent,
-            &ctx.reviewer_agent,
-            &ctx.logger,
+            phase_ctx.config,
+            phase_ctx.registry,
+            phase_ctx.developer_agent,
+            phase_ctx.reviewer_agent,
+            phase_ctx.logger,
             run_context,
         )
-        .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
+        .with_executor_from_context(std::sync::Arc::clone(&phase_ctx.executor_arc))
         .with_execution_history(phase_ctx.execution_history.clone())
         .with_prompt_history(phase_ctx.clone_prompt_history());
 
-    if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
-        let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+    if let Some(checkpoint) = builder.build_with_workspace(phase_ctx.workspace) {
+        let _ = save_checkpoint_with_workspace(phase_ctx.workspace, &checkpoint);
     }
 }
 
 /// Create a checkpoint builder with common configuration.
 fn create_checkpoint_builder(
-    ctx: &PipelineContext,
     phase_ctx: &PhaseContext<'_>,
     run_context: &RunContext,
     phase: PipelinePhase,
 ) -> CheckpointBuilder {
     CheckpointBuilder::new()
-        .phase(phase, 0, ctx.config.developer_iters)
-        .reviewer_pass(0, ctx.config.reviewer_reviews)
+        .phase(phase, 0, phase_ctx.config.developer_iters)
+        .reviewer_pass(0, phase_ctx.config.reviewer_reviews)
         .capture_from_context(
-            &ctx.config,
-            &ctx.registry,
-            &ctx.developer_agent,
-            &ctx.reviewer_agent,
-            &ctx.logger,
+            phase_ctx.config,
+            phase_ctx.registry,
+            phase_ctx.developer_agent,
+            phase_ctx.reviewer_agent,
+            phase_ctx.logger,
             run_context,
         )
-        .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
+        .with_executor_from_context(std::sync::Arc::clone(&phase_ctx.executor_arc))
         .with_execution_history(phase_ctx.execution_history.clone())
         .with_prompt_history(phase_ctx.clone_prompt_history())
 }
@@ -473,6 +504,7 @@ pub(crate) fn try_resolve_conflicts(
     match run_ai_conflict_resolution(
         &resolution_prompt,
         ctx.config,
+        ctx.registry,
         ctx.logger,
         ctx.colors,
         std::sync::Arc::clone(&ctx.executor_arc),
@@ -565,8 +597,21 @@ fn build_resolution_prompt(
     template_context: &TemplateContext,
     workspace: &dyn crate::workspace::Workspace,
 ) -> String {
-    build_enhanced_resolution_prompt(conflicts, None::<()>, template_context, workspace)
-        .unwrap_or_else(|_| String::new())
+    let prompt =
+        build_enhanced_resolution_prompt(conflicts, None::<()>, template_context, workspace)
+            .unwrap_or_else(|e| {
+                format!(
+                "# MERGE CONFLICT RESOLUTION\n\nFailed to build context: {e}\n\nConflicts:\n{:#?}",
+                conflicts.keys().collect::<Vec<_>>()
+            )
+            });
+    if prompt.trim().is_empty() {
+        return format!(
+            "# MERGE CONFLICT RESOLUTION\n\nEmpty prompt generated.\n\nConflicts:\n{:#?}",
+            conflicts.keys().collect::<Vec<_>>()
+        );
+    }
+    prompt
 }
 
 /// Build the conflict resolution prompt with optional branch info.
@@ -591,22 +636,33 @@ fn build_enhanced_resolution_prompt(
     )
 }
 
+fn read_repo_head_or_unknown(workspace: &dyn Workspace) -> String {
+    match git2::Repository::open(workspace.root()) {
+        Ok(repo) => repo
+            .head()
+            .ok()
+            .and_then(|head| head.peel_to_commit().ok())
+            .map(|commit| commit.id().to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        Err(_) => "unknown".to_string(),
+    }
+}
+
 /// Run AI agent to resolve conflicts with a single attempt.
 fn run_ai_conflict_resolution(
     resolution_prompt: &str,
     config: &crate::config::Config,
+    registry: &crate::agents::AgentRegistry,
     logger: &Logger,
     colors: Colors,
     executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
     workspace: &dyn crate::workspace::Workspace,
 ) -> anyhow::Result<ConflictResolutionResult> {
-    use crate::agents::AgentRegistry;
     use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
     use std::path::Path;
 
     let log_dir = ".agent/logs/rebase_conflict_resolution";
 
-    let registry = AgentRegistry::new()?;
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
 
     let executor_ref: &dyn crate::executor::ProcessExecutor = &*executor_arc;
@@ -698,6 +754,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
 
     let ctx = ConflictResolutionContext {
         config,
+        registry: &registry,
         template_context,
         logger,
         colors,

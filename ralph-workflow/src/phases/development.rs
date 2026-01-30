@@ -11,8 +11,7 @@ use crate::checkpoint::execution_history::{ExecutionStep, StepOutcome};
 use crate::checkpoint::restore::ResumeContext;
 use crate::checkpoint::{save_checkpoint_with_workspace, CheckpointBuilder, PipelinePhase};
 use crate::files::llm_output_extraction::{
-    archive_xml_file_with_workspace, validate_development_result_xml, validate_plan_xml, xml_paths,
-    PlanElements,
+    validate_development_result_xml, validate_plan_xml, xml_paths, PlanElements,
 };
 use crate::files::update_status_with_workspace;
 use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
@@ -32,6 +31,8 @@ use super::context::PhaseContext;
 pub struct DevAttemptResult {
     /// Whether any agent run returned a non-zero exit code.
     pub had_error: bool,
+    /// Exit code from the agent invocation.
+    pub exit_code: i32,
     /// Whether the output was successfully validated against the XSD.
     pub output_valid: bool,
     /// Development status (completed/partial/failed).
@@ -162,6 +163,7 @@ pub fn run_development_attempt(
     if auth_failure {
         return Ok(DevAttemptResult {
             had_error,
+            exit_code: result.exit_code,
             output_valid: false,
             status: DevelopmentStatus::Failed,
             summary: "Authentication error detected".to_string(),
@@ -179,6 +181,7 @@ pub fn run_development_attempt(
     let Some(xml_to_validate) = xml_content else {
         return Ok(DevAttemptResult {
             had_error,
+            exit_code: result.exit_code,
             output_valid: false,
             status: DevelopmentStatus::Failed,
             summary:
@@ -192,11 +195,6 @@ pub fn run_development_attempt(
 
     match validate_development_result_xml(&xml_to_validate) {
         Ok(result_elements) => {
-            archive_xml_file_with_workspace(
-                ctx.workspace,
-                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-            );
-
             let files_changed = result_elements
                 .files_changed
                 .as_ref()
@@ -212,6 +210,7 @@ pub fn run_development_attempt(
 
             Ok(DevAttemptResult {
                 had_error,
+                exit_code: result.exit_code,
                 output_valid: true,
                 status,
                 summary: result_elements.summary.clone(),
@@ -222,6 +221,7 @@ pub fn run_development_attempt(
         }
         Err(_) => Ok(DevAttemptResult {
             had_error,
+            exit_code: result.exit_code,
             output_valid: false,
             status: DevelopmentStatus::Failed,
             summary: "XML output failed validation. Provide valid XML output.".to_string(),
@@ -351,8 +351,6 @@ fn run_planning_step_with_agent(
 
     match validate_plan_xml(&xml_content) {
         Ok(plan_elements) => {
-            archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::PLAN_XML));
-
             let plan_md = format_plan_as_markdown(&plan_elements);
             ctx.workspace.write(plan_path, &plan_md)?;
 

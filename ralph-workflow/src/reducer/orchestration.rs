@@ -3,8 +3,8 @@
 //! Contains `determine_next_effect()` which decides which effect to execute
 //! based on current pipeline state.
 
-use super::event::{CheckpointTrigger, PipelinePhase};
-use super::state::{CommitState, PipelineState};
+use super::event::{CheckpointTrigger, PipelinePhase, RebasePhase};
+use super::state::{CommitState, PipelineState, RebaseState};
 
 use crate::agents::AgentRole;
 use crate::reducer::effect::{ContinuationContextData, Effect};
@@ -18,7 +18,56 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         return Effect::CleanupContinuationContext;
     }
 
+    if matches!(
+        state.rebase,
+        RebaseState::InProgress { .. } | RebaseState::Conflicted { .. }
+    ) {
+        let phase = match state.phase {
+            PipelinePhase::Planning => RebasePhase::Initial,
+            _ => RebasePhase::PostReview,
+        };
+
+        return match &state.rebase {
+            RebaseState::InProgress { target_branch, .. } => Effect::RunRebase {
+                phase,
+                target_branch: target_branch.clone(),
+            },
+            RebaseState::Conflicted { .. } => Effect::ResolveRebaseConflicts {
+                strategy: super::event::ConflictStrategy::Continue,
+            },
+            _ => unreachable!("checked rebase state before matching"),
+        };
+    }
+
     if !state.agent_chain.agents.is_empty() && state.agent_chain.is_exhausted() {
+        let progressed = match state.phase {
+            PipelinePhase::Planning => state.iteration > 0,
+            PipelinePhase::Development => state.iteration > 0,
+            PipelinePhase::Review => state.reviewer_pass > 0,
+            PipelinePhase::CommitMessage => matches!(
+                state.commit,
+                CommitState::Generated { .. }
+                    | CommitState::Committed { .. }
+                    | CommitState::Skipped
+            ),
+            PipelinePhase::FinalValidation
+            | PipelinePhase::Finalizing
+            | PipelinePhase::Complete
+            | PipelinePhase::Interrupted => false,
+        };
+
+        if progressed
+            && state.checkpoint_saved_count == 0
+            && !matches!(
+                state.phase,
+                PipelinePhase::Complete | PipelinePhase::Interrupted
+            )
+        {
+            return Effect::SaveCheckpoint {
+                trigger: CheckpointTrigger::Interrupt,
+            };
+        }
+
         return Effect::AbortPipeline {
             reason: format!(
                 "Agent chain exhausted for role {:?} in phase {:?} (cycle {})",
@@ -37,6 +86,18 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 
     match state.phase {
         PipelinePhase::Planning => {
+            if state.iteration == 0
+                && state.checkpoint_saved_count == 0
+                && matches!(
+                    state.rebase,
+                    RebaseState::Skipped | RebaseState::Completed { .. }
+                )
+            {
+                return Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::PhaseTransition,
+                };
+            }
+
             if state.agent_chain.agents.is_empty() {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Developer,
@@ -294,6 +355,31 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
+        assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
+    }
+
+    #[test]
+    fn test_determine_effect_exhausted_chain_after_checkpoint_aborts() {
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(3);
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 2,
+            total_iterations: 5,
+            checkpoint_saved_count: 1,
+            agent_chain: chain,
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
         assert!(matches!(effect, Effect::AbortPipeline { .. }));
     }
 
@@ -463,6 +549,31 @@ mod tests {
             phase: PipelinePhase::Review,
             reviewer_pass: 1,
             total_reviewer_passes: 2,
+            agent_chain: chain,
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
+    }
+
+    #[test]
+    fn test_determine_effect_review_exhausted_chain_after_checkpoint_aborts() {
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Reviewer,
+            )
+            .with_max_cycles(3);
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 1,
+            total_reviewer_passes: 2,
+            checkpoint_saved_count: 1,
             agent_chain: chain,
             ..create_test_state()
         };

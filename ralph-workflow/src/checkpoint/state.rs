@@ -282,6 +282,13 @@ pub struct EnvironmentSnapshot {
     pub other_vars: HashMap<String, String>,
 }
 
+pub(crate) fn is_sensitive_env_key(key: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    ["TOKEN", "KEY", "SECRET", "PASSWORD"]
+        .iter()
+        .any(|pattern| upper.contains(pattern))
+}
+
 impl EnvironmentSnapshot {
     /// Capture the current environment variables relevant to Ralph.
     pub fn capture_current() -> Self {
@@ -290,7 +297,7 @@ impl EnvironmentSnapshot {
 
         // Capture all RALPH_* environment variables
         for (key, value) in std::env::vars() {
-            if key.starts_with("RALPH_") {
+            if key.starts_with("RALPH_") && !is_sensitive_env_key(&key) {
                 ralph_vars.insert(key, value);
             }
         }
@@ -306,7 +313,9 @@ impl EnvironmentSnapshot {
         ];
         for key in &relevant_keys {
             if let Ok(value) = std::env::var(key) {
-                other_vars.insert(key.to_string(), value);
+                if !is_sensitive_env_key(key) {
+                    other_vars.insert(key.to_string(), value);
+                }
             }
         }
 
@@ -837,6 +846,23 @@ mod tests {
     // =========================================================================
     // Workspace-based tests (for testability without real filesystem)
     // =========================================================================
+
+    #[test]
+    fn test_environment_snapshot_filters_sensitive_vars() {
+        std::env::set_var("RALPH_SAFE_SETTING", "ok");
+        std::env::set_var("RALPH_API_TOKEN", "secret");
+        std::env::set_var("EDITOR", "vim");
+
+        let snapshot = EnvironmentSnapshot::capture_current();
+
+        assert!(snapshot.ralph_vars.contains_key("RALPH_SAFE_SETTING"));
+        assert!(!snapshot.ralph_vars.contains_key("RALPH_API_TOKEN"));
+        assert!(snapshot.other_vars.contains_key("EDITOR"));
+
+        std::env::remove_var("RALPH_SAFE_SETTING");
+        std::env::remove_var("RALPH_API_TOKEN");
+        std::env::remove_var("EDITOR");
+    }
 
     #[cfg(feature = "test-utils")]
     mod workspace_tests {

@@ -45,7 +45,7 @@ pub mod finalization;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock_effect_handler;
 pub mod plumbing;
-mod rebase;
+pub(crate) mod rebase;
 pub mod resume;
 pub mod validation;
 
@@ -84,7 +84,7 @@ use config_init::initialize_config;
 use context::PipelineContext;
 use detection::detect_project_stack;
 use plumbing::handle_generate_commit_msg;
-use rebase::{run_initial_rebase, run_rebase_to_default, try_resolve_conflicts_without_phase_ctx};
+use rebase::{run_rebase_to_default, try_resolve_conflicts_without_phase_ctx};
 use resume::{handle_resume_with_validation, offer_resume_if_checkpoint_exists};
 use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
@@ -1049,9 +1049,12 @@ fn validate_and_setup_agents<H: effect::AppEffectHandler>(
     // Determine repo root - use override if provided (for testing), otherwise discover
     let repo_root = if let Some(override_dir) = working_dir_override {
         // Testing mode: use provided directory and change CWD to it via handler
-        handler.execute(effect::AppEffect::SetCurrentDir {
+        let result = handler.execute(effect::AppEffect::SetCurrentDir {
             path: override_dir.to_path_buf(),
         });
+        if let effect::AppEffectResult::Error(e) = result {
+            anyhow::bail!("Failed to set working directory: {}", e);
+        }
         override_dir.to_path_buf()
     } else {
         // Production mode: discover repo root and change CWD via handler
@@ -1069,7 +1072,10 @@ fn validate_and_setup_agents<H: effect::AppEffectHandler>(
             _ => anyhow::bail!("Unexpected result from GitGetRepoRoot"),
         };
 
-        handler.execute(effect::AppEffect::SetCurrentDir { path: root.clone() });
+        let set_result = handler.execute(effect::AppEffect::SetCurrentDir { path: root.clone() });
+        if let effect::AppEffectResult::Error(e) = set_result {
+            anyhow::bail!("Failed to set working directory: {}", e);
+        }
         root
     };
 
@@ -1297,63 +1303,47 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     // Determine if we should run rebase based on current args only.
     let should_run_rebase = ctx.args.rebase_flags.with_rebase;
 
-    // Run pre-development rebase (only if explicitly requested via --with-rebase)
-    if should_run_rebase {
-        run_initial_rebase(ctx, &mut phase_ctx, &run_context, &*ctx.executor)?;
-        // Update interrupt context after rebase
-        update_interrupt_context_from_phase(
-            &phase_ctx,
-            PipelinePhase::Planning,
-            config.developer_iters,
-            config.reviewer_reviews,
-            &run_context,
-            std::sync::Arc::clone(&ctx.workspace),
-        );
-    } else {
-        // Save initial checkpoint when rebase is disabled
-        if config.features.checkpoint_enabled && resume_checkpoint.is_none() {
-            let builder = CheckpointBuilder::new()
-                .phase(PipelinePhase::Planning, 0, config.developer_iters)
-                .reviewer_pass(0, config.reviewer_reviews)
-                .capture_from_context(
-                    &config,
-                    &ctx.registry,
-                    &ctx.developer_agent,
-                    &ctx.reviewer_agent,
-                    &ctx.logger,
-                    &run_context,
-                )
-                .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
-                .with_execution_history(phase_ctx.execution_history.clone())
-                .with_prompt_history(phase_ctx.clone_prompt_history());
-
-            if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
-                let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
-            }
-        }
-        // Update interrupt context after initial checkpoint
-        update_interrupt_context_from_phase(
-            &phase_ctx,
-            PipelinePhase::Planning,
-            config.developer_iters,
-            config.reviewer_reviews,
-            &run_context,
-            std::sync::Arc::clone(&ctx.workspace),
-        );
-    }
+    // Update interrupt context before entering the reducer event loop.
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        initial_phase,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
+    );
 
     // ============================================
     // RUN PIPELINE PHASES VIA REDUCER EVENT LOOP
     // ============================================
 
     // Initialize pipeline state
-    let initial_state = if let Some(ref checkpoint) = resume_checkpoint {
+    let mut initial_state = if let Some(ref checkpoint) = resume_checkpoint {
         // Migrate from old checkpoint format to new reducer state
         PipelineState::from(checkpoint.clone())
     } else {
         // Create new initial state
         PipelineState::initial(config.developer_iters, config.reviewer_reviews)
     };
+
+    if should_run_rebase {
+        if matches!(
+            initial_state.rebase,
+            crate::reducer::state::RebaseState::NotStarted
+        ) {
+            let default_branch =
+                crate::git_helpers::get_default_branch().unwrap_or_else(|_| "main".to_string());
+            initial_state.rebase = crate::reducer::state::RebaseState::InProgress {
+                original_head: "HEAD".to_string(),
+                target_branch: default_branch,
+            };
+        }
+    } else if matches!(
+        initial_state.rebase,
+        crate::reducer::state::RebaseState::NotStarted
+    ) {
+        initial_state.rebase = crate::reducer::state::RebaseState::Skipped;
+    }
 
     // Configure event loop
     let event_loop_config = EventLoopConfig {
@@ -1594,12 +1584,44 @@ where
     // Ensure interrupt context is cleared on completion
     let _interrupt_guard = defer_clear_interrupt_context();
 
+    // Determine if we should run rebase based on current args only.
+    let should_run_rebase = ctx.args.rebase_flags.with_rebase;
+
+    // Update interrupt context before entering the reducer event loop.
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        initial_phase,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
+    );
+
     // Initialize pipeline state
-    let initial_state = if let Some(ref checkpoint) = resume_checkpoint {
+    let mut initial_state = if let Some(ref checkpoint) = resume_checkpoint {
         PipelineState::from(checkpoint.clone())
     } else {
         PipelineState::initial(config.developer_iters, config.reviewer_reviews)
     };
+
+    if should_run_rebase {
+        if matches!(
+            initial_state.rebase,
+            crate::reducer::state::RebaseState::NotStarted
+        ) {
+            let default_branch =
+                crate::git_helpers::get_default_branch().unwrap_or_else(|_| "main".to_string());
+            initial_state.rebase = crate::reducer::state::RebaseState::InProgress {
+                original_head: "HEAD".to_string(),
+                target_branch: default_branch,
+            };
+        }
+    } else if matches!(
+        initial_state.rebase,
+        crate::reducer::state::RebaseState::NotStarted
+    ) {
+        initial_state.rebase = crate::reducer::state::RebaseState::Skipped;
+    }
 
     // Configure event loop
     let event_loop_config = EventLoopConfig {

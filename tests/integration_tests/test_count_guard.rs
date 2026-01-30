@@ -398,11 +398,6 @@ fn integration_test_count_guard_documentation() {
                 "Compiled test list count {compiled_count} is below MINIMUM_EXPECTED_TESTS ({MINIMUM_EXPECTED_TESTS}). \
 Ensure you're running `cargo test -p ralph-workflow-tests`."
             );
-        } else {
-            eprintln!(
-                "Skipping compiled test count check: RALPH_INTEGRATION_TEST_LIST_COUNT is unset. \
-Set it to the `cargo test -p ralph-workflow-tests -- --list` count to validate compiled test discovery."
-            );
         }
     });
 }

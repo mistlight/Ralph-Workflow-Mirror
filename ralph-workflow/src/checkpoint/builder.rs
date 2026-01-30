@@ -369,17 +369,10 @@ impl CheckpointBuilder {
 
         // Capture and populate file system state
         // Use workspace-based capture when workspace is available (pipeline code),
-        // fall back to CWD-based capture when not (CLI layer code)
+        // fall back to CWD-based capture when not (CLI layer code).
         let executor_ref = self.executor.as_ref().map(|e| e.as_ref());
         checkpoint.file_system_state = if let Some(ws) = workspace {
-            let executor = executor_ref.unwrap_or_else(|| {
-                // This is safe because we're using a static reference that lives for the scope
-                // In practice, executor should always be provided when workspace is available
-                static DEFAULT_EXECUTOR: std::sync::LazyLock<crate::executor::RealProcessExecutor> =
-                    std::sync::LazyLock::new(crate::executor::RealProcessExecutor::new);
-                &*DEFAULT_EXECUTOR
-            });
-            Some(FileSystemState::capture_with_workspace(ws, executor))
+            executor_ref.map(|executor| FileSystemState::capture_with_workspace(ws, executor))
         } else {
             Some(FileSystemState::capture_with_optional_executor_impl(
                 executor_ref,
@@ -545,7 +538,9 @@ mod tests {
     #[cfg(feature = "test-utils")]
     mod workspace_tests {
         use super::*;
+        use crate::executor::MockProcessExecutor;
         use crate::workspace::MemoryWorkspace;
+        use std::sync::Arc;
 
         #[test]
         fn test_builder_with_workspace_captures_file_state() {
@@ -566,6 +561,7 @@ mod tests {
                 .cli_args(cli_args)
                 .developer_config(dev_config)
                 .reviewer_config(rev_config)
+                .with_executor_from_context(Arc::new(MockProcessExecutor::new()))
                 .build_with_workspace(&workspace)
                 .unwrap();
 
@@ -601,6 +597,7 @@ mod tests {
                 .cli_args(cli_args)
                 .developer_config(dev_config)
                 .reviewer_config(rev_config)
+                .with_executor_from_context(Arc::new(MockProcessExecutor::new()))
                 .build_with_workspace(&workspace)
                 .unwrap();
 

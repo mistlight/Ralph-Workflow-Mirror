@@ -16,7 +16,7 @@
 use super::parser::parse_env_bool;
 use super::path_resolver::ConfigEnvironment;
 use super::types::{Config, ReviewDepth, Verbosity};
-use super::unified::{unified_config_path, UnifiedConfig};
+use super::unified::UnifiedConfig;
 use std::env;
 use std::path::PathBuf;
 
@@ -497,7 +497,7 @@ fn parse_env_u8(name: &str, warnings: &mut Vec<String>, max: u8) -> Option<u8> {
 
 /// Check if the unified config file exists.
 pub fn unified_config_exists() -> bool {
-    unified_config_path().is_some_and(|p| p.exists())
+    unified_config_exists_with_env(&super::path_resolver::RealConfigEnvironment)
 }
 
 /// Check if the unified config file exists using a [`ConfigEnvironment`].

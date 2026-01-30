@@ -174,14 +174,20 @@ pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> u
 
     let mut restored = 0;
 
-    // Restore RALPH_* variables
+    // Restore RALPH_* variables (safe only)
     for (key, value) in &env_snap.ralph_vars {
+        if crate::checkpoint::state::is_sensitive_env_key(key) {
+            continue;
+        }
         std::env::set_var(key, value);
         restored += 1;
     }
 
-    // Restore other relevant variables
+    // Restore other relevant variables (safe only)
     for (key, value) in &env_snap.other_vars {
+        if crate::checkpoint::state::is_sensitive_env_key(key) {
+            continue;
+        }
         std::env::set_var(key, value);
         restored += 1;
     }
@@ -337,7 +343,7 @@ impl RestoredContext {
 mod tests {
     use super::*;
     use crate::checkpoint::state::{
-        AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot, RebaseState,
+        AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot, EnvironmentSnapshot, RebaseState,
     };
 
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32, pass: u32) -> PipelineCheckpoint {
@@ -488,5 +494,42 @@ mod tests {
         };
 
         assert_eq!(ctx.phase_name(), "Review (pass 2/3)");
+    }
+
+    #[test]
+    fn test_restore_environment_skips_sensitive_vars() {
+        let mut checkpoint = make_test_checkpoint(PipelinePhase::Development, 1, 0);
+        let mut snapshot = EnvironmentSnapshot::default();
+        snapshot
+            .ralph_vars
+            .insert("RALPH_SAFE_SETTING".to_string(), "ok".to_string());
+        snapshot
+            .ralph_vars
+            .insert("RALPH_API_TOKEN".to_string(), "secret".to_string());
+        snapshot
+            .other_vars
+            .insert("EDITOR".to_string(), "vim".to_string());
+        snapshot
+            .other_vars
+            .insert("GIT_PASSWORD".to_string(), "nope".to_string());
+        checkpoint.env_snapshot = Some(snapshot);
+
+        std::env::remove_var("RALPH_SAFE_SETTING");
+        std::env::remove_var("RALPH_API_TOKEN");
+        std::env::remove_var("EDITOR");
+        std::env::remove_var("GIT_PASSWORD");
+
+        let restored = restore_environment_from_checkpoint(&checkpoint);
+        assert_eq!(restored, 2);
+        assert_eq!(
+            std::env::var("RALPH_SAFE_SETTING").ok().as_deref(),
+            Some("ok")
+        );
+        assert!(std::env::var("RALPH_API_TOKEN").is_err());
+        assert_eq!(std::env::var("EDITOR").ok().as_deref(), Some("vim"));
+        assert!(std::env::var("GIT_PASSWORD").is_err());
+
+        std::env::remove_var("RALPH_SAFE_SETTING");
+        std::env::remove_var("EDITOR");
     }
 }

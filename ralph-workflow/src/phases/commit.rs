@@ -368,7 +368,6 @@ pub fn run_commit_attempt(
     }
 
     if let Some(result) = extraction_result {
-        archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML));
         let message = result.into_message();
         return Ok(CommitAttemptResult {
             had_error,

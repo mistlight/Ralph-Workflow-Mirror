@@ -306,7 +306,6 @@ pub fn generate_resume_note(context: &ResumeContext) -> String {
     }
 
     note.push_str("Previous progress is preserved in git history.\n");
-    note.push_str("Check 'git log' for details about what was done before.\n");
 
     // Add helpful guidance about what the agent should focus on
     note.push_str("\nGUIDANCE:\n");
@@ -404,7 +403,7 @@ pub fn prompt_for_agent(
         generate_resume_note(resume_ctx)
     } else if config.is_resume {
         // Fallback when no rich ResumeContext is available (uses simpler note)
-        "\nNOTE: This session is resuming from a previous run. Previous progress is preserved in git history. You can check 'git log' for context about what was done before.\n\n".to_string()
+        "\nNOTE: This session is resuming from a previous run. Previous progress is preserved in git history.\n\n".to_string()
     } else {
         String::new()
     };
@@ -798,7 +797,7 @@ mod tests {
         );
         // Should include resume note
         assert!(result.contains("resuming from a previous run"));
-        assert!(result.contains("git log"));
+        assert!(result.contains("git history"));
     }
 
     #[test]

@@ -195,10 +195,8 @@ impl PipelineState {
     }
 
     pub fn is_complete(&self) -> bool {
-        matches!(
-            self.phase,
-            PipelinePhase::Complete | PipelinePhase::Interrupted
-        )
+        matches!(self.phase, PipelinePhase::Complete)
+            || (matches!(self.phase, PipelinePhase::Interrupted) && self.checkpoint_saved_count > 0)
     }
 
     pub fn current_head(&self) -> String {
@@ -447,30 +445,6 @@ impl AgentChainState {
     /// we switch to the next agent and preserve the prompt so the new agent
     /// can continue the same work.
     pub fn switch_to_next_agent_with_prompt(&self, prompt: Option<String>) -> Self {
-        // Rate-limit fallback is special: it should never retry an agent that has
-        // already been rate-limited in the current chain.
-        //
-        // For single-agent chains (or when switching would wrap around), we
-        // treat the chain as exhausted to avoid immediately re-invoking the same
-        // rate-limited agent.
-        if self.agents.len() <= 1 {
-            let mut exhausted = self.clone();
-            exhausted.current_agent_index = 0;
-            exhausted.current_model_index = 0;
-            exhausted.retry_cycle = exhausted.max_cycles;
-            exhausted.rate_limit_continuation_prompt = None;
-            return exhausted;
-        }
-
-        if self.current_agent_index + 1 >= self.agents.len() {
-            let mut exhausted = self.clone();
-            exhausted.current_agent_index = 0;
-            exhausted.current_model_index = 0;
-            exhausted.retry_cycle = exhausted.max_cycles;
-            exhausted.rate_limit_continuation_prompt = None;
-            return exhausted;
-        }
-
         let mut next = self.switch_to_next_agent();
         next.rate_limit_continuation_prompt = prompt;
         next
@@ -1109,7 +1083,7 @@ mod tests {
     }
 
     #[test]
-    fn test_switch_to_next_agent_with_prompt_exhausts_when_single_agent() {
+    fn test_switch_to_next_agent_with_prompt_advances_retry_cycle_when_single_agent() {
         let chain = AgentChainState::initial().with_agents(
             vec!["agent1".to_string()],
             vec![vec![]],
@@ -1118,13 +1092,14 @@ mod tests {
 
         let next = chain.switch_to_next_agent_with_prompt(Some("prompt".to_string()));
         assert!(
-            next.is_exhausted(),
-            "single-agent rate limit fallback should exhaust the chain"
+            !next.is_exhausted(),
+            "single-agent rate limit fallback should not immediately exhaust the chain"
         );
+        assert_eq!(next.retry_cycle, 1);
     }
 
     #[test]
-    fn test_switch_to_next_agent_with_prompt_exhausts_on_wraparound() {
+    fn test_switch_to_next_agent_with_prompt_advances_retry_cycle_on_wraparound() {
         let mut chain = AgentChainState::initial().with_agents(
             vec!["agent1".to_string(), "agent2".to_string()],
             vec![vec![], vec![]],
@@ -1134,8 +1109,9 @@ mod tests {
 
         let next = chain.switch_to_next_agent_with_prompt(Some("prompt".to_string()));
         assert!(
-            next.is_exhausted(),
-            "rate limit fallback should not wrap and retry a previously rate-limited agent"
+            !next.is_exhausted(),
+            "rate limit fallback should not immediately exhaust on wraparound"
         );
+        assert_eq!(next.retry_cycle, 1);
     }
 }

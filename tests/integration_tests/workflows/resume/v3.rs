@@ -290,27 +290,20 @@ fn ralph_v3_file_system_state_auto_recovery() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        // Resume with --recovery-strategy=force should proceed despite file changes
-        // Note: auto-recovery writes to real filesystem, not the mock handler's memory,
-        // so we use force strategy to test that resume can proceed with modified files.
+        // Resume with --recovery-strategy=auto should restore the file from checkpoint state.
         run_ralph_cli_with_handler(
-            &["--resume", "--recovery-strategy", "force"],
+            &["--resume", "--recovery-strategy", "auto"],
             executor,
             config,
             &mut handler,
         )
         .unwrap();
 
-        // Verify the pipeline completed (file stays modified with force strategy)
-        // Note: With force strategy, we just verify the pipeline completes without error.
-        // The file content remains "Modified plan content" because:
-        // 1. force strategy proceeds without restoring
-        // 2. auto-recovery would write to real fs, not mock handler
-        let file_exists = handler.get_file(&PathBuf::from(".agent/PLAN.md")).is_some();
-        assert!(
-            file_exists,
-            "PLAN.md should still exist after resume with force strategy"
-        );
+        // Verify the pipeline completed and PLAN.md was restored from checkpoint content.
+        let restored = handler
+            .get_file(&PathBuf::from(".agent/PLAN.md"))
+            .expect("PLAN.md should exist after resume");
+        assert_eq!(restored, plan_content);
     });
 }
 

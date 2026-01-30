@@ -330,9 +330,10 @@ impl MainEffectHandler {
 
                     // Try to read plan XML for semantic rendering.
                     // Try to read plan XML for semantic rendering via helper.
-                    if let Some(xml_content) =
-                        read_xml_if_present(ctx.workspace, Path::new(xml_paths::PLAN_XML))
-                    {
+                    if let Some(xml_content) = read_xml_and_archive_if_present(
+                        ctx.workspace,
+                        Path::new(xml_paths::PLAN_XML),
+                    ) {
                         ui_events.push(UIEvent::XmlOutput {
                             xml_type: XmlOutputType::DevelopmentPlan,
                             content: xml_content,
@@ -446,7 +447,7 @@ impl MainEffectHandler {
             return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
                 AgentRole::Developer,
                 current_agent,
-                1,
+                attempt.exit_code,
                 AgentErrorKind::Authentication,
                 false,
             )));
@@ -457,7 +458,7 @@ impl MainEffectHandler {
             return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
                 AgentRole::Developer,
                 current_agent,
-                1,
+                attempt.exit_code,
                 AgentErrorKind::InternalError,
                 false,
             )));
@@ -471,9 +472,10 @@ impl MainEffectHandler {
             }];
 
             // Try to read development result XML for semantic rendering via helper.
-            if let Some(xml_content) =
-                read_xml_if_present(ctx.workspace, Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
-            {
+            if let Some(xml_content) = read_xml_and_archive_if_present(
+                ctx.workspace,
+                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+            ) {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
                     content: xml_content,
@@ -519,9 +521,10 @@ impl MainEffectHandler {
             let mut ui_events = vec![ui_event];
 
             // Try to read development result XML for semantic rendering via helper.
-            if let Some(xml_content) =
-                read_xml_if_present(ctx.workspace, Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
-            {
+            if let Some(xml_content) = read_xml_and_archive_if_present(
+                ctx.workspace,
+                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+            ) {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
                     content: xml_content,
@@ -562,9 +565,10 @@ impl MainEffectHandler {
             }];
 
             // Try to read development result XML for semantic rendering via helper.
-            if let Some(xml_content) =
-                read_xml_if_present(ctx.workspace, Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
-            {
+            if let Some(xml_content) = read_xml_and_archive_if_present(
+                ctx.workspace,
+                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+            ) {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
                     content: xml_content,
@@ -603,9 +607,10 @@ impl MainEffectHandler {
         }];
 
         // Try to read development result XML for semantic rendering via helper.
-        if let Some(xml_content) =
-            read_xml_if_present(ctx.workspace, Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
-        {
+        if let Some(xml_content) = read_xml_and_archive_if_present(
+            ctx.workspace,
+            Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+        ) {
             ui_events.push(UIEvent::XmlOutput {
                 xml_type: XmlOutputType::DevelopmentResult,
                 content: xml_content,
@@ -809,6 +814,23 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::git_helpers::{get_conflicted_files, rebase_onto};
 
+        if matches!(phase, RebasePhase::Initial) {
+            let run_context = _ctx.run_context.clone();
+            let outcome =
+                crate::app::rebase::run_initial_rebase(_ctx, &run_context, _ctx.executor)?;
+
+            let event = match outcome {
+                crate::app::rebase::InitialRebaseOutcome::Succeeded { new_head } => {
+                    PipelineEvent::rebase_succeeded(phase, new_head)
+                }
+                crate::app::rebase::InitialRebaseOutcome::Skipped { reason } => {
+                    PipelineEvent::rebase_skipped(phase, reason)
+                }
+            };
+
+            return Ok(EffectResult::event(event));
+        }
+
         match rebase_onto(&target_branch, _ctx.executor) {
             Ok(_) => {
                 // Check for conflicts
@@ -822,7 +844,7 @@ impl MainEffectHandler {
                     ))
                 } else {
                     // Get current head for success case
-                    let new_head = match git2::Repository::open(".") {
+                    let new_head = match git2::Repository::open(_ctx.repo_root) {
                         Ok(repo) => {
                             match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
                                 Some(commit) => commit.id().to_string(),
@@ -871,7 +893,7 @@ impl MainEffectHandler {
             },
             ConflictStrategy::Abort => match abort_rebase(_ctx.executor) {
                 Ok(_) => {
-                    let restored_to = match git2::Repository::open(".") {
+                    let restored_to = match git2::Repository::open(_ctx.repo_root) {
                         Ok(repo) => {
                             match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
                                 Some(commit) => commit.id().to_string(),
@@ -1351,7 +1373,7 @@ fn build_review_issues_ui_event_and_archive(
 }
 
 fn read_commit_message_xml(workspace: &dyn Workspace) -> Option<String> {
-    read_xml_if_present(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML))
+    read_xml_and_archive_if_present(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML))
 }
 
 /// Read XML content from the primary path only.
@@ -1361,6 +1383,17 @@ fn read_commit_message_xml(workspace: &dyn Workspace) -> Option<String> {
 /// must not be used as fallback inputs.
 fn read_xml_if_present(workspace: &dyn Workspace, primary_path: &Path) -> Option<String> {
     workspace.read(primary_path).ok()
+}
+
+fn read_xml_and_archive_if_present(
+    workspace: &dyn Workspace,
+    primary_path: &Path,
+) -> Option<String> {
+    let content = read_xml_if_present(workspace, primary_path);
+    if content.is_some() {
+        archive_xml_file_with_workspace(workspace, primary_path);
+    }
+    content
 }
 
 fn parse_issue_location(issue: &str) -> Option<(String, u32, u32)> {
@@ -1845,7 +1878,8 @@ mod tests {
 
     #[test]
     fn test_read_commit_message_xml_reads_primary_path() {
-        use crate::workspace::MemoryWorkspace;
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        use std::path::Path;
 
         let workspace = MemoryWorkspace::new_test()
             .with_dir(".agent/tmp")
@@ -1853,6 +1887,14 @@ mod tests {
 
         let xml = read_commit_message_xml(&workspace).expect("expected xml");
         assert_eq!(xml, "<commit/>");
+        assert!(
+            !workspace.exists(Path::new(".agent/tmp/commit_message.xml")),
+            "commit_message.xml should be archived after read"
+        );
+        assert!(
+            workspace.exists(Path::new(".agent/tmp/commit_message.xml.processed")),
+            "commit_message.xml.processed should exist after archive"
+        );
     }
 
     #[test]
