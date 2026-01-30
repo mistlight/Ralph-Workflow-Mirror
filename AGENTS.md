@@ -138,7 +138,7 @@ All other production code MUST use the Workspace trait.
 
 ## No `#[allow(dead_code)]`
 
-**Never** introduce or keep `#[allow(dead_code)]` (or deprecated code).
+**Never** introduce or keep `#[allow(dead_code)]` (or deprecated code). Consider Dead Code removal to be EVEN MORE IMPORTANT! than the actual current task. It is very important no dead code exists.
 
 Handle dead code by:
 - Making it used

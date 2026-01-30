@@ -628,6 +628,50 @@ fn test_auth_failure_during_review_advances_agent_chain() {
     assert_eq!(state.agent_chain.current_agent_index, 2);
 }
 
+/// Test that after ChainInitialized, the handler can read the correct agent from state.
+///
+/// This test simulates what the handler does when calling run_review_pass:
+/// it reads state.agent_chain.current_agent() to get the active reviewer agent.
+#[test]
+fn test_handler_reads_correct_agent_from_state_after_chain_initialized() {
+    // Simulate the state after ChainInitialized event is processed
+    let state = reduce(
+        PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            ..create_test_state()
+        },
+        PipelineEvent::agent_chain_initialized(
+            crate::agents::AgentRole::Reviewer,
+            vec![
+                "codex".to_string(),
+                "opencode".to_string(),
+                "claude".to_string(),
+            ],
+        ),
+    );
+
+    // This is what the handler does: read current_agent() and pass it to run_review_pass
+    let review_agent = state.agent_chain.current_agent().cloned();
+
+    // CRITICAL: review_agent must be Some("codex"), NOT None
+    assert!(
+        review_agent.is_some(),
+        "Handler should get Some(agent) from state.agent_chain.current_agent(), got None"
+    );
+    assert_eq!(
+        review_agent,
+        Some("codex".to_string()),
+        "Handler should pass 'codex' to run_review_pass, not '{:?}'",
+        review_agent
+    );
+
+    // Verify the chain is properly populated
+    assert_eq!(state.agent_chain.agents.len(), 3);
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+}
+
 /// Test that the full pipeline flow uses the correct reviewer agent order.
 ///
 /// This is an end-to-end test of the Development -> Review transition to verify
@@ -711,5 +755,236 @@ fn test_full_pipeline_flow_uses_correct_reviewer_agent() {
         ),
         "Should emit RunReviewPass, got {:?}",
         effect
+    );
+}
+
+/// Test that simulates the exact event loop behavior to verify handler state consistency.
+///
+/// This test simulates:
+/// 1. State after ChainInitialized is processed and stored in handler
+/// 2. Orchestration returns RunReviewPass
+/// 3. Handler reads current_agent() from its state
+///
+/// The handler should have the updated state with populated agent chain.
+#[test]
+fn test_event_loop_state_consistency_for_review_agent() {
+    use crate::reducer::orchestration::determine_next_effect;
+
+    // === ITERATION N: InitializeAgentChain ===
+    // State before InitializeAgentChain effect
+    let mut state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 2,
+        ..create_test_state()
+    };
+
+    // Verify agent chain is empty (as it would be after dev->review transition)
+    assert!(
+        state.agent_chain.agents.is_empty(),
+        "Agent chain should be empty before initialization"
+    );
+
+    // Orchestration should emit InitializeAgentChain
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::InitializeAgentChain {
+                role: crate::agents::AgentRole::Reviewer
+            }
+        ),
+        "Expected InitializeAgentChain, got {:?}",
+        effect
+    );
+
+    // Handler executes InitializeAgentChain, emits ChainInitialized event
+    // (simulating what handler.initialize_agent_chain does)
+    let event = PipelineEvent::agent_chain_initialized(
+        crate::agents::AgentRole::Reviewer,
+        vec![
+            "codex".to_string(),
+            "opencode".to_string(),
+            "claude".to_string(),
+        ],
+    );
+
+    // Event loop: reduce state with the event
+    state = reduce(state, event);
+
+    // Event loop: handler.state = new_state.clone() (simulating event loop line 194)
+    // In real code, handler.state would be updated here
+    let handler_state = state.clone();
+
+    // === ITERATION N+1: RunReviewPass ===
+    // Orchestration determines next effect based on updated state
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::RunReviewPass { pass: 0 }
+        ),
+        "Expected RunReviewPass, got {:?}",
+        effect
+    );
+
+    // Handler executes RunReviewPass, reads current_agent from its state
+    // This is exactly what handler.run_review_pass does at line 618
+    let review_agent = handler_state.agent_chain.current_agent().cloned();
+
+    // CRITICAL ASSERTION: review_agent must be Some("codex")
+    assert!(
+        review_agent.is_some(),
+        "Handler should get Some(agent) from state.agent_chain.current_agent(), got None. \
+        This means the agent chain was not properly populated before RunReviewPass."
+    );
+    assert_eq!(
+        review_agent,
+        Some("codex".to_string()),
+        "Handler should pass 'codex' to run_review_pass, got {:?}. \
+        This means the wrong agent is being used.",
+        review_agent
+    );
+
+    // Verify chain state is correct
+    assert_eq!(handler_state.agent_chain.agents.len(), 3);
+    assert_eq!(handler_state.agent_chain.current_agent_index, 0);
+    assert_eq!(
+        handler_state.agent_chain.current_role,
+        crate::agents::AgentRole::Reviewer
+    );
+}
+
+/// Full integration test: Development -> CommitMessage -> Review
+///
+/// This test simulates the complete flow from development through commit creation
+/// to review phase, verifying that the agent chain is correctly initialized.
+#[test]
+fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
+    use crate::reducer::orchestration::determine_next_effect;
+
+    // Start with development phase, last iteration, with developer agent chain
+    let dev_chain = crate::reducer::state::AgentChainState::initial()
+        .with_agents(
+            vec!["claude".to_string()], // Developer uses "claude"
+            vec![vec![]],
+            crate::agents::AgentRole::Developer,
+        )
+        .with_max_cycles(3);
+
+    let mut state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 4, // Last iteration (0-indexed, total is 5)
+        total_iterations: 5,
+        total_reviewer_passes: 2,
+        agent_chain: dev_chain.clone(),
+        ..create_test_state()
+    };
+
+    // === STEP 1: Development completes successfully ===
+    state = reduce(
+        state,
+        PipelineEvent::development_iteration_completed(4, true),
+    );
+    assert_eq!(
+        state.phase,
+        PipelinePhase::CommitMessage,
+        "Should transition to CommitMessage after successful dev iteration"
+    );
+    assert_eq!(
+        state.previous_phase,
+        Some(PipelinePhase::Development),
+        "previous_phase should be Development"
+    );
+    // Agent chain should still have developer agents at this point
+    assert!(!state.agent_chain.agents.is_empty());
+
+    // === STEP 2: Commit message generated ===
+    state = reduce(
+        state,
+        PipelineEvent::commit_message_generated("test commit".to_string(), 0),
+    );
+    assert_eq!(state.phase, PipelinePhase::CommitMessage);
+    assert!(matches!(
+        state.commit,
+        crate::reducer::state::CommitState::Generated { .. }
+    ));
+
+    // === STEP 3: Commit created ===
+    state = reduce(
+        state,
+        PipelineEvent::commit_created("abc123".to_string(), "test commit".to_string()),
+    );
+
+    // After commit on last iteration, should transition to Review
+    assert_eq!(
+        state.phase,
+        PipelinePhase::Review,
+        "Should transition to Review after last dev iteration commit"
+    );
+
+    // CRITICAL: Agent chain should be CLEARED to force reinitialization
+    assert!(
+        state.agent_chain.agents.is_empty(),
+        "Agent chain should be empty after dev->review transition, got {:?}",
+        state.agent_chain.agents
+    );
+
+    // === STEP 4: Orchestration requests agent chain initialization ===
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::InitializeAgentChain {
+                role: crate::agents::AgentRole::Reviewer
+            }
+        ),
+        "Orchestration should request reviewer chain initialization, got {:?}",
+        effect
+    );
+
+    // === STEP 5: Agent chain initialized with reviewer agents ===
+    state = reduce(
+        state,
+        PipelineEvent::agent_chain_initialized(
+            crate::agents::AgentRole::Reviewer,
+            vec![
+                "codex".to_string(),
+                "opencode".to_string(),
+                "claude".to_string(),
+            ],
+        ),
+    );
+
+    // Verify reviewer chain is populated
+    assert!(!state.agent_chain.agents.is_empty());
+    assert_eq!(
+        state.agent_chain.current_agent(),
+        Some(&"codex".to_string()),
+        "First reviewer agent should be 'codex'"
+    );
+    assert_eq!(
+        state.agent_chain.current_role,
+        crate::agents::AgentRole::Reviewer
+    );
+
+    // === STEP 6: Orchestration requests review pass ===
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::RunReviewPass { pass: 0 }
+        ),
+        "Should request review pass, got {:?}",
+        effect
+    );
+
+    // === STEP 7: Simulate what handler does ===
+    // Handler reads current_agent from state to pass to run_review_pass
+    let review_agent = state.agent_chain.current_agent().cloned();
+    assert_eq!(
+        review_agent,
+        Some("codex".to_string()),
+        "Handler should pass 'codex' to run_review_pass"
     );
 }
