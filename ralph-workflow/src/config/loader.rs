@@ -46,46 +46,10 @@ pub fn load_config() -> (Config, Option<UnifiedConfig>, Vec<String>) {
 ///
 /// Returns a tuple of `(Config, Option<UnifiedConfig>, Vec<String>)` where the last element
 /// contains any deprecation warnings to be displayed to the user.
-///
-/// **Note:** This function uses `std::fs` directly. For testable code,
-/// use [`load_config_from_path_with_env`] with a [`ConfigEnvironment`] instead.
 pub fn load_config_from_path(
     config_path: Option<&std::path::Path>,
 ) -> (Config, Option<UnifiedConfig>, Vec<String>) {
-    let mut warnings = Vec::new();
-
-    // Try to load unified config from specified path or default
-    let unified = config_path.map_or_else(UnifiedConfig::load_default, |path| {
-        if path.exists() {
-            match UnifiedConfig::load_from_path(path) {
-                Ok(cfg) => Some(cfg),
-                Err(e) => {
-                    warnings.push(format!(
-                        "Failed to load config from {}: {}",
-                        path.display(),
-                        e
-                    ));
-                    None
-                }
-            }
-        } else {
-            warnings.push(format!("Config file not found: {}", path.display()));
-            None
-        }
-    });
-
-    // Start with defaults, then apply unified config if found
-    let config = if let Some(ref unified_cfg) = unified {
-        config_from_unified(unified_cfg, &mut warnings)
-    } else {
-        // No unified config - use defaults (legacy config discovery removed)
-        default_config()
-    };
-
-    // Apply environment variable overrides
-    let config = apply_env_overrides(config, &mut warnings);
-
-    (config, unified, warnings)
+    load_config_from_path_with_env(config_path, &super::path_resolver::RealConfigEnvironment)
 }
 
 /// Load configuration from a specific path or the default location using a [`ConfigEnvironment`].
@@ -710,7 +674,8 @@ max_dev_continuations = 0
         env::remove_var("RALPH_DEVELOPER_ITERS");
         env::remove_var("RALPH_VERBOSITY");
 
-        let (config, _unified, _warnings) = load_config();
+        let env = MemoryConfigEnvironment::new();
+        let (config, _unified, _warnings) = load_config_from_path_with_env(None, &env);
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.verbosity, Verbosity::Verbose);
     }

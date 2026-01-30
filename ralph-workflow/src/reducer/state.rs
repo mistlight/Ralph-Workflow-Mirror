@@ -402,15 +402,23 @@ impl AgentChainState {
     }
 
     pub fn advance_to_next_model(&self) -> Self {
-        let mut new = self.clone();
-        if let Some(models) = new.models_per_agent.get(new.current_agent_index) {
-            if new.current_model_index + 1 < models.len() {
-                new.current_model_index += 1;
-            } else {
-                new.current_model_index = 0;
+        let new = self.clone();
+
+        // When models are configured, we try each model for the current agent once.
+        // If the models list is exhausted, advance to the next agent/retry cycle
+        // instead of looping models indefinitely.
+        match new.models_per_agent.get(new.current_agent_index) {
+            Some(models) if !models.is_empty() => {
+                if new.current_model_index + 1 < models.len() {
+                    let mut advanced = new;
+                    advanced.current_model_index += 1;
+                    advanced
+                } else {
+                    new.switch_to_next_agent()
+                }
             }
+            _ => new.switch_to_next_agent(),
         }
-        new
     }
 
     pub fn switch_to_next_agent(&self) -> Self {
@@ -750,6 +758,28 @@ mod tests {
         let new_chain = chain.advance_to_next_model();
         assert_eq!(new_chain.current_model_index, 1);
         assert_eq!(new_chain.current_model(), Some(&"model2".to_string()));
+    }
+
+    #[test]
+    fn test_agent_chain_advance_to_next_model_switches_agent_when_models_exhausted() {
+        let chain = AgentChainState::initial().with_agents(
+            vec!["agent-a".to_string(), "agent-b".to_string()],
+            vec![
+                vec!["a1".to_string(), "a2".to_string()],
+                vec!["b1".to_string()],
+            ],
+            AgentRole::Developer,
+        );
+
+        let chain = chain.advance_to_next_model(); // a1 -> a2
+        assert_eq!(chain.current_agent(), Some(&"agent-a".to_string()));
+        assert_eq!(chain.current_model(), Some(&"a2".to_string()));
+
+        // Exhausted models for agent-a; should move to agent-b instead of looping models.
+        let chain = chain.advance_to_next_model();
+        assert_eq!(chain.current_agent(), Some(&"agent-b".to_string()));
+        assert_eq!(chain.current_model_index, 0);
+        assert_eq!(chain.current_model(), Some(&"b1".to_string()));
     }
 
     #[test]

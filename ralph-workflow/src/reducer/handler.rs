@@ -28,6 +28,7 @@ use crate::agents::AgentRole;
 use crate::checkpoint::{
     save_checkpoint_with_workspace, CheckpointBuilder, PipelinePhase as CheckpointPhase,
 };
+use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::files::llm_output_extraction::validate_issues_xml;
 use crate::phases::{commit, development, get_primary_commit_agent, review, PhaseContext};
@@ -679,20 +680,10 @@ impl MainEffectHandler {
                     },
                 ];
 
-                // Try to read issues XML for semantic rendering
-                if let Some(xml_content) =
-                    read_xml_if_present(ctx.workspace, Path::new(xml_paths::ISSUES_XML))
+                if let Some(ui_event) =
+                    build_review_issues_ui_event_and_archive(ctx.workspace, pass)
                 {
-                    let snippets = collect_review_issue_snippets(ctx.workspace, &xml_content);
-                    ui_events.push(UIEvent::XmlOutput {
-                        xml_type: XmlOutputType::ReviewIssues,
-                        content: xml_content,
-                        context: Some(XmlOutputContext {
-                            iteration: None,
-                            pass: Some(pass),
-                            snippets,
-                        }),
-                    });
+                    ui_events.push(ui_event);
                 }
 
                 Ok(EffectResult::with_ui(event, ui_events))
@@ -1336,6 +1327,29 @@ fn collect_review_issue_snippets(
     snippets
 }
 
+fn build_review_issues_ui_event_and_archive(
+    workspace: &dyn Workspace,
+    pass: u32,
+) -> Option<UIEvent> {
+    let xml_content = read_xml_if_present(workspace, Path::new(xml_paths::ISSUES_XML))?;
+    let snippets = collect_review_issue_snippets(workspace, &xml_content);
+    let ui_event = UIEvent::XmlOutput {
+        xml_type: XmlOutputType::ReviewIssues,
+        content: xml_content,
+        context: Some(XmlOutputContext {
+            iteration: None,
+            pass: Some(pass),
+            snippets,
+        }),
+    };
+
+    // Archive after UI rendering, so subsequent passes do not accidentally
+    // reuse stale XML if a future agent run fails to write a fresh file.
+    archive_xml_file_with_workspace(workspace, Path::new(xml_paths::ISSUES_XML));
+
+    Some(ui_event)
+}
+
 fn read_commit_message_xml(workspace: &dyn Workspace) -> Option<String> {
     read_xml_if_present(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML))
 }
@@ -1710,6 +1724,34 @@ mod tests {
             workspace.exists(Path::new(".agent/tmp/keep.txt")),
             "non-xml file should not be deleted"
         );
+    }
+
+    #[test]
+    fn test_build_review_issues_ui_event_and_archive_archives_after_reading() {
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        use std::path::{Path, PathBuf};
+
+        let xml_content = r#"<ralph-issues>
+ <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
+ </ralph-issues>"#;
+
+        let workspace = MemoryWorkspace::new_test().with_file(xml_paths::ISSUES_XML, xml_content);
+
+        let ui = build_review_issues_ui_event_and_archive(&workspace, 1)
+            .expect("expected UI event when issues.xml exists");
+
+        assert!(matches!(
+            ui,
+            UIEvent::XmlOutput {
+                xml_type: XmlOutputType::ReviewIssues,
+                ..
+            }
+        ));
+
+        // Should archive (rename) the canonical file after reading.
+        assert!(!workspace.exists(Path::new(xml_paths::ISSUES_XML)));
+        let processed = PathBuf::from(format!("{}.processed", xml_paths::ISSUES_XML));
+        assert!(workspace.exists(&processed));
     }
 
     /// Test that save_checkpoint uses workspace for file operations.

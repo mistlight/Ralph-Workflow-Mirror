@@ -395,10 +395,16 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             // Clearing the chain ensures orchestration deterministically emits
             // InitializeAgentChain for AgentRole::Reviewer.
             agent_chain: {
-                let mut chain = super::state::AgentChainState::initial();
-                // Preserve configured max cycles across phases.
-                chain.max_cycles = state.agent_chain.max_cycles;
-                chain.reset_for_role(AgentRole::Reviewer)
+                // Entering Review must clear any populated developer chain, but must preserve
+                // the configured retry/backoff policy so behavior stays consistent across phases.
+                super::state::AgentChainState::initial()
+                    .with_max_cycles(state.agent_chain.max_cycles)
+                    .with_backoff_policy(
+                        state.agent_chain.retry_delay_ms,
+                        state.agent_chain.backoff_multiplier,
+                        state.agent_chain.max_backoff_ms,
+                    )
+                    .reset_for_role(AgentRole::Reviewer)
             },
             // Entering Review must reset continuation state to avoid leaking
             // development continuation context into review/fix/rebase logic.
@@ -983,6 +989,36 @@ mod tests {
             review_state.continuation,
             ContinuationState::new(),
             "Entering Review should reset continuation state to avoid cross-phase leakage"
+        );
+    }
+
+    #[test]
+    fn test_review_phase_started_preserves_agent_chain_backoff_policy() {
+        // Review phase resets the chain, but must preserve the configured
+        // retry/backoff policy so behavior is consistent across phases.
+        let mut state = create_test_state();
+        state.agent_chain = state
+            .agent_chain
+            .with_max_cycles(7)
+            .with_backoff_policy(1234, 3.5, 98765);
+
+        let review_state = reduce(state.clone(), PipelineEvent::review_phase_started());
+
+        assert_eq!(
+            review_state.agent_chain.max_cycles,
+            state.agent_chain.max_cycles
+        );
+        assert_eq!(
+            review_state.agent_chain.retry_delay_ms,
+            state.agent_chain.retry_delay_ms
+        );
+        assert_eq!(
+            review_state.agent_chain.backoff_multiplier,
+            state.agent_chain.backoff_multiplier
+        );
+        assert_eq!(
+            review_state.agent_chain.max_backoff_ms,
+            state.agent_chain.max_backoff_ms
         );
     }
 
