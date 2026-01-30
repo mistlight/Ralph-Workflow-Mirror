@@ -402,9 +402,9 @@ pub enum PipelinePhase {
     Development,
     /// Review-fix cycles phase (N iterations of review + fix)
     Review,
-    /// Fix phase (legacy checkpoints only; no longer supported for resume).
+    /// Fix phase (legacy checkpoints; migrated to Development on load).
     Fix,
-    /// Verification review phase (legacy checkpoints only; no longer supported for resume).
+    /// Verification review phase (legacy checkpoints; migrated to Review on load).
     ReviewAgain,
     /// Commit message generation
     CommitMessage,
@@ -455,10 +455,8 @@ impl<'de> Deserialize<'de> for PipelinePhase {
                     "PostRebase" => Ok(PipelinePhase::PostRebase),
                     "PostRebaseConflict" => Ok(PipelinePhase::PostRebaseConflict),
                     "Interrupted" => Ok(PipelinePhase::Interrupted),
-                    "Fix" | "ReviewAgain" => Err(E::custom(format!(
-                        "legacy phase '{}' is no longer supported",
-                        value
-                    ))),
+                    "Fix" => Ok(PipelinePhase::Development),
+                    "ReviewAgain" => Ok(PipelinePhase::Review),
                     _ => Err(E::unknown_variant(
                         value,
                         &[
@@ -466,6 +464,8 @@ impl<'de> Deserialize<'de> for PipelinePhase {
                             "Planning",
                             "Development",
                             "Review",
+                            "Fix",
+                            "ReviewAgain",
                             "CommitMessage",
                             "FinalValidation",
                             "Complete",
@@ -726,9 +726,10 @@ fn load_checkpoint_with_fallback(
 ) -> Result<PipelineCheckpoint, Box<dyn std::error::Error>> {
     // Only accept v3 format (current)
     match serde_json::from_str::<PipelineCheckpoint>(content) {
-        Ok(checkpoint) => {
+        Ok(mut checkpoint) => {
             // Accept v3 (current) or higher
             if checkpoint.version >= 3 {
+                checkpoint.phase = normalize_legacy_phase(checkpoint.phase);
                 return Ok(checkpoint);
             }
             // Reject older versions
@@ -750,6 +751,14 @@ fn load_checkpoint_with_fallback(
             )
             .into())
         }
+    }
+}
+
+fn normalize_legacy_phase(phase: PipelinePhase) -> PipelinePhase {
+    match phase {
+        PipelinePhase::Fix => PipelinePhase::Development,
+        PipelinePhase::ReviewAgain => PipelinePhase::Review,
+        _ => phase,
     }
 }
 
@@ -1180,10 +1189,10 @@ mod tests {
         }
 
         #[test]
-        fn test_load_checkpoint_rejects_legacy_phase_variants() {
-            let json = r#"{
+        fn test_load_checkpoint_migrates_legacy_phase_variants() {
+            let base_json = r#"{
                 "version": 3,
-                "phase": "Fix",
+                "phase": "%PHASE%",
                 "iteration": 1,
                 "total_iterations": 1,
                 "reviewer_pass": 0,
@@ -1227,16 +1236,30 @@ mod tests {
                 "git_user_email": null
             }"#;
 
-            let workspace = MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", json);
+            for (phase_label, expected_phase) in [
+                ("Fix", PipelinePhase::Development),
+                ("ReviewAgain", PipelinePhase::Review),
+            ] {
+                let json = base_json.replace("%PHASE%", phase_label);
+                let workspace =
+                    MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", &json);
 
-            let result = load_checkpoint_with_workspace(&workspace);
-            assert!(result.is_err(), "legacy phase should be rejected");
-            let err = result.unwrap_err();
-            assert!(
-                err.to_string().contains("Legacy checkpoint formats"),
-                "Error should mention legacy not supported: {}",
-                err
-            );
+                let result = load_checkpoint_with_workspace(&workspace)
+                    .expect("load should succeed")
+                    .expect("checkpoint should exist");
+                assert_eq!(result.phase, expected_phase);
+            }
+        }
+
+        #[test]
+        fn test_pipeline_phase_deserialize_migrates_legacy_variants() {
+            let fix: PipelinePhase = serde_json::from_str("\"Fix\"")
+                .expect("should deserialize legacy Fix phase");
+            assert_eq!(fix, PipelinePhase::Development);
+
+            let review_again: PipelinePhase = serde_json::from_str("\"ReviewAgain\"")
+                .expect("should deserialize legacy ReviewAgain phase");
+            assert_eq!(review_again, PipelinePhase::Review);
         }
     }
 
