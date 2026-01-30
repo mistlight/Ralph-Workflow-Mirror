@@ -664,7 +664,16 @@ impl PipelineCheckpoint {
                     self.iteration, self.total_iterations
                 )
             }
-            PipelinePhase::Review => "Initial review".to_string(),
+            PipelinePhase::Review => {
+                if self.reviewer_pass > 0 {
+                    format!(
+                        "Verification review {}/{}",
+                        self.reviewer_pass, self.total_reviewer_passes
+                    )
+                } else {
+                    "Initial review".to_string()
+                }
+            }
             PipelinePhase::Fix => "Applying fixes".to_string(),
             PipelinePhase::ReviewAgain => {
                 format!(
@@ -1387,6 +1396,40 @@ mod tests {
             phase: PipelinePhase::Review,
             iteration: 5,
             total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 3,
+            developer_agent: "claude",
+            reviewer_agent: "codex",
+            cli_args: CliArgsSnapshot::new(5, 3, None, false, true, 2, false, None),
+            developer_agent_config: AgentConfigSnapshot::new(
+                "claude".into(),
+                "cmd".into(),
+                "-o".into(),
+                None,
+                true,
+            ),
+            reviewer_agent_config: AgentConfigSnapshot::new(
+                "codex".into(),
+                "cmd".into(),
+                "-o".into(),
+                None,
+                true,
+            ),
+            rebase_state: RebaseState::default(),
+            git_user_name: None,
+            git_user_email: None,
+            run_id: &run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: 5,
+            actual_reviewer_runs: 0,
+        });
+        assert_eq!(checkpoint.description(), "Initial review");
+
+        let checkpoint = PipelineCheckpoint::from_params(CheckpointParams {
+            phase: PipelinePhase::Review,
+            iteration: 5,
+            total_iterations: 5,
             reviewer_pass: 2,
             total_reviewer_passes: 3,
             developer_agent: "claude",
@@ -1415,7 +1458,7 @@ mod tests {
             actual_developer_runs: 5,
             actual_reviewer_runs: 2,
         });
-        assert_eq!(checkpoint.description(), "Initial review");
+        assert_eq!(checkpoint.description(), "Verification review 2/3");
     }
 
     #[test]

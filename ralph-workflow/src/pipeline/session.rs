@@ -255,9 +255,36 @@ pub fn extract_session_info_from_log_prefix(
     known_agent_name: Option<&str>,
     workspace: &dyn crate::workspace::Workspace,
 ) -> Option<SessionInfo> {
-    use crate::agents::JsonParserType;
+    let agent_name = match known_agent_name {
+        Some(name) => name,
+        None => {
+            eprintln!(
+                "warning: missing known agent name for log prefix {}",
+                log_prefix.display()
+            );
+            return None;
+        }
+    };
 
-    let agent_name = known_agent_name?;
+    extract_session_info_from_log_prefix_with_agent_name(
+        log_prefix,
+        parser_type,
+        agent_name,
+        workspace,
+    )
+}
+
+/// Find log files matching a prefix pattern and extract session info.
+///
+/// This variant requires a known agent name and should be preferred by callers
+/// that can provide it.
+pub fn extract_session_info_from_log_prefix_with_agent_name(
+    log_prefix: &Path,
+    parser_type: crate::agents::JsonParserType,
+    known_agent_name: &str,
+    workspace: &dyn crate::workspace::Workspace,
+) -> Option<SessionInfo> {
+    use crate::agents::JsonParserType;
 
     // Get all log files matching the prefix
     let parent = log_prefix.parent().unwrap_or(Path::new("."));
@@ -288,7 +315,7 @@ pub fn extract_session_info_from_log_prefix(
     // Sort by filename for deterministic ordering
     log_files.sort();
 
-    let agent_name = agent_name.to_string();
+    let agent_name = known_agent_name.to_string();
 
     // Try to extract session ID from each log file
     // The first file with a valid session ID wins
@@ -489,6 +516,24 @@ mod tests {
             Path::new(".agent/logs/planning_1"),
             JsonParserType::OpenCode,
             Some("opencode/anthropic/claude-sonnet-4"),
+            &workspace,
+        )
+        .expect("session info should be extracted");
+
+        assert_eq!(result.session_id, "ses_44f9562d4ffe");
+        assert_eq!(result.agent_name, "opencode/anthropic/claude-sonnet-4");
+    }
+
+    #[test]
+    fn test_extract_session_info_with_required_agent_name() {
+        let content = r#"{"type":"step_start","timestamp":1,"sessionID":"ses_44f9562d4ffe"}"#;
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/logs/planning_1_opencode.log", content);
+
+        let result = extract_session_info_from_log_prefix_with_agent_name(
+            Path::new(".agent/logs/planning_1"),
+            JsonParserType::OpenCode,
+            "opencode/anthropic/claude-sonnet-4",
             &workspace,
         )
         .expect("session info should be extracted");
