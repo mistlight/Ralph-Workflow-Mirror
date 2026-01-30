@@ -348,7 +348,6 @@ pub fn handle_list_work_guides(colors: Colors) -> bool {
     );
 
     println!("Usage: ralph --init <work-guide>");
-    println!("       ralph --init-prompt <work-guide>");
     println!();
     println!("Example:");
     println!("  ralph --init bug-fix              # Create bug fix Work Guide");
@@ -435,7 +434,7 @@ fn handle_smart_init_at_paths_with_env<R: ConfigEnvironment>(
     let config_exists = env.file_exists(config_path);
     let prompt_exists = env.file_exists(prompt_path);
 
-    // If a template name is provided (non-empty), treat it as --init-prompt
+    // If a template name is provided (non-empty), treat it as --init <template>
     if let Some(template_name) = template_arg {
         if !template_name.is_empty() {
             return handle_init_template_arg_at_path_with_env(
@@ -1013,7 +1012,6 @@ fn handle_init_only_config_exists_with_env<R: ConfigEnvironment>(
 
     println!();
     println!("Usage: ralph --init <work-guide>");
-    println!("       ralph --init-prompt <work-guide>");
     println!();
     println!("Example:");
     println!("  ralph --init bug-fix");
@@ -1085,7 +1083,6 @@ WORK GUIDES VS AGENT PROMPTS
      Commands:
        ralph --init <work-guide>      Create PROMPT.md from a Work Guide
        ralph --list-work-guides       Show all available Work Guides
-       ralph --init-prompt <name>     Same as --init (legacy alias)
 
   2. AGENT PROMPTS (backend AI behavior configuration)
      ─────────────────────────────────────────────────────
@@ -1141,7 +1138,6 @@ ADVANCED OPTIONS
 
   Initialization:
     --force-overwrite            Overwrite PROMPT.md without prompting
-    --init-prompt <name>         Create PROMPT.md (legacy, use --init instead)
     -i, --interactive            Prompt for PROMPT.md if missing
 
   Git Control:

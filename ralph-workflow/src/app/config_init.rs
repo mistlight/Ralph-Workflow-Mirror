@@ -44,7 +44,7 @@ pub struct ConfigInitResult {
 /// 1. Loads config from unified config file (~/.config/ralph-workflow.toml)
 /// 2. Applies environment variable overrides
 /// 3. Applies CLI arguments to config
-/// 4. Handles --list-work-guides, --init-prompt, --init/--init-global if set
+/// 4. Handles --list-work-guides, --init/--init-global if set
 /// 5. Loads agent registry from built-ins + unified config
 /// 6. Selects default agents from fallback chains
 ///
@@ -57,7 +57,7 @@ pub struct ConfigInitResult {
 /// # Returns
 ///
 /// Returns `Ok(Some(result))` on success, `Ok(None)` if an early exit was triggered
-/// (e.g., --init, --init-prompt, --list-templates), or an error if initialization fails.
+/// (e.g., --init, --list-templates), or an error if initialization fails.
 pub fn initialize_config(
     args: &Args,
     colors: Colors,
@@ -89,7 +89,7 @@ pub fn initialize_config(
 /// # Returns
 ///
 /// Returns `Ok(Some(result))` on success, `Ok(None)` if an early exit was triggered
-/// (e.g., --init, --init-prompt, --list-templates), or an error if initialization fails.
+/// (e.g., --init, --list-templates), or an error if initialization fails.
 pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
     args: &Args,
     colors: Colors,
