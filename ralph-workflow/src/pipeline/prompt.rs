@@ -559,6 +559,7 @@ fn run_with_agent_spawn(
             return Ok(CommandResult {
                 exit_code,
                 stderr: format!("{}: {} - {}", argv[0], detail, e),
+                session_id: None,
             });
         }
     };
@@ -665,10 +666,57 @@ fn run_with_agent_spawn(
         ));
     }
 
+    // Extract session_id from the log file (first init event in agent output)
+    let session_id = extract_session_id_from_logfile(cmd.logfile, runtime.workspace);
+
     Ok(CommandResult {
         exit_code: final_exit_code,
         stderr: stderr_output,
+        session_id,
     })
+}
+
+/// Extract session_id from the agent's log file.
+///
+/// Parses the first few lines of the log file looking for init events
+/// that contain a session_id field. Supports Claude, Gemini, and OpenCode formats.
+fn extract_session_id_from_logfile(
+    logfile: &str,
+    workspace: &dyn crate::workspace::Workspace,
+) -> Option<String> {
+    let logfile_path = Path::new(logfile);
+    let content = workspace.read(logfile_path).ok()?;
+
+    // Look for session_id in the first few lines (init events come first)
+    for line in content.lines().take(10) {
+        if let Some(session_id) = extract_session_id_from_json_line(line) {
+            return Some(session_id);
+        }
+    }
+    None
+}
+
+/// Extract session_id from a single JSON line.
+///
+/// Supports multiple agent formats:
+/// - Claude: `{"type":"system","subtype":"init","session_id":"abc123"}`
+/// - Gemini: `{"type":"init","session_id":"abc123","model":"gemini-pro"}`
+/// - OpenCode: `{"event_type":"...", "session_id":"abc123"}`
+fn extract_session_id_from_json_line(line: &str) -> Option<String> {
+    // Try to parse as JSON
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+
+    // Check for session_id field (common across formats)
+    if let Some(session_id) = value.get("session_id").and_then(|v| v.as_str()) {
+        return Some(session_id.to_string());
+    }
+
+    // Check for sessionID field (some agents use camelCase)
+    if let Some(session_id) = value.get("sessionID").and_then(|v| v.as_str()) {
+        return Some(session_id.to_string());
+    }
+
+    None
 }
 
 /// Stream agent output from an AgentChildHandle.

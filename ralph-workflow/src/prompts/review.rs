@@ -336,6 +336,30 @@ mod tests {
         assert!(result.contains("REVIEW MODE"));
         assert!(result.contains("<ralph-issues>"));
 
+        // Read-only modes: reviewer must still write exactly one XML file.
+        assert!(
+            result.contains("explicitly authorized") && result.contains("EXACTLY ONE file"),
+            "review_xml should explicitly authorize writing exactly one XML file"
+        );
+        assert!(
+            result.contains("MANDATORY"),
+            "review_xml should mark XML file write mandatory"
+        );
+        assert!(
+            result.contains("Not writing") && result.contains("FAILURE"),
+            "review_xml should say not writing XML is a failure"
+        );
+        assert!(
+            result.contains("does not conform")
+                && result.contains("XSD")
+                && result.contains("FAILURE"),
+            "review_xml should say non-XSD XML is a failure"
+        );
+        assert!(
+            result.contains("DO NOT") && (result.contains("print") || result.contains("stdout")),
+            "review_xml should forbid stdout output"
+        );
+
         // Shared partials should be expanded (no raw partial directives left in output)
         assert!(
             result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
@@ -363,6 +387,30 @@ mod tests {
         assert!(result.contains("XSD error"));
         assert!(result.contains(".agent/tmp/issues.xml"));
         assert!(result.contains(".agent/tmp/issues.xsd"));
+
+        // Read-only modes: reviewer must still write exactly one XML file.
+        assert!(
+            result.contains("explicitly authorized") && result.contains("EXACTLY ONE file"),
+            "review_xsd_retry should explicitly authorize writing exactly one XML file"
+        );
+        assert!(
+            result.contains("MANDATORY"),
+            "review_xsd_retry should mark XML file write mandatory"
+        );
+        assert!(
+            result.contains("Not writing") && result.contains("FAILURE"),
+            "review_xsd_retry should say not writing XML is a failure"
+        );
+        assert!(
+            result.contains("does not conform")
+                && result.contains("XSD")
+                && result.contains("FAILURE"),
+            "review_xsd_retry should say non-XSD XML is a failure"
+        );
+        assert!(
+            result.contains("DO NOT") && (result.contains("print") || result.contains("stdout")),
+            "review_xsd_retry should forbid stdout output"
+        );
 
         // Shared partials should be expanded
         assert!(

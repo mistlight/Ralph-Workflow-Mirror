@@ -41,6 +41,11 @@ pub struct CommandResult {
     pub(crate) exit_code: i32,
     /// Standard error output captured from the command
     pub(crate) stderr: String,
+    /// Session ID from the agent's init event (if available).
+    ///
+    /// This is extracted from the agent's JSON output and can be used for
+    /// session continuation (XSD retry). Not all agents provide session IDs.
+    pub session_id: Option<String>,
 }
 
 /// RAII guard for agent phase cleanup.

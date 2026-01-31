@@ -65,6 +65,12 @@ pub struct FixPassResult {
     pub output_valid: bool,
     /// Whether changes were made according to the fix output.
     pub changes_made: bool,
+    /// Parsed fix status from `<ralph-status>` (when output is valid).
+    pub status: Option<String>,
+    /// Optional summary from `<ralph-summary>` (when output is valid).
+    pub summary: Option<String>,
+    /// Raw XML content for UI rendering (if available).
+    pub xml_content: Option<String>,
 }
 
 /// Result of parsing review output.
@@ -119,6 +125,17 @@ pub fn run_review_pass(
 
             prompt_review_xml_with_references(ctx.template_context, &refs)
         });
+
+    // Enforce that the rendered prompt does not contain unresolved template placeholders.
+    // This must happen before any agent invocation.
+    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&review_prompt_xml) {
+        return Err(crate::prompts::TemplateVariablesInvalidError {
+            template_name: "review_xml".to_string(),
+            missing_variables: Vec::new(),
+            unresolved_placeholders: err.unresolved_placeholders,
+        }
+        .into());
+    }
 
     if !was_replayed {
         ctx.capture_prompt(&prompt_key, &review_prompt_xml);
@@ -447,6 +464,17 @@ pub fn run_fix_pass(
             )
         });
 
+    // Enforce that the rendered prompt does not contain unresolved template placeholders.
+    // This must happen before any agent invocation.
+    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&fix_prompt) {
+        return Err(crate::prompts::TemplateVariablesInvalidError {
+            template_name: "fix_mode_xml".to_string(),
+            missing_variables: Vec::new(),
+            unresolved_placeholders: err.unresolved_placeholders,
+        }
+        .into());
+    }
+
     if !was_replayed {
         ctx.capture_prompt(&prompt_key, &fix_prompt);
     } else {
@@ -501,6 +529,9 @@ pub fn run_fix_pass(
             agent_failed: true,
             output_valid: false,
             changes_made: false,
+            status: None,
+            summary: None,
+            xml_content: None,
         });
     }
 
@@ -513,6 +544,9 @@ pub fn run_fix_pass(
             agent_failed: false,
             output_valid: false,
             changes_made: false,
+            status: None,
+            summary: None,
+            xml_content: None,
         });
     };
 
@@ -537,6 +571,9 @@ pub fn run_fix_pass(
                 agent_failed: false,
                 output_valid: true,
                 changes_made,
+                status: Some(result_elements.status.clone()),
+                summary: result_elements.summary.clone(),
+                xml_content: Some(xml_to_validate),
             })
         }
         Err(err) => {
@@ -547,6 +584,9 @@ pub fn run_fix_pass(
                 agent_failed: false,
                 output_valid: false,
                 changes_made: false,
+                status: None,
+                summary: None,
+                xml_content: Some(xml_to_validate),
             })
         }
     }

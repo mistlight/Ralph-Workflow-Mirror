@@ -39,7 +39,7 @@ use crate::reducer::event::{
     AgentErrorKind, CheckpointTrigger, ConflictStrategy, PipelineEvent, PipelinePhase, RebasePhase,
 };
 use crate::reducer::fault_tolerant_executor::{
-    execute_agent_fault_tolerantly, AgentExecutionConfig,
+    execute_agent_fault_tolerantly, AgentExecutionConfig, AgentExecutionResult,
 };
 use crate::reducer::state::PipelineState;
 use crate::reducer::ui_event::{UIEvent, XmlCodeSnippet, XmlOutputContext, XmlOutputType};
@@ -268,20 +268,11 @@ impl MainEffectHandler {
         // a session ID from a previous invocation, reuse it for same-session retry.
         // This allows the agent to continue from where it left off and just fix the XML.
         //
-        // KNOWN LIMITATION: Session ID extraction from agent responses is not yet implemented.
-        // The infrastructure for session reuse is in place (SessionEstablished event, agent
-        // chain session_id storage, build_cmd_with_session), but the handler does not yet
-        // emit SessionEstablished events because:
-        // 1. CommandResult doesn't include session_id from the JSON parser
-        // 2. The JSON parsers (Claude, Gemini, OpenCode) do parse session_id but don't return it
-        //
-        // To implement session reuse:
-        // 1. Add session_id: Option<String> to CommandResult in pipeline/types.rs
-        // 2. Parse and extract session_id in run_with_agent_spawn (pipeline/prompt.rs)
-        // 3. Return it in the fault_tolerant_executor
-        // 4. Emit SessionEstablished event here when session_id is present
-        //
-        // Until implemented, session reuse will not function (session_id will always be None).
+        // Session ID extraction is implemented:
+        // 1. CommandResult includes session_id extracted from the agent's log file
+        // 2. AgentInvocationSucceeded event includes session_id
+        // 3. Reducer stores session_id in agent_chain.last_session_id
+        // 4. Handler passes session_id to build_cmd_with_session for XSD retries
         let session_id = if self.state.continuation.xsd_retry_pending {
             self.state.agent_chain.last_session_id.as_deref()
         } else {
@@ -314,7 +305,8 @@ impl MainEffectHandler {
             logfile: &logfile,
         };
 
-        let event = execute_agent_fault_tolerantly(config, &mut runtime)?;
+        let AgentExecutionResult { event, session_id } =
+            execute_agent_fault_tolerantly(config, &mut runtime)?;
 
         // Emit UI event for agent activity
         let ui_event = UIEvent::AgentActivity {
@@ -322,7 +314,20 @@ impl MainEffectHandler {
             message: format!("Completed {} task", role),
         };
 
-        Ok(EffectResult::with_ui(event, vec![ui_event]))
+        // Build result with the main event
+        let mut result = EffectResult::with_ui(event, vec![ui_event]);
+
+        // If session_id was extracted, emit SessionEstablished as a separate event
+        // This ensures proper state management in the reducer
+        if let Some(sid) = session_id {
+            result = result.with_additional_event(PipelineEvent::agent_session_established(
+                role,
+                effective_agent.clone(),
+                sid,
+            ));
+        }
+
+        Ok(result)
     }
 
     fn generate_plan(
@@ -395,6 +400,19 @@ impl MainEffectHandler {
                 Ok(EffectResult::with_ui(event, ui_events))
             }
             Err(err) => {
+                if let Some(tpl_err) =
+                    err.downcast_ref::<crate::prompts::TemplateVariablesInvalidError>()
+                {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::agent_template_variables_invalid(
+                            AgentRole::Developer,
+                            tpl_err.template_name.clone(),
+                            tpl_err.missing_variables.clone(),
+                            tpl_err.unresolved_placeholders.clone(),
+                        ),
+                    ));
+                }
+
                 if Self::is_auth_failure(&err) {
                     let current_agent = self
                         .state
@@ -481,6 +499,18 @@ impl MainEffectHandler {
         let attempt = match attempt {
             Ok(a) => a,
             Err(err) => {
+                if let Some(tpl_err) =
+                    err.downcast_ref::<crate::prompts::TemplateVariablesInvalidError>()
+                {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::agent_template_variables_invalid(
+                            AgentRole::Developer,
+                            tpl_err.template_name.clone(),
+                            tpl_err.missing_variables.clone(),
+                            tpl_err.unresolved_placeholders.clone(),
+                        ),
+                    ));
+                }
                 return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
                     format!("Development attempt failed: {err}"),
                 )));
@@ -742,6 +772,19 @@ impl MainEffectHandler {
                 Ok(EffectResult::with_ui(event, ui_events))
             }
             Err(err) => {
+                if let Some(tpl_err) =
+                    err.downcast_ref::<crate::prompts::TemplateVariablesInvalidError>()
+                {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::agent_template_variables_invalid(
+                            AgentRole::Reviewer,
+                            tpl_err.template_name.clone(),
+                            tpl_err.missing_variables.clone(),
+                            tpl_err.unresolved_placeholders.clone(),
+                        ),
+                    ));
+                }
+
                 if Self::is_auth_failure(&err) {
                     let current_agent = review_agent.unwrap_or_else(|| "unknown".to_string());
                     return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
@@ -804,22 +847,49 @@ impl MainEffectHandler {
 
                 if !result.output_valid {
                     return Ok(EffectResult::event(
-                        PipelineEvent::review_output_validation_failed(
+                        PipelineEvent::fix_output_validation_failed(
                             pass,
                             self.state.continuation.invalid_output_attempts,
                         ),
                     ));
                 }
 
-                let event = PipelineEvent::fix_attempt_completed(pass, result.changes_made);
+                // Output is valid: interpret fix status and emit a reducer event describing
+                // completion vs. continuation requirement.
+                let status = result
+                    .status
+                    .as_deref()
+                    .and_then(crate::reducer::state::FixStatus::parse)
+                    .unwrap_or(crate::reducer::state::FixStatus::Failed);
+
+                let event = if status.needs_continuation() {
+                    // Decide between triggering another continuation vs. reporting budget exhaustion.
+                    let next_attempt = self.state.continuation.fix_continuation_attempt + 1;
+                    if next_attempt >= self.state.continuation.max_fix_continue_count {
+                        PipelineEvent::fix_continuation_budget_exhausted(
+                            pass,
+                            self.state.continuation.fix_continuation_attempt + 1,
+                            status,
+                        )
+                    } else {
+                        PipelineEvent::fix_continuation_triggered(pass, status, result.summary)
+                    }
+                } else if self.state.continuation.fix_continuation_attempt > 0 {
+                    // We were in a fix continuation chain and have now reached a complete status.
+                    PipelineEvent::fix_continuation_succeeded(
+                        pass,
+                        self.state.continuation.fix_continuation_attempt + 1,
+                    )
+                } else {
+                    // First attempt completed with a complete status.
+                    PipelineEvent::fix_attempt_completed(pass, result.changes_made)
+                };
 
                 let mut ui_events = vec![];
-                if let Some(xml_content) =
-                    read_xml_if_present(ctx.workspace, Path::new(xml_paths::FIX_RESULT_XML))
-                {
+                if let Some(xml_content) = result.xml_content.as_deref() {
                     ui_events.push(UIEvent::XmlOutput {
                         xml_type: XmlOutputType::FixResult,
-                        content: xml_content,
+                        content: xml_content.to_string(),
                         context: Some(XmlOutputContext {
                             iteration: None,
                             pass: Some(pass),
@@ -831,6 +901,19 @@ impl MainEffectHandler {
                 Ok(EffectResult::with_ui(event, ui_events))
             }
             Err(err) => {
+                if let Some(tpl_err) =
+                    err.downcast_ref::<crate::prompts::TemplateVariablesInvalidError>()
+                {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::agent_template_variables_invalid(
+                            AgentRole::Reviewer,
+                            tpl_err.template_name.clone(),
+                            tpl_err.missing_variables.clone(),
+                            tpl_err.unresolved_placeholders.clone(),
+                        ),
+                    ));
+                }
+
                 if Self::is_auth_failure(&err) {
                     let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
                     return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
@@ -994,7 +1077,27 @@ impl MainEffectHandler {
             .cloned()
             .expect("commit agent should be initialized via InitializeAgentChain effect");
 
-        let attempt_result = commit::run_commit_attempt(ctx, attempt, &diff, &commit_agent)?;
+        let attempt_result = match commit::run_commit_attempt(ctx, attempt, &diff, &commit_agent) {
+            Ok(r) => r,
+            Err(err) => {
+                if let Some(tpl_err) =
+                    err.downcast_ref::<crate::prompts::TemplateVariablesInvalidError>()
+                {
+                    return Ok(EffectResult::event(
+                        PipelineEvent::agent_template_variables_invalid(
+                            AgentRole::Commit,
+                            tpl_err.template_name.clone(),
+                            tpl_err.missing_variables.clone(),
+                            tpl_err.unresolved_placeholders.clone(),
+                        ),
+                    ));
+                }
+
+                return Ok(EffectResult::event(
+                    PipelineEvent::commit_generation_failed(err.to_string()),
+                ));
+            }
+        };
 
         if attempt_result.auth_failure {
             return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
@@ -2252,6 +2355,308 @@ mod tests {
             "fresh",
             "invoke_agent should not override a new prompt with a stale rate_limit_continuation_prompt"
         );
+    }
+
+    #[test]
+    fn test_run_fix_attempt_invalid_output_emits_fix_output_validation_failed() {
+        use crate::agents::{AgentConfig, AgentRegistry, JsonParserType};
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::{AgentCommandResult, MockProcessExecutor};
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.register(
+            "mock-reviewer",
+            AgentConfig {
+                cmd: "mock-reviewer-bin".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: Some("mock".to_string()),
+            },
+        );
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+
+        let mock_executor = std::sync::Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("mock-reviewer-bin", Ok(AgentCommandResult::success())),
+        );
+        let executor_arc =
+            mock_executor.clone() as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+
+        // Minimal workspace inputs required by phases::review::run_fix_pass.
+        // Intentionally omit .agent/tmp/fix_result.xml to simulate missing/invalid output.
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("PROMPT.md", "requirements")
+            .with_file(".agent/PLAN.md", "# plan")
+            .with_file(".agent/ISSUES.md", "# issues")
+            .with_dir(".agent/tmp")
+            .with_dir(".agent/logs");
+
+        let repo_root = PathBuf::from("/test/repo");
+        let config = Config::default();
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "mock-reviewer",
+            reviewer_agent: "mock-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let mut state = PipelineState::initial(1, 1);
+        state.continuation.invalid_output_attempts = 0;
+        let mut handler = super::MainEffectHandler::new(state);
+
+        let result = handler.run_fix_attempt(&mut ctx, 0).unwrap();
+
+        assert!(
+            matches!(
+                result.event,
+                PipelineEvent::Review(
+                    crate::reducer::event::ReviewEvent::FixOutputValidationFailed {
+                        pass: 0,
+                        attempt: 0
+                    }
+                )
+            ),
+            "expected FixOutputValidationFailed, got: {:?}",
+            result.event
+        );
+    }
+
+    #[test]
+    fn test_run_fix_attempt_issues_remain_emits_fix_continuation_triggered() {
+        use crate::agents::{AgentConfig, AgentRegistry, JsonParserType};
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::{AgentCommandResult, MockProcessExecutor};
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::reducer::state::FixStatus;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.register(
+            "mock-reviewer",
+            AgentConfig {
+                cmd: "mock-reviewer-bin".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: Some("mock".to_string()),
+            },
+        );
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+
+        let mock_executor = std::sync::Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("mock-reviewer-bin", Ok(AgentCommandResult::success())),
+        );
+        let executor_arc =
+            mock_executor.clone() as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+
+        let fix_xml = r#"<ralph-fix-result>
+<ralph-status>issues_remain</ralph-status>
+<ralph-summary>Some issues fixed, some remain</ralph-summary>
+</ralph-fix-result>"#;
+
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("PROMPT.md", "requirements")
+            .with_file(".agent/PLAN.md", "# plan")
+            .with_file(".agent/ISSUES.md", "# issues")
+            .with_dir(".agent/tmp")
+            .with_file(".agent/tmp/fix_result.xml", fix_xml)
+            .with_dir(".agent/logs");
+
+        let repo_root = PathBuf::from("/test/repo");
+        let config = Config::default();
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "mock-reviewer",
+            reviewer_agent: "mock-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let state = PipelineState::initial(1, 1);
+        let mut handler = super::MainEffectHandler::new(state);
+
+        let result = handler.run_fix_attempt(&mut ctx, 0).unwrap();
+
+        match result.event {
+            PipelineEvent::Review(
+                crate::reducer::event::ReviewEvent::FixContinuationTriggered {
+                    pass,
+                    status,
+                    summary,
+                },
+            ) => {
+                assert_eq!(pass, 0);
+                assert_eq!(status, FixStatus::IssuesRemain);
+                assert_eq!(summary, Some("Some issues fixed, some remain".to_string()));
+            }
+            other => panic!("expected FixContinuationTriggered, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_generate_plan_rejects_prompts_with_unresolved_placeholders() {
+        use crate::agents::{AgentConfig, AgentRegistry, JsonParserType};
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::{AgentCommandResult, MockProcessExecutor};
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::reducer::event::AgentEvent;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let mut registry = AgentRegistry::new().unwrap();
+        registry.register(
+            "mock-dev",
+            AgentConfig {
+                cmd: "mock-dev-bin".to_string(),
+                output_flag: String::new(),
+                yolo_flag: String::new(),
+                verbose_flag: String::new(),
+                can_commit: true,
+                json_parser: JsonParserType::Generic,
+                model_flag: None,
+                print_flag: String::new(),
+                streaming_flag: String::new(),
+                session_flag: String::new(),
+                env_vars: std::collections::HashMap::new(),
+                display_name: Some("mock".to_string()),
+            },
+        );
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+
+        let mock_executor = std::sync::Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("mock-dev-bin", Ok(AgentCommandResult::success())),
+        );
+        let executor_arc =
+            mock_executor.clone() as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+
+        // PROMPT.md includes a raw {{...}} token, which must be rejected before agent invocation.
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("PROMPT.md", "requirements with {{UNRESOLVED}} token")
+            .with_dir(".agent/tmp")
+            .with_dir(".agent/logs");
+
+        let repo_root = PathBuf::from("/test/repo");
+        let config = Config::default();
+        let template_context = TemplateContext::default();
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "mock-dev",
+            reviewer_agent: "mock-dev",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let state = PipelineState::initial(1, 0);
+        let mut handler = super::MainEffectHandler::new(state);
+
+        let result = handler.generate_plan(&mut ctx, 0).unwrap();
+
+        match result.event {
+            PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid {
+                role,
+                template_name,
+                missing_variables,
+                unresolved_placeholders,
+                ..
+            }) => {
+                assert_eq!(role, AgentRole::Developer);
+                assert_eq!(template_name, "planning_xml");
+                assert!(missing_variables.is_empty());
+                assert!(
+                    unresolved_placeholders
+                        .iter()
+                        .any(|p| p.contains("{{UNRESOLVED")),
+                    "expected unresolved placeholder to be captured; got: {:?}",
+                    unresolved_placeholders
+                );
+            }
+            other => panic!("expected TemplateVariablesInvalid, got: {:?}", other),
+        }
     }
 
     #[test]

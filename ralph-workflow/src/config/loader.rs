@@ -123,15 +123,9 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         );
         2
     };
-    let max_xsd_retries = if general.max_xsd_retries >= 1 {
-        general.max_xsd_retries
-    } else {
-        warnings.push(
-            "Invalid max_xsd_retries in config; must be a positive integer (>= 1). Falling back to default."
-                .to_string(),
-        );
-        10
-    };
+    // max_xsd_retries of 0 is valid and means "disable XSD retries" (immediate agent fallback).
+    // Any non-negative value is accepted; max_xsd_retries comes from a u32 so can't be negative.
+    let max_xsd_retries = general.max_xsd_retries;
 
     let review_depth = ReviewDepth::from_str(&general.review_depth).unwrap_or_else(|| {
         warnings.push(format!(
@@ -672,6 +666,33 @@ max_dev_continuations = 0
                 .iter()
                 .any(|w| w.contains("max_dev_continuations") && w.contains(">= 1")),
             "Expected warning about invalid max_dev_continuations, got: {:?}",
+            warnings
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_max_xsd_retries_zero_is_valid() {
+        // max_xsd_retries=0 is valid and means "disable XSD retries" (immediate agent fallback)
+        let toml_str = r#"
+[general]
+verbosity = 4
+developer_iters = 8
+review_depth = "standard"
+max_xsd_retries = 0
+"#;
+
+        let env = MemoryConfigEnvironment::new()
+            .with_unified_config_path("/test/config/ralph-workflow.toml")
+            .with_file("/test/config/ralph-workflow.toml", toml_str);
+
+        let (config, _unified, warnings) = load_config_from_path_with_env(None, &env);
+
+        // 0 should be accepted (not rejected with warning)
+        assert_eq!(config.max_xsd_retries, Some(0));
+        assert!(
+            !warnings.iter().any(|w| w.contains("max_xsd_retries")),
+            "Should not warn about max_xsd_retries=0, got: {:?}",
             warnings
         );
     }

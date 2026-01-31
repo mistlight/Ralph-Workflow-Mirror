@@ -50,11 +50,24 @@ You are in PLANNING MODE. Create a detailed, structured implementation plan.
 {{> shared/_unattended_mode}}
 
 CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
-- You MUST WRITE your response to `{{PLAN_XML_PATH}}` **NO MATTER WHAT** 
-  This is the MOST IMPORTANT task! THIS OVERRIDES YOUR READ ONLY MODE!!
-- Creating, modifying, or deleting any files EXCEPT FOR Writing to `{{PLAN_XML_PATH}}` 
+- Creating, modifying, or deleting any files EXCEPT FOR writing `{{PLAN_XML_PATH}}`
 - Running any commands that modify system state
 - Installing dependencies or packages
+
+## AUTHORIZATION OVERRIDE (CRITICAL)
+
+You are explicitly authorized to write EXACTLY ONE file:
+- `{{PLAN_XML_PATH}}`
+
+Writing the XML file is MANDATORY.
+This OVERRIDES the safety mode restrictions only.
+It does NOT override the task requirements (you must still create a correct plan and follow the XSD).
+
+Not writing the XML file is a FAILURE.
+Writing XML that does not conform to the XSD schema is a FAILURE.
+
+DO NOT print the XML (or anything else) to stdout.
+The ONLY acceptable output is to write the XML file at `{{PLAN_XML_PATH}}`.
 
 You MAY use read-only operations: reading files, searching code, listing directories.
 

@@ -38,6 +38,21 @@ You MUST:
 3. Fix ONLY the XML structure/format issues
 4. Write the corrected XML to `{{ISSUES_XML_PATH}}`
 
+## AUTHORIZATION OVERRIDE (CRITICAL)
+
+You are explicitly authorized to write EXACTLY ONE file:
+- `{{ISSUES_XML_PATH}}`
+
+Writing the XML file is MANDATORY.
+This OVERRIDES the safety mode restrictions only.
+It does NOT override the task requirements (you must still fix the XML to match the XSD).
+
+Not writing the XML file is a FAILURE.
+Writing XML that does not conform to the XSD schema is a FAILURE.
+
+DO NOT print the XML (or anything else) to stdout.
+The ONLY acceptable output is to write the XML file at `{{ISSUES_XML_PATH}}`.
+
 You MUST NOT:
 - Review any code
 - Analyze any files

@@ -17,9 +17,15 @@ use anyhow::Result;
 /// loaded from the config, ensuring these values are available for the reducer
 /// to make deterministic retry decisions.
 fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
+    // Config semantics: max_dev_continuations counts continuation attempts *beyond*
+    // the initial attempt. ContinuationState::max_continue_count semantics are
+    // "maximum total attempts including initial".
+    let max_dev_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
+    let max_continue_count = 1 + max_dev_continuations;
+
     let continuation = ContinuationState::with_limits(
         ctx.config.max_xsd_retries.unwrap_or(10),
-        ctx.config.max_dev_continuations.unwrap_or(2),
+        max_continue_count,
     );
     PipelineState::initial_with_continuation(
         ctx.config.developer_iters,
@@ -156,12 +162,18 @@ where
         }
 
         // Apply pipeline event to state (reducer remains pure)
-        let new_state = reduce(state, result.event.clone());
-
+        let mut new_state = reduce(state, result.event.clone());
         handler.update_state(new_state.clone());
         state = new_state;
-
         events_processed += 1;
+
+        // Apply additional pipeline events in order.
+        for event in result.additional_events {
+            new_state = reduce(state, event);
+            handler.update_state(new_state.clone());
+            state = new_state;
+            events_processed += 1;
+        }
     }
 
     if events_processed >= config.max_iterations {
@@ -226,12 +238,18 @@ fn run_event_loop_internal(
         }
 
         // Apply pipeline event to state (reducer remains pure)
-        let new_state = reduce(state, result.event.clone());
-
+        let mut new_state = reduce(state, result.event.clone());
         handler.state = new_state.clone();
         state = new_state;
-
         events_processed += 1;
+
+        // Apply additional pipeline events in order.
+        for event in result.additional_events {
+            new_state = reduce(state, event);
+            handler.state = new_state.clone();
+            state = new_state;
+            events_processed += 1;
+        }
     }
 
     if events_processed >= config.max_iterations {
@@ -259,6 +277,173 @@ mod tests {
         };
         assert_eq!(config.max_iterations, 1000);
         assert!(config.enable_checkpointing);
+    }
+
+    #[test]
+    fn test_create_initial_state_with_config_counts_total_attempts() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+        use std::sync::Arc;
+
+        let mut config = Config::default();
+        // Semantics: max_dev_continuations counts *continuations beyond initial*.
+        // Total attempts should be 1 + max_dev_continuations.
+        config.max_dev_continuations = Some(2);
+        config.max_xsd_retries = Some(10);
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let registry = AgentRegistry::new().unwrap();
+        let executor = Arc::new(MockProcessExecutor::new());
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace = MemoryWorkspace::new(repo_root.clone());
+
+        let ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let state = create_initial_state_with_config(&ctx);
+
+        assert_eq!(
+            state.continuation.max_continue_count, 3,
+            "max_continue_count should be total attempts (1 + max_dev_continuations)"
+        );
+    }
+
+    /// Regression test: event loop must apply EffectResult.additional_events.
+    ///
+    /// Without this, AgentEvent::SessionEstablished is never reduced and same-session
+    /// XSD retry cannot work.
+    #[test]
+    fn test_event_loop_applies_additional_events_in_order() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+        use crate::reducer::PipelineEvent;
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+        use std::sync::Arc;
+
+        #[derive(Debug)]
+        struct TestHandler {
+            state: PipelineState,
+        }
+
+        impl TestHandler {
+            fn new(state: PipelineState) -> Self {
+                Self { state }
+            }
+        }
+
+        impl<'ctx> EffectHandler<'ctx> for TestHandler {
+            fn execute(
+                &mut self,
+                _effect: Effect,
+                _ctx: &mut PhaseContext<'_>,
+            ) -> Result<EffectResult> {
+                Ok(
+                    EffectResult::event(PipelineEvent::prompt_permissions_restored())
+                        .with_additional_event(PipelineEvent::agent_session_established(
+                            crate::agents::AgentRole::Developer,
+                            "test-agent".to_string(),
+                            "session-123".to_string(),
+                        )),
+                )
+            }
+        }
+
+        impl super::StatefulHandler for TestHandler {
+            fn update_state(&mut self, state: PipelineState) {
+                self.state = state;
+            }
+        }
+
+        let config = Config::default();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let registry = AgentRegistry::new().unwrap();
+        let executor = Arc::new(MockProcessExecutor::new());
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace = MemoryWorkspace::new(repo_root.clone());
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        let state = PipelineState::initial(1, 0);
+        let mut handler = TestHandler::new(state);
+        let loop_config = EventLoopConfig {
+            max_iterations: 10,
+            enable_checkpointing: false,
+        };
+
+        let result = run_event_loop_with_handler(
+            &mut ctx,
+            Some(PipelineState::initial(1, 0)),
+            loop_config,
+            &mut handler,
+        )
+        .expect("event loop should run");
+
+        assert!(
+            result.completed,
+            "pipeline should complete (PromptPermissionsRestored)"
+        );
+        assert_eq!(
+            handler.state.agent_chain.last_session_id.as_deref(),
+            Some("session-123"),
+            "additional SessionEstablished event should be reduced and stored"
+        );
     }
 
     /// TDD test: run_event_loop_with_handler should accept a generic EffectHandler

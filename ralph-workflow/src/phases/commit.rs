@@ -278,6 +278,18 @@ pub fn run_commit_attempt(
         ctx.workspace,
         &ctx.prompt_history,
     );
+
+    // Enforce that the rendered prompt does not contain unresolved template placeholders.
+    // This must happen before any agent invocation.
+    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&prompt) {
+        return Err(crate::prompts::TemplateVariablesInvalidError {
+            template_name: "commit_message_xml".to_string(),
+            missing_variables: Vec::new(),
+            unresolved_placeholders: err.unresolved_placeholders,
+        }
+        .into());
+    }
+
     if !was_replayed {
         ctx.capture_prompt(&prompt_key, &prompt);
     }

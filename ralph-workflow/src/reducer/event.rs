@@ -286,6 +286,9 @@ pub enum ReviewEvent {
         /// The pass number this fix was for.
         pass: u32,
         /// Total number of continuation attempts it took.
+        ///
+        /// Note: This field is not used by the reducer for state transitions, but
+        /// is kept for observability (event logs, checkpoint serialization, debugging).
         total_attempts: u32,
     },
 

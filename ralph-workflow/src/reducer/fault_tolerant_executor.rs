@@ -16,6 +16,33 @@ use anyhow::Result;
 use serde_json::Value;
 use std::io;
 
+/// Result of executing an agent.
+///
+/// Contains the pipeline event and optional session_id for session continuation.
+///
+/// # Session ID Handling
+///
+/// When `session_id` is `Some`, the handler MUST emit a separate `SessionEstablished`
+/// event to the reducer. This is the proper way to handle session IDs in the reducer
+/// architecture - each piece of information is communicated via a dedicated event.
+///
+/// The handler should:
+/// 1. Process `event` through the reducer
+/// 2. If `session_id.is_some()`, emit `SessionEstablished` and process it
+///
+/// This two-event approach ensures:
+/// - Clean separation of concerns (success vs session establishment)
+/// - Proper state transitions in the reducer
+/// - Session ID is stored in agent_chain.last_session_id for XSD retry reuse
+pub struct AgentExecutionResult {
+    /// The pipeline event from agent execution (success or failure).
+    pub event: PipelineEvent,
+    /// Session ID from agent's init event, for XSD retry session continuation.
+    ///
+    /// When present, handler must emit `SessionEstablished` event separately.
+    pub session_id: Option<String>,
+}
+
 /// Configuration for fault-tolerant agent execution.
 #[derive(Clone, Copy)]
 pub struct AgentExecutionConfig<'a> {
@@ -53,15 +80,18 @@ pub struct AgentExecutionConfig<'a> {
 ///
 /// # Returns
 ///
-/// Returns `Ok(PipelineEvent)` with either:
-/// - `AgentInvocationSucceeded` - agent completed successfully
-/// - `AgentInvocationFailed` - agent failed with error classification
+/// Returns `Ok(AgentExecutionResult)` with:
+/// - `event`: `AgentInvocationSucceeded` or `AgentInvocationFailed`
+/// - `session_id`: Optional session ID for XSD retry session continuation
+///
+/// The handler MUST emit `SessionEstablished` as a separate event when session_id
+/// is present. This ensures proper state management in the reducer.
 ///
 /// This function never returns `Err` - all errors are converted to events.
 pub fn execute_agent_fault_tolerantly(
     config: AgentExecutionConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,
-) -> Result<PipelineEvent> {
+) -> Result<AgentExecutionResult> {
     let role = config.role;
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -74,13 +104,16 @@ pub fn execute_agent_fault_tolerantly(
             let error_kind = AgentErrorKind::InternalError;
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(PipelineEvent::agent_invocation_failed(
-                role,
-                config.agent_name.to_string(),
-                1,
-                error_kind,
-                retriable,
-            ))
+            Ok(AgentExecutionResult {
+                event: PipelineEvent::agent_invocation_failed(
+                    role,
+                    config.agent_name.to_string(),
+                    1,
+                    error_kind,
+                    retriable,
+                ),
+                session_id: None,
+            })
         }
     }
 }
@@ -93,7 +126,7 @@ pub fn execute_agent_fault_tolerantly(
 fn try_agent_execution(
     config: AgentExecutionConfig<'_>,
     runtime: &mut PipelineRuntime<'_>,
-) -> Result<PipelineEvent> {
+) -> Result<AgentExecutionResult> {
     let prompt_cmd = PromptCommand {
         label: config.agent_name,
         display_name: config.display_name,
@@ -105,32 +138,41 @@ fn try_agent_execution(
     };
 
     match run_with_prompt(&prompt_cmd, runtime) {
-        Ok(result) if result.exit_code == 0 => Ok(PipelineEvent::agent_invocation_succeeded(
-            config.role,
-            config.agent_name.to_string(),
-        )),
+        Ok(result) if result.exit_code == 0 => Ok(AgentExecutionResult {
+            event: PipelineEvent::agent_invocation_succeeded(
+                config.role,
+                config.agent_name.to_string(),
+            ),
+            session_id: result.session_id,
+        }),
         Ok(result) => {
             let exit_code = result.exit_code;
             let error_kind = classify_agent_error(exit_code, &result.stderr);
 
             // Special handling for rate limit: emit fallback event with prompt context
             if is_rate_limit_error(&error_kind) {
-                return Ok(PipelineEvent::agent_rate_limit_fallback(
-                    config.role,
-                    config.agent_name.to_string(),
-                    Some(config.prompt.to_string()),
-                ));
+                return Ok(AgentExecutionResult {
+                    event: PipelineEvent::agent_rate_limit_fallback(
+                        config.role,
+                        config.agent_name.to_string(),
+                        Some(config.prompt.to_string()),
+                    ),
+                    session_id: None,
+                });
             }
 
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(PipelineEvent::agent_invocation_failed(
-                config.role,
-                config.agent_name.to_string(),
-                exit_code,
-                error_kind,
-                retriable,
-            ))
+            Ok(AgentExecutionResult {
+                event: PipelineEvent::agent_invocation_failed(
+                    config.role,
+                    config.agent_name.to_string(),
+                    exit_code,
+                    error_kind,
+                    retriable,
+                ),
+                session_id: None,
+            })
         }
         Err(e) => {
             let error_kind = if let Ok(io_err) = e.downcast::<io::Error>() {
@@ -140,13 +182,16 @@ fn try_agent_execution(
             };
             let retriable = is_retriable_agent_error(&error_kind);
 
-            Ok(PipelineEvent::agent_invocation_failed(
-                config.role,
-                config.agent_name.to_string(),
-                1,
-                error_kind,
-                retriable,
-            ))
+            Ok(AgentExecutionResult {
+                event: PipelineEvent::agent_invocation_failed(
+                    config.role,
+                    config.agent_name.to_string(),
+                    1,
+                    error_kind,
+                    retriable,
+                ),
+                session_id: None,
+            })
         }
     }
 }

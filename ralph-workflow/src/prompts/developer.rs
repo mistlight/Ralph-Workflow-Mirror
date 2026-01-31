@@ -1015,6 +1015,30 @@ mod tests {
         // Should embed content inline
         assert!(result.contains("Small requirements"));
         assert!(result.contains("PLANNING MODE"));
+
+        // Read-only modes: planner must still write exactly one XML file.
+        assert!(
+            result.contains("explicitly authorized") && result.contains("EXACTLY ONE file"),
+            "planning_xml should explicitly authorize writing exactly one XML file"
+        );
+        assert!(
+            result.contains("MANDATORY"),
+            "planning_xml should mark XML file write mandatory"
+        );
+        assert!(
+            result.contains("Not writing") && result.contains("FAILURE"),
+            "planning_xml should say not writing XML is a failure"
+        );
+        assert!(
+            result.contains("does not conform")
+                && result.contains("XSD")
+                && result.contains("FAILURE"),
+            "planning_xml should say non-XSD XML is a failure"
+        );
+        assert!(
+            result.contains("DO NOT") && (result.contains("print") || result.contains("stdout")),
+            "planning_xml should forbid stdout output"
+        );
     }
 
     #[test]
@@ -1056,6 +1080,53 @@ mod tests {
 
         // Should have written the XSD schema file
         assert!(workspace.exists(Path::new(".agent/tmp/plan.xsd")));
+    }
+
+    #[test]
+    fn test_prompt_planning_xsd_retry_with_context_has_read_only_overrides() {
+        use crate::workspace::MemoryWorkspace;
+
+        let context = TemplateContext::default();
+        let workspace = MemoryWorkspace::new_test();
+
+        let result = prompt_planning_xsd_retry_with_context(
+            &context,
+            "prompt content",
+            "XSD error",
+            "last output",
+            &workspace,
+        );
+
+        assert!(result.contains("XSD error"));
+        assert!(result.contains(".agent/tmp/plan.xsd"));
+        assert!(result.contains(".agent/tmp/last_output.xml"));
+
+        assert!(
+            result.contains("explicitly authorized") && result.contains("EXACTLY ONE file"),
+            "planning_xsd_retry should explicitly authorize writing exactly one XML file"
+        );
+        assert!(
+            result.contains("MANDATORY"),
+            "planning_xsd_retry should mark XML file write mandatory"
+        );
+        assert!(
+            result.contains("Not writing") && result.contains("FAILURE"),
+            "planning_xsd_retry should say not writing XML is a failure"
+        );
+        assert!(
+            result.contains("does not conform")
+                && result.contains("XSD")
+                && result.contains("FAILURE"),
+            "planning_xsd_retry should say non-XSD XML is a failure"
+        );
+        assert!(
+            result.contains("DO NOT") && (result.contains("print") || result.contains("stdout")),
+            "planning_xsd_retry should forbid stdout output"
+        );
+
+        // Verify files were written to workspace
+        assert!(workspace.was_written(".agent/tmp/plan.xsd"));
+        assert!(workspace.was_written(".agent/tmp/last_output.xml"));
     }
 
     #[test]

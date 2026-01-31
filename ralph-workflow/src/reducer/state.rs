@@ -61,6 +61,13 @@ pub enum DevelopmentStatus {
 ///
 /// These values map to the `<ralph-status>` element in fix_result.xml.
 /// Used to track whether fix work is complete or needs continuation.
+///
+/// # Continuation Semantics
+///
+/// - `AllIssuesAddressed`: Complete, no continuation needed
+/// - `NoIssuesFound`: Complete, no continuation needed
+/// - `IssuesRemain`: Work incomplete, needs continuation
+/// - `Failed`: Fix attempt failed, needs continuation with different approach
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum FixStatus {
     /// All issues have been addressed - no continuation needed.
@@ -70,6 +77,12 @@ pub enum FixStatus {
     IssuesRemain,
     /// No issues were found - nothing to fix.
     NoIssuesFound,
+    /// Fix attempt failed - needs continuation with different approach.
+    ///
+    /// This status indicates the fix attempt produced valid XML output but
+    /// the agent could not fix the issues (e.g., blocked by external factors,
+    /// needs different strategy). Triggers continuation like `IssuesRemain`.
+    Failed,
 }
 
 impl std::fmt::Display for DevelopmentStatus {
@@ -88,6 +101,7 @@ impl std::fmt::Display for FixStatus {
             Self::AllIssuesAddressed => write!(f, "all_issues_addressed"),
             Self::IssuesRemain => write!(f, "issues_remain"),
             Self::NoIssuesFound => write!(f, "no_issues_found"),
+            Self::Failed => write!(f, "failed"),
         }
     }
 }
@@ -102,6 +116,7 @@ impl FixStatus {
             "all_issues_addressed" => Some(Self::AllIssuesAddressed),
             "issues_remain" => Some(Self::IssuesRemain),
             "no_issues_found" => Some(Self::NoIssuesFound),
+            "failed" => Some(Self::Failed),
             _ => None,
         }
     }
@@ -111,9 +126,13 @@ impl FixStatus {
         matches!(self, Self::AllIssuesAddressed | Self::NoIssuesFound)
     }
 
-    /// Returns true if issues remain (continuation needed).
+    /// Returns true if continuation is needed (incomplete work or failure).
+    ///
+    /// Both `IssuesRemain` and `Failed` trigger continuation:
+    /// - `IssuesRemain`: Some issues fixed, others remain
+    /// - `Failed`: Fix attempt failed, needs different approach
     pub fn needs_continuation(&self) -> bool {
-        matches!(self, Self::IssuesRemain)
+        matches!(self, Self::IssuesRemain | Self::Failed)
     }
 }
 
@@ -271,6 +290,14 @@ impl ContinuationState {
         }
     }
 
+    /// Builder: set max XSD retry count.
+    ///
+    /// Use 0 to disable XSD retries (immediate agent fallback on validation failure).
+    pub fn with_max_xsd_retry(mut self, max_xsd_retry_count: u32) -> Self {
+        self.max_xsd_retry_count = max_xsd_retry_count;
+        self
+    }
+
     /// Check if this is a continuation attempt (not the first attempt).
     pub fn is_continuation(&self) -> bool {
         self.continuation_attempt > 0
@@ -362,12 +389,25 @@ impl ContinuationState {
 
     /// Check if continuation attempts are exhausted.
     ///
-    /// With the default `max_continue_count` of 3, the allowed attempts are 0, 1, 2
-    /// (3 total attempts). Attempt 3+ is considered exhausted.
+    /// Returns `true` when `continuation_attempt >= max_continue_count`.
     ///
-    /// Note: `continuation_attempt` counts the number of times `trigger_continuation`
-    /// has been called, starting from 0 for the initial attempt. So if `max_continue_count`
-    /// is 3, we allow the initial attempt (0) plus 2 continuations (1, 2), totaling 3 attempts.
+    /// # Semantics
+    ///
+    /// The `continuation_attempt` counter tracks how many times work has been attempted:
+    /// - 0: Initial attempt (before any continuation)
+    /// - 1: After first continuation
+    /// - 2: After second continuation
+    /// - etc.
+    ///
+    /// With `max_continue_count = 3`:
+    /// - Attempts 0, 1, 2 are allowed (3 total)
+    /// - Attempt 3+ triggers exhaustion
+    ///
+    /// # Naming Note
+    ///
+    /// The field is named `max_continue_count` rather than `max_total_attempts` because
+    /// it historically represented the maximum number of continuations. The actual
+    /// semantics are "maximum total attempts including initial".
     pub fn continuations_exhausted(&self) -> bool {
         self.continuation_attempt >= self.max_continue_count
     }
@@ -1626,6 +1666,52 @@ mod tests {
     }
 
     #[test]
+    fn test_continuations_exhausted_semantics() {
+        // Test the documented semantics: max_continue_count=3 means 3 total attempts
+        // Attempts 0, 1, 2 are allowed; attempt 3+ triggers exhaustion
+        let state = ContinuationState::with_limits(10, 3);
+        assert_eq!(state.continuation_attempt, 0);
+        assert!(
+            !state.continuations_exhausted(),
+            "attempt 0 should not be exhausted"
+        );
+
+        let state =
+            state.trigger_continuation(DevelopmentStatus::Partial, "1".to_string(), None, None);
+        assert_eq!(state.continuation_attempt, 1);
+        assert!(
+            !state.continuations_exhausted(),
+            "attempt 1 should not be exhausted"
+        );
+
+        let state =
+            state.trigger_continuation(DevelopmentStatus::Partial, "2".to_string(), None, None);
+        assert_eq!(state.continuation_attempt, 2);
+        assert!(
+            !state.continuations_exhausted(),
+            "attempt 2 should not be exhausted"
+        );
+
+        let state =
+            state.trigger_continuation(DevelopmentStatus::Partial, "3".to_string(), None, None);
+        assert_eq!(state.continuation_attempt, 3);
+        assert!(
+            state.continuations_exhausted(),
+            "attempt 3 should be exhausted with max_continue_count=3"
+        );
+    }
+
+    #[test]
+    fn test_xsd_retries_exhausted_with_zero_max() {
+        // max_xsd_retry_count=0 means XSD retries are disabled (immediate agent fallback)
+        let state = ContinuationState::with_limits(10, 3).with_max_xsd_retry(0);
+        assert!(
+            state.xsd_retries_exhausted(),
+            "0 max retries should be immediately exhausted"
+        );
+    }
+
+    #[test]
     fn test_trigger_continuation_resets_xsd_retry() {
         let state = ContinuationState::new()
             .with_artifact(ArtifactType::DevelopmentResult)
@@ -1700,6 +1786,58 @@ mod tests {
         assert!(
             reset.last_session_id.is_none(),
             "reset_for_role() should clear last_session_id"
+        );
+    }
+
+    // =========================================================================
+    // FixStatus tests
+    // =========================================================================
+
+    #[test]
+    fn test_fix_status_parse() {
+        assert_eq!(
+            FixStatus::parse("all_issues_addressed"),
+            Some(FixStatus::AllIssuesAddressed)
+        );
+        assert_eq!(
+            FixStatus::parse("issues_remain"),
+            Some(FixStatus::IssuesRemain)
+        );
+        assert_eq!(
+            FixStatus::parse("no_issues_found"),
+            Some(FixStatus::NoIssuesFound)
+        );
+        assert_eq!(FixStatus::parse("failed"), Some(FixStatus::Failed));
+        assert_eq!(FixStatus::parse("unknown"), None);
+    }
+
+    #[test]
+    fn test_fix_status_display() {
+        assert_eq!(
+            format!("{}", FixStatus::AllIssuesAddressed),
+            "all_issues_addressed"
+        );
+        assert_eq!(format!("{}", FixStatus::IssuesRemain), "issues_remain");
+        assert_eq!(format!("{}", FixStatus::NoIssuesFound), "no_issues_found");
+        assert_eq!(format!("{}", FixStatus::Failed), "failed");
+    }
+
+    #[test]
+    fn test_fix_status_is_complete() {
+        assert!(FixStatus::AllIssuesAddressed.is_complete());
+        assert!(FixStatus::NoIssuesFound.is_complete());
+        assert!(!FixStatus::IssuesRemain.is_complete());
+        assert!(!FixStatus::Failed.is_complete());
+    }
+
+    #[test]
+    fn test_fix_status_needs_continuation() {
+        assert!(!FixStatus::AllIssuesAddressed.needs_continuation());
+        assert!(!FixStatus::NoIssuesFound.needs_continuation());
+        assert!(FixStatus::IssuesRemain.needs_continuation());
+        assert!(
+            FixStatus::Failed.needs_continuation(),
+            "Failed status should trigger continuation like IssuesRemain"
         );
     }
 }

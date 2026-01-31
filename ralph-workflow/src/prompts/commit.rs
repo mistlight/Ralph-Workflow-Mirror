@@ -681,6 +681,41 @@ mod tests {
             !result.contains("{{>"),
             "commit_message_xml should not contain raw partial directives"
         );
+
+        assert!(
+            result.contains("authorized to write") || result.contains("AUTHORIZATION"),
+            "commit_message_xml should explicitly authorize writing commit_message.xml"
+        );
+        assert!(
+            result.contains("Write your XML to:")
+                && (result.contains("DO NOT print")
+                    || result.contains("Do NOT print")
+                    || result.contains("DO NOT output")
+                    || result.contains("Do NOT output")),
+            "commit_message_xml should forbid stdout output and require file write"
+        );
+
+        assert!(
+            result.contains("MANDATORY") && result.contains("OVERRIDES the safety mode"),
+            "commit_message_xml should mark file write mandatory and explicitly override safety mode"
+        );
+        assert!(
+            result.contains("does NOT override")
+                && (result.contains("analyze") || result.contains("DIFF")),
+            "commit_message_xml should clarify that mandatory write does not override task requirements"
+        );
+
+        assert!(
+            (result.contains("not writing") || result.contains("Not writing"))
+                && result.contains("FAILURE"),
+            "commit_message_xml should state that failing to write XML is a FAILURE"
+        );
+        assert!(
+            result.contains("does not conform")
+                && (result.contains("XSD") || result.contains("schema"))
+                && result.contains("FAILURE"),
+            "commit_message_xml should state that non-XSD-conformant XML is a FAILURE"
+        );
     }
 
     #[test]

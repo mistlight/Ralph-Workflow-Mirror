@@ -112,11 +112,24 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
     // XSD retry: validation failed, retry with same agent/session if not exhausted.
     // Note: The reducer should clear xsd_retry_pending when retries are exhausted, so
     // normally we wouldn't see xsd_retry_pending=true AND xsd_retries_exhausted()=true.
-    // However, to be robust against edge cases, we still derive the retry effect even
-    // when exhausted - the handler's retry attempt will cause the reducer to process
-    // another validation event, which will detect exhaustion and switch agents.
-    if state.continuation.xsd_retry_pending && !state.continuation.xsd_retries_exhausted() {
-        return derive_xsd_retry_effect(state);
+    if state.continuation.xsd_retry_pending {
+        if state.continuation.xsd_retries_exhausted() {
+            // Edge case: xsd_retry_pending is true but retries are exhausted.
+            // This shouldn't happen in normal operation since the reducer clears
+            // xsd_retry_pending when exhausting retries. However, if it does occur
+            // (e.g., due to a bug or unexpected state), we fall through to normal
+            // phase effects rather than deriving a retry effect that would fail.
+            debug_assert!(
+                false,
+                "Unexpected state: xsd_retry_pending=true but xsd_retries_exhausted()=true. \
+                 The reducer should have cleared xsd_retry_pending when retries exhausted. \
+                 xsd_retry_count={}, max_xsd_retry_count={}",
+                state.continuation.xsd_retry_count, state.continuation.max_xsd_retry_count
+            );
+            // Fall through to normal phase effects
+        } else {
+            return derive_xsd_retry_effect(state);
+        }
     }
 
     // Development continuation pending: output valid but work incomplete, start new session

@@ -162,10 +162,26 @@ pub enum Effect {
 /// Contains both the PipelineEvent (for reducer) and optional UIEvents (for display).
 /// This separation keeps UI concerns out of the reducer while allowing handlers
 /// to emit rich feedback during execution.
+///
+/// # Multiple Events
+///
+/// Some effects produce multiple reducer events. For example, agent invocation
+/// may produce:
+/// 1. `InvocationSucceeded` - the primary event
+/// 2. `SessionEstablished` - additional event when session ID is extracted
+///
+/// The `additional_events` field holds events that should be processed after
+/// the primary event. The reducer loop processes all events in order.
 #[derive(Clone, Debug)]
 pub struct EffectResult {
-    /// Event for reducer (affects state).
+    /// Primary event for reducer (affects state).
     pub event: PipelineEvent,
+    /// Additional events to process after the primary event.
+    ///
+    /// Used for cases where an effect produces multiple events, such as
+    /// agent invocation followed by session establishment. Each event is
+    /// processed by the reducer in order.
+    pub additional_events: Vec<PipelineEvent>,
     /// UI events for display (do not affect state).
     pub ui_events: Vec<UIEvent>,
 }
@@ -175,13 +191,28 @@ impl EffectResult {
     pub fn event(event: PipelineEvent) -> Self {
         Self {
             event,
+            additional_events: Vec::new(),
             ui_events: Vec::new(),
         }
     }
 
     /// Create result with pipeline event and UI events.
     pub fn with_ui(event: PipelineEvent, ui_events: Vec<UIEvent>) -> Self {
-        Self { event, ui_events }
+        Self {
+            event,
+            additional_events: Vec::new(),
+            ui_events,
+        }
+    }
+
+    /// Add an additional event to process after the primary event.
+    ///
+    /// Used for emitting separate events like SessionEstablished after
+    /// agent invocation completes. Each additional event is processed
+    /// by the reducer in order.
+    pub fn with_additional_event(mut self, event: PipelineEvent) -> Self {
+        self.additional_events.push(event);
+        self
     }
 
     /// Add a UI event to the result.

@@ -197,6 +197,7 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 use std::rc::Rc;
 
 use super::delta_display::{DeltaRenderer, TextDeltaRenderer};
@@ -1199,6 +1200,26 @@ impl OpenCodeParser {
         // Write accumulated log content to workspace
         if let Some(log_path) = &self.log_path {
             workspace.append_bytes(log_path, &log_buffer)?;
+        }
+
+        // OpenCode models may emit XML directly in text output (without using tools to write
+        // `.agent/tmp/*.xml`). Capture `<ralph-commit>...</ralph-commit>` from the accumulated
+        // text stream and write it to the standard commit artifact path so the commit phase can
+        // validate it via file-based extraction.
+        if let Some(accumulated) = self
+            .streaming_session
+            .borrow()
+            .get_accumulated(ContentType::Text, "main")
+        {
+            if let Some(xml) =
+                crate::files::llm_output_extraction::xml_extraction::extract_xml_commit(accumulated)
+            {
+                workspace.create_dir_all(Path::new(".agent/tmp"))?;
+                workspace.write(
+                    Path::new(crate::files::llm_output_extraction::file_based_extraction::paths::COMMIT_MESSAGE_XML),
+                    &xml,
+                )?;
+            }
         }
         if let Some(warning) = monitor.check_and_warn(*c) {
             let mut printer = self.printer.borrow_mut();

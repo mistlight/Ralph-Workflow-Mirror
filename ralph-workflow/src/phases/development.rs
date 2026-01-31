@@ -126,6 +126,24 @@ pub fn run_development_attempt(
         prompt
     };
 
+    // Enforce that the rendered prompt does not contain unresolved template placeholders.
+    // This must happen before any agent invocation.
+    let template_name = if continuation_state.is_continuation() {
+        "developer_iteration_continuation_xml"
+    } else if continuation_state.invalid_output_attempts > 0 {
+        "developer_iteration_xsd_retry"
+    } else {
+        "developer_iteration_xml"
+    };
+    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&dev_prompt) {
+        return Err(crate::prompts::TemplateVariablesInvalidError {
+            template_name: template_name.to_string(),
+            missing_variables: Vec::new(),
+            unresolved_placeholders: err.unresolved_placeholders,
+        }
+        .into());
+    }
+
     let log_dir = Path::new(".agent/logs");
     ctx.workspace.create_dir_all(log_dir)?;
     let logfile = format!(".agent/logs/developer_{iteration}.log");
@@ -331,6 +349,22 @@ fn run_planning_step_with_agent(
 
         prompt
     };
+
+    // Enforce that the rendered prompt does not contain unresolved template placeholders.
+    // This must happen before any agent invocation.
+    let template_name = if continuation_state.invalid_output_attempts > 0 {
+        "planning_xsd_retry"
+    } else {
+        "planning_xml"
+    };
+    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&plan_prompt) {
+        return Err(crate::prompts::TemplateVariablesInvalidError {
+            template_name: template_name.to_string(),
+            missing_variables: Vec::new(),
+            unresolved_placeholders: err.unresolved_placeholders,
+        }
+        .into());
+    }
 
     let plan_path = Path::new(".agent/PLAN.md");
     if let Some(parent) = plan_path.parent() {

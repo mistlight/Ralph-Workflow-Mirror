@@ -79,6 +79,38 @@ impl std::fmt::Display for RenderedPromptError {
 
 impl std::error::Error for RenderedPromptError {}
 
+/// Error type for template variable enforcement failures.
+///
+/// This is used when a prompt template was rendered but the resulting prompt still
+/// contains `{{...}}` patterns (unresolved placeholders) or when template rendering
+/// cannot proceed due to missing variables.
+///
+/// The reducer consumes these failures via `AgentEvent::TemplateVariablesInvalid`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateVariablesInvalidError {
+    /// The template key/name (e.g. "planning_xml").
+    pub template_name: String,
+    /// Missing required variables (best-effort; may be empty when the renderer
+    /// succeeded but placeholders remained in the output).
+    pub missing_variables: Vec<String>,
+    /// Unresolved `{{...}}` placeholder strings found in the rendered output.
+    pub unresolved_placeholders: Vec<String>,
+}
+
+impl std::fmt::Display for TemplateVariablesInvalidError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Template variables invalid for template '{}': missing=[{}], unresolved=[{}]",
+            self.template_name,
+            self.missing_variables.join(", "),
+            self.unresolved_placeholders.join(", ")
+        )
+    }
+}
+
+impl std::error::Error for TemplateVariablesInvalidError {}
+
 /// Validate that a rendered prompt has no unresolved placeholders.
 ///
 /// This should be called AFTER template rendering to ensure no `{{...}}`
@@ -109,15 +141,20 @@ impl std::error::Error for RenderedPromptError {}
 /// If templates need to include literal `{{...}}` patterns as content, they
 /// should be escaped appropriately during rendering (e.g., using `\{{` or `{{{{`).
 pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), RenderedPromptError> {
-    // Use a simple regex to catch ANY remaining {{...}} patterns, including:
+    // Use a regex to catch ANY remaining {{...}} patterns, including:
     // - Normal variables: {{VAR}}
     // - Variables with defaults: {{VAR|default="x"}}
+    // - Variables with nested braces in defaults: {{VAR|default="{}"}}
     // - Triple braces: {{{VAR}}} (will match {{VAR}} inside)
     // - Malformed/unclosed patterns: {{VAR (detected separately below)
     //
+    // The pattern uses non-greedy matching (.*?) to capture everything between
+    // {{ and the first occurrence of }}. This correctly handles nested single
+    // braces like `default="{}"` by continuing until the closing `}}`.
+    //
     // This is more robust than extract_variables() which parses template syntax
     // and may miss malformed patterns that indicate rendering failures.
-    let closed_re = regex::Regex::new(r"\{\{[^}]*\}\}").expect("regex should be valid");
+    let closed_re = regex::Regex::new(r"\{\{.*?\}\}").expect("regex should be valid");
     let mut unresolved: Vec<String> = closed_re
         .find_iter(rendered)
         .map(|m| m.as_str().to_string())
@@ -799,5 +836,31 @@ Content here";
         let err = result.unwrap_err();
         // Should have both: the closed pattern and the unclosed pattern
         assert_eq!(err.unresolved_placeholders.len(), 2);
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_placeholders_with_nested_braces() {
+        // Complex pattern with nested braces in default value
+        let rendered = r#"Value: {{VAR|default="{}"}}"#;
+        let result = validate_no_unresolved_placeholders(rendered);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // Should detect the full pattern including nested braces
+        assert!(
+            err.unresolved_placeholders
+                .iter()
+                .any(|p| p.contains("VAR")),
+            "Should detect placeholder with nested braces, got: {:?}",
+            err.unresolved_placeholders
+        );
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_placeholders_triple_braces() {
+        // Triple braces (raw output in some template engines)
+        let rendered = "Value: {{{RAW}}}";
+        let result = validate_no_unresolved_placeholders(rendered);
+        assert!(result.is_err());
+        // Should detect the inner {{RAW}} at minimum
     }
 }
