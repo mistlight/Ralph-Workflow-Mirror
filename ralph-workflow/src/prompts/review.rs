@@ -356,8 +356,20 @@ mod tests {
             "review_xml should say non-XSD XML is a failure"
         );
         assert!(
-            result.contains("DO NOT") && (result.contains("print") || result.contains("stdout")),
-            "review_xml should forbid stdout output"
+            result.contains("READ-ONLY")
+                && (result.contains("EXCEPT FOR writing")
+                    || result.contains("except for writing")
+                    || result.contains("Except for writing"))
+                && result.contains("issues.xml"),
+            "review_xml should be read-only except for writing issues.xml"
+        );
+
+        assert!(
+            !result.contains("DO NOT print")
+                && !result.contains("Do NOT print")
+                && !result.contains("ONLY acceptable output")
+                && !result.contains("The ONLY acceptable output"),
+            "review_xml should not include stdout suppression wording"
         );
 
         // Shared partials should be expanded (no raw partial directives left in output)
@@ -449,8 +461,20 @@ mod tests {
             "review_xsd_retry should say non-XSD XML is a failure"
         );
         assert!(
-            result.contains("DO NOT") && (result.contains("print") || result.contains("stdout")),
-            "review_xsd_retry should forbid stdout output"
+            result.contains("READ-ONLY")
+                && (result.contains("EXCEPT FOR writing")
+                    || result.contains("except for writing")
+                    || result.contains("Except for writing"))
+                && result.contains("issues.xml"),
+            "review_xsd_retry should be read-only except for writing issues.xml"
+        );
+
+        assert!(
+            !result.contains("DO NOT print")
+                && !result.contains("Do NOT print")
+                && !result.contains("ONLY acceptable output")
+                && !result.contains("The ONLY acceptable output"),
+            "review_xsd_retry should not include stdout suppression wording"
         );
 
         // Shared partials should be expanded

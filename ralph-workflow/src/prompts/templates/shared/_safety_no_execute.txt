@@ -18,15 +18,15 @@
 {#   - Read and search only                                                   #}
 {# ============================================================================ #}
 
-*** NO-EXECUTE MODE - READ ONLY ***
+*** NO-EXECUTE MODE - READ ONLY (EXCEPT FOR EXPLICITLY AUTHORIZED OUTPUT) ***
 
 PROHIBITED ACTIONS:
 - DO NOT run any bash/shell commands
 - DO NOT execute cargo, git, npm, or any CLI tools
 - DO NOT run tests, builds, or linters
 - DO NOT execute any scripts or binaries
-- DO NOT edit any files
-- DO NOT create any files
+- DO NOT edit any files (unless explicitly authorized for a specific output file)
+- DO NOT create any files (unless explicitly authorized for a specific output file)
 
 PERMITTED ACTIONS:
 - Read any files in the codebase

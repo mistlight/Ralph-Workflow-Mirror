@@ -670,7 +670,7 @@ mod tests {
 
         // Shared partials should be expanded
         assert!(
-            result.contains("*** NO-EXECUTE MODE - READ ONLY ***"),
+            result.contains("*** NO-EXECUTE MODE - READ ONLY"),
             "commit_message_xml should render shared/_safety_no_execute partial"
         );
         assert!(
@@ -687,12 +687,20 @@ mod tests {
             "commit_message_xml should explicitly authorize writing commit_message.xml"
         );
         assert!(
-            result.contains("Write your XML to:")
-                && (result.contains("DO NOT print")
-                    || result.contains("Do NOT print")
-                    || result.contains("DO NOT output")
-                    || result.contains("Do NOT output")),
-            "commit_message_xml should forbid stdout output and require file write"
+            result.contains("READ-ONLY")
+                && (result.contains("EXCEPT FOR writing")
+                    || result.contains("except for writing")
+                    || result.contains("Except for writing"))
+                && result.contains("commit_message.xml"),
+            "commit_message_xml should be read-only except for writing commit_message.xml"
+        );
+
+        assert!(
+            !result.contains("DO NOT print")
+                && !result.contains("Do NOT print")
+                && !result.contains("ONLY acceptable output")
+                && !result.contains("The ONLY acceptable output"),
+            "commit_message_xml should not include stdout suppression wording"
         );
 
         assert!(

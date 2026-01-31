@@ -507,9 +507,6 @@ impl OpenCodeParser {
         let c = &self.colors;
         let prefix = &self.display_name;
 
-        // Reset streaming state on new step
-        self.streaming_session.borrow_mut().on_message_start();
-
         // Create unique step ID for duplicate detection
         // Use part.message_id if available, otherwise combine session_id + part.id
         let step_id = event.part.as_ref().map_or_else(
@@ -530,6 +527,20 @@ impl OpenCodeParser {
                 )
             },
         );
+
+        // Defensive: OpenCode can emit duplicate `step_start` events for the same message.
+        // Suppress duplicates to avoid spamming and to avoid resetting streaming state mid-step.
+        if self
+            .streaming_session
+            .borrow()
+            .get_current_message_id()
+            .is_some_and(|current| current == step_id)
+        {
+            return String::new();
+        }
+
+        // Reset streaming state on new step
+        self.streaming_session.borrow_mut().on_message_start();
         self.streaming_session
             .borrow_mut()
             .set_current_message_id(Some(step_id));
@@ -1242,6 +1253,20 @@ mod tests {
         let out = output.unwrap();
         assert!(out.contains("Step started"));
         assert!(out.contains("5d36aa03"));
+    }
+
+    #[test]
+    fn test_opencode_step_start_dedupes_duplicate_starts_for_same_message_id() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"step_start","timestamp":1768191337567,"sessionID":"ses_44f9562d4ffe","part":{"id":"prt_bb06aa45c001","sessionID":"ses_44f9562d4ffe","messageID":"msg_bb06a9dc1001","type":"step-start","snapshot":"5d36aa035d4df6edb73a68058733063258114ed5"}}"#;
+
+        let first = parser.parse_event(json);
+        assert!(first.is_some());
+        assert!(first.unwrap().contains("Step started"));
+
+        // Defensive behavior: OpenCode can emit duplicate step_start events; we should not spam.
+        let second = parser.parse_event(json);
+        assert!(second.is_none());
     }
 
     #[test]

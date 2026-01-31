@@ -376,4 +376,31 @@ mod tests {
             "review_xml should contain REVIEW MODE"
         );
     }
+
+    #[test]
+    fn test_commit_xsd_retry_is_read_only_except_for_xml_write() {
+        let content = get_embedded_template("commit_xsd_retry").expect("commit_xsd_retry exists");
+
+        assert!(
+            content.contains("XSD") && content.contains("FIX XML"),
+            "commit_xsd_retry should clearly be an XML-only retry prompt"
+        );
+
+        assert!(
+            content.contains("READ-ONLY")
+                && (content.contains("EXCEPT FOR writing")
+                    || content.contains("except for writing")
+                    || content.contains("Except for writing"))
+                && content.contains("{{COMMIT_MESSAGE_XML_PATH}}"),
+            "commit_xsd_retry should be read-only except for writing commit_message.xml"
+        );
+
+        assert!(
+            !content.contains("DO NOT print")
+                && !content.contains("Do NOT print")
+                && !content.contains("ONLY acceptable output")
+                && !content.contains("The ONLY acceptable output"),
+            "commit_xsd_retry should not include stdout suppression wording"
+        );
+    }
 }

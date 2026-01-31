@@ -38,6 +38,9 @@ You MUST:
 3. Fix ONLY the XML structure/format issues
 4. Write the corrected XML to `{{COMMIT_MESSAGE_XML_PATH}}`
 
+This is a READ-ONLY task EXCEPT FOR writing `{{COMMIT_MESSAGE_XML_PATH}}`.
+You MUST NOT create, modify, or delete any other files.
+
 You MUST NOT:
 - Analyze any code or diffs
 - Run any commands
