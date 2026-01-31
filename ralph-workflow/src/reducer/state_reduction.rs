@@ -138,6 +138,8 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
                     phase: super::event::PipelinePhase::Development,
                     continuation: ContinuationState {
                         invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
                         ..state.continuation
                     },
                     ..state
@@ -152,24 +154,33 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
         }
 
         PlanningEvent::OutputValidationFailed { iteration, attempt } => {
-            if attempt >= super::state::MAX_PLAN_INVALID_OUTPUT_RERUNS {
-                let new_agent_chain = state.agent_chain.switch_to_next_agent();
+            let new_xsd_count = state.continuation.xsd_retry_count + 1;
+            if attempt >= super::state::MAX_PLAN_INVALID_OUTPUT_RERUNS
+                || new_xsd_count >= state.continuation.max_xsd_retry_count
+            {
+                // XSD retries exhausted - switch to next agent
+                let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
                 PipelineState {
                     phase: super::event::PipelinePhase::Planning,
                     iteration,
                     agent_chain: new_agent_chain,
                     continuation: ContinuationState {
                         invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
                         ..state.continuation
                     },
                     ..state
                 }
             } else {
+                // Stay in Planning, increment attempt counters, set retry pending
                 PipelineState {
                     phase: super::event::PipelinePhase::Planning,
                     iteration,
                     continuation: ContinuationState {
                         invalid_output_attempts: attempt + 1,
+                        xsd_retry_count: new_xsd_count,
+                        xsd_retry_pending: true,
                         ..state.continuation
                     },
                     ..state
@@ -306,25 +317,33 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
         DevelopmentEvent::OutputValidationFailed { iteration, attempt } => {
             // Policy: After MAX_DEV_INVALID_OUTPUT_RERUNS, switch to next agent.
             // This keeps invalid output retry logic in the reducer, not the handler.
-            if attempt >= super::state::MAX_DEV_INVALID_OUTPUT_RERUNS {
-                let new_agent_chain = state.agent_chain.switch_to_next_agent();
+            let new_xsd_count = state.continuation.xsd_retry_count + 1;
+            if attempt >= super::state::MAX_DEV_INVALID_OUTPUT_RERUNS
+                || new_xsd_count >= state.continuation.max_xsd_retry_count
+            {
+                // XSD retries exhausted - switch to next agent
+                let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
                 PipelineState {
                     phase: super::event::PipelinePhase::Development,
                     iteration,
                     agent_chain: new_agent_chain,
                     continuation: ContinuationState {
                         invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
                         ..state.continuation
                     },
                     ..state
                 }
             } else {
-                // Stay in Development, increment attempt counter
+                // Stay in Development, increment attempt counters, set retry pending
                 PipelineState {
                     phase: super::event::PipelinePhase::Development,
                     iteration,
                     continuation: ContinuationState {
                         invalid_output_attempts: attempt + 1,
+                        xsd_retry_count: new_xsd_count,
+                        xsd_retry_pending: true,
                         ..state.continuation
                     },
                     ..state
@@ -545,25 +564,34 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             // Policy: The reducer maintains retry state for determinism.
             // Handlers should emit `attempt` from state (checkpoint-resume safe).
             const MAX_REVIEW_INVALID_OUTPUT_RERUNS: u32 = 2;
+            let new_xsd_count = state.continuation.xsd_retry_count + 1;
 
-            if attempt >= MAX_REVIEW_INVALID_OUTPUT_RERUNS {
-                let new_agent_chain = state.agent_chain.switch_to_next_agent();
+            if attempt >= MAX_REVIEW_INVALID_OUTPUT_RERUNS
+                || new_xsd_count >= state.continuation.max_xsd_retry_count
+            {
+                // XSD retries exhausted - switch to next agent
+                let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
                 PipelineState {
                     phase: super::event::PipelinePhase::Review,
                     reviewer_pass: pass,
                     agent_chain: new_agent_chain,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
                         ..state.continuation
                     },
                     ..state
                 }
             } else {
+                // Stay in Review, increment attempt counters, set retry pending
                 PipelineState {
                     phase: super::event::PipelinePhase::Review,
                     reviewer_pass: pass,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: attempt + 1,
+                        xsd_retry_count: new_xsd_count,
+                        xsd_retry_pending: true,
                         ..state.continuation
                     },
                     ..state
@@ -607,15 +635,15 @@ fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState 
             agent_chain: state.agent_chain.advance_to_next_model(),
             ..state
         },
-        // Non-retriable errors: switch agent
+        // Non-retriable errors: switch agent and clear session
         AgentEvent::InvocationFailed {
             retriable: false, ..
         } => PipelineState {
-            agent_chain: state.agent_chain.switch_to_next_agent(),
+            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
             ..state
         },
         AgentEvent::FallbackTriggered { .. } => PipelineState {
-            agent_chain: state.agent_chain.switch_to_next_agent(),
+            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
             ..state
         },
         AgentEvent::ChainExhausted { .. } => PipelineState {
@@ -649,6 +677,16 @@ fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState 
                 ..state
             }
         }
+        // Session established: store session ID for potential XSD retry
+        AgentEvent::SessionEstablished { session_id, .. } => PipelineState {
+            agent_chain: state.agent_chain.with_session_id(Some(session_id)),
+            ..state
+        },
+        // XSD validation failed: trigger XSD retry via continuation state
+        AgentEvent::XsdValidationFailed { .. } => PipelineState {
+            continuation: state.continuation.trigger_xsd_retry(),
+            ..state
+        },
     }
 }
 
@@ -2449,6 +2487,197 @@ mod tests {
             matches!(effect, crate::reducer::effect::Effect::RunReviewPass { .. }),
             "Should emit RunReviewPass when chain is already initialized, got {:?}",
             effect
+        );
+    }
+
+    // =========================================================================
+    // XSD retry state transitions
+    // =========================================================================
+
+    #[test]
+    fn test_development_output_validation_failed_sets_xsd_retry_pending() {
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 1,
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(1, 0),
+        );
+
+        assert!(
+            new_state.continuation.xsd_retry_pending,
+            "XSD retry should be pending after validation failure"
+        );
+        assert_eq!(
+            new_state.continuation.xsd_retry_count, 1,
+            "XSD retry count should be incremented"
+        );
+        assert_eq!(
+            new_state.continuation.invalid_output_attempts, 1,
+            "Invalid output attempts should be incremented"
+        );
+    }
+
+    #[test]
+    fn test_development_output_validation_failed_exhausts_xsd_retries() {
+        use crate::reducer::state::ContinuationState;
+
+        // Create state with custom max_xsd_retry_count = 2
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 1,
+            continuation: ContinuationState {
+                xsd_retry_count: 1,
+                max_xsd_retry_count: 2,
+                ..ContinuationState::new()
+            },
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Developer,
+            ),
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state.clone(),
+            PipelineEvent::development_output_validation_failed(1, 0),
+        );
+
+        // XSD retries exhausted, should switch agent
+        assert!(
+            !new_state.continuation.xsd_retry_pending,
+            "XSD retry should not be pending after exhaustion"
+        );
+        assert_eq!(
+            new_state.continuation.xsd_retry_count, 0,
+            "XSD retry count should be reset after agent switch"
+        );
+        assert_eq!(
+            new_state.agent_chain.current_agent_index, 1,
+            "Should have switched to next agent"
+        );
+    }
+
+    #[test]
+    fn test_planning_output_validation_failed_sets_xsd_retry_pending() {
+        let state = PipelineState {
+            phase: PipelinePhase::Planning,
+            iteration: 0,
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::planning_output_validation_failed(0, 0),
+        );
+
+        assert!(
+            new_state.continuation.xsd_retry_pending,
+            "XSD retry should be pending after validation failure"
+        );
+        assert_eq!(
+            new_state.continuation.xsd_retry_count, 1,
+            "XSD retry count should be incremented"
+        );
+    }
+
+    #[test]
+    fn test_review_output_validation_failed_sets_xsd_retry_pending() {
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 0,
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+
+        assert!(
+            new_state.continuation.xsd_retry_pending,
+            "XSD retry should be pending after validation failure"
+        );
+        assert_eq!(
+            new_state.continuation.xsd_retry_count, 1,
+            "XSD retry count should be incremented"
+        );
+    }
+
+    #[test]
+    fn test_plan_generation_completed_clears_xsd_retry_state() {
+        use crate::reducer::state::ContinuationState;
+
+        let state = PipelineState {
+            phase: PipelinePhase::Planning,
+            continuation: ContinuationState {
+                xsd_retry_count: 3,
+                xsd_retry_pending: true,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::plan_generation_completed(1, true));
+
+        assert!(
+            !new_state.continuation.xsd_retry_pending,
+            "XSD retry pending should be cleared on success"
+        );
+        assert_eq!(
+            new_state.continuation.xsd_retry_count, 0,
+            "XSD retry count should be reset on success"
+        );
+    }
+
+    #[test]
+    fn test_session_established_stores_session_id() {
+        let state = create_test_state();
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::agent_session_established(
+                AgentRole::Developer,
+                "claude".to_string(),
+                "ses_abc123".to_string(),
+            ),
+        );
+
+        assert_eq!(
+            new_state.agent_chain.last_session_id,
+            Some("ses_abc123".to_string()),
+            "Session ID should be stored"
+        );
+    }
+
+    #[test]
+    fn test_agent_switch_clears_session_id() {
+        let state = PipelineState {
+            agent_chain: AgentChainState::initial()
+                .with_agents(
+                    vec!["agent1".to_string(), "agent2".to_string()],
+                    vec![vec![], vec![]],
+                    AgentRole::Developer,
+                )
+                .with_session_id(Some("ses_abc123".to_string())),
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                crate::reducer::event::AgentErrorKind::InternalError,
+                false,
+            ),
+        );
+
+        assert!(
+            new_state.agent_chain.last_session_id.is_none(),
+            "Session ID should be cleared when switching agents"
         );
     }
 }

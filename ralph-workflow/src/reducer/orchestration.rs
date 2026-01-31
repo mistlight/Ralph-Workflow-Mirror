@@ -4,18 +4,150 @@
 //! based on current pipeline state.
 
 use super::event::{CheckpointTrigger, PipelinePhase, RebasePhase};
-use super::state::{CommitState, PipelineState, RebaseState};
+use super::state::{ArtifactType, CommitState, PipelineState, RebaseState};
 
 use crate::agents::AgentRole;
 use crate::reducer::effect::{ContinuationContextData, Effect};
+
+/// Derive the effect for XSD retry based on current phase.
+///
+/// XSD retry reuses the same agent and session if available.
+/// Returns the appropriate phase-specific effect with retry context.
+fn derive_xsd_retry_effect(state: &PipelineState) -> Effect {
+    match state.phase {
+        PipelinePhase::Planning => Effect::GeneratePlan {
+            iteration: state.iteration,
+        },
+        PipelinePhase::Development => Effect::RunDevelopmentIteration {
+            iteration: state.iteration,
+        },
+        PipelinePhase::Review => {
+            if state.review_issues_found {
+                Effect::RunFixAttempt {
+                    pass: state.reviewer_pass,
+                }
+            } else {
+                Effect::RunReviewPass {
+                    pass: state.reviewer_pass,
+                }
+            }
+        }
+        PipelinePhase::CommitMessage => Effect::GenerateCommitMessage,
+        // Other phases don't have XSD retry
+        _ => Effect::SaveCheckpoint {
+            trigger: CheckpointTrigger::PhaseTransition,
+        },
+    }
+}
+
+/// Derive the effect for continuation based on current phase.
+///
+/// Continuation starts a new session (agent starts fresh but with context).
+/// Only applies to Development and Fix phases where incomplete work can continue.
+fn derive_continuation_effect(state: &PipelineState) -> Effect {
+    match state.phase {
+        PipelinePhase::Development => {
+            // Write continuation context first if needed
+            if state.continuation.context_write_pending {
+                let status = state
+                    .continuation
+                    .previous_status
+                    .clone()
+                    .unwrap_or(super::state::DevelopmentStatus::Failed);
+                let summary = state
+                    .continuation
+                    .previous_summary
+                    .clone()
+                    .unwrap_or_default();
+                let files_changed = state.continuation.previous_files_changed.clone();
+                let next_steps = state.continuation.previous_next_steps.clone();
+
+                Effect::WriteContinuationContext(ContinuationContextData {
+                    iteration: state.iteration,
+                    attempt: state.continuation.continuation_attempt,
+                    status,
+                    summary,
+                    files_changed,
+                    next_steps,
+                })
+            } else {
+                Effect::RunDevelopmentIteration {
+                    iteration: state.iteration,
+                }
+            }
+        }
+        PipelinePhase::Review if state.review_issues_found => Effect::RunFixAttempt {
+            pass: state.reviewer_pass,
+        },
+        // Other phases don't support continuation
+        _ => Effect::SaveCheckpoint {
+            trigger: CheckpointTrigger::PhaseTransition,
+        },
+    }
+}
+
+/// Derive the artifact type for the current phase.
+///
+/// Used to set the current_artifact in ContinuationState for
+/// proper retry prompt selection.
+pub fn artifact_for_phase(phase: PipelinePhase, in_fix_attempt: bool) -> Option<ArtifactType> {
+    match phase {
+        PipelinePhase::Planning => Some(ArtifactType::Plan),
+        PipelinePhase::Development => Some(ArtifactType::DevelopmentResult),
+        PipelinePhase::Review => {
+            if in_fix_attempt {
+                Some(ArtifactType::FixResult)
+            } else {
+                Some(ArtifactType::Issues)
+            }
+        }
+        PipelinePhase::CommitMessage => Some(ArtifactType::CommitMessage),
+        _ => None,
+    }
+}
 
 /// Determine the next effect to execute based on current state.
 ///
 /// This function is pure - it only reads state and returns an effect.
 /// The actual execution happens in the effect handler.
+///
+/// # Priority Order for Effects
+///
+/// 1. Continuation context cleanup (highest priority)
+/// 2. XSD retry pending (validation failed, retry with same agent/session)
+/// 3. Continue pending (output valid but incomplete, new session)
+/// 4. Rebase in progress
+/// 5. Agent chain exhausted
+/// 6. Backoff wait
+/// 7. Phase-specific effects
 pub fn determine_next_effect(state: &PipelineState) -> Effect {
     if state.continuation.context_cleanup_pending {
         return Effect::CleanupContinuationContext;
+    }
+
+    // XSD retry: validation failed, retry with same agent/session if not exhausted
+    if state.continuation.xsd_retry_pending {
+        if state.continuation.xsd_retries_exhausted() {
+            // Exhausted XSD retries - advance agent chain
+            // The agent chain advancement is handled by state reduction on XsdValidationFailed
+            // when retries are exhausted, so here we just clear the pending flag
+            // and continue to normal phase-specific effect
+        } else {
+            // Retry with same agent, potentially same session
+            return derive_xsd_retry_effect(state);
+        }
+    }
+
+    // Continue pending: output valid but work incomplete, start new session
+    if state.continuation.continue_pending {
+        if state.continuation.continuations_exhausted() {
+            // Exhausted continuation budget - accept current state as complete
+            // The budget exhaustion is handled by state reduction, so we proceed
+            // to normal phase-specific effects
+        } else {
+            // Trigger continuation with new session
+            return derive_continuation_effect(state);
+        }
     }
 
     if matches!(
@@ -515,10 +647,11 @@ mod tests {
             vec![0, 1, 2, 3, 4],
             "Should run iterations 0-4"
         );
+        // With total_reviewer_passes=0, we go to FinalValidation, not Review
         assert_eq!(
             state.phase,
-            PipelinePhase::Review,
-            "Should transition to Review after 5 iterations"
+            PipelinePhase::FinalValidation,
+            "Should transition to FinalValidation after 5 iterations when reviewer_passes=0"
         );
     }
 

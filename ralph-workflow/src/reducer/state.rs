@@ -13,6 +13,36 @@ use std::path::PathBuf;
 
 use super::event::PipelinePhase;
 
+/// Artifact type being processed by the current phase.
+///
+/// Used to track which XML artifact type is expected for XSD validation,
+/// enabling role-specific retry prompts and error messages.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ArtifactType {
+    /// Plan XML from planning phase.
+    Plan,
+    /// DevelopmentResult XML from development phase.
+    DevelopmentResult,
+    /// Issues XML from review phase.
+    Issues,
+    /// FixResult XML from fix phase.
+    FixResult,
+    /// CommitMessage XML from commit message generation.
+    CommitMessage,
+}
+
+impl std::fmt::Display for ArtifactType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Plan => write!(f, "plan"),
+            Self::DevelopmentResult => write!(f, "development_result"),
+            Self::Issues => write!(f, "issues"),
+            Self::FixResult => write!(f, "fix_result"),
+            Self::CommitMessage => write!(f, "commit_message"),
+        }
+    }
+}
+
 /// Development status from agent output.
 ///
 /// These values map to the `<ralph-status>` element in development_result.xml.
@@ -56,7 +86,7 @@ impl std::fmt::Display for DevelopmentStatus {
 /// - A new iteration starts (DevelopmentIterationStarted event)
 /// - Status becomes "completed" (ContinuationSucceeded event)
 /// - Phase transitions away from Development
-#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ContinuationState {
     /// Status from the previous attempt ("partial" or "failed").
     pub previous_status: Option<DevelopmentStatus>,
@@ -77,12 +107,87 @@ pub struct ContinuationState {
     /// Whether a continuation context cleanup is pending.
     #[serde(default)]
     pub context_cleanup_pending: bool,
+    /// Count of XSD validation retry attempts for current artifact.
+    ///
+    /// Tracks how many times we've retried with the same agent/session due to
+    /// XML parsing or XSD validation failures. Reset when switching agents,
+    /// artifacts, or on successful validation.
+    #[serde(default)]
+    pub xsd_retry_count: u32,
+    /// Whether an XSD retry is pending (validation failed, need to retry).
+    ///
+    /// Set to true when XsdValidationFailed event fires.
+    /// Cleared when retry attempt starts or max retries exceeded.
+    #[serde(default)]
+    pub xsd_retry_pending: bool,
+    /// Whether a continuation is pending (output valid but work incomplete).
+    ///
+    /// Set to true when agent output indicates status is "partial" or "failed".
+    /// Cleared when continuation attempt starts or max continuations exceeded.
+    #[serde(default)]
+    pub continue_pending: bool,
+    /// Current artifact type being processed.
+    ///
+    /// Set at the start of each phase to track which XML artifact is expected.
+    /// Used for appropriate retry prompts and error messages.
+    #[serde(default)]
+    pub current_artifact: Option<ArtifactType>,
+    /// Maximum XSD retry attempts (default 10).
+    ///
+    /// Loaded from unified config. After this many retries, falls back to
+    /// agent chain advancement.
+    #[serde(default = "default_max_xsd_retry_count")]
+    pub max_xsd_retry_count: u32,
+    /// Maximum continuation attempts (default 3).
+    ///
+    /// Loaded from unified config. After this many continuations, marks
+    /// iteration as complete (even if status is partial/failed).
+    #[serde(default = "default_max_continue_count")]
+    pub max_continue_count: u32,
+}
+
+const fn default_max_xsd_retry_count() -> u32 {
+    10
+}
+
+const fn default_max_continue_count() -> u32 {
+    3
+}
+
+impl Default for ContinuationState {
+    fn default() -> Self {
+        Self {
+            previous_status: None,
+            previous_summary: None,
+            previous_files_changed: None,
+            previous_next_steps: None,
+            continuation_attempt: 0,
+            invalid_output_attempts: 0,
+            context_write_pending: false,
+            context_cleanup_pending: false,
+            xsd_retry_count: 0,
+            xsd_retry_pending: false,
+            continue_pending: false,
+            current_artifact: None,
+            max_xsd_retry_count: default_max_xsd_retry_count(),
+            max_continue_count: default_max_continue_count(),
+        }
+    }
 }
 
 impl ContinuationState {
     /// Create a new empty continuation state.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create continuation state with custom limits (for config loading).
+    pub fn with_limits(max_xsd_retry_count: u32, max_continue_count: u32) -> Self {
+        Self {
+            max_xsd_retry_count,
+            max_continue_count,
+            ..Self::default()
+        }
     }
 
     /// Check if this is a continuation attempt (not the first attempt).
@@ -92,7 +197,65 @@ impl ContinuationState {
 
     /// Reset the continuation state for a new iteration.
     pub fn reset(&self) -> Self {
-        Self::default()
+        // Preserve configured limits, reset everything else
+        Self {
+            max_xsd_retry_count: self.max_xsd_retry_count,
+            max_continue_count: self.max_continue_count,
+            ..Self::default()
+        }
+    }
+
+    /// Set the current artifact type being processed.
+    pub fn with_artifact(&self, artifact: ArtifactType) -> Self {
+        Self {
+            current_artifact: Some(artifact),
+            xsd_retry_count: 0,
+            xsd_retry_pending: false,
+            ..self.clone()
+        }
+    }
+
+    /// Mark XSD validation as failed, triggering a retry.
+    pub fn trigger_xsd_retry(&self) -> Self {
+        Self {
+            xsd_retry_pending: true,
+            xsd_retry_count: self.xsd_retry_count + 1,
+            ..self.clone()
+        }
+    }
+
+    /// Clear XSD retry pending flag after starting retry.
+    pub fn clear_xsd_retry_pending(&self) -> Self {
+        Self {
+            xsd_retry_pending: false,
+            ..self.clone()
+        }
+    }
+
+    /// Check if XSD retries are exhausted.
+    pub fn xsd_retries_exhausted(&self) -> bool {
+        self.xsd_retry_count >= self.max_xsd_retry_count
+    }
+
+    /// Mark continuation as pending (output valid but work incomplete).
+    pub fn trigger_continue(&self) -> Self {
+        Self {
+            continue_pending: true,
+            ..self.clone()
+        }
+    }
+
+    /// Clear continue pending flag after starting continuation.
+    pub fn clear_continue_pending(&self) -> Self {
+        Self {
+            continue_pending: false,
+            ..self.clone()
+        }
+    }
+
+    /// Check if continuation attempts are exhausted.
+    pub fn continuations_exhausted(&self) -> bool {
+        self.continuation_attempt >= self.max_continue_count
     }
 
     /// Trigger a continuation with context from the previous attempt.
@@ -112,6 +275,14 @@ impl ContinuationState {
             invalid_output_attempts: 0,
             context_write_pending: true,
             context_cleanup_pending: false,
+            // Reset XSD retry count for new continuation attempt
+            xsd_retry_count: 0,
+            xsd_retry_pending: false,
+            continue_pending: false,
+            // Preserve artifact type and limits
+            current_artifact: self.current_artifact.clone(),
+            max_xsd_retry_count: self.max_xsd_retry_count,
+            max_continue_count: self.max_continue_count,
         }
     }
 }
@@ -312,6 +483,13 @@ pub struct AgentChainState {
     /// can continue the same work instead of starting from scratch.
     #[serde(default)]
     pub rate_limit_continuation_prompt: Option<String>,
+    /// Session ID from the last agent response.
+    ///
+    /// Used for XSD retry to continue with the same session when possible.
+    /// Agents that support sessions (e.g., Claude Code) emit session IDs
+    /// that can be passed back for continuation.
+    #[serde(default)]
+    pub last_session_id: Option<String>,
 }
 
 const fn default_retry_delay_ms() -> u64 {
@@ -341,6 +519,7 @@ impl AgentChainState {
             backoff_pending_ms: None,
             current_role: AgentRole::Developer,
             rate_limit_continuation_prompt: None,
+            last_session_id: None,
         }
     }
 
@@ -468,6 +647,7 @@ impl AgentChainState {
         new.retry_cycle = 0;
         new.backoff_pending_ms = None;
         new.rate_limit_continuation_prompt = None;
+        new.last_session_id = None;
         new
     }
 
@@ -477,6 +657,21 @@ impl AgentChainState {
         new.current_model_index = 0;
         new.backoff_pending_ms = None;
         new.rate_limit_continuation_prompt = None;
+        new.last_session_id = None;
+        new
+    }
+
+    /// Store session ID from agent response for potential reuse.
+    pub fn with_session_id(&self, session_id: Option<String>) -> Self {
+        let mut new = self.clone();
+        new.last_session_id = session_id;
+        new
+    }
+
+    /// Clear session ID (e.g., when switching agents or starting new work).
+    pub fn clear_session_id(&self) -> Self {
+        let mut new = self.clone();
+        new.last_session_id = None;
         new
     }
 
@@ -1113,5 +1308,201 @@ mod tests {
             "rate limit fallback should not immediately exhaust on wraparound"
         );
         assert_eq!(next.retry_cycle, 1);
+    }
+
+    // =========================================================================
+    // XSD retry and session tracking tests
+    // =========================================================================
+
+    #[test]
+    fn test_artifact_type_display() {
+        assert_eq!(format!("{}", ArtifactType::Plan), "plan");
+        assert_eq!(
+            format!("{}", ArtifactType::DevelopmentResult),
+            "development_result"
+        );
+        assert_eq!(format!("{}", ArtifactType::Issues), "issues");
+        assert_eq!(format!("{}", ArtifactType::FixResult), "fix_result");
+        assert_eq!(format!("{}", ArtifactType::CommitMessage), "commit_message");
+    }
+
+    #[test]
+    fn test_continuation_state_with_limits() {
+        let state = ContinuationState::with_limits(5, 2);
+        assert_eq!(state.max_xsd_retry_count, 5);
+        assert_eq!(state.max_continue_count, 2);
+        assert!(!state.is_continuation());
+    }
+
+    #[test]
+    fn test_continuation_state_default_limits() {
+        let state = ContinuationState::new();
+        assert_eq!(state.max_xsd_retry_count, 10);
+        assert_eq!(state.max_continue_count, 3);
+    }
+
+    #[test]
+    fn test_continuation_reset_preserves_limits() {
+        let state = ContinuationState::with_limits(5, 2)
+            .trigger_xsd_retry()
+            .trigger_xsd_retry();
+        assert_eq!(state.xsd_retry_count, 2);
+
+        let reset = state.reset();
+        assert_eq!(reset.xsd_retry_count, 0);
+        assert_eq!(reset.max_xsd_retry_count, 5);
+        assert_eq!(reset.max_continue_count, 2);
+    }
+
+    #[test]
+    fn test_continuation_with_artifact() {
+        let state = ContinuationState::new().with_artifact(ArtifactType::DevelopmentResult);
+        assert_eq!(
+            state.current_artifact,
+            Some(ArtifactType::DevelopmentResult)
+        );
+        assert_eq!(state.xsd_retry_count, 0);
+        assert!(!state.xsd_retry_pending);
+    }
+
+    #[test]
+    fn test_xsd_retry_trigger() {
+        let state = ContinuationState::new()
+            .with_artifact(ArtifactType::Plan)
+            .trigger_xsd_retry();
+
+        assert!(state.xsd_retry_pending);
+        assert_eq!(state.xsd_retry_count, 1);
+        assert_eq!(state.current_artifact, Some(ArtifactType::Plan));
+    }
+
+    #[test]
+    fn test_xsd_retry_clear_pending() {
+        let state = ContinuationState::new()
+            .trigger_xsd_retry()
+            .clear_xsd_retry_pending();
+
+        assert!(!state.xsd_retry_pending);
+        assert_eq!(state.xsd_retry_count, 1);
+    }
+
+    #[test]
+    fn test_xsd_retries_exhausted() {
+        let state = ContinuationState::with_limits(2, 3);
+        assert!(!state.xsd_retries_exhausted());
+
+        let state = state.trigger_xsd_retry();
+        assert!(!state.xsd_retries_exhausted());
+
+        let state = state.trigger_xsd_retry();
+        assert!(state.xsd_retries_exhausted());
+    }
+
+    #[test]
+    fn test_continue_trigger() {
+        let state = ContinuationState::new().trigger_continue();
+        assert!(state.continue_pending);
+    }
+
+    #[test]
+    fn test_continue_clear_pending() {
+        let state = ContinuationState::new()
+            .trigger_continue()
+            .clear_continue_pending();
+        assert!(!state.continue_pending);
+    }
+
+    #[test]
+    fn test_continuations_exhausted() {
+        let state = ContinuationState::with_limits(10, 2);
+        assert!(!state.continuations_exhausted());
+
+        let state =
+            state.trigger_continuation(DevelopmentStatus::Partial, "First".to_string(), None, None);
+        assert!(!state.continuations_exhausted());
+
+        let state = state.trigger_continuation(
+            DevelopmentStatus::Partial,
+            "Second".to_string(),
+            None,
+            None,
+        );
+        assert!(state.continuations_exhausted());
+    }
+
+    #[test]
+    fn test_trigger_continuation_resets_xsd_retry() {
+        let state = ContinuationState::new()
+            .with_artifact(ArtifactType::DevelopmentResult)
+            .trigger_xsd_retry()
+            .trigger_xsd_retry()
+            .trigger_continuation(
+                DevelopmentStatus::Partial,
+                "Work done".to_string(),
+                None,
+                None,
+            );
+
+        assert_eq!(state.xsd_retry_count, 0);
+        assert!(!state.xsd_retry_pending);
+        assert!(!state.continue_pending);
+        assert_eq!(
+            state.current_artifact,
+            Some(ArtifactType::DevelopmentResult)
+        );
+    }
+
+    #[test]
+    fn test_agent_chain_session_id() {
+        let chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent1".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_session_id(Some("session-123".to_string()));
+
+        assert_eq!(chain.last_session_id, Some("session-123".to_string()));
+    }
+
+    #[test]
+    fn test_agent_chain_clear_session_id() {
+        let chain = AgentChainState::initial()
+            .with_session_id(Some("session-123".to_string()))
+            .clear_session_id();
+
+        assert!(chain.last_session_id.is_none());
+    }
+
+    #[test]
+    fn test_agent_chain_reset_clears_session_id() {
+        let mut chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+        chain.last_session_id = Some("session-123".to_string());
+
+        let reset = chain.reset();
+        assert!(
+            reset.last_session_id.is_none(),
+            "reset() should clear last_session_id"
+        );
+    }
+
+    #[test]
+    fn test_agent_chain_reset_for_role_clears_session_id() {
+        let mut chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+        chain.last_session_id = Some("session-123".to_string());
+
+        let reset = chain.reset_for_role(AgentRole::Reviewer);
+        assert!(
+            reset.last_session_id.is_none(),
+            "reset_for_role() should clear last_session_id"
+        );
     }
 }

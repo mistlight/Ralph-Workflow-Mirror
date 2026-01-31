@@ -376,6 +376,37 @@ pub enum AgentEvent {
         /// This allows the next agent to continue the same work.
         prompt_context: Option<String>,
     },
+
+    /// Session established with agent.
+    ///
+    /// Emitted when an agent response includes a session ID that can be
+    /// used for XSD retry continuation. This enables reusing the same
+    /// session when retrying due to validation failures.
+    SessionEstablished {
+        /// The role this agent is fulfilling.
+        role: AgentRole,
+        /// The agent name.
+        agent: String,
+        /// The session ID returned by the agent.
+        session_id: String,
+    },
+
+    /// XSD validation failed for agent output.
+    ///
+    /// Emitted when agent output cannot be parsed or fails XSD validation.
+    /// Distinct from OutputValidationFailed events in phase-specific enums,
+    /// this is the canonical XSD retry trigger that the reducer uses to
+    /// decide whether to retry with the same agent/session or advance the chain.
+    XsdValidationFailed {
+        /// The role whose output failed validation.
+        role: AgentRole,
+        /// The artifact type that failed validation.
+        artifact: crate::reducer::state::ArtifactType,
+        /// Error message from validation.
+        error: String,
+        /// Current XSD retry count for this artifact.
+        retry_count: u32,
+    },
 }
 
 /// Rebase operation events.
@@ -861,6 +892,30 @@ impl PipelineEvent {
             role,
             agent,
             prompt_context,
+        })
+    }
+
+    /// Create an AgentSessionEstablished event.
+    pub fn agent_session_established(role: AgentRole, agent: String, session_id: String) -> Self {
+        Self::Agent(AgentEvent::SessionEstablished {
+            role,
+            agent,
+            session_id,
+        })
+    }
+
+    /// Create an AgentXsdValidationFailed event.
+    pub fn agent_xsd_validation_failed(
+        role: AgentRole,
+        artifact: crate::reducer::state::ArtifactType,
+        error: String,
+        retry_count: u32,
+    ) -> Self {
+        Self::Agent(AgentEvent::XsdValidationFailed {
+            role,
+            artifact,
+            error,
+            retry_count,
         })
     }
 

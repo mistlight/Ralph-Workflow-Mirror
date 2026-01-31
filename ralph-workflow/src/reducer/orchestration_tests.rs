@@ -168,10 +168,11 @@ fn test_development_runs_exactly_n_iterations() {
         vec![0, 1, 2, 3, 4],
         "Should run iterations 0-4"
     );
+    // With total_reviewer_passes=0, we go to FinalValidation, not Review
     assert_eq!(
         state.phase,
-        PipelinePhase::Review,
-        "Should transition to Review after 5 iterations"
+        PipelinePhase::FinalValidation,
+        "Should transition to FinalValidation after 5 iterations when reviewer_passes=0"
     );
 }
 

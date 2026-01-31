@@ -178,13 +178,13 @@ fn test_fix_attempt_started_resets_agent_chain() {
     // CRITICAL: review_issues_found should be preserved (not reset)
     assert!(new_state.review_issues_found);
 
-    // Agent chain should be reset for developer role
+    // Agent chain should be reset for reviewer role (fix attempts use reviewer chain)
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
     assert_eq!(new_state.agent_chain.current_model_index, 0);
     assert_eq!(new_state.agent_chain.retry_cycle, 0);
     assert_eq!(
         new_state.agent_chain.current_role,
-        crate::agents::AgentRole::Developer
+        crate::agents::AgentRole::Reviewer
     );
     assert!(
         new_state.agent_chain.agents.is_empty(),
