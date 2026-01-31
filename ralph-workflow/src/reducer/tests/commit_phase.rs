@@ -391,6 +391,31 @@ fn test_commit_skipped_goes_to_review_after_last_development_iteration() {
 }
 
 #[test]
+fn test_commit_created_skips_review_when_no_reviewer_passes_configured() {
+    // When the last development iteration is committed and reviewer passes are disabled,
+    // the pipeline should skip Review entirely.
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: Some(PipelinePhase::Development),
+        iteration: 0,
+        total_iterations: 1,
+        total_reviewer_passes: 0,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::commit_created("abc123".to_string(), "test".to_string()),
+    );
+
+    assert_eq!(
+        new_state.phase,
+        PipelinePhase::FinalValidation,
+        "With total_reviewer_passes=0, pipeline should skip Review after last dev commit"
+    );
+}
+
+#[test]
 fn test_commit_skipped_returns_to_review_after_fix_attempt() {
     // When commit is skipped after fix attempt,
     // should stay in Review for next pass

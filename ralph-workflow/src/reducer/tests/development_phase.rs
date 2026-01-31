@@ -224,7 +224,13 @@ fn test_development_iteration_continuation_succeeded_transitions_to_commit_messa
     assert_eq!(new_state.phase, PipelinePhase::CommitMessage);
     assert_eq!(new_state.previous_phase, Some(PipelinePhase::Development));
     assert!(matches!(new_state.commit, CommitState::NotStarted));
-    assert_eq!(new_state.continuation, ContinuationState::new());
+    assert_eq!(
+        new_state.continuation,
+        ContinuationState {
+            context_cleanup_pending: true,
+            ..ContinuationState::new()
+        }
+    );
 }
 
 #[test]
@@ -444,17 +450,19 @@ fn test_continuation_context_cleanup_sequence() {
     );
     state.phase = PipelinePhase::Development;
 
-    // ContinuationSucceeded resets continuation state
+    // ContinuationSucceeded resets continuation state and schedules cleanup
     let state = reduce(
         state,
         PipelineEvent::development_iteration_continuation_succeeded(0, 1),
     );
     assert!(!state.continuation.is_continuation());
+    assert!(state.continuation.context_cleanup_pending);
 
-    // ContinuationContextCleaned is a no-op on state
+    // ContinuationContextCleaned clears cleanup pending
     let state = reduce(
         state,
         PipelineEvent::development_continuation_context_cleaned(),
     );
     assert!(!state.continuation.is_continuation());
+    assert!(!state.continuation.context_cleanup_pending);
 }

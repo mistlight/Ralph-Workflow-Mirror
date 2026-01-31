@@ -15,17 +15,8 @@ use crate::test_timeout::with_default_timeout;
 use super::{
     make_checkpoint_json, make_checkpoint_with_execution_history,
     make_checkpoint_with_file_system_state, make_checkpoint_with_prompt_history, MOCK_REPO_PATH,
+    STANDARD_PROMPT, STANDARD_PROMPT_CHECKSUM,
 };
-
-/// Standard prompt content for tests - matches the required PROMPT.md format.
-const STANDARD_PROMPT: &str = r#"## Goal
-
-Do something.
-
-## Acceptance
-
-- Tests pass
-"#;
 
 // ============================================================================
 // V3 Hardened Resume Tests - Execution History
@@ -46,7 +37,8 @@ fn ralph_v3_checkpoint_contains_execution_history() {
                     "agent": "claude",
                     "duration_secs": 10
                 }
-            ]
+            ],
+            "file_snapshots": {}
         }"#;
 
         let checkpoint_json = make_checkpoint_with_execution_history(
@@ -58,7 +50,7 @@ fn ralph_v3_checkpoint_contains_execution_history() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file("PROMPT.md", "Test prompt\n")
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/commit-message.txt", "feat: test\n");
@@ -124,6 +116,7 @@ fn ralph_v3_restores_execution_history_on_resume() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/commit-message.txt", "feat: test\n");
@@ -143,16 +136,8 @@ fn ralph_v3_restores_execution_history_on_resume() {
 #[test]
 fn ralph_v3_file_system_state_validates_on_resume() {
     with_default_timeout(|| {
-        // Create PROMPT.md with known content
-        let prompt_content = "# Test Prompt\n\nDo something.";
-
-        // Calculate checksum
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(prompt_content.as_bytes());
-        let checksum = format!("{:x}", hasher.finalize());
-
-        // Create file system state JSON
+        // Use STANDARD_PROMPT which matches STANDARD_PROMPT_CHECKSUM in the checkpoint
+        // Create file system state JSON with the matching checksum
         let file_system_state_json = format!(
             r#"{{
             "files": {{
@@ -167,8 +152,8 @@ fn ralph_v3_file_system_state_validates_on_resume() {
             "git_head_oid": null,
             "git_branch": null
         }}"#,
-            checksum,
-            prompt_content.len()
+            STANDARD_PROMPT_CHECKSUM,
+            STANDARD_PROMPT.len()
         );
 
         let checkpoint_json = make_checkpoint_with_file_system_state(
@@ -180,7 +165,7 @@ fn ralph_v3_file_system_state_validates_on_resume() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file("PROMPT.md", prompt_content)
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
@@ -194,23 +179,18 @@ fn ralph_v3_file_system_state_validates_on_resume() {
 #[test]
 fn ralph_v3_file_system_state_detects_changes() {
     with_default_timeout(|| {
-        // Original content for checksum calculation
-        let original_content = "# Original Task\nDo something.";
+        // The checkpoint uses STANDARD_PROMPT_CHECKSUM, but we put a different checksum
+        // in file_system_state to simulate that the file has changed.
+        let fake_old_checksum = "0000000000000000000000000000000000000000000000000000000000000000";
 
-        // Calculate checksum of original content
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(original_content.as_bytes());
-        let original_checksum = format!("{:x}", hasher.finalize());
-
-        // Create file system state JSON with original checksum
+        // Create file system state JSON with fake old checksum (simulates file has changed)
         let file_system_state_json = format!(
             r#"{{
             "files": {{
                 "PROMPT.md": {{
                     "path": "PROMPT.md",
                     "checksum": "{}",
-                    "size": {},
+                    "size": 100,
                     "content": null,
                     "exists": true
                 }}
@@ -218,8 +198,7 @@ fn ralph_v3_file_system_state_detects_changes() {
             "git_head_oid": null,
             "git_branch": null
         }}"#,
-            original_checksum,
-            original_content.len()
+            fake_old_checksum
         );
 
         let checkpoint_json = make_checkpoint_with_file_system_state(
@@ -228,25 +207,37 @@ fn ralph_v3_file_system_state_detects_changes() {
             &file_system_state_json,
         );
 
-        // Create handler with MODIFIED PROMPT.md (different from checkpoint checksum)
+        // Create handler with STANDARD_PROMPT (different from file_system_state checksum)
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file("PROMPT.md", "# Modified Task\nDo something else.")
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json);
 
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        // Resume with --recovery-strategy=fail should detect the change
-        // With strategy=fail, the resume is aborted and the program continues with a fresh run
-        run_ralph_cli_with_handler(
+        // Resume with --recovery-strategy=fail should detect the change and error
+        let result = run_ralph_cli_with_handler(
             &["--resume", "--recovery-strategy", "fail"],
             executor,
             config,
             &mut handler,
-        )
-        .unwrap();
+        );
+
+        // With strategy=fail, file system state mismatch should cause an error
+        assert!(
+            result.is_err(),
+            "Should fail when file system state has changed and strategy is 'fail'"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("File system state")
+                || err.contains("validation failed")
+                || err.contains("changed"),
+            "Error should mention file system state change: {}",
+            err
+        );
     });
 }
 
@@ -299,27 +290,20 @@ fn ralph_v3_file_system_state_auto_recovery() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        // Resume with --recovery-strategy=force should proceed despite file changes
-        // Note: auto-recovery writes to real filesystem, not the mock handler's memory,
-        // so we use force strategy to test that resume can proceed with modified files.
+        // Resume with --recovery-strategy=auto should restore the file from checkpoint state.
         run_ralph_cli_with_handler(
-            &["--resume", "--recovery-strategy", "force"],
+            &["--resume", "--recovery-strategy", "auto"],
             executor,
             config,
             &mut handler,
         )
         .unwrap();
 
-        // Verify the pipeline completed (file stays modified with force strategy)
-        // Note: With force strategy, we just verify the pipeline completes without error.
-        // The file content remains "Modified plan content" because:
-        // 1. force strategy proceeds without restoring
-        // 2. auto-recovery would write to real fs, not mock handler
-        let file_exists = handler.get_file(&PathBuf::from(".agent/PLAN.md")).is_some();
-        assert!(
-            file_exists,
-            "PLAN.md should still exist after resume with force strategy"
-        );
+        // Verify the pipeline completed and PLAN.md was restored from checkpoint content.
+        let restored = handler
+            .get_file(&PathBuf::from(".agent/PLAN.md"))
+            .expect("PLAN.md should exist after resume");
+        assert_eq!(restored, plan_content);
     });
 }
 
@@ -394,7 +378,7 @@ fn ralph_v3_interactive_resume_offer_on_existing_checkpoint() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file("PROMPT.md", "Test prompt\n")
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/commit-message.txt", "feat: test\n");
@@ -420,7 +404,7 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file("PROMPT.md", "Test prompt\n")
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/commit-message.txt", "feat: test\n");
@@ -440,33 +424,28 @@ fn ralph_v3_shows_user_friendly_checkpoint_summary() {
 #[test]
 fn ralph_v3_comprehensive_resume_from_review_phase() {
     with_default_timeout(|| {
-        // Create PROMPT.md and PLAN.md content
-        let prompt_content = "# Test Prompt\n\nImplement feature X.";
+        // Use STANDARD_PROMPT for PROMPT.md
         let plan_content = "# Plan\n\n1. Step 1\n2. Step 2";
 
-        // Calculate checksums
+        // Calculate plan checksum
         use sha2::{Digest, Sha256};
-        let mut prompt_hasher = Sha256::new();
-        prompt_hasher.update(prompt_content.as_bytes());
-        let prompt_checksum = format!("{:x}", prompt_hasher.finalize());
-
         let mut plan_hasher = Sha256::new();
         plan_hasher.update(plan_content.as_bytes());
         let plan_checksum = format!("{:x}", plan_hasher.finalize());
 
-        // Create comprehensive v3 checkpoint
+        // Create comprehensive v3 checkpoint with matching checksums
         let checkpoint_json = make_comprehensive_v3_checkpoint(
             MOCK_REPO_PATH,
-            &prompt_checksum,
+            STANDARD_PROMPT_CHECKSUM,
             &plan_checksum,
-            prompt_content.len(),
+            STANDARD_PROMPT.len(),
             plan_content.len(),
         );
 
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file("PROMPT.md", prompt_content)
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/PLAN.md", plan_content)
             .with_file(".agent/checkpoint.json", &checkpoint_json)
             .with_file(".agent/ISSUES.md", "No issues\n")
@@ -523,16 +502,8 @@ fn ralph_resume_replays_prompts_deterministically() {
 #[test]
 fn ralph_v3_checkpoint_contains_file_system_state() {
     with_default_timeout(|| {
-        // Create PROMPT.md content
-        let prompt_content = "# Test Prompt\n\nDo something.";
-
-        // Calculate checksum
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(prompt_content.as_bytes());
-        let prompt_checksum = format!("{:x}", hasher.finalize());
-
-        // Create file system state JSON
+        // Use STANDARD_PROMPT which matches STANDARD_PROMPT_CHECKSUM in the checkpoint
+        // Create file system state JSON with matching checksum
         let file_system_state_json = format!(
             r#"{{
             "files": {{
@@ -547,8 +518,8 @@ fn ralph_v3_checkpoint_contains_file_system_state() {
             "git_head_oid": null,
             "git_branch": null
         }}"#,
-            prompt_checksum,
-            prompt_content.len()
+            STANDARD_PROMPT_CHECKSUM,
+            STANDARD_PROMPT.len()
         );
 
         let checkpoint_json = make_checkpoint_with_file_system_state(
@@ -560,7 +531,7 @@ fn ralph_v3_checkpoint_contains_file_system_state() {
         let mut handler = MockAppEffectHandler::new()
             .with_head_oid("a".repeat(40))
             .with_cwd(PathBuf::from(MOCK_REPO_PATH))
-            .with_file("PROMPT.md", prompt_content)
+            .with_file("PROMPT.md", STANDARD_PROMPT)
             .with_file(".agent/checkpoint.json", &checkpoint_json)
             .with_file(".agent/PLAN.md", "Test plan\n")
             .with_file(".agent/commit-message.txt", "feat: test\n");
@@ -837,10 +808,14 @@ fn ralph_v3_execution_step_serialization_with_new_fields() {
     });
 }
 
+/// Test that checkpoints missing prompt_md_checksum are rejected as legacy.
+///
+/// Legacy checkpoints (missing required fields like prompt_md_checksum) are no
+/// longer supported. Users must delete the checkpoint and restart the pipeline.
 #[test]
-fn ralph_v3_backward_compatible_missing_new_fields() {
+fn ralph_v3_rejects_legacy_checkpoint_missing_prompt_md_checksum() {
     with_default_timeout(|| {
-        // Create checkpoint WITHOUT new fields (backward compatibility)
+        // Create checkpoint WITHOUT prompt_md_checksum (legacy format)
         let checkpoint_json = make_checkpoint_without_new_fields(MOCK_REPO_PATH);
 
         let mut handler = MockAppEffectHandler::new()
@@ -854,8 +829,21 @@ fn ralph_v3_backward_compatible_missing_new_fields() {
         let config = create_test_config_struct();
         let executor = mock_executor_with_success();
 
-        // Verify checkpoint can still be loaded (backward compatibility)
-        run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler).unwrap();
+        // Verify checkpoint is REJECTED (legacy checkpoints no longer supported)
+        let result = run_ralph_cli_with_handler(&["--resume"], executor, config, &mut handler);
+        assert!(
+            result.is_err(),
+            "Should reject legacy checkpoint missing prompt_md_checksum"
+        );
+
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("Legacy checkpoints are not supported")
+                || error_msg.contains("checkpoint")
+                || error_msg.contains("validation"),
+            "Error message should mention legacy checkpoint rejection: {}",
+            error_msg
+        );
     });
 }
 
@@ -915,8 +903,7 @@ fn make_checkpoint_json_with_resume_count(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "feat: add feature",
-                "review_depth": "standard",
-                "skip_rebase": false
+                "review_depth": "standard"
             }},
             "developer_agent_config": {{
                 "name": "claude",
@@ -942,7 +929,7 @@ fn make_checkpoint_json_with_resume_count(working_dir: &str) -> String {
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-456",
@@ -954,7 +941,7 @@ fn make_checkpoint_json_with_resume_count(working_dir: &str) -> String {
             "file_system_state": null,
             "prompt_history": null
         }}"#,
-        working_dir
+        working_dir, STANDARD_PROMPT_CHECKSUM
     )
 }
 
@@ -980,8 +967,7 @@ fn make_comprehensive_v3_checkpoint(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "feat: add feature X",
-                "review_depth": "standard",
-                "skip_rebase": false
+                "review_depth": "standard"
             }},
             "developer_agent_config": {{
                 "name": "claude",
@@ -1064,8 +1050,7 @@ fn make_checkpoint_with_git_commit_oid(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": true
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -1091,7 +1076,7 @@ fn make_checkpoint_with_git_commit_oid(working_dir: &str) -> String {
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-git-commit-oid",
@@ -1137,7 +1122,7 @@ fn make_checkpoint_with_git_commit_oid(working_dir: &str) -> String {
                 "development_1": "Implement feature X"
             }}
         }}"#,
-        working_dir
+        working_dir, STANDARD_PROMPT_CHECKSUM
     )
 }
 
@@ -1157,8 +1142,7 @@ fn make_checkpoint_with_all_new_fields(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": true
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -1184,7 +1168,7 @@ fn make_checkpoint_with_all_new_fields(working_dir: &str) -> String {
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-new-fields",
@@ -1226,7 +1210,7 @@ fn make_checkpoint_with_all_new_fields(working_dir: &str) -> String {
                 "development_1": "Implement the feature"
             }}
         }}"#,
-        working_dir
+        working_dir, STANDARD_PROMPT_CHECKSUM
     )
 }
 
@@ -1246,8 +1230,7 @@ fn make_checkpoint_without_new_fields(working_dir: &str) -> String {
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": true
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -1325,8 +1308,7 @@ fn make_checkpoint_with_detailed_execution_history(working_dir: &str) -> String 
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": true
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -1352,7 +1334,7 @@ fn make_checkpoint_with_detailed_execution_history(working_dir: &str) -> String 
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-resume-note",
@@ -1398,6 +1380,6 @@ fn make_checkpoint_with_detailed_execution_history(working_dir: &str) -> String 
                 "development_1": "Implement feature X"
             }}
         }}"#,
-        working_dir
+        working_dir, STANDARD_PROMPT_CHECKSUM
     )
 }

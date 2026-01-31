@@ -3,19 +3,101 @@
 //! Contains `determine_next_effect()` which decides which effect to execute
 //! based on current pipeline state.
 
-use super::event::{CheckpointTrigger, PipelinePhase};
-use super::state::{CommitState, PipelineState};
+use super::event::{CheckpointTrigger, PipelinePhase, RebasePhase};
+use super::state::{CommitState, PipelineState, RebaseState};
 
 use crate::agents::AgentRole;
-use crate::reducer::effect::Effect;
+use crate::reducer::effect::{ContinuationContextData, Effect};
 
 /// Determine the next effect to execute based on current state.
 ///
 /// This function is pure - it only reads state and returns an effect.
 /// The actual execution happens in the effect handler.
 pub fn determine_next_effect(state: &PipelineState) -> Effect {
+    if state.continuation.context_cleanup_pending {
+        return Effect::CleanupContinuationContext;
+    }
+
+    if matches!(
+        state.rebase,
+        RebaseState::InProgress { .. } | RebaseState::Conflicted { .. }
+    ) {
+        let phase = match state.phase {
+            PipelinePhase::Planning => RebasePhase::Initial,
+            _ => RebasePhase::PostReview,
+        };
+
+        return match &state.rebase {
+            RebaseState::InProgress { target_branch, .. } => Effect::RunRebase {
+                phase,
+                target_branch: target_branch.clone(),
+            },
+            RebaseState::Conflicted { .. } => Effect::ResolveRebaseConflicts {
+                strategy: super::event::ConflictStrategy::Continue,
+            },
+            _ => unreachable!("checked rebase state before matching"),
+        };
+    }
+
+    if !state.agent_chain.agents.is_empty() && state.agent_chain.is_exhausted() {
+        let progressed = match state.phase {
+            PipelinePhase::Planning => state.iteration > 0,
+            PipelinePhase::Development => state.iteration > 0,
+            PipelinePhase::Review => state.reviewer_pass > 0,
+            PipelinePhase::CommitMessage => matches!(
+                state.commit,
+                CommitState::Generated { .. }
+                    | CommitState::Committed { .. }
+                    | CommitState::Skipped
+            ),
+            PipelinePhase::FinalValidation
+            | PipelinePhase::Finalizing
+            | PipelinePhase::Complete
+            | PipelinePhase::Interrupted => false,
+        };
+
+        if progressed
+            && state.checkpoint_saved_count == 0
+            && !matches!(
+                state.phase,
+                PipelinePhase::Complete | PipelinePhase::Interrupted
+            )
+        {
+            return Effect::SaveCheckpoint {
+                trigger: CheckpointTrigger::Interrupt,
+            };
+        }
+
+        return Effect::AbortPipeline {
+            reason: format!(
+                "Agent chain exhausted for role {:?} in phase {:?} (cycle {})",
+                state.agent_chain.current_role, state.phase, state.agent_chain.retry_cycle
+            ),
+        };
+    }
+
+    if let Some(duration_ms) = state.agent_chain.backoff_pending_ms {
+        return Effect::BackoffWait {
+            role: state.agent_chain.current_role,
+            cycle: state.agent_chain.retry_cycle,
+            duration_ms,
+        };
+    }
+
     match state.phase {
         PipelinePhase::Planning => {
+            if state.iteration == 0
+                && state.checkpoint_saved_count == 0
+                && matches!(
+                    state.rebase,
+                    RebaseState::Skipped | RebaseState::Completed { .. }
+                )
+            {
+                return Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::PhaseTransition,
+                };
+            }
+
             if state.agent_chain.agents.is_empty() {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Developer,
@@ -33,14 +115,33 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         }
 
         PipelinePhase::Development => {
+            if state.continuation.context_write_pending {
+                let status = state
+                    .continuation
+                    .previous_status
+                    .clone()
+                    .unwrap_or(super::state::DevelopmentStatus::Failed);
+                let summary = state
+                    .continuation
+                    .previous_summary
+                    .clone()
+                    .unwrap_or_default();
+                let files_changed = state.continuation.previous_files_changed.clone();
+                let next_steps = state.continuation.previous_next_steps.clone();
+
+                return Effect::WriteContinuationContext(ContinuationContextData {
+                    iteration: state.iteration,
+                    attempt: state.continuation.continuation_attempt,
+                    status,
+                    summary,
+                    files_changed,
+                    next_steps,
+                });
+            }
+
             if state.agent_chain.agents.is_empty() {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Developer,
-                };
-            }
-            if state.agent_chain.is_exhausted() {
-                return Effect::SaveCheckpoint {
-                    trigger: CheckpointTrigger::PhaseTransition,
                 };
             }
 
@@ -56,21 +157,24 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         }
 
         PipelinePhase::Review => {
-            if state.agent_chain.agents.is_empty() {
-                return Effect::InitializeAgentChain {
-                    role: AgentRole::Reviewer,
-                };
-            }
-            if state.agent_chain.is_exhausted() {
-                return Effect::SaveCheckpoint {
-                    trigger: CheckpointTrigger::PhaseTransition,
+            // If review found issues, run fix attempt
+            if state.review_issues_found {
+                if state.agent_chain.agents.is_empty()
+                    || state.agent_chain.current_role != AgentRole::Reviewer
+                {
+                    return Effect::InitializeAgentChain {
+                        role: AgentRole::Reviewer,
+                    };
+                }
+
+                return Effect::RunFixAttempt {
+                    pass: state.reviewer_pass,
                 };
             }
 
-            // If review found issues, run fix attempt
-            if state.review_issues_found {
-                return Effect::RunFixAttempt {
-                    pass: state.reviewer_pass,
+            if state.agent_chain.agents.is_empty() {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Reviewer,
                 };
             }
 
@@ -86,16 +190,24 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             }
         }
 
-        PipelinePhase::CommitMessage => match state.commit {
-            CommitState::NotStarted => Effect::GenerateCommitMessage,
-            CommitState::Generated { ref message } => Effect::CreateCommit {
-                message: message.clone(),
-            },
-            CommitState::Committed { .. } | CommitState::Skipped => Effect::SaveCheckpoint {
-                trigger: CheckpointTrigger::PhaseTransition,
-            },
-            CommitState::Generating { .. } => Effect::GenerateCommitMessage,
-        },
+        PipelinePhase::CommitMessage => {
+            // Commit phase requires explicit agent chain initialization like other phases
+            if state.agent_chain.agents.is_empty() {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Commit,
+                };
+            }
+            match state.commit {
+                CommitState::NotStarted => Effect::GenerateCommitMessage,
+                CommitState::Generated { ref message } => Effect::CreateCommit {
+                    message: message.clone(),
+                },
+                CommitState::Committed { .. } | CommitState::Skipped => Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::PhaseTransition,
+                },
+                CommitState::Generating { .. } => Effect::GenerateCommitMessage,
+            }
+        }
 
         PipelinePhase::FinalValidation => Effect::ValidateFinalState,
 
@@ -255,6 +367,31 @@ mod tests {
     }
 
     #[test]
+    fn test_determine_effect_exhausted_chain_after_checkpoint_aborts() {
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(3);
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 2,
+            total_iterations: 5,
+            checkpoint_saved_count: 1,
+            agent_chain: chain,
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(effect, Effect::AbortPipeline { .. }));
+    }
+
+    #[test]
     fn test_determine_effect_development_phase_with_chain() {
         let state = PipelineState {
             phase: PipelinePhase::Development,
@@ -313,6 +450,12 @@ mod tests {
                     // Context cleanup before planning
                     state = reduce(state, PipelineEvent::ContextCleaned);
                 }
+                Effect::CleanupContinuationContext => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::development_continuation_context_cleaned(),
+                    );
+                }
                 Effect::GeneratePlan { iteration } => {
                     // Complete planning
                     state = reduce(
@@ -349,6 +492,10 @@ mod tests {
                         PipelineEvent::agent_chain_initialized(
                             AgentRole::Developer,
                             vec!["claude".to_string()],
+                            3,
+                            1000,
+                            2.0,
+                            60000,
                         ),
                     );
                 }
@@ -418,6 +565,31 @@ mod tests {
     }
 
     #[test]
+    fn test_determine_effect_review_exhausted_chain_after_checkpoint_aborts() {
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Reviewer,
+            )
+            .with_max_cycles(3);
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+        chain = chain.start_retry_cycle();
+
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 1,
+            total_reviewer_passes: 2,
+            checkpoint_saved_count: 1,
+            agent_chain: chain,
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(effect, Effect::AbortPipeline { .. }));
+    }
+
+    #[test]
     fn test_determine_effect_review_phase_with_chain() {
         let state = PipelineState {
             phase: PipelinePhase::Review,
@@ -484,7 +656,7 @@ mod tests {
             "review_issues_found should be true"
         );
 
-        // Orchestration should now trigger fix attempt
+        // With a populated Reviewer chain, orchestration should run the fix attempt directly.
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::RunFixAttempt { pass: 0 }),
@@ -552,10 +724,23 @@ mod tests {
                 Effect::CleanupContext => {
                     state = reduce(state, PipelineEvent::ContextCleaned);
                 }
+                Effect::CleanupContinuationContext => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::development_continuation_context_cleaned(),
+                    );
+                }
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
-                        PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
+                        PipelineEvent::agent_chain_initialized(
+                            role,
+                            vec!["claude".to_string()],
+                            3,
+                            1000,
+                            2.0,
+                            60000,
+                        ),
                     );
                 }
                 Effect::GeneratePlan { iteration } => {
@@ -680,7 +865,14 @@ mod tests {
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
-                        PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
+                        PipelineEvent::agent_chain_initialized(
+                            role,
+                            vec!["claude".to_string()],
+                            3,
+                            1000,
+                            2.0,
+                            60000,
+                        ),
                     );
                 }
                 Effect::RunReviewPass { pass } => {
@@ -739,7 +931,14 @@ mod tests {
                 Effect::InitializeAgentChain { role } => {
                     state = reduce(
                         state,
-                        PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
+                        PipelineEvent::agent_chain_initialized(
+                            role,
+                            vec!["claude".to_string()],
+                            3,
+                            1000,
+                            2.0,
+                            60000,
+                        ),
                     );
                 }
                 Effect::RunReviewPass { pass } => {
@@ -814,10 +1013,34 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_effect_commit_message_not_started() {
+    fn test_determine_effect_commit_message_empty_chain() {
+        // When agent chain is empty, commit phase should request initialization
         let state = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
+            agent_chain: AgentChainState::initial(),
+            ..create_test_state()
+        };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(
+            effect,
+            Effect::InitializeAgentChain {
+                role: AgentRole::Commit
+            }
+        ));
+    }
+
+    #[test]
+    fn test_determine_effect_commit_message_not_started() {
+        // With initialized agent chain, commit phase should generate message
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: CommitState::NotStarted,
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["commit-agent".to_string()],
+                vec![vec![]],
+                AgentRole::Commit,
+            ),
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
@@ -831,6 +1054,11 @@ mod tests {
             commit: CommitState::Generated {
                 message: "test commit message".to_string(),
             },
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["commit-agent".to_string()],
+                vec![vec![]],
+                AgentRole::Commit,
+            ),
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);

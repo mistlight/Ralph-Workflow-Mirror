@@ -5,7 +5,7 @@
 //! - commit-message.txt management
 //! - PROMPT.md validation
 //! - Isolation mode file cleanup
-//! - Result extraction from agent JSON logs
+//! - File path extraction from ISSUES content
 //! - File integrity verification and checksums
 //! - Error recovery and state repair
 //! - Real-time file system monitoring for PROMPT.md protection
@@ -17,7 +17,7 @@
 //! - [`io`] - File I/O operations (agent files, recovery, backup, context)
 //! - [`protection`] - File protection and integrity (validation, integrity, monitoring)
 //! - [`llm_output_extraction`] - LLM output extraction (commit message, JSON extraction)
-//! - [`result_extraction`] - Plan and issue extraction from logs
+//! - [`result_extraction`] - File path extraction from ISSUES content
 //!
 //! # Isolation Mode
 //!
@@ -39,17 +39,14 @@ pub mod protection;
 pub mod llm_output_extraction;
 pub mod result_extraction;
 
-// Re-exports from new domain structure for backward compatibility
+// Re-exports from domain submodules for API convenience
 pub use io::{
-    clean_context_for_reviewer, clean_context_for_reviewer_with_workspace,
-    cleanup_generated_files_with_workspace, create_prompt_backup,
+    clean_context_for_reviewer_with_workspace, cleanup_generated_files_with_workspace,
     create_prompt_backup_with_workspace, delete_commit_message_file_with_workspace,
-    delete_issues_file_for_isolation, delete_issues_file_for_isolation_with_workspace,
-    delete_plan_file_with_workspace, ensure_files_with_workspace, file_contains_marker,
-    file_contains_marker_with_workspace, make_prompt_read_only,
-    make_prompt_read_only_with_workspace, make_prompt_writable,
-    make_prompt_writable_with_workspace, read_commit_message_file_with_workspace,
-    reset_context_for_isolation, setup_xsd_schemas_with_workspace, update_status,
+    delete_issues_file_for_isolation_with_workspace, delete_plan_file_with_workspace,
+    ensure_files_with_workspace, file_contains_marker, file_contains_marker_with_workspace,
+    make_prompt_read_only_with_workspace, make_prompt_writable_with_workspace,
+    read_commit_message_file_with_workspace, setup_xsd_schemas_with_workspace,
     update_status_with_workspace, verify_file_not_corrupted_with_workspace,
     write_commit_message_file_with_workspace, write_diff_backup_with_workspace,
     write_file_atomic_with_workspace,
@@ -58,6 +55,3 @@ pub use io::{
 #[cfg(test)]
 pub use protection::restore_prompt_if_needed;
 pub use protection::{validate_prompt_md, validate_prompt_md_with_workspace};
-pub use result_extraction::extract_issues;
-#[cfg(any(test, feature = "test-utils"))]
-pub use result_extraction::extract_plan;

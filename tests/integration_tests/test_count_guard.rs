@@ -81,10 +81,6 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("commit/mod.rs"),
     },
     SourceFile {
-        path: "codex_parser_tests.rs",
-        contents: include_str!("codex_parser_tests.rs"),
-    },
-    SourceFile {
         path: "common/mod.rs",
         contents: include_str!("common/mod.rs"),
     },
@@ -113,10 +109,6 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("logger/mod.rs"),
     },
     SourceFile {
-        path: "logger/json_event_extraction.rs",
-        contents: include_str!("logger/json_event_extraction.rs"),
-    },
-    SourceFile {
         path: "logger/test_logger_tests.rs",
         contents: include_str!("logger/test_logger_tests.rs"),
     },
@@ -135,6 +127,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "reducer_fault_tolerance.rs",
         contents: include_str!("reducer_fault_tolerance.rs"),
+    },
+    SourceFile {
+        path: "reducer_hidden_behavior.rs",
+        contents: include_str!("reducer_hidden_behavior.rs"),
     },
     SourceFile {
         path: "reducer_rebase_state_machine.rs",
@@ -163,10 +159,6 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
     SourceFile {
         path: "review_xml_validation.rs",
         contents: include_str!("review_xml_validation.rs"),
-    },
-    SourceFile {
-        path: "review_xsd_retry_session.rs",
-        contents: include_str!("review_xsd_retry_session.rs"),
     },
     SourceFile {
         path: "test_count_guard.rs",
@@ -405,11 +397,6 @@ fn integration_test_count_guard_documentation() {
                 compiled_count >= MINIMUM_EXPECTED_TESTS,
                 "Compiled test list count {compiled_count} is below MINIMUM_EXPECTED_TESTS ({MINIMUM_EXPECTED_TESTS}). \
 Ensure you're running `cargo test -p ralph-workflow-tests`."
-            );
-        } else {
-            eprintln!(
-                "Skipping compiled test count check: RALPH_INTEGRATION_TEST_LIST_COUNT is unset. \
-Set it to the `cargo test -p ralph-workflow-tests -- --list` count to validate compiled test discovery."
             );
         }
     });

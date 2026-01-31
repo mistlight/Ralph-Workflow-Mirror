@@ -157,7 +157,7 @@ fn test_fix_attempt_started_resets_agent_chain() {
         crate::agents::AgentRole::Reviewer,
     );
     agent_chain = agent_chain.switch_to_next_agent(); // Move to agent 1
-    agent_chain.retry_cycle = 3; // Manually set retry_cycle to verify preservation
+    agent_chain.retry_cycle = 3; // Manually set retry_cycle to verify reset
 
     let state = PipelineState {
         review_issues_found: true,
@@ -178,10 +178,18 @@ fn test_fix_attempt_started_resets_agent_chain() {
     // CRITICAL: review_issues_found should be preserved (not reset)
     assert!(new_state.review_issues_found);
 
-    // Agent chain should be reset (indices to 0, but retry_cycle preserved)
+    // Agent chain should be reset for developer role
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
     assert_eq!(new_state.agent_chain.current_model_index, 0);
-    assert_eq!(new_state.agent_chain.retry_cycle, 3); // Preserved, not reset
+    assert_eq!(new_state.agent_chain.retry_cycle, 0);
+    assert_eq!(
+        new_state.agent_chain.current_role,
+        crate::agents::AgentRole::Developer
+    );
+    assert!(
+        new_state.agent_chain.agents.is_empty(),
+        "Expected agent chain to be cleared for re-initialization"
+    );
 }
 
 #[test]
@@ -554,6 +562,40 @@ fn test_review_uses_agent_from_state_chain_not_context() {
     );
 }
 
+#[test]
+fn test_fix_attempt_reinitializes_chain_for_reviewer_role() {
+    use crate::reducer::orchestration::determine_next_effect;
+
+    // Simulate the bug/regression scenario: the chain is populated, but for the wrong role.
+    // Fix attempts must use the Reviewer role (not Developer).
+    let developer_chain = crate::reducer::state::AgentChainState::initial().with_agents(
+        vec!["dev-1".to_string(), "dev-2".to_string()],
+        vec![vec![], vec![]],
+        crate::agents::AgentRole::Developer,
+    );
+
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 1,
+        review_issues_found: true,
+        agent_chain: developer_chain,
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::InitializeAgentChain {
+                role: crate::agents::AgentRole::Reviewer
+            }
+        ),
+        "Expected InitializeAgentChain for Reviewer before fix attempt, got {:?}",
+        effect
+    );
+}
+
 /// Test that auth failure during review advances the agent chain via events.
 #[test]
 fn test_auth_failure_during_review_advances_agent_chain() {
@@ -649,6 +691,10 @@ fn test_handler_reads_correct_agent_from_state_after_chain_initialized() {
                 "opencode".to_string(),
                 "claude".to_string(),
             ],
+            3,
+            1000,
+            2.0,
+            60000,
         ),
     );
 
@@ -732,6 +778,10 @@ fn test_full_pipeline_flow_uses_correct_reviewer_agent() {
                 "opencode".to_string(),
                 "claude".to_string(),
             ],
+            3,
+            1000,
+            2.0,
+            60000,
         ),
     );
 
@@ -807,6 +857,10 @@ fn test_event_loop_state_consistency_for_review_agent() {
             "opencode".to_string(),
             "claude".to_string(),
         ],
+        3,
+        1000,
+        2.0,
+        60000,
     );
 
     // Event loop: reduce state with the event
@@ -930,8 +984,19 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
         state.agent_chain.agents
     );
 
-    // === STEP 4: Orchestration requests agent chain initialization ===
-    let effect = determine_next_effect(&state);
+    // === STEP 4: Orchestration cleans continuation context if needed ===
+    let mut effect = determine_next_effect(&state);
+    if matches!(
+        effect,
+        crate::reducer::effect::Effect::CleanupContinuationContext
+    ) {
+        state = reduce(
+            state,
+            PipelineEvent::development_continuation_context_cleaned(),
+        );
+        effect = determine_next_effect(&state);
+    }
+
     assert!(
         matches!(
             effect,
@@ -953,6 +1018,10 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
                 "opencode".to_string(),
                 "claude".to_string(),
             ],
+            3,
+            1000,
+            2.0,
+            60000,
         ),
     );
 

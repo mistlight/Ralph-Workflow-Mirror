@@ -10,6 +10,19 @@
 //! - [`EffectHandler`] - Trait for executing effects (impure code lives here)
 //! - [`EffectResult`] - Contains both pipeline event and optional UI events
 //!
+//! # Single-Task Effect Principle
+//!
+//! Each Effect variant represents exactly **one** logical operation. Effects must NOT:
+//! - Perform multiple unrelated file operations
+//! - Combine "decide" and "do" in one effect
+//! - Bundle agent execution with parsing, retry, or output writing
+//!
+//! If an effect needs multiple responsibilities, split it into separate effects.
+//! The effect handler executes effects atomically; all coordination happens via
+//! reducer state and events.
+//!
+//! This principle is tested in `reducer_legacy_rejection.rs::test_effects_are_single_task`.
+//!
 //! # Design
 //!
 //! This separation keeps business logic pure (in reducers) while isolating
@@ -87,6 +100,25 @@ pub enum Effect {
     },
 
     SkipCommit {
+        reason: String,
+    },
+
+    /// Wait for a retry-cycle backoff delay.
+    ///
+    /// This effect is emitted when the reducer determines the agent chain has
+    /// entered a new retry cycle and a backoff delay must be applied before
+    /// attempting more work.
+    BackoffWait {
+        role: AgentRole,
+        cycle: u32,
+        duration_ms: u64,
+    },
+
+    /// Abort the pipeline with a reason.
+    ///
+    /// This provides an explicit terminal effect for unrecoverable situations
+    /// (e.g., exhausted agent chain) so the pipeline never stalls on checkpoints.
+    AbortPipeline {
         reason: String,
     },
 

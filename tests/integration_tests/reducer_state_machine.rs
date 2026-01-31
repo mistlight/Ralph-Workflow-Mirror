@@ -335,7 +335,10 @@ fn test_pipeline_continues_after_agent_failure() {
             phase: PipelinePhase::Development,
             agent_chain: AgentChainState::initial().with_agents(
                 vec!["agent1".to_string(), "agent2".to_string()],
-                vec![vec!["model1".to_string()]],
+                vec![
+                    vec!["model1".to_string(), "model2".to_string()],
+                    vec!["model1".to_string()],
+                ],
                 AgentRole::Developer,
             ),
             ..create_initial_state()

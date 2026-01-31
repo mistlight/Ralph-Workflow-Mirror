@@ -5,6 +5,9 @@
 
 use crate::agents::AgentRole;
 use crate::checkpoint::execution_history::ExecutionStep;
+use crate::checkpoint::{
+    PipelineCheckpoint, PipelinePhase as CheckpointPhase, RebaseState as CheckpointRebaseState,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -68,6 +71,12 @@ pub struct ContinuationState {
     /// Count of invalid XML outputs for the current iteration.
     #[serde(default)]
     pub invalid_output_attempts: u32,
+    /// Whether a continuation context write is pending.
+    #[serde(default)]
+    pub context_write_pending: bool,
+    /// Whether a continuation context cleanup is pending.
+    #[serde(default)]
+    pub context_cleanup_pending: bool,
 }
 
 impl ContinuationState {
@@ -101,6 +110,8 @@ impl ContinuationState {
             previous_next_steps: next_steps,
             continuation_attempt: self.continuation_attempt + 1,
             invalid_output_attempts: 0,
+            context_write_pending: true,
+            context_cleanup_pending: false,
         }
     }
 }
@@ -136,6 +147,12 @@ pub struct PipelineState {
     pub rebase: RebaseState,
     pub commit: CommitState,
     pub execution_history: Vec<ExecutionStep>,
+    /// Count of CheckpointSaved events applied to state.
+    ///
+    /// This is a reducer-visible record of checkpoint saves, intended for
+    /// observability and tests that enforce checkpointing happens via effects.
+    #[serde(default)]
+    pub checkpoint_saved_count: u32,
     /// Continuation state for development iterations.
     ///
     /// Tracks context from previous attempts when status is "partial" or "failed"
@@ -172,21 +189,93 @@ impl PipelineState {
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
             execution_history: Vec::new(),
+            checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
         }
     }
 
     pub fn is_complete(&self) -> bool {
-        matches!(
-            self.phase,
-            PipelinePhase::Complete | PipelinePhase::Interrupted
-        )
+        matches!(self.phase, PipelinePhase::Complete)
+            || (matches!(self.phase, PipelinePhase::Interrupted) && self.checkpoint_saved_count > 0)
     }
 
     pub fn current_head(&self) -> String {
         self.rebase
             .current_head()
             .unwrap_or_else(|| "HEAD".to_string())
+    }
+}
+
+impl From<PipelineCheckpoint> for PipelineState {
+    fn from(checkpoint: PipelineCheckpoint) -> Self {
+        let rebase_state = map_checkpoint_rebase_state(&checkpoint.rebase_state);
+        let agent_chain = AgentChainState::initial();
+
+        PipelineState {
+            phase: map_checkpoint_phase(checkpoint.phase),
+            previous_phase: None,
+            iteration: checkpoint.iteration,
+            total_iterations: checkpoint.total_iterations,
+            reviewer_pass: checkpoint.reviewer_pass,
+            total_reviewer_passes: checkpoint.total_reviewer_passes,
+            review_issues_found: false,
+            context_cleaned: false,
+            agent_chain,
+            rebase: rebase_state,
+            commit: CommitState::NotStarted,
+            execution_history: checkpoint
+                .execution_history
+                .map(|h| h.steps)
+                .unwrap_or_default(),
+            checkpoint_saved_count: 0,
+            continuation: ContinuationState::new(),
+        }
+    }
+}
+
+fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
+    match phase {
+        CheckpointPhase::Rebase => PipelinePhase::Planning,
+        CheckpointPhase::Planning => PipelinePhase::Planning,
+        CheckpointPhase::Development => PipelinePhase::Development,
+        CheckpointPhase::Review => PipelinePhase::Review,
+        CheckpointPhase::CommitMessage => PipelinePhase::CommitMessage,
+        CheckpointPhase::FinalValidation => PipelinePhase::FinalValidation,
+        CheckpointPhase::Complete => PipelinePhase::Complete,
+        CheckpointPhase::PreRebase => PipelinePhase::Planning,
+        CheckpointPhase::PreRebaseConflict => PipelinePhase::Planning,
+        CheckpointPhase::PostRebase => PipelinePhase::CommitMessage,
+        CheckpointPhase::PostRebaseConflict => PipelinePhase::CommitMessage,
+        CheckpointPhase::Interrupted => PipelinePhase::Interrupted,
+    }
+}
+
+fn map_checkpoint_rebase_state(rebase_state: &CheckpointRebaseState) -> RebaseState {
+    match rebase_state {
+        CheckpointRebaseState::NotStarted => RebaseState::NotStarted,
+        CheckpointRebaseState::PreRebaseInProgress { upstream_branch } => RebaseState::InProgress {
+            original_head: "HEAD".to_string(),
+            target_branch: upstream_branch.clone(),
+        },
+        CheckpointRebaseState::PreRebaseCompleted { commit_oid } => RebaseState::Completed {
+            new_head: commit_oid.clone(),
+        },
+        CheckpointRebaseState::PostRebaseInProgress { upstream_branch } => {
+            RebaseState::InProgress {
+                original_head: "HEAD".to_string(),
+                target_branch: upstream_branch.clone(),
+            }
+        }
+        CheckpointRebaseState::PostRebaseCompleted { commit_oid } => RebaseState::Completed {
+            new_head: commit_oid.clone(),
+        },
+        CheckpointRebaseState::HasConflicts { files } => RebaseState::Conflicted {
+            original_head: "HEAD".to_string(),
+            target_branch: "main".to_string(),
+            files: files.iter().map(PathBuf::from).collect(),
+            resolution_attempts: 0,
+        },
+        CheckpointRebaseState::Failed { .. } => RebaseState::Skipped,
     }
 }
 
@@ -204,6 +293,18 @@ pub struct AgentChainState {
     pub current_model_index: usize,
     pub retry_cycle: u32,
     pub max_cycles: u32,
+    /// Base delay between retry cycles in milliseconds.
+    #[serde(default = "default_retry_delay_ms")]
+    pub retry_delay_ms: u64,
+    /// Multiplier for exponential backoff.
+    #[serde(default = "default_backoff_multiplier")]
+    pub backoff_multiplier: f64,
+    /// Maximum backoff delay in milliseconds.
+    #[serde(default = "default_max_backoff_ms")]
+    pub max_backoff_ms: u64,
+    /// Pending backoff delay (milliseconds) that must be waited before continuing.
+    #[serde(default)]
+    pub backoff_pending_ms: Option<u64>,
     pub current_role: AgentRole,
     /// Prompt context preserved from rate-limited agent for continuation.
     ///
@@ -211,6 +312,18 @@ pub struct AgentChainState {
     /// can continue the same work instead of starting from scratch.
     #[serde(default)]
     pub rate_limit_continuation_prompt: Option<String>,
+}
+
+const fn default_retry_delay_ms() -> u64 {
+    1000
+}
+
+const fn default_backoff_multiplier() -> f64 {
+    2.0
+}
+
+const fn default_max_backoff_ms() -> u64 {
+    60000
 }
 
 impl AgentChainState {
@@ -222,6 +335,10 @@ impl AgentChainState {
             current_model_index: 0,
             retry_cycle: 0,
             max_cycles: 3,
+            retry_delay_ms: default_retry_delay_ms(),
+            backoff_multiplier: default_backoff_multiplier(),
+            max_backoff_ms: default_max_backoff_ms(),
+            backoff_pending_ms: None,
             current_role: AgentRole::Developer,
             rate_limit_continuation_prompt: None,
         }
@@ -248,6 +365,18 @@ impl AgentChainState {
         self
     }
 
+    pub fn with_backoff_policy(
+        mut self,
+        retry_delay_ms: u64,
+        backoff_multiplier: f64,
+        max_backoff_ms: u64,
+    ) -> Self {
+        self.retry_delay_ms = retry_delay_ms;
+        self.backoff_multiplier = backoff_multiplier;
+        self.max_backoff_ms = max_backoff_ms;
+        self
+    }
+
     pub fn current_agent(&self) -> Option<&String> {
         self.agents.get(self.current_agent_index)
     }
@@ -271,15 +400,23 @@ impl AgentChainState {
     }
 
     pub fn advance_to_next_model(&self) -> Self {
-        let mut new = self.clone();
-        if let Some(models) = new.models_per_agent.get(new.current_agent_index) {
-            if new.current_model_index + 1 < models.len() {
-                new.current_model_index += 1;
-            } else {
-                new.current_model_index = 0;
+        let new = self.clone();
+
+        // When models are configured, we try each model for the current agent once.
+        // If the models list is exhausted, advance to the next agent/retry cycle
+        // instead of looping models indefinitely.
+        match new.models_per_agent.get(new.current_agent_index) {
+            Some(models) if !models.is_empty() => {
+                if new.current_model_index + 1 < models.len() {
+                    let mut advanced = new;
+                    advanced.current_model_index += 1;
+                    advanced
+                } else {
+                    new.switch_to_next_agent()
+                }
             }
+            _ => new.switch_to_next_agent(),
         }
-        new
     }
 
     pub fn switch_to_next_agent(&self) -> Self {
@@ -287,10 +424,16 @@ impl AgentChainState {
         if new.current_agent_index + 1 < new.agents.len() {
             new.current_agent_index += 1;
             new.current_model_index = 0;
+            new.backoff_pending_ms = None;
         } else {
             new.current_agent_index = 0;
             new.current_model_index = 0;
             new.retry_cycle += 1;
+            if new.is_exhausted() {
+                new.backoff_pending_ms = None;
+            } else {
+                new.backoff_pending_ms = Some(new.calculate_backoff_delay_ms_for_retry_cycle());
+            }
         }
         new
     }
@@ -302,30 +445,6 @@ impl AgentChainState {
     /// we switch to the next agent and preserve the prompt so the new agent
     /// can continue the same work.
     pub fn switch_to_next_agent_with_prompt(&self, prompt: Option<String>) -> Self {
-        // Rate-limit fallback is special: it should never retry an agent that has
-        // already been rate-limited in the current chain.
-        //
-        // For single-agent chains (or when switching would wrap around), we
-        // treat the chain as exhausted to avoid immediately re-invoking the same
-        // rate-limited agent.
-        if self.agents.len() <= 1 {
-            let mut exhausted = self.clone();
-            exhausted.current_agent_index = 0;
-            exhausted.current_model_index = 0;
-            exhausted.retry_cycle = exhausted.max_cycles;
-            exhausted.rate_limit_continuation_prompt = None;
-            return exhausted;
-        }
-
-        if self.current_agent_index + 1 >= self.agents.len() {
-            let mut exhausted = self.clone();
-            exhausted.current_agent_index = 0;
-            exhausted.current_model_index = 0;
-            exhausted.retry_cycle = exhausted.max_cycles;
-            exhausted.rate_limit_continuation_prompt = None;
-            return exhausted;
-        }
-
         let mut next = self.switch_to_next_agent();
         next.rate_limit_continuation_prompt = prompt;
         next
@@ -347,6 +466,7 @@ impl AgentChainState {
         new.current_agent_index = 0;
         new.current_model_index = 0;
         new.retry_cycle = 0;
+        new.backoff_pending_ms = None;
         new.rate_limit_continuation_prompt = None;
         new
     }
@@ -355,6 +475,7 @@ impl AgentChainState {
         let mut new = self.clone();
         new.current_agent_index = 0;
         new.current_model_index = 0;
+        new.backoff_pending_ms = None;
         new.rate_limit_continuation_prompt = None;
         new
     }
@@ -364,8 +485,106 @@ impl AgentChainState {
         new.current_agent_index = 0;
         new.current_model_index = 0;
         new.retry_cycle += 1;
+        if new.is_exhausted() {
+            new.backoff_pending_ms = None;
+        } else {
+            new.backoff_pending_ms = Some(new.calculate_backoff_delay_ms_for_retry_cycle());
+        }
         new
     }
+
+    pub fn clear_backoff_pending(&self) -> Self {
+        let mut new = self.clone();
+        new.backoff_pending_ms = None;
+        new
+    }
+
+    fn calculate_backoff_delay_ms_for_retry_cycle(&self) -> u64 {
+        // The first retry cycle should use the base delay.
+        let cycle_index = self.retry_cycle.saturating_sub(1);
+        calculate_backoff_delay_ms(
+            self.retry_delay_ms,
+            self.backoff_multiplier,
+            self.max_backoff_ms,
+            cycle_index,
+        )
+    }
+}
+
+// Backoff computation helpers.
+// These mirror the semantics in `crate::agents::fallback::FallbackConfig::calculate_backoff`
+// but live in reducer state so orchestration can derive BackoffWait effects purely.
+
+const IEEE_754_EXP_BIAS: i32 = 1023;
+const IEEE_754_EXP_MASK: u64 = 0x7FF;
+const IEEE_754_MANTISSA_MASK: u64 = 0x000F_FFFF_FFFF_FFFF;
+const IEEE_754_IMPLICIT_ONE: u64 = 1u64 << 52;
+
+fn f64_to_u64_via_bits(value: f64) -> u64 {
+    if !value.is_finite() || value < 0.0 {
+        return 0;
+    }
+    let bits = value.to_bits();
+    let exp_biased = ((bits >> 52) & IEEE_754_EXP_MASK) as i32;
+    let mantissa = bits & IEEE_754_MANTISSA_MASK;
+    if exp_biased == 0 {
+        return 0;
+    }
+    let exp = exp_biased - IEEE_754_EXP_BIAS;
+    if exp < 0 {
+        return 0;
+    }
+    let full_mantissa = mantissa | IEEE_754_IMPLICIT_ONE;
+    let shift = 52i32 - exp;
+    if shift <= 0 {
+        u64::MAX
+    } else if shift < 64 {
+        full_mantissa >> shift
+    } else {
+        0
+    }
+}
+
+fn multiplier_hundredths(backoff_multiplier: f64) -> u64 {
+    const EPSILON: f64 = 0.0001;
+    let m = backoff_multiplier;
+    if (m - 1.0).abs() < EPSILON {
+        return 100;
+    } else if (m - 1.5).abs() < EPSILON {
+        return 150;
+    } else if (m - 2.0).abs() < EPSILON {
+        return 200;
+    } else if (m - 2.5).abs() < EPSILON {
+        return 250;
+    } else if (m - 3.0).abs() < EPSILON {
+        return 300;
+    } else if (m - 4.0).abs() < EPSILON {
+        return 400;
+    } else if (m - 5.0).abs() < EPSILON {
+        return 500;
+    } else if (m - 10.0).abs() < EPSILON {
+        return 1000;
+    }
+
+    let clamped = m.clamp(0.0, 1000.0);
+    let multiplied = clamped * 100.0;
+    let rounded = multiplied.round();
+    f64_to_u64_via_bits(rounded)
+}
+
+fn calculate_backoff_delay_ms(
+    retry_delay_ms: u64,
+    backoff_multiplier: f64,
+    max_backoff_ms: u64,
+    cycle: u32,
+) -> u64 {
+    let mult_hundredths = multiplier_hundredths(backoff_multiplier);
+    let mut delay_hundredths = retry_delay_ms.saturating_mul(100);
+    for _ in 0..cycle {
+        delay_hundredths = delay_hundredths.saturating_mul(mult_hundredths);
+        delay_hundredths = delay_hundredths.saturating_div(100);
+    }
+    delay_hundredths.div_euclid(100).min(max_backoff_ms)
 }
 
 /// Rebase operation state.
@@ -441,6 +660,9 @@ pub const MAX_DEV_VALIDATION_RETRY_ATTEMPTS: u32 = 10;
 /// Maximum number of invalid XML output reruns before aborting the iteration.
 pub const MAX_DEV_INVALID_OUTPUT_RERUNS: u32 = 2;
 
+/// Maximum number of invalid planning output reruns before switching agents.
+pub const MAX_PLAN_INVALID_OUTPUT_RERUNS: u32 = 2;
+
 /// Commit generation state.
 ///
 /// Tracks commit message generation progress through retries:
@@ -465,6 +687,7 @@ impl CommitState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::checkpoint::state::{AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot};
 
     #[test]
     fn test_pipeline_state_initial() {
@@ -509,6 +732,28 @@ mod tests {
         let new_chain = chain.advance_to_next_model();
         assert_eq!(new_chain.current_model_index, 1);
         assert_eq!(new_chain.current_model(), Some(&"model2".to_string()));
+    }
+
+    #[test]
+    fn test_agent_chain_advance_to_next_model_switches_agent_when_models_exhausted() {
+        let chain = AgentChainState::initial().with_agents(
+            vec!["agent-a".to_string(), "agent-b".to_string()],
+            vec![
+                vec!["a1".to_string(), "a2".to_string()],
+                vec!["b1".to_string()],
+            ],
+            AgentRole::Developer,
+        );
+
+        let chain = chain.advance_to_next_model(); // a1 -> a2
+        assert_eq!(chain.current_agent(), Some(&"agent-a".to_string()));
+        assert_eq!(chain.current_model(), Some(&"a2".to_string()));
+
+        // Exhausted models for agent-a; should move to agent-b instead of looping models.
+        let chain = chain.advance_to_next_model();
+        assert_eq!(chain.current_agent(), Some(&"agent-b".to_string()));
+        assert_eq!(chain.current_model_index, 0);
+        assert_eq!(chain.current_model(), Some(&"b1".to_string()));
     }
 
     #[test]
@@ -569,6 +814,71 @@ mod tests {
         assert!(state.is_terminal());
         assert_eq!(state.current_head(), Some("def456".to_string()));
         assert!(!state.is_in_progress());
+    }
+
+    fn make_checkpoint_for_state(
+        phase: CheckpointPhase,
+        rebase_state: CheckpointRebaseState,
+    ) -> PipelineCheckpoint {
+        let run_id = uuid::Uuid::new_v4().to_string();
+        PipelineCheckpoint::from_params(CheckpointParams {
+            phase,
+            iteration: 2,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            developer_agent: "claude",
+            reviewer_agent: "codex",
+            cli_args: CliArgsSnapshot::new(5, 2, None, true, 2, false, None),
+            developer_agent_config: AgentConfigSnapshot::new(
+                "claude".into(),
+                "cmd".into(),
+                "-o".into(),
+                None,
+                true,
+            ),
+            reviewer_agent_config: AgentConfigSnapshot::new(
+                "codex".into(),
+                "cmd".into(),
+                "-o".into(),
+                None,
+                true,
+            ),
+            rebase_state,
+            git_user_name: None,
+            git_user_email: None,
+            run_id: &run_id,
+            parent_run_id: None,
+            resume_count: 0,
+            actual_developer_runs: 2,
+            actual_reviewer_runs: 0,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
+        })
+    }
+
+    #[test]
+    fn test_pipeline_state_from_checkpoint_phase_mapping() {
+        let checkpoint = make_checkpoint_for_state(
+            CheckpointPhase::Development,
+            CheckpointRebaseState::NotStarted,
+        );
+        let state: PipelineState = checkpoint.into();
+        assert_eq!(state.phase, PipelinePhase::Development);
+    }
+
+    #[test]
+    fn test_pipeline_state_from_checkpoint_rebase_conflicts() {
+        let checkpoint = make_checkpoint_for_state(
+            CheckpointPhase::PreRebaseConflict,
+            CheckpointRebaseState::HasConflicts {
+                files: vec!["file1.rs".to_string()],
+            },
+        );
+        let state: PipelineState = checkpoint.into();
+        assert!(matches!(state.rebase, RebaseState::Conflicted { .. }));
     }
 
     #[test]
@@ -773,7 +1083,7 @@ mod tests {
     }
 
     #[test]
-    fn test_switch_to_next_agent_with_prompt_exhausts_when_single_agent() {
+    fn test_switch_to_next_agent_with_prompt_advances_retry_cycle_when_single_agent() {
         let chain = AgentChainState::initial().with_agents(
             vec!["agent1".to_string()],
             vec![vec![]],
@@ -782,13 +1092,14 @@ mod tests {
 
         let next = chain.switch_to_next_agent_with_prompt(Some("prompt".to_string()));
         assert!(
-            next.is_exhausted(),
-            "single-agent rate limit fallback should exhaust the chain"
+            !next.is_exhausted(),
+            "single-agent rate limit fallback should not immediately exhaust the chain"
         );
+        assert_eq!(next.retry_cycle, 1);
     }
 
     #[test]
-    fn test_switch_to_next_agent_with_prompt_exhausts_on_wraparound() {
+    fn test_switch_to_next_agent_with_prompt_advances_retry_cycle_on_wraparound() {
         let mut chain = AgentChainState::initial().with_agents(
             vec!["agent1".to_string(), "agent2".to_string()],
             vec![vec![], vec![]],
@@ -798,8 +1109,9 @@ mod tests {
 
         let next = chain.switch_to_next_agent_with_prompt(Some("prompt".to_string()));
         assert!(
-            next.is_exhausted(),
-            "rate limit fallback should not wrap and retry a previously rate-limited agent"
+            !next.is_exhausted(),
+            "rate limit fallback should not immediately exhaust on wraparound"
         );
+        assert_eq!(next.retry_cycle, 1);
     }
 }

@@ -45,7 +45,7 @@ pub mod finalization;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock_effect_handler;
 pub mod plumbing;
-mod rebase;
+pub(crate) mod rebase;
 pub mod resume;
 pub mod validation;
 
@@ -68,8 +68,7 @@ use crate::files::{
     update_status_with_workspace, validate_prompt_md_with_workspace,
 };
 use crate::git_helpers::{
-    abort_rebase, continue_rebase, get_conflicted_files, is_main_or_master_branch,
-    reset_start_commit, RebaseResult,
+    abort_rebase, continue_rebase, get_conflicted_files, is_main_or_master_branch, RebaseResult,
 };
 #[cfg(not(feature = "test-utils"))]
 use crate::git_helpers::{
@@ -85,7 +84,7 @@ use config_init::initialize_config;
 use context::PipelineContext;
 use detection::detect_project_stack;
 use plumbing::handle_generate_commit_msg;
-use rebase::{run_initial_rebase, run_rebase_to_default, try_resolve_conflicts_without_phase_ctx};
+use rebase::{run_rebase_to_default, try_resolve_conflicts_without_phase_ctx};
 use resume::{handle_resume_with_validation, offer_resume_if_checkpoint_exists};
 use validation::{
     resolve_required_agents, validate_agent_chains, validate_agent_commands, validate_can_commit,
@@ -173,6 +172,9 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
 
     // Handle --diagnose
     if args.recovery.diagnose {
+        let diagnose_workspace = crate::workspace::WorkspaceFs::new(
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        );
         handle_diagnose(
             colors,
             &config,
@@ -180,6 +182,7 @@ pub fn run(args: Args, executor: std::sync::Arc<dyn ProcessExecutor>) -> anyhow:
             &config_path,
             &config_sources,
             &*executor,
+            &diagnose_workspace,
         );
         return Ok(());
     }
@@ -330,7 +333,7 @@ pub fn run_with_config(
     config: crate::config::Config,
     registry: AgentRegistry,
 ) -> anyhow::Result<()> {
-    // Use real path resolver and effect handler by default for backward compatibility
+    // Use real path resolver and effect handler by default
     let mut handler = effect_handler::RealAppEffectHandler::new();
     run_with_config_and_resolver(
         args,
@@ -379,8 +382,8 @@ pub fn run_with_config_and_resolver<
     workspace: Option<std::sync::Arc<dyn crate::workspace::Workspace>>,
 ) -> anyhow::Result<()> {
     use crate::cli::{
-        handle_extended_help, handle_init_global_with, handle_init_prompt_with,
-        handle_list_work_guides, handle_smart_init_with,
+        handle_extended_help, handle_init_global_with, handle_list_work_guides,
+        handle_smart_init_with,
     };
 
     let colors = Colors::new();
@@ -404,18 +407,6 @@ pub fn run_with_config_and_resolver<
     // Handle --list-work-guides / --list-templates flag
     if args.work_guide_list.list_work_guides && handle_list_work_guides(colors) {
         return Ok(());
-    }
-
-    // Handle --init-prompt flag: create PROMPT.md from template and exit
-    if let Some(ref template_name) = args.init_prompt {
-        if handle_init_prompt_with(
-            template_name,
-            args.unified_init.force_init,
-            colors,
-            path_resolver,
-        )? {
-            return Ok(());
-        }
     }
 
     // Handle smart --init flag: intelligently determine what to initialize
@@ -455,7 +446,19 @@ pub fn run_with_config_and_resolver<
 
     // Handle --diagnose
     if args.recovery.diagnose {
-        handle_diagnose(colors, &config, &registry, &config_path, &[], &*executor);
+        let diagnose_workspace = workspace
+            .as_ref()
+            .map(|w| w.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("--diagnose requires workspace context"))?;
+        handle_diagnose(
+            colors,
+            &config,
+            &registry,
+            &config_path,
+            &[],
+            &*executor,
+            diagnose_workspace,
+        );
         return Ok(());
     }
 
@@ -581,8 +584,8 @@ where
         ..
     } = params;
     use crate::cli::{
-        handle_extended_help, handle_init_global_with, handle_init_prompt_with,
-        handle_list_work_guides, handle_smart_init_with,
+        handle_extended_help, handle_init_global_with, handle_list_work_guides,
+        handle_smart_init_with,
     };
 
     let colors = Colors::new();
@@ -606,18 +609,6 @@ where
     // Handle --list-work-guides / --list-templates flag
     if args.work_guide_list.list_work_guides && handle_list_work_guides(colors) {
         return Ok(());
-    }
-
-    // Handle --init-prompt flag
-    if let Some(ref template_name) = args.init_prompt {
-        if handle_init_prompt_with(
-            template_name,
-            args.unified_init.force_init,
-            colors,
-            path_resolver,
-        )? {
-            return Ok(());
-        }
     }
 
     // Handle smart --init flag
@@ -657,7 +648,19 @@ where
 
     // Handle --diagnose
     if args.recovery.diagnose {
-        handle_diagnose(colors, &config, &registry, &config_path, &[], &*executor);
+        let diagnose_workspace = workspace
+            .as_ref()
+            .map(|w| w.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("--diagnose requires workspace context"))?;
+        handle_diagnose(
+            colors,
+            &config,
+            &registry,
+            &config_path,
+            &[],
+            &*executor,
+            diagnose_workspace,
+        );
         return Ok(());
     }
 
@@ -847,40 +850,7 @@ fn handle_plumbing_commands<H: effect::AppEffectHandler>(
                 logger.error(&format!("Failed to reset starting commit: {e}"));
                 anyhow::bail!("Failed to reset starting commit");
             }
-            other => {
-                // Fallback to old implementation for other result types
-                // This allows gradual migration
-                drop(other);
-                match reset_start_commit() {
-                    Ok(result) => {
-                        let short_oid = &result.oid[..8.min(result.oid.len())];
-                        if result.fell_back_to_head {
-                            logger.success(&format!(
-                                "Starting commit reference reset to current HEAD ({})",
-                                short_oid
-                            ));
-                            logger.info("On main/master branch - using HEAD as baseline");
-                        } else if let Some(ref branch) = result.default_branch {
-                            logger.success(&format!(
-                                "Starting commit reference reset to merge-base with '{}' ({})",
-                                branch, short_oid
-                            ));
-                            logger.info("Baseline set to common ancestor with default branch");
-                        } else {
-                            logger.success(&format!(
-                                "Starting commit reference reset ({})",
-                                short_oid
-                            ));
-                        }
-                        logger.info(".agent/start_commit has been updated");
-                        Ok(true)
-                    }
-                    Err(e) => {
-                        logger.error(&format!("Failed to reset starting commit: {e}"));
-                        anyhow::bail!("Failed to reset starting commit");
-                    }
-                }
-            }
+            other => anyhow::bail!("unexpected result from GitResetStartCommit: {other:?}"),
         };
     }
 
@@ -964,6 +934,7 @@ fn prepare_pipeline_or_exit<H: effect::AppEffectHandler>(
             &developer_display,
             &reviewer_display,
             &repo_root,
+            &*workspace,
         )?;
         return Ok(None);
     }
@@ -1078,9 +1049,12 @@ fn validate_and_setup_agents<H: effect::AppEffectHandler>(
     // Determine repo root - use override if provided (for testing), otherwise discover
     let repo_root = if let Some(override_dir) = working_dir_override {
         // Testing mode: use provided directory and change CWD to it via handler
-        handler.execute(effect::AppEffect::SetCurrentDir {
+        let result = handler.execute(effect::AppEffect::SetCurrentDir {
             path: override_dir.to_path_buf(),
         });
+        if let effect::AppEffectResult::Error(e) = result {
+            anyhow::bail!("Failed to set working directory: {}", e);
+        }
         override_dir.to_path_buf()
     } else {
         // Production mode: discover repo root and change CWD via handler
@@ -1098,7 +1072,10 @@ fn validate_and_setup_agents<H: effect::AppEffectHandler>(
             _ => anyhow::bail!("Unexpected result from GitGetRepoRoot"),
         };
 
-        handler.execute(effect::AppEffect::SetCurrentDir { path: root.clone() });
+        let set_result = handler.execute(effect::AppEffect::SetCurrentDir { path: root.clone() });
+        if let effect::AppEffectResult::Error(e) = set_result {
+            anyhow::bail!("Failed to set working directory: {}", e);
+        }
         root
     };
 
@@ -1189,6 +1166,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         &ctx.logger,
         &ctx.developer_agent,
         &ctx.reviewer_agent,
+        &*ctx.workspace,
     );
 
     // If interactive resume didn't happen, check for --resume flag
@@ -1201,7 +1179,8 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             &ctx.logger,
             &ctx.developer_display,
             &ctx.reviewer_display,
-        ),
+            &*ctx.workspace,
+        )?,
     };
 
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
@@ -1315,80 +1294,56 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         &phase_ctx.execution_history,
         &phase_ctx.prompt_history,
         &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
     );
 
     // Ensure interrupt context is cleared on completion
     let _interrupt_guard = defer_clear_interrupt_context();
 
-    // Determine if we should run rebase based on checkpoint or current args
-    let should_run_rebase = if let Some(ref checkpoint) = resume_checkpoint {
-        // Use checkpoint's skip_rebase value if it has meaningful cli_args
-        if checkpoint.cli_args.developer_iters > 0 || checkpoint.cli_args.reviewer_reviews > 0 {
-            !checkpoint.cli_args.skip_rebase
-        } else {
-            // Fallback to current args
-            ctx.args.rebase_flags.with_rebase
-        }
-    } else {
-        ctx.args.rebase_flags.with_rebase
-    };
+    // Determine if we should run rebase based on current args only.
+    let should_run_rebase = ctx.args.rebase_flags.with_rebase;
 
-    // Run pre-development rebase (only if explicitly requested via --with-rebase)
-    if should_run_rebase {
-        run_initial_rebase(ctx, &mut phase_ctx, &run_context, &*ctx.executor)?;
-        // Update interrupt context after rebase
-        update_interrupt_context_from_phase(
-            &phase_ctx,
-            PipelinePhase::Planning,
-            config.developer_iters,
-            config.reviewer_reviews,
-            &run_context,
-        );
-    } else {
-        // Save initial checkpoint when rebase is disabled
-        if config.features.checkpoint_enabled && resume_checkpoint.is_none() {
-            let builder = CheckpointBuilder::new()
-                .phase(PipelinePhase::Planning, 0, config.developer_iters)
-                .reviewer_pass(0, config.reviewer_reviews)
-                .skip_rebase(true) // Rebase is disabled
-                .capture_from_context(
-                    &config,
-                    &ctx.registry,
-                    &ctx.developer_agent,
-                    &ctx.reviewer_agent,
-                    &ctx.logger,
-                    &run_context,
-                )
-                .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
-                .with_execution_history(phase_ctx.execution_history.clone())
-                .with_prompt_history(phase_ctx.clone_prompt_history());
-
-            if let Some(checkpoint) = builder.build() {
-                let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
-            }
-        }
-        // Update interrupt context after initial checkpoint
-        update_interrupt_context_from_phase(
-            &phase_ctx,
-            PipelinePhase::Planning,
-            config.developer_iters,
-            config.reviewer_reviews,
-            &run_context,
-        );
-    }
+    // Update interrupt context before entering the reducer event loop.
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        initial_phase,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
+    );
 
     // ============================================
     // RUN PIPELINE PHASES VIA REDUCER EVENT LOOP
     // ============================================
 
     // Initialize pipeline state
-    let initial_state = if let Some(ref checkpoint) = resume_checkpoint {
+    let mut initial_state = if let Some(ref checkpoint) = resume_checkpoint {
         // Migrate from old checkpoint format to new reducer state
         PipelineState::from(checkpoint.clone())
     } else {
         // Create new initial state
         PipelineState::initial(config.developer_iters, config.reviewer_reviews)
     };
+
+    if should_run_rebase {
+        if matches!(
+            initial_state.rebase,
+            crate::reducer::state::RebaseState::NotStarted
+        ) {
+            let default_branch =
+                crate::git_helpers::get_default_branch().unwrap_or_else(|_| "main".to_string());
+            initial_state.rebase = crate::reducer::state::RebaseState::InProgress {
+                original_head: "HEAD".to_string(),
+                target_branch: default_branch,
+            };
+        }
+    } else if matches!(
+        initial_state.rebase,
+        crate::reducer::state::RebaseState::NotStarted
+    ) {
+        initial_state.rebase = crate::reducer::state::RebaseState::Skipped;
+    }
 
     // Configure event loop
     let event_loop_config = EventLoopConfig {
@@ -1443,7 +1398,6 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
 
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled {
-        let skip_rebase = !ctx.args.rebase_flags.with_rebase;
         let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::Complete,
@@ -1451,7 +1405,6 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
                 config.developer_iters,
             )
             .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
-            .skip_rebase(skip_rebase)
             .capture_from_context(
                 &config,
                 &ctx.registry,
@@ -1466,7 +1419,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             .with_execution_history(execution_history_before)
             .with_prompt_history(prompt_history_before);
 
-        if let Some(checkpoint) = builder.build() {
+        if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
             let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
         }
     }
@@ -1486,7 +1439,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             stats: &stats,
         },
         prompt_monitor,
-        Some(&*ctx.workspace),
+        &*ctx.workspace,
     );
     Ok(())
 }
@@ -1523,6 +1476,7 @@ where
         &ctx.logger,
         &ctx.developer_agent,
         &ctx.reviewer_agent,
+        &*ctx.workspace,
     );
 
     // If interactive resume didn't happen, check for --resume flag
@@ -1535,7 +1489,8 @@ where
             &ctx.logger,
             &ctx.developer_display,
             &ctx.reviewer_display,
-        ),
+            &*ctx.workspace,
+        )?,
     };
 
     let resume_checkpoint = resume_result.map(|r| r.checkpoint);
@@ -1623,17 +1578,50 @@ where
         &phase_ctx.execution_history,
         &phase_ctx.prompt_history,
         &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
     );
 
     // Ensure interrupt context is cleared on completion
     let _interrupt_guard = defer_clear_interrupt_context();
 
+    // Determine if we should run rebase based on current args only.
+    let should_run_rebase = ctx.args.rebase_flags.with_rebase;
+
+    // Update interrupt context before entering the reducer event loop.
+    update_interrupt_context_from_phase(
+        &phase_ctx,
+        initial_phase,
+        config.developer_iters,
+        config.reviewer_reviews,
+        &run_context,
+        std::sync::Arc::clone(&ctx.workspace),
+    );
+
     // Initialize pipeline state
-    let initial_state = if let Some(ref checkpoint) = resume_checkpoint {
+    let mut initial_state = if let Some(ref checkpoint) = resume_checkpoint {
         PipelineState::from(checkpoint.clone())
     } else {
         PipelineState::initial(config.developer_iters, config.reviewer_reviews)
     };
+
+    if should_run_rebase {
+        if matches!(
+            initial_state.rebase,
+            crate::reducer::state::RebaseState::NotStarted
+        ) {
+            let default_branch =
+                crate::git_helpers::get_default_branch().unwrap_or_else(|_| "main".to_string());
+            initial_state.rebase = crate::reducer::state::RebaseState::InProgress {
+                original_head: "HEAD".to_string(),
+                target_branch: default_branch,
+            };
+        }
+    } else if matches!(
+        initial_state.rebase,
+        crate::reducer::state::RebaseState::NotStarted
+    ) {
+        initial_state.rebase = crate::reducer::state::RebaseState::Skipped;
+    }
 
     // Configure event loop
     let event_loop_config = EventLoopConfig {
@@ -1673,7 +1661,6 @@ where
 
     // Save Complete checkpoint before clearing (for idempotent resume)
     if config.features.checkpoint_enabled {
-        let skip_rebase = !ctx.args.rebase_flags.with_rebase;
         let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::Complete,
@@ -1681,7 +1668,6 @@ where
                 config.developer_iters,
             )
             .reviewer_pass(config.reviewer_reviews, config.reviewer_reviews)
-            .skip_rebase(skip_rebase)
             .capture_from_context(
                 &config,
                 &ctx.registry,
@@ -1696,7 +1682,7 @@ where
             .with_execution_history(execution_history_before)
             .with_prompt_history(prompt_history_before);
 
-        if let Some(checkpoint) = builder.build() {
+        if let Some(checkpoint) = builder.build_with_workspace(&*ctx.workspace) {
             let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
         }
     }
@@ -1716,7 +1702,7 @@ where
             stats: &stats,
         },
         prompt_monitor,
-        Some(&*ctx.workspace),
+        &*ctx.workspace,
     );
     Ok(())
 }
@@ -1732,15 +1718,14 @@ fn setup_interrupt_context_for_pipeline(
     execution_history: &crate::checkpoint::ExecutionHistory,
     prompt_history: &std::collections::HashMap<String, String>,
     run_context: &crate::checkpoint::RunContext,
+    workspace: std::sync::Arc<dyn crate::workspace::Workspace>,
 ) {
     use crate::interrupt::{set_interrupt_context, InterruptContext};
 
     // Determine initial iteration based on phase
     let (iteration, reviewer_pass) = match phase {
         PipelinePhase::Development => (1, 0),
-        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
-            (total_iterations, 1)
-        }
+        PipelinePhase::Review => (total_iterations, 1),
         PipelinePhase::PostRebase | PipelinePhase::CommitMessage => {
             (total_iterations, total_reviewer_passes)
         }
@@ -1756,6 +1741,7 @@ fn setup_interrupt_context_for_pipeline(
         run_context: run_context.clone(),
         execution_history: execution_history.clone(),
         prompt_history: prompt_history.clone(),
+        workspace,
     };
 
     set_interrupt_context(context);
@@ -1771,6 +1757,7 @@ fn update_interrupt_context_from_phase(
     total_iterations: u32,
     total_reviewer_passes: u32,
     run_context: &crate::checkpoint::RunContext,
+    workspace: std::sync::Arc<dyn crate::workspace::Workspace>,
 ) {
     use crate::interrupt::{set_interrupt_context, InterruptContext};
 
@@ -1781,9 +1768,7 @@ fn update_interrupt_context_from_phase(
             let iter = run_context.actual_developer_runs.max(1);
             (iter, 0)
         }
-        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
-            (total_iterations, run_context.actual_reviewer_runs.max(1))
-        }
+        PipelinePhase::Review => (total_iterations, run_context.actual_reviewer_runs.max(1)),
         PipelinePhase::PostRebase | PipelinePhase::CommitMessage => {
             (total_iterations, total_reviewer_passes)
         }
@@ -1799,6 +1784,7 @@ fn update_interrupt_context_from_phase(
         run_context: run_context.clone(),
         execution_history: phase_ctx.execution_history.clone(),
         prompt_history: phase_ctx.clone_prompt_history(),
+        workspace,
     };
 
     set_interrupt_context(context);

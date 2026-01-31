@@ -45,12 +45,6 @@ pub use unified::{
 // Re-export config environment types for dependency injection
 pub use path_resolver::{ConfigEnvironment, MemoryConfigEnvironment, RealConfigEnvironment};
 
-// Backward compatibility type aliases
-pub type ConfigPathResolver = dyn ConfigEnvironment;
-pub type RealConfigPathResolver = RealConfigEnvironment;
-pub type TestConfigPathResolver = MemoryConfigEnvironment;
-pub type MemoryConfigPathResolver = MemoryConfigEnvironment;
-
 #[cfg(test)]
 mod tests {
     use super::*;

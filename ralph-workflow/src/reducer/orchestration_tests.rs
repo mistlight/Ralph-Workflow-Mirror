@@ -110,6 +110,12 @@ fn test_development_runs_exactly_n_iterations() {
             Effect::CleanupContext => {
                 state = reduce(state, PipelineEvent::ContextCleaned);
             }
+            Effect::CleanupContinuationContext => {
+                state = reduce(
+                    state,
+                    PipelineEvent::development_continuation_context_cleaned(),
+                );
+            }
             Effect::GeneratePlan { iteration } => {
                 state = reduce(
                     state,
@@ -140,6 +146,10 @@ fn test_development_runs_exactly_n_iterations() {
                     PipelineEvent::agent_chain_initialized(
                         AgentRole::Developer,
                         vec!["claude".to_string()],
+                        3,
+                        1000,
+                        2.0,
+                        60000,
                     ),
                 );
             }
@@ -213,7 +223,14 @@ fn test_review_runs_exactly_n_passes() {
             Effect::InitializeAgentChain { role } => {
                 state = reduce(
                     state,
-                    PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
+                    PipelineEvent::agent_chain_initialized(
+                        role,
+                        vec!["claude".to_string()],
+                        3,
+                        1000,
+                        2.0,
+                        60000,
+                    ),
                 );
             }
             Effect::RunReviewPass { pass } => {
@@ -263,7 +280,7 @@ fn test_review_triggers_fix_when_issues_found() {
 
     assert!(state.review_issues_found);
 
-    // Orchestration should trigger fix attempt
+    // With a populated Reviewer chain, orchestration should run the fix attempt directly.
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::RunFixAttempt { pass: 0 }));
 
@@ -346,10 +363,35 @@ fn test_review_skips_fix_when_no_issues() {
 // ============================================================================
 
 #[test]
-fn test_commit_not_started_generates_message() {
+fn test_commit_empty_chain_initializes_agent_chain() {
+    // When agent chain is empty, commit phase should request initialization
     let state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: crate::reducer::state::CommitState::NotStarted,
+        agent_chain: crate::reducer::state::AgentChainState::initial(),
+        ..create_test_state()
+    };
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::InitializeAgentChain {
+            role: AgentRole::Commit
+        }
+    ));
+}
+
+#[test]
+fn test_commit_not_started_generates_message() {
+    // With initialized agent chain, commit phase should generate message
+    use crate::reducer::state::AgentChainState;
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        commit: crate::reducer::state::CommitState::NotStarted,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
         ..create_test_state()
     };
     let effect = determine_next_effect(&state);
@@ -358,11 +400,17 @@ fn test_commit_not_started_generates_message() {
 
 #[test]
 fn test_commit_generated_creates_commit() {
+    use crate::reducer::state::AgentChainState;
     let state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: crate::reducer::state::CommitState::Generated {
             message: "test commit message".to_string(),
         },
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
         ..create_test_state()
     };
     let effect = determine_next_effect(&state);
@@ -424,11 +472,24 @@ fn test_complete_pipeline_flow() {
             Effect::InitializeAgentChain { role } => {
                 state = reduce(
                     state,
-                    PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
+                    PipelineEvent::agent_chain_initialized(
+                        role,
+                        vec!["claude".to_string()],
+                        3,
+                        1000,
+                        2.0,
+                        60000,
+                    ),
                 );
             }
             Effect::CleanupContext => {
                 state = reduce(state, PipelineEvent::ContextCleaned);
+            }
+            Effect::CleanupContinuationContext => {
+                state = reduce(
+                    state,
+                    PipelineEvent::development_continuation_context_cleaned(),
+                );
             }
             Effect::GeneratePlan { iteration } => {
                 state = reduce(
@@ -511,7 +572,14 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
             Effect::InitializeAgentChain { role } => {
                 state = reduce(
                     state,
-                    PipelineEvent::agent_chain_initialized(role, vec!["claude".to_string()]),
+                    PipelineEvent::agent_chain_initialized(
+                        role,
+                        vec!["claude".to_string()],
+                        3,
+                        1000,
+                        2.0,
+                        60000,
+                    ),
                 );
             }
             Effect::RunReviewPass { pass } => {

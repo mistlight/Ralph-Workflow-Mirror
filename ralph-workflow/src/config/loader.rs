@@ -9,15 +9,14 @@
 //! 2. **Override layer**: Environment variables (RALPH_*)
 //! 3. **CLI arguments**: Final override (handled at CLI layer)
 //!
-//! # Migration Support
+//! # Legacy Configs
 //!
-//! For backwards compatibility, the loader also checks legacy config locations
-//! (`~/.config/ralph/agents.toml` and `.agent/agents.toml`) and emits
-//! deprecation warnings when they are used.
+//! Legacy config discovery is intentionally not supported. Only the unified
+//! config path is consulted, and missing config files fall back to defaults.
 use super::parser::parse_env_bool;
 use super::path_resolver::ConfigEnvironment;
 use super::types::{Config, ReviewDepth, Verbosity};
-use super::unified::{unified_config_path, UnifiedConfig};
+use super::unified::UnifiedConfig;
 use std::env;
 use std::path::PathBuf;
 
@@ -47,46 +46,10 @@ pub fn load_config() -> (Config, Option<UnifiedConfig>, Vec<String>) {
 ///
 /// Returns a tuple of `(Config, Option<UnifiedConfig>, Vec<String>)` where the last element
 /// contains any deprecation warnings to be displayed to the user.
-///
-/// **Note:** This function uses `std::fs` directly. For testable code,
-/// use [`load_config_from_path_with_env`] with a [`ConfigEnvironment`] instead.
 pub fn load_config_from_path(
     config_path: Option<&std::path::Path>,
 ) -> (Config, Option<UnifiedConfig>, Vec<String>) {
-    let mut warnings = Vec::new();
-
-    // Try to load unified config from specified path or default
-    let unified = config_path.map_or_else(UnifiedConfig::load_default, |path| {
-        if path.exists() {
-            match UnifiedConfig::load_from_path(path) {
-                Ok(cfg) => Some(cfg),
-                Err(e) => {
-                    warnings.push(format!(
-                        "Failed to load config from {}: {}",
-                        path.display(),
-                        e
-                    ));
-                    None
-                }
-            }
-        } else {
-            warnings.push(format!("Config file not found: {}", path.display()));
-            None
-        }
-    });
-
-    // Start with defaults, then apply unified config if found
-    let config = if let Some(ref unified_cfg) = unified {
-        config_from_unified(unified_cfg, &mut warnings)
-    } else {
-        // No unified config - use defaults (legacy config discovery removed)
-        default_config()
-    };
-
-    // Apply environment variable overrides
-    let config = apply_env_overrides(config, &mut warnings);
-
-    (config, unified, warnings)
+    load_config_from_path_with_env(config_path, &super::path_resolver::RealConfigEnvironment)
 }
 
 /// Load configuration from a specific path or the default location using a [`ConfigEnvironment`].
@@ -279,10 +242,7 @@ fn apply_env_overrides(mut config: Config, warnings: &mut Vec<String>) -> Config
 
 /// Apply agent selection environment variables.
 fn apply_agent_selection_env(config: &mut Config, warnings: &mut Vec<String>) {
-    let developer_agent = env::var("RALPH_DEVELOPER_AGENT")
-        .or_else(|_| env::var("RALPH_DRIVER_AGENT"))
-        .ok();
-    if let Some(val) = developer_agent {
+    if let Ok(val) = env::var("RALPH_DEVELOPER_AGENT") {
         let trimmed = val.trim();
         if trimmed.is_empty() {
             warnings.push("Env var RALPH_DEVELOPER_AGENT is empty; ignoring.".to_string());
@@ -537,7 +497,7 @@ fn parse_env_u8(name: &str, warnings: &mut Vec<String>, max: u8) -> Option<u8> {
 
 /// Check if the unified config file exists.
 pub fn unified_config_exists() -> bool {
-    unified_config_path().is_some_and(|p| p.exists())
+    unified_config_exists_with_env(&super::path_resolver::RealConfigEnvironment)
 }
 
 /// Check if the unified config file exists using a [`ConfigEnvironment`].
@@ -714,7 +674,8 @@ max_dev_continuations = 0
         env::remove_var("RALPH_DEVELOPER_ITERS");
         env::remove_var("RALPH_VERBOSITY");
 
-        let (config, _unified, _warnings) = load_config();
+        let env = MemoryConfigEnvironment::new();
+        let (config, _unified, _warnings) = load_config_from_path_with_env(None, &env);
         assert_eq!(config.developer_iters, 5);
         assert_eq!(config.verbosity, Verbosity::Verbose);
     }

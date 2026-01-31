@@ -12,20 +12,7 @@ use crate::common::{
 };
 use crate::test_timeout::with_default_timeout;
 
-use super::make_checkpoint_json;
-
-/// Standard prompt content for tests - matches the required PROMPT.md format.
-const STANDARD_PROMPT: &str = r#"## Goal
-
-Do something.
-
-## Acceptance
-
-- Tests pass
-"#;
-
-/// Mock repository path used in all tests.
-const MOCK_REPO_PATH: &str = "/mock/repo";
+use super::{make_checkpoint_json, MOCK_REPO_PATH, STANDARD_PROMPT};
 
 // ============================================================================
 // Resume Flag Tests

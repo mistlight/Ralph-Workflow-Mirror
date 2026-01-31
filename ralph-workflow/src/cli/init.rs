@@ -1,7 +1,7 @@
 //! Configuration initialization handlers.
 //!
-//! This module handles the `--init`, `--init-global`, and `--init-prompt` flags
-//! for creating default unified configuration files and PROMPT.md from templates.
+//! This module handles the `--init` and `--init-global` flags for creating
+//! default unified configuration files and PROMPT.md from templates.
 //!
 //! # Dependency Injection
 //!
@@ -194,54 +194,6 @@ fn prompt_overwrite_confirmation(prompt_path: &Path, colors: Colors) -> anyhow::
     Ok(response == "y" || response == "yes")
 }
 
-/// Handle the `--init-prompt` flag with a custom path resolver.
-///
-/// Creates a PROMPT.md file from the specified template at the path
-/// determined by the resolver.
-///
-/// # Arguments
-///
-/// * `template_name` - The name of the template to use
-/// * `force` - If true, overwrite existing PROMPT.md without prompting
-/// * `colors` - Terminal color configuration for output
-/// * `resolver` - Path resolver for determining PROMPT.md location
-///
-/// # Returns
-///
-/// Returns `Ok(true)` if the flag was handled (program should exit after),
-/// or an error if template creation failed.
-pub fn handle_init_prompt_with<R: ConfigEnvironment>(
-    template_name: &str,
-    force: bool,
-    colors: Colors,
-    env: &R,
-) -> anyhow::Result<bool> {
-    handle_init_prompt_at_path_with_env(template_name, &env.prompt_path(), force, colors, env)
-}
-
-/// Handle the `--init-prompt` flag using the default path resolver.
-///
-/// Creates a PROMPT.md file from the specified template.
-/// This is a convenience wrapper that uses [`RealConfigEnvironment`] internally.
-///
-/// # Arguments
-///
-/// * `template_name` - The name of the template to use
-/// * `force` - If true, overwrite existing PROMPT.md without prompting
-/// * `colors` - Terminal color configuration for output
-///
-/// # Returns
-///
-/// Returns `Ok(true)` if the flag was handled (program should exit after),
-/// or an error if template creation failed.
-pub fn handle_init_prompt(
-    template_name: &str,
-    force: bool,
-    colors: Colors,
-) -> anyhow::Result<bool> {
-    handle_init_prompt_with(template_name, force, colors, &RealConfigEnvironment)
-}
-
 /// Print a short list of common Work Guides.
 ///
 /// Shows the most commonly used Work Guides with a note to use --list-work-guides for more.
@@ -396,7 +348,6 @@ pub fn handle_list_work_guides(colors: Colors) -> bool {
     );
 
     println!("Usage: ralph --init <work-guide>");
-    println!("       ralph --init-prompt <work-guide>");
     println!();
     println!("Example:");
     println!("  ralph --init bug-fix              # Create bug fix Work Guide");
@@ -483,7 +434,7 @@ fn handle_smart_init_at_paths_with_env<R: ConfigEnvironment>(
     let config_exists = env.file_exists(config_path);
     let prompt_exists = env.file_exists(prompt_path);
 
-    // If a template name is provided (non-empty), treat it as --init-prompt
+    // If a template name is provided (non-empty), treat it as --init <template>
     if let Some(template_name) = template_arg {
         if !template_name.is_empty() {
             return handle_init_template_arg_at_path_with_env(
@@ -783,8 +734,8 @@ fn handle_init_both_exist(
 // These versions accept a ConfigEnvironment for dependency injection,
 // enabling tests to use in-memory file storage instead of real filesystem.
 
-/// Handle --init-prompt at a specific path using the provided environment.
-fn handle_init_prompt_at_path_with_env<R: ConfigEnvironment>(
+/// Create PROMPT.md from a template at the specified path.
+fn create_prompt_from_template<R: ConfigEnvironment>(
     template_name: &str,
     prompt_path: &Path,
     force: bool,
@@ -816,7 +767,7 @@ fn handle_init_prompt_at_path_with_env<R: ConfigEnvironment>(
         }
         println!("Commonly used Work Guides:");
         print_common_work_guides(colors);
-        println!("Usage: ralph --init-prompt <work-guide>");
+        println!("Usage: ralph --init <work-guide>");
         return Ok(true);
     };
 
@@ -877,7 +828,7 @@ fn handle_init_template_arg_at_path_with_env<R: ConfigEnvironment>(
     env: &R,
 ) -> anyhow::Result<bool> {
     if get_template(template_name).is_some() {
-        return handle_init_prompt_at_path_with_env(template_name, prompt_path, force, colors, env);
+        return create_prompt_from_template(template_name, prompt_path, force, colors, env);
     }
 
     // Unknown value - show helpful error with suggestions
@@ -985,13 +936,7 @@ fn handle_init_only_config_exists_with_env<R: ConfigEnvironment>(
     if can_prompt_user() {
         // Interactive mode: prompt for template selection
         if let Some(template_name) = prompt_for_template(colors) {
-            match handle_init_prompt_at_path_with_env(
-                &template_name,
-                prompt_path,
-                force,
-                colors,
-                env,
-            ) {
+            match create_prompt_from_template(&template_name, prompt_path, force, colors, env) {
                 Ok(_) => return true,
                 Err(e) => {
                     println!(
@@ -1067,7 +1012,6 @@ fn handle_init_only_config_exists_with_env<R: ConfigEnvironment>(
 
     println!();
     println!("Usage: ralph --init <work-guide>");
-    println!("       ralph --init-prompt <work-guide>");
     println!();
     println!("Example:");
     println!("  ralph --init bug-fix");
@@ -1106,7 +1050,7 @@ pub fn handle_extended_help() {
 
 Ralph is a PROMPT-driven multi-agent orchestrator for git repos. It runs a
 developer agent for code implementation, then a reviewer agent for quality
-assurance, automatically staging and committing the final result.
+assurance and fixes (default), automatically staging and committing the final result.
 
 ═══════════════════════════════════════════════════════════════════════════════
 GETTING STARTED
@@ -1139,7 +1083,6 @@ WORK GUIDES VS AGENT PROMPTS
      Commands:
        ralph --init <work-guide>      Create PROMPT.md from a Work Guide
        ralph --list-work-guides       Show all available Work Guides
-       ralph --init-prompt <name>     Same as --init (legacy alias)
 
   2. AGENT PROMPTS (backend AI behavior configuration)
      ─────────────────────────────────────────────────────
@@ -1195,11 +1138,10 @@ ADVANCED OPTIONS
 
   Initialization:
     --force-overwrite            Overwrite PROMPT.md without prompting
-    --init-prompt <name>         Create PROMPT.md (legacy, use --init instead)
     -i, --interactive            Prompt for PROMPT.md if missing
 
   Git Control:
-    --skip-rebase                Skip automatic rebase to main branch
+    --with-rebase                Enable automatic rebase to main branch (disabled by default)
     --rebase-only                Only rebase, then exit (no pipeline)
     --git-user-name <name>       Override git user name for commits
     --git-user-email <email>     Override git user email for commits
@@ -1317,42 +1259,6 @@ mod tests {
         // Prompt should not be created for invalid template
         let prompt_path = env.prompt_path();
         assert!(!env.file_exists(&prompt_path));
-    }
-
-    #[test]
-    fn test_handle_init_prompt_does_not_overwrite_existing_prompt_without_force() {
-        let env = test_env();
-        let prompt_path = env.prompt_path();
-
-        // Create existing prompt file
-        env.write_file(&prompt_path, "original").unwrap();
-
-        let colors = Colors::new();
-        let err = handle_init_prompt_with("quick", false, colors, &env).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("Refusing to overwrite in non-interactive mode"));
-
-        // Verify original content is preserved
-        let content = env.read_file(&prompt_path).unwrap();
-        assert_eq!(content, "original");
-    }
-
-    #[test]
-    fn test_handle_init_prompt_overwrites_existing_prompt_with_force() {
-        let env = test_env();
-        let prompt_path = env.prompt_path();
-
-        // Create existing prompt file
-        env.write_file(&prompt_path, "original").unwrap();
-
-        let colors = Colors::new();
-        let result = handle_init_prompt_with("quick", true, colors, &env).unwrap();
-        assert!(result);
-
-        let template = get_template("quick").unwrap();
-        let content = env.read_file(&prompt_path).unwrap();
-        assert_eq!(content, template.content());
     }
 
     #[test]

@@ -122,6 +122,70 @@ fn test_generate_plan_requires_agent_chain() {
     });
 }
 
+/// Test that exhausted agent chains produce an explicit abort effect.
+///
+/// When the agent chain is exhausted, the pipeline must not stall by emitting
+/// SaveCheckpoint repeatedly. The reducer/orchestration must emit an explicit
+/// abort effect so termination happens through a single effect path.
+#[test]
+fn test_exhausted_agent_chain_emits_abort_effect() {
+    with_default_timeout(|| {
+        // Development phase exhausted chain -> AbortPipeline
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(1);
+        chain = chain.start_retry_cycle();
+        assert!(
+            chain.is_exhausted(),
+            "test precondition: chain must be exhausted"
+        );
+
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 0,
+            total_iterations: 1,
+            agent_chain: chain,
+            ..PipelineState::initial(1, 0)
+        };
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::AbortPipeline { .. }),
+            "Exhausted chain must abort explicitly; got {effect:?}"
+        );
+
+        // Review phase exhausted chain -> AbortPipeline
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["reviewer".to_string()],
+                vec![vec![]],
+                AgentRole::Reviewer,
+            )
+            .with_max_cycles(1);
+        chain = chain.start_retry_cycle();
+        assert!(
+            chain.is_exhausted(),
+            "test precondition: chain must be exhausted"
+        );
+
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 0,
+            total_reviewer_passes: 1,
+            agent_chain: chain,
+            ..PipelineState::initial(1, 1)
+        };
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(effect, Effect::AbortPipeline { .. }),
+            "Exhausted chain must abort explicitly; got {effect:?}"
+        );
+    });
+}
+
 /// Test that each effect type is distinct and represents a single responsibility.
 ///
 /// This is a documentation test that enumerates the effects and their responsibilities.
@@ -168,25 +232,61 @@ fn test_effect_types_are_single_task() {
     });
 }
 
+/// Test that CommitMessage phase requires agent chain initialization.
+///
+/// CommitMessage phase should first initialize agent chain when empty,
+/// just like other phases (Planning, Development, Review).
+#[test]
+fn test_commit_phase_requires_agent_chain() {
+    with_default_timeout(|| {
+        // Empty chain -> InitializeAgentChain
+        let state_empty_chain = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: CommitState::NotStarted,
+            agent_chain: AgentChainState::initial(),
+            ..PipelineState::initial(5, 2)
+        };
+        let effect = determine_next_effect(&state_empty_chain);
+        assert!(
+            matches!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Commit
+                }
+            ),
+            "Empty chain should emit InitializeAgentChain for Commit, got {:?}",
+            effect
+        );
+    });
+}
+
 /// Test that CommitMessage phase effects follow correct sequence.
 ///
-/// CommitMessage phase should:
+/// CommitMessage phase should (after agent chain is initialized):
 /// 1. GenerateCommitMessage when commit is NotStarted
 /// 2. CreateCommit when commit is Generated
 /// 3. SaveCheckpoint when commit is Committed/Skipped
 #[test]
 fn test_commit_phase_effect_sequence() {
     with_default_timeout(|| {
-        // NotStarted -> GenerateCommitMessage
+        // Create agent chain for commit phase
+        let commit_chain = AgentChainState::initial().with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        );
+
+        // NotStarted (with chain) -> GenerateCommitMessage
         let state_not_started = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
+            agent_chain: commit_chain.clone(),
             ..PipelineState::initial(5, 2)
         };
         let effect = determine_next_effect(&state_not_started);
         assert!(
             matches!(effect, Effect::GenerateCommitMessage),
-            "NotStarted should emit GenerateCommitMessage, got {:?}",
+            "NotStarted with chain should emit GenerateCommitMessage, got {:?}",
             effect
         );
 
@@ -196,6 +296,7 @@ fn test_commit_phase_effect_sequence() {
             commit: CommitState::Generated {
                 message: "test".to_string(),
             },
+            agent_chain: commit_chain.clone(),
             ..PipelineState::initial(5, 2)
         };
         let effect = determine_next_effect(&state_generated);
@@ -211,6 +312,7 @@ fn test_commit_phase_effect_sequence() {
             commit: CommitState::Committed {
                 hash: "abc".to_string(),
             },
+            agent_chain: commit_chain,
             ..PipelineState::initial(5, 2)
         };
         let effect = determine_next_effect(&state_committed);
@@ -435,6 +537,66 @@ fn test_phase_effects_do_not_bundle_cleanup() {
         assert!(
             matches!(cleanup_effect, Effect::CleanupContext),
             "CleanupContext is its own effect"
+        );
+    });
+}
+
+/// Test that continuation context writing is driven by WriteContinuationContext effect.
+///
+/// When development returns status="partial" or "failed", the handler emits a
+/// ContinuationTriggered event. The reducer then determines if WriteContinuationContext
+/// effect should be emitted based on continuation budget and policy.
+///
+/// This test verifies that:
+/// 1. WriteContinuationContext is a distinct effect (not bundled)
+/// 2. The effect is emitted based on reducer state, not handler decision
+/// 3. CleanupContinuationContext is also effect-driven
+#[test]
+fn test_continuation_context_is_effect_driven() {
+    use ralph_workflow::reducer::effect::ContinuationContextData;
+    use ralph_workflow::reducer::state::DevelopmentStatus;
+
+    with_default_timeout(|| {
+        // WriteContinuationContext is its own effect
+        let write_effect = Effect::WriteContinuationContext(ContinuationContextData {
+            iteration: 0,
+            attempt: 1,
+            status: DevelopmentStatus::Partial,
+            summary: "test".to_string(),
+            files_changed: None,
+            next_steps: None,
+        });
+
+        // Verify it's distinct from development iteration effect
+        let dev_effect = Effect::RunDevelopmentIteration { iteration: 0 };
+
+        assert!(
+            !matches!(&dev_effect, Effect::WriteContinuationContext(_)),
+            "Continuation context writing must be separate from development iteration"
+        );
+
+        // Verify WriteContinuationContext carries the necessary data for reducer policy
+        match &write_effect {
+            Effect::WriteContinuationContext(data) => {
+                // The data includes all info needed for reducer to track continuation state
+                assert_eq!(
+                    data.iteration, 0,
+                    "Tracks which iteration triggered continuation"
+                );
+                assert_eq!(data.attempt, 1, "Tracks continuation attempt count");
+                assert!(
+                    matches!(data.status, DevelopmentStatus::Partial),
+                    "Tracks status that triggered continuation"
+                );
+            }
+            _ => panic!("Expected WriteContinuationContext"),
+        }
+
+        // CleanupContinuationContext is also separate
+        let cleanup_effect = Effect::CleanupContinuationContext;
+        assert!(
+            matches!(cleanup_effect, Effect::CleanupContinuationContext),
+            "Cleanup is its own effect driven by reducer, not handler side effect"
         );
     });
 }

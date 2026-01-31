@@ -9,13 +9,15 @@ const SHORT_OID_LENGTH: usize = 8;
 use crate::agents::AgentRegistry;
 use crate::checkpoint::file_state::{FileSystemState, ValidationError};
 use crate::checkpoint::{
-    checkpoint_exists, load_checkpoint, validate_checkpoint, PipelineCheckpoint, PipelinePhase,
+    checkpoint_exists_with_workspace, load_checkpoint_with_workspace, validate_checkpoint,
+    PipelineCheckpoint, PipelinePhase,
 };
 use crate::config::Config;
 use crate::git_helpers::rebase_in_progress;
 use crate::logger::Logger;
-use std::fs;
+use crate::workspace::Workspace;
 use std::io::{self, IsTerminal};
+use std::path::Path;
 
 /// Result of handling resume, containing the checkpoint.
 pub struct ResumeResult {
@@ -38,6 +40,7 @@ pub struct ResumeResult {
 /// * `logger` - Logger for output
 /// * `developer_agent` - Current developer agent name
 /// * `reviewer_agent` - Current reviewer agent name
+/// * `workspace` - Workspace for explicit file operations
 ///
 /// # Returns
 ///
@@ -50,6 +53,7 @@ pub fn offer_resume_if_checkpoint_exists(
     logger: &Logger,
     developer_agent: &str,
     reviewer_agent: &str,
+    workspace: &dyn Workspace,
 ) -> Option<ResumeResult> {
     // Skip if --resume flag was already specified (handled by handle_resume_with_validation)
     if args.recovery.resume {
@@ -72,12 +76,12 @@ pub fn offer_resume_if_checkpoint_exists(
     }
 
     // Check if checkpoint exists
-    if !checkpoint_exists() {
+    if !checkpoint_exists_with_workspace(workspace) {
         return None;
     }
 
     // Load checkpoint to display summary
-    let checkpoint = match load_checkpoint() {
+    let checkpoint = match load_checkpoint_with_workspace(workspace) {
         Ok(Some(cp)) => cp,
         Ok(None) => return None,
         Err(e) => {
@@ -94,14 +98,14 @@ pub fn offer_resume_if_checkpoint_exists(
     if !prompt_user_to_resume(logger) {
         // User declined - delete checkpoint and start fresh
         logger.info("Deleting checkpoint and starting fresh...");
-        let _ = crate::checkpoint::clear_checkpoint();
+        let _ = crate::checkpoint::clear_checkpoint_with_workspace(workspace);
         return None;
     }
 
     // User chose to resume - validate and proceed
     logger.header("RESUME: Loading Checkpoint", crate::logger::Colors::yellow);
 
-    let validation = validate_checkpoint(&checkpoint, config, registry);
+    let validation = validate_checkpoint(&checkpoint, config, registry, workspace);
 
     for warning in &validation.warnings {
         logger.warn(warning);
@@ -136,6 +140,7 @@ pub fn offer_resume_if_checkpoint_exists(
             file_system_state,
             logger,
             args.recovery.recovery_strategy.into(),
+            workspace,
         )
     } else {
         ValidationOutcome::Passed
@@ -383,11 +388,6 @@ fn reconstruct_command(checkpoint: &PipelineCheckpoint) -> Option<String> {
         parts.push(format!("--review-depth {}", depth));
     }
 
-    // Add --skip-rebase if true
-    if cli.skip_rebase {
-        parts.push("--skip-rebase".to_string());
-    }
-
     // Add --no-isolation if false (isolation_mode defaults to true)
     if !cli.isolation_mode {
         parts.push("--no-isolation".to_string());
@@ -476,8 +476,6 @@ fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
                 Some("complete review cycle".to_string())
             }
         }
-        PipelinePhase::Fix => Some("address issues from code review".to_string()),
-        PipelinePhase::ReviewAgain => Some("complete verification review".to_string()),
         PipelinePhase::PostRebase => Some("complete post-development rebase".to_string()),
         PipelinePhase::PostRebaseConflict => Some("resolve post-rebase conflicts".to_string()),
         PipelinePhase::CommitMessage => Some("finalize commit message".to_string()),
@@ -569,11 +567,13 @@ pub enum ValidationOutcome {
 /// * `logger` - Logger for output
 /// * `developer_agent` - Current developer agent name
 /// * `reviewer_agent` - Current reviewer agent name
+/// * `workspace` - Workspace for explicit file operations
 ///
 /// # Returns
 ///
-/// `Some(ResumeResult)` if a valid checkpoint was found and loaded,
-/// `None` if no checkpoint exists or --resume was not specified.
+/// `Ok(Some(ResumeResult))` if a valid checkpoint was found and loaded,
+/// `Ok(None)` if no checkpoint exists or --resume was not specified.
+/// `Err(_)` if --resume was specified and checkpoint validation failed.
 pub fn handle_resume_with_validation(
     args: &crate::cli::Args,
     config: &Config,
@@ -581,10 +581,11 @@ pub fn handle_resume_with_validation(
     logger: &Logger,
     developer_agent: &str,
     reviewer_agent: &str,
-) -> Option<ResumeResult> {
+    workspace: &dyn Workspace,
+) -> anyhow::Result<Option<ResumeResult>> {
     // Handle --inspect-checkpoint flag
     if args.recovery.inspect_checkpoint {
-        match load_checkpoint() {
+        match load_checkpoint_with_workspace(workspace) {
             Ok(Some(checkpoint)) => {
                 logger.header("CHECKPOINT INSPECTION", crate::logger::Colors::cyan);
                 display_detailed_checkpoint_info(&checkpoint, logger);
@@ -602,16 +603,16 @@ pub fn handle_resume_with_validation(
     }
 
     if !args.recovery.resume {
-        return None;
+        return Ok(None);
     }
 
-    match load_checkpoint() {
+    match load_checkpoint_with_workspace(workspace) {
         Ok(Some(checkpoint)) => {
             logger.header("RESUME: Loading Checkpoint", crate::logger::Colors::yellow);
             display_checkpoint_summary(&checkpoint, logger);
 
             // Validate checkpoint
-            let validation = validate_checkpoint(&checkpoint, config, registry);
+            let validation = validate_checkpoint(&checkpoint, config, registry, workspace);
 
             // Display validation results
             for warning in &validation.warnings {
@@ -622,11 +623,16 @@ pub fn handle_resume_with_validation(
             }
 
             if !validation.is_valid {
+                // When --resume is explicitly specified and validation fails, return an error.
+                // The user explicitly asked to resume, so failing validation is a hard error.
                 logger.error("Checkpoint validation failed. Cannot resume.");
                 logger.info(
                     "Delete .agent/checkpoint.json and start fresh, or fix the issues above.",
                 );
-                return None;
+                return Err(anyhow::anyhow!(
+                    "Checkpoint validation failed: {}",
+                    validation.errors.join("; ")
+                ));
             }
 
             // Verify agents match (additional agent-specific warnings)
@@ -653,24 +659,28 @@ pub fn handle_resume_with_validation(
                     file_system_state,
                     logger,
                     args.recovery.recovery_strategy.into(),
+                    workspace,
                 )
             } else {
                 ValidationOutcome::Passed
             };
 
-            if matches!(validation_outcome, ValidationOutcome::Failed(_)) {
-                return None;
+            if let ValidationOutcome::Failed(reason) = validation_outcome {
+                return Err(anyhow::anyhow!(
+                    "File system state validation failed: {}",
+                    reason
+                ));
             }
 
-            Some(ResumeResult { checkpoint })
+            Ok(Some(ResumeResult { checkpoint }))
         }
         Ok(None) => {
             logger.warn("No checkpoint found. Starting fresh pipeline...");
-            None
+            Ok(None)
         }
         Err(e) => {
-            logger.warn(&format!("Failed to load checkpoint (starting fresh): {e}"));
-            None
+            // When --resume is specified but checkpoint fails to load, that's an error
+            Err(anyhow::anyhow!("Failed to load checkpoint: {e}"))
         }
     }
 }
@@ -687,8 +697,9 @@ fn validate_file_system_state(
     file_system_state: &FileSystemState,
     logger: &Logger,
     strategy: crate::checkpoint::recovery::RecoveryStrategy,
+    workspace: &dyn Workspace,
 ) -> ValidationOutcome {
-    let errors = file_system_state.validate_with_executor_impl(None);
+    let errors = file_system_state.validate_with_workspace(workspace, None);
 
     if errors.is_empty() {
         logger.info("File system state validation passed.");
@@ -724,7 +735,8 @@ fn validate_file_system_state(
         }
         crate::checkpoint::recovery::RecoveryStrategy::Auto => {
             // Attempt automatic recovery for recoverable errors
-            let (_recovered, remaining) = attempt_auto_recovery(file_system_state, &errors, logger);
+            let (_recovered, remaining) =
+                attempt_auto_recovery(file_system_state, &errors, logger, workspace);
 
             if remaining.is_empty() {
                 logger.success("Automatic recovery completed successfully.");
@@ -761,12 +773,13 @@ fn attempt_auto_recovery(
     file_system_state: &FileSystemState,
     errors: &[ValidationError],
     logger: &Logger,
+    workspace: &dyn Workspace,
 ) -> (usize, Vec<ValidationError>) {
     let mut recovered = 0;
     let mut remaining = Vec::new();
 
     for error in errors {
-        match attempt_recovery_for_error(file_system_state, error, logger) {
+        match attempt_recovery_for_error(file_system_state, error, logger, workspace) {
             Ok(()) => {
                 recovered += 1;
                 logger.success(&format!("Recovered: {}", error));
@@ -790,13 +803,16 @@ fn attempt_recovery_for_error(
     file_system_state: &FileSystemState,
     error: &ValidationError,
     logger: &Logger,
+    workspace: &dyn Workspace,
 ) -> Result<(), String> {
     match error {
         ValidationError::FileContentChanged { path } => {
             // Try to restore from snapshot if content is available
             if let Some(snapshot) = file_system_state.files.get(path) {
                 if let Some(content) = snapshot.get_content() {
-                    fs::write(path, content).map_err(|e| format!("Failed to write file: {}", e))?;
+                    workspace
+                        .write(Path::new(path), &content)
+                        .map_err(|e| format!("Failed to write file: {}", e))?;
                     logger.info(&format!("Restored {} from checkpoint content.", path));
                     return Ok(());
                 }
@@ -819,7 +835,9 @@ fn attempt_recovery_for_error(
             // Can't recover a missing file unless we have content
             if let Some(snapshot) = file_system_state.files.get(path) {
                 if let Some(content) = snapshot.get_content() {
-                    fs::write(path, content).map_err(|e| format!("Failed to write file: {}", e))?;
+                    workspace
+                        .write(Path::new(path), &content)
+                        .map_err(|e| format!("Failed to write file: {}", e))?;
                     logger.info(&format!("Restored missing {} from checkpoint.", path));
                     return Ok(());
                 }
@@ -1189,8 +1207,6 @@ fn get_phase_emoji(phase: PipelinePhase) -> &'static str {
         PipelinePhase::Planning => "📋",
         PipelinePhase::Development => "🔨",
         PipelinePhase::Review => "👀",
-        PipelinePhase::Fix => "🔧",
-        PipelinePhase::ReviewAgain => "🔍",
         PipelinePhase::CommitMessage => "📝",
         PipelinePhase::FinalValidation => "✅",
         PipelinePhase::Complete => "🎉",

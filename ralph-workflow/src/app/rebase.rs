@@ -16,7 +16,7 @@ use crate::logger::{Colors, Logger};
 use crate::phases::PhaseContext;
 use crate::prompts::{get_stored_or_generate_prompt, template_context::TemplateContext};
 
-use super::context::PipelineContext;
+use crate::workspace::Workspace;
 
 /// Context for conflict resolution operations.
 ///
@@ -24,6 +24,7 @@ use super::context::PipelineContext;
 /// AI-assisted conflict resolution during rebase operations.
 pub(crate) struct ConflictResolutionContext<'a> {
     pub config: &'a crate::config::Config,
+    pub registry: &'a crate::agents::AgentRegistry,
     pub template_context: &'a TemplateContext,
     pub logger: &'a Logger,
     pub colors: Colors,
@@ -35,12 +36,15 @@ pub(crate) struct ConflictResolutionContext<'a> {
 ///
 /// Represents the different ways conflict resolution can succeed or fail.
 pub(crate) enum ConflictResolutionResult {
-    /// Agent provided JSON output with resolved file contents
-    WithJson(String),
     /// Agent resolved conflicts by editing files directly (no JSON output)
     FileEditsOnly,
     /// Resolution failed completely
     Failed,
+}
+
+pub(crate) enum InitialRebaseOutcome {
+    Succeeded { new_head: String },
+    Skipped { reason: String },
 }
 
 /// Run rebase to the default branch.
@@ -74,26 +78,52 @@ pub fn run_rebase_to_default(
 /// Uses a state machine for fault tolerance and automatic recovery from
 /// interruptions or failures.
 pub fn run_initial_rebase(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
     executor: &dyn ProcessExecutor,
-) -> anyhow::Result<()> {
-    ctx.logger.header("Pre-development rebase", Colors::cyan);
+) -> anyhow::Result<InitialRebaseOutcome> {
+    phase_ctx
+        .logger
+        .header("Pre-development rebase", Colors::cyan);
 
     record_rebase_start(phase_ctx);
-    save_pre_rebase_checkpoint(ctx, phase_ctx, run_context)?;
+    save_pre_rebase_checkpoint(phase_ctx, run_context)?;
 
-    match run_rebase_to_default(&ctx.logger, ctx.colors, &*ctx.executor) {
-        Ok(RebaseResult::Success) => handle_rebase_success(ctx, phase_ctx, run_context),
+    match run_rebase_to_default(phase_ctx.logger, *phase_ctx.colors, executor) {
+        Ok(RebaseResult::Success) => {
+            handle_rebase_success(phase_ctx, run_context)?;
+            Ok(InitialRebaseOutcome::Succeeded {
+                new_head: read_repo_head_or_unknown(phase_ctx.workspace),
+            })
+        }
         Ok(RebaseResult::NoOp { reason }) => {
-            handle_rebase_noop(ctx, phase_ctx, run_context, &reason)
+            handle_rebase_noop(phase_ctx, run_context, &reason)?;
+            Ok(InitialRebaseOutcome::Skipped { reason })
         }
         Ok(RebaseResult::Conflicts(_)) => {
-            handle_rebase_conflicts(ctx, phase_ctx, run_context, executor)
+            let resolved = handle_rebase_conflicts(phase_ctx, run_context, executor)?;
+            if resolved {
+                Ok(InitialRebaseOutcome::Succeeded {
+                    new_head: read_repo_head_or_unknown(phase_ctx.workspace),
+                })
+            } else {
+                Ok(InitialRebaseOutcome::Skipped {
+                    reason: "Rebase conflicts unresolved".to_string(),
+                })
+            }
         }
-        Ok(RebaseResult::Failed(err)) => handle_rebase_failed(ctx, phase_ctx, err),
-        Err(e) => handle_rebase_error(ctx, phase_ctx, e),
+        Ok(RebaseResult::Failed(err)) => {
+            handle_rebase_failed(phase_ctx, err)?;
+            Ok(InitialRebaseOutcome::Skipped {
+                reason: "Rebase failed".to_string(),
+            })
+        }
+        Err(e) => {
+            handle_rebase_error(phase_ctx, e)?;
+            Ok(InitialRebaseOutcome::Skipped {
+                reason: "Rebase error".to_string(),
+            })
+        }
     }
 }
 
@@ -110,22 +140,21 @@ fn record_rebase_start(phase_ctx: &mut PhaseContext<'_>) {
 
 /// Save checkpoint at the start of pre-rebase phase.
 fn save_pre_rebase_checkpoint(
-    ctx: &PipelineContext,
     phase_ctx: &PhaseContext<'_>,
     run_context: &RunContext,
 ) -> anyhow::Result<()> {
-    if !ctx.config.features.checkpoint_enabled {
+    if !phase_ctx.config.features.checkpoint_enabled {
         return Ok(());
     }
 
     let default_branch = get_default_branch().unwrap_or_else(|_| "main".to_string());
-    let builder = create_checkpoint_builder(ctx, phase_ctx, run_context, PipelinePhase::PreRebase);
+    let builder = create_checkpoint_builder(phase_ctx, run_context, PipelinePhase::PreRebase);
 
-    if let Some(mut checkpoint) = builder.build() {
+    if let Some(mut checkpoint) = builder.build_with_workspace(phase_ctx.workspace) {
         checkpoint.rebase_state = RebaseState::PreRebaseInProgress {
             upstream_branch: default_branch,
         };
-        let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+        let _ = save_checkpoint_with_workspace(phase_ctx.workspace, &checkpoint);
     }
 
     Ok(())
@@ -133,11 +162,10 @@ fn save_pre_rebase_checkpoint(
 
 /// Handle successful rebase completion.
 fn handle_rebase_success(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
 ) -> anyhow::Result<()> {
-    ctx.logger.success("Rebase completed successfully");
+    phase_ctx.logger.success("Rebase completed successfully");
 
     let step = ExecutionStep::new(
         "PreRebase",
@@ -147,18 +175,19 @@ fn handle_rebase_success(
     );
     phase_ctx.execution_history.add_step(step);
 
-    save_post_rebase_checkpoint(ctx, phase_ctx, run_context);
+    save_post_rebase_checkpoint(phase_ctx, run_context);
     Ok(())
 }
 
 /// Handle rebase that was not needed.
 fn handle_rebase_noop(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
     reason: &str,
 ) -> anyhow::Result<()> {
-    ctx.logger.info(&format!("No rebase needed: {reason}"));
+    phase_ctx
+        .logger
+        .info(&format!("No rebase needed: {reason}"));
 
     let step = ExecutionStep::new(
         "PreRebase",
@@ -168,52 +197,62 @@ fn handle_rebase_noop(
     );
     phase_ctx.execution_history.add_step(step);
 
-    save_post_rebase_checkpoint(ctx, phase_ctx, run_context);
+    save_post_rebase_checkpoint(phase_ctx, run_context);
     Ok(())
 }
 
 /// Handle rebase conflicts by attempting AI resolution.
 fn handle_rebase_conflicts(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
     executor: &dyn ProcessExecutor,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let conflicted_files = get_conflicted_files()?;
     if conflicted_files.is_empty() {
-        ctx.logger
+        phase_ctx
+            .logger
             .warn("Rebase reported conflicts but no conflicted files found");
         let _ = abort_rebase(executor);
-        return Ok(());
+        return Ok(false);
     }
 
     record_conflict_detected(phase_ctx, conflicted_files.len());
-    save_conflict_checkpoint(ctx, phase_ctx, run_context, &conflicted_files);
+    save_conflict_checkpoint(phase_ctx, run_context, &conflicted_files);
 
-    ctx.logger.warn(&format!(
+    phase_ctx.logger.warn(&format!(
         "Rebase resulted in {} conflict(s), attempting AI resolution",
         conflicted_files.len()
     ));
 
     let resolution_ctx = ConflictResolutionContext {
-        config: &ctx.config,
-        template_context: &ctx.template_context,
-        logger: &ctx.logger,
-        colors: ctx.colors,
-        executor_arc: std::sync::Arc::clone(&ctx.executor),
-        workspace: &*ctx.workspace,
+        config: phase_ctx.config,
+        registry: phase_ctx.registry,
+        template_context: phase_ctx.template_context,
+        logger: phase_ctx.logger,
+        colors: *phase_ctx.colors,
+        executor_arc: std::sync::Arc::clone(&phase_ctx.executor_arc),
+        workspace: phase_ctx.workspace,
     };
 
-    match try_resolve_conflicts_with_fallback(
+    match try_resolve_conflicts(
         &conflicted_files,
         resolution_ctx,
         phase_ctx,
         "PreRebase",
         executor,
     ) {
-        Ok(true) => handle_conflicts_resolved(ctx, phase_ctx, run_context, executor),
-        Ok(false) => handle_resolution_failed(ctx, phase_ctx, executor),
-        Err(e) => handle_resolution_error(ctx, phase_ctx, executor, e),
+        Ok(true) => {
+            handle_conflicts_resolved(phase_ctx, run_context, executor)?;
+            Ok(true)
+        }
+        Ok(false) => {
+            handle_resolution_failed(phase_ctx, executor)?;
+            Ok(false)
+        }
+        Err(e) => {
+            handle_resolution_error(phase_ctx, executor, e)?;
+            Ok(false)
+        }
     }
 }
 
@@ -233,43 +272,39 @@ fn record_conflict_detected(phase_ctx: &mut PhaseContext<'_>, conflict_count: us
 
 /// Save checkpoint for conflict state.
 fn save_conflict_checkpoint(
-    ctx: &PipelineContext,
     phase_ctx: &PhaseContext<'_>,
     run_context: &RunContext,
     conflicted_files: &[String],
 ) {
-    if !ctx.config.features.checkpoint_enabled {
+    if !phase_ctx.config.features.checkpoint_enabled {
         return;
     }
 
-    let builder = create_checkpoint_builder(
-        ctx,
-        phase_ctx,
-        run_context,
-        PipelinePhase::PreRebaseConflict,
-    );
+    let builder =
+        create_checkpoint_builder(phase_ctx, run_context, PipelinePhase::PreRebaseConflict);
 
-    if let Some(mut checkpoint) = builder.build() {
+    if let Some(mut checkpoint) = builder.build_with_workspace(phase_ctx.workspace) {
         checkpoint.rebase_state = RebaseState::HasConflicts {
             files: conflicted_files.to_vec(),
         };
-        let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+        let _ = save_checkpoint_with_workspace(phase_ctx.workspace, &checkpoint);
     }
 }
 
 /// Handle successful conflict resolution.
 fn handle_conflicts_resolved(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     run_context: &RunContext,
     executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<()> {
-    ctx.logger
+    phase_ctx
+        .logger
         .info("Continuing rebase after conflict resolution");
 
     match continue_rebase(executor) {
         Ok(()) => {
-            ctx.logger
+            phase_ctx
+                .logger
                 .success("Rebase completed successfully after AI resolution");
 
             let step = ExecutionStep::new(
@@ -280,11 +315,13 @@ fn handle_conflicts_resolved(
             );
             phase_ctx.execution_history.add_step(step);
 
-            save_post_rebase_checkpoint(ctx, phase_ctx, run_context);
+            save_post_rebase_checkpoint(phase_ctx, run_context);
             Ok(())
         }
         Err(e) => {
-            ctx.logger.warn(&format!("Failed to continue rebase: {e}"));
+            phase_ctx
+                .logger
+                .warn(&format!("Failed to continue rebase: {e}"));
             let _ = abort_rebase(executor);
 
             let step = ExecutionStep::new(
@@ -304,11 +341,11 @@ fn handle_conflicts_resolved(
 
 /// Handle failed AI conflict resolution.
 fn handle_resolution_failed(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     executor: &dyn ProcessExecutor,
 ) -> anyhow::Result<()> {
-    ctx.logger
+    phase_ctx
+        .logger
         .warn("AI conflict resolution failed, aborting rebase");
     let _ = abort_rebase(executor);
 
@@ -324,12 +361,13 @@ fn handle_resolution_failed(
 
 /// Handle error during conflict resolution.
 fn handle_resolution_error(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     executor: &dyn ProcessExecutor,
     e: anyhow::Error,
 ) -> anyhow::Result<()> {
-    ctx.logger.error(&format!("Conflict resolution error: {e}"));
+    phase_ctx
+        .logger
+        .error(&format!("Conflict resolution error: {e}"));
     let _ = abort_rebase(executor);
 
     let step = ExecutionStep::new(
@@ -344,12 +382,11 @@ fn handle_resolution_error(
 
 /// Handle rebase failure.
 fn handle_rebase_failed(
-    ctx: &PipelineContext,
     phase_ctx: &mut PhaseContext<'_>,
     err: RebaseErrorKind,
 ) -> anyhow::Result<()> {
-    ctx.logger.error(&format!("Rebase failed: {err}"));
-    let _ = abort_rebase(&*ctx.executor);
+    phase_ctx.logger.error(&format!("Rebase failed: {err}"));
+    let _ = abort_rebase(phase_ctx.executor);
 
     let step = ExecutionStep::new(
         "PreRebase",
@@ -362,12 +399,9 @@ fn handle_rebase_failed(
 }
 
 /// Handle rebase error.
-fn handle_rebase_error(
-    ctx: &PipelineContext,
-    phase_ctx: &mut PhaseContext<'_>,
-    e: std::io::Error,
-) -> anyhow::Result<()> {
-    ctx.logger
+fn handle_rebase_error(phase_ctx: &mut PhaseContext<'_>, e: std::io::Error) -> anyhow::Result<()> {
+    phase_ctx
+        .logger
         .warn(&format!("Rebase failed, continuing without rebase: {e}"));
 
     let step = ExecutionStep::new(
@@ -381,64 +415,58 @@ fn handle_rebase_error(
 }
 
 /// Save checkpoint after successful rebase completion.
-fn save_post_rebase_checkpoint(
-    ctx: &PipelineContext,
-    phase_ctx: &PhaseContext<'_>,
-    run_context: &RunContext,
-) {
-    if !ctx.config.features.checkpoint_enabled {
+fn save_post_rebase_checkpoint(phase_ctx: &PhaseContext<'_>, run_context: &RunContext) {
+    if !phase_ctx.config.features.checkpoint_enabled {
         return;
     }
 
     let builder = CheckpointBuilder::new()
-        .phase(PipelinePhase::Planning, 0, ctx.config.developer_iters)
-        .reviewer_pass(0, ctx.config.reviewer_reviews)
-        .skip_rebase(true) // Pre-rebase is done
+        .phase(PipelinePhase::Planning, 0, phase_ctx.config.developer_iters)
+        .reviewer_pass(0, phase_ctx.config.reviewer_reviews)
         .capture_from_context(
-            &ctx.config,
-            &ctx.registry,
-            &ctx.developer_agent,
-            &ctx.reviewer_agent,
-            &ctx.logger,
+            phase_ctx.config,
+            phase_ctx.registry,
+            phase_ctx.developer_agent,
+            phase_ctx.reviewer_agent,
+            phase_ctx.logger,
             run_context,
         )
-        .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
+        .with_executor_from_context(std::sync::Arc::clone(&phase_ctx.executor_arc))
         .with_execution_history(phase_ctx.execution_history.clone())
         .with_prompt_history(phase_ctx.clone_prompt_history());
 
-    if let Some(checkpoint) = builder.build() {
-        let _ = save_checkpoint_with_workspace(&*ctx.workspace, &checkpoint);
+    if let Some(checkpoint) = builder.build_with_workspace(phase_ctx.workspace) {
+        let _ = save_checkpoint_with_workspace(phase_ctx.workspace, &checkpoint);
     }
 }
 
 /// Create a checkpoint builder with common configuration.
 fn create_checkpoint_builder(
-    ctx: &PipelineContext,
     phase_ctx: &PhaseContext<'_>,
     run_context: &RunContext,
     phase: PipelinePhase,
 ) -> CheckpointBuilder {
     CheckpointBuilder::new()
-        .phase(phase, 0, ctx.config.developer_iters)
-        .reviewer_pass(0, ctx.config.reviewer_reviews)
+        .phase(phase, 0, phase_ctx.config.developer_iters)
+        .reviewer_pass(0, phase_ctx.config.reviewer_reviews)
         .capture_from_context(
-            &ctx.config,
-            &ctx.registry,
-            &ctx.developer_agent,
-            &ctx.reviewer_agent,
-            &ctx.logger,
+            phase_ctx.config,
+            phase_ctx.registry,
+            phase_ctx.developer_agent,
+            phase_ctx.reviewer_agent,
+            phase_ctx.logger,
             run_context,
         )
-        .with_executor_from_context(std::sync::Arc::clone(&ctx.executor))
+        .with_executor_from_context(std::sync::Arc::clone(&phase_ctx.executor_arc))
         .with_execution_history(phase_ctx.execution_history.clone())
         .with_prompt_history(phase_ctx.clone_prompt_history())
 }
 
-/// Attempt to resolve rebase conflicts with AI fallback.
+/// Attempt to resolve rebase conflicts with AI.
 ///
 /// This function accepts `PhaseContext` to capture prompts and track
 /// execution history for hardened resume functionality.
-pub(crate) fn try_resolve_conflicts_with_fallback(
+pub(crate) fn try_resolve_conflicts(
     conflicted_files: &[String],
     ctx: ConflictResolutionContext<'_>,
     phase_ctx: &mut PhaseContext<'_>,
@@ -454,7 +482,7 @@ pub(crate) fn try_resolve_conflicts_with_fallback(
         conflicted_files.len()
     ));
 
-    let conflicts = collect_conflict_info_or_error(conflicted_files, ctx.logger)?;
+    let conflicts = collect_conflict_info_or_error(conflicted_files, ctx.workspace, ctx.logger)?;
 
     // Use stored_or_generate pattern for hardened resume
     let prompt_key = format!("{}_conflict_resolution", phase.to_lowercase());
@@ -476,47 +504,15 @@ pub(crate) fn try_resolve_conflicts_with_fallback(
     match run_ai_conflict_resolution(
         &resolution_prompt,
         ctx.config,
+        ctx.registry,
         ctx.logger,
         ctx.colors,
         std::sync::Arc::clone(&ctx.executor_arc),
         ctx.workspace,
     ) {
-        Ok(ConflictResolutionResult::WithJson(resolved_content)) => {
-            handle_json_resolution(&resolved_content, ctx.logger, ctx.workspace)
-        }
         Ok(ConflictResolutionResult::FileEditsOnly) => handle_file_edits_resolution(ctx.logger),
         Ok(ConflictResolutionResult::Failed) => handle_failed_resolution(ctx.logger, executor),
         Err(e) => handle_error_resolution(ctx.logger, executor, e),
-    }
-}
-
-/// Handle resolution that returned JSON output.
-fn handle_json_resolution(
-    resolved_content: &str,
-    logger: &Logger,
-    workspace: &dyn crate::workspace::Workspace,
-) -> anyhow::Result<bool> {
-    // Attempt to parse and write files
-    match parse_and_validate_resolved_files(resolved_content, logger) {
-        Ok(resolved_files) => {
-            write_resolved_files(&resolved_files, workspace, logger)?;
-        }
-        Err(_) => {
-            // JSON parsing failed - this is expected and normal
-            // We verify conflicts via LibGit2 state, not JSON parsing
-        }
-    }
-
-    // Verify all conflicts are resolved via LibGit2 (authoritative source)
-    let remaining_conflicts = get_conflicted_files()?;
-    if remaining_conflicts.is_empty() {
-        Ok(true)
-    } else {
-        logger.warn(&format!(
-            "{} conflicts remain after AI resolution",
-            remaining_conflicts.len()
-        ));
-        Ok(false)
     }
 }
 
@@ -581,11 +577,12 @@ fn handle_error_resolution(
 /// Collect conflict information from conflicted files.
 fn collect_conflict_info_or_error(
     conflicted_files: &[String],
+    workspace: &dyn crate::workspace::Workspace,
     logger: &Logger,
 ) -> anyhow::Result<std::collections::HashMap<String, crate::prompts::FileConflict>> {
-    use crate::prompts::collect_conflict_info;
+    use crate::prompts::collect_conflict_info_with_workspace;
 
-    match collect_conflict_info(conflicted_files) {
+    match collect_conflict_info_with_workspace(workspace, conflicted_files) {
         Ok(c) => Ok(c),
         Err(e) => {
             logger.error(&format!("Failed to collect conflict info: {e}"));
@@ -600,8 +597,21 @@ fn build_resolution_prompt(
     template_context: &TemplateContext,
     workspace: &dyn crate::workspace::Workspace,
 ) -> String {
-    build_enhanced_resolution_prompt(conflicts, None::<()>, template_context, workspace)
-        .unwrap_or_else(|_| String::new())
+    let prompt =
+        build_enhanced_resolution_prompt(conflicts, None::<()>, template_context, workspace)
+            .unwrap_or_else(|e| {
+                format!(
+                "# MERGE CONFLICT RESOLUTION\n\nFailed to build context: {e}\n\nConflicts:\n{:#?}",
+                conflicts.keys().collect::<Vec<_>>()
+            )
+            });
+    if prompt.trim().is_empty() {
+        return format!(
+            "# MERGE CONFLICT RESOLUTION\n\nEmpty prompt generated.\n\nConflicts:\n{:#?}",
+            conflicts.keys().collect::<Vec<_>>()
+        );
+    }
+    prompt
 }
 
 /// Build the conflict resolution prompt with optional branch info.
@@ -626,26 +636,33 @@ fn build_enhanced_resolution_prompt(
     )
 }
 
-/// Run AI agent to resolve conflicts with fallback mechanism.
+fn read_repo_head_or_unknown(workspace: &dyn Workspace) -> String {
+    match git2::Repository::open(workspace.root()) {
+        Ok(repo) => repo
+            .head()
+            .ok()
+            .and_then(|head| head.peel_to_commit().ok())
+            .map(|commit| commit.id().to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        Err(_) => "unknown".to_string(),
+    }
+}
+
+/// Run AI agent to resolve conflicts with a single attempt.
 fn run_ai_conflict_resolution(
     resolution_prompt: &str,
     config: &crate::config::Config,
+    registry: &crate::agents::AgentRegistry,
     logger: &Logger,
     colors: Colors,
     executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
     workspace: &dyn crate::workspace::Workspace,
 ) -> anyhow::Result<ConflictResolutionResult> {
-    use crate::agents::AgentRegistry;
-    use crate::files::result_extraction::extract_last_result;
-    use crate::pipeline::{
-        run_with_fallback_and_validator, FallbackConfig, OutputValidator, PipelineRuntime,
-    };
-    use std::io;
+    use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
     use std::path::Path;
 
     let log_dir = ".agent/logs/rebase_conflict_resolution";
 
-    let registry = AgentRegistry::new()?;
     let reviewer_agent = config.reviewer_agent.as_deref().unwrap_or("codex");
 
     let executor_ref: &dyn crate::executor::ProcessExecutor = &*executor_arc;
@@ -659,127 +676,34 @@ fn run_ai_conflict_resolution(
         workspace,
     };
 
-    let validate_output: OutputValidator = |ws: &dyn crate::workspace::Workspace,
-                                            log_dir_path: &Path,
-                                            validation_logger: &crate::logger::Logger|
-     -> io::Result<bool> {
-        match extract_last_result(ws, log_dir_path) {
-            Ok(Some(_)) => Ok(true),
-            Ok(None) => match crate::git_helpers::get_conflicted_files() {
-                Ok(conflicts) if conflicts.is_empty() => {
-                    validation_logger
-                        .info("Agent resolved conflicts without JSON output (file edits only)");
-                    Ok(true)
-                }
-                Ok(conflicts) => {
-                    validation_logger.warn(&format!(
-                        "{} conflict(s) remain unresolved",
-                        conflicts.len()
-                    ));
-                    Ok(false)
-                }
-                Err(e) => {
-                    validation_logger.warn(&format!("Failed to check for conflicts: {e}"));
-                    Ok(false)
-                }
-            },
-            Err(e) => {
-                validation_logger.warn(&format!("Output validation check failed: {e}"));
-                Ok(false)
-            }
-        }
-    };
+    workspace.create_dir_all(Path::new(log_dir))?;
 
-    let mut fallback_config = FallbackConfig {
-        role: crate::agents::AgentRole::Reviewer,
-        base_label: "conflict resolution",
+    let agent_config = registry
+        .resolve_config(reviewer_agent)
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", reviewer_agent))?;
+    let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
+
+    let prompt_cmd = PromptCommand {
+        label: reviewer_agent,
+        display_name: reviewer_agent,
+        cmd_str: &cmd_str,
         prompt: resolution_prompt,
-        logfile_prefix: log_dir,
-        runtime: &mut runtime,
-        registry: &registry,
-        primary_agent: reviewer_agent,
-        output_validator: Some(validate_output),
-        workspace,
+        logfile: ".agent/logs/rebase_conflict_resolution/conflict_resolution.log",
+        parser_type: agent_config.json_parser,
+        env_vars: &agent_config.env_vars,
     };
 
-    let exit_code = run_with_fallback_and_validator(&mut fallback_config)?;
-
-    if exit_code != 0 {
+    let result = run_with_prompt(&prompt_cmd, &mut runtime)?;
+    if result.exit_code != 0 {
         return Ok(ConflictResolutionResult::Failed);
     }
 
     let remaining_conflicts = crate::git_helpers::get_conflicted_files()?;
-
     if remaining_conflicts.is_empty() {
-        match extract_last_result(workspace, Path::new(log_dir)) {
-            Ok(Some(content)) => Ok(ConflictResolutionResult::WithJson(content)),
-            _ => Ok(ConflictResolutionResult::FileEditsOnly),
-        }
+        Ok(ConflictResolutionResult::FileEditsOnly)
     } else {
         Ok(ConflictResolutionResult::Failed)
     }
-}
-
-/// Parse and validate the resolved files from AI output.
-///
-/// JSON parsing failures are expected and handled gracefully - LibGit2 state
-/// is used for verification, not JSON output. This function only parses the
-/// JSON to write resolved files if available.
-fn parse_and_validate_resolved_files(
-    resolved_content: &str,
-    logger: &Logger,
-) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
-    let json: serde_json::Value = serde_json::from_str(resolved_content).map_err(|_e| {
-        // Agent did not provide JSON output - fall back to LibGit2 verification
-        // This is expected and normal, not an error condition
-        anyhow::anyhow!("Agent did not provide JSON output (will verify via Git state)")
-    })?;
-
-    let resolved_files = match json.get("resolved_files") {
-        Some(v) if v.is_object() => v.as_object().unwrap(),
-        _ => {
-            logger.info("Agent output missing 'resolved_files' object");
-            anyhow::bail!("Agent output missing 'resolved_files' object");
-        }
-    };
-
-    if resolved_files.is_empty() {
-        logger.info("No resolved files in JSON output");
-        anyhow::bail!("No files were resolved by the agent");
-    }
-
-    Ok(resolved_files.clone())
-}
-
-/// Write resolved files to disk and stage them.
-///
-/// Uses workspace abstraction for file operations, enabling testing with
-/// `MemoryWorkspace`.
-fn write_resolved_files(
-    resolved_files: &serde_json::Map<String, serde_json::Value>,
-    workspace: &dyn crate::workspace::Workspace,
-    logger: &Logger,
-) -> anyhow::Result<usize> {
-    use std::path::Path;
-
-    let mut files_written = 0;
-    for (path, content) in resolved_files {
-        if let Some(content_str) = content.as_str() {
-            workspace.write(Path::new(path), content_str).map_err(|e| {
-                logger.error(&format!("Failed to write {path}: {e}"));
-                anyhow::anyhow!("Failed to write {path}: {e}")
-            })?;
-            logger.info(&format!("Resolved and wrote: {path}"));
-            files_written += 1;
-            // Stage the resolved file
-            if let Err(e) = crate::git_helpers::git_add_all() {
-                logger.warn(&format!("Failed to stage {path}: {e}"));
-            }
-        }
-    }
-
-    logger.success(&format!("Successfully resolved {files_written} file(s)"));
-    Ok(files_written)
 }
 
 /// Wrapper for conflict resolution without PhaseContext.
@@ -830,6 +754,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
 
     let ctx = ConflictResolutionContext {
         config,
+        registry: &registry,
         template_context,
         logger,
         colors,
@@ -837,7 +762,7 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         workspace: &workspace,
     };
 
-    try_resolve_conflicts_with_fallback(
+    try_resolve_conflicts(
         conflicted_files,
         ctx,
         &mut phase_ctx,

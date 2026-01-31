@@ -5,7 +5,9 @@
 use std::env::consts::OS;
 
 use super::Platform;
-use crate::executor::{ProcessExecutor, RealProcessExecutor};
+use crate::executor::ProcessExecutor;
+#[cfg(test)]
+use crate::executor::RealProcessExecutor;
 
 /// Check if a command exists in PATH
 fn has_command(executor: &dyn ProcessExecutor, cmd: &str) -> bool {
@@ -30,11 +32,6 @@ fn detect_linux_distro(executor: &dyn ProcessExecutor) -> Platform {
 }
 
 impl Platform {
-    /// Detect the current platform using default process executor
-    pub(crate) fn detect() -> Self {
-        Self::detect_with_executor(&RealProcessExecutor)
-    }
-
     /// Detect the current platform with a provided process executor
     pub(crate) fn detect_with_executor(executor: &dyn ProcessExecutor) -> Self {
         match OS {
@@ -58,7 +55,7 @@ mod tests {
 
     #[test]
     fn test_platform_detect_returns_valid_platform() {
-        let platform = Platform::detect();
+        let platform = Platform::detect_with_executor(&RealProcessExecutor);
         // Should return some valid platform based on current OS
         assert!(matches!(
             platform,

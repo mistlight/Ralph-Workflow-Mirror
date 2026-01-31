@@ -52,12 +52,6 @@ impl ResumeContext {
                 self.reviewer_pass + 1,
                 self.total_reviewer_passes
             ),
-            PipelinePhase::Fix => "Fix".to_string(),
-            PipelinePhase::ReviewAgain => format!(
-                "Verification review {}/{}",
-                self.reviewer_pass + 1,
-                self.total_reviewer_passes
-            ),
             PipelinePhase::CommitMessage => "Commit Message Generation".to_string(),
             PipelinePhase::FinalValidation => "Final Validation".to_string(),
             PipelinePhase::Complete => "Complete".to_string(),
@@ -180,14 +174,20 @@ pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> u
 
     let mut restored = 0;
 
-    // Restore RALPH_* variables
+    // Restore RALPH_* variables (safe only)
     for (key, value) in &env_snap.ralph_vars {
+        if crate::checkpoint::state::is_sensitive_env_key(key) {
+            continue;
+        }
         std::env::set_var(key, value);
         restored += 1;
     }
 
-    // Restore other relevant variables
+    // Restore other relevant variables (safe only)
     for (key, value) in &env_snap.other_vars {
+        if crate::checkpoint::state::is_sensitive_env_key(key) {
+            continue;
+        }
         std::env::set_var(key, value);
         restored += 1;
     }
@@ -233,9 +233,7 @@ pub fn calculate_start_iteration(checkpoint: &PipelineCheckpoint, max_iterations
 /// The pass number to start from (1-indexed).
 pub fn calculate_start_reviewer_pass(checkpoint: &PipelineCheckpoint, max_passes: u32) -> u32 {
     match checkpoint.phase {
-        PipelinePhase::Review | PipelinePhase::Fix | PipelinePhase::ReviewAgain => {
-            checkpoint.reviewer_pass.clamp(1, max_passes.max(1))
-        }
+        PipelinePhase::Review => checkpoint.reviewer_pass.clamp(1, max_passes.max(1)),
         // For earlier phases, start from the beginning
         PipelinePhase::Planning
         | PipelinePhase::Development
@@ -265,11 +263,8 @@ fn phase_rank(phase: PipelinePhase) -> u32 {
         PipelinePhase::FinalValidation => 4,
         PipelinePhase::Complete => 5,
         PipelinePhase::Interrupted => 6,
-        // Fix and other intermediate phases map to Review
-        PipelinePhase::Fix
-        | PipelinePhase::ReviewAgain
-        | PipelinePhase::PreRebase
-        | PipelinePhase::PreRebaseConflict => 2,
+        // Pre-rebase phases map to Review rank
+        PipelinePhase::PreRebase | PipelinePhase::PreRebaseConflict => 2,
         // Rebase phases map between Development and Review
         PipelinePhase::Rebase | PipelinePhase::PostRebase | PipelinePhase::PostRebaseConflict => 2,
     }
@@ -348,11 +343,11 @@ impl RestoredContext {
 mod tests {
     use super::*;
     use crate::checkpoint::state::{
-        AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot, RebaseState,
+        AgentConfigSnapshot, CheckpointParams, CliArgsSnapshot, EnvironmentSnapshot, RebaseState,
     };
 
     fn make_test_checkpoint(phase: PipelinePhase, iteration: u32, pass: u32) -> PipelineCheckpoint {
-        let cli_args = CliArgsSnapshot::new(5, 3, None, false, true, 2, false, None);
+        let cli_args = CliArgsSnapshot::new(5, 3, None, true, 2, false, None);
         let dev_config =
             AgentConfigSnapshot::new("claude".into(), "cmd".into(), "-o".into(), None, true);
         let rev_config =
@@ -378,6 +373,10 @@ mod tests {
             resume_count: 0,
             actual_developer_runs: iteration,
             actual_reviewer_runs: pass,
+            working_dir: "/test/repo".to_string(),
+            prompt_md_checksum: None,
+            config_path: None,
+            config_checksum: None,
         })
     }
 
@@ -498,38 +497,39 @@ mod tests {
     }
 
     #[test]
-    fn test_resume_context_phase_name_review_again() {
-        let ctx = ResumeContext {
-            phase: PipelinePhase::ReviewAgain,
-            iteration: 5,
-            total_iterations: 5,
-            reviewer_pass: 2,
-            total_reviewer_passes: 3,
-            resume_count: 1,
-            rebase_state: RebaseState::default(),
-            run_id: "test".to_string(),
-            prompt_history: None,
-            execution_history: None,
-        };
+    fn test_restore_environment_skips_sensitive_vars() {
+        let mut checkpoint = make_test_checkpoint(PipelinePhase::Development, 1, 0);
+        let mut snapshot = EnvironmentSnapshot::default();
+        snapshot
+            .ralph_vars
+            .insert("RALPH_SAFE_SETTING".to_string(), "ok".to_string());
+        snapshot
+            .ralph_vars
+            .insert("RALPH_API_TOKEN".to_string(), "secret".to_string());
+        snapshot
+            .other_vars
+            .insert("EDITOR".to_string(), "vim".to_string());
+        snapshot
+            .other_vars
+            .insert("GIT_PASSWORD".to_string(), "nope".to_string());
+        checkpoint.env_snapshot = Some(snapshot);
 
-        assert_eq!(ctx.phase_name(), "Verification review 3/3");
-    }
+        std::env::remove_var("RALPH_SAFE_SETTING");
+        std::env::remove_var("RALPH_API_TOKEN");
+        std::env::remove_var("EDITOR");
+        std::env::remove_var("GIT_PASSWORD");
 
-    #[test]
-    fn test_resume_context_phase_name_fix() {
-        let ctx = ResumeContext {
-            phase: PipelinePhase::Fix,
-            iteration: 5,
-            total_iterations: 5,
-            reviewer_pass: 1,
-            total_reviewer_passes: 3,
-            resume_count: 0,
-            rebase_state: RebaseState::default(),
-            run_id: "test".to_string(),
-            prompt_history: None,
-            execution_history: None,
-        };
+        let restored = restore_environment_from_checkpoint(&checkpoint);
+        assert_eq!(restored, 2);
+        assert_eq!(
+            std::env::var("RALPH_SAFE_SETTING").ok().as_deref(),
+            Some("ok")
+        );
+        assert!(std::env::var("RALPH_API_TOKEN").is_err());
+        assert_eq!(std::env::var("EDITOR").ok().as_deref(), Some("vim"));
+        assert!(std::env::var("GIT_PASSWORD").is_err());
 
-        assert_eq!(ctx.phase_name(), "Fix");
+        std::env::remove_var("RALPH_SAFE_SETTING");
+        std::env::remove_var("EDITOR");
     }
 }

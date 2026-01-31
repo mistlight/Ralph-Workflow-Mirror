@@ -165,7 +165,7 @@ pub fn handle_apply_commit_with_handler<H: AppEffectHandler>(
 ///
 /// Generates a commit message for current changes using the standard pipeline.
 /// Uses the same `generate_commit_message()` function as the main workflow,
-/// ensuring consistent behavior with proper fallback chain support and logging.
+/// ensuring consistent behavior with reducer-driven validation.
 ///
 /// # Arguments
 ///
@@ -206,11 +206,7 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
         workspace: config.workspace,
     };
 
-    // Use the standard commit message generation from phases/commit.rs
-    // This provides:
-    // - Proper fallback chain support
-    // - Structured logging to .agent/logs/
-    // - Meaningful error diagnostics
+    // Use the standard commit message generation from phases/commit.rs.
     let result = generate_commit_message(
         &diff,
         config.registry,
@@ -221,11 +217,6 @@ pub fn handle_generate_commit_msg(config: CommitGenerationConfig<'_>) -> anyhow:
         &std::collections::HashMap::new(), // Empty prompt history for plumbing command
     )
     .map_err(|e| anyhow::anyhow!("Failed to generate commit message: {e}"))?;
-
-    if !result.success || result.message.trim().is_empty() {
-        anyhow::bail!("Commit message generation failed");
-    }
-
     let commit_message = result.message;
 
     config.logger.success("Commit message generated:");

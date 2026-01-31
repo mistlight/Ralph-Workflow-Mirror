@@ -384,7 +384,7 @@ pub fn run_pipeline(initial_state: PipelineState) -> Result<()> {
 
         // 5. Auto-checkpoint on significant events
         if should_checkpoint(&state) {
-            save_checkpoint(&state)?;
+            save_checkpoint_with_workspace(&workspace, &state)?;
         }
     }
 

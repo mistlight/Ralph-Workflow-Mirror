@@ -17,8 +17,7 @@ use crate::agents::opencode_api::{CatalogLoader, RealCatalogLoader};
 use crate::agents::{validation as agent_validation, AgentRegistry, AgentRole, ConfigSource};
 use crate::cli::{
     apply_args_to_config, handle_extended_help, handle_generate_completion,
-    handle_init_global_with, handle_init_prompt_with, handle_list_work_guides,
-    handle_smart_init_with, Args,
+    handle_init_global_with, handle_list_work_guides, handle_smart_init_with, Args,
 };
 use crate::config::{
     loader, unified_config_path, Config, ConfigEnvironment, RealConfigEnvironment, UnifiedConfig,
@@ -45,7 +44,7 @@ pub struct ConfigInitResult {
 /// 1. Loads config from unified config file (~/.config/ralph-workflow.toml)
 /// 2. Applies environment variable overrides
 /// 3. Applies CLI arguments to config
-/// 4. Handles --list-work-guides, --init-prompt, --init/--init-global if set
+/// 4. Handles --list-work-guides, --init/--init-global if set
 /// 5. Loads agent registry from built-ins + unified config
 /// 6. Selects default agents from fallback chains
 ///
@@ -58,7 +57,7 @@ pub struct ConfigInitResult {
 /// # Returns
 ///
 /// Returns `Ok(Some(result))` on success, `Ok(None)` if an early exit was triggered
-/// (e.g., --init, --init-prompt, --list-templates), or an error if initialization fails.
+/// (e.g., --init, --list-templates), or an error if initialization fails.
 pub fn initialize_config(
     args: &Args,
     colors: Colors,
@@ -90,7 +89,7 @@ pub fn initialize_config(
 /// # Returns
 ///
 /// Returns `Ok(Some(result))` on success, `Ok(None)` if an early exit was triggered
-/// (e.g., --init, --init-prompt, --list-templates), or an error if initialization fails.
+/// (e.g., --init, --list-templates), or an error if initialization fails.
 pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
     args: &Args,
     colors: Colors,
@@ -138,18 +137,6 @@ pub fn initialize_config_with<L: CatalogLoader, P: ConfigEnvironment>(
     // Handle --list-work-guides / --list-templates flag: display available Work Guides and exit
     if args.work_guide_list.list_work_guides && handle_list_work_guides(colors) {
         return Ok(None);
-    }
-
-    // Handle --init-prompt flag: create PROMPT.md from template and exit
-    if let Some(ref template_name) = args.init_prompt {
-        if handle_init_prompt_with(
-            template_name,
-            args.unified_init.force_init,
-            colors,
-            path_resolver,
-        )? {
-            return Ok(None);
-        }
     }
 
     // Handle smart --init flag: intelligently determine what to initialize

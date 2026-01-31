@@ -21,6 +21,22 @@ mod v3;
 /// Mock repository path used consistently across resume tests.
 pub(crate) const MOCK_REPO_PATH: &str = "/mock/repo";
 
+/// Standard prompt content for tests - matches the required PROMPT.md format.
+/// NOTE: If you change this, update STANDARD_PROMPT_CHECKSUM below!
+pub(crate) const STANDARD_PROMPT: &str = r#"## Goal
+
+Do something.
+
+## Acceptance
+
+- Tests pass
+"#;
+
+/// SHA256 checksum of STANDARD_PROMPT above.
+/// Compute with: echo -n '<content>' | sha256sum
+pub(crate) const STANDARD_PROMPT_CHECKSUM: &str =
+    "f3172db90fb9245992bd8ad018ed77821a8765c16d57ca889dc2aa8501953556";
+
 /// Helper function to create a valid v3 checkpoint JSON with all required fields.
 /// Always sets developer_iters and reviewer_reviews to 0 to prevent agent execution.
 pub(crate) fn make_checkpoint_json(
@@ -44,8 +60,7 @@ pub(crate) fn make_checkpoint_json(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -71,7 +86,7 @@ pub(crate) fn make_checkpoint_json(
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "00000000-0000-0000-0000-000000000001",
@@ -83,7 +98,7 @@ pub(crate) fn make_checkpoint_json(
             "file_system_state": null,
             "prompt_history": null
         }}"#,
-        phase, iteration, total_iterations, working_dir, iteration
+        phase, iteration, total_iterations, working_dir, STANDARD_PROMPT_CHECKSUM, iteration
     )
 }
 
@@ -108,8 +123,7 @@ pub(crate) fn make_checkpoint_with_execution_history(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -135,7 +149,7 @@ pub(crate) fn make_checkpoint_with_execution_history(
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-123",
@@ -147,7 +161,7 @@ pub(crate) fn make_checkpoint_with_execution_history(
             "file_system_state": null,
             "prompt_history": null
         }}"#,
-        phase, working_dir, execution_history_json
+        phase, working_dir, STANDARD_PROMPT_CHECKSUM, execution_history_json
     )
 }
 
@@ -172,8 +186,7 @@ pub(crate) fn make_checkpoint_with_file_system_state(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -199,7 +212,7 @@ pub(crate) fn make_checkpoint_with_file_system_state(
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-123",
@@ -211,7 +224,7 @@ pub(crate) fn make_checkpoint_with_file_system_state(
             "file_system_state": {},
             "prompt_history": null
         }}"#,
-        phase, working_dir, file_system_state_json
+        phase, working_dir, STANDARD_PROMPT_CHECKSUM, file_system_state_json
     )
 }
 
@@ -236,8 +249,7 @@ pub(crate) fn make_checkpoint_with_prompt_history(
                 "developer_iters": 0,
                 "reviewer_reviews": 0,
                 "commit_msg": "",
-                "review_depth": null,
-                "skip_rebase": false
+                "review_depth": null
             }},
             "developer_agent_config": {{
                 "name": "test-agent",
@@ -263,7 +275,7 @@ pub(crate) fn make_checkpoint_with_prompt_history(
             "config_path": null,
             "config_checksum": null,
             "working_dir": "{}",
-            "prompt_md_checksum": null,
+            "prompt_md_checksum": "{}",
             "git_user_name": null,
             "git_user_email": null,
             "run_id": "test-run-id-123",
@@ -275,6 +287,6 @@ pub(crate) fn make_checkpoint_with_prompt_history(
             "file_system_state": null,
             "prompt_history": {}
         }}"#,
-        phase, working_dir, prompt_history_json
+        phase, working_dir, STANDARD_PROMPT_CHECKSUM, prompt_history_json
     )
 }

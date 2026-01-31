@@ -223,7 +223,7 @@ impl AgentRegistry {
         }
 
         // OpenCode pattern: "opencode-provider-model" → "opencode/provider/model"
-        // Note: This is a best-effort heuristic for backwards compatibility.
+        // Note: This is a best-effort heuristic for log file name parsing.
         // Provider names may contain hyphens (e.g., "zai-coding-plan"), making it
         // impossible to reliably split "opencode-zai-coding-plan-glm-4.7".
         // The preferred approach is to pass the original agent name through

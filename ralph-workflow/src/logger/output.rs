@@ -50,22 +50,11 @@
 //! }
 //! ```
 //!
-//! ## Logger → File → Extraction Flow
+//! ## Logger → File → XML Flow
 //!
-//! The review and planning phases extract structured output from agent logs:
-//!
-//! 1. **Agent writes JSON events**: Agents emit `{"type": "result", "result": "..."}` events
-//! 2. **Events written to log files**: Via direct file writes or Logger's file logging
-//! 3. **Extraction reads log files**: `extract_last_result()` parses JSON from log files
-//! 4. **Result content captured**: The orchestrator uses extracted content for ISSUES.md/PLAN.md
-//!
-//! ### Last Line Handling
-//!
-//! A key concern is whether the last line without a trailing newline is extracted.
-//! The extraction uses `BufReader::lines()`, which **does** return the last line
-//! even without a trailing newline (this is documented Rust stdlib behavior).
-//!
-//! Reference: <https://doc.rust-lang.org/std/io/struct.BufReader.html#method.lines>
+//! The pipeline treats structured output as explicit XML files written to
+//! `.agent/tmp/` by the agent. The reducer then validates and archives these
+//! files via effects. Logger output is for diagnostics only.
 //!
 //! ### Testing Logger Output
 //!
@@ -109,11 +98,11 @@ use std::cell::RefCell;
 /// All messages include timestamps and appropriate icons.
 pub struct Logger {
     colors: Colors,
-    /// Path for direct filesystem logging (legacy mode)
+    /// Path for direct filesystem logging (CLI layer before workspace available).
     log_file: Option<String>,
-    /// Workspace for abstracted file logging
+    /// Workspace for abstracted file logging (preferred when workspace is available).
     workspace: Option<Arc<dyn Workspace>>,
-    /// Relative path within workspace for log file
+    /// Relative path within workspace for log file.
     workspace_log_path: Option<String>,
 }
 
@@ -179,7 +168,7 @@ impl Logger {
             return;
         }
 
-        // Fall back to direct filesystem logging (legacy mode)
+        // Fall back to direct filesystem logging (CLI layer before workspace available)
         if let Some(ref path) = self.log_file {
             if let Some(parent) = Path::new(path).parent() {
                 let _ = fs::create_dir_all(parent);

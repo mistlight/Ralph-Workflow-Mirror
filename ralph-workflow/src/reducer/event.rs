@@ -90,6 +90,17 @@ pub enum PlanningEvent {
         /// Whether the generated plan passed validation.
         valid: bool,
     },
+
+    /// Output validation failed (missing/empty or otherwise invalid plan output).
+    ///
+    /// Emitted when planning output cannot be validated. The reducer decides
+    /// whether to retry (same agent) or switch agents based on the attempt count.
+    OutputValidationFailed {
+        /// Current iteration number.
+        iteration: u32,
+        /// Current invalid output attempt number.
+        attempt: u32,
+    },
 }
 
 /// Development phase events.
@@ -190,7 +201,8 @@ pub enum DevelopmentEvent {
 /// Review phase events.
 ///
 /// Events related to code review passes and fix attempts. The review phase
-/// runs reviewer agents to identify issues and developer agents to fix them.
+/// runs reviewer agents to identify issues and (by default) the same reviewer
+/// agent chain to apply any required fixes.
 ///
 /// # State Transitions
 ///
@@ -340,6 +352,14 @@ pub enum AgentEvent {
         role: AgentRole,
         /// The agents available in this chain.
         agents: Vec<String>,
+        /// Maximum number of retry cycles allowed for this chain.
+        max_cycles: u32,
+        /// Base retry-cycle delay in milliseconds.
+        retry_delay_ms: u64,
+        /// Exponential backoff multiplier.
+        backoff_multiplier: f64,
+        /// Maximum backoff delay in milliseconds.
+        max_backoff_ms: u64,
     },
     /// Agent hit rate limit (429) - should fallback immediately.
     ///
@@ -624,6 +644,11 @@ impl PipelineEvent {
         Self::Planning(PlanningEvent::GenerationCompleted { iteration, valid })
     }
 
+    /// Create a PlanningOutputValidationFailed event.
+    pub fn planning_output_validation_failed(iteration: u32, attempt: u32) -> Self {
+        Self::Planning(PlanningEvent::OutputValidationFailed { iteration, attempt })
+    }
+
     // Development constructors
     /// Create a DevelopmentPhaseStarted event.
     pub fn development_phase_started() -> Self {
@@ -808,8 +833,22 @@ impl PipelineEvent {
     }
 
     /// Create an AgentChainInitialized event.
-    pub fn agent_chain_initialized(role: AgentRole, agents: Vec<String>) -> Self {
-        Self::Agent(AgentEvent::ChainInitialized { role, agents })
+    pub fn agent_chain_initialized(
+        role: AgentRole,
+        agents: Vec<String>,
+        max_cycles: u32,
+        retry_delay_ms: u64,
+        backoff_multiplier: f64,
+        max_backoff_ms: u64,
+    ) -> Self {
+        Self::Agent(AgentEvent::ChainInitialized {
+            role,
+            agents,
+            max_cycles,
+            retry_delay_ms,
+            backoff_multiplier,
+            max_backoff_ms,
+        })
     }
 
     /// Create an AgentRateLimitFallback event.

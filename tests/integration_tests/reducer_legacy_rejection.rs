@@ -24,7 +24,6 @@
 use std::path::Path;
 
 use ralph_workflow::checkpoint::load_checkpoint_with_workspace;
-use ralph_workflow::files::result_extraction::extract_last_result;
 use ralph_workflow::workspace::MemoryWorkspace;
 
 use crate::test_timeout::with_default_timeout;
@@ -209,8 +208,7 @@ fn test_checkpoint_accepts_v3_format() {
             "reviewer_agent": "test-agent",
             "cli_args": {
                 "developer_iters": 5,
-                "reviewer_reviews": 2,
-                "skip_rebase": false
+                "reviewer_reviews": 2
             },
             "developer_agent_config": {
                 "name": "test-agent",
@@ -264,112 +262,157 @@ fn test_checkpoint_accepts_v3_format() {
 }
 
 // ============================================================================
-// RESULT EXTRACTION TESTS
+// LEGACY PHASE REJECTION TESTS
 // ============================================================================
 
-/// Test that result extraction ignores legacy directory mode.
+/// Test that checkpoint with legacy "Fix" phase is rejected outright.
 ///
-/// When a directory exists at the log path (legacy behavior), extraction
-/// should NOT scan the directory. Only prefix-based file matching should work.
+/// The reducer-only architecture requires that legacy phases are rejected,
+/// not silently migrated. Users must delete old checkpoints and start fresh.
 #[test]
-fn test_result_extraction_ignores_directory_mode() {
+fn test_checkpoint_rejects_legacy_fix_phase() {
     with_default_timeout(|| {
-        // Create a workspace with a directory at the log path (legacy)
-        // and a file inside it
-        // Note: result field must be a string, not an object
-        let result_event = "{\"type\":\"result\",\"result\":\"# Plan\\n\\n## Summary\\nLegacy directory content\"}";
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/logs/planning_1")
-            .with_file(".agent/logs/planning_1/output.log", result_event);
+        let v3_with_fix = r#"{
+            "version": 3,
+            "phase": "Fix",
+            "iteration": 1,
+            "total_iterations": 5,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 2,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {
+                "developer_iters": 5,
+                "reviewer_reviews": 2
+            },
+            "developer_agent_config": {
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            },
+            "reviewer_agent_config": {
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            },
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "/test",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-run-id",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 0,
+            "actual_reviewer_runs": 0,
+            "execution_history": null,
+            "file_system_state": null,
+            "prompt_history": null,
+            "env_snapshot": null
+        }"#;
 
-        let log_path = Path::new(".agent/logs/planning_1");
-        let result = extract_last_result(&workspace, log_path).unwrap();
-
-        // Legacy directory mode should be ignored
-        assert!(
-            result.is_none(),
-            "Should not extract from directory (legacy mode removed)"
-        );
-    });
-}
-
-/// Test that result extraction ignores subdirectory fallback.
-///
-/// Legacy logs where agent names with "/" created nested directories
-/// (e.g., "planning_1_ccs/glm_0.log") should no longer be found.
-#[test]
-fn test_result_extraction_ignores_subdirectory_fallback() {
-    with_default_timeout(|| {
-        // Create a workspace with nested subdirectory structure (legacy)
-        // Note: result field must be a string, not an object
-        let result_event = "{\"type\":\"result\",\"result\":\"# Plan\\n\\n## Summary\\nNested subdirectory content\"}";
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/logs")
-            .with_file(".agent/logs/planning_1_ccs/glm_0.log", result_event);
-
-        let log_path = Path::new(".agent/logs/planning_1");
-        let result = extract_last_result(&workspace, log_path).unwrap();
-
-        // Legacy subdirectory fallback should be ignored
-        assert!(
-            result.is_none(),
-            "Should not extract from subdirectory fallback (legacy mode removed)"
-        );
-    });
-}
-
-/// Test that result extraction works with current prefix mode.
-///
-/// The primary extraction mode uses prefix-based file matching:
-/// `{prefix}_*.log` files in the parent directory.
-#[test]
-fn test_result_extraction_uses_prefix_mode() {
-    with_default_timeout(|| {
-        // Create a workspace with prefix-based log file (current convention)
-        // Note: result field must be a string, not an object
-        let result_event =
-            "{\"type\":\"result\",\"result\":\"# Plan\\n\\n## Summary\\nPrefix mode content\"}";
-        let workspace = MemoryWorkspace::new_test()
-            .with_dir(".agent/logs")
-            .with_file(".agent/logs/planning_1_claude_0.log", result_event);
-
-        let log_path = Path::new(".agent/logs/planning_1");
-        let result = extract_last_result(&workspace, log_path).unwrap();
-
-        // Prefix mode should work
-        assert!(
-            result.is_some(),
-            "Should extract from prefix-based log file"
-        );
-        assert!(
-            result.unwrap().contains("Prefix mode content"),
-            "Should contain expected content"
-        );
-    });
-}
-
-/// Test that exact file fallback still works.
-///
-/// If the exact path exists as a file, it should be read (this is Strategy 4,
-/// now Strategy 2 after removing legacy modes).
-#[test]
-fn test_result_extraction_exact_file_fallback() {
-    with_default_timeout(|| {
-        // Create a workspace with exact file at log path
-        // Note: result field must be a string, not an object
-        let result_event =
-            "{\"type\":\"result\",\"result\":\"# Plan\\n\\n## Summary\\nExact file content\"}";
         let workspace =
-            MemoryWorkspace::new_test().with_file(".agent/logs/exact.log", result_event);
+            MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", v3_with_fix);
 
-        let log_path = Path::new(".agent/logs/exact.log");
-        let result = extract_last_result(&workspace, log_path).unwrap();
-
-        // Exact file fallback should still work
-        assert!(result.is_some(), "Should extract from exact file path");
+        let result = load_checkpoint_with_workspace(&workspace);
         assert!(
-            result.unwrap().contains("Exact file content"),
-            "Should contain expected content"
+            result.is_err(),
+            "Should reject checkpoint with legacy Fix phase (not silently migrate)"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Fix") || err.contains("legacy") || err.contains("no longer supported"),
+            "Error should mention Fix or legacy: {err}"
+        );
+    });
+}
+
+/// Test that checkpoint with legacy "ReviewAgain" phase is rejected outright.
+///
+/// The reducer-only architecture requires that legacy phases are rejected,
+/// not silently migrated. Users must delete old checkpoints and start fresh.
+#[test]
+fn test_checkpoint_rejects_legacy_review_again_phase() {
+    with_default_timeout(|| {
+        let v3_with_review_again = r#"{
+            "version": 3,
+            "phase": "ReviewAgain",
+            "iteration": 1,
+            "total_iterations": 5,
+            "reviewer_pass": 0,
+            "total_reviewer_passes": 2,
+            "timestamp": "2024-01-01 12:00:00",
+            "developer_agent": "test-agent",
+            "reviewer_agent": "test-agent",
+            "cli_args": {
+                "developer_iters": 5,
+                "reviewer_reviews": 2
+            },
+            "developer_agent_config": {
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            },
+            "reviewer_agent_config": {
+                "name": "test-agent",
+                "cmd": "echo",
+                "output_flag": "",
+                "yolo_flag": null,
+                "can_commit": false,
+                "model_override": null,
+                "provider_override": null,
+                "context_level": 1
+            },
+            "rebase_state": "NotStarted",
+            "config_path": null,
+            "config_checksum": null,
+            "working_dir": "/test",
+            "prompt_md_checksum": null,
+            "git_user_name": null,
+            "git_user_email": null,
+            "run_id": "test-run-id",
+            "parent_run_id": null,
+            "resume_count": 0,
+            "actual_developer_runs": 0,
+            "actual_reviewer_runs": 0,
+            "execution_history": null,
+            "file_system_state": null,
+            "prompt_history": null,
+            "env_snapshot": null
+        }"#;
+
+        let workspace =
+            MemoryWorkspace::new_test().with_file(".agent/checkpoint.json", v3_with_review_again);
+
+        let result = load_checkpoint_with_workspace(&workspace);
+        assert!(
+            result.is_err(),
+            "Should reject checkpoint with legacy ReviewAgain phase (not silently migrate)"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("ReviewAgain")
+                || err.contains("legacy")
+                || err.contains("no longer supported"),
+            "Error should mention ReviewAgain or legacy: {err}"
         );
     });
 }
@@ -828,6 +871,8 @@ fn test_effects_are_single_task() {
                 Effect::GenerateCommitMessage => "Generate ONE commit message",
                 Effect::CreateCommit { .. } => "Create ONE commit",
                 Effect::SkipCommit { .. } => "Skip commit ONCE",
+                Effect::BackoffWait { .. } => "Wait ONE backoff delay",
+                Effect::AbortPipeline { .. } => "Abort pipeline ONCE",
                 Effect::ValidateFinalState => "Validate final state ONCE",
                 Effect::SaveCheckpoint { .. } => "Save ONE checkpoint",
                 Effect::CleanupContext => "Clean context ONCE",
@@ -867,6 +912,14 @@ fn test_effects_are_single_task() {
             Effect::SkipCommit {
                 reason: "test".to_string(),
             },
+            Effect::BackoffWait {
+                role: AgentRole::Developer,
+                cycle: 1,
+                duration_ms: 1,
+            },
+            Effect::AbortPipeline {
+                reason: "test".to_string(),
+            },
             Effect::ValidateFinalState,
             Effect::SaveCheckpoint {
                 trigger: CheckpointTrigger::PhaseTransition,
@@ -895,11 +948,11 @@ fn test_effects_are_single_task() {
             );
         }
 
-        // Verify we covered all variants (17 at time of writing)
+        // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            17,
-            "Expected 17 Effect variants; update this test if variants were added or removed"
+            19,
+            "Expected 19 Effect variants; update this test if variants were added or removed"
         );
     });
 }
@@ -1150,5 +1203,341 @@ fn test_effect_determination_is_pure_function_of_state() {
             "Third call: {:?}",
             effect3
         );
+    });
+}
+
+// ============================================================================
+// PHASE MODULE CONTROL FLOW TESTS
+// ============================================================================
+
+/// Test that review phase validation failures surface as reducer events.
+///
+/// When XML validation fails during review, the phase module must emit an event
+/// and let the reducer decide retry policy. The phase module should NOT internally
+/// hide failures or make retry decisions autonomously.
+#[test]
+fn test_review_validation_failure_surfaces_via_event() {
+    use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase, ReviewEvent};
+    use ralph_workflow::reducer::state::PipelineState;
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        // Start in Review phase
+        let mut state = PipelineState::initial(0, 3);
+        state.phase = PipelinePhase::Review;
+        state.reviewer_pass = 0;
+
+        // When review output validation fails, reducer should track the attempt
+        // via the OutputValidationFailed event (not hidden inside phase module)
+        let state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
+                pass: 0,
+                attempt: 0,
+            }),
+        );
+
+        // The state should reflect the validation failure via continuation.invalid_output_attempts
+        // This proves the failure was surfaced to the reducer, not hidden in phase code
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 1,
+            "Review validation failure must surface via reducer event and increment attempt counter"
+        );
+
+        // Another failure should increment again (reducer controls retry logic)
+        let state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
+                pass: 0,
+                attempt: 1,
+            }),
+        );
+
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 2,
+            "Subsequent failures must continue to surface via reducer events"
+        );
+    });
+}
+
+/// Test that development continuation decisions come from reducer state.
+///
+/// When development returns status="partial" or "failed", the decision to continue
+/// must come from reducer state transitions, not from autonomous phase module logic.
+#[test]
+fn test_development_continuation_is_reducer_driven() {
+    use ralph_workflow::reducer::event::{DevelopmentEvent, PipelineEvent, PipelinePhase};
+    use ralph_workflow::reducer::state::{DevelopmentStatus, PipelineState};
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        // Start in Development phase
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Development;
+
+        // Simulate a "partial" status from development via reducer event
+        // The reducer state should track continuation context
+        let state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+                iteration: 0,
+                status: DevelopmentStatus::Partial,
+                summary: "Work partially done".to_string(),
+                files_changed: Some(vec!["file.rs".to_string()]),
+                next_steps: Some("Continue implementation".to_string()),
+            }),
+        );
+
+        // Verify reducer state tracks continuation
+        assert!(
+            state.continuation.is_continuation(),
+            "Continuation decision must be tracked in reducer state"
+        );
+        assert_eq!(
+            state.continuation.previous_status,
+            Some(DevelopmentStatus::Partial),
+            "Previous status must be tracked for continuation"
+        );
+        assert_eq!(
+            state.continuation.continuation_attempt, 1,
+            "Continuation attempt counter must be incremented"
+        );
+    });
+}
+
+/// Test that XSD retry loop exhaustion triggers reducer state transitions.
+///
+/// When XSD validation fails repeatedly, the reducer state must track exhaustion
+/// and trigger agent advancement. Phase modules must NOT silently give up or
+/// make fallback decisions internally.
+#[test]
+fn test_xsd_retry_exhaustion_triggers_state_transition() {
+    use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase};
+    use ralph_workflow::reducer::state::{PipelineState, MAX_DEV_INVALID_OUTPUT_RERUNS};
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Development;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["agent-1".to_string(), "agent-2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+
+        // Exhaust retries via reducer events (not hidden in phase code)
+        let mut current = state;
+        for attempt in 0..=MAX_DEV_INVALID_OUTPUT_RERUNS {
+            current = reduce(
+                current,
+                PipelineEvent::development_output_validation_failed(0, attempt),
+            );
+        }
+
+        // After exhausting retries, agent chain should advance
+        // This proves the retry policy is in reducer, not phase module
+        assert_eq!(
+            current.agent_chain.current_agent(),
+            Some(&"agent-2".to_string()),
+            "Agent chain must advance after retry exhaustion (reducer-driven policy)"
+        );
+
+        // Counter should reset for new agent
+        assert_eq!(
+            current.continuation.invalid_output_attempts, 0,
+            "Invalid output attempts must reset after agent switch"
+        );
+    });
+}
+
+/// Test that phase transitions only happen via reducer events.
+///
+/// Phase modules must NOT directly advance phases. All phase transitions
+/// must occur through reducer event processing, ensuring state is the
+/// single source of truth.
+#[test]
+fn test_phase_transitions_only_via_reducer_events() {
+    use ralph_workflow::reducer::event::{
+        CommitEvent, DevelopmentEvent, PipelineEvent, PipelinePhase, PlanningEvent, ReviewEvent,
+    };
+    use ralph_workflow::reducer::state::PipelineState;
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        // Start at Planning
+        let state = PipelineState::initial(1, 1);
+        assert_eq!(state.phase, PipelinePhase::Planning);
+
+        // Transition Planning -> Development via event
+        let state = reduce(
+            state,
+            PipelineEvent::Planning(PlanningEvent::GenerationCompleted {
+                iteration: 0,
+                valid: true,
+            }),
+        );
+        assert_eq!(
+            state.phase,
+            PipelinePhase::Development,
+            "Planning->Development must happen via reducer event"
+        );
+
+        // Transition Development -> CommitMessage via event
+        let state = reduce(
+            state,
+            PipelineEvent::Development(DevelopmentEvent::IterationCompleted {
+                iteration: 0,
+                output_valid: true,
+            }),
+        );
+        assert_eq!(
+            state.phase,
+            PipelinePhase::CommitMessage,
+            "Development->CommitMessage must happen via reducer event"
+        );
+
+        // Transition CommitMessage -> Review via event (when iterations exhausted)
+        let state = reduce(
+            state,
+            PipelineEvent::Commit(CommitEvent::Created {
+                hash: "abc123".to_string(),
+                message: "test".to_string(),
+            }),
+        );
+        assert_eq!(
+            state.phase,
+            PipelinePhase::Review,
+            "CommitMessage->Review must happen via reducer event"
+        );
+
+        // Transition Review -> CommitMessage via event (phase completed early)
+        let state = reduce(
+            state,
+            PipelineEvent::Review(ReviewEvent::PhaseCompleted { early_exit: true }),
+        );
+        // Review phase completed transitions to CommitMessage for commit handling
+        assert_eq!(
+            state.phase,
+            PipelinePhase::CommitMessage,
+            "Review->CommitMessage must happen via reducer event"
+        );
+    });
+}
+
+// ============================================================================
+// .PROCESSED ARCHIVE TESTS (NO FALLBACK READS)
+// ============================================================================
+
+/// Test that `.processed` files are archive-only and never used as fallback reads.
+///
+/// This applies to all canonical XML outputs. If the primary XML is missing, the
+/// pipeline must NOT consult the archived `.processed` file.
+#[test]
+fn test_processed_files_are_archive_only_for_all_outputs() {
+    use ralph_workflow::files::llm_output_extraction::file_based_extraction::try_extract_from_file_with_workspace;
+    use ralph_workflow::workspace::MemoryWorkspace;
+
+    with_default_timeout(|| {
+        let cases = [
+            (".agent/tmp/plan.xml", "<plan>archived</plan>"),
+            (".agent/tmp/issues.xml", "<issues>archived</issues>"),
+            (
+                ".agent/tmp/development_result.xml",
+                "<development>archived</development>",
+            ),
+            (".agent/tmp/fix_result.xml", "<fix>archived</fix>"),
+            (
+                ".agent/tmp/commit_message.xml",
+                "<commit_message>archived</commit_message>",
+            ),
+        ];
+
+        let mut workspace = MemoryWorkspace::new_test();
+        for (primary_path, content) in cases {
+            workspace = workspace.with_file(&format!("{primary_path}.processed"), content);
+        }
+
+        for (primary_path, _) in cases {
+            let result = try_extract_from_file_with_workspace(&workspace, Path::new(primary_path));
+            assert!(
+                result.is_none(),
+                "{primary_path}.processed must not be used as a fallback input"
+            );
+        }
+    });
+}
+
+/// Test that legacy `commit.xml` is not used as a fallback when commit message XML is missing.
+#[test]
+fn test_legacy_commit_xml_is_not_used_for_commit_message_extraction() {
+    use ralph_workflow::files::llm_output_extraction::file_based_extraction::try_extract_from_file_with_workspace;
+    use ralph_workflow::workspace::MemoryWorkspace;
+
+    with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test().with_file(
+            ".agent/tmp/commit.xml",
+            "<commit><message>legacy</message></commit>",
+        );
+
+        let result = try_extract_from_file_with_workspace(
+            &workspace,
+            Path::new(".agent/tmp/commit_message.xml"),
+        );
+
+        assert!(
+            result.is_none(),
+            "commit_message.xml missing must not fall back to legacy commit.xml"
+        );
+    });
+}
+
+/// Test that archived XML files use .processed suffix consistently.
+///
+/// All XML archiving must use the `.processed` suffix for consistency.
+/// This ensures the fallback pattern in handlers works correctly.
+#[test]
+fn test_archived_xml_uses_processed_suffix() {
+    use ralph_workflow::files::llm_output_extraction::archive_xml_file_with_workspace;
+    use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
+
+    with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/tmp/plan.xml", "<plan>test</plan>")
+            .with_file(".agent/tmp/issues.xml", "<issues>test</issues>")
+            .with_file(
+                ".agent/tmp/development_result.xml",
+                "<development>test</development>",
+            )
+            .with_file(".agent/tmp/fix_result.xml", "<fix>test</fix>")
+            .with_file(".agent/tmp/commit_message.xml", "<commit>test</commit>");
+
+        // Archive each file
+        let paths = [
+            ".agent/tmp/plan.xml",
+            ".agent/tmp/issues.xml",
+            ".agent/tmp/development_result.xml",
+            ".agent/tmp/fix_result.xml",
+            ".agent/tmp/commit_message.xml",
+        ];
+
+        for path in paths {
+            archive_xml_file_with_workspace(&workspace, Path::new(path));
+
+            // Original should be gone
+            assert!(
+                !workspace.exists(Path::new(path)),
+                "Original file should be removed after archiving: {}",
+                path
+            );
+
+            // .processed should exist
+            let processed_path = format!("{}.processed", path);
+            assert!(
+                workspace.exists(Path::new(&processed_path)),
+                "Archived file should have .processed suffix: {}",
+                processed_path
+            );
+        }
     });
 }

@@ -6,9 +6,9 @@
 use super::ccs_env::{load_ccs_env_vars, CcsEnvVarsError};
 use super::fallback::FallbackConfig;
 use super::parser::JsonParserType;
+use crate::workspace::{Workspace, WorkspaceFs};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -466,11 +466,13 @@ impl AgentsConfigFile {
     /// Load agents config from a file, returning None if file doesn't exist.
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Option<Self>, AgentConfigError> {
         let path = path.as_ref();
-        if !path.exists() {
+        let workspace = WorkspaceFs::new(PathBuf::from("."));
+
+        if !workspace.exists(path) {
             return Ok(None);
         }
 
-        let contents = fs::read_to_string(path)?;
+        let contents = workspace.read(path)?;
         let config: Self = toml::from_str(&contents)?;
         Ok(Some(config))
     }
@@ -508,18 +510,19 @@ impl AgentsConfigFile {
     /// Ensure agents config file exists, creating it from template if needed.
     pub fn ensure_config_exists<P: AsRef<Path>>(path: P) -> io::Result<ConfigInitResult> {
         let path = path.as_ref();
+        let workspace = WorkspaceFs::new(PathBuf::from("."));
 
-        if path.exists() {
+        if workspace.exists(path) {
             return Ok(ConfigInitResult::AlreadyExists);
         }
 
         // Create parent directories if they don't exist
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            workspace.create_dir_all(parent)?;
         }
 
         // Write the default template
-        fs::write(path, DEFAULT_AGENTS_TOML)?;
+        workspace.write(path, DEFAULT_AGENTS_TOML)?;
 
         Ok(ConfigInitResult::Created)
     }
