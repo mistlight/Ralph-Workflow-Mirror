@@ -1200,9 +1200,28 @@ impl MainEffectHandler {
             let _ = save_checkpoint_from_state(&self.state, ctx);
         }
 
-        Ok(EffectResult::event(PipelineEvent::checkpoint_saved(
-            trigger,
-        )))
+        let mut result = EffectResult::event(PipelineEvent::checkpoint_saved(trigger));
+
+        // If the pipeline reaches a phase boundary but checkpoint writing is disabled (or the
+        // checkpoint file write is skipped), orchestration can repeatedly derive the
+        // phase-transition checkpoint effect without making progress.
+        //
+        // Emit the phase completion event as a separate reducer event so the state machine
+        // always advances past the boundary.
+        if trigger == CheckpointTrigger::PhaseTransition {
+            match self.state.phase {
+                PipelinePhase::Review
+                    if self.state.reviewer_pass >= self.state.total_reviewer_passes =>
+                {
+                    result = result.with_additional_event(PipelineEvent::review_phase_completed(
+                        /* early_exit */ false,
+                    ));
+                }
+                _ => {}
+            }
+        }
+
+        Ok(result)
     }
 
     fn initialize_agent_chain(
@@ -2011,6 +2030,76 @@ mod tests {
         assert!(
             content.contains("\"version\""),
             "checkpoint should contain version field"
+        );
+    }
+
+    #[test]
+    fn test_save_checkpoint_phase_transition_advances_review_when_checkpointing_disabled() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::phases::context::PhaseContext;
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::reducer::event::{PipelinePhase, ReviewEvent};
+        use crate::workspace::MemoryWorkspace;
+        use std::path::PathBuf;
+
+        let workspace = MemoryWorkspace::new_test();
+        let mut config = Config::default();
+        config.features.checkpoint_enabled = false;
+
+        let registry = AgentRegistry::new().unwrap();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let executor_arc = std::sync::Arc::new(MockProcessExecutor::new())
+            as std::sync::Arc<dyn crate::executor::ProcessExecutor>;
+        let repo_root = PathBuf::from("/test/repo");
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "claude",
+            reviewer_agent: "claude",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor_arc,
+            executor_arc: std::sync::Arc::clone(&executor_arc),
+            repo_root: &repo_root,
+            workspace: &workspace,
+        };
+
+        // Construct a boundary state: Review phase but passes already exhausted.
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 1,
+            total_reviewer_passes: 1,
+            ..PipelineState::initial(0, 1)
+        };
+        let mut handler = super::MainEffectHandler::new(state);
+
+        let result = handler
+            .save_checkpoint(&mut ctx, CheckpointTrigger::PhaseTransition)
+            .expect("save_checkpoint should succeed");
+
+        assert!(
+            result
+                .additional_events
+                .iter()
+                .any(|e| matches!(e, PipelineEvent::Review(ReviewEvent::PhaseCompleted { .. }))),
+            "expected save_checkpoint to emit Review::PhaseCompleted as an additional reducer event"
         );
     }
 
