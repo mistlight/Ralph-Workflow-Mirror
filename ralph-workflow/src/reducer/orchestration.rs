@@ -76,6 +76,10 @@ fn derive_continuation_effect(state: &PipelineState) -> Effect {
                 }
             }
         }
+        // Fix continuation: run fix attempt with continuation context
+        PipelinePhase::Review if state.continuation.fix_continue_pending => Effect::RunFixAttempt {
+            pass: state.reviewer_pass,
+        },
         PipelinePhase::Review if state.review_issues_found => Effect::RunFixAttempt {
             pass: state.reviewer_pass,
         },
@@ -146,6 +150,17 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             // to normal phase-specific effects
         } else {
             // Trigger continuation with new session
+            return derive_continuation_effect(state);
+        }
+    }
+
+    // Fix continuation pending: fix output valid but issues remain, start new session
+    if state.continuation.fix_continue_pending {
+        if state.continuation.fix_continuations_exhausted() {
+            // Exhausted fix continuation budget - proceed to commit
+            // The budget exhaustion is handled by state reduction
+        } else {
+            // Trigger fix continuation with new session
             return derive_continuation_effect(state);
         }
     }

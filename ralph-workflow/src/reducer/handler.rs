@@ -245,7 +245,18 @@ impl MainEffectHandler {
         let model_override = model_name
             .map(std::string::String::as_str)
             .or(model.as_deref());
-        let cmd_str = agent_config.build_cmd_with_model(true, true, true, model_override);
+
+        // Session ID reuse for XSD retry: when xsd_retry_pending is true and we have
+        // a session ID from a previous invocation, reuse it for same-session retry.
+        // This allows the agent to continue from where it left off and just fix the XML.
+        let session_id = if self.state.continuation.xsd_retry_pending {
+            self.state.agent_chain.last_session_id.as_deref()
+        } else {
+            None
+        };
+
+        let cmd_str =
+            agent_config.build_cmd_with_session(true, true, true, model_override, session_id);
 
         // Build pipeline runtime
         let mut runtime = PipelineRuntime {

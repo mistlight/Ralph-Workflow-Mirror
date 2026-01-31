@@ -598,6 +598,91 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                 }
             }
         }
+
+        // Fix continuation events
+        ReviewEvent::FixContinuationTriggered {
+            pass,
+            status,
+            summary,
+        } => {
+            // Fix output is valid but indicates work is incomplete (issues_remain)
+            PipelineState {
+                reviewer_pass: pass,
+                continuation: state.continuation.trigger_fix_continuation(status, summary),
+                ..state
+            }
+        }
+
+        ReviewEvent::FixContinuationSucceeded {
+            pass,
+            total_attempts: _,
+        } => {
+            // Fix continuation succeeded - transition to CommitMessage
+            PipelineState {
+                phase: super::event::PipelinePhase::CommitMessage,
+                previous_phase: Some(super::event::PipelinePhase::Review),
+                reviewer_pass: pass,
+                review_issues_found: false,
+                commit: super::state::CommitState::NotStarted,
+                continuation: ContinuationState::new(),
+                ..state
+            }
+        }
+
+        ReviewEvent::FixContinuationBudgetExhausted {
+            pass,
+            total_attempts: _,
+            last_status: _,
+        } => {
+            // Fix continuation budget exhausted - proceed to commit with current state
+            // Policy: We accept partial fixes rather than blocking the pipeline
+            PipelineState {
+                phase: super::event::PipelinePhase::CommitMessage,
+                previous_phase: Some(super::event::PipelinePhase::Review),
+                reviewer_pass: pass,
+                commit: super::state::CommitState::NotStarted,
+                continuation: ContinuationState::new(),
+                ..state
+            }
+        }
+
+        ReviewEvent::FixOutputValidationFailed { pass, attempt } => {
+            // Same policy as review output validation failure
+            const MAX_FIX_INVALID_OUTPUT_RERUNS: u32 = 2;
+            let new_xsd_count = state.continuation.xsd_retry_count + 1;
+
+            if attempt >= MAX_FIX_INVALID_OUTPUT_RERUNS
+                || new_xsd_count >= state.continuation.max_xsd_retry_count
+            {
+                // XSD retries exhausted - switch to next agent
+                let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
+                PipelineState {
+                    phase: super::event::PipelinePhase::Review,
+                    reviewer_pass: pass,
+                    agent_chain: new_agent_chain,
+                    continuation: super::state::ContinuationState {
+                        invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
+                        ..state.continuation
+                    },
+                    ..state
+                }
+            } else {
+                // Stay in Review, increment attempt counters, set retry pending
+                PipelineState {
+                    phase: super::event::PipelinePhase::Review,
+                    reviewer_pass: pass,
+                    continuation: super::state::ContinuationState {
+                        invalid_output_attempts: attempt + 1,
+                        xsd_retry_count: new_xsd_count,
+                        xsd_retry_pending: true,
+                        ..state.continuation
+                    },
+                    ..state
+                }
+            }
+        }
     }
 }
 
@@ -685,6 +770,13 @@ fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState 
         // XSD validation failed: trigger XSD retry via continuation state
         AgentEvent::XsdValidationFailed { .. } => PipelineState {
             continuation: state.continuation.trigger_xsd_retry(),
+            ..state
+        },
+
+        // Template variables invalid: switch to next agent (different agent may have different templates)
+        // This is treated as a non-retriable error since the template system itself failed.
+        AgentEvent::TemplateVariablesInvalid { .. } => PipelineState {
+            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
             ..state
         },
     }
@@ -924,35 +1016,35 @@ fn compute_post_commit_transition(
     }
 }
 
-/// Handle commit message validation failure with retry logic.
+/// Handle commit message validation failure with XSD retry logic.
+///
+/// This now integrates with the XSD retry tracking in ContinuationState
+/// for uniformity with other phases.
 fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> PipelineState {
-    let next_attempt = attempt + 1;
+    let new_xsd_count = state.continuation.xsd_retry_count + 1;
     let max_attempts = super::state::MAX_VALIDATION_RETRY_ATTEMPTS;
 
-    if next_attempt <= max_attempts {
-        PipelineState {
-            commit: CommitState::Generating {
-                attempt: next_attempt,
-                max_attempts,
-            },
-            ..state
-        }
-    } else {
-        // Exceeded max attempts with current agent - try next agent
-        let old_agent_index = state.agent_chain.current_agent_index;
-        let old_retry_cycle = state.agent_chain.retry_cycle;
-        let new_agent_chain = state.agent_chain.switch_to_next_agent();
+    // Check if XSD retries are exhausted (global limit) or local attempts exhausted
+    if new_xsd_count >= state.continuation.max_xsd_retry_count || attempt >= max_attempts {
+        // XSD retries exhausted - switch to next agent
+        let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
 
-        let wrapped_around = new_agent_chain.retry_cycle > old_retry_cycle;
-        let advanced_to_next =
-            new_agent_chain.current_agent_index != old_agent_index && !wrapped_around;
+        // Check if we successfully advanced to next agent
+        let advanced = new_agent_chain.current_agent_index != state.agent_chain.current_agent_index
+            && new_agent_chain.retry_cycle == state.agent_chain.retry_cycle;
 
-        if advanced_to_next {
+        if advanced {
+            // Reset for new agent
             PipelineState {
                 agent_chain: new_agent_chain,
                 commit: CommitState::Generating {
                     attempt: 1,
                     max_attempts,
+                },
+                continuation: super::state::ContinuationState {
+                    xsd_retry_count: 0,
+                    xsd_retry_pending: false,
+                    ..state.continuation
                 },
                 ..state
             }
@@ -961,8 +1053,27 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
             PipelineState {
                 agent_chain: new_agent_chain,
                 commit: CommitState::NotStarted,
+                continuation: super::state::ContinuationState {
+                    xsd_retry_count: 0,
+                    xsd_retry_pending: false,
+                    ..state.continuation
+                },
                 ..state
             }
+        }
+    } else {
+        // Set XSD retry pending - orchestration will trigger retry with same agent/session
+        PipelineState {
+            commit: CommitState::Generating {
+                attempt: attempt + 1,
+                max_attempts,
+            },
+            continuation: super::state::ContinuationState {
+                xsd_retry_count: new_xsd_count,
+                xsd_retry_pending: true,
+                ..state.continuation
+            },
+            ..state
         }
     }
 }
@@ -2678,6 +2789,284 @@ mod tests {
         assert!(
             new_state.agent_chain.last_session_id.is_none(),
             "Session ID should be cleared when switching agents"
+        );
+    }
+
+    // =========================================================================
+    // Tests for commit XSD retry
+    // =========================================================================
+
+    #[test]
+    fn test_commit_message_validation_failed_sets_xsd_retry_pending() {
+        use crate::reducer::state::ContinuationState;
+
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: super::CommitState::Generating {
+                attempt: 1,
+                max_attempts: 3,
+            },
+            continuation: ContinuationState::new(),
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::commit_message_validation_failed("Invalid XML".to_string(), 1),
+        );
+
+        assert!(
+            new_state.continuation.xsd_retry_pending,
+            "XSD retry pending should be set"
+        );
+        assert_eq!(
+            new_state.continuation.xsd_retry_count, 1,
+            "XSD retry count should be incremented"
+        );
+    }
+
+    #[test]
+    fn test_commit_xsd_retry_exhausted_switches_agent() {
+        use crate::reducer::state::ContinuationState;
+
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: super::CommitState::Generating {
+                attempt: 1,
+                max_attempts: 3,
+            },
+            continuation: ContinuationState {
+                xsd_retry_count: 9,
+                max_xsd_retry_count: 10,
+                ..ContinuationState::new()
+            },
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Commit,
+            ),
+            ..PipelineState::initial(5, 2)
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::commit_message_validation_failed("Invalid XML".to_string(), 1),
+        );
+
+        // Should have switched to next agent
+        assert_eq!(
+            new_state.agent_chain.current_agent_index, 1,
+            "Should switch to next agent"
+        );
+        assert_eq!(
+            new_state.continuation.xsd_retry_count, 0,
+            "XSD retry count should be reset"
+        );
+        assert!(
+            !new_state.continuation.xsd_retry_pending,
+            "XSD retry pending should be cleared"
+        );
+    }
+
+    // =========================================================================
+    // Tests for fix continuation
+    // =========================================================================
+
+    #[test]
+    fn test_fix_continuation_triggered_sets_pending() {
+        use crate::reducer::state::{ContinuationState, FixStatus};
+
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            review_issues_found: true,
+            reviewer_pass: 0,
+            continuation: ContinuationState::new(),
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::fix_continuation_triggered(
+                0,
+                FixStatus::IssuesRemain,
+                Some("Fixed 2 of 5 issues".to_string()),
+            ),
+        );
+
+        assert!(
+            new_state.continuation.fix_continue_pending,
+            "Fix continue pending should be set"
+        );
+        assert_eq!(
+            new_state.continuation.fix_continuation_attempt, 1,
+            "Fix continuation attempt should be incremented"
+        );
+        assert_eq!(
+            new_state.continuation.fix_status,
+            Some(FixStatus::IssuesRemain),
+            "Fix status should be stored"
+        );
+    }
+
+    #[test]
+    fn test_fix_continuation_succeeded_transitions_to_commit() {
+        use crate::reducer::state::{ContinuationState, FixStatus};
+
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            review_issues_found: true,
+            reviewer_pass: 0,
+            continuation: ContinuationState {
+                fix_continue_pending: true,
+                fix_continuation_attempt: 2,
+                fix_status: Some(FixStatus::IssuesRemain),
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::fix_continuation_succeeded(0, 2));
+
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::CommitMessage,
+            "Should transition to CommitMessage phase"
+        );
+        assert!(
+            !new_state.continuation.fix_continue_pending,
+            "Fix continue pending should be cleared"
+        );
+    }
+
+    #[test]
+    fn test_fix_continuation_budget_exhausted_transitions_to_commit() {
+        use crate::reducer::state::{ContinuationState, FixStatus};
+
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            review_issues_found: true,
+            reviewer_pass: 0,
+            continuation: ContinuationState {
+                fix_continue_pending: true,
+                fix_continuation_attempt: 3,
+                fix_status: Some(FixStatus::IssuesRemain),
+                max_fix_continue_count: 3,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::fix_continuation_budget_exhausted(0, 3, FixStatus::IssuesRemain),
+        );
+
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::CommitMessage,
+            "Should transition to CommitMessage even when budget exhausted"
+        );
+    }
+
+    // =========================================================================
+    // Tests for TEMPLATE_VARIABLES_INVALID
+    // =========================================================================
+
+    #[test]
+    fn test_template_variables_invalid_switches_agent() {
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            agent_chain: AgentChainState::initial()
+                .with_agents(
+                    vec!["agent1".to_string(), "agent2".to_string()],
+                    vec![vec![], vec![]],
+                    AgentRole::Developer,
+                )
+                .with_session_id(Some("ses_abc123".to_string())),
+            ..PipelineState::initial(5, 2)
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::agent_template_variables_invalid(
+                AgentRole::Developer,
+                "dev_iteration".to_string(),
+                vec!["PLAN".to_string()],
+                vec!["{{XSD_ERROR}}".to_string()],
+            ),
+        );
+
+        // Should switch to next agent
+        assert_eq!(
+            new_state.agent_chain.current_agent_index, 1,
+            "Should switch to next agent on template failure"
+        );
+        // Session ID should be cleared
+        assert!(
+            new_state.agent_chain.last_session_id.is_none(),
+            "Session ID should be cleared when switching agents"
+        );
+    }
+
+    // =========================================================================
+    // Tests for fix output validation failed
+    // =========================================================================
+
+    #[test]
+    fn test_fix_output_validation_failed_sets_xsd_retry_pending() {
+        use crate::reducer::state::ContinuationState;
+
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            review_issues_found: true,
+            reviewer_pass: 0,
+            continuation: ContinuationState::new(),
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::fix_output_validation_failed(0, 0));
+
+        assert!(
+            new_state.continuation.xsd_retry_pending,
+            "XSD retry pending should be set"
+        );
+        assert_eq!(
+            new_state.continuation.xsd_retry_count, 1,
+            "XSD retry count should be incremented"
+        );
+    }
+
+    #[test]
+    fn test_fix_output_validation_exhausted_switches_agent() {
+        use crate::reducer::state::ContinuationState;
+
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            review_issues_found: true,
+            reviewer_pass: 0,
+            continuation: ContinuationState {
+                xsd_retry_count: 9,
+                max_xsd_retry_count: 10,
+                ..ContinuationState::new()
+            },
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Reviewer,
+            ),
+            ..PipelineState::initial(5, 2)
+        };
+
+        let new_state = reduce(state, PipelineEvent::fix_output_validation_failed(0, 2));
+
+        // Should have switched to next agent
+        assert_eq!(
+            new_state.agent_chain.current_agent_index, 1,
+            "Should switch to next agent when XSD retries exhausted"
+        );
+        assert_eq!(
+            new_state.continuation.xsd_retry_count, 0,
+            "XSD retry count should be reset"
         );
     }
 }

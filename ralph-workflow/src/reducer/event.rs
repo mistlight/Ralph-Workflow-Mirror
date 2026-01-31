@@ -264,6 +264,54 @@ pub enum ReviewEvent {
         /// Current invalid output attempt number.
         attempt: u32,
     },
+
+    /// Fix attempt completed with incomplete status, needs continuation.
+    ///
+    /// Emitted when fix output is valid XML but indicates work is not complete
+    /// (status is "issues_remain"). Triggers a continuation with new session.
+    FixContinuationTriggered {
+        /// The pass number this fix was for.
+        pass: u32,
+        /// Status from the agent (typically IssuesRemain).
+        status: crate::reducer::state::FixStatus,
+        /// Summary of what was accomplished.
+        summary: Option<String>,
+    },
+
+    /// Fix continuation succeeded after multiple attempts.
+    ///
+    /// Emitted when a fix continuation finally reaches a complete state
+    /// (all_issues_addressed or no_issues_found).
+    FixContinuationSucceeded {
+        /// The pass number this fix was for.
+        pass: u32,
+        /// Total number of continuation attempts it took.
+        total_attempts: u32,
+    },
+
+    /// Fix continuation budget exhausted.
+    ///
+    /// Emitted when fix continuations have been exhausted without reaching
+    /// a complete state. Policy decides whether to proceed to commit or abort.
+    FixContinuationBudgetExhausted {
+        /// The pass number this fix was for.
+        pass: u32,
+        /// Total number of continuation attempts made.
+        total_attempts: u32,
+        /// The last status received (typically IssuesRemain).
+        last_status: crate::reducer::state::FixStatus,
+    },
+
+    /// Fix output validation failed (XSD/XML parsing error).
+    ///
+    /// Emitted when fix output cannot be parsed. Reducer decides
+    /// whether to retry or switch agents.
+    FixOutputValidationFailed {
+        /// The pass number this fix was for.
+        pass: u32,
+        /// Current invalid output attempt number.
+        attempt: u32,
+    },
 }
 
 /// Agent invocation and chain management events.
@@ -406,6 +454,22 @@ pub enum AgentEvent {
         error: String,
         /// Current XSD retry count for this artifact.
         retry_count: u32,
+    },
+
+    /// Template rendering failed due to missing required variables or unresolved placeholders.
+    ///
+    /// Emitted when a prompt template cannot be rendered because required variables
+    /// are missing or unresolved placeholders (e.g., `{{VAR}}`) remain in the output.
+    /// The reducer decides fallback policy, typically switching to the next agent.
+    TemplateVariablesInvalid {
+        /// The role whose template failed to render.
+        role: AgentRole,
+        /// The name of the template that failed.
+        template_name: String,
+        /// Variables that were required but not provided.
+        missing_variables: Vec<String>,
+        /// Placeholder patterns that remain unresolved in the rendered output.
+        unresolved_placeholders: Vec<String>,
     },
 }
 
@@ -801,6 +865,45 @@ impl PipelineEvent {
         Self::Review(ReviewEvent::OutputValidationFailed { pass, attempt })
     }
 
+    /// Create a FixContinuationTriggered event.
+    pub fn fix_continuation_triggered(
+        pass: u32,
+        status: crate::reducer::state::FixStatus,
+        summary: Option<String>,
+    ) -> Self {
+        Self::Review(ReviewEvent::FixContinuationTriggered {
+            pass,
+            status,
+            summary,
+        })
+    }
+
+    /// Create a FixContinuationSucceeded event.
+    pub fn fix_continuation_succeeded(pass: u32, total_attempts: u32) -> Self {
+        Self::Review(ReviewEvent::FixContinuationSucceeded {
+            pass,
+            total_attempts,
+        })
+    }
+
+    /// Create a FixContinuationBudgetExhausted event.
+    pub fn fix_continuation_budget_exhausted(
+        pass: u32,
+        total_attempts: u32,
+        last_status: crate::reducer::state::FixStatus,
+    ) -> Self {
+        Self::Review(ReviewEvent::FixContinuationBudgetExhausted {
+            pass,
+            total_attempts,
+            last_status,
+        })
+    }
+
+    /// Create a FixOutputValidationFailed event.
+    pub fn fix_output_validation_failed(pass: u32, attempt: u32) -> Self {
+        Self::Review(ReviewEvent::FixOutputValidationFailed { pass, attempt })
+    }
+
     // Agent constructors
     /// Create an AgentInvocationStarted event.
     pub fn agent_invocation_started(role: AgentRole, agent: String, model: Option<String>) -> Self {
@@ -916,6 +1019,21 @@ impl PipelineEvent {
             artifact,
             error,
             retry_count,
+        })
+    }
+
+    /// Create an AgentTemplateVariablesInvalid event.
+    pub fn agent_template_variables_invalid(
+        role: AgentRole,
+        template_name: String,
+        missing_variables: Vec<String>,
+        unresolved_placeholders: Vec<String>,
+    ) -> Self {
+        Self::Agent(AgentEvent::TemplateVariablesInvalid {
+            role,
+            template_name,
+            missing_variables,
+            unresolved_placeholders,
         })
     }
 

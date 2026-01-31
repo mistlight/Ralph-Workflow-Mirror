@@ -321,7 +321,7 @@ mod tests {
         assert!(result.contains("provided for reference only"));
         // Fix prompt should encourage fixing root cause (incl. necessary refactors)
         assert!(
-            result.contains("Getting rid of tech debt is necessary to fix a bug"),
+            result.contains("getting rid of tech debt is necessary to fix a bug"),
             "Fix prompt should instruct agent to do necessary refactors"
         );
         assert!(result.contains("FIX MODE"));
@@ -509,8 +509,9 @@ mod tests {
                 || fix_prompt.contains("MUST stop exploring"),
             "Fix prompt should emphasize limited exploration"
         );
+        // The template says "use grep to find function/class names"
         assert!(
-            fix_prompt.contains("git grep")
+            fix_prompt.contains("grep")
                 || fix_prompt.contains("ripgrep")
                 || fix_prompt.contains("locate"),
             "Fix prompt should explicitly allow discovery tools for finding relevant code"
@@ -606,7 +607,7 @@ mod tests {
         assert!(result.contains("MUST NOT modify the ISSUES content"));
         assert!(result.contains("provided for reference only"));
         assert!(
-            result.contains("Getting rid of tech debt is necessary to fix a bug"),
+            result.contains("getting rid of tech debt is necessary to fix a bug"),
             "Fix prompt should instruct agent to do necessary refactors"
         );
         assert!(result.contains("FIX MODE"));

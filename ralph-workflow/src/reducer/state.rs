@@ -57,6 +57,21 @@ pub enum DevelopmentStatus {
     Failed,
 }
 
+/// Fix status from agent output.
+///
+/// These values map to the `<ralph-status>` element in fix_result.xml.
+/// Used to track whether fix work is complete or needs continuation.
+#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum FixStatus {
+    /// All issues have been addressed - no continuation needed.
+    #[default]
+    AllIssuesAddressed,
+    /// Issues remain - needs continuation.
+    IssuesRemain,
+    /// No issues were found - nothing to fix.
+    NoIssuesFound,
+}
+
 impl std::fmt::Display for DevelopmentStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -64,6 +79,41 @@ impl std::fmt::Display for DevelopmentStatus {
             Self::Partial => write!(f, "partial"),
             Self::Failed => write!(f, "failed"),
         }
+    }
+}
+
+impl std::fmt::Display for FixStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AllIssuesAddressed => write!(f, "all_issues_addressed"),
+            Self::IssuesRemain => write!(f, "issues_remain"),
+            Self::NoIssuesFound => write!(f, "no_issues_found"),
+        }
+    }
+}
+
+impl FixStatus {
+    /// Parse a fix status string from XML.
+    ///
+    /// This is intentionally not implementing std::str::FromStr because it returns
+    /// Option<Self> for easier handling of unknown values without error types.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "all_issues_addressed" => Some(Self::AllIssuesAddressed),
+            "issues_remain" => Some(Self::IssuesRemain),
+            "no_issues_found" => Some(Self::NoIssuesFound),
+            _ => None,
+        }
+    }
+
+    /// Returns true if the fix is complete (no more work needed).
+    pub fn is_complete(&self) -> bool {
+        matches!(self, Self::AllIssuesAddressed | Self::NoIssuesFound)
+    }
+
+    /// Returns true if issues remain (continuation needed).
+    pub fn needs_continuation(&self) -> bool {
+        matches!(self, Self::IssuesRemain)
     }
 }
 
@@ -144,6 +194,30 @@ pub struct ContinuationState {
     /// iteration as complete (even if status is partial/failed).
     #[serde(default = "default_max_continue_count")]
     pub max_continue_count: u32,
+
+    // =========================================================================
+    // Fix continuation tracking (parallel to development continuation)
+    // =========================================================================
+    /// Status from the previous fix attempt.
+    #[serde(default)]
+    pub fix_status: Option<FixStatus>,
+    /// Summary from the previous fix attempt.
+    #[serde(default)]
+    pub fix_previous_summary: Option<String>,
+    /// Current fix continuation attempt number (0 = first attempt, 1+ = continuation).
+    #[serde(default)]
+    pub fix_continuation_attempt: u32,
+    /// Whether a fix continuation is pending (output valid but work incomplete).
+    ///
+    /// Set to true when fix output indicates status is "issues_remain".
+    /// Cleared when continuation attempt starts or max continuations exceeded.
+    #[serde(default)]
+    pub fix_continue_pending: bool,
+    /// Maximum fix continuation attempts (default 3).
+    ///
+    /// After this many continuations, proceeds to commit even if issues remain.
+    #[serde(default = "default_max_continue_count")]
+    pub max_fix_continue_count: u32,
 }
 
 const fn default_max_xsd_retry_count() -> u32 {
@@ -171,6 +245,12 @@ impl Default for ContinuationState {
             current_artifact: None,
             max_xsd_retry_count: default_max_xsd_retry_count(),
             max_continue_count: default_max_continue_count(),
+            // Fix continuation fields
+            fix_status: None,
+            fix_previous_summary: None,
+            fix_continuation_attempt: 0,
+            fix_continue_pending: false,
+            max_fix_continue_count: default_max_continue_count(),
         }
     }
 }
@@ -186,6 +266,7 @@ impl ContinuationState {
         Self {
             max_xsd_retry_count,
             max_continue_count,
+            max_fix_continue_count: max_continue_count,
             ..Self::default()
         }
     }
@@ -201,12 +282,14 @@ impl ContinuationState {
         Self {
             max_xsd_retry_count: self.max_xsd_retry_count,
             max_continue_count: self.max_continue_count,
+            max_fix_continue_count: self.max_fix_continue_count,
             ..Self::default()
         }
     }
 
     /// Set the current artifact type being processed.
     pub fn with_artifact(&self, artifact: ArtifactType) -> Self {
+        // Reset XSD retry state when switching artifacts, preserve everything else
         Self {
             current_artifact: Some(artifact),
             xsd_retry_count: 0,
@@ -283,6 +366,67 @@ impl ContinuationState {
             current_artifact: self.current_artifact.clone(),
             max_xsd_retry_count: self.max_xsd_retry_count,
             max_continue_count: self.max_continue_count,
+            // Preserve fix continuation fields
+            fix_status: self.fix_status.clone(),
+            fix_previous_summary: self.fix_previous_summary.clone(),
+            fix_continuation_attempt: self.fix_continuation_attempt,
+            fix_continue_pending: self.fix_continue_pending,
+            max_fix_continue_count: self.max_fix_continue_count,
+        }
+    }
+
+    // =========================================================================
+    // Fix continuation methods
+    // =========================================================================
+
+    /// Check if fix continuations are exhausted.
+    pub fn fix_continuations_exhausted(&self) -> bool {
+        self.fix_continuation_attempt >= self.max_fix_continue_count
+    }
+
+    /// Trigger a fix continuation with status context.
+    pub fn trigger_fix_continuation(&self, status: FixStatus, summary: Option<String>) -> Self {
+        Self {
+            fix_status: Some(status),
+            fix_previous_summary: summary,
+            fix_continuation_attempt: self.fix_continuation_attempt + 1,
+            fix_continue_pending: true,
+            // Reset XSD retry state for new continuation
+            xsd_retry_count: 0,
+            xsd_retry_pending: false,
+            // Preserve other fields
+            previous_status: self.previous_status.clone(),
+            previous_summary: self.previous_summary.clone(),
+            previous_files_changed: self.previous_files_changed.clone(),
+            previous_next_steps: self.previous_next_steps.clone(),
+            continuation_attempt: self.continuation_attempt,
+            invalid_output_attempts: 0,
+            context_write_pending: false,
+            context_cleanup_pending: false,
+            continue_pending: false,
+            current_artifact: self.current_artifact.clone(),
+            max_xsd_retry_count: self.max_xsd_retry_count,
+            max_continue_count: self.max_continue_count,
+            max_fix_continue_count: self.max_fix_continue_count,
+        }
+    }
+
+    /// Clear fix continuation pending flag after starting continuation.
+    pub fn clear_fix_continue_pending(&self) -> Self {
+        Self {
+            fix_continue_pending: false,
+            ..self.clone()
+        }
+    }
+
+    /// Reset fix continuation state (e.g., when entering a new review pass).
+    pub fn reset_fix_continuation(&self) -> Self {
+        Self {
+            fix_status: None,
+            fix_previous_summary: None,
+            fix_continuation_attempt: 0,
+            fix_continue_pending: false,
+            ..self.clone()
         }
     }
 }

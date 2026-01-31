@@ -57,6 +57,62 @@ pub enum ValidationWarning {
     VariableMayError { name: String },
 }
 
+/// Error type for rendered prompt validation failures.
+///
+/// Returned when a rendered prompt still contains unresolved template
+/// placeholders, indicating missing variables or template rendering failures.
+#[derive(Debug, Clone)]
+pub struct RenderedPromptError {
+    /// Placeholder patterns that remain unresolved in the rendered output.
+    pub unresolved_placeholders: Vec<String>,
+}
+
+impl std::fmt::Display for RenderedPromptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Rendered prompt contains unresolved placeholders: {}",
+            self.unresolved_placeholders.join(", ")
+        )
+    }
+}
+
+impl std::error::Error for RenderedPromptError {}
+
+/// Validate that a rendered prompt has no unresolved placeholders.
+///
+/// This should be called AFTER template rendering to ensure no `{{...}}`
+/// patterns remain in the output. Unresolved placeholders indicate either
+/// missing template variables or template rendering failures.
+///
+/// Per the reducer fallback spec, Ralph must validate templates before
+/// invoking an agent and emit `TEMPLATE_VARIABLES_INVALID` if validation fails.
+///
+/// # Arguments
+///
+/// * `rendered` - The rendered prompt string to validate
+///
+/// # Returns
+///
+/// * `Ok(())` if no unresolved placeholders are found
+/// * `Err(RenderedPromptError)` with the list of unresolved placeholders
+pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), RenderedPromptError> {
+    let vars = extract_variables(rendered);
+
+    if vars.is_empty() {
+        Ok(())
+    } else {
+        let unresolved: Vec<String> = vars
+            .into_iter()
+            .map(|v| format!("{{{{{}}}}}", v.name))
+            .collect();
+
+        Err(RenderedPromptError {
+            unresolved_placeholders: unresolved,
+        })
+    }
+}
+
 /// Template metadata extracted from header comments.
 #[derive(Debug, Clone)]
 pub struct TemplateMetadata {
@@ -653,5 +709,42 @@ Content here";
         let content = "{% if NAME %}Hello {{NAME}}{% endif %}";
         let vars = extract_variables(content);
         assert_eq!(vars.len(), 1); // Only NAME in output is extracted
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_placeholders_pass() {
+        let rendered = "Hello John, your order 12345 is ready.";
+        let result = validate_no_unresolved_placeholders(rendered);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_placeholders_fail() {
+        let rendered = "Hello {{NAME}}, your order {{ORDER_ID}} is ready.";
+        let result = validate_no_unresolved_placeholders(rendered);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.unresolved_placeholders.len(), 2);
+        assert!(err
+            .unresolved_placeholders
+            .contains(&"{{NAME}}".to_string()));
+        assert!(err
+            .unresolved_placeholders
+            .contains(&"{{ORDER_ID}}".to_string()));
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_placeholders_empty() {
+        let rendered = "";
+        let result = validate_no_unresolved_placeholders(rendered);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_placeholders_with_default() {
+        // Variables with defaults are still considered unresolved if present in output
+        let rendered = "Hello {{NAME|default='Guest'}}";
+        let result = validate_no_unresolved_placeholders(rendered);
+        assert!(result.is_err());
     }
 }
