@@ -772,6 +772,13 @@ impl MainEffectHandler {
                 Ok(EffectResult::with_ui(event, ui_events))
             }
             Err(err) => {
+                ctx.logger.warn(&format!(
+                    "Review pass {} failed for agent {:?}: {}",
+                    pass,
+                    review_agent.as_deref().unwrap_or("(none)"),
+                    err
+                ));
+
                 if let Some(tpl_err) =
                     err.downcast_ref::<crate::prompts::TemplateVariablesInvalidError>()
                 {

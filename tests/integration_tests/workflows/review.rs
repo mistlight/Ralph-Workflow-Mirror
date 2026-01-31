@@ -203,6 +203,38 @@ fn review_prompt_construction_includes_all_required_components() {
     });
 }
 
+/// Test that review prompt is still renderable when PLAN and CHANGES are empty.
+///
+/// This matches the real-world workflow when running with developer-iters=0 (no plan produced)
+/// and/or when diff content is unavailable.
+#[test]
+fn review_prompt_allows_empty_plan_and_changes() {
+    use ralph_workflow::prompts::prompt_review_xml_with_context;
+    use ralph_workflow::prompts::template_context::TemplateContext;
+
+    with_default_timeout(|| {
+        let template_context = TemplateContext::default();
+        let review_prompt = prompt_review_xml_with_context(&template_context, "prompt", "", "");
+
+        assert!(
+            !review_prompt.contains("{{PLAN}}"),
+            "Review prompt must not contain unresolved {{PLAN}} placeholder"
+        );
+        assert!(
+            !review_prompt.contains("{{CHANGES}}"),
+            "Review prompt must not contain unresolved {{CHANGES}} placeholder"
+        );
+        assert!(
+            review_prompt.contains("(no plan available)"),
+            "Review prompt should include a default when plan content is empty"
+        );
+        assert!(
+            review_prompt.contains("(no diff available)"),
+            "Review prompt should include a default when diff content is empty"
+        );
+    });
+}
+
 /// Test that review prompt includes severity levels and file references in format instructions.
 ///
 /// This verifies the prompt guides the reviewer to provide actionable output

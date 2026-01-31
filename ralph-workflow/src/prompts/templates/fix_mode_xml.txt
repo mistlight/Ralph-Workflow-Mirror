@@ -58,7 +58,7 @@ ORIGINAL REQUEST:
 {{PROMPT}}
 
 IMPLEMENTATION PLAN:
-{{PLAN}}
+{{PLAN|default="(no plan available)"}}
 
 ═══════════════════════════════════════════════════════════════════════════════
 YOUR TASK

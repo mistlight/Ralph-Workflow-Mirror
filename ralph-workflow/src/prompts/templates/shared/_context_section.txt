@@ -24,4 +24,4 @@ ORIGINAL REQUEST:
 
 {# IMPLEMENTATION PLAN - What the changes are implementing #}
 IMPLEMENTATION PLAN:
-{{PLAN}}
+{{PLAN|default="(no plan available)"}}

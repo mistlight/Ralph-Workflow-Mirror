@@ -372,6 +372,47 @@ mod tests {
     }
 
     #[test]
+    fn test_prompt_review_xml_with_context_allows_empty_plan_and_changes() {
+        let context = TemplateContext::default();
+        let result = prompt_review_xml_with_context(&context, "prompt", "", "");
+
+        assert!(
+            !result.contains("{{PLAN}}"),
+            "review prompt must not contain unresolved {{PLAN}} placeholder"
+        );
+        assert!(
+            !result.contains("{{CHANGES}}"),
+            "review prompt must not contain unresolved {{CHANGES}} placeholder"
+        );
+        assert!(
+            result.contains("(no plan available)"),
+            "review prompt should include a default when plan content is empty"
+        );
+        assert!(
+            result.contains("(no diff available)"),
+            "review prompt should include a default when changes/diff content is empty"
+        );
+    }
+
+    #[test]
+    fn test_prompt_review_xml_with_context_uses_inline_plan_and_changes_when_present() {
+        let context = TemplateContext::default();
+        let result = prompt_review_xml_with_context(&context, "prompt", "plan here", "diff here");
+
+        assert!(result.contains("plan here"));
+        assert!(result.contains("diff here"));
+
+        assert!(
+            !result.contains("(no plan available)"),
+            "default plan text should not appear when plan is present"
+        );
+        assert!(
+            !result.contains("(no diff available)"),
+            "default diff text should not appear when diff is present"
+        );
+    }
+
+    #[test]
     fn test_prompt_review_xsd_retry_with_context() {
         let context = TemplateContext::default();
         let workspace = MemoryWorkspace::new_test();

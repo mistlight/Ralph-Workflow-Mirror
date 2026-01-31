@@ -94,7 +94,10 @@ mod tests {
         let partials = get_shared_partials();
         let context = partials.get("shared/_context_section").unwrap();
         assert!(context.contains("{{PROMPT}}"));
-        assert!(context.contains("{{PLAN}}"));
+        assert!(
+            context.contains("{{PLAN"),
+            "expected context section to contain PLAN placeholder (possibly with defaults)"
+        );
     }
 
     #[test]

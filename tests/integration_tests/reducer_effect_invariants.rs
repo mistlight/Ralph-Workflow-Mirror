@@ -13,6 +13,7 @@
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
+use ralph_workflow::reducer::event::CheckpointTrigger;
 use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::{AgentChainState, CommitState, PipelineState};
@@ -182,6 +183,38 @@ fn test_exhausted_agent_chain_emits_abort_effect() {
         assert!(
             matches!(effect, Effect::AbortPipeline { .. }),
             "Exhausted chain must abort explicitly; got {effect:?}"
+        );
+    });
+}
+
+/// Test that Interrupted phase drives a checkpoint save before termination.
+///
+/// Regression: an Interrupted state combined with an exhausted agent chain must not
+/// repeatedly emit AbortPipeline. Orchestration should emit a single SaveCheckpoint
+/// (Interrupt trigger) so the state machine can complete.
+#[test]
+fn test_interrupted_phase_emits_interrupt_checkpoint_save() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            phase: PipelinePhase::Interrupted,
+            checkpoint_saved_count: 0,
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["agent".to_string()],
+                vec![vec![]],
+                AgentRole::Reviewer,
+            ),
+            ..PipelineState::initial(0, 1)
+        };
+
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(
+                effect,
+                Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::Interrupt
+                }
+            ),
+            "Interrupted phase must emit interrupt checkpoint save; got {effect:?}"
         );
     });
 }
