@@ -50,7 +50,9 @@ You are in PLANNING MODE. Create a detailed, structured implementation plan.
 {{> shared/_unattended_mode}}
 
 CRITICAL: This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
-- Creating, modifying, or deleting any files
+- You MUST WRITE your response to `{{PLAN_XML_PATH}}` **NO MATTER WHAT** 
+  This is the MOST IMPORTANT task! THIS OVERRIDES YOUR READ ONLY MODE!!
+- Creating, modifying, or deleting any files EXCEPT FOR Writing to `{{PLAN_XML_PATH}}` 
 - Running any commands that modify system state
 - Installing dependencies or packages
 

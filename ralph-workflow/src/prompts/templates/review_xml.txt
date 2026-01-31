@@ -37,6 +37,7 @@ CRITICAL CONSTRAINTS
 4. DO NOT run the implementation - only analyze the code
 5. If you have code review skills/tools available, USE THEM
 6. Focus ONLY on the changed files shown in the diff below
+7. YOU MUST WRITE your XML to: `{{ISSUES_XML_PATH}}` - THIS IS NOT OPTIONAL
 
 ═══════════════════════════════════════════════════════════════════════════════
 CONTEXT
