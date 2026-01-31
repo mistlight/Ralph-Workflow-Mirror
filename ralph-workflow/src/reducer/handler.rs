@@ -249,6 +249,13 @@ impl MainEffectHandler {
         // Session ID reuse for XSD retry: when xsd_retry_pending is true and we have
         // a session ID from a previous invocation, reuse it for same-session retry.
         // This allows the agent to continue from where it left off and just fix the XML.
+        //
+        // NOTE: For session reuse to work, the handler must emit SessionEstablished event
+        // after successful agent invocation to store the session ID. Currently, session ID
+        // extraction from agent responses is not implemented - the JSON parser would need
+        // to track session_id from ClaudeEvent::System or GeminiEvent::Init events and
+        // return it, then the handler would emit PipelineEvent::agent_session_established().
+        // Until this is implemented, session reuse will not function.
         let session_id = if self.state.continuation.xsd_retry_pending {
             self.state.agent_chain.last_session_id.as_deref()
         } else {

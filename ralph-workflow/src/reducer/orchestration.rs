@@ -142,8 +142,9 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         }
     }
 
-    // Continue pending: output valid but work incomplete, start new session
-    if state.continuation.continue_pending {
+    // Development continuation pending: output valid but work incomplete, start new session
+    // Only check continue_pending in Development phase to avoid confusion with fix_continue_pending
+    if state.phase == PipelinePhase::Development && state.continuation.continue_pending {
         if state.continuation.continuations_exhausted() {
             // Exhausted continuation budget - accept current state as complete
             // The budget exhaustion is handled by state reduction, so we proceed
@@ -155,7 +156,8 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
     }
 
     // Fix continuation pending: fix output valid but issues remain, start new session
-    if state.continuation.fix_continue_pending {
+    // Only check fix_continue_pending in Review phase to be explicit about phase context
+    if state.phase == PipelinePhase::Review && state.continuation.fix_continue_pending {
         if state.continuation.fix_continuations_exhausted() {
             // Exhausted fix continuation budget - proceed to commit
             // The budget exhaustion is handled by state reduction

@@ -131,7 +131,22 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
             },
             ..state
         },
-        PlanningEvent::GenerationStarted { .. } => state,
+        PlanningEvent::GenerationStarted { .. } => {
+            // Clear xsd_retry_pending when generation starts.
+            // This prevents infinite loops if the handler somehow fails to emit
+            // a completion/validation event after the XSD retry effect runs.
+            if state.continuation.xsd_retry_pending {
+                PipelineState {
+                    continuation: ContinuationState {
+                        xsd_retry_pending: false,
+                        ..state.continuation
+                    },
+                    ..state
+                }
+            } else {
+                state
+            }
+        }
         PlanningEvent::GenerationCompleted { valid, .. } => {
             if valid {
                 PipelineState {
@@ -2880,7 +2895,10 @@ mod tests {
             phase: PipelinePhase::Review,
             review_issues_found: true,
             reviewer_pass: 0,
-            continuation: ContinuationState::new(),
+            continuation: ContinuationState {
+                invalid_output_attempts: 3, // Set non-zero to verify reset
+                ..ContinuationState::new()
+            },
             ..create_test_state()
         };
 
@@ -2905,6 +2923,10 @@ mod tests {
             new_state.continuation.fix_status,
             Some(FixStatus::IssuesRemain),
             "Fix status should be stored"
+        );
+        assert_eq!(
+            new_state.continuation.invalid_output_attempts, 0,
+            "Invalid output attempts should be reset for new continuation"
         );
     }
 

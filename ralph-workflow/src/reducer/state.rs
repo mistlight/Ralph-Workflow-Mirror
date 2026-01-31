@@ -394,20 +394,14 @@ impl ContinuationState {
             // Reset XSD retry state for new continuation
             xsd_retry_count: 0,
             xsd_retry_pending: false,
-            // Preserve other fields
-            previous_status: self.previous_status.clone(),
-            previous_summary: self.previous_summary.clone(),
-            previous_files_changed: self.previous_files_changed.clone(),
-            previous_next_steps: self.previous_next_steps.clone(),
-            continuation_attempt: self.continuation_attempt,
+            // Reset invalid output attempts for new continuation
             invalid_output_attempts: 0,
+            // Clear other pending flags
             context_write_pending: false,
             context_cleanup_pending: false,
             continue_pending: false,
-            current_artifact: self.current_artifact.clone(),
-            max_xsd_retry_count: self.max_xsd_retry_count,
-            max_continue_count: self.max_continue_count,
-            max_fix_continue_count: self.max_fix_continue_count,
+            // Preserve all other fields via spread operator
+            ..self.clone()
         }
     }
 

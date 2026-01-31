@@ -97,16 +97,21 @@ impl std::error::Error for RenderedPromptError {}
 /// * `Ok(())` if no unresolved placeholders are found
 /// * `Err(RenderedPromptError)` with the list of unresolved placeholders
 pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), RenderedPromptError> {
-    let vars = extract_variables(rendered);
+    // Use a simple regex to catch ANY remaining {{...}} patterns, including:
+    // - Normal variables: {{VAR}}
+    // - Variables with defaults: {{VAR|default="x"}}
+    // - Malformed patterns: {{VAR, {{{VAR}}}
+    // This is more robust than extract_variables() which parses template syntax
+    // and may miss malformed patterns that indicate rendering failures.
+    let re = regex::Regex::new(r"\{\{[^}]*\}\}").expect("regex should be valid");
+    let unresolved: Vec<String> = re
+        .find_iter(rendered)
+        .map(|m| m.as_str().to_string())
+        .collect();
 
-    if vars.is_empty() {
+    if unresolved.is_empty() {
         Ok(())
     } else {
-        let unresolved: Vec<String> = vars
-            .into_iter()
-            .map(|v| format!("{{{{{}}}}}", v.name))
-            .collect();
-
         Err(RenderedPromptError {
             unresolved_placeholders: unresolved,
         })
