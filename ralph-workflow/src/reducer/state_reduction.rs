@@ -469,7 +469,14 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             }
         }
         ReviewEvent::FixAttemptStarted { .. } => PipelineState {
-            agent_chain: state.agent_chain.reset(),
+            agent_chain: super::state::AgentChainState::initial()
+                .with_max_cycles(state.agent_chain.max_cycles)
+                .with_backoff_policy(
+                    state.agent_chain.retry_delay_ms,
+                    state.agent_chain.backoff_multiplier,
+                    state.agent_chain.max_backoff_ms,
+                )
+                .reset_for_role(AgentRole::Developer),
             continuation: super::state::ContinuationState {
                 invalid_output_attempts: 0,
                 ..state.continuation

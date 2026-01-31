@@ -50,6 +50,8 @@ pub struct ReviewPassResult {
     pub output_valid: bool,
     /// Whether issues were found in the validated output.
     pub issues_found: bool,
+    /// Raw XML content for UI rendering (if available).
+    pub xml_content: Option<String>,
 }
 
 /// Result of running a fix pass.
@@ -69,9 +71,9 @@ pub struct FixPassResult {
 #[derive(Debug)]
 enum ParseResult {
     /// Successfully parsed with issues found
-    IssuesFound { issues: Vec<String> },
+    IssuesFound { issues: Vec<String>, xml_content: String },
     /// Successfully parsed with explicit "no issues" declaration
-    NoIssuesExplicit,
+    NoIssuesExplicit { xml_content: String },
     /// Failed to parse - includes error description for re-prompting
     ParseFailed(String),
 }
@@ -171,6 +173,7 @@ pub fn run_review_pass(
             agent_failed: true,
             output_valid: false,
             issues_found: false,
+            xml_content: None,
         });
     }
 
@@ -178,7 +181,7 @@ pub fn run_review_pass(
     let parse_result = extract_and_validate_review_output_xml(ctx, &log_prefix, issues_path)?;
 
     match parse_result {
-        ParseResult::IssuesFound { issues } => {
+        ParseResult::IssuesFound { issues, xml_content } => {
             handle_postflight_validation(ctx, j);
 
             ctx.logger
@@ -203,9 +206,10 @@ pub fn run_review_pass(
                 agent_failed: false,
                 output_valid: true,
                 issues_found: true,
+                xml_content: Some(xml_content),
             })
         }
-        ParseResult::NoIssuesExplicit => {
+        ParseResult::NoIssuesExplicit { xml_content } => {
             ctx.logger
                 .success(&format!("No issues found after cycle {j} - stopping early"));
 
@@ -229,6 +233,7 @@ pub fn run_review_pass(
                 agent_failed: false,
                 output_valid: true,
                 issues_found: false,
+                xml_content: Some(xml_content),
             })
         }
         ParseResult::ParseFailed(reason) => {
@@ -241,6 +246,7 @@ pub fn run_review_pass(
                 agent_failed: false,
                 output_valid: false,
                 issues_found: false,
+                xml_content: None,
             })
         }
     }
@@ -297,16 +303,20 @@ fn validate_and_process_issues_xml(
 
     match validated {
         Ok(elements) => {
-            // Write the validated XML to ISSUES.md
-            ctx.workspace.write(issues_path, xml_content)?;
+            let markdown = render_issues_markdown(&elements);
+            ctx.workspace.write(issues_path, &markdown)?;
+            archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::ISSUES_XML));
 
             if elements.no_issues_found.is_some() {
-                return Ok(ParseResult::NoIssuesExplicit);
+                return Ok(ParseResult::NoIssuesExplicit {
+                    xml_content: xml_content.to_string(),
+                });
             }
 
             if !elements.issues.is_empty() {
                 return Ok(ParseResult::IssuesFound {
                     issues: elements.issues,
+                    xml_content: xml_content.to_string(),
                 });
             }
 
@@ -319,6 +329,38 @@ fn validate_and_process_issues_xml(
             Ok(ParseResult::ParseFailed(xsd_error.format_for_ai_retry()))
         }
     }
+}
+
+fn render_issues_markdown(elements: &IssuesElements) -> String {
+    let mut output = String::from("# Issues\n\n");
+
+    if let Some(message) = &elements.no_issues_found {
+        let trimmed = message.trim();
+        if trimmed.is_empty() {
+            output.push_str("No issues found.\n");
+        } else {
+            output.push_str(trimmed);
+            output.push('\n');
+        }
+        return output;
+    }
+
+    if elements.issues.is_empty() {
+        output.push_str("No issues found.\n");
+        return output;
+    }
+
+    for issue in &elements.issues {
+        let trimmed = issue.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        output.push_str("- [ ] ");
+        output.push_str(trimmed);
+        output.push('\n');
+    }
+
+    output
 }
 
 /// Handle post-flight validation after a review pass.
@@ -577,7 +619,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_and_process_issues_xml_does_not_remove_canonical_issues_xml() {
+    fn test_validate_and_process_issues_xml_archives_and_writes_markdown() {
         let xml_content = r#"<ralph-issues>
  <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
  </ralph-issues>"#;
@@ -590,11 +632,29 @@ mod tests {
             validate_and_process_issues_xml(&mut ctx, xml_content, Path::new(".agent/ISSUES.md"))
                 .expect("validate_and_process_issues_xml should succeed for valid XML");
 
-        // The canonical path is used later by the reducer effect handler for UI rendering.
         assert!(
-            fixture.workspace.exists(Path::new(xml_paths::ISSUES_XML)),
-            "expected {} to still exist after validation",
+            !fixture.workspace.exists(Path::new(xml_paths::ISSUES_XML)),
+            "expected {} to be archived after validation",
             xml_paths::ISSUES_XML
+        );
+        assert!(
+            fixture
+                .workspace
+                .exists(Path::new(".agent/tmp/issues.xml.processed")),
+            "expected archived issues XML to exist"
+        );
+
+        let issues_md = fixture
+            .workspace
+            .read(Path::new(".agent/ISSUES.md"))
+            .expect("ISSUES.md should be written");
+        assert!(
+            issues_md.contains("No issues"),
+            "expected ISSUES.md to contain the no-issues summary"
+        );
+        assert!(
+            !issues_md.contains("<ralph-issues>"),
+            "expected ISSUES.md to be markdown, not raw XML"
         );
     }
 }

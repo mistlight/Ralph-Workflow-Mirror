@@ -685,10 +685,12 @@ impl MainEffectHandler {
                     },
                 ];
 
-                if let Some(ui_event) =
-                    build_review_issues_ui_event_and_archive(ctx.workspace, pass)
-                {
-                    ui_events.push(ui_event);
+                if let Some(xml_content) = result.xml_content.as_deref() {
+                    ui_events.push(build_review_issues_ui_event(
+                        ctx.workspace,
+                        pass,
+                        xml_content,
+                    ));
                 }
 
                 Ok(EffectResult::with_ui(event, ui_events))
@@ -735,7 +737,7 @@ impl MainEffectHandler {
                 if result.auth_failure {
                     let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
                     return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                        AgentRole::Reviewer,
+                        AgentRole::Developer,
                         current_agent,
                         1,
                         AgentErrorKind::Authentication,
@@ -746,7 +748,7 @@ impl MainEffectHandler {
                 if result.agent_failed {
                     let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
                     return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                        AgentRole::Reviewer,
+                        AgentRole::Developer,
                         current_agent,
                         1,
                         AgentErrorKind::InternalError,
@@ -786,7 +788,7 @@ impl MainEffectHandler {
                 if Self::is_auth_failure(&err) {
                     let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
                     return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                        AgentRole::Reviewer,
+                        AgentRole::Developer,
                         current_agent,
                         1,
                         AgentErrorKind::Authentication,
@@ -796,7 +798,7 @@ impl MainEffectHandler {
 
                 let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
                 Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                    AgentRole::Reviewer,
+                    AgentRole::Developer,
                     current_agent,
                     1,
                     AgentErrorKind::InternalError,
@@ -1349,27 +1351,21 @@ fn collect_review_issue_snippets(
     snippets
 }
 
-fn build_review_issues_ui_event_and_archive(
+fn build_review_issues_ui_event(
     workspace: &dyn Workspace,
     pass: u32,
-) -> Option<UIEvent> {
-    let xml_content = read_xml_if_present(workspace, Path::new(xml_paths::ISSUES_XML))?;
-    let snippets = collect_review_issue_snippets(workspace, &xml_content);
-    let ui_event = UIEvent::XmlOutput {
+    xml_content: &str,
+) -> UIEvent {
+    let snippets = collect_review_issue_snippets(workspace, xml_content);
+    UIEvent::XmlOutput {
         xml_type: XmlOutputType::ReviewIssues,
-        content: xml_content,
+        content: xml_content.to_string(),
         context: Some(XmlOutputContext {
             iteration: None,
             pass: Some(pass),
             snippets,
         }),
-    };
-
-    // Archive after UI rendering, so subsequent passes do not accidentally
-    // reuse stale XML if a future agent run fails to write a fresh file.
-    archive_xml_file_with_workspace(workspace, Path::new(xml_paths::ISSUES_XML));
-
-    Some(ui_event)
+    }
 }
 
 fn read_commit_message_xml(workspace: &dyn Workspace) -> Option<String> {
@@ -1760,18 +1756,16 @@ mod tests {
     }
 
     #[test]
-    fn test_build_review_issues_ui_event_and_archive_archives_after_reading() {
-        use crate::workspace::{MemoryWorkspace, Workspace};
-        use std::path::{Path, PathBuf};
+    fn test_build_review_issues_ui_event_formats_xml_output() {
+        use crate::workspace::MemoryWorkspace;
 
         let xml_content = r#"<ralph-issues>
  <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
  </ralph-issues>"#;
 
-        let workspace = MemoryWorkspace::new_test().with_file(xml_paths::ISSUES_XML, xml_content);
+        let workspace = MemoryWorkspace::new_test();
 
-        let ui = build_review_issues_ui_event_and_archive(&workspace, 1)
-            .expect("expected UI event when issues.xml exists");
+        let ui = build_review_issues_ui_event(&workspace, 1, xml_content);
 
         assert!(matches!(
             ui,
@@ -1780,11 +1774,6 @@ mod tests {
                 ..
             }
         ));
-
-        // Should archive (rename) the canonical file after reading.
-        assert!(!workspace.exists(Path::new(xml_paths::ISSUES_XML)));
-        let processed = PathBuf::from(format!("{}.processed", xml_paths::ISSUES_XML));
-        assert!(workspace.exists(&processed));
     }
 
     /// Test that save_checkpoint uses workspace for file operations.

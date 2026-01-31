@@ -157,7 +157,7 @@ fn test_fix_attempt_started_resets_agent_chain() {
         crate::agents::AgentRole::Reviewer,
     );
     agent_chain = agent_chain.switch_to_next_agent(); // Move to agent 1
-    agent_chain.retry_cycle = 3; // Manually set retry_cycle to verify preservation
+    agent_chain.retry_cycle = 3; // Manually set retry_cycle to verify reset
 
     let state = PipelineState {
         review_issues_found: true,
@@ -178,10 +178,18 @@ fn test_fix_attempt_started_resets_agent_chain() {
     // CRITICAL: review_issues_found should be preserved (not reset)
     assert!(new_state.review_issues_found);
 
-    // Agent chain should be reset (indices to 0, but retry_cycle preserved)
+    // Agent chain should be reset for developer role
     assert_eq!(new_state.agent_chain.current_agent_index, 0);
     assert_eq!(new_state.agent_chain.current_model_index, 0);
-    assert_eq!(new_state.agent_chain.retry_cycle, 3); // Preserved, not reset
+    assert_eq!(new_state.agent_chain.retry_cycle, 0);
+    assert_eq!(
+        new_state.agent_chain.current_role,
+        crate::agents::AgentRole::Developer
+    );
+    assert!(
+        new_state.agent_chain.agents.is_empty(),
+        "Expected agent chain to be cleared for re-initialization"
+    );
 }
 
 #[test]
@@ -550,6 +558,38 @@ fn test_review_uses_agent_from_state_chain_not_context() {
             crate::reducer::effect::Effect::RunReviewPass { pass: 0 }
         ),
         "Orchestration should emit RunReviewPass, got {:?}",
+        effect
+    );
+}
+
+#[test]
+fn test_fix_attempt_reinitializes_chain_for_developer_role() {
+    use crate::reducer::orchestration::determine_next_effect;
+
+    let reviewer_chain = crate::reducer::state::AgentChainState::initial().with_agents(
+        vec!["reviewer-1".to_string(), "reviewer-2".to_string()],
+        vec![vec![], vec![]],
+        crate::agents::AgentRole::Reviewer,
+    );
+
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 1,
+        review_issues_found: true,
+        agent_chain: reviewer_chain,
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::InitializeAgentChain {
+                role: crate::agents::AgentRole::Developer
+            }
+        ),
+        "Expected InitializeAgentChain for Developer before fix attempt, got {:?}",
         effect
     );
 }

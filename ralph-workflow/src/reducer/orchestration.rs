@@ -157,16 +157,24 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         }
 
         PipelinePhase::Review => {
-            if state.agent_chain.agents.is_empty() {
-                return Effect::InitializeAgentChain {
-                    role: AgentRole::Reviewer,
+            // If review found issues, run fix attempt
+            if state.review_issues_found {
+                if state.agent_chain.agents.is_empty()
+                    || state.agent_chain.current_role != AgentRole::Developer
+                {
+                    return Effect::InitializeAgentChain {
+                        role: AgentRole::Developer,
+                    };
+                }
+
+                return Effect::RunFixAttempt {
+                    pass: state.reviewer_pass,
                 };
             }
 
-            // If review found issues, run fix attempt
-            if state.review_issues_found {
-                return Effect::RunFixAttempt {
-                    pass: state.reviewer_pass,
+            if state.agent_chain.agents.is_empty() {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Reviewer,
                 };
             }
 
@@ -648,11 +656,35 @@ mod tests {
             "review_issues_found should be true"
         );
 
-        // Orchestration should now trigger fix attempt
+        // Orchestration should reinitialize chain for developer before fix attempt
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Developer
+                }
+            ),
+            "Expected InitializeAgentChain for Developer after issues found, got {:?}",
+            effect
+        );
+
+        state = reduce(
+            state,
+            PipelineEvent::agent_chain_initialized(
+                AgentRole::Developer,
+                vec!["claude".to_string()],
+                3,
+                1000,
+                2.0,
+                60000,
+            ),
+        );
+
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::RunFixAttempt { pass: 0 }),
-            "Expected RunFixAttempt after issues found, got {:?}",
+            "Expected RunFixAttempt after initializing developer chain, got {:?}",
             effect
         );
 
