@@ -38,6 +38,8 @@ An RFC is a design document that describes a proposed change to Ralph. RFCs are 
 | [RFC-001](./RFC-001-enhanced-opencode-integration.md) | Enhanced OpenCode Integration | Draft |
 | [RFC-002](./RFC-002-ux-improvements.md) | Developer Experience Improvements | In Progress |
 | [RFC-003](./RFC-003-streaming-architecture-hardening.md) | AI Agent Streaming Architecture Hardening | Implemented |
+| [RFC-004](./RFC-004-reducer-based-pipeline-architecture.md) | Reducer-Based Pipeline Architecture | Production Ready ✅ |
+| [RFC-005](./RFC-005-event-loop-savecheckpoint-bypass.md) | Event Loop Must Not Bypass SaveCheckpoint Effects | Implemented |
 
 ## Creating a New RFC
 
