@@ -160,10 +160,10 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             // If review found issues, run fix attempt
             if state.review_issues_found {
                 if state.agent_chain.agents.is_empty()
-                    || state.agent_chain.current_role != AgentRole::Developer
+                    || state.agent_chain.current_role != AgentRole::Reviewer
                 {
                     return Effect::InitializeAgentChain {
-                        role: AgentRole::Developer,
+                        role: AgentRole::Reviewer,
                     };
                 }
 
@@ -656,35 +656,11 @@ mod tests {
             "review_issues_found should be true"
         );
 
-        // Orchestration should reinitialize chain for developer before fix attempt
-        let effect = determine_next_effect(&state);
-        assert!(
-            matches!(
-                effect,
-                Effect::InitializeAgentChain {
-                    role: AgentRole::Developer
-                }
-            ),
-            "Expected InitializeAgentChain for Developer after issues found, got {:?}",
-            effect
-        );
-
-        state = reduce(
-            state,
-            PipelineEvent::agent_chain_initialized(
-                AgentRole::Developer,
-                vec!["claude".to_string()],
-                3,
-                1000,
-                2.0,
-                60000,
-            ),
-        );
-
+        // With a populated Reviewer chain, orchestration should run the fix attempt directly.
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::RunFixAttempt { pass: 0 }),
-            "Expected RunFixAttempt after initializing developer chain, got {:?}",
+            "Expected RunFixAttempt after issues found, got {:?}",
             effect
         );
 

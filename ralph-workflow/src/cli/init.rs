@@ -1050,7 +1050,7 @@ pub fn handle_extended_help() {
 
 Ralph is a PROMPT-driven multi-agent orchestrator for git repos. It runs a
 developer agent for code implementation, then a reviewer agent for quality
-assurance, automatically staging and committing the final result.
+assurance and fixes (default), automatically staging and committing the final result.
 
 ═══════════════════════════════════════════════════════════════════════════════
 GETTING STARTED

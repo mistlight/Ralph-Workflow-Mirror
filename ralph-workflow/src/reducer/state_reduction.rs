@@ -476,7 +476,7 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     state.agent_chain.backoff_multiplier,
                     state.agent_chain.max_backoff_ms,
                 )
-                .reset_for_role(AgentRole::Developer),
+                .reset_for_role(AgentRole::Reviewer),
             continuation: super::state::ContinuationState {
                 invalid_output_attempts: 0,
                 ..state.continuation
@@ -841,11 +841,19 @@ fn compute_post_commit_transition(
         Some(super::event::PipelinePhase::Development) => {
             let next_iter = state.iteration + 1;
             if next_iter >= state.total_iterations {
-                (
-                    super::event::PipelinePhase::Review,
-                    next_iter,
-                    state.reviewer_pass,
-                )
+                if state.total_reviewer_passes == 0 {
+                    (
+                        super::event::PipelinePhase::FinalValidation,
+                        next_iter,
+                        state.reviewer_pass,
+                    )
+                } else {
+                    (
+                        super::event::PipelinePhase::Review,
+                        next_iter,
+                        state.reviewer_pass,
+                    )
+                }
             } else {
                 (
                     super::event::PipelinePhase::Planning,

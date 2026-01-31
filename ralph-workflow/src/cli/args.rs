@@ -462,7 +462,7 @@ pub struct RebaseFlags {
 #[command(
     long_about = "Ralph orchestrates AI coding agents to implement changes based on PROMPT.md.\n\n\
     It runs a developer agent for code implementation, then a reviewer agent for\n\
-    quality assurance, automatically staging and committing the final result."
+    review and fixes (default), automatically staging and committing the final result."
 )]
 #[command(version)]
 #[command(after_help = "GETTING STARTED:\n\

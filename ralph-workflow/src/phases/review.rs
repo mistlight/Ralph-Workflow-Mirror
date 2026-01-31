@@ -71,7 +71,10 @@ pub struct FixPassResult {
 #[derive(Debug)]
 enum ParseResult {
     /// Successfully parsed with issues found
-    IssuesFound { issues: Vec<String>, xml_content: String },
+    IssuesFound {
+        issues: Vec<String>,
+        xml_content: String,
+    },
     /// Successfully parsed with explicit "no issues" declaration
     NoIssuesExplicit { xml_content: String },
     /// Failed to parse - includes error description for re-prompting
@@ -181,7 +184,10 @@ pub fn run_review_pass(
     let parse_result = extract_and_validate_review_output_xml(ctx, &log_prefix, issues_path)?;
 
     match parse_result {
-        ParseResult::IssuesFound { issues, xml_content } => {
+        ParseResult::IssuesFound {
+            issues,
+            xml_content,
+        } => {
             handle_postflight_validation(ctx, j);
 
             ctx.logger

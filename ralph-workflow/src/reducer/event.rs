@@ -201,7 +201,8 @@ pub enum DevelopmentEvent {
 /// Review phase events.
 ///
 /// Events related to code review passes and fix attempts. The review phase
-/// runs reviewer agents to identify issues and developer agents to fix them.
+/// runs reviewer agents to identify issues and (by default) the same reviewer
+/// agent chain to apply any required fixes.
 ///
 /// # State Transitions
 ///

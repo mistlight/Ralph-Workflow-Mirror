@@ -64,10 +64,12 @@ fn create_workspace_from_handler(
 ) -> (
     Arc<ralph_workflow::workspace::MemoryWorkspace>,
     std::collections::HashSet<std::path::PathBuf>,
+    std::collections::HashMap<std::path::PathBuf, String>,
 ) {
     let cwd = handler.get_cwd();
     let mut workspace = ralph_workflow::workspace::MemoryWorkspace::new(cwd);
     let mut initial_paths = std::collections::HashSet::new();
+    let mut initial_files = std::collections::HashMap::new();
 
     // Copy all files from the handler to the workspace
     for (path, content) in handler.get_all_files() {
@@ -75,10 +77,11 @@ fn create_workspace_from_handler(
         if let Some(path_str) = path.to_str() {
             workspace = workspace.with_file(path_str, &content);
             initial_paths.insert(path.clone());
+            initial_files.insert(path, content);
         }
     }
 
-    (Arc::new(workspace), initial_paths)
+    (Arc::new(workspace), initial_paths, initial_files)
 }
 
 /// Sync files from a MemoryWorkspace back to a MockAppEffectHandler.
@@ -101,6 +104,7 @@ fn sync_workspace_to_handler(
     workspace: &ralph_workflow::workspace::MemoryWorkspace,
     handler: &mut ralph_workflow::app::mock_effect_handler::MockAppEffectHandler,
     initial_workspace_files: &std::collections::HashSet<std::path::PathBuf>,
+    initial_handler_files: &std::collections::HashMap<std::path::PathBuf, String>,
 ) {
     // Get current files in workspace after execution
     let workspace_files = workspace.written_files();
@@ -114,14 +118,35 @@ fn sync_workspace_to_handler(
         .map(|(p, _)| p.clone())
         .collect();
 
-    // Add new files from workspace to handler
+    // Sync files from workspace to handler.
     for (path, content) in workspace_files.iter() {
+        let content_str = String::from_utf8_lossy(content).to_string();
         let is_in_handler = handler_files_snapshot.contains(path);
-        if !is_in_handler {
-            if let Some(path_str) = path.to_str() {
-                let content_str = String::from_utf8_lossy(content).to_string();
-                handler.add_file(path_str, &content_str);
+
+        // Preserve handler-updated files.
+        //
+        // The MockAppEffectHandler can mutate its internal file store via effects
+        // (e.g., git helpers updating `.agent/start_commit`). Those updates are the
+        // observable behavior we want to assert on in integration tests, so we do
+        // not overwrite them with workspace state.
+        if is_in_handler {
+            match initial_handler_files.get(path) {
+                // If the file existed before the run and handler changed it, keep handler.
+                Some(initial) => {
+                    if let Some(current) = handler.get_file(path) {
+                        if &current != initial {
+                            continue;
+                        }
+                    }
+                }
+                // If the file did not exist before the run, treat it as handler-owned.
+                None => continue,
             }
+        }
+
+        if let Some(path_str) = path.to_str() {
+            // add_file() overwrites existing entries.
+            handler.add_file(path_str, &content_str);
         }
     }
 
@@ -205,7 +230,7 @@ pub fn run_ralph_cli_with_handler(
     // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
     // This ensures file operations use the handler's in-memory filesystem.
     // We also track the initial files so we can detect deletions during execution.
-    let (workspace, initial_files) = create_workspace_from_handler(handler);
+    let (workspace, initial_files, initial_handler_files) = create_workspace_from_handler(handler);
 
     // Use run_with_config_and_resolver with the provided handler, memory config env, and memory workspace
     let result = ralph_workflow::app::run_with_config_and_resolver(
@@ -219,7 +244,7 @@ pub fn run_ralph_cli_with_handler(
     );
 
     // Sync workspace files back to handler so tests can verify file side effects
-    sync_workspace_to_handler(&workspace, handler, &initial_files);
+    sync_workspace_to_handler(&workspace, handler, &initial_files, &initial_handler_files);
 
     result
 }
@@ -298,7 +323,8 @@ pub fn run_ralph_cli_with_handlers(
 
     // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
     // Track initial files so we can detect deletions during execution.
-    let (workspace, initial_files) = create_workspace_from_handler(app_handler);
+    let (workspace, initial_files, initial_handler_files) =
+        create_workspace_from_handler(app_handler);
 
     // Use run_with_config_and_handlers with both handlers and memory workspace
     let result = ralph_workflow::app::run_with_config_and_handlers(
@@ -316,7 +342,12 @@ pub fn run_ralph_cli_with_handlers(
     );
 
     // Sync workspace files back to handler so tests can verify file side effects
-    sync_workspace_to_handler(&workspace, app_handler, &initial_files);
+    sync_workspace_to_handler(
+        &workspace,
+        app_handler,
+        &initial_files,
+        &initial_handler_files,
+    );
 
     result
 }
@@ -378,7 +409,7 @@ pub fn run_ralph_cli_with_env(
 
     // Create a MemoryWorkspace that syncs with the MockAppEffectHandler's files.
     // Track initial files so we can detect deletions during execution.
-    let (workspace, initial_files) = create_workspace_from_handler(handler);
+    let (workspace, initial_files, initial_handler_files) = create_workspace_from_handler(handler);
 
     // Use run_with_config_and_resolver with the provided handler and custom config env
     let result = ralph_workflow::app::run_with_config_and_resolver(
@@ -392,7 +423,7 @@ pub fn run_ralph_cli_with_env(
     );
 
     // Sync workspace files back to handler so tests can verify file side effects
-    sync_workspace_to_handler(&workspace, handler, &initial_files);
+    sync_workspace_to_handler(&workspace, handler, &initial_files, &initial_handler_files);
 
     result
 }

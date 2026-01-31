@@ -563,13 +563,15 @@ fn test_review_uses_agent_from_state_chain_not_context() {
 }
 
 #[test]
-fn test_fix_attempt_reinitializes_chain_for_developer_role() {
+fn test_fix_attempt_reinitializes_chain_for_reviewer_role() {
     use crate::reducer::orchestration::determine_next_effect;
 
-    let reviewer_chain = crate::reducer::state::AgentChainState::initial().with_agents(
-        vec!["reviewer-1".to_string(), "reviewer-2".to_string()],
+    // Simulate the bug/regression scenario: the chain is populated, but for the wrong role.
+    // Fix attempts must use the Reviewer role (not Developer).
+    let developer_chain = crate::reducer::state::AgentChainState::initial().with_agents(
+        vec!["dev-1".to_string(), "dev-2".to_string()],
         vec![vec![], vec![]],
-        crate::agents::AgentRole::Reviewer,
+        crate::agents::AgentRole::Developer,
     );
 
     let state = PipelineState {
@@ -577,7 +579,7 @@ fn test_fix_attempt_reinitializes_chain_for_developer_role() {
         reviewer_pass: 0,
         total_reviewer_passes: 1,
         review_issues_found: true,
-        agent_chain: reviewer_chain,
+        agent_chain: developer_chain,
         ..create_test_state()
     };
 
@@ -586,10 +588,10 @@ fn test_fix_attempt_reinitializes_chain_for_developer_role() {
         matches!(
             effect,
             crate::reducer::effect::Effect::InitializeAgentChain {
-                role: crate::agents::AgentRole::Developer
+                role: crate::agents::AgentRole::Reviewer
             }
         ),
-        "Expected InitializeAgentChain for Developer before fix attempt, got {:?}",
+        "Expected InitializeAgentChain for Reviewer before fix attempt, got {:?}",
         effect
     );
 }

@@ -116,15 +116,7 @@ where
     while events_processed < config.max_iterations {
         let effect = determine_next_effect(&state);
 
-        let allow_terminal_checkpoint =
-            matches!(state.phase, crate::reducer::event::PipelinePhase::Complete)
-                && matches!(
-                    effect,
-                    crate::reducer::effect::Effect::SaveCheckpoint { .. }
-                )
-                && state.checkpoint_saved_count == 0;
-
-        if state.is_complete() && !allow_terminal_checkpoint {
+        if state.is_complete() {
             break;
         }
 
@@ -196,15 +188,7 @@ fn run_event_loop_internal(
     while events_processed < config.max_iterations {
         let effect = determine_next_effect(&state);
 
-        let allow_terminal_checkpoint =
-            matches!(state.phase, crate::reducer::event::PipelinePhase::Complete)
-                && matches!(
-                    effect,
-                    crate::reducer::effect::Effect::SaveCheckpoint { .. }
-                )
-                && state.checkpoint_saved_count == 0;
-
-        if state.is_complete() && !allow_terminal_checkpoint {
+        if state.is_complete() {
             break;
         }
 

@@ -9,7 +9,7 @@
 //! During the review-fix phase, each cycle should:
 //! 1. Capture baseline before review (current HEAD)
 //! 2. Review sees diff from that baseline
-//! 3. Fixer makes changes
+//! 3. Fixer makes changes (reviewer agent by default)
 //! 4. Baseline is updated after fix pass
 //! 5. Next review cycle sees only new changes
 //!

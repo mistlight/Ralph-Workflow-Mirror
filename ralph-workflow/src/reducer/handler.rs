@@ -737,7 +737,7 @@ impl MainEffectHandler {
                 if result.auth_failure {
                     let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
                     return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                        AgentRole::Developer,
+                        AgentRole::Reviewer,
                         current_agent,
                         1,
                         AgentErrorKind::Authentication,
@@ -748,7 +748,7 @@ impl MainEffectHandler {
                 if result.agent_failed {
                     let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
                     return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                        AgentRole::Developer,
+                        AgentRole::Reviewer,
                         current_agent,
                         1,
                         AgentErrorKind::InternalError,
@@ -788,7 +788,7 @@ impl MainEffectHandler {
                 if Self::is_auth_failure(&err) {
                     let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
                     return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                        AgentRole::Developer,
+                        AgentRole::Reviewer,
                         current_agent,
                         1,
                         AgentErrorKind::Authentication,
@@ -798,7 +798,7 @@ impl MainEffectHandler {
 
                 let current_agent = fix_agent.unwrap_or_else(|| "unknown".to_string());
                 Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                    AgentRole::Developer,
+                    AgentRole::Reviewer,
                     current_agent,
                     1,
                     AgentErrorKind::InternalError,

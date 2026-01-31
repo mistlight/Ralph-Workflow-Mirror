@@ -280,27 +280,7 @@ fn test_review_triggers_fix_when_issues_found() {
 
     assert!(state.review_issues_found);
 
-    // Orchestration should reinitialize agent chain for developer before fix attempt
-    let effect = determine_next_effect(&state);
-    assert!(matches!(
-        effect,
-        Effect::InitializeAgentChain {
-            role: AgentRole::Developer
-        }
-    ));
-
-    state = reduce(
-        state,
-        PipelineEvent::agent_chain_initialized(
-            AgentRole::Developer,
-            vec!["claude".to_string()],
-            3,
-            1000,
-            2.0,
-            60000,
-        ),
-    );
-
+    // With a populated Reviewer chain, orchestration should run the fix attempt directly.
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::RunFixAttempt { pass: 0 }));
 
