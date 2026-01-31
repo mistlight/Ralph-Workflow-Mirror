@@ -5,10 +5,28 @@
 //! run the pipeline using the event-sourced architecture from RFC-004.
 
 use crate::phases::PhaseContext;
+use crate::reducer::state::ContinuationState;
 use crate::reducer::{
     determine_next_effect, reduce, EffectHandler, MainEffectHandler, PipelineState,
 };
 use anyhow::Result;
+
+/// Create initial pipeline state with continuation limits from config.
+///
+/// This function creates a `PipelineState` with XSD retry and continuation limits
+/// loaded from the config, ensuring these values are available for the reducer
+/// to make deterministic retry decisions.
+fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
+    let continuation = ContinuationState::with_limits(
+        ctx.config.max_xsd_retries.unwrap_or(10),
+        ctx.config.max_dev_continuations.unwrap_or(2),
+    );
+    PipelineState::initial_with_continuation(
+        ctx.config.developer_iters,
+        ctx.config.reviewer_reviews,
+        continuation,
+    )
+}
 
 /// Maximum iterations for the main event loop to prevent infinite loops.
 ///
@@ -68,9 +86,8 @@ pub fn run_event_loop(
         Ok(result) => result,
         Err(_) => {
             ctx.logger.error("Event loop recovered from panic");
-            let _fallback_state = initial_state.unwrap_or_else(|| {
-                PipelineState::initial(ctx.config.developer_iters, ctx.config.reviewer_reviews)
-            });
+            let _fallback_state =
+                initial_state.unwrap_or_else(|| create_initial_state_with_config(ctx));
 
             Ok(EventLoopResult {
                 completed: false,
@@ -104,9 +121,7 @@ pub fn run_event_loop_with_handler<'ctx, H>(
 where
     H: EffectHandler<'ctx> + StatefulHandler,
 {
-    let mut state = initial_state.unwrap_or_else(|| {
-        PipelineState::initial(ctx.config.developer_iters, ctx.config.reviewer_reviews)
-    });
+    let mut state = initial_state.unwrap_or_else(|| create_initial_state_with_config(ctx));
 
     handler.update_state(state.clone());
     let mut events_processed = 0;
@@ -176,9 +191,7 @@ fn run_event_loop_internal(
     initial_state: Option<PipelineState>,
     config: EventLoopConfig,
 ) -> Result<EventLoopResult> {
-    let mut state = initial_state.unwrap_or_else(|| {
-        PipelineState::initial(ctx.config.developer_iters, ctx.config.reviewer_reviews)
-    });
+    let mut state = initial_state.unwrap_or_else(|| create_initial_state_with_config(ctx));
 
     let mut handler = MainEffectHandler::new(state.clone());
     let mut events_processed = 0;

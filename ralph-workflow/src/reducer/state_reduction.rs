@@ -511,8 +511,10 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     state.agent_chain.max_backoff_ms,
                 )
                 .reset_for_role(AgentRole::Reviewer),
+            // Clear fix_continue_pending when fix attempt starts to prevent infinite loops
             continuation: super::state::ContinuationState {
                 invalid_output_attempts: 0,
+                fix_continue_pending: false,
                 ..state.continuation
             },
             ..state

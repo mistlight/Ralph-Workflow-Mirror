@@ -129,17 +129,14 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
         return Effect::CleanupContinuationContext;
     }
 
-    // XSD retry: validation failed, retry with same agent/session if not exhausted
-    if state.continuation.xsd_retry_pending {
-        if state.continuation.xsd_retries_exhausted() {
-            // Exhausted XSD retries - advance agent chain
-            // The agent chain advancement is handled by state reduction on XsdValidationFailed
-            // when retries are exhausted, so here we just clear the pending flag
-            // and continue to normal phase-specific effect
-        } else {
-            // Retry with same agent, potentially same session
-            return derive_xsd_retry_effect(state);
-        }
+    // XSD retry: validation failed, retry with same agent/session if not exhausted.
+    // Note: The reducer should clear xsd_retry_pending when retries are exhausted, so
+    // normally we wouldn't see xsd_retry_pending=true AND xsd_retries_exhausted()=true.
+    // However, to be robust against edge cases, we still derive the retry effect even
+    // when exhausted - the handler's retry attempt will cause the reducer to process
+    // another validation event, which will detect exhaustion and switch agents.
+    if state.continuation.xsd_retry_pending && !state.continuation.xsd_retries_exhausted() {
+        return derive_xsd_retry_effect(state);
     }
 
     // Development continuation pending: output valid but work incomplete, start new session

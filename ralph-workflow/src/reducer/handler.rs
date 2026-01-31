@@ -197,6 +197,24 @@ impl MainEffectHandler {
         model: Option<String>,
         prompt: String,
     ) -> Result<EffectResult> {
+        // Validate template before invoking agent (per reducer fallback spec)
+        // If the rendered prompt still contains unresolved placeholders, emit
+        // TemplateVariablesInvalid event to trigger reducer-driven fallback.
+        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&prompt) {
+            ctx.logger.warn(&format!(
+                "Template validation failed: {}",
+                err.unresolved_placeholders.join(", ")
+            ));
+            return Ok(EffectResult::event(
+                PipelineEvent::agent_template_variables_invalid(
+                    role,
+                    "unknown".to_string(), // Template name not tracked at this level
+                    Vec::new(),            // Missing variables not tracked
+                    err.unresolved_placeholders,
+                ),
+            ));
+        }
+
         // Use agent from state.agent_chain if available
         let effective_agent = self
             .state
@@ -250,12 +268,20 @@ impl MainEffectHandler {
         // a session ID from a previous invocation, reuse it for same-session retry.
         // This allows the agent to continue from where it left off and just fix the XML.
         //
-        // NOTE: For session reuse to work, the handler must emit SessionEstablished event
-        // after successful agent invocation to store the session ID. Currently, session ID
-        // extraction from agent responses is not implemented - the JSON parser would need
-        // to track session_id from ClaudeEvent::System or GeminiEvent::Init events and
-        // return it, then the handler would emit PipelineEvent::agent_session_established().
-        // Until this is implemented, session reuse will not function.
+        // KNOWN LIMITATION: Session ID extraction from agent responses is not yet implemented.
+        // The infrastructure for session reuse is in place (SessionEstablished event, agent
+        // chain session_id storage, build_cmd_with_session), but the handler does not yet
+        // emit SessionEstablished events because:
+        // 1. CommandResult doesn't include session_id from the JSON parser
+        // 2. The JSON parsers (Claude, Gemini, OpenCode) do parse session_id but don't return it
+        //
+        // To implement session reuse:
+        // 1. Add session_id: Option<String> to CommandResult in pipeline/types.rs
+        // 2. Parse and extract session_id in run_with_agent_spawn (pipeline/prompt.rs)
+        // 3. Return it in the fault_tolerant_executor
+        // 4. Emit SessionEstablished event here when session_id is present
+        //
+        // Until implemented, session reuse will not function (session_id will always be None).
         let session_id = if self.state.continuation.xsd_retry_pending {
             self.state.agent_chain.last_session_id.as_deref()
         } else {

@@ -152,6 +152,7 @@ mod tests {
             show_streaming_metrics: false,
             review_format_retries: 5,
             max_dev_continuations: Some(2),
+            max_xsd_retries: Some(10),
         }
     }
 

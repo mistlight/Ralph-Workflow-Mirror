@@ -342,6 +342,9 @@ impl ContinuationState {
     }
 
     /// Trigger a continuation with context from the previous attempt.
+    ///
+    /// Sets both `context_write_pending` (to write continuation context) and
+    /// `continue_pending` (to trigger the continuation flow in orchestration).
     pub fn trigger_continuation(
         &self,
         status: DevelopmentStatus,
@@ -361,7 +364,8 @@ impl ContinuationState {
             // Reset XSD retry count for new continuation attempt
             xsd_retry_count: 0,
             xsd_retry_pending: false,
-            continue_pending: false,
+            // Set continue_pending to trigger continuation in orchestration
+            continue_pending: true,
             // Preserve artifact type and limits
             current_artifact: self.current_artifact.clone(),
             max_xsd_retry_count: self.max_xsd_retry_count,
@@ -472,6 +476,25 @@ pub struct PipelineState {
 
 impl PipelineState {
     pub fn initial(developer_iters: u32, reviewer_reviews: u32) -> Self {
+        Self::initial_with_continuation(developer_iters, reviewer_reviews, ContinuationState::new())
+    }
+
+    /// Create initial state with custom continuation limits from config.
+    ///
+    /// Use this when you need to load XSD retry and continuation limits from unified config.
+    /// Example:
+    /// ```ignore
+    /// let continuation = ContinuationState::with_limits(
+    ///     config.general.max_xsd_retries,
+    ///     config.general.max_dev_continuations,
+    /// );
+    /// let state = PipelineState::initial_with_continuation(dev_iters, reviews, continuation);
+    /// ```
+    pub fn initial_with_continuation(
+        developer_iters: u32,
+        reviewer_reviews: u32,
+        continuation: ContinuationState,
+    ) -> Self {
         // Determine initial phase based on what work needs to be done
         let initial_phase = if developer_iters == 0 {
             // No development iterations → skip Planning and Development
@@ -499,7 +522,7 @@ impl PipelineState {
             commit: CommitState::NotStarted,
             execution_history: Vec::new(),
             checkpoint_saved_count: 0,
-            continuation: ContinuationState::new(),
+            continuation,
         }
     }
 
@@ -1583,7 +1606,9 @@ mod tests {
 
         assert_eq!(state.xsd_retry_count, 0);
         assert!(!state.xsd_retry_pending);
-        assert!(!state.continue_pending);
+        // continue_pending is now set to true by trigger_continuation to enable
+        // orchestration to derive the continuation effect
+        assert!(state.continue_pending);
         assert_eq!(
             state.current_artifact,
             Some(ArtifactType::DevelopmentResult)

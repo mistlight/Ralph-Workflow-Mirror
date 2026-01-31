@@ -123,6 +123,15 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         );
         2
     };
+    let max_xsd_retries = if general.max_xsd_retries >= 1 {
+        general.max_xsd_retries
+    } else {
+        warnings.push(
+            "Invalid max_xsd_retries in config; must be a positive integer (>= 1). Falling back to default."
+                .to_string(),
+        );
+        10
+    };
 
     let review_depth = ReviewDepth::from_str(&general.review_depth).unwrap_or_else(|| {
         warnings.push(format!(
@@ -171,6 +180,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         show_streaming_metrics: false, // Default to false; can be enabled via CLI flag or config file
         review_format_retries: 5,      // Default to 5 retries for format correction
         max_dev_continuations: Some(max_dev_continuations),
+        max_xsd_retries: Some(max_xsd_retries),
     }
 }
 
@@ -214,6 +224,7 @@ fn default_config() -> Config {
         show_streaming_metrics: false,
         review_format_retries: 5,
         max_dev_continuations: Some(2), // Default to 2 (initial + 1 continuation)
+        max_xsd_retries: Some(10),      // Default to 10 retries before agent fallback
     }
 }
 

@@ -248,6 +248,10 @@ pub struct Config {
     /// Higher values allow more attempts to complete complex tasks within a single plan.
     /// Default: 2 (initial attempt + 1 continuation = 2 total attempts per iteration).
     pub max_dev_continuations: Option<u32>,
+    /// Maximum XSD retry attempts when agent output fails XML validation.
+    /// Higher values allow more attempts to fix XML formatting before agent fallback.
+    /// Default: 10 (10 retries before falling back to next agent).
+    pub max_xsd_retries: Option<u32>,
 }
 
 impl Config {
@@ -305,6 +309,7 @@ impl Config {
             show_streaming_metrics: false,
             review_format_retries: 5,
             max_dev_continuations: Some(2),
+            max_xsd_retries: Some(10),
         }
     }
 

@@ -149,6 +149,14 @@ pub struct GeneralConfig {
     /// Default: 2 continuations (initial attempt + 2 continuations = 3 total attempts per iteration).
     #[serde(default = "default_max_dev_continuations")]
     pub max_dev_continuations: u32,
+    /// Maximum XSD retry attempts when agent output fails XML validation.
+    ///
+    /// Higher values allow more attempts to fix XML formatting issues before
+    /// switching to the next agent in the fallback chain.
+    ///
+    /// Default: 10 retries before falling back to the next agent.
+    #[serde(default = "default_max_xsd_retries")]
+    pub max_xsd_retries: u32,
 }
 
 /// Default maximum continuation attempts per development iteration.
@@ -157,6 +165,13 @@ pub struct GeneralConfig {
 /// for fast iteration cycles.
 fn default_max_dev_continuations() -> u32 {
     2
+}
+
+/// Default maximum XSD retry attempts before agent fallback.
+///
+/// This allows 10 retries to fix XML formatting issues before switching agents.
+fn default_max_xsd_retries() -> u32 {
+    10
 }
 
 impl Default for GeneralConfig {
@@ -185,6 +200,7 @@ impl Default for GeneralConfig {
             git_user_name: None,
             git_user_email: None,
             max_dev_continuations: default_max_dev_continuations(),
+            max_xsd_retries: default_max_xsd_retries(),
         }
     }
 }
