@@ -276,7 +276,31 @@ impl ContinuationState {
         self.continuation_attempt > 0
     }
 
-    /// Reset the continuation state for a new iteration.
+    /// Reset the continuation state for a new iteration or phase transition.
+    ///
+    /// This performs a **hard reset** of ALL continuation and retry state,
+    /// preserving only the configured limits (max_xsd_retry_count, max_continue_count,
+    /// max_fix_continue_count).
+    ///
+    /// # What gets reset
+    ///
+    /// - `continuation_attempt` -> 0
+    /// - `continue_pending` -> false
+    /// - `invalid_output_attempts` -> 0
+    /// - `xsd_retry_count` -> 0
+    /// - `xsd_retry_pending` -> false
+    /// - `fix_continuation_attempt` -> 0
+    /// - `fix_continue_pending` -> false
+    /// - `fix_status` -> None
+    /// - `current_artifact` -> None
+    /// - `previous_status`, `previous_summary`, etc. -> defaults
+    ///
+    /// # Usage
+    ///
+    /// Call this when transitioning to a completely new phase or iteration
+    /// where prior continuation/retry state should not carry over. For partial
+    /// resets (e.g., resetting only fix continuation while preserving development
+    /// continuation state), use field-level updates instead.
     pub fn reset(&self) -> Self {
         // Preserve configured limits, reset everything else
         Self {

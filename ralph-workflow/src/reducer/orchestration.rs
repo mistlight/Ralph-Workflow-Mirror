@@ -4,7 +4,7 @@
 //! based on current pipeline state.
 
 use super::event::{CheckpointTrigger, PipelinePhase, RebasePhase};
-use super::state::{ArtifactType, CommitState, PipelineState, RebaseState};
+use super::state::{CommitState, PipelineState, RebaseState};
 
 use crate::agents::AgentRole;
 use crate::reducer::effect::{ContinuationContextData, Effect};
@@ -87,26 +87,6 @@ fn derive_continuation_effect(state: &PipelineState) -> Effect {
         _ => Effect::SaveCheckpoint {
             trigger: CheckpointTrigger::PhaseTransition,
         },
-    }
-}
-
-/// Derive the artifact type for the current phase.
-///
-/// Used to set the current_artifact in ContinuationState for
-/// proper retry prompt selection.
-pub fn artifact_for_phase(phase: PipelinePhase, in_fix_attempt: bool) -> Option<ArtifactType> {
-    match phase {
-        PipelinePhase::Planning => Some(ArtifactType::Plan),
-        PipelinePhase::Development => Some(ArtifactType::DevelopmentResult),
-        PipelinePhase::Review => {
-            if in_fix_attempt {
-                Some(ArtifactType::FixResult)
-            } else {
-                Some(ArtifactType::Issues)
-            }
-        }
-        PipelinePhase::CommitMessage => Some(ArtifactType::CommitMessage),
-        _ => None,
     }
 }
 

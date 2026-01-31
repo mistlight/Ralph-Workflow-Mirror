@@ -100,14 +100,27 @@ pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), Rendere
     // Use a simple regex to catch ANY remaining {{...}} patterns, including:
     // - Normal variables: {{VAR}}
     // - Variables with defaults: {{VAR|default="x"}}
-    // - Malformed patterns: {{VAR, {{{VAR}}}
+    // - Triple braces: {{{VAR}}} (will match {{VAR}} inside)
+    // - Malformed/unclosed patterns: {{VAR (detected separately below)
+    //
     // This is more robust than extract_variables() which parses template syntax
     // and may miss malformed patterns that indicate rendering failures.
-    let re = regex::Regex::new(r"\{\{[^}]*\}\}").expect("regex should be valid");
-    let unresolved: Vec<String> = re
+    let closed_re = regex::Regex::new(r"\{\{[^}]*\}\}").expect("regex should be valid");
+    let mut unresolved: Vec<String> = closed_re
         .find_iter(rendered)
         .map(|m| m.as_str().to_string())
         .collect();
+
+    // Also check for unclosed {{ patterns that never close.
+    // This catches malformed templates like "Hello {{VAR" where the closing }} is missing.
+    // We look for {{ that is NOT followed by a matching }} on the same line.
+    let unclosed_re = regex::Regex::new(r"\{\{[^}]*$").expect("regex should be valid");
+    for line in rendered.lines() {
+        // Check if line has {{ without matching }}
+        if let Some(m) = unclosed_re.find(line) {
+            unresolved.push(format!("{} (unclosed)", m.as_str()));
+        }
+    }
 
     if unresolved.is_empty() {
         Ok(())
@@ -751,5 +764,28 @@ Content here";
         let rendered = "Hello {{NAME|default='Guest'}}";
         let result = validate_no_unresolved_placeholders(rendered);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_placeholders_unclosed() {
+        // Unclosed patterns like "{{VAR" should also be detected
+        let rendered = "Hello {{NAME";
+        let result = validate_no_unresolved_placeholders(rendered);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.unresolved_placeholders.len(), 1);
+        assert!(err.unresolved_placeholders[0].contains("{{NAME"));
+        assert!(err.unresolved_placeholders[0].contains("unclosed"));
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_placeholders_multiline_unclosed() {
+        // Unclosed on one line, properly closed on next - both should be detected
+        let rendered = "Line 1 {{UNCLOSED\nLine 2 {{CLOSED}}";
+        let result = validate_no_unresolved_placeholders(rendered);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // Should have both: the closed pattern and the unclosed pattern
+        assert_eq!(err.unresolved_placeholders.len(), 2);
     }
 }
