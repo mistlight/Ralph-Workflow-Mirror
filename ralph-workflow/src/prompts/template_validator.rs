@@ -96,6 +96,18 @@ impl std::error::Error for RenderedPromptError {}
 ///
 /// * `Ok(())` if no unresolved placeholders are found
 /// * `Err(RenderedPromptError)` with the list of unresolved placeholders
+///
+/// # Trade-offs
+///
+/// This validation uses a simple regex that may have false positives if the
+/// rendered prompt legitimately contains literal `{{...}}` patterns, such as:
+/// - Documentation that explains template syntax
+/// - Code examples that demonstrate Handlebars/Jinja templates
+///
+/// This is an intentional trade-off: it's safer to reject rare legitimate content
+/// than to allow prompts with unresolved template variables to reach agents.
+/// If templates need to include literal `{{...}}` patterns as content, they
+/// should be escaped appropriately during rendering (e.g., using `\{{` or `{{{{`).
 pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), RenderedPromptError> {
     // Use a simple regex to catch ANY remaining {{...}} patterns, including:
     // - Normal variables: {{VAR}}

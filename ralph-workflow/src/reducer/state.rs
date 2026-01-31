@@ -361,6 +361,13 @@ impl ContinuationState {
     }
 
     /// Check if continuation attempts are exhausted.
+    ///
+    /// With the default `max_continue_count` of 3, the allowed attempts are 0, 1, 2
+    /// (3 total attempts). Attempt 3+ is considered exhausted.
+    ///
+    /// Note: `continuation_attempt` counts the number of times `trigger_continuation`
+    /// has been called, starting from 0 for the initial attempt. So if `max_continue_count`
+    /// is 3, we allow the initial attempt (0) plus 2 continuations (1, 2), totaling 3 attempts.
     pub fn continuations_exhausted(&self) -> bool {
         self.continuation_attempt >= self.max_continue_count
     }
@@ -408,6 +415,9 @@ impl ContinuationState {
     // =========================================================================
 
     /// Check if fix continuations are exhausted.
+    ///
+    /// Semantics match `continuations_exhausted()`: with default `max_fix_continue_count`
+    /// of 3, attempts 0, 1, 2 are allowed (3 total), attempt 3+ is exhausted.
     pub fn fix_continuations_exhausted(&self) -> bool {
         self.fix_continuation_attempt >= self.max_fix_continue_count
     }

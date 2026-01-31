@@ -248,9 +248,10 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                     commit: super::state::CommitState::NotStarted,
                     context_cleaned: false,
                     // Reset continuation state on successful completion
+                    // Use reset() to preserve configured limits (max_xsd_retry_count, etc.)
                     continuation: ContinuationState {
                         context_cleanup_pending: true,
-                        ..ContinuationState::new()
+                        ..state.continuation.reset()
                     },
                     ..state
                 }
@@ -457,12 +458,18 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             },
             continuation: if pass == state.reviewer_pass {
                 // If orchestration re-emits PassStarted for the same pass (e.g., retry after
-                // OutputValidationFailed), do not reset the invalid-output attempt counter.
+                // OutputValidationFailed), clear xsd_retry_pending to prevent infinite loops.
                 // The reducer owns retry accounting for determinism.
-                state.continuation
+                super::state::ContinuationState {
+                    xsd_retry_pending: false,
+                    ..state.continuation
+                }
             } else {
+                // New pass: reset retry state but preserve configured limits
                 super::state::ContinuationState {
                     invalid_output_attempts: 0,
+                    xsd_retry_count: 0,
+                    xsd_retry_pending: false,
                     ..state.continuation
                 }
             },
@@ -502,6 +509,10 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                 }
             }
         }
+        // Fix attempts use the Reviewer agent chain by design. The pipeline has three
+        // agent roles: Developer, Reviewer, and Commit. Fixes are performed by the same
+        // agent chain configured for review (there is no separate "Fixer" role), since
+        // the fix phase is part of the review workflow.
         ReviewEvent::FixAttemptStarted { .. } => PipelineState {
             agent_chain: super::state::AgentChainState::initial()
                 .with_max_cycles(state.agent_chain.max_cycles)
@@ -511,10 +522,13 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     state.agent_chain.max_backoff_ms,
                 )
                 .reset_for_role(AgentRole::Reviewer),
-            // Clear fix_continue_pending when fix attempt starts to prevent infinite loops
+            // Clear pending flags when fix attempt starts to prevent infinite loops.
+            // xsd_retry_pending is cleared to ensure the XSD retry effect doesn't re-trigger
+            // after the fix attempt starts a fresh agent invocation.
             continuation: super::state::ContinuationState {
                 invalid_output_attempts: 0,
                 fix_continue_pending: false,
+                xsd_retry_pending: false,
                 ..state.continuation
             },
             ..state
@@ -635,13 +649,14 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             total_attempts: _,
         } => {
             // Fix continuation succeeded - transition to CommitMessage
+            // Use reset() instead of new() to preserve configured limits
             PipelineState {
                 phase: super::event::PipelinePhase::CommitMessage,
                 previous_phase: Some(super::event::PipelinePhase::Review),
                 reviewer_pass: pass,
                 review_issues_found: false,
                 commit: super::state::CommitState::NotStarted,
-                continuation: ContinuationState::new(),
+                continuation: state.continuation.reset(),
                 ..state
             }
         }
@@ -653,12 +668,13 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
         } => {
             // Fix continuation budget exhausted - proceed to commit with current state
             // Policy: We accept partial fixes rather than blocking the pipeline
+            // Use reset() instead of new() to preserve configured limits
             PipelineState {
                 phase: super::event::PipelinePhase::CommitMessage,
                 previous_phase: Some(super::event::PipelinePhase::Review),
                 reviewer_pass: pass,
                 commit: super::state::CommitState::NotStarted,
-                continuation: ContinuationState::new(),
+                continuation: state.continuation.reset(),
                 ..state
             }
         }
@@ -877,13 +893,26 @@ fn reduce_rebase_event(state: PipelineState, event: RebaseEvent) -> PipelineStat
 /// - MessageValidationFailed: Retry or advance agent
 fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineState {
     match event {
-        CommitEvent::GenerationStarted => PipelineState {
-            commit: CommitState::Generating {
-                attempt: 1,
-                max_attempts: super::state::MAX_VALIDATION_RETRY_ATTEMPTS,
-            },
-            ..state
-        },
+        CommitEvent::GenerationStarted => {
+            // Clear xsd_retry_pending when generation starts, similar to PlanningEvent::GenerationStarted.
+            // This prevents infinite loops if the handler somehow fails to emit a validation event
+            // after the XSD retry effect runs.
+            PipelineState {
+                commit: CommitState::Generating {
+                    attempt: 1,
+                    max_attempts: super::state::MAX_VALIDATION_RETRY_ATTEMPTS,
+                },
+                continuation: if state.continuation.xsd_retry_pending {
+                    super::state::ContinuationState {
+                        xsd_retry_pending: false,
+                        ..state.continuation
+                    }
+                } else {
+                    state.continuation
+                },
+                ..state
+            }
+        }
         CommitEvent::MessageGenerated { message, .. } => PipelineState {
             commit: CommitState::Generated { message },
             ..state
