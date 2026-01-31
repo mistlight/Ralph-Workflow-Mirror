@@ -475,3 +475,128 @@ fn test_commit_skipped_no_previous_phase_goes_to_final_validation() {
     // Should go to FinalValidation since no previous_phase indicates final commit
     assert_eq!(new_state.phase, PipelinePhase::FinalValidation);
 }
+
+// ============================================================================
+// Commit Agent Chain Fallback Tests
+// ============================================================================
+// Tests verifying commit agent fallback to reviewer chain when no commit agents
+// are configured. This is a critical behavior documented in agent-compatibility.md.
+
+#[test]
+fn test_commit_agent_chain_initialized_preserves_role() {
+    // When commit agent chain is initialized, it should set the role to Commit
+    let state = create_test_state();
+    let agents = vec!["reviewer1".to_string()]; // Using reviewer as fallback
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::agent_chain_initialized(
+            AgentRole::Commit,
+            agents.clone(),
+            3,
+            1000,
+            2.0,
+            60000,
+        ),
+    );
+
+    assert_eq!(new_state.agent_chain.agents, agents);
+    assert_eq!(new_state.agent_chain.current_role, AgentRole::Commit);
+}
+
+#[test]
+fn test_commit_agent_chain_fallback_works_with_reviewer_agents() {
+    // When commit agent chain uses reviewer agents as fallback,
+    // all fallback behavior should still work correctly
+    let base_state = create_test_state();
+    let state = PipelineState {
+        agent_chain: base_state.agent_chain.with_agents(
+            vec!["reviewer1".to_string(), "reviewer2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Commit, // Using Commit role with reviewer agents
+        ),
+        commit: CommitState::Generating {
+            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
+            max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS,
+        },
+        ..base_state
+    };
+
+    // Verify initial state
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+    assert_eq!(state.agent_chain.current_role, AgentRole::Commit);
+
+    // Exhaust first agent, should switch to second
+    let new_state = reduce(
+        state,
+        PipelineEvent::commit_message_validation_failed(
+            "Invalid format".to_string(),
+            MAX_VALIDATION_RETRY_ATTEMPTS,
+        ),
+    );
+
+    assert_eq!(new_state.agent_chain.current_agent_index, 1);
+    assert!(matches!(
+        new_state.commit,
+        CommitState::Generating { attempt: 1, .. }
+    ));
+}
+
+#[test]
+fn test_commit_agent_chain_empty_gives_up_immediately() {
+    // When no commit agents are configured and handler returns empty chain,
+    // the commit should transition to NotStarted
+    let base_state = create_test_state();
+    let state = PipelineState {
+        agent_chain: base_state.agent_chain.with_agents(
+            vec![], // Empty agent chain
+            vec![],
+            AgentRole::Commit,
+        ),
+        phase: PipelinePhase::CommitMessage,
+        commit: CommitState::Generating {
+            attempt: 1,
+            max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS,
+        },
+        ..base_state
+    };
+
+    // With empty chain, validation failure should give up
+    let new_state = reduce(
+        state,
+        PipelineEvent::commit_message_validation_failed(
+            "Invalid format".to_string(),
+            MAX_VALIDATION_RETRY_ATTEMPTS,
+        ),
+    );
+
+    // Should give up since no agents available
+    assert!(matches!(new_state.commit, CommitState::NotStarted));
+}
+
+#[test]
+fn test_commit_agent_role_preserved_across_retries() {
+    // Verify that the agent chain role stays as Commit even when using reviewer agents
+    let base_state = create_test_state();
+    let mut state = PipelineState {
+        agent_chain: base_state.agent_chain.with_agents(
+            vec!["reviewer1".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
+        commit: CommitState::Generating {
+            attempt: 1,
+            max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS,
+        },
+        ..base_state
+    };
+
+    // Simulate multiple validation failures
+    for i in 1..MAX_VALIDATION_RETRY_ATTEMPTS {
+        state = reduce(
+            state,
+            PipelineEvent::commit_message_validation_failed("Invalid".to_string(), i),
+        );
+        assert_eq!(state.agent_chain.current_role, AgentRole::Commit);
+    }
+}

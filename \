@@ -1,0 +1,5 @@
+# PROMPT
+
+* Analyze the commit process, and the CLI command --generate-commit-msg and see if commit chain is properly execited with the commit agent. Remember if no commit agent is speified it defaults to reviewer agent chain. Ensure these behavior is documented.
+* Ensure Agent fallback works flawlessly and it is throughly tested
+* XML retry logic doesn't seem to work for some reason, especially for PLAN.md, it should be sending the retry template to the same session. Ensure this works within the reducer framework and retries all emit a RETRY event

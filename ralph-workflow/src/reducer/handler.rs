@@ -296,8 +296,10 @@ impl MainEffectHandler {
             .map(|s| s.as_str())
             .unwrap_or(ctx.developer_agent);
 
+        // Pass continuation state so planning can use XSD retry prompt when appropriate
+        let continuation_state = self.state.continuation.clone();
         match with_overridden_developer_agent(ctx, effective_agent, |inner_ctx| {
-            development::run_planning_step(inner_ctx, iteration)
+            development::run_planning_step(inner_ctx, iteration, &continuation_state)
         }) {
             Ok(_) => {
                 // Validate plan was created

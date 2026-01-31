@@ -304,6 +304,74 @@ json_parser = "gemini"
 - May have issues with complex review guidelines
 - Consider using `json_parser = "generic"` if issues arise
 
+## Agent Chain and Fallback Behavior
+
+Ralph uses an **agent chain** system for fault-tolerant execution. When an agent fails (due to XSD validation errors, authentication failures, or other issues), Ralph automatically falls back to the next agent in the chain.
+
+### Agent Chain Configuration
+
+Configure fallback chains per role in `~/.config/ralph-workflow.toml`:
+
+```toml
+[agent_chain]
+developer = ["claude", "codex", "aider"]  # Primary -> Secondary -> Tertiary
+reviewer = ["claude", "codex"]
+commit = []  # Empty = use reviewer chain as fallback
+```
+
+### Fallback Behavior by Role
+
+| Role | Chain Config | Fallback If Empty |
+|------|--------------|-------------------|
+| **Developer** | `agent_chain.developer` | Uses `--developer-agent` value |
+| **Reviewer** | `agent_chain.reviewer` | Uses `--reviewer-agent` value |
+| **Commit** | `agent_chain.commit` | Uses reviewer chain, then reviewer agent |
+
+### Commit Agent Fallback (Important)
+
+When generating commit messages (`--generate-commit-msg`), Ralph uses this fallback order:
+
+1. **First**: Check `agent_chain.commit` for configured commit agents
+2. **Second**: If empty, use `agent_chain.reviewer` (reviewer chain)
+3. **Third**: If both empty, use the context's reviewer agent
+
+This design reflects that commit message generation is semantically similar to review tasks, so reviewer agents are natural fallbacks.
+
+**Example**: With no commit agents configured:
+```toml
+[agent_chain]
+developer = ["claude", "codex"]
+reviewer = ["codex", "aider"]  # Will be used for commit if commit is empty
+commit = []
+```
+
+Running `ralph --generate-commit-msg` will use: codex -> aider (from reviewer chain).
+
+### XSD Retry Logic
+
+When an agent produces invalid XML output, Ralph uses XSD retry logic:
+
+1. **Within same session**: Re-prompts the same agent with the XSD error and last output
+2. **After MAX_PLAN_INVALID_OUTPUT_RERUNS (2)**: Switches to next agent in chain
+3. **After MAX_VALIDATION_RETRY_ATTEMPTS (10)**: Escalates to agent switch
+
+The XSD retry prompt includes:
+- The XSD schema for reference
+- The previous invalid output
+- The specific validation error
+
+### Backoff Policy
+
+Ralph applies exponential backoff between retry cycles:
+
+```toml
+[agent_chain.fallback]
+retry_delay_ms = 1000       # Initial delay (1 second)
+backoff_multiplier = 2.0    # Double each cycle
+max_backoff_ms = 30000      # Cap at 30 seconds
+max_cycles = 3              # Maximum retry cycles
+```
+
 ## Configuration Recommendations
 
 ### Per-Agent Configuration

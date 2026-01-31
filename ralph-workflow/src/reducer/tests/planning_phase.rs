@@ -34,3 +34,135 @@ fn test_plan_generation_completed_transitions_to_development() {
 
     assert_eq!(new_state.phase, PipelinePhase::Development);
 }
+
+// ============================================================================
+// XSD Retry Tests
+// ============================================================================
+
+#[test]
+fn test_planning_output_validation_failed_increments_attempt() {
+    let state = create_state_in_phase(PipelinePhase::Planning);
+    assert_eq!(state.continuation.invalid_output_attempts, 0);
+
+    // First validation failure should increment to 1
+    let new_state = reduce(
+        state,
+        PipelineEvent::planning_output_validation_failed(1, 0),
+    );
+
+    assert_eq!(new_state.continuation.invalid_output_attempts, 1);
+    assert_eq!(new_state.phase, PipelinePhase::Planning);
+    assert_eq!(new_state.iteration, 1);
+}
+
+#[test]
+fn test_planning_output_validation_failed_stays_in_planning_phase() {
+    let mut state = create_state_in_phase(PipelinePhase::Planning);
+    state.iteration = 1;
+
+    // Validation failure should keep us in Planning phase
+    let new_state = reduce(
+        state,
+        PipelineEvent::planning_output_validation_failed(1, 0),
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::Planning);
+}
+
+#[test]
+fn test_planning_output_validation_failed_switches_agent_at_max_attempts() {
+    use crate::reducer::state::MAX_PLAN_INVALID_OUTPUT_RERUNS;
+
+    let mut state = create_state_in_phase(PipelinePhase::Planning);
+    state.iteration = 1;
+
+    // Initialize agent chain with multiple agents
+    state.agent_chain.agents = vec!["agent1".to_string(), "agent2".to_string()];
+    state.agent_chain.current_agent_index = 0;
+
+    // Attempt at MAX should trigger agent switch
+    let new_state = reduce(
+        state,
+        PipelineEvent::planning_output_validation_failed(1, MAX_PLAN_INVALID_OUTPUT_RERUNS),
+    );
+
+    // Agent chain should have moved to next agent
+    assert_eq!(new_state.agent_chain.current_agent_index, 1);
+    // Attempts should be reset
+    assert_eq!(new_state.continuation.invalid_output_attempts, 0);
+    // Still in Planning phase
+    assert_eq!(new_state.phase, PipelinePhase::Planning);
+}
+
+#[test]
+fn test_planning_output_validation_failed_preserves_iteration() {
+    let mut state = create_state_in_phase(PipelinePhase::Planning);
+    state.iteration = 3;
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::planning_output_validation_failed(3, 1),
+    );
+
+    assert_eq!(new_state.iteration, 3);
+}
+
+#[test]
+fn test_planning_output_validation_failed_multiple_attempts_before_switch() {
+    use crate::reducer::state::MAX_PLAN_INVALID_OUTPUT_RERUNS;
+
+    let mut state = create_state_in_phase(PipelinePhase::Planning);
+    state.agent_chain.agents = vec!["agent1".to_string(), "agent2".to_string()];
+    state.agent_chain.current_agent_index = 0;
+
+    // First failure (attempt 0) should not switch agent
+    let state = reduce(
+        state,
+        PipelineEvent::planning_output_validation_failed(1, 0),
+    );
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+    assert_eq!(state.continuation.invalid_output_attempts, 1);
+
+    // Second failure (attempt 1) should not switch agent if MAX is 2
+    if MAX_PLAN_INVALID_OUTPUT_RERUNS > 1 {
+        let state = reduce(
+            state,
+            PipelineEvent::planning_output_validation_failed(1, 1),
+        );
+        assert_eq!(state.agent_chain.current_agent_index, 0);
+        assert_eq!(state.continuation.invalid_output_attempts, 2);
+    }
+}
+
+#[test]
+fn test_planning_phase_started_resets_invalid_output_attempts() {
+    let mut state = create_state_in_phase(PipelinePhase::Development);
+    state.continuation.invalid_output_attempts = 3;
+
+    let new_state = reduce(state, PipelineEvent::planning_phase_started());
+
+    assert_eq!(new_state.continuation.invalid_output_attempts, 0);
+    assert_eq!(new_state.phase, PipelinePhase::Planning);
+}
+
+#[test]
+fn test_planning_phase_completed_resets_invalid_output_attempts() {
+    let mut state = create_state_in_phase(PipelinePhase::Planning);
+    state.continuation.invalid_output_attempts = 2;
+
+    let new_state = reduce(state, PipelineEvent::planning_phase_completed());
+
+    assert_eq!(new_state.continuation.invalid_output_attempts, 0);
+    assert_eq!(new_state.phase, PipelinePhase::Development);
+}
+
+#[test]
+fn test_plan_generation_completed_valid_resets_invalid_output_attempts() {
+    let mut state = create_state_in_phase(PipelinePhase::Planning);
+    state.continuation.invalid_output_attempts = 1;
+
+    let new_state = reduce(state, PipelineEvent::plan_generation_completed(1, true));
+
+    assert_eq!(new_state.continuation.invalid_output_attempts, 0);
+    assert_eq!(new_state.phase, PipelinePhase::Development);
+}

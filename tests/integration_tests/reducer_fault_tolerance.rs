@@ -689,3 +689,188 @@ fn test_xsd_retry_state_independent_of_invocation_failures() {
         );
     });
 }
+
+// ============================================================================
+// PLANNING PHASE XSD RETRY TESTS
+// ============================================================================
+
+/// Test that planning XSD retry decisions come from reducer state.
+///
+/// The invalid_output_attempts counter in ContinuationState must be the
+/// single source of truth for planning XSD retry decisions.
+#[test]
+fn test_planning_xsd_retry_decisions_from_reducer_state() {
+    use ralph_workflow::reducer::state::{PipelineState, MAX_PLAN_INVALID_OUTPUT_RERUNS};
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Planning;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["agent-1".to_string(), "agent-2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+
+        // Verify counter starts at 0
+        assert_eq!(state.continuation.invalid_output_attempts, 0);
+
+        // Process validation failures up to threshold
+        for i in 0..MAX_PLAN_INVALID_OUTPUT_RERUNS {
+            state = reduce(
+                state,
+                PipelineEvent::planning_output_validation_failed(0, i),
+            );
+            assert_eq!(
+                state.continuation.invalid_output_attempts,
+                i + 1,
+                "Counter should increment on each failure"
+            );
+            // Agent should NOT change until threshold exceeded
+            assert_eq!(
+                state.agent_chain.current_agent(),
+                Some(&"agent-1".to_string()),
+                "Agent should not change until threshold exceeded"
+            );
+        }
+
+        // One more failure should trigger agent advancement
+        state = reduce(
+            state,
+            PipelineEvent::planning_output_validation_failed(0, MAX_PLAN_INVALID_OUTPUT_RERUNS),
+        );
+
+        // Counter should reset after agent switch
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 0,
+            "Counter should reset after agent advancement"
+        );
+
+        // Agent should have advanced
+        assert_eq!(
+            state.agent_chain.current_agent(),
+            Some(&"agent-2".to_string()),
+            "Agent should advance after max retries"
+        );
+    });
+}
+
+/// Test that planning XSD retry is independent of development XSD retry.
+///
+/// When planning phase completes and development starts, the retry counter
+/// should be reset.
+#[test]
+fn test_planning_xsd_retry_resets_on_phase_transition() {
+    use ralph_workflow::reducer::state::PipelineState;
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Planning;
+        state.continuation.invalid_output_attempts = 2;
+
+        // Plan generation completes successfully
+        state = reduce(state, PipelineEvent::plan_generation_completed(1, true));
+
+        // Counter should reset on successful completion
+        assert_eq!(
+            state.continuation.invalid_output_attempts, 0,
+            "Counter should reset after successful plan generation"
+        );
+        assert_eq!(
+            state.phase,
+            PipelinePhase::Development,
+            "Should transition to Development"
+        );
+    });
+}
+
+/// Test planning XSD retry state persists across multiple attempts.
+///
+/// This verifies that the continuation state correctly tracks XSD retry
+/// attempts within the planning phase.
+#[test]
+fn test_planning_xsd_retry_state_persistence() {
+    use ralph_workflow::reducer::state::PipelineState;
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        let mut state = PipelineState::initial(3, 1);
+        state.phase = PipelinePhase::Planning;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["agent-1".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+
+        // First failure
+        state = reduce(
+            state,
+            PipelineEvent::planning_output_validation_failed(1, 0),
+        );
+        assert_eq!(state.continuation.invalid_output_attempts, 1);
+        assert_eq!(state.iteration, 1);
+
+        // Second failure at same iteration
+        state = reduce(
+            state,
+            PipelineEvent::planning_output_validation_failed(1, 1),
+        );
+        assert_eq!(state.continuation.invalid_output_attempts, 2);
+        assert_eq!(state.iteration, 1);
+
+        // State remains in Planning phase
+        assert_eq!(state.phase, PipelinePhase::Planning);
+    });
+}
+
+// ============================================================================
+// COMMIT AGENT FALLBACK TO REVIEWER CHAIN TESTS
+// ============================================================================
+
+/// Test that commit agent chain can use reviewer agents when no commit agents configured.
+///
+/// This is the documented fallback behavior: when agent_chain.commit is empty,
+/// the system falls back to using agent_chain.reviewer agents.
+#[test]
+fn test_commit_phase_uses_reviewer_chain_fallback() {
+    use ralph_workflow::reducer::state::{
+        CommitState, PipelineState, MAX_VALIDATION_RETRY_ATTEMPTS,
+    };
+    use ralph_workflow::reducer::state_reduction::reduce;
+
+    with_default_timeout(|| {
+        // Set up state with reviewer agents in commit role (simulating fallback)
+        let mut state = PipelineState::initial(1, 1);
+        state.phase = PipelinePhase::CommitMessage;
+        state.agent_chain = state.agent_chain.with_agents(
+            vec!["reviewer-claude".to_string(), "reviewer-codex".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Commit, // Commit role with reviewer agents
+        );
+        state.commit = CommitState::Generating {
+            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
+            max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS,
+        };
+
+        // Validation failure should still trigger proper fallback
+        state = reduce(
+            state,
+            PipelineEvent::commit_message_validation_failed(
+                "Invalid format".to_string(),
+                MAX_VALIDATION_RETRY_ATTEMPTS,
+            ),
+        );
+
+        // Should advance to next agent
+        assert_eq!(
+            state.agent_chain.current_agent_index, 1,
+            "Should advance to next reviewer agent"
+        );
+        assert_eq!(
+            state.agent_chain.current_role,
+            AgentRole::Commit,
+            "Role should remain Commit"
+        );
+    });
+}

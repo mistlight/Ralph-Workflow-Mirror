@@ -18,7 +18,7 @@ use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
 use crate::prompts::{
     get_stored_or_generate_prompt, prompt_developer_iteration_continuation_xml,
     prompt_developer_iteration_xml_with_context, prompt_developer_iteration_xsd_retry_with_context,
-    prompt_planning_xml_with_context, ContextLevel,
+    prompt_planning_xml_with_context, prompt_planning_xsd_retry_with_context, ContextLevel,
 };
 use crate::reducer::state::{ContinuationState, DevelopmentStatus};
 use std::path::Path;
@@ -236,10 +236,21 @@ pub fn run_development_attempt(
 ///
 /// The orchestrator ALWAYS extracts and writes PLAN.md from agent XML output.
 /// Uses XSD validation with retry loop to ensure valid XML format.
+///
+/// # XSD Retry Behavior
+///
+/// When `continuation_state.invalid_output_attempts > 0`, this function uses
+/// the XSD retry prompt which includes:
+/// - The XSD schema for reference
+/// - The previous invalid output (read from `.agent/tmp/plan.xml`)
+/// - The validation error context
+///
+/// This allows the same agent session to retry with context about what went wrong.
 fn run_planning_step_with_agent(
     ctx: &mut PhaseContext<'_>,
     iteration: u32,
     agent: &str,
+    continuation_state: &ContinuationState,
 ) -> anyhow::Result<()> {
     let start_time = Instant::now();
     if ctx.config.features.checkpoint_enabled {
@@ -275,27 +286,51 @@ fn run_planning_step_with_agent(
     )?;
 
     let prompt_md_content = ctx.workspace.read(Path::new("PROMPT.md")).ok();
-
-    let prompt_key = format!("planning_{}", iteration);
     let prompt_md_str = prompt_md_content.as_deref().unwrap_or("");
 
-    let (plan_prompt, was_replayed) =
-        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-            prompt_planning_xml_with_context(
-                ctx.template_context,
-                Some(prompt_md_str),
-                ctx.workspace,
-            )
-        });
-
-    if !was_replayed {
-        ctx.capture_prompt(&prompt_key, &plan_prompt);
-    } else {
+    // If this is an XSD retry attempt, use the retry prompt with error context
+    let plan_prompt = if continuation_state.invalid_output_attempts > 0 {
         ctx.logger.info(&format!(
-            "Using stored prompt from checkpoint for determinism: {}",
-            prompt_key
+            "Planning XSD retry attempt {} - using retry prompt with error context",
+            continuation_state.invalid_output_attempts
         ));
-    }
+
+        // Read the last invalid output for context
+        let last_output = ctx
+            .workspace
+            .read(Path::new(xml_paths::PLAN_XML))
+            .unwrap_or_default();
+
+        prompt_planning_xsd_retry_with_context(
+            ctx.template_context,
+            prompt_md_str,
+            "Previous XML output failed XSD validation. Please provide valid XML conforming to the schema.",
+            &last_output,
+            ctx.workspace,
+        )
+    } else {
+        let prompt_key = format!("planning_{}", iteration);
+
+        let (prompt, was_replayed) =
+            get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                prompt_planning_xml_with_context(
+                    ctx.template_context,
+                    Some(prompt_md_str),
+                    ctx.workspace,
+                )
+            });
+
+        if !was_replayed {
+            ctx.capture_prompt(&prompt_key, &prompt);
+        } else {
+            ctx.logger.info(&format!(
+                "Using stored prompt from checkpoint for determinism: {}",
+                prompt_key
+            ));
+        }
+
+        prompt
+    };
 
     let plan_path = Path::new(".agent/PLAN.md");
     if let Some(parent) = plan_path.parent() {
@@ -373,8 +408,18 @@ fn run_planning_step_with_agent(
 /// Run the planning step to create PLAN.md.
 ///
 /// The orchestrator ALWAYS extracts and writes PLAN.md from agent XML output.
-pub fn run_planning_step(ctx: &mut PhaseContext<'_>, iteration: u32) -> anyhow::Result<()> {
-    run_planning_step_with_agent(ctx, iteration, ctx.developer_agent)
+///
+/// # Parameters
+///
+/// * `ctx` - Phase context containing workspace, config, and agent information
+/// * `iteration` - Current iteration number
+/// * `continuation_state` - State tracking XSD retry attempts
+pub fn run_planning_step(
+    ctx: &mut PhaseContext<'_>,
+    iteration: u32,
+    continuation_state: &ContinuationState,
+) -> anyhow::Result<()> {
+    run_planning_step_with_agent(ctx, iteration, ctx.developer_agent, continuation_state)
 }
 
 /// Format plan elements as markdown for PLAN.md.
