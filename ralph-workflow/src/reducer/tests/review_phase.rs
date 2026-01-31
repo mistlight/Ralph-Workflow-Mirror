@@ -550,14 +550,14 @@ fn test_review_uses_agent_from_state_chain_not_context() {
     );
     assert_eq!(state.agent_chain.current_agent_index, 0);
 
-    // Orchestration should emit RunReviewPass (since chain is populated)
+    // Orchestration should begin the single-task review chain (since chain is populated)
     let effect = determine_next_effect(&state);
     assert!(
         matches!(
             effect,
-            crate::reducer::effect::Effect::RunReviewPass { pass: 0 }
+            crate::reducer::effect::Effect::PrepareReviewContext { pass: 0 }
         ),
-        "Orchestration should emit RunReviewPass, got {:?}",
+        "Orchestration should emit PrepareReviewContext, got {:?}",
         effect
     );
 }
@@ -796,14 +796,14 @@ fn test_full_pipeline_flow_uses_correct_reviewer_agent() {
         crate::agents::AgentRole::Reviewer
     );
 
-    // Now orchestration should emit RunReviewPass
+    // Now orchestration should emit PrepareReviewContext
     let effect = determine_next_effect(&state);
     assert!(
         matches!(
             effect,
-            crate::reducer::effect::Effect::RunReviewPass { pass: 0 }
+            crate::reducer::effect::Effect::PrepareReviewContext { pass: 0 }
         ),
-        "Should emit RunReviewPass, got {:?}",
+        "Should emit PrepareReviewContext, got {:?}",
         effect
     );
 }
@@ -870,15 +870,43 @@ fn test_event_loop_state_consistency_for_review_agent() {
     // In real code, handler.state would be updated here
     let handler_state = state.clone();
 
-    // === ITERATION N+1: RunReviewPass ===
+    // === ITERATION N+1: PrepareReviewContext ===
     // Orchestration determines next effect based on updated state
     let effect = determine_next_effect(&state);
     assert!(
         matches!(
             effect,
-            crate::reducer::effect::Effect::RunReviewPass { pass: 0 }
+            crate::reducer::effect::Effect::PrepareReviewContext { pass: 0 }
         ),
-        "Expected RunReviewPass, got {:?}",
+        "Expected PrepareReviewContext, got {:?}",
+        effect
+    );
+
+    // Simulate context prepared
+    state = reduce(state, PipelineEvent::review_context_prepared(0));
+
+    // Next: PrepareReviewPrompt
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::PrepareReviewPrompt { pass: 0 }
+        ),
+        "Expected PrepareReviewPrompt, got {:?}",
+        effect
+    );
+
+    // Simulate prompt prepared
+    state = reduce(state, PipelineEvent::review_prompt_prepared(0));
+
+    // Next: InvokeReviewAgent
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::InvokeReviewAgent { pass: 0 }
+        ),
+        "Expected InvokeReviewAgent, got {:?}",
         effect
     );
 
@@ -1037,14 +1065,27 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
         crate::agents::AgentRole::Reviewer
     );
 
-    // === STEP 6: Orchestration requests review pass ===
+    // === STEP 6: Orchestration begins single-task review chain ===
     let effect = determine_next_effect(&state);
     assert!(
         matches!(
             effect,
-            crate::reducer::effect::Effect::RunReviewPass { pass: 0 }
+            crate::reducer::effect::Effect::PrepareReviewContext { pass: 0 }
         ),
-        "Should request review pass, got {:?}",
+        "Should request PrepareReviewContext, got {:?}",
+        effect
+    );
+
+    // Simulate context + prompt prepared, then orchestration should invoke agent
+    state = reduce(state, PipelineEvent::review_context_prepared(0));
+    state = reduce(state, PipelineEvent::review_prompt_prepared(0));
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::InvokeReviewAgent { pass: 0 }
+        ),
+        "Should request InvokeReviewAgent, got {:?}",
         effect
     );
 

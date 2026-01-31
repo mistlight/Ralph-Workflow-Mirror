@@ -327,8 +327,60 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 
             // Otherwise, run next review pass or complete phase
             if state.reviewer_pass < state.total_reviewer_passes {
-                Effect::RunReviewPass {
-                    pass: state.reviewer_pass,
+                if state.review_context_prepared_pass != Some(state.reviewer_pass) {
+                    return Effect::PrepareReviewContext {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.review_prompt_prepared_pass != Some(state.reviewer_pass) {
+                    return Effect::PrepareReviewPrompt {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.review_agent_invoked_pass != Some(state.reviewer_pass) {
+                    return Effect::InvokeReviewAgent {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.review_issues_xml_extracted_pass != Some(state.reviewer_pass) {
+                    return Effect::ExtractReviewIssuesXml {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                let review_validated_is_for_pass = state
+                    .review_validated_outcome
+                    .as_ref()
+                    .is_some_and(|o| o.pass == state.reviewer_pass);
+                if !review_validated_is_for_pass {
+                    return Effect::ValidateReviewIssuesXml {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.review_issues_markdown_written_pass != Some(state.reviewer_pass) {
+                    return Effect::WriteIssuesMarkdown {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.review_issues_xml_archived_pass != Some(state.reviewer_pass) {
+                    return Effect::ArchiveReviewIssuesXml {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                let outcome = state
+                    .review_validated_outcome
+                    .as_ref()
+                    .expect("validated outcome should exist before applying review outcome");
+                Effect::ApplyReviewOutcome {
+                    pass: outcome.pass,
+                    issues_found: outcome.issues_found,
+                    clean_no_issues: outcome.clean_no_issues,
                 }
             } else {
                 Effect::SaveCheckpoint {
@@ -774,7 +826,7 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::RunReviewPass { .. }));
+        assert!(matches!(effect, Effect::PrepareReviewContext { pass: 1 }));
     }
 
     #[test]

@@ -221,6 +221,45 @@ pub enum ReviewEvent {
         /// The pass number starting.
         pass: u32,
     },
+
+    /// Review context prepared for a pass.
+    ///
+    /// Emitted after `Effect::PrepareReviewContext` completes.
+    ContextPrepared {
+        /// The pass number the context was prepared for.
+        pass: u32,
+    },
+
+    /// Review prompt prepared for a pass.
+    ///
+    /// Emitted after `Effect::PrepareReviewPrompt` completes.
+    PromptPrepared { pass: u32 },
+
+    /// Reviewer agent was invoked for a pass.
+    ///
+    /// Emitted after `Effect::InvokeReviewAgent` completes.
+    AgentInvoked { pass: u32 },
+
+    /// Review issues XML exists and was read successfully for the pass.
+    ///
+    /// Emitted after `Effect::ExtractReviewIssuesXml` completes.
+    IssuesXmlExtracted { pass: u32 },
+
+    /// Review issues XML validated for a pass.
+    ///
+    /// This event is an observation: the XML was valid and the handler determined
+    /// whether issues were found and whether this was an explicit clean-no-issues output.
+    IssuesXmlValidated {
+        pass: u32,
+        issues_found: bool,
+        clean_no_issues: bool,
+    },
+
+    /// ISSUES.md was written for a pass.
+    IssuesMarkdownWritten { pass: u32 },
+
+    /// Review issues XML archived for a pass.
+    IssuesXmlArchived { pass: u32 },
     /// A review pass completed with results.
     Completed {
         /// The pass number that completed.
@@ -836,6 +875,47 @@ impl PipelineEvent {
     /// Create a ReviewPassStarted event.
     pub fn review_pass_started(pass: u32) -> Self {
         Self::Review(ReviewEvent::PassStarted { pass })
+    }
+
+    /// Create a ReviewContextPrepared event.
+    pub fn review_context_prepared(pass: u32) -> Self {
+        Self::Review(ReviewEvent::ContextPrepared { pass })
+    }
+
+    /// Create a ReviewPromptPrepared event.
+    pub fn review_prompt_prepared(pass: u32) -> Self {
+        Self::Review(ReviewEvent::PromptPrepared { pass })
+    }
+
+    /// Create a ReviewAgentInvoked event.
+    pub fn review_agent_invoked(pass: u32) -> Self {
+        Self::Review(ReviewEvent::AgentInvoked { pass })
+    }
+
+    /// Create a ReviewIssuesXmlExtracted event.
+    pub fn review_issues_xml_extracted(pass: u32) -> Self {
+        Self::Review(ReviewEvent::IssuesXmlExtracted { pass })
+    }
+
+    /// Create a ReviewIssuesXmlValidated event.
+    pub fn review_issues_xml_validated(
+        pass: u32,
+        issues_found: bool,
+        clean_no_issues: bool,
+    ) -> Self {
+        Self::Review(ReviewEvent::IssuesXmlValidated {
+            pass,
+            issues_found,
+            clean_no_issues,
+        })
+    }
+
+    pub fn review_issues_markdown_written(pass: u32) -> Self {
+        Self::Review(ReviewEvent::IssuesMarkdownWritten { pass })
+    }
+
+    pub fn review_issues_xml_archived(pass: u32) -> Self {
+        Self::Review(ReviewEvent::IssuesXmlArchived { pass })
     }
 
     /// Create a ReviewCompleted event.

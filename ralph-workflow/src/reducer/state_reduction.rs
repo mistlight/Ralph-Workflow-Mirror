@@ -449,6 +449,13 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
         ReviewEvent::PassStarted { pass } => PipelineState {
             reviewer_pass: pass,
             review_issues_found: false,
+            review_context_prepared_pass: None,
+            review_prompt_prepared_pass: None,
+            review_agent_invoked_pass: None,
+            review_issues_xml_extracted_pass: None,
+            review_validated_outcome: None,
+            review_issues_markdown_written_pass: None,
+            review_issues_xml_archived_pass: None,
             agent_chain: if pass == state.reviewer_pass {
                 // If orchestration re-emits PassStarted for the same pass (e.g., retry after
                 // OutputValidationFailed), preserve the agent selection so fallback is effective.
@@ -475,6 +482,49 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             },
             ..state
         },
+
+        ReviewEvent::ContextPrepared { pass } => PipelineState {
+            review_context_prepared_pass: Some(pass),
+            ..state
+        },
+
+        ReviewEvent::PromptPrepared { pass } => PipelineState {
+            review_prompt_prepared_pass: Some(pass),
+            ..state
+        },
+
+        ReviewEvent::AgentInvoked { pass } => PipelineState {
+            review_agent_invoked_pass: Some(pass),
+            ..state
+        },
+
+        ReviewEvent::IssuesXmlExtracted { pass } => PipelineState {
+            review_issues_xml_extracted_pass: Some(pass),
+            ..state
+        },
+
+        ReviewEvent::IssuesXmlValidated {
+            pass,
+            issues_found,
+            clean_no_issues,
+        } => PipelineState {
+            review_validated_outcome: Some(super::state::ReviewValidatedOutcome {
+                pass,
+                issues_found,
+                clean_no_issues,
+            }),
+            ..state
+        },
+
+        ReviewEvent::IssuesMarkdownWritten { pass } => PipelineState {
+            review_issues_markdown_written_pass: Some(pass),
+            ..state
+        },
+
+        ReviewEvent::IssuesXmlArchived { pass } => PipelineState {
+            review_issues_xml_archived_pass: Some(pass),
+            ..state
+        },
         ReviewEvent::Completed { pass, issues_found } => {
             let next_pass = if issues_found { pass } else { pass + 1 };
             let next_phase = if !issues_found && next_pass >= state.total_reviewer_passes {
@@ -489,9 +539,18 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     previous_phase: None,
                     reviewer_pass: next_pass,
                     review_issues_found: issues_found,
+                    review_context_prepared_pass: None,
+                    review_prompt_prepared_pass: None,
+                    review_agent_invoked_pass: None,
+                    review_issues_xml_extracted_pass: None,
+                    review_validated_outcome: None,
+                    review_issues_markdown_written_pass: None,
+                    review_issues_xml_archived_pass: None,
                     commit: super::state::CommitState::NotStarted,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
                         ..state.continuation
                     },
                     ..state
@@ -501,8 +560,17 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     phase: next_phase,
                     reviewer_pass: next_pass,
                     review_issues_found: issues_found,
+                    review_context_prepared_pass: None,
+                    review_prompt_prepared_pass: None,
+                    review_agent_invoked_pass: None,
+                    review_issues_xml_extracted_pass: None,
+                    review_validated_outcome: None,
+                    review_issues_markdown_written_pass: None,
+                    review_issues_xml_archived_pass: None,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
                         ..state.continuation
                     },
                     ..state
@@ -571,9 +639,18 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     previous_phase: None,
                     reviewer_pass: next_pass,
                     review_issues_found: false,
+                    review_context_prepared_pass: None,
+                    review_prompt_prepared_pass: None,
+                    review_agent_invoked_pass: None,
+                    review_issues_xml_extracted_pass: None,
+                    review_validated_outcome: None,
+                    review_issues_markdown_written_pass: None,
+                    review_issues_xml_archived_pass: None,
                     commit: super::state::CommitState::NotStarted,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
                         ..state.continuation
                     },
                     ..state
@@ -583,8 +660,17 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     phase: next_phase,
                     reviewer_pass: next_pass,
                     review_issues_found: false,
+                    review_context_prepared_pass: None,
+                    review_prompt_prepared_pass: None,
+                    review_agent_invoked_pass: None,
+                    review_issues_xml_extracted_pass: None,
+                    review_validated_outcome: None,
+                    review_issues_markdown_written_pass: None,
+                    review_issues_xml_archived_pass: None,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
                         ..state.continuation
                     },
                     ..state
@@ -2639,10 +2725,13 @@ mod tests {
         // Orchestration should still work - it reads from state.agent_chain
         let effect = determine_next_effect(&state);
 
-        // Should emit RunReviewPass, not InitializeAgentChain (chain is already populated)
+        // Should emit PrepareReviewContext, not InitializeAgentChain (chain is already populated)
         assert!(
-            matches!(effect, crate::reducer::effect::Effect::RunReviewPass { .. }),
-            "Should emit RunReviewPass when chain is already initialized, got {:?}",
+            matches!(
+                effect,
+                crate::reducer::effect::Effect::PrepareReviewContext { .. }
+            ),
+            "Should emit PrepareReviewContext when chain is already initialized, got {:?}",
             effect
         );
     }

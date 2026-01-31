@@ -529,6 +529,31 @@ pub struct PipelineState {
     pub reviewer_pass: u32,
     pub total_reviewer_passes: u32,
     pub review_issues_found: bool,
+    /// Tracks whether review context was prepared for the current pass.
+    ///
+    /// Used to sequence single-task review effects (PrepareReviewContext -> RunReviewPass).
+    #[serde(default)]
+    pub review_context_prepared_pass: Option<u32>,
+    /// Tracks whether the review prompt was prepared for the current pass.
+    #[serde(default)]
+    pub review_prompt_prepared_pass: Option<u32>,
+    /// Tracks whether the reviewer agent was invoked for the current pass.
+    #[serde(default)]
+    pub review_agent_invoked_pass: Option<u32>,
+    /// Tracks whether `.agent/tmp/issues.xml` was successfully extracted for the current pass.
+    #[serde(default)]
+    pub review_issues_xml_extracted_pass: Option<u32>,
+    /// Stores the validated outcome for the current review pass.
+    ///
+    /// This is used to sequence post-validation single-task effects (write markdown,
+    /// archive XML) before the reducer advances to the next pass/phase.
+    #[serde(default)]
+    pub review_validated_outcome: Option<ReviewValidatedOutcome>,
+    /// Tracks whether ISSUES.md has been written for the current pass.
+    #[serde(default)]
+    pub review_issues_markdown_written_pass: Option<u32>,
+    #[serde(default)]
+    pub review_issues_xml_archived_pass: Option<u32>,
     pub context_cleaned: bool,
     pub agent_chain: AgentChainState,
     pub rebase: RebaseState,
@@ -546,6 +571,13 @@ pub struct PipelineState {
     /// to enable continuation-aware prompting.
     #[serde(default)]
     pub continuation: ContinuationState,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewValidatedOutcome {
+    pub pass: u32,
+    pub issues_found: bool,
+    pub clean_no_issues: bool,
 }
 
 impl PipelineState {
@@ -590,6 +622,13 @@ impl PipelineState {
             reviewer_pass: 0,
             total_reviewer_passes: reviewer_reviews,
             review_issues_found: false,
+            review_context_prepared_pass: None,
+            review_prompt_prepared_pass: None,
+            review_agent_invoked_pass: None,
+            review_issues_xml_extracted_pass: None,
+            review_validated_outcome: None,
+            review_issues_markdown_written_pass: None,
+            review_issues_xml_archived_pass: None,
             context_cleaned: false,
             agent_chain: AgentChainState::initial(),
             rebase: RebaseState::NotStarted,
@@ -625,6 +664,13 @@ impl From<PipelineCheckpoint> for PipelineState {
             reviewer_pass: checkpoint.reviewer_pass,
             total_reviewer_passes: checkpoint.total_reviewer_passes,
             review_issues_found: false,
+            review_context_prepared_pass: None,
+            review_prompt_prepared_pass: None,
+            review_agent_invoked_pass: None,
+            review_issues_xml_extracted_pass: None,
+            review_validated_outcome: None,
+            review_issues_markdown_written_pass: None,
+            review_issues_xml_archived_pass: None,
             context_cleaned: false,
             agent_chain,
             rebase: rebase_state,

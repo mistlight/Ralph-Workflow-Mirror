@@ -1,0 +1,5 @@
+// Split from the legacy monolithic reducer/handler.rs test module.
+// Individual test modules will be added here as the handler implementation is
+// decomposed into single-task effects.
+
+mod review_prompt;

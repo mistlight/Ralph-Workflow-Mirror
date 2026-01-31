@@ -277,6 +277,51 @@ src/lib.rs</ralph-files-changed>
                 (PipelineEvent::review_completed(pass, false), ui)
             }
 
+            Effect::PrepareReviewContext { pass } => {
+                (PipelineEvent::review_context_prepared(pass), vec![])
+            }
+
+            Effect::PrepareReviewPrompt { pass } => {
+                (PipelineEvent::review_prompt_prepared(pass), vec![])
+            }
+
+            Effect::InvokeReviewAgent { pass } => {
+                // In mock mode we only emit the review-specific progress event.
+                (PipelineEvent::review_agent_invoked(pass), vec![])
+            }
+
+            Effect::ExtractReviewIssuesXml { pass } => {
+                (PipelineEvent::review_issues_xml_extracted(pass), vec![])
+            }
+
+            Effect::ValidateReviewIssuesXml { pass } => {
+                // Default mock: clean, no issues.
+                (
+                    PipelineEvent::review_issues_xml_validated(pass, false, true),
+                    vec![],
+                )
+            }
+
+            Effect::WriteIssuesMarkdown { pass } => {
+                (PipelineEvent::review_issues_markdown_written(pass), vec![])
+            }
+
+            Effect::ArchiveReviewIssuesXml { pass } => {
+                (PipelineEvent::review_issues_xml_archived(pass), vec![])
+            }
+
+            Effect::ApplyReviewOutcome {
+                pass,
+                issues_found,
+                clean_no_issues,
+            } => {
+                if clean_no_issues {
+                    (PipelineEvent::review_pass_completed_clean(pass), vec![])
+                } else {
+                    (PipelineEvent::review_completed(pass, issues_found), vec![])
+                }
+            }
+
             Effect::RunFixAttempt { pass } => {
                 let mock_fix_xml = r#"<ralph-fix-result>
 <ralph-status>all_issues_addressed</ralph-status>

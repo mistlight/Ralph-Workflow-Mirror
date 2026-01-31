@@ -23,6 +23,18 @@
 //!
 //! This principle is tested in `reducer_legacy_rejection.rs::test_effects_are_single_task`.
 //!
+//! # Redux-Style Event Modeling
+//!
+//! This project intentionally follows the Redux style-guide guidance:
+//! - Think of events/actions as "something that happened" (not "setters")
+//! - Keep reducer logic pure and deterministic
+//! - Keep state serializable
+//! - Put side effects in handlers/middleware (effects), not in reducers
+//!
+//! References (official Redux docs):
+//! - Actions are events: https://redux.js.org/tutorials/fundamentals/part-2-concepts-data-flow
+//! - Event-based actions vs setters: https://redux.js.org/style-guide/
+//!
 //! # Design
 //!
 //! This separation keeps business logic pure (in reducers) while isolating
@@ -78,6 +90,70 @@ pub enum Effect {
 
     RunReviewPass {
         pass: u32,
+    },
+
+    /// Prepare review context files (single-task).
+    ///
+    /// This effect must only write the review inputs (prompt backups, diffs, etc.)
+    /// needed for a subsequent `AgentInvocation` and must not invoke agents.
+    PrepareReviewContext {
+        pass: u32,
+    },
+
+    /// Prepare the review prompt for a pass (single-task).
+    ///
+    /// This effect must only render/write the prompt that will be used for the
+    /// subsequent reviewer agent invocation.
+    PrepareReviewPrompt {
+        pass: u32,
+    },
+
+    /// Invoke the reviewer agent for a review pass (single-task).
+    ///
+    /// This effect must only perform agent execution using the prepared review prompt
+    /// (written by `PrepareReviewPrompt`) and must not parse/validate outputs.
+    InvokeReviewAgent {
+        pass: u32,
+    },
+
+    /// Extract the review issues XML from the canonical workspace path (single-task).
+    ///
+    /// This effect must only verify that `.agent/tmp/issues.xml` exists and is readable.
+    /// It must not validate XML, write ISSUES.md, or change phase.
+    ExtractReviewIssuesXml {
+        pass: u32,
+    },
+
+    /// Validate the extracted review issues XML (single-task).
+    ///
+    /// This effect must only validate/parses the XML at `.agent/tmp/issues.xml` and
+    /// emit a review validation event. It must not write ISSUES.md, archive files,
+    /// or transition phases.
+    ValidateReviewIssuesXml {
+        pass: u32,
+    },
+
+    /// Write `.agent/ISSUES.md` from the validated issues XML (single-task).
+    ///
+    /// This effect must only write markdown. It must not archive XML or transition phases.
+    WriteIssuesMarkdown {
+        pass: u32,
+    },
+
+    /// Archive `.agent/tmp/issues.xml` after ISSUES.md is written (single-task).
+    ///
+    /// This effect must only archive the canonical issues XML (move to `.processed`).
+    ArchiveReviewIssuesXml {
+        pass: u32,
+    },
+
+    /// Apply the already-validated review outcome to advance the reducer state (single-task).
+    ///
+    /// This effect must only emit the appropriate review outcome event.
+    ApplyReviewOutcome {
+        pass: u32,
+        issues_found: bool,
+        clean_no_issues: bool,
     },
 
     RunFixAttempt {
