@@ -83,7 +83,8 @@ FIX GUIDELINES:
 - Fix problems at the root cause, not with surface-level patches
 - Follow existing code patterns and conventions
 - Add tests if the issue was a missed test case
-- Getting rid of tech debt is necessary to fix a bug, you **MUST** do so.
+- If getting rid of tech debt is necessary to fix a bug, you **MUST** do so. 
+  Do **NOT** leave the code in a worse state from a bug fix.
 
 ═══════════════════════════════════════════════════════════════════════════════
 OUTPUT FORMAT
