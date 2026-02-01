@@ -668,6 +668,23 @@ pub enum AgentEvent {
         agent: String,
     },
 
+    /// Agent hit idle timeout - should fallback to a different agent.
+    ///
+    /// Unlike other retriable errors (Network, ModelUnavailable), idle timeouts
+    /// indicate the agent may be stuck or the task is too complex for it.
+    /// Retrying the same agent would likely hit the same timeout, so we switch
+    /// to a different agent instead.
+    ///
+    /// Unlike `RateLimitFallback`, timeout fallback does not preserve prompt
+    /// context since the previous execution may have made partial progress
+    /// that is difficult to resume cleanly.
+    TimeoutFallback {
+        /// The role being fulfilled.
+        role: AgentRole,
+        /// The agent that timed out.
+        agent: String,
+    },
+
     /// Session established with agent.
     ///
     /// Emitted when an agent response includes a session ID that can be
@@ -1493,6 +1510,15 @@ impl PipelineEvent {
     /// Create an AgentAuthFallback event.
     pub fn agent_auth_fallback(role: AgentRole, agent: String) -> Self {
         Self::Agent(AgentEvent::AuthFallback { role, agent })
+    }
+
+    /// Create an AgentTimeoutFallback event.
+    ///
+    /// Used when an agent hits an idle timeout and should fallback to
+    /// a different agent. Unlike rate limit fallback, this does not
+    /// preserve prompt context.
+    pub fn agent_timeout_fallback(role: AgentRole, agent: String) -> Self {
+        Self::Agent(AgentEvent::TimeoutFallback { role, agent })
     }
 
     /// Create an AgentSessionEstablished event.

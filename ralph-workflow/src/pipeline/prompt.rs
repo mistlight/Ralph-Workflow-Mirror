@@ -7,8 +7,8 @@ use crate::logger::argv_requests_json;
 use crate::logger::Colors;
 use crate::logger::Logger;
 use crate::pipeline::idle_timeout::{
-    monitor_idle_timeout, new_activity_timestamp, ActivityTrackingReader, MonitorResult,
-    SharedActivityTimestamp, IDLE_TIMEOUT_SECS,
+    monitor_idle_timeout, new_activity_timestamp, time_since_activity, ActivityTrackingReader,
+    MonitorResult, SharedActivityTimestamp, StderrActivityTracker, IDLE_TIMEOUT_SECS,
 };
 use crate::pipeline::Timer;
 use crate::rendering::json_pretty::format_generic_json_for_display;
@@ -281,27 +281,72 @@ pub struct PipelineRuntime<'a> {
     pub workspace: &'a dyn crate::workspace::Workspace,
 }
 
-/// Saves the prompt to a file and optionally copies it to the clipboard.
+/// Options for saving a prompt to file and clipboard.
+struct PromptSaveOptions<'a> {
+    /// Optional prompt archive info for observability.
+    archive_info: Option<PromptArchiveInfo<'a>>,
+    /// Whether to copy to clipboard.
+    interactive: bool,
+    /// Color configuration.
+    colors: Colors,
+}
+
+struct PromptArchiveInfo<'a> {
+    phase_label: &'a str,
+    agent_name: &'a str,
+    logfile: &'a str,
+}
+
+/// Saves the prompt to a file, archives it, and optionally copies it to the clipboard.
+///
+/// # Arguments
+///
+/// * `prompt` - The prompt content to save
+/// * `prompt_path` - Primary path for the prompt (e.g., `.agent/last_prompt.txt`)
+/// * `options` - Options for archiving and clipboard behavior
+/// * `logger` - Logger for status messages
+/// * `executor` - Process executor for clipboard operations
+/// * `workspace` - Workspace for file operations
+///
+/// # Archive Behavior
+///
+/// When `options.archive_info` is provided, the prompt is also saved to a unique timestamped
+/// archive file in `.agent/prompts/`. This enables debugging by preserving each
+/// prompt sent to each agent invocation, rather than overwriting a single file.
 fn save_prompt_to_file_and_clipboard(
     prompt: &str,
     prompt_path: &std::path::Path,
-    interactive: bool,
+    options: PromptSaveOptions<'_>,
     logger: &Logger,
-    colors: Colors,
     executor: &dyn crate::executor::ProcessExecutor,
     workspace: &dyn crate::workspace::Workspace,
 ) -> io::Result<()> {
-    // Save prompt to file using workspace
+    // Save prompt to primary location (existing behavior)
     workspace.write(prompt_path, prompt)?;
     logger.info(&format!(
         "Prompt saved to {}{}{}",
-        colors.cyan(),
+        options.colors.cyan(),
         prompt_path.display(),
-        colors.reset()
+        options.colors.reset()
     ));
 
+    // Archive prompt with unique path for debugging
+    if let Some(info) = options.archive_info {
+        if let Err(e) = archive_prompt(
+            prompt,
+            info.phase_label,
+            info.agent_name,
+            info.logfile,
+            logger,
+            workspace,
+        ) {
+            // Log but don't fail - archiving is for observability, not critical path
+            logger.warn(&format!("Failed to archive prompt: {}", e));
+        }
+    }
+
     // Copy to clipboard if interactive
-    if interactive {
+    if options.interactive {
         if let Some(clipboard_cmd) = get_platform_clipboard_command() {
             match executor.spawn(clipboard_cmd.binary, clipboard_cmd.args, &[], None) {
                 Ok(mut child) => {
@@ -311,9 +356,9 @@ fn save_prompt_to_file_and_clipboard(
                     let _ = child.wait();
                     logger.info(&format!(
                         "Prompt copied to clipboard {}({}){}",
-                        colors.dim(),
+                        options.colors.dim(),
                         clipboard_cmd.paste_hint,
-                        colors.reset()
+                        options.colors.reset()
                     ));
                 }
                 Err(e) => {
@@ -323,6 +368,119 @@ fn save_prompt_to_file_and_clipboard(
         }
     }
     Ok(())
+}
+
+/// Archive a prompt to a unique timestamped file for debugging.
+///
+/// Prompts are archived to `.agent/prompts/{phase_iteration}_{agent}_{model_index}_a{attempt}_{timestamp}.txt`.
+///
+/// The archive filename is derived from structured components:
+/// - `phase_iteration`: derived from the log file stem when possible (e.g., `planning_1`)
+/// - `agent`: sanitized agent name (slashes replaced with hyphens)
+/// - `model_index`: parsed from the log file name when present
+/// - `attempt`: parsed from the log file name when present (`_a{attempt}`)
+/// - `timestamp`: milliseconds since UNIX epoch
+///
+/// This enables post-mortem debugging by preserving every prompt sent to every
+/// agent invocation, even when the same agent is invoked multiple times.
+fn archive_prompt(
+    prompt: &str,
+    phase_label: &str,
+    agent_name: &str,
+    logfile: &str,
+    logger: &Logger,
+    workspace: &dyn crate::workspace::Workspace,
+) -> io::Result<()> {
+    use std::path::PathBuf;
+
+    let prompts_dir = PathBuf::from(".agent/prompts");
+    workspace.create_dir_all(&prompts_dir)?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+
+    let archive_filename =
+        build_prompt_archive_filename(phase_label, agent_name, logfile, timestamp);
+    let archive_path = prompts_dir.join(archive_filename);
+
+    workspace.write(&archive_path, prompt)?;
+    logger.info(&format!("Prompt archived to {}", archive_path.display()));
+
+    Ok(())
+}
+
+fn build_prompt_archive_filename(
+    phase_label: &str,
+    agent_name: &str,
+    logfile: &str,
+    timestamp_ms: u128,
+) -> String {
+    use crate::pipeline::logfile::sanitize_agent_name;
+    use std::path::Path;
+
+    let safe_agent = sanitize_agent_name(&agent_name.to_lowercase());
+
+    let log_stem = Path::new(logfile)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("unknown");
+
+    let (stem_without_attempt, attempt_suffix) = if let Some(last_underscore) = log_stem.rfind('_')
+    {
+        let suffix = &log_stem[last_underscore + 1..];
+        if let Some(attempt_digits) = suffix.strip_prefix('a') {
+            if !attempt_digits.is_empty() && attempt_digits.chars().all(|c| c.is_ascii_digit()) {
+                (
+                    &log_stem[..last_underscore],
+                    Some(format!("a{}", attempt_digits)),
+                )
+            } else {
+                (log_stem, None)
+            }
+        } else {
+            (log_stem, None)
+        }
+    } else {
+        (log_stem, None)
+    };
+
+    let mut prefix_part = stem_without_attempt.to_string();
+    let mut model_index_part: Option<String> = None;
+
+    if let Some(last_underscore) = stem_without_attempt.rfind('_') {
+        let suffix = &stem_without_attempt[last_underscore + 1..];
+        if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+            let before_model = &stem_without_attempt[..last_underscore];
+            if let Some(second_last_underscore) = before_model.rfind('_') {
+                let agent_segment = &before_model[second_last_underscore + 1..];
+                if agent_segment == safe_agent {
+                    prefix_part = before_model[..second_last_underscore].to_string();
+                    model_index_part = Some(suffix.to_string());
+                }
+            }
+        }
+    }
+
+    if prefix_part.is_empty() || prefix_part == "unknown" {
+        prefix_part = sanitize_agent_name(&phase_label.to_lowercase());
+    }
+
+    if prefix_part == safe_agent {
+        return format!("{prefix_part}_{timestamp_ms}.txt");
+    }
+
+    let mut parts = vec![prefix_part, safe_agent];
+    if let Some(model) = model_index_part {
+        parts.push(model);
+    }
+    if let Some(attempt) = attempt_suffix {
+        parts.push(attempt);
+    }
+
+    format!("{}_{}.txt", parts.join("_"), timestamp_ms)
 }
 
 /// Sanitize environment variables for agent subprocess execution.
@@ -420,6 +578,46 @@ fn wait_for_completion_and_collect_stderr(
     Ok((exit_code, stderr_output))
 }
 
+fn collect_stderr_with_cap_and_drain<R: Read>(
+    mut reader: R,
+    max_bytes: usize,
+) -> io::Result<String> {
+    let mut buf = [0u8; 8192];
+    let mut collected = Vec::<u8>::new();
+    let mut truncated = false;
+
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+
+        if collected.len() < max_bytes {
+            let remaining = max_bytes - collected.len();
+            let to_take = remaining.min(n);
+            collected.extend_from_slice(&buf[..to_take]);
+            if to_take < n {
+                truncated = true;
+            }
+        } else {
+            truncated = true;
+        }
+        // Always continue reading to EOF.
+        // If we stop reading after reaching max_bytes, the stderr pipe can fill and
+        // block the subprocess, causing a self-inflicted idle timeout.
+    }
+
+    let mut stderr_output = String::from_utf8_lossy(&collected).into_owned();
+    if truncated {
+        if !stderr_output.ends_with('\n') {
+            stderr_output.push('\n');
+        }
+        stderr_output.push_str("<stderr truncated>");
+    }
+
+    Ok(stderr_output)
+}
+
 /// Run a command with a prompt argument.
 ///
 /// This is an internal helper for `run_with_fallback`.
@@ -445,12 +643,21 @@ pub fn run_with_prompt(
         runtime.colors.reset()
     ));
 
+    let options = PromptSaveOptions {
+        archive_info: Some(PromptArchiveInfo {
+            phase_label: cmd.label,
+            agent_name: cmd.display_name,
+            logfile: cmd.logfile,
+        }),
+        interactive: runtime.config.behavior.interactive,
+        colors: *runtime.colors,
+    };
+
     save_prompt_to_file_and_clipboard(
         cmd.prompt,
         &runtime.config.prompt_path,
-        runtime.config.behavior.interactive,
+        options,
         runtime.logger,
-        *runtime.colors,
         runtime.executor,
         runtime.workspace,
     )?;
@@ -594,45 +801,24 @@ fn run_with_agent_spawn(
     let stderr = agent_handle.stderr;
     let inner = agent_handle.inner;
 
-    // Spawn stderr collection thread
+    // Clone activity timestamp for stderr thread to share with stdout tracking.
+    // This ensures both stdout AND stderr activity prevent idle timeout kills.
+    let stderr_activity_timestamp = activity_timestamp.clone();
+
+    // Spawn stderr collection thread with activity tracking
     let stderr_join_handle = std::thread::spawn(move || -> io::Result<String> {
         const STDERR_MAX_BYTES: usize = 512 * 1024;
 
-        let mut reader = BufReader::new(stderr);
-        let mut buf = [0u8; 8192];
-        let mut collected = Vec::<u8>::new();
-        let mut truncated = false;
-
-        loop {
-            let n = reader.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-
-            let remaining = STDERR_MAX_BYTES.saturating_sub(collected.len());
-            if remaining == 0 {
-                truncated = true;
-                break;
-            }
-
-            let to_take = remaining.min(n);
-            collected.extend_from_slice(&buf[..to_take]);
-            if to_take < n {
-                truncated = true;
-                break;
-            }
-        }
-
-        let mut stderr_output = String::from_utf8_lossy(&collected).into_owned();
-        if truncated {
-            if !stderr_output.ends_with('\n') {
-                stderr_output.push('\n');
-            }
-            stderr_output.push_str("<stderr truncated>");
-        }
-
-        Ok(stderr_output)
+        // Wrap stderr with activity tracking to prevent idle timeout when
+        // agents produce verbose stderr output while processing.
+        let tracked_stderr = StderrActivityTracker::new(stderr, stderr_activity_timestamp);
+        let reader = BufReader::new(tracked_stderr);
+        collect_stderr_with_cap_and_drain(reader, STDERR_MAX_BYTES)
     });
+
+    // Clone activity_timestamp before passing it to stream function,
+    // so we can use it later for the timeout diagnostic message.
+    let activity_timestamp_for_timeout = activity_timestamp.clone();
 
     // Stream agent output using the handle
     stream_agent_output_from_handle(stdout, cmd, runtime, activity_timestamp)?;
@@ -649,10 +835,16 @@ fn run_with_agent_spawn(
         .unwrap_or(MonitorResult::ProcessCompleted);
 
     // If monitor timed out, use SIGTERM exit code regardless of actual exit code
+    // and provide detailed diagnostics for debugging
     let final_exit_code = if monitor_result == MonitorResult::TimedOut {
+        let idle_duration = time_since_activity(&activity_timestamp_for_timeout);
         runtime.logger.warn(&format!(
-            "Agent killed due to idle timeout (no output for {} seconds)",
-            IDLE_TIMEOUT_SECS
+            "Agent killed due to idle timeout (no stdout/stderr for {} seconds, \
+             last activity {:.1}s ago, process exit code was {}, \
+             kill reason: IDLE_TIMEOUT_MONITOR)",
+            IDLE_TIMEOUT_SECS,
+            idle_duration.as_secs_f64(),
+            exit_code
         ));
         SIGTERM_EXIT_CODE
     } else {
@@ -817,6 +1009,8 @@ fn stream_agent_output_from_handle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     fn test_logger() -> Logger {
         Logger::new(Colors::new())
@@ -875,6 +1069,76 @@ mod tests {
 
         // Should preserve the end content (most relevant for XSD errors)
         assert!(result.contains("IMPORTANT_END_MARKER"));
+    }
+
+    struct CountingReader {
+        data: Vec<u8>,
+        pos: usize,
+        total_read: Arc<AtomicUsize>,
+    }
+
+    impl CountingReader {
+        fn new(data: Vec<u8>, total_read: Arc<AtomicUsize>) -> Self {
+            Self {
+                data,
+                pos: 0,
+                total_read,
+            }
+        }
+    }
+
+    impl Read for CountingReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.pos >= self.data.len() {
+                return Ok(0);
+            }
+            let remaining = self.data.len() - self.pos;
+            let n = remaining.min(buf.len());
+            buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+            self.pos += n;
+            self.total_read.fetch_add(n, Ordering::SeqCst);
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn test_collect_stderr_with_cap_drains_to_eof() {
+        let total_read = Arc::new(AtomicUsize::new(0));
+        let data = (0..100u8).collect::<Vec<u8>>();
+        let reader = CountingReader::new(data.clone(), Arc::clone(&total_read));
+
+        let result = collect_stderr_with_cap_and_drain(reader, 10).unwrap();
+        assert!(result.contains("<stderr truncated>"));
+        assert_eq!(total_read.load(Ordering::SeqCst), data.len());
+    }
+
+    #[test]
+    fn test_build_prompt_archive_filename_from_structured_log_components() {
+        let name = build_prompt_archive_filename(
+            "planning",
+            "ccs/glm",
+            ".agent/logs/planning_1_ccs-glm_0_a2.log",
+            123,
+        );
+        assert_eq!(name, "planning_1_ccs-glm_0_a2_123.txt");
+        assert!(!name.contains(".log"));
+    }
+
+    #[test]
+    fn test_build_prompt_archive_filename_for_review_logs_without_agent_in_name() {
+        let name = build_prompt_archive_filename(
+            "review",
+            "codex",
+            ".agent/logs/reviewer_review_2.log",
+            42,
+        );
+        assert_eq!(name, "reviewer_review_2_codex_42.txt");
+    }
+
+    #[test]
+    fn test_build_prompt_archive_filename_dedupes_when_logfile_is_agent_only() {
+        let name = build_prompt_archive_filename("dev", "claude", ".agent/logs/claude.log", 7);
+        assert_eq!(name, "claude_7.txt");
     }
 }
 

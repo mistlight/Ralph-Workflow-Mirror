@@ -70,6 +70,47 @@ pub fn build_logfile_path(prefix: &str, agent_name: &str, model_index: usize) ->
     format!("{}_{safe_agent_name}_{model_index}.log", prefix)
 }
 
+/// Build a log file path with retry attempt index for enhanced observability.
+///
+/// This variant includes a retry attempt counter to distinguish between
+/// multiple invocations of the same agent/model combination (e.g., during
+/// XSD retry cycles or after timeout-triggered agent switches).
+///
+/// # Arguments
+///
+/// * `prefix` - The log file prefix (e.g., ".agent/logs/planning_1")
+/// * `agent_name` - The agent registry name (will be sanitized)
+/// * `model_index` - The model fallback index
+/// * `attempt` - The retry attempt number (0 for first attempt)
+///
+/// # Pattern
+///
+/// `{prefix}_{agent}_{model_index}_a{attempt}.log`
+///
+/// # Examples
+///
+/// ```
+/// use ralph_workflow::pipeline::logfile::build_logfile_path_with_attempt;
+///
+/// assert_eq!(
+///     build_logfile_path_with_attempt(".agent/logs/planning_1", "claude", 0, 0),
+///     ".agent/logs/planning_1_claude_0_a0.log"
+/// );
+/// assert_eq!(
+///     build_logfile_path_with_attempt(".agent/logs/planning_1", "ccs/glm", 1, 2),
+///     ".agent/logs/planning_1_ccs-glm_1_a2.log"
+/// );
+/// ```
+pub fn build_logfile_path_with_attempt(
+    prefix: &str,
+    agent_name: &str,
+    model_index: usize,
+    attempt: u32,
+) -> String {
+    let safe_agent_name = sanitize_agent_name(agent_name);
+    format!("{}_{safe_agent_name}_{model_index}_a{attempt}.log", prefix)
+}
+
 /// Extract the agent name from a log file path.
 ///
 /// Parses a log file name like `planning_1_ccs-glm_0.log` to extract
@@ -108,6 +149,23 @@ pub fn extract_agent_name_from_logfile(log_file: &Path, log_prefix: &Path) -> Op
 
     // Remove the .log extension
     let without_ext = after_prefix.strip_suffix(".log")?;
+
+    // Strip optional retry attempt suffix ("_a{attempt}") if present.
+    // This keeps agent parsing stable when logs include attempt identifiers.
+    let without_ext = if let Some(last_underscore) = without_ext.rfind('_') {
+        let suffix = &without_ext[last_underscore + 1..];
+        if let Some(attempt_digits) = suffix.strip_prefix('a') {
+            if !attempt_digits.is_empty() && attempt_digits.chars().all(|c| c.is_ascii_digit()) {
+                &without_ext[..last_underscore]
+            } else {
+                without_ext
+            }
+        } else {
+            without_ext
+        }
+    } else {
+        without_ext
+    };
 
     // The format is either "agent" or "agent_modelindex"
     // Find the last underscore followed by a number
@@ -245,6 +303,27 @@ mod tests {
     }
 
     #[test]
+    fn test_build_logfile_path_with_attempt() {
+        assert_eq!(
+            build_logfile_path_with_attempt(".agent/logs/planning_1", "claude", 0, 0),
+            ".agent/logs/planning_1_claude_0_a0.log"
+        );
+        assert_eq!(
+            build_logfile_path_with_attempt(".agent/logs/planning_1", "ccs/glm", 1, 2),
+            ".agent/logs/planning_1_ccs-glm_1_a2.log"
+        );
+        assert_eq!(
+            build_logfile_path_with_attempt(
+                ".agent/logs/dev_2",
+                "opencode/anthropic/claude-sonnet-4",
+                0,
+                5
+            ),
+            ".agent/logs/dev_2_opencode-anthropic-claude-sonnet-4_0_a5.log"
+        );
+    }
+
+    #[test]
     fn test_extract_agent_name_with_model_index() {
         let log_file = Path::new(".agent/logs/planning_1_ccs-glm_0.log");
         let prefix = Path::new(".agent/logs/planning_1");
@@ -257,6 +336,26 @@ mod tests {
     #[test]
     fn test_extract_agent_name_opencode_style() {
         let log_file = Path::new(".agent/logs/dev_1_opencode-anthropic-claude-sonnet-4_0.log");
+        let prefix = Path::new(".agent/logs/dev_1");
+        assert_eq!(
+            extract_agent_name_from_logfile(log_file, prefix),
+            Some("opencode-anthropic-claude-sonnet-4".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_agent_name_with_attempt_suffix() {
+        let log_file = Path::new(".agent/logs/planning_1_ccs-glm_0_a2.log");
+        let prefix = Path::new(".agent/logs/planning_1");
+        assert_eq!(
+            extract_agent_name_from_logfile(log_file, prefix),
+            Some("ccs-glm".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_agent_name_opencode_style_with_attempt_suffix() {
+        let log_file = Path::new(".agent/logs/dev_1_opencode-anthropic-claude-sonnet-4_0_a5.log");
         let prefix = Path::new(".agent/logs/dev_1");
         assert_eq!(
             extract_agent_name_from_logfile(log_file, prefix),

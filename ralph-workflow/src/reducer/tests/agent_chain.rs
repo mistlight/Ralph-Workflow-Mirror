@@ -82,7 +82,7 @@ fn test_agent_invocation_succeeded_preserves_indices() {
 }
 
 #[test]
-fn test_agent_invocation_failed_with_retriable_advances_model() {
+fn test_agent_invocation_failed_with_retriable_network_advances_model() {
     let base_state = create_test_state();
     let state = PipelineState {
         agent_chain: base_state.agent_chain.with_agents(
@@ -99,7 +99,7 @@ fn test_agent_invocation_failed_with_retriable_advances_model() {
             AgentRole::Developer,
             "agent1".to_string(),
             1,
-            AgentErrorKind::Timeout,
+            AgentErrorKind::Network,
             true,
         ),
     );
@@ -243,7 +243,7 @@ fn test_agent_retry_cycle_started_is_noop() {
 }
 
 #[test]
-fn test_agent_invocation_failed_on_last_model_wraps_to_first_model() {
+fn test_agent_invocation_failed_retriable_network_on_last_model_wraps_to_first_model() {
     let base_state = create_test_state();
     let state = PipelineState {
         agent_chain: base_state
@@ -266,7 +266,7 @@ fn test_agent_invocation_failed_on_last_model_wraps_to_first_model() {
             AgentRole::Developer,
             "agent1".to_string(),
             1,
-            AgentErrorKind::Timeout,
+            AgentErrorKind::Network,
             true,
         ),
     );
@@ -342,7 +342,7 @@ fn test_agent_invocation_failed_non_retriable_switches_agent() {
 }
 
 #[test]
-fn test_agent_invocation_failed_retriable_on_single_model_wraps() {
+fn test_agent_invocation_failed_retriable_network_on_single_model_wraps() {
     let base_state = create_test_state();
     let state = PipelineState {
         agent_chain: base_state.agent_chain.with_agents(
@@ -359,7 +359,7 @@ fn test_agent_invocation_failed_retriable_on_single_model_wraps() {
             AgentRole::Developer,
             "agent1".to_string(),
             1,
-            AgentErrorKind::Timeout,
+            AgentErrorKind::Network,
             true,
         ),
     );
@@ -480,5 +480,157 @@ fn test_agent_chain_initialized_contains_full_fallback_chain() {
         new_state.agent_chain.current_agent().map(String::as_str),
         Some("codex"),
         "Current agent should be the first in the chain"
+    );
+}
+
+// ============================================================================
+// Timeout Fallback Tests
+// ============================================================================
+
+#[test]
+fn test_timeout_fallback_triggers_agent_switch_not_model_switch() {
+    // Setup: two agents, each with two models
+    let base_state = create_test_state();
+    let state = PipelineState {
+        agent_chain: base_state.agent_chain.with_agents(
+            vec!["agent-a".to_string(), "agent-b".to_string()],
+            vec![
+                vec!["model-a1".to_string(), "model-a2".to_string()],
+                vec!["model-b1".to_string()],
+            ],
+            AgentRole::Developer,
+        ),
+        ..base_state
+    };
+
+    // Verify initial state
+    assert_eq!(
+        state.agent_chain.current_agent().map(String::as_str),
+        Some("agent-a")
+    );
+    assert_eq!(state.agent_chain.current_model_index, 0);
+
+    // Apply timeout fallback event
+    let new_state = reduce(
+        state,
+        PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent-a".to_string()),
+    );
+
+    // Should switch to agent-b, not model-a2
+    // This is the key behavior change: timeout triggers agent fallback, not model fallback
+    assert_eq!(
+        new_state.agent_chain.current_agent().map(String::as_str),
+        Some("agent-b"),
+        "Timeout should switch to next agent, not retry same agent with different model"
+    );
+    assert_eq!(
+        new_state.agent_chain.current_model_index, 0,
+        "Model index should reset to 0 when switching agents"
+    );
+}
+
+#[test]
+fn test_timeout_fallback_clears_session_id() {
+    let base_state = create_test_state();
+    let state = PipelineState {
+        agent_chain: base_state
+            .agent_chain
+            .with_agents(
+                vec!["agent-a".to_string(), "agent-b".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Developer,
+            )
+            .with_session_id(Some("session-123".to_string())),
+        ..base_state
+    };
+
+    // Verify session ID is set
+    assert_eq!(
+        state.agent_chain.last_session_id,
+        Some("session-123".to_string())
+    );
+
+    // Apply timeout fallback
+    let new_state = reduce(
+        state,
+        PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent-a".to_string()),
+    );
+
+    // Session ID should be cleared (new agent, new session)
+    assert_eq!(
+        new_state.agent_chain.last_session_id, None,
+        "Timeout fallback should clear session ID"
+    );
+}
+
+#[test]
+fn test_timeout_fallback_clears_continuation_prompt() {
+    let base_state = create_test_state();
+    let mut agent_chain = base_state.agent_chain.with_agents(
+        vec!["agent-a".to_string(), "agent-b".to_string()],
+        vec![vec![], vec![]],
+        AgentRole::Developer,
+    );
+    // Set the continuation prompt directly
+    agent_chain.rate_limit_continuation_prompt = Some("continue from here".to_string());
+
+    let state = PipelineState {
+        agent_chain,
+        ..base_state
+    };
+
+    // Verify continuation prompt is set
+    assert!(state.agent_chain.rate_limit_continuation_prompt.is_some());
+
+    // Apply timeout fallback
+    let new_state = reduce(
+        state,
+        PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent-a".to_string()),
+    );
+
+    // Continuation prompt should be cleared (unlike rate limit fallback which preserves it)
+    assert_eq!(
+        new_state.agent_chain.rate_limit_continuation_prompt, None,
+        "Timeout fallback should clear continuation prompt (unlike rate limit)"
+    );
+}
+
+#[test]
+fn test_timeout_fallback_from_last_agent_increments_retry_cycle() {
+    let base_state = create_test_state();
+    let state = PipelineState {
+        agent_chain: base_state
+            .agent_chain
+            .with_agents(
+                vec!["agent-a".to_string(), "agent-b".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Developer,
+            )
+            .switch_to_next_agent(), // Move to last agent (agent-b)
+        ..base_state
+    };
+
+    // Verify we're on the last agent
+    assert_eq!(
+        state.agent_chain.current_agent().map(String::as_str),
+        Some("agent-b")
+    );
+    assert_eq!(state.agent_chain.retry_cycle, 0);
+
+    // Apply timeout fallback from last agent
+    let new_state = reduce(
+        state,
+        PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent-b".to_string()),
+    );
+
+    // Should wrap back to first agent and increment retry cycle
+    assert_eq!(
+        new_state.agent_chain.current_agent().map(String::as_str),
+        Some("agent-a"),
+        "Should wrap back to first agent"
+    );
+    assert_eq!(
+        new_state.agent_chain.retry_cycle, 1,
+        "Should increment retry cycle when wrapping"
     );
 }

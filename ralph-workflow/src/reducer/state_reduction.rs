@@ -1284,7 +1284,21 @@ fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState 
                 .clear_continuation_prompt(),
             ..state
         },
-        // Other retriable errors (Network, Timeout): try next model
+        // Timeout (idle): immediate agent fallback, clear session
+        // Unlike rate limits, timeouts may indicate the agent is stuck or the
+        // task is too complex for it. Retrying the same agent would likely
+        // hit the same timeout, so switch to a different agent. We don't
+        // preserve prompt context since the previous execution may have made
+        // partial progress that is difficult to resume cleanly.
+        AgentEvent::TimeoutFallback { .. } => PipelineState {
+            agent_chain: state
+                .agent_chain
+                .switch_to_next_agent()
+                .clear_session_id()
+                .clear_continuation_prompt(),
+            ..state
+        },
+        // Other retriable errors (Network, ModelUnavailable): try next model
         AgentEvent::InvocationFailed {
             retriable: true, ..
         } => PipelineState {
@@ -3013,13 +3027,14 @@ mod tests {
         state.phase = PipelinePhase::Review;
         state.reviewer_pass = 0;
         state.total_reviewer_passes = 2;
+        // Set xsd_retry_count to max-1 so next failure triggers agent switch
+        state.continuation.xsd_retry_count = 9; // default max is 10
 
-        // Simulate switching agents due to repeated output validation failures.
-        state.continuation.invalid_output_attempts = 2;
-        let state = reduce(state, PipelineEvent::review_output_validation_failed(0, 2));
+        // Simulate switching agents due to XSD retry limit reached.
+        let state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
         assert!(
             state.agent_chain.current_agent_index > 0,
-            "Precondition: review_output_validation_failed should have switched agents"
+            "Precondition: review_output_validation_failed should have switched agents when XSD retry limit reached"
         );
 
         // Orchestration can re-emit PassStarted for the same pass during retries.

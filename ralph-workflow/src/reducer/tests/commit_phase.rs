@@ -170,7 +170,7 @@ fn test_commit_message_validation_failed_exhausts_attempts_with_more_agents() {
 }
 
 #[test]
-fn test_commit_prompt_prepared_preserves_xsd_retry_pending() {
+fn test_commit_prompt_prepared_clears_xsd_retry_pending() {
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -182,8 +182,8 @@ fn test_commit_prompt_prepared_preserves_xsd_retry_pending() {
     let new_state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
 
     assert!(
-        new_state.continuation.xsd_retry_pending,
-        "commit prompt preparation should not clear xsd_retry_pending"
+        !new_state.continuation.xsd_retry_pending,
+        "commit prompt preparation should clear xsd_retry_pending to prevent infinite retry loops"
     );
 }
 

@@ -7,9 +7,14 @@
 //! # Design
 //!
 //! The idle timeout system uses a shared atomic timestamp that gets updated
-//! whenever data is read from the subprocess stdout. A monitor thread
+//! whenever data is read from the subprocess stdout OR stderr. A monitor thread
 //! periodically checks this timestamp and can kill the subprocess if
 //! no output has been received for longer than the configured timeout.
+//!
+//! Both stdout and stderr activity are tracked because some agents (e.g., opencode
+//! with `--print-logs`) output verbose progress information to stderr while
+//! processing, and only produce stdout when complete. Without tracking stderr,
+//! such agents would be incorrectly killed as idle.
 //!
 //! # Timeout Value
 //!
@@ -21,9 +26,65 @@
 use std::io::{self, Read};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use crate::executor::ProcessExecutor;
+
+/// Clock trait for obtaining current time. Enables testing with mock clocks.
+///
+/// Prefer implementations that return monotonically increasing millisecond values.
+///
+/// In practice, some test clocks may simulate backwards jumps. This module
+/// treats any backwards movement as *no elapsed time* by using
+/// `saturating_sub(now, last)`.
+pub trait Clock: Send + Sync {
+    /// Returns the current time in milliseconds since an arbitrary epoch.
+    ///
+    /// If the value goes backwards, elapsed time is clamped to zero.
+    fn now_millis(&self) -> u64;
+}
+
+/// Production clock using `Instant` for monotonic time.
+///
+/// Unlike `SystemTime`, `Instant` is guaranteed to be monotonically increasing
+/// and is not affected by NTP synchronization, system sleep/wake cycles, or
+/// manual clock adjustments. This prevents spurious idle timeout kills caused
+/// by clock jumps.
+pub struct MonotonicClock {
+    /// The reference point for all time measurements.
+    epoch: Instant,
+}
+
+impl MonotonicClock {
+    /// Create a new monotonic clock with the current instant as epoch.
+    pub fn new() -> Self {
+        Self {
+            epoch: Instant::now(),
+        }
+    }
+}
+
+impl Default for MonotonicClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clock for MonotonicClock {
+    fn now_millis(&self) -> u64 {
+        self.epoch.elapsed().as_millis() as u64
+    }
+}
+
+/// Global monotonic clock instance for production use.
+///
+/// This is lazily initialized on first use and provides monotonic time
+/// measurements for the entire process lifetime.
+fn global_clock() -> &'static MonotonicClock {
+    use std::sync::OnceLock;
+    static CLOCK: OnceLock<MonotonicClock> = OnceLock::new();
+    CLOCK.get_or_init(MonotonicClock::new)
+}
 
 /// Default idle timeout in seconds (5 minutes).
 ///
@@ -35,41 +96,81 @@ pub const IDLE_TIMEOUT_SECS: u64 = 300;
 
 /// Shared timestamp for tracking last activity.
 ///
-/// Stores milliseconds since UNIX epoch. Use [`new_activity_timestamp`] to create.
+/// Stores milliseconds since process start (monotonic time).
+/// Use [`new_activity_timestamp`] to create.
 pub type SharedActivityTimestamp = Arc<AtomicU64>;
 
 /// Creates a new shared activity timestamp initialized to the current time.
+///
+/// Uses monotonic time (via `Instant`) to prevent issues with clock jumps
+/// from NTP synchronization or system sleep/wake cycles.
 pub fn new_activity_timestamp() -> SharedActivityTimestamp {
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::ZERO)
-        .as_millis() as u64;
-    Arc::new(AtomicU64::new(now_ms))
+    Arc::new(AtomicU64::new(global_clock().now_millis()))
+}
+
+/// Creates a new shared activity timestamp using a custom clock.
+///
+/// This variant is primarily used for testing with mock clocks.
+pub fn new_activity_timestamp_with_clock(clock: &dyn Clock) -> SharedActivityTimestamp {
+    Arc::new(AtomicU64::new(clock.now_millis()))
 }
 
 /// Updates the shared activity timestamp to the current time.
+///
+/// Uses monotonic time to ensure consistent behavior regardless of
+/// system clock changes.
 pub fn touch_activity(timestamp: &SharedActivityTimestamp) {
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::ZERO)
-        .as_millis() as u64;
-    timestamp.store(now_ms, Ordering::Release);
+    timestamp.store(global_clock().now_millis(), Ordering::Release);
+}
+
+/// Updates the shared activity timestamp using a custom clock.
+///
+/// This variant is primarily used for testing with mock clocks.
+pub fn touch_activity_with_clock(timestamp: &SharedActivityTimestamp, clock: &dyn Clock) {
+    timestamp.store(clock.now_millis(), Ordering::Release);
 }
 
 /// Returns the duration since the last activity update.
+///
+/// Uses monotonic time, so the result is always non-negative and
+/// unaffected by system clock changes.
 pub fn time_since_activity(timestamp: &SharedActivityTimestamp) -> Duration {
     let last_ms = timestamp.load(Ordering::Acquire);
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::ZERO)
-        .as_millis() as u64;
+    let now_ms = global_clock().now_millis();
+    Duration::from_millis(now_ms.saturating_sub(last_ms))
+}
 
+/// Returns the duration since the last activity update using a custom clock.
+///
+/// This variant is primarily used for testing with mock clocks.
+///
+/// If the clock value goes backwards relative to the stored activity timestamp,
+/// the elapsed time is clamped to zero.
+pub fn time_since_activity_with_clock(
+    timestamp: &SharedActivityTimestamp,
+    clock: &dyn Clock,
+) -> Duration {
+    let last_ms = timestamp.load(Ordering::Acquire);
+    let now_ms = clock.now_millis();
     Duration::from_millis(now_ms.saturating_sub(last_ms))
 }
 
 /// Checks if the idle timeout has been exceeded.
+///
+/// Uses monotonic time to prevent spurious timeout triggers from clock jumps.
 pub fn is_idle_timeout_exceeded(timestamp: &SharedActivityTimestamp, timeout_secs: u64) -> bool {
     time_since_activity(timestamp) > Duration::from_secs(timeout_secs)
+}
+
+/// Checks if the idle timeout has been exceeded using a custom clock.
+///
+/// This variant is primarily used for testing with mock clocks.
+pub fn is_idle_timeout_exceeded_with_clock(
+    timestamp: &SharedActivityTimestamp,
+    timeout_secs: u64,
+    clock: &dyn Clock,
+) -> bool {
+    time_since_activity_with_clock(timestamp, clock) > Duration::from_secs(timeout_secs)
 }
 
 /// A reader wrapper that updates an activity timestamp on every read.
@@ -98,6 +199,55 @@ impl<R: Read> ActivityTrackingReader<R> {
 }
 
 impl<R: Read> Read for ActivityTrackingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n > 0 {
+            touch_activity(&self.activity_timestamp);
+        }
+        Ok(n)
+    }
+}
+
+/// A reader wrapper for stderr that updates an activity timestamp on every read.
+///
+/// This is similar to [`ActivityTrackingReader`] but designed specifically for
+/// stderr tracking in a separate thread. It shares the same activity timestamp
+/// as the stdout tracker, ensuring that any output (stdout OR stderr) prevents
+/// idle timeout kills.
+///
+/// # Why Separate Struct?
+///
+/// While functionally identical to `ActivityTrackingReader`, having a distinct
+/// type makes the code's intent clearer and enables separate documentation.
+/// The stderr tracker runs in its own thread and updates the shared timestamp
+/// whenever stderr data is received.
+///
+/// # Example Use Case
+///
+/// Some agents (e.g., opencode with `--print-logs`) output progress information
+/// to stderr while processing, only producing stdout output when complete.
+/// Without tracking stderr activity, such agents would be incorrectly killed
+/// after the idle timeout despite being actively working.
+pub struct StderrActivityTracker<R: Read> {
+    inner: R,
+    activity_timestamp: SharedActivityTimestamp,
+}
+
+impl<R: Read> StderrActivityTracker<R> {
+    /// Create a new stderr activity tracker.
+    ///
+    /// The provided timestamp should be the same one used by the stdout
+    /// `ActivityTrackingReader`, ensuring both streams contribute to
+    /// preventing idle timeout kills.
+    pub fn new(inner: R, activity_timestamp: SharedActivityTimestamp) -> Self {
+        Self {
+            inner,
+            activity_timestamp,
+        }
+    }
+}
+
+impl<R: Read> Read for StderrActivityTracker<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         if n > 0 {
@@ -201,7 +351,36 @@ fn kill_process(pid: u32, executor: &dyn ProcessExecutor) -> bool {
 mod tests {
     use super::*;
     use std::io::Cursor;
+    use std::sync::atomic::AtomicU64;
     use std::thread;
+
+    /// Mock clock for testing time-related behavior without real delays.
+    struct MockClock {
+        current_ms: AtomicU64,
+    }
+
+    impl MockClock {
+        fn new(initial_ms: u64) -> Self {
+            Self {
+                current_ms: AtomicU64::new(initial_ms),
+            }
+        }
+
+        fn advance(&self, delta_ms: u64) {
+            self.current_ms.fetch_add(delta_ms, Ordering::SeqCst);
+        }
+
+        #[cfg(test)]
+        fn jump_back(&self, delta_ms: u64) {
+            self.current_ms.fetch_sub(delta_ms, Ordering::SeqCst);
+        }
+    }
+
+    impl Clock for MockClock {
+        fn now_millis(&self) -> u64 {
+            self.current_ms.load(Ordering::SeqCst)
+        }
+    }
 
     #[test]
     fn test_new_activity_timestamp_is_recent() {
@@ -235,17 +414,36 @@ mod tests {
 
     #[test]
     fn test_is_idle_timeout_exceeded_true_after_timeout() {
-        let timestamp = new_activity_timestamp();
-        // Set timestamp to 2 seconds ago
-        let two_secs_ago = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64
-            - 2000;
-        timestamp.store(two_secs_ago, Ordering::Release);
+        // Use mock clock for deterministic testing
+        let clock = MockClock::new(100_000); // Start at 100 seconds
+        let timestamp = new_activity_timestamp_with_clock(&clock);
+
+        // Advance clock by 2 seconds without touching activity
+        clock.advance(2000);
 
         // Timeout of 1 second should be exceeded
-        assert!(is_idle_timeout_exceeded(&timestamp, 1));
+        assert!(is_idle_timeout_exceeded_with_clock(&timestamp, 1, &clock));
+    }
+
+    #[test]
+    fn test_is_idle_timeout_exceeded_with_mock_clock() {
+        let clock = MockClock::new(0);
+        let timestamp = new_activity_timestamp_with_clock(&clock);
+
+        // Initially, no timeout
+        assert!(!is_idle_timeout_exceeded_with_clock(&timestamp, 5, &clock));
+
+        // Advance by 3 seconds - still no timeout (threshold is 5)
+        clock.advance(3000);
+        assert!(!is_idle_timeout_exceeded_with_clock(&timestamp, 5, &clock));
+
+        // Advance by 3 more seconds (total 6) - now timeout
+        clock.advance(3000);
+        assert!(is_idle_timeout_exceeded_with_clock(&timestamp, 5, &clock));
+
+        // Touch activity resets
+        touch_activity_with_clock(&timestamp, &clock);
+        assert!(!is_idle_timeout_exceeded_with_clock(&timestamp, 5, &clock));
     }
 
     #[test]
@@ -256,25 +454,28 @@ mod tests {
 
         let mut reader = ActivityTrackingReader::new(cursor, timestamp.clone());
 
-        // Set timestamp to 1 second ago AFTER creating reader
-        // (since new() calls touch_activity)
-        let one_sec_ago = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64
-            - 1000;
-        timestamp.store(one_sec_ago, Ordering::Release);
+        // Set timestamp to 0 to simulate very old activity
+        timestamp.store(0, Ordering::Release);
 
-        // Before read, should be ~1 second old
-        assert!(time_since_activity(&timestamp) >= Duration::from_millis(900));
+        // Verify timestamp is at 0
+        assert_eq!(timestamp.load(Ordering::Acquire), 0);
 
         // Read some data
         let mut buf = [0u8; 5];
         let n = reader.read(&mut buf).unwrap();
         assert_eq!(n, 5);
 
-        // After read, timestamp should be updated (very recent)
-        assert!(time_since_activity(&timestamp) < Duration::from_millis(100));
+        // After read, timestamp should be updated to current clock time.
+        // The actual value depends on when global_clock was initialized.
+        // We verify by checking that timestamp == global_clock.now_millis() (within tolerance)
+        // because touch_activity sets it to current time.
+        let updated = timestamp.load(Ordering::Acquire);
+        let current = global_clock().now_millis();
+        // Timestamp should be recent (within 100ms of current time)
+        assert!(
+            current.saturating_sub(updated) < 100,
+            "After read, timestamp should be updated to recent time. Updated: {updated}, Current: {current}"
+        );
     }
 
     #[test]
@@ -283,31 +484,25 @@ mod tests {
         let cursor = Cursor::new(data.to_vec());
         let timestamp = new_activity_timestamp();
 
-        // Set timestamp to 1 second ago
-        let one_sec_ago = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64
-            - 1000;
-        timestamp.store(one_sec_ago, Ordering::Release);
-
         let mut reader = ActivityTrackingReader::new(cursor, timestamp.clone());
 
-        // Note: ActivityTrackingReader::new touches the timestamp, so reset it
-        let one_sec_ago = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64
-            - 1000;
-        timestamp.store(one_sec_ago, Ordering::Release);
+        // Set timestamp to 0 to simulate very old activity
+        timestamp.store(0, Ordering::Release);
+
+        // Verify timestamp is at 0
+        assert_eq!(timestamp.load(Ordering::Acquire), 0);
 
         // Read (should return 0, EOF)
         let mut buf = [0u8; 5];
         let n = reader.read(&mut buf).unwrap();
         assert_eq!(n, 0);
 
-        // After zero-read, timestamp should NOT be updated
-        assert!(time_since_activity(&timestamp) >= Duration::from_millis(900));
+        // After zero-read, timestamp should NOT be updated (still 0)
+        assert_eq!(
+            timestamp.load(Ordering::Acquire),
+            0,
+            "After zero-read, timestamp should remain 0"
+        );
     }
 
     #[test]
@@ -363,5 +558,97 @@ mod tests {
         // Wait for monitor to complete
         let result = handle.join().expect("Monitor thread panicked");
         assert_eq!(result, MonitorResult::ProcessCompleted);
+    }
+
+    #[test]
+    fn test_stderr_activity_tracker_updates_timestamp() {
+        let data = b"debug output\nmore output\n";
+        let cursor = Cursor::new(data.to_vec());
+        let timestamp = new_activity_timestamp();
+
+        // Set timestamp to 0 to simulate very old activity
+        timestamp.store(0, Ordering::Release);
+
+        // Verify timestamp is at 0
+        assert_eq!(timestamp.load(Ordering::Acquire), 0);
+
+        // Create stderr tracker and read data
+        let mut tracker = StderrActivityTracker::new(cursor, timestamp.clone());
+        let mut buf = [0u8; 50];
+        let n = tracker.read(&mut buf).unwrap();
+        assert!(n > 0);
+
+        // After stderr read, timestamp should be updated to current clock time.
+        let updated = timestamp.load(Ordering::Acquire);
+        let current = global_clock().now_millis();
+        // Timestamp should be recent (within 100ms of current time)
+        assert!(
+            current.saturating_sub(updated) < 100,
+            "After stderr read, timestamp should be updated to recent time. Updated: {updated}, Current: {current}"
+        );
+    }
+
+    #[test]
+    fn test_stderr_activity_tracker_no_update_on_zero_read() {
+        let data = b"";
+        let cursor = Cursor::new(data.to_vec());
+        let timestamp = new_activity_timestamp();
+
+        let mut tracker = StderrActivityTracker::new(cursor, timestamp.clone());
+
+        // Set timestamp to 0 after creating tracker
+        timestamp.store(0, Ordering::Release);
+
+        // Verify timestamp is at 0
+        assert_eq!(timestamp.load(Ordering::Acquire), 0);
+
+        // Read (should return 0, EOF)
+        let mut buf = [0u8; 10];
+        let n = tracker.read(&mut buf).unwrap();
+        assert_eq!(n, 0);
+
+        // After zero-read, timestamp should NOT be updated (still 0)
+        assert_eq!(
+            timestamp.load(Ordering::Acquire),
+            0,
+            "After zero-read, timestamp should remain 0"
+        );
+    }
+
+    #[test]
+    fn test_clock_jump_back_does_not_cause_spurious_timeout() {
+        // This test verifies that even if we simulate a "clock jump" by
+        // manipulating the mock clock, our monotonic time approach handles
+        // it correctly with saturating_sub.
+        let clock = MockClock::new(100_000); // Start at 100 seconds
+        let timestamp = new_activity_timestamp_with_clock(&clock);
+
+        // Activity just happened at t=100s
+        touch_activity_with_clock(&timestamp, &clock);
+
+        // Simulate clock jumping back 50 seconds (NTP sync scenario)
+        clock.jump_back(50_000);
+
+        // Should NOT trigger timeout because:
+        // 1. timestamp stores 100_000
+        // 2. current time is now 50_000
+        // 3. saturating_sub(50_000, 100_000) = 0
+        // 4. elapsed = 0 < timeout threshold
+        let elapsed = time_since_activity_with_clock(&timestamp, &clock);
+        assert_eq!(elapsed, Duration::ZERO);
+        assert!(!is_idle_timeout_exceeded_with_clock(
+            &timestamp,
+            IDLE_TIMEOUT_SECS,
+            &clock
+        ));
+    }
+
+    #[test]
+    fn test_monotonic_clock_only_increases() {
+        let clock = MonotonicClock::new();
+        let t1 = clock.now_millis();
+        thread::sleep(Duration::from_millis(10));
+        let t2 = clock.now_millis();
+        assert!(t2 >= t1, "Monotonic clock should never go backwards");
     }
 }

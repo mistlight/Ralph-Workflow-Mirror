@@ -172,6 +172,19 @@ fn try_agent_execution(
                 });
             }
 
+            // Special handling for timeout: emit fallback event to switch agents
+            // Unlike rate limits, timeout fallback does not preserve prompt context
+            // since the previous execution may have made partial progress.
+            if is_timeout_error(&error_kind) {
+                return Ok(AgentExecutionResult {
+                    event: PipelineEvent::agent_timeout_fallback(
+                        config.role,
+                        config.agent_name.to_string(),
+                    ),
+                    session_id: None,
+                });
+            }
+
             let retriable = is_retriable_agent_error(&error_kind);
 
             Ok(AgentExecutionResult {
@@ -346,15 +359,32 @@ fn classify_io_error(error: &io::Error) -> AgentErrorKind {
 /// Retriable errors should trigger model fallback (same agent, different model).
 /// Non-retriable errors should trigger agent fallback (different agent).
 ///
-/// Note: RateLimit (429) is intentionally NOT retriable - it triggers immediate
-/// agent fallback to continue work without waiting. This is handled specially
-/// via the `AgentRateLimitFallback` event which switches to the next agent
-/// immediately rather than retrying with the same agent.
+/// # Non-retriable errors that get special handling:
+///
+/// - **RateLimit (429)**: Triggers immediate agent fallback via `AgentRateLimitFallback`.
+///   The current provider is temporarily exhausted, so switch to next agent immediately.
+///
+/// - **Timeout**: Triggers immediate agent fallback via `AgentTimeoutFallback`.
+///   The agent may be stuck or the task is too complex for it. Retrying the same
+///   agent would likely hit the same timeout, so switch to a different agent.
+///
+/// - **Authentication**: Triggers immediate agent fallback via `AgentAuthFallback`.
+///   Credential issues with the current agent require switching to another.
 fn is_retriable_agent_error(error_kind: &AgentErrorKind) -> bool {
     matches!(
         error_kind,
-        AgentErrorKind::Network | AgentErrorKind::Timeout | AgentErrorKind::ModelUnavailable
+        AgentErrorKind::Network | AgentErrorKind::ModelUnavailable
     )
+}
+
+/// Check if an error kind represents a timeout error.
+///
+/// Timeout errors get special handling - they trigger immediate agent
+/// fallback via `AgentTimeoutFallback` event. Unlike rate limits, timeout
+/// fallback does not preserve prompt context since the previous execution
+/// may have made partial progress that is difficult to resume cleanly.
+fn is_timeout_error(error_kind: &AgentErrorKind) -> bool {
+    matches!(error_kind, AgentErrorKind::Timeout)
 }
 
 /// Check if an error kind represents a rate limit (429) error.
@@ -446,10 +476,12 @@ mod tests {
 
     #[test]
     fn test_is_retriable_agent_error() {
-        // Network, Timeout, ModelUnavailable are retriable (model fallback)
+        // Network, ModelUnavailable are retriable (model fallback)
         assert!(is_retriable_agent_error(&AgentErrorKind::Network));
-        assert!(is_retriable_agent_error(&AgentErrorKind::Timeout));
         assert!(is_retriable_agent_error(&AgentErrorKind::ModelUnavailable));
+        // Timeout is NOT retriable - it triggers immediate agent fallback
+        // (retrying the same agent would likely hit the same timeout)
+        assert!(!is_retriable_agent_error(&AgentErrorKind::Timeout));
         // RateLimit is NOT retriable - it triggers immediate agent fallback
         assert!(!is_retriable_agent_error(&AgentErrorKind::RateLimit));
         // Non-retriable errors trigger agent fallback
@@ -457,6 +489,20 @@ mod tests {
         assert!(!is_retriable_agent_error(&AgentErrorKind::ParsingError));
         assert!(!is_retriable_agent_error(&AgentErrorKind::FileSystem));
         assert!(!is_retriable_agent_error(&AgentErrorKind::InternalError));
+    }
+
+    #[test]
+    fn test_is_timeout_error() {
+        // Only Timeout should match
+        assert!(is_timeout_error(&AgentErrorKind::Timeout));
+        // All others should NOT be timeout errors
+        assert!(!is_timeout_error(&AgentErrorKind::Network));
+        assert!(!is_timeout_error(&AgentErrorKind::RateLimit));
+        assert!(!is_timeout_error(&AgentErrorKind::ModelUnavailable));
+        assert!(!is_timeout_error(&AgentErrorKind::Authentication));
+        assert!(!is_timeout_error(&AgentErrorKind::ParsingError));
+        assert!(!is_timeout_error(&AgentErrorKind::FileSystem));
+        assert!(!is_timeout_error(&AgentErrorKind::InternalError));
     }
 
     #[test]
@@ -661,10 +707,12 @@ mod tests {
             "Network should not trigger auth fallback"
         );
 
-        // Timeout errors: retriable
+        // Timeout errors: NOT retriable (triggers agent fallback via TimeoutFallback)
+        // Retrying the same agent would likely hit the same timeout
         let timeout_error = classify_agent_error(143, ""); // SIGTERM
         assert_eq!(timeout_error, AgentErrorKind::Timeout);
-        assert!(is_retriable_agent_error(&timeout_error));
+        assert!(!is_retriable_agent_error(&timeout_error));
+        assert!(is_timeout_error(&timeout_error));
 
         // Model unavailable: retriable
         let model_error = classify_agent_error(1, "Model not found");

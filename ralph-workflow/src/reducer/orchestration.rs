@@ -1287,6 +1287,9 @@ mod tests {
                 Effect::PreparePlanningPrompt { iteration, .. } => {
                     state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
                 }
+                Effect::CleanupPlanningXml { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_xml_cleaned(iteration));
+                }
                 Effect::InvokePlanningAgent { iteration } => {
                     state = reduce(state, PipelineEvent::planning_agent_invoked(iteration));
                 }
@@ -1323,6 +1326,9 @@ mod tests {
                 }
                 Effect::PrepareDevelopmentPrompt { iteration, .. } => {
                     state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
+                }
+                Effect::CleanupDevelopmentXml { iteration } => {
+                    state = reduce(state, PipelineEvent::development_xml_cleaned(iteration));
                 }
                 Effect::InvokeDevelopmentAgent { iteration } => {
                     state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
@@ -1407,6 +1413,9 @@ mod tests {
 
                 Effect::PrepareFixPrompt { pass, .. } => {
                     state = reduce(state, PipelineEvent::fix_prompt_prepared(pass));
+                }
+                Effect::CleanupFixResultXml { pass } => {
+                    state = reduce(state, PipelineEvent::fix_result_xml_cleaned(pass));
                 }
                 Effect::InvokeFixAgent { pass } => {
                     state = reduce(state, PipelineEvent::fix_agent_invoked(pass));
@@ -1776,12 +1785,11 @@ mod tests {
 
     #[test]
     fn test_determine_effect_commit_message_not_started() {
-        // With initialized agent chain, commit phase should generate message
-        // (after checking diff first if not already done)
+        // With initialized agent chain and diff prepared, commit phase should prepare prompt
         let state = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
-            commit_diff_prepared: true, // Skip diff check
+            commit_diff_prepared: true, // Diff already done
             agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
                 vec!["commit-agent".to_string()],
                 vec![vec![]],
@@ -1790,23 +1798,31 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::CheckCommitDiff));
+        // Since diff is prepared but prompt is not, next step is to prepare prompt
+        assert!(matches!(
+            effect,
+            Effect::PrepareCommitPrompt {
+                prompt_mode: PromptMode::Normal
+            }
+        ));
     }
 
     #[test]
     fn test_determine_effect_commit_message_ignores_stale_validated_outcome() {
+        // Stale outcome (attempt 1) should be ignored when current attempt is 2
+        // Should proceed to prepare prompt instead of applying stale outcome
         let state = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::Generating {
                 attempt: 2,
                 max_attempts: 5,
             },
-            commit_diff_prepared: true, // Skip diff check
+            commit_diff_prepared: true, // Diff already done
             commit_prompt_prepared: false,
             commit_agent_invoked: false,
             commit_xml_extracted: false,
             commit_validated_outcome: Some(crate::reducer::state::CommitValidatedOutcome {
-                attempt: 1,
+                attempt: 1, // Stale: from attempt 1, not current attempt 2
                 message: Some("stale message".to_string()),
                 reason: None,
             }),
@@ -1819,7 +1835,13 @@ mod tests {
         };
 
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::CheckCommitDiff));
+        // Stale outcome is ignored, so proceeds to prepare prompt
+        assert!(matches!(
+            effect,
+            Effect::PrepareCommitPrompt {
+                prompt_mode: PromptMode::Normal
+            }
+        ));
     }
 
     #[test]

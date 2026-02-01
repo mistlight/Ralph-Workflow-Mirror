@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[test]
-fn test_validate_review_issues_xml_emits_event_without_ui_output() {
+fn test_validate_review_issues_xml_emits_event_and_ui_output() {
     let issues_xml =
         "<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>";
     let workspace = MemoryWorkspace::new_test().with_file(xml_paths::ISSUES_XML, issues_xml);
@@ -73,7 +73,15 @@ fn test_validate_review_issues_xml_emits_event_without_ui_output() {
         }) if issues.is_empty() && no_issues_found.as_deref() == Some("ok")
     ));
 
-    assert!(result.ui_events.is_empty());
+    // Validation always emits UI output for the XML content
+    assert_eq!(result.ui_events.len(), 1);
+    assert!(matches!(
+        &result.ui_events[0],
+        UIEvent::XmlOutput {
+            xml_type: XmlOutputType::ReviewIssues,
+            ..
+        }
+    ));
 }
 
 #[test]

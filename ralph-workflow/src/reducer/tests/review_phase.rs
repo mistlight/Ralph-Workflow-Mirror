@@ -194,7 +194,7 @@ fn test_fix_attempt_started_resets_agent_chain() {
 }
 
 #[test]
-fn test_review_prompt_prepared_preserves_xsd_retry_pending() {
+fn test_review_prompt_prepared_clears_xsd_retry_pending() {
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -206,13 +206,13 @@ fn test_review_prompt_prepared_preserves_xsd_retry_pending() {
     let new_state = reduce(state, PipelineEvent::review_prompt_prepared(0));
 
     assert!(
-        new_state.continuation.xsd_retry_pending,
-        "review prompt preparation should not clear xsd_retry_pending"
+        !new_state.continuation.xsd_retry_pending,
+        "review prompt preparation should clear xsd_retry_pending to prevent infinite retry loops"
     );
 }
 
 #[test]
-fn test_fix_prompt_prepared_preserves_xsd_retry_pending() {
+fn test_fix_prompt_prepared_clears_xsd_retry_pending() {
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -224,8 +224,8 @@ fn test_fix_prompt_prepared_preserves_xsd_retry_pending() {
     let new_state = reduce(state, PipelineEvent::fix_prompt_prepared(0));
 
     assert!(
-        new_state.continuation.xsd_retry_pending,
-        "fix prompt preparation should not clear xsd_retry_pending"
+        !new_state.continuation.xsd_retry_pending,
+        "fix prompt preparation should clear xsd_retry_pending to prevent infinite retry loops"
     );
 }
 
@@ -395,26 +395,34 @@ fn test_review_output_validation_failed_retries_within_limit() {
 
 #[test]
 fn test_review_output_validation_failed_switches_agent_at_limit() {
+    use crate::reducer::state::ContinuationState;
+
     let agent_chain = crate::reducer::state::AgentChainState::initial().with_agents(
         vec!["agent1".to_string(), "agent2".to_string()],
         vec![vec![], vec![]],
         crate::agents::AgentRole::Reviewer,
     );
+    // Set xsd_retry_count to max-1 so next failure triggers agent switch
+    let continuation = ContinuationState {
+        xsd_retry_count: 9, // default max is 10, so 9+1 >= 10 triggers switch
+        ..ContinuationState::new()
+    };
     let state = PipelineState {
         phase: PipelinePhase::Review,
         reviewer_pass: 0,
         agent_chain,
+        continuation,
         ..create_test_state()
     };
 
-    // MAX_REVIEW_INVALID_OUTPUT_RERUNS is 2, so at attempt 2 we should switch
-    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 2));
+    // This validation failure should trigger agent switch since xsd_retry_count is at limit
+    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
     // Should switch to next agent
     assert_eq!(
         new_state.agent_chain.current_agent_index, 1,
-        "Should switch to next agent after max invalid output attempts"
+        "Should switch to next agent after max XSD retries"
     );
 }
 
