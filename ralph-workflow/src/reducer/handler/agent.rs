@@ -84,29 +84,29 @@ impl MainEffectHandler {
             PipelinePhase::Interrupted => ".agent/logs/interrupted".to_string(),
         };
 
-        // Encode attempt context into a single counter for filename stability.
-        // Keep the arithmetic simple and deterministic.
+        // Determine a collision-free logfile attempt index.
         //
-        // Important: use saturating arithmetic for the full expression.
-        // Even if each component uses saturating_mul, normal addition can
-        // overflow and panic in debug builds.
-        let attempt = self
-            .state
-            .agent_chain
-            .retry_cycle
-            .saturating_mul(10_000)
-            .saturating_add(
-                self.state
-                    .continuation
-                    .continuation_attempt
-                    .saturating_mul(100),
-            )
-            .saturating_add(self.state.continuation.xsd_retry_count);
+        // Rationale: The reducer tracks multiple retry counters (retry_cycle,
+        // continuation_attempt, xsd_retry_count). Packing them into a single
+        // arithmetic attempt value can collide when counters exceed assumed
+        // bounds, causing later attempts to overwrite earlier logs.
+        //
+        // We avoid collisions by scanning existing logs for this
+        // `(phase_prefix, agent, model_index)` family and using the next
+        // available attempt index.
+        let model_index = self.state.agent_chain.current_model_index;
+        let agent_for_log = effective_agent.to_lowercase();
+        let attempt = crate::pipeline::logfile::next_logfile_attempt_index(
+            std::path::Path::new(&phase_prefix),
+            &agent_for_log,
+            model_index,
+            ctx.workspace,
+        );
 
         let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
             &phase_prefix,
-            &effective_agent.to_lowercase(),
-            self.state.agent_chain.current_model_index,
+            &agent_for_log,
+            model_index,
             attempt,
         );
 
@@ -149,7 +149,7 @@ impl MainEffectHandler {
             prompt: &effective_prompt,
             display_name: &effective_agent,
             log_prefix: &phase_prefix,
-            model_index: self.state.agent_chain.current_model_index,
+            model_index,
             attempt,
             logfile: &logfile,
         };

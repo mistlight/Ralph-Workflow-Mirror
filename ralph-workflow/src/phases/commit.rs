@@ -325,15 +325,23 @@ pub fn run_commit_attempt(
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
     let log_prefix = ".agent/logs/commit_generation/commit_generation";
+    let model_index = 0usize;
+    let agent_for_log = commit_agent.to_lowercase();
+    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
+        log_prefix,
+        &agent_for_log,
+        model_index,
+        attempt,
+    );
     let prompt_cmd = PromptCommand {
         label: commit_agent,
         display_name: commit_agent,
         cmd_str: &cmd_str,
         prompt: &prompt,
         log_prefix,
-        model_index: None,
-        attempt: None,
-        logfile: ".agent/logs/commit_generation/commit_generation.log",
+        model_index: Some(model_index),
+        attempt: Some(attempt),
+        logfile: &logfile,
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,
     };
@@ -445,15 +453,24 @@ pub fn generate_commit_message(
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
     let log_prefix = ".agent/logs/commit_generation/commit_generation";
+    let model_index = 0usize;
+    let attempt = 1u32;
+    let agent_for_log = commit_agent.to_lowercase();
+    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
+        log_prefix,
+        &agent_for_log,
+        model_index,
+        attempt,
+    );
     let prompt_cmd = PromptCommand {
         label: commit_agent,
         display_name: commit_agent,
         cmd_str: &cmd_str,
         prompt: &prompt,
         log_prefix,
-        model_index: None,
-        attempt: None,
-        logfile: ".agent/logs/commit_generation/commit_generation.log",
+        model_index: Some(model_index),
+        attempt: Some(attempt),
+        logfile: &logfile,
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,
     };
@@ -485,7 +502,17 @@ pub fn generate_commit_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::execution_history::ExecutionHistory;
+    use crate::checkpoint::RunContext;
+    use crate::config::Config;
+    use crate::executor::{MockProcessExecutor, ProcessExecutor};
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::{Stats, Timer};
     use crate::workspace::MemoryWorkspace;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Arc;
 
     #[test]
     fn test_truncate_diff_if_large() {
@@ -577,5 +604,57 @@ mod tests {
             extraction,
             CommitExtractionOutcome::MissingFile(_)
         ));
+    }
+
+    #[test]
+    fn test_run_commit_attempt_uses_unique_logfile_with_attempt_suffix() {
+        let workspace = MemoryWorkspace::new_test().with_file(
+            xml_paths::COMMIT_MESSAGE_XML,
+            "<ralph-commit><ralph-subject>feat: x</ralph-subject></ralph-commit>",
+        );
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let template_context = TemplateContext::default();
+
+        let executor = Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+        );
+        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+
+        let repo_root = PathBuf::from("/mock/repo");
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "claude",
+            reviewer_agent: "claude",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: repo_root.as_path(),
+            workspace: &workspace,
+        };
+
+        let _ = run_commit_attempt(&mut ctx, 2, "diff --git a/a b/a\n+change\n", "claude")
+            .expect("run_commit_attempt should succeed");
+
+        let calls = executor.agent_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].logfile, ".agent/logs/commit_generation/commit_generation_claude_0_a2.log",
+            "commit generation log should include agent, model index, and attempt suffix"
+        );
     }
 }

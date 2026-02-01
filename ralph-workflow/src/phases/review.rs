@@ -159,7 +159,20 @@ pub fn run_review_pass(
     let log_dir = Path::new(".agent/logs");
     ctx.workspace.create_dir_all(log_dir)?;
     let log_prefix = format!(".agent/logs/reviewer_review_{j}");
-    let logfile = format!("{log_prefix}.log");
+    let model_index = 0usize;
+    let agent_for_log = active_agent.to_lowercase();
+    let attempt = crate::pipeline::logfile::next_logfile_attempt_index(
+        Path::new(&log_prefix),
+        &agent_for_log,
+        model_index,
+        ctx.workspace,
+    );
+    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
+        &log_prefix,
+        &agent_for_log,
+        model_index,
+        attempt,
+    );
 
     let agent_config = ctx
         .registry
@@ -183,8 +196,8 @@ pub fn run_review_pass(
         cmd_str: &cmd_str,
         prompt: &review_prompt_xml,
         log_prefix: &log_prefix,
-        model_index: None,
-        attempt: None,
+        model_index: Some(model_index),
+        attempt: Some(attempt),
         logfile: &logfile,
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,
@@ -507,7 +520,20 @@ pub fn run_fix_pass(
     let log_dir = Path::new(".agent/logs");
     ctx.workspace.create_dir_all(log_dir)?;
     let log_prefix = format!(".agent/logs/reviewer_fix_{j}");
-    let logfile = format!("{log_prefix}.log");
+    let model_index = 0usize;
+    let agent_for_log = active_agent.to_lowercase();
+    let attempt = crate::pipeline::logfile::next_logfile_attempt_index(
+        Path::new(&log_prefix),
+        &agent_for_log,
+        model_index,
+        ctx.workspace,
+    );
+    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
+        &log_prefix,
+        &agent_for_log,
+        model_index,
+        attempt,
+    );
 
     let agent_config = ctx
         .registry
@@ -531,8 +557,8 @@ pub fn run_fix_pass(
         cmd_str: &cmd_str,
         prompt: &fix_prompt,
         log_prefix: &log_prefix,
-        model_index: None,
-        attempt: None,
+        model_index: Some(model_index),
+        attempt: Some(attempt),
         logfile: &logfile,
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,
@@ -616,12 +642,13 @@ mod tests {
     use crate::checkpoint::execution_history::ExecutionHistory;
     use crate::checkpoint::RunContext;
     use crate::config::Config;
-    use crate::executor::MockProcessExecutor;
+    use crate::executor::{MockProcessExecutor, ProcessExecutor};
     use crate::logger::{Colors, Logger};
     use crate::pipeline::{Stats, Timer};
     use crate::prompts::template_context::TemplateContext;
     use crate::workspace::MemoryWorkspace;
     use crate::workspace::Workspace;
+    use std::collections::HashMap;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
@@ -718,6 +745,107 @@ mod tests {
         assert!(
             !issues_md.contains("<ralph-issues>"),
             "expected ISSUES.md to be markdown, not raw XML"
+        );
+    }
+
+    #[test]
+    fn test_run_review_pass_uses_unique_logfile_with_attempt_suffix() {
+        let workspace = MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Plan\n");
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let template_context = TemplateContext::default();
+        let executor = Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+        );
+        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+
+        let repo_root = PathBuf::from("/mock/repo");
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "claude",
+            reviewer_agent: "claude",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: repo_root.as_path(),
+            workspace: &workspace,
+        };
+
+        let _ = run_review_pass(&mut ctx, 1, "review", "", None)
+            .expect("run_review_pass should succeed");
+
+        let calls = executor.agent_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].logfile, ".agent/logs/reviewer_review_1_claude_0_a0.log",
+            "review logfile should include agent, model index, and attempt suffix"
+        );
+    }
+
+    #[test]
+    fn test_run_fix_pass_uses_unique_logfile_with_attempt_suffix() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file("PROMPT.md", "# Prompt\n")
+            .with_file(".agent/PROMPT.md.backup", "# Prompt\n")
+            .with_file(".agent/PLAN.md", "# Plan\n")
+            .with_file(".agent/ISSUES.md", "# Issues\n");
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let template_context = TemplateContext::default();
+        let executor = Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+        );
+        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+
+        let repo_root = PathBuf::from("/mock/repo");
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "claude",
+            reviewer_agent: "claude",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: repo_root.as_path(),
+            workspace: &workspace,
+        };
+
+        let resume_ctx: Option<&ResumeContext> = None;
+        let _ = run_fix_pass(&mut ctx, 1, ContextLevel::Normal, resume_ctx, None)
+            .expect("run_fix_pass should succeed");
+
+        let calls = executor.agent_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].logfile, ".agent/logs/reviewer_fix_1_claude_0_a0.log",
+            "fix logfile should include agent, model index, and attempt suffix"
         );
     }
 }
