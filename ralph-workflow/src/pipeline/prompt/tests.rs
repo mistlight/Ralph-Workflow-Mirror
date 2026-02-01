@@ -1,6 +1,7 @@
 use super::*;
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
+use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -85,6 +86,22 @@ fn test_build_prompt_archive_filename_is_unique_across_calls_with_same_timestamp
     assert_ne!(a, b);
     assert!(a.ends_with("_123.txt"));
     assert!(b.ends_with("_123.txt"));
+}
+
+#[test]
+fn test_streaming_line_reader_rejects_single_line_larger_than_max_buffer_size() {
+    // Regression test: BufRead::lines() must not accumulate unbounded memory
+    // when the stream never emits a newline.
+    let data = vec![b'a'; MAX_BUFFER_SIZE + 1];
+    let reader = StreamingLineReader::new(Cursor::new(data));
+
+    let mut lines = reader.lines();
+    let first = lines.next().expect("expected one line or an error");
+
+    assert!(
+        first.is_err(),
+        "expected an error when a single line exceeds MAX_BUFFER_SIZE"
+    );
 }
 
 struct CountingReader {
