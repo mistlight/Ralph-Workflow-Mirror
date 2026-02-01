@@ -262,6 +262,14 @@ pub struct PromptCommand<'a> {
     pub display_name: &'a str,
     pub cmd_str: &'a str,
     pub prompt: &'a str,
+    /// Log prefix used for associating artifacts.
+    ///
+    /// Example: `.agent/logs/planning_1` (without extension).
+    pub log_prefix: &'a str,
+    /// Optional model fallback index for attribution.
+    pub model_index: Option<usize>,
+    /// Optional attempt counter for attribution.
+    pub attempt: Option<u32>,
     pub logfile: &'a str,
     pub parser_type: JsonParserType,
     pub env_vars: &'a std::collections::HashMap<String, String>,
@@ -294,7 +302,9 @@ struct PromptSaveOptions<'a> {
 struct PromptArchiveInfo<'a> {
     phase_label: &'a str,
     agent_name: &'a str,
-    logfile: &'a str,
+    log_prefix: &'a str,
+    model_index: Option<usize>,
+    attempt: Option<u32>,
 }
 
 /// Saves the prompt to a file, archives it, and optionally copies it to the clipboard.
@@ -332,14 +342,7 @@ fn save_prompt_to_file_and_clipboard(
 
     // Archive prompt with unique path for debugging
     if let Some(info) = options.archive_info {
-        if let Err(e) = archive_prompt(
-            prompt,
-            info.phase_label,
-            info.agent_name,
-            info.logfile,
-            logger,
-            workspace,
-        ) {
+        if let Err(e) = archive_prompt(prompt, &info, logger, workspace) {
             // Log but don't fail - archiving is for observability, not critical path
             logger.warn(&format!("Failed to archive prompt: {}", e));
         }
@@ -375,19 +378,17 @@ fn save_prompt_to_file_and_clipboard(
 /// Prompts are archived to `.agent/prompts/{phase_iteration}_{agent}_{model_index}_a{attempt}_{timestamp}.txt`.
 ///
 /// The archive filename is derived from structured components:
-/// - `phase_iteration`: derived from the log file stem when possible (e.g., `planning_1`)
+/// - `phase_iteration`: derived from `log_prefix` when possible (e.g., `planning_1`)
 /// - `agent`: sanitized agent name (slashes replaced with hyphens)
-/// - `model_index`: parsed from the log file name when present
-/// - `attempt`: parsed from the log file name when present (`_a{attempt}`)
+/// - `model_index`: provided explicitly when known
+/// - `attempt`: provided explicitly when known
 /// - `timestamp`: milliseconds since UNIX epoch
 ///
 /// This enables post-mortem debugging by preserving every prompt sent to every
 /// agent invocation, even when the same agent is invoked multiple times.
 fn archive_prompt(
     prompt: &str,
-    phase_label: &str,
-    agent_name: &str,
-    logfile: &str,
+    info: &PromptArchiveInfo<'_>,
     logger: &Logger,
     workspace: &dyn crate::workspace::Workspace,
 ) -> io::Result<()> {
@@ -401,8 +402,14 @@ fn archive_prompt(
         .unwrap_or_default()
         .as_millis();
 
-    let archive_filename =
-        build_prompt_archive_filename(phase_label, agent_name, logfile, timestamp);
+    let archive_filename = build_prompt_archive_filename(
+        info.phase_label,
+        info.agent_name,
+        info.log_prefix,
+        info.model_index,
+        info.attempt,
+        timestamp,
+    );
     let archive_path = prompts_dir.join(archive_filename);
 
     workspace.write(&archive_path, prompt)?;
@@ -414,7 +421,9 @@ fn archive_prompt(
 fn build_prompt_archive_filename(
     phase_label: &str,
     agent_name: &str,
-    logfile: &str,
+    log_prefix: &str,
+    model_index: Option<usize>,
+    attempt: Option<u32>,
     timestamp_ms: u128,
 ) -> String {
     use crate::pipeline::logfile::sanitize_agent_name;
@@ -422,62 +431,23 @@ fn build_prompt_archive_filename(
 
     let safe_agent = sanitize_agent_name(&agent_name.to_lowercase());
 
-    let log_stem = Path::new(logfile)
-        .file_stem()
+    let mut prefix_part = Path::new(log_prefix)
+        .file_name()
         .and_then(|s| s.to_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("unknown");
+        .map(|s| sanitize_agent_name(&s.to_lowercase()))
+        .unwrap_or_else(|| "unknown".to_string());
 
-    let (stem_without_attempt, attempt_suffix) = if let Some(last_underscore) = log_stem.rfind('_')
-    {
-        let suffix = &log_stem[last_underscore + 1..];
-        if let Some(attempt_digits) = suffix.strip_prefix('a') {
-            if !attempt_digits.is_empty() && attempt_digits.chars().all(|c| c.is_ascii_digit()) {
-                (
-                    &log_stem[..last_underscore],
-                    Some(format!("a{}", attempt_digits)),
-                )
-            } else {
-                (log_stem, None)
-            }
-        } else {
-            (log_stem, None)
-        }
-    } else {
-        (log_stem, None)
-    };
-
-    let mut prefix_part = stem_without_attempt.to_string();
-    let mut model_index_part: Option<String> = None;
-
-    if let Some(last_underscore) = stem_without_attempt.rfind('_') {
-        let suffix = &stem_without_attempt[last_underscore + 1..];
-        if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
-            let before_model = &stem_without_attempt[..last_underscore];
-            if let Some(second_last_underscore) = before_model.rfind('_') {
-                let agent_segment = &before_model[second_last_underscore + 1..];
-                if agent_segment == safe_agent {
-                    prefix_part = before_model[..second_last_underscore].to_string();
-                    model_index_part = Some(suffix.to_string());
-                }
-            }
-        }
-    }
-
-    if prefix_part.is_empty() || prefix_part == "unknown" {
+    if prefix_part.is_empty() || prefix_part == "unknown" || prefix_part == safe_agent {
         prefix_part = sanitize_agent_name(&phase_label.to_lowercase());
     }
 
-    if prefix_part == safe_agent {
-        return format!("{prefix_part}_{timestamp_ms}.txt");
-    }
-
     let mut parts = vec![prefix_part, safe_agent];
-    if let Some(model) = model_index_part {
-        parts.push(model);
+    if let Some(model) = model_index {
+        parts.push(model.to_string());
     }
-    if let Some(attempt) = attempt_suffix {
-        parts.push(attempt);
+    if let Some(a) = attempt {
+        parts.push(format!("a{}", a));
     }
 
     format!("{}_{}.txt", parts.join("_"), timestamp_ms)
@@ -647,7 +617,9 @@ pub fn run_with_prompt(
         archive_info: Some(PromptArchiveInfo {
             phase_label: cmd.label,
             agent_name: cmd.display_name,
-            logfile: cmd.logfile,
+            log_prefix: cmd.log_prefix,
+            model_index: cmd.model_index,
+            attempt: cmd.attempt,
         }),
         interactive: runtime.config.behavior.interactive,
         colors: *runtime.colors,
@@ -1117,7 +1089,9 @@ mod tests {
         let name = build_prompt_archive_filename(
             "planning",
             "ccs/glm",
-            ".agent/logs/planning_1_ccs-glm_0_a2.log",
+            ".agent/logs/planning_1",
+            Some(0),
+            Some(2),
             123,
         );
         assert_eq!(name, "planning_1_ccs-glm_0_a2_123.txt");
@@ -1129,7 +1103,9 @@ mod tests {
         let name = build_prompt_archive_filename(
             "review",
             "codex",
-            ".agent/logs/reviewer_review_2.log",
+            ".agent/logs/reviewer_review_2",
+            None,
+            None,
             42,
         );
         assert_eq!(name, "reviewer_review_2_codex_42.txt");
@@ -1137,8 +1113,24 @@ mod tests {
 
     #[test]
     fn test_build_prompt_archive_filename_dedupes_when_logfile_is_agent_only() {
-        let name = build_prompt_archive_filename("dev", "claude", ".agent/logs/claude.log", 7);
-        assert_eq!(name, "claude_7.txt");
+        let name =
+            build_prompt_archive_filename("dev", "claude", ".agent/logs/claude", None, None, 7);
+        assert_eq!(name, "dev_claude_7.txt");
+    }
+
+    #[test]
+    fn test_build_prompt_archive_filename_does_not_depend_on_logfile_stem_parsing() {
+        // Agent names may contain underscores. The archive filename should remain stable
+        // and should not attempt to reverse-parse delimiters from the logfile stem.
+        let name = build_prompt_archive_filename(
+            "planning",
+            "openai/gpt_4o",
+            ".agent/logs/planning_1",
+            Some(0),
+            Some(2),
+            123,
+        );
+        assert_eq!(name, "planning_1_openai-gpt_4o_0_a2_123.txt");
     }
 }
 

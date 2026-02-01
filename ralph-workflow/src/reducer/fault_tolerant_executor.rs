@@ -60,6 +60,14 @@ pub struct AgentExecutionConfig<'a> {
     pub prompt: &'a str,
     /// Display name for logging
     pub display_name: &'a str,
+    /// Log prefix (without extension) used to associate artifacts.
+    ///
+    /// Example: `.agent/logs/planning_1`.
+    pub log_prefix: &'a str,
+    /// Model fallback index for attribution.
+    pub model_index: usize,
+    /// Attempt counter for attribution.
+    pub attempt: u32,
     /// Log file path
     pub logfile: &'a str,
 }
@@ -132,6 +140,9 @@ fn try_agent_execution(
         display_name: config.display_name,
         cmd_str: config.cmd_str,
         prompt: config.prompt,
+        log_prefix: config.log_prefix,
+        model_index: Some(config.model_index),
+        attempt: Some(config.attempt),
         logfile: config.logfile,
         parser_type: config.parser_type,
         env_vars: config.env_vars,
@@ -558,6 +569,9 @@ mod tests {
             env_vars: &env_vars,
             prompt: "hello",
             display_name: "claude",
+            log_prefix: ".agent/logs/test",
+            model_index: 0,
+            attempt: 0,
             logfile: ".agent/logs/test.log",
         };
 

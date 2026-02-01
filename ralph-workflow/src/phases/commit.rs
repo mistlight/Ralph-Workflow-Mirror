@@ -324,11 +324,15 @@ pub fn run_commit_attempt(
         .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", commit_agent))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
+    let log_prefix = ".agent/logs/commit_generation/commit_generation";
     let prompt_cmd = PromptCommand {
         label: commit_agent,
         display_name: commit_agent,
         cmd_str: &cmd_str,
         prompt: &prompt,
+        log_prefix,
+        model_index: None,
+        attempt: None,
         logfile: ".agent/logs/commit_generation/commit_generation.log",
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,
@@ -440,11 +444,15 @@ pub fn generate_commit_message(
         .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", commit_agent))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
+    let log_prefix = ".agent/logs/commit_generation/commit_generation";
     let prompt_cmd = PromptCommand {
         label: commit_agent,
         display_name: commit_agent,
         cmd_str: &cmd_str,
         prompt: &prompt,
+        log_prefix,
+        model_index: None,
+        attempt: None,
         logfile: ".agent/logs/commit_generation/commit_generation.log",
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,

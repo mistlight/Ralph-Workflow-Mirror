@@ -158,7 +158,8 @@ pub fn run_review_pass(
 
     let log_dir = Path::new(".agent/logs");
     ctx.workspace.create_dir_all(log_dir)?;
-    let logfile = format!(".agent/logs/reviewer_review_{j}.log");
+    let log_prefix = format!(".agent/logs/reviewer_review_{j}");
+    let logfile = format!("{log_prefix}.log");
 
     let agent_config = ctx
         .registry
@@ -181,6 +182,9 @@ pub fn run_review_pass(
         display_name: active_agent,
         cmd_str: &cmd_str,
         prompt: &review_prompt_xml,
+        log_prefix: &log_prefix,
+        model_index: None,
+        attempt: None,
         logfile: &logfile,
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,
@@ -200,7 +204,6 @@ pub fn run_review_pass(
         });
     }
 
-    let log_prefix = format!(".agent/logs/reviewer_review_{j}");
     let parse_result = extract_and_validate_review_output_xml(ctx, &log_prefix, issues_path)?;
 
     match parse_result {
@@ -503,7 +506,8 @@ pub fn run_fix_pass(
 
     let log_dir = Path::new(".agent/logs");
     ctx.workspace.create_dir_all(log_dir)?;
-    let logfile = format!(".agent/logs/reviewer_fix_{j}.log");
+    let log_prefix = format!(".agent/logs/reviewer_fix_{j}");
+    let logfile = format!("{log_prefix}.log");
 
     let agent_config = ctx
         .registry
@@ -526,6 +530,9 @@ pub fn run_fix_pass(
         display_name: active_agent,
         cmd_str: &cmd_str,
         prompt: &fix_prompt,
+        log_prefix: &log_prefix,
+        model_index: None,
+        attempt: None,
         logfile: &logfile,
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,

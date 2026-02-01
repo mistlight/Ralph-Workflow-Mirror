@@ -182,6 +182,82 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
 }
 
 #[test]
+fn test_invoke_planning_agent_logfile_attempt_saturates_without_overflow() {
+    let workspace =
+        MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(
+        MockProcessExecutor::new()
+            .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+    );
+
+    let repo_root = PathBuf::from("/mock/repo");
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec!["model-a".to_string()]],
+        crate::agents::AgentRole::Developer,
+    );
+
+    // Force overflow if the attempt expression uses normal u32 addition.
+    handler.state.agent_chain.retry_cycle = u32::MAX;
+    handler.state.continuation.continuation_attempt = 1;
+    handler.state.continuation.xsd_retry_count = 1;
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        handler.invoke_planning_agent(&mut ctx, 0)
+    }));
+    assert!(
+        result.is_ok(),
+        "invoke_planning_agent should not panic when attempt counter would overflow"
+    );
+
+    let effect_result = result
+        .unwrap()
+        .expect("invoke_planning_agent should succeed");
+
+    assert!(matches!(
+        effect_result.event,
+        PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+    ));
+
+    let calls = executor.agent_calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].logfile, ".agent/logs/planning_1_claude_0_a4294967295.log",
+        "logfile attempt should saturate at u32::MAX"
+    );
+}
+
+#[test]
 fn test_invoke_development_agent_aborts_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
     let colors = Colors { enabled: false };

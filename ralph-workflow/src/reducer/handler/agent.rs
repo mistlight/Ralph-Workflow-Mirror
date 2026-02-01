@@ -86,13 +86,22 @@ impl MainEffectHandler {
 
         // Encode attempt context into a single counter for filename stability.
         // Keep the arithmetic simple and deterministic.
-        let attempt = self.state.agent_chain.retry_cycle.saturating_mul(10_000)
-            + self
-                .state
-                .continuation
-                .continuation_attempt
-                .saturating_mul(100)
-            + self.state.continuation.xsd_retry_count;
+        //
+        // Important: use saturating arithmetic for the full expression.
+        // Even if each component uses saturating_mul, normal addition can
+        // overflow and panic in debug builds.
+        let attempt = self
+            .state
+            .agent_chain
+            .retry_cycle
+            .saturating_mul(10_000)
+            .saturating_add(
+                self.state
+                    .continuation
+                    .continuation_attempt
+                    .saturating_mul(100),
+            )
+            .saturating_add(self.state.continuation.xsd_retry_count);
 
         let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
             &phase_prefix,
@@ -139,6 +148,9 @@ impl MainEffectHandler {
             env_vars: &agent_config.env_vars,
             prompt: &effective_prompt,
             display_name: &effective_agent,
+            log_prefix: &phase_prefix,
+            model_index: self.state.agent_chain.current_model_index,
+            attempt,
             logfile: &logfile,
         };
 

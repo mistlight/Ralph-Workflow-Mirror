@@ -151,12 +151,23 @@ pub fn extract_agent_name_from_logfile(log_file: &Path, log_prefix: &Path) -> Op
     let without_ext = after_prefix.strip_suffix(".log")?;
 
     // Strip optional retry attempt suffix ("_a{attempt}") if present.
-    // This keeps agent parsing stable when logs include attempt identifiers.
-    let without_ext = if let Some(last_underscore) = without_ext.rfind('_') {
-        let suffix = &without_ext[last_underscore + 1..];
-        if let Some(attempt_digits) = suffix.strip_prefix('a') {
-            if !attempt_digits.is_empty() && attempt_digits.chars().all(|c| c.is_ascii_digit()) {
-                &without_ext[..last_underscore]
+    //
+    // Important: only strip when the filename also contains a model index.
+    // If a logfile ever uses the agent-only form (no model index) and the agent
+    // name itself ends with "_a<digits>", we must not truncate the agent name.
+    let without_ext = if let Some(attempt_pos) = without_ext.rfind("_a") {
+        let attempt_digits = &without_ext[attempt_pos + 2..];
+        if !attempt_digits.is_empty() && attempt_digits.chars().all(|c| c.is_ascii_digit()) {
+            let before_attempt = &without_ext[..attempt_pos];
+
+            // Confirm the segment before "_a{attempt}" ends with "_{model_index}".
+            if let Some(model_pos) = before_attempt.rfind('_') {
+                let model_digits = &before_attempt[model_pos + 1..];
+                if !model_digits.is_empty() && model_digits.chars().all(|c| c.is_ascii_digit()) {
+                    before_attempt
+                } else {
+                    without_ext
+                }
             } else {
                 without_ext
             }
@@ -360,6 +371,18 @@ mod tests {
         assert_eq!(
             extract_agent_name_from_logfile(log_file, prefix),
             Some("opencode-anthropic-claude-sonnet-4".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_agent_name_does_not_strip_attempt_suffix_when_no_model_index() {
+        // If a logfile uses the agent-only form (no model index) and the agent name
+        // itself ends with "_a<digits>", we must NOT strip that suffix.
+        let log_file = Path::new(".agent/logs/planning_1_agent_a123.log");
+        let prefix = Path::new(".agent/logs/planning_1");
+        assert_eq!(
+            extract_agent_name_from_logfile(log_file, prefix),
+            Some("agent_a123".to_string())
         );
     }
 
