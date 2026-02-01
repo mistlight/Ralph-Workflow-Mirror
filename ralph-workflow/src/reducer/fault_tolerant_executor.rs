@@ -360,20 +360,36 @@ fn extract_error_code(value: &Value) -> Option<String> {
 
 /// Classify I/O error during agent execution.
 fn classify_io_error(error: &io::Error) -> AgentErrorKind {
-    let error_msg = error.to_string().to_lowercase();
+    match error.kind() {
+        io::ErrorKind::TimedOut => AgentErrorKind::Timeout,
+        io::ErrorKind::PermissionDenied | io::ErrorKind::NotFound => AgentErrorKind::FileSystem,
+        io::ErrorKind::BrokenPipe
+        | io::ErrorKind::ConnectionAborted
+        | io::ErrorKind::ConnectionRefused
+        | io::ErrorKind::ConnectionReset
+        | io::ErrorKind::NotConnected
+        | io::ErrorKind::AddrInUse
+        | io::ErrorKind::AddrNotAvailable
+        | io::ErrorKind::UnexpectedEof => AgentErrorKind::Network,
+        _ => {
+            // Some process/executor paths surface `io::ErrorKind::Other` with a message that still
+            // carries useful intent; keep message-based heuristics as a fallback.
+            let error_msg = error.to_string().to_lowercase();
 
-    if error_msg.contains("timeout") {
-        AgentErrorKind::Timeout
-    } else if error_msg.contains("permission")
-        || error_msg.contains("access denied")
-        || error_msg.contains("no such file")
-        || error_msg.contains("not found")
-    {
-        AgentErrorKind::FileSystem
-    } else if error_msg.contains("broken pipe") || error_msg.contains("connection") {
-        AgentErrorKind::Network
-    } else {
-        AgentErrorKind::InternalError
+            if error_msg.contains("timed out") || error_msg.contains("timeout") {
+                AgentErrorKind::Timeout
+            } else if error_msg.contains("permission")
+                || error_msg.contains("access denied")
+                || error_msg.contains("no such file")
+                || error_msg.contains("not found")
+            {
+                AgentErrorKind::FileSystem
+            } else if error_msg.contains("broken pipe") || error_msg.contains("connection") {
+                AgentErrorKind::Network
+            } else {
+                AgentErrorKind::InternalError
+            }
+        }
     }
 }
 
@@ -743,6 +759,15 @@ mod tests {
     #[test]
     fn test_classify_io_error_timeout() {
         let error = io::Error::new(io::ErrorKind::TimedOut, "Operation timeout");
+        let error_kind = classify_io_error(&error);
+        assert_eq!(error_kind, AgentErrorKind::Timeout);
+    }
+
+    #[test]
+    fn test_classify_io_error_timeout_timed_out_message() {
+        // Common OS phrasing is "timed out" (not "timeout"). We must classify
+        // based on `io::ErrorKind::TimedOut`, not substring matching.
+        let error = io::Error::new(io::ErrorKind::TimedOut, "Operation timed out");
         let error_kind = classify_io_error(&error);
         assert_eq!(error_kind, AgentErrorKind::Timeout);
     }
