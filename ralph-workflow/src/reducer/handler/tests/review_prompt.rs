@@ -288,6 +288,70 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
 }
 
 #[test]
+fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_file(
+            crate::files::llm_output_extraction::file_based_extraction::paths::ISSUES_XML,
+            "{{MISSING}}",
+        );
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut prompt_history = HashMap::new();
+    prompt_history.insert(
+        "review_0_xsd_retry_1".to_string(),
+        "Last output was {{MISSING}}".to_string(),
+    );
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            invalid_output_attempts: 1,
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(0, 1)
+    });
+
+    let result = handler
+        .prepare_review_prompt(&mut ctx, 0)
+        .expect("prepare_review_prompt should succeed");
+
+    assert!(matches!(result.event, PipelineEvent::Review(_)));
+}
+
+#[test]
 fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")

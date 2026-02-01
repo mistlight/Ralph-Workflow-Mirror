@@ -83,13 +83,19 @@ impl MainEffectHandler {
             .to_string();
 
         let continuation_state = &self.state.continuation;
-        let ignore_sources = [plan_content.as_str(), diff_content.as_str()];
+        let mut last_output = String::new();
+        if continuation_state.invalid_output_attempts > 0 {
+            last_output = ctx
+                .workspace
+                .read(Path::new(xml_paths::ISSUES_XML))
+                .unwrap_or_default();
+        }
+        let mut ignore_sources = vec![plan_content.as_str(), diff_content.as_str()];
+        if continuation_state.invalid_output_attempts > 0 {
+            ignore_sources.push(last_output.as_str());
+        }
         let (prompt_key, review_prompt_xml, was_replayed) =
             if continuation_state.invalid_output_attempts > 0 {
-                let last_output = ctx
-                    .workspace
-                    .read(Path::new(xml_paths::ISSUES_XML))
-                    .unwrap_or_default();
                 let prompt_key = format!(
                     "review_{pass}_xsd_retry_{}",
                     continuation_state.invalid_output_attempts
