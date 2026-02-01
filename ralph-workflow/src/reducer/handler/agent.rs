@@ -4,6 +4,7 @@ use crate::phases::PhaseContext;
 use crate::pipeline::PipelineRuntime;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::PipelineEvent;
+use crate::reducer::event::PipelinePhase;
 use crate::reducer::fault_tolerant_executor::{
     execute_agent_fault_tolerantly, AgentExecutionConfig, AgentExecutionResult,
 };
@@ -56,10 +57,49 @@ impl MainEffectHandler {
             .resolve_config(&effective_agent)
             .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", effective_agent))?;
 
-        // Determine log file path
-        let safe_agent_name =
-            crate::pipeline::logfile::sanitize_agent_name(&effective_agent.to_lowercase());
-        let logfile = format!(".agent/logs/{}.log", safe_agent_name);
+        // Determine log file path.
+        //
+        // Logs must uniquely identify the invocation attempt to avoid collisions across:
+        // - model fallback (model index)
+        // - agent fallback cycles (retry_cycle)
+        // - XSD retries and continuation attempts
+        let phase_prefix = match self.state.phase {
+            PipelinePhase::Planning => format!(".agent/logs/planning_{}", self.state.iteration + 1),
+            PipelinePhase::Development => {
+                format!(".agent/logs/developer_{}", self.state.iteration + 1)
+            }
+            PipelinePhase::Review => {
+                format!(".agent/logs/reviewer_{}", self.state.reviewer_pass + 1)
+            }
+            PipelinePhase::CommitMessage => {
+                let commit_attempt = match &self.state.commit {
+                    crate::reducer::state::CommitState::Generating { attempt, .. } => *attempt,
+                    _ => 1,
+                };
+                format!(".agent/logs/commit_{commit_attempt}")
+            }
+            PipelinePhase::FinalValidation => ".agent/logs/final_validation".to_string(),
+            PipelinePhase::Finalizing => ".agent/logs/finalizing".to_string(),
+            PipelinePhase::Complete => ".agent/logs/complete".to_string(),
+            PipelinePhase::Interrupted => ".agent/logs/interrupted".to_string(),
+        };
+
+        // Encode attempt context into a single counter for filename stability.
+        // Keep the arithmetic simple and deterministic.
+        let attempt = self.state.agent_chain.retry_cycle.saturating_mul(10_000)
+            + self
+                .state
+                .continuation
+                .continuation_attempt
+                .saturating_mul(100)
+            + self.state.continuation.xsd_retry_count;
+
+        let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
+            &phase_prefix,
+            &effective_agent.to_lowercase(),
+            self.state.agent_chain.current_model_index,
+            attempt,
+        );
 
         // Build command string, honoring reducer-selected model (if any).
         // The reducer's agent chain drives model fallback (advance_to_next_model).

@@ -199,11 +199,23 @@ fn try_agent_execution(
             })
         }
         Err(e) => {
-            let error_kind = if let Ok(io_err) = e.downcast::<io::Error>() {
-                classify_io_error(&io_err)
-            } else {
-                AgentErrorKind::InternalError
-            };
+            // `run_with_prompt` returns `io::Error` directly. Classify based on the error kind
+            // instead of attempting to downcast the inner error payload.
+            let error_kind = classify_io_error(&e);
+
+            // Mirror special-case handling from the non-zero exit path.
+            // If `run_with_prompt` itself returns an error classified as Timeout,
+            // emit TimeoutFallback so the reducer clears any continuation prompt
+            // and switches agents (instead of emitting a generic InvocationFailed).
+            if is_timeout_error(&error_kind) {
+                return Ok(AgentExecutionResult {
+                    event: PipelineEvent::agent_timeout_fallback(
+                        config.role,
+                        config.agent_name.to_string(),
+                    ),
+                    session_id: None,
+                });
+            }
             let retriable = is_retriable_agent_error(&error_kind);
 
             Ok(AgentExecutionResult {
@@ -406,6 +418,157 @@ fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::JsonParserType;
+    use crate::config::Config;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::Timer;
+    use crate::reducer::event::AgentEvent;
+    use crate::workspace::{MemoryWorkspace, Workspace};
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct TimedOutWriteWorkspace {
+        inner: MemoryWorkspace,
+        fail_path: PathBuf,
+    }
+
+    impl TimedOutWriteWorkspace {
+        fn new(inner: MemoryWorkspace, fail_path: PathBuf) -> Self {
+            Self { inner, fail_path }
+        }
+    }
+
+    impl Workspace for TimedOutWriteWorkspace {
+        fn root(&self) -> &Path {
+            self.inner.root()
+        }
+
+        fn read(&self, relative: &Path) -> io::Result<String> {
+            self.inner.read(relative)
+        }
+
+        fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+            self.inner.read_bytes(relative)
+        }
+
+        fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+            if relative == self.fail_path.as_path() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "simulated write timeout",
+                ));
+            }
+            self.inner.write(relative, content)
+        }
+
+        fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+            self.inner.write_bytes(relative, content)
+        }
+
+        fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+            self.inner.append_bytes(relative, content)
+        }
+
+        fn exists(&self, relative: &Path) -> bool {
+            self.inner.exists(relative)
+        }
+
+        fn is_file(&self, relative: &Path) -> bool {
+            self.inner.is_file(relative)
+        }
+
+        fn is_dir(&self, relative: &Path) -> bool {
+            self.inner.is_dir(relative)
+        }
+
+        fn remove(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove(relative)
+        }
+
+        fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_if_exists(relative)
+        }
+
+        fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_dir_all(relative)
+        }
+
+        fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_dir_all_if_exists(relative)
+        }
+
+        fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+            self.inner.create_dir_all(relative)
+        }
+
+        fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
+            self.inner.read_dir(relative)
+        }
+
+        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+            self.inner.rename(from, to)
+        }
+
+        fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+            self.inner.write_atomic(relative, content)
+        }
+
+        fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+            self.inner.set_readonly(relative)
+        }
+
+        fn set_writable(&self, relative: &Path) -> io::Result<()> {
+            self.inner.set_writable(relative)
+        }
+    }
+
+    #[test]
+    fn test_timeout_error_from_run_with_prompt_err_arm_triggers_timeout_fallback() {
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let config = Config::default();
+
+        // Use a workspace that times out when saving the prompt.
+        let inner_ws = MemoryWorkspace::new_test();
+        let workspace =
+            TimedOutWriteWorkspace::new(inner_ws, PathBuf::from(".agent/last_prompt.txt"));
+
+        let executor = Arc::new(crate::executor::MockProcessExecutor::new());
+        let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
+
+        let mut runtime = PipelineRuntime {
+            timer: &mut timer,
+            logger: &logger,
+            colors: &colors,
+            config: &config,
+            executor: executor_arc.as_ref(),
+            executor_arc: Arc::clone(&executor_arc),
+            workspace: &workspace,
+        };
+
+        let env_vars: HashMap<String, String> = HashMap::new();
+        let exec_config = AgentExecutionConfig {
+            role: AgentRole::Developer,
+            agent_name: "claude",
+            cmd_str: "claude -p",
+            parser_type: JsonParserType::Claude,
+            env_vars: &env_vars,
+            prompt: "hello",
+            display_name: "claude",
+            logfile: ".agent/logs/test.log",
+        };
+
+        let result = execute_agent_fault_tolerantly(exec_config, &mut runtime)
+            .expect("executor should never return Err");
+
+        assert!(matches!(
+            result.event,
+            PipelineEvent::Agent(AgentEvent::TimeoutFallback { .. })
+        ));
+    }
 
     #[test]
     fn test_classify_agent_error_sigsegv() {

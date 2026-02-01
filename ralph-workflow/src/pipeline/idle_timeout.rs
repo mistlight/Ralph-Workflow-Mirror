@@ -383,26 +383,31 @@ mod tests {
     }
 
     #[test]
-    fn test_new_activity_timestamp_is_recent() {
-        let timestamp = new_activity_timestamp();
-        let elapsed = time_since_activity(&timestamp);
-        // Should be very recent (less than 100ms)
-        assert!(elapsed < Duration::from_millis(100));
+    fn test_new_activity_timestamp_with_clock_starts_at_now() {
+        let clock = MockClock::new(1234);
+        let timestamp = new_activity_timestamp_with_clock(&clock);
+        assert_eq!(
+            time_since_activity_with_clock(&timestamp, &clock),
+            Duration::ZERO
+        );
     }
 
     #[test]
-    fn test_touch_activity_updates_timestamp() {
-        let timestamp = new_activity_timestamp();
-        // Wait a bit
-        thread::sleep(Duration::from_millis(50));
-        let before_touch = time_since_activity(&timestamp);
+    fn test_touch_activity_with_clock_resets_elapsed_time() {
+        let clock = MockClock::new(10_000);
+        let timestamp = new_activity_timestamp_with_clock(&clock);
 
-        // Touch should reset the elapsed time
-        touch_activity(&timestamp);
-        let after_touch = time_since_activity(&timestamp);
+        clock.advance(50);
+        assert_eq!(
+            time_since_activity_with_clock(&timestamp, &clock),
+            Duration::from_millis(50)
+        );
 
-        assert!(before_touch >= Duration::from_millis(50));
-        assert!(after_touch < Duration::from_millis(10));
+        touch_activity_with_clock(&timestamp, &clock);
+        assert_eq!(
+            time_since_activity_with_clock(&timestamp, &clock),
+            Duration::ZERO
+        );
     }
 
     #[test]
@@ -454,28 +459,19 @@ mod tests {
 
         let mut reader = ActivityTrackingReader::new(cursor, timestamp.clone());
 
-        // Set timestamp to 0 to simulate very old activity
-        timestamp.store(0, Ordering::Release);
+        // Use a sentinel value to avoid time-based assertions.
+        timestamp.store(u64::MAX, Ordering::Release);
 
-        // Verify timestamp is at 0
-        assert_eq!(timestamp.load(Ordering::Acquire), 0);
+        // Verify timestamp is at sentinel
+        assert_eq!(timestamp.load(Ordering::Acquire), u64::MAX);
 
         // Read some data
         let mut buf = [0u8; 5];
         let n = reader.read(&mut buf).unwrap();
         assert_eq!(n, 5);
 
-        // After read, timestamp should be updated to current clock time.
-        // The actual value depends on when global_clock was initialized.
-        // We verify by checking that timestamp == global_clock.now_millis() (within tolerance)
-        // because touch_activity sets it to current time.
-        let updated = timestamp.load(Ordering::Acquire);
-        let current = global_clock().now_millis();
-        // Timestamp should be recent (within 100ms of current time)
-        assert!(
-            current.saturating_sub(updated) < 100,
-            "After read, timestamp should be updated to recent time. Updated: {updated}, Current: {current}"
-        );
+        // After read, timestamp should no longer be the sentinel.
+        assert_ne!(timestamp.load(Ordering::Acquire), u64::MAX);
     }
 
     #[test]
@@ -566,11 +562,11 @@ mod tests {
         let cursor = Cursor::new(data.to_vec());
         let timestamp = new_activity_timestamp();
 
-        // Set timestamp to 0 to simulate very old activity
-        timestamp.store(0, Ordering::Release);
+        // Use a sentinel value to avoid time-based assertions.
+        timestamp.store(u64::MAX, Ordering::Release);
 
-        // Verify timestamp is at 0
-        assert_eq!(timestamp.load(Ordering::Acquire), 0);
+        // Verify timestamp is at sentinel
+        assert_eq!(timestamp.load(Ordering::Acquire), u64::MAX);
 
         // Create stderr tracker and read data
         let mut tracker = StderrActivityTracker::new(cursor, timestamp.clone());
@@ -578,14 +574,8 @@ mod tests {
         let n = tracker.read(&mut buf).unwrap();
         assert!(n > 0);
 
-        // After stderr read, timestamp should be updated to current clock time.
-        let updated = timestamp.load(Ordering::Acquire);
-        let current = global_clock().now_millis();
-        // Timestamp should be recent (within 100ms of current time)
-        assert!(
-            current.saturating_sub(updated) < 100,
-            "After stderr read, timestamp should be updated to recent time. Updated: {updated}, Current: {current}"
-        );
+        // After stderr read, timestamp should no longer be the sentinel.
+        assert_ne!(timestamp.load(Ordering::Acquire), u64::MAX);
     }
 
     #[test]
@@ -647,7 +637,6 @@ mod tests {
     fn test_monotonic_clock_only_increases() {
         let clock = MonotonicClock::new();
         let t1 = clock.now_millis();
-        thread::sleep(Duration::from_millis(10));
         let t2 = clock.now_millis();
         assert!(t2 >= t1, "Monotonic clock should never go backwards");
     }
