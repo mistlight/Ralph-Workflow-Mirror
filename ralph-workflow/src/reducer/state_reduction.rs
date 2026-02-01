@@ -323,6 +323,13 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
         },
         DevelopmentEvent::ContextPrepared { iteration } => PipelineState {
             development_context_prepared_iteration: Some(iteration),
+            // Clear continue_pending to prevent infinite loop.
+            // Once context is prepared, the continuation attempt has started,
+            // so we should not re-derive PrepareDevelopmentContext.
+            continuation: super::state::ContinuationState {
+                continue_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         DevelopmentEvent::PromptPrepared { iteration } => PipelineState {
@@ -909,6 +916,10 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             fix_prompt_prepared_pass: Some(pass),
             continuation: super::state::ContinuationState {
                 xsd_retry_pending: false,
+                // Clear fix_continue_pending to prevent infinite loop.
+                // Once the fix prompt is prepared, the fix continuation attempt has started,
+                // so we should not re-derive PrepareFixPrompt.
+                fix_continue_pending: false,
                 ..state.continuation
             },
             ..state
@@ -3009,13 +3020,21 @@ mod tests {
 
     #[test]
     fn test_review_pass_started_preserves_agent_chain_on_retry() {
+        use crate::reducer::state::ContinuationState;
+
         let mut state = create_test_state();
         state.phase = PipelinePhase::Review;
         state.reviewer_pass = 0;
         state.total_reviewer_passes = 2;
 
         // Simulate switching agents due to repeated output validation failures.
-        state.continuation.invalid_output_attempts = 2;
+        // Need to set up continuation state at the limit for agent switch to occur.
+        state.continuation = ContinuationState {
+            invalid_output_attempts: 2,
+            xsd_retry_count: 1,
+            max_xsd_retry_count: 2,
+            ..ContinuationState::new()
+        };
         let state = reduce(state, PipelineEvent::review_output_validation_failed(0, 2));
         assert!(
             state.agent_chain.current_agent_index > 0,

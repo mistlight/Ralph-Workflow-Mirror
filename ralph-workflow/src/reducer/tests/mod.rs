@@ -11,6 +11,7 @@ pub use crate::reducer::state_reduction::reduce;
 // Test modules organized by phase
 mod agent_chain;
 mod commit_phase;
+mod continuation;
 mod development_phase;
 mod phase_transitions;
 mod pipeline_lifecycle;

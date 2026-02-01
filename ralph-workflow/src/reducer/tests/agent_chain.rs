@@ -216,29 +216,38 @@ fn test_agent_model_fallback_triggered_advances_to_next_model() {
 }
 
 #[test]
-fn test_agent_retry_cycle_started_is_noop() {
-    let state = PipelineState {
+fn test_agent_retry_cycle_started_clears_backoff_pending() {
+    let mut base_state = PipelineState {
         phase: PipelinePhase::Development,
         iteration: 3,
         reviewer_pass: 1,
         ..create_test_state()
     };
+    // Set backoff_pending_ms to verify it gets cleared
+    base_state.agent_chain.backoff_pending_ms = Some(1000);
+
     let new_state = reduce(
-        state.clone(),
+        base_state.clone(),
         PipelineEvent::agent_retry_cycle_started(AgentRole::Developer, 2),
     );
 
-    // AgentRetryCycleStarted is a no-op - all state should be preserved
-    assert_eq!(new_state.phase, state.phase);
-    assert_eq!(new_state.iteration, state.iteration);
-    assert_eq!(new_state.reviewer_pass, state.reviewer_pass);
+    // RetryCycleStarted clears backoff_pending_ms to allow the retry cycle to proceed.
+    // Other state fields are preserved.
+    assert_eq!(new_state.phase, base_state.phase);
+    assert_eq!(new_state.iteration, base_state.iteration);
+    assert_eq!(new_state.reviewer_pass, base_state.reviewer_pass);
     assert_eq!(
         new_state.agent_chain.current_agent_index,
-        state.agent_chain.current_agent_index
+        base_state.agent_chain.current_agent_index
     );
     assert_eq!(
         new_state.agent_chain.current_model_index,
-        state.agent_chain.current_model_index
+        base_state.agent_chain.current_model_index
+    );
+    // Verify backoff_pending_ms is cleared (the critical behavior)
+    assert!(
+        new_state.agent_chain.backoff_pending_ms.is_none(),
+        "backoff_pending_ms should be cleared after RetryCycleStarted"
     );
 }
 

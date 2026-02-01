@@ -194,7 +194,8 @@ fn test_fix_attempt_started_resets_agent_chain() {
 }
 
 #[test]
-fn test_review_prompt_prepared_preserves_xsd_retry_pending() {
+fn test_review_prompt_prepared_clears_xsd_retry_pending() {
+    // Preparing a prompt starts a new attempt, so xsd_retry_pending should be cleared.
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -206,13 +207,14 @@ fn test_review_prompt_prepared_preserves_xsd_retry_pending() {
     let new_state = reduce(state, PipelineEvent::review_prompt_prepared(0));
 
     assert!(
-        new_state.continuation.xsd_retry_pending,
-        "review prompt preparation should not clear xsd_retry_pending"
+        !new_state.continuation.xsd_retry_pending,
+        "review prompt preparation should clear xsd_retry_pending"
     );
 }
 
 #[test]
-fn test_fix_prompt_prepared_preserves_xsd_retry_pending() {
+fn test_fix_prompt_prepared_clears_xsd_retry_pending() {
+    // Preparing a prompt starts a new attempt, so xsd_retry_pending should be cleared.
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -224,8 +226,8 @@ fn test_fix_prompt_prepared_preserves_xsd_retry_pending() {
     let new_state = reduce(state, PipelineEvent::fix_prompt_prepared(0));
 
     assert!(
-        new_state.continuation.xsd_retry_pending,
-        "fix prompt preparation should not clear xsd_retry_pending"
+        !new_state.continuation.xsd_retry_pending,
+        "fix prompt preparation should clear xsd_retry_pending"
     );
 }
 
@@ -395,6 +397,8 @@ fn test_review_output_validation_failed_retries_within_limit() {
 
 #[test]
 fn test_review_output_validation_failed_switches_agent_at_limit() {
+    // The reducer checks state.continuation.invalid_output_attempts to decide when to switch agents.
+    // We need to set up the state with invalid_output_attempts at the limit.
     let agent_chain = crate::reducer::state::AgentChainState::initial().with_agents(
         vec!["agent1".to_string(), "agent2".to_string()],
         vec![vec![], vec![]],
@@ -404,17 +408,29 @@ fn test_review_output_validation_failed_switches_agent_at_limit() {
         phase: PipelinePhase::Review,
         reviewer_pass: 0,
         agent_chain,
+        continuation: ContinuationState {
+            // Set invalid_output_attempts at the limit (MAX_REVIEW_INVALID_OUTPUT_RERUNS = 2)
+            invalid_output_attempts: 2,
+            // Also need xsd_retry_count at limit for the agent switch logic
+            xsd_retry_count: 1,
+            max_xsd_retry_count: 2,
+            ..ContinuationState::new()
+        },
         ..create_test_state()
     };
 
-    // MAX_REVIEW_INVALID_OUTPUT_RERUNS is 2, so at attempt 2 we should switch
+    // This validation failure should trigger agent switch since we're at the limit
     let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 2));
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
-    // Should switch to next agent
-    assert_eq!(
-        new_state.agent_chain.current_agent_index, 1,
+    // Should switch to next agent since we exceeded the limit
+    assert!(
+        new_state.agent_chain.current_agent_index > 0,
         "Should switch to next agent after max invalid output attempts"
+    );
+    assert_eq!(
+        new_state.continuation.invalid_output_attempts, 0,
+        "Invalid output attempts should be reset after switching agents"
     );
 }
 
