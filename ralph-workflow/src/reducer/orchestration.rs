@@ -1298,7 +1298,7 @@ mod tests {
                     // Simulate finding issues
                     state = reduce(
                         state,
-                        PipelineEvent::review_issues_xml_validated(pass, true, false),
+                        PipelineEvent::review_issues_xml_validated(pass, true, false, None),
                     );
                 }
                 Effect::WriteIssuesMarkdown { pass } => {
@@ -1483,7 +1483,7 @@ mod tests {
                     state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
                     state = reduce(
                         state,
-                        PipelineEvent::review_issues_xml_validated(pass, false, true),
+                        PipelineEvent::review_issues_xml_validated(pass, false, true, None),
                     );
                     state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
                     state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
@@ -1575,7 +1575,7 @@ mod tests {
                     state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
                     state = reduce(
                         state,
-                        PipelineEvent::review_issues_xml_validated(pass, false, true),
+                        PipelineEvent::review_issues_xml_validated(pass, false, true, None),
                     );
                     state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
                     state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));

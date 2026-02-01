@@ -175,7 +175,7 @@ fn test_review_phase_emits_write_issues_markdown_after_validated() {
     let state = reduce(state, PipelineEvent::review_issues_xml_extracted(0));
     let state = reduce(
         state,
-        PipelineEvent::review_issues_xml_validated(0, false, true),
+        PipelineEvent::review_issues_xml_validated(0, false, true, None),
     );
 
     let effect = determine_next_effect(&state);
@@ -204,7 +204,7 @@ fn test_review_phase_emits_archive_issues_xml_after_markdown_written() {
     let state = reduce(state, PipelineEvent::review_issues_xml_extracted(0));
     let state = reduce(
         state,
-        PipelineEvent::review_issues_xml_validated(0, false, true),
+        PipelineEvent::review_issues_xml_validated(0, false, true, None),
     );
     let state = reduce(state, PipelineEvent::review_issues_markdown_written(0));
 
@@ -234,7 +234,7 @@ fn test_review_phase_emits_apply_review_outcome_after_issues_xml_archived() {
     let state = reduce(state, PipelineEvent::review_issues_xml_extracted(0));
     let state = reduce(
         state,
-        PipelineEvent::review_issues_xml_validated(0, false, true),
+        PipelineEvent::review_issues_xml_validated(0, false, true, None),
     );
     let state = reduce(state, PipelineEvent::review_issues_markdown_written(0));
     let state = reduce(state, PipelineEvent::review_issues_xml_archived(0));
@@ -782,7 +782,7 @@ fn test_review_runs_exactly_n_passes() {
                 state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
                 state = reduce(
                     state,
-                    PipelineEvent::review_issues_xml_validated(pass, false, true),
+                    PipelineEvent::review_issues_xml_validated(pass, false, true, None),
                 );
                 state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
                 state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
@@ -1144,7 +1144,7 @@ fn test_complete_pipeline_flow() {
                 state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
                 state = reduce(
                     state,
-                    PipelineEvent::review_issues_xml_validated(pass, true, false),
+                    PipelineEvent::review_issues_xml_validated(pass, true, false, None),
                 );
                 state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
                 state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
@@ -1263,7 +1263,7 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
                 state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
                 state = reduce(
                     state,
-                    PipelineEvent::review_issues_xml_validated(pass, false, true),
+                    PipelineEvent::review_issues_xml_validated(pass, false, true, None),
                 );
                 state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
                 state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));

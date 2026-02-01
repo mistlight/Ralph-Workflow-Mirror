@@ -2,7 +2,7 @@ use super::MainEffectHandler;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::PipelineEvent;
-use crate::reducer::ui_event::UIEvent;
+use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use anyhow::Result;
 use std::path::Path;
 
@@ -51,6 +51,7 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
+        use crate::agents::AgentRole;
         use crate::prompts::{
             get_stored_or_generate_prompt, prompt_review_xml_with_references, PromptContentBuilder,
         };
@@ -89,12 +90,14 @@ impl MainEffectHandler {
             });
 
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&review_prompt_xml) {
-            return Err(crate::prompts::TemplateVariablesInvalidError {
-                template_name: "review_xml".to_string(),
-                missing_variables: Vec::new(),
-                unresolved_placeholders: err.unresolved_placeholders,
-            }
-            .into());
+            return Ok(EffectResult::event(
+                PipelineEvent::agent_template_variables_invalid(
+                    AgentRole::Reviewer,
+                    "review_xml".to_string(),
+                    Vec::new(),
+                    err.unresolved_placeholders,
+                ),
+            ));
         }
 
         if !was_replayed {
@@ -189,8 +192,23 @@ impl MainEffectHandler {
                 let issues_found = !elements.issues.is_empty();
                 let clean_no_issues =
                     elements.no_issues_found.is_some() && elements.issues.is_empty();
-                Ok(EffectResult::event(
-                    PipelineEvent::review_issues_xml_validated(pass, issues_found, clean_no_issues),
+                let markdown = render_issues_markdown(&elements);
+                Ok(EffectResult::with_ui(
+                    PipelineEvent::review_issues_xml_validated(
+                        pass,
+                        issues_found,
+                        clean_no_issues,
+                        Some(markdown),
+                    ),
+                    vec![UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::ReviewIssues,
+                        content: issues_xml,
+                        context: Some(XmlOutputContext {
+                            iteration: None,
+                            pass: Some(pass),
+                            snippets: Vec::new(),
+                        }),
+                    }],
                 ))
             }
             Err(_) => Ok(EffectResult::event(
@@ -207,13 +225,17 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
-        use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
-        use crate::files::llm_output_extraction::validate_issues_xml;
         use std::path::Path;
 
-        let issues_xml = match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
-            Ok(s) => s,
-            Err(_) => {
+        let markdown = match self
+            .state
+            .review_validated_outcome
+            .as_ref()
+            .filter(|outcome| outcome.pass == pass)
+            .and_then(|outcome| outcome.markdown.clone())
+        {
+            Some(markdown) => markdown,
+            None => {
                 return Ok(EffectResult::event(
                     PipelineEvent::review_output_validation_failed(
                         pass,
@@ -222,20 +244,6 @@ impl MainEffectHandler {
                 ));
             }
         };
-
-        let elements = match validate_issues_xml(&issues_xml) {
-            Ok(e) => e,
-            Err(_) => {
-                return Ok(EffectResult::event(
-                    PipelineEvent::review_output_validation_failed(
-                        pass,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
-                ));
-            }
-        };
-
-        let markdown = render_issues_markdown(&elements);
         ctx.workspace
             .write(Path::new(".agent/ISSUES.md"), &markdown)?;
 
@@ -282,6 +290,7 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
+        use crate::agents::AgentRole;
         use crate::prompts::prompt_fix_xml_with_context;
         use std::path::Path;
 
@@ -312,12 +321,14 @@ impl MainEffectHandler {
         );
 
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&fix_prompt) {
-            return Err(crate::prompts::TemplateVariablesInvalidError {
-                template_name: "fix_mode_xml".to_string(),
-                missing_variables: Vec::new(),
-                unresolved_placeholders: err.unresolved_placeholders,
-            }
-            .into());
+            return Ok(EffectResult::event(
+                PipelineEvent::agent_template_variables_invalid(
+                    AgentRole::Reviewer,
+                    "fix_mode_xml".to_string(),
+                    Vec::new(),
+                    err.unresolved_placeholders,
+                ),
+            ));
         }
 
         ctx.workspace
@@ -400,8 +411,17 @@ impl MainEffectHandler {
             Ok(elements) => {
                 let status = crate::reducer::state::FixStatus::parse(&elements.status)
                     .unwrap_or(crate::reducer::state::FixStatus::Failed);
-                Ok(EffectResult::event(
+                Ok(EffectResult::with_ui(
                     PipelineEvent::fix_result_xml_validated(pass, status, elements.summary),
+                    vec![UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::FixResult,
+                        content: fix_xml,
+                        context: Some(XmlOutputContext {
+                            iteration: None,
+                            pass: Some(pass),
+                            snippets: Vec::new(),
+                        }),
+                    }],
                 ))
             }
             Err(_) => Ok(EffectResult::event(

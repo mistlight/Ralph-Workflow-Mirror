@@ -344,6 +344,7 @@ pub enum ReviewEvent {
         pass: u32,
         issues_found: bool,
         clean_no_issues: bool,
+        markdown: Option<String>,
     },
 
     /// ISSUES.md was written for a pass.
@@ -1128,11 +1129,13 @@ impl PipelineEvent {
         pass: u32,
         issues_found: bool,
         clean_no_issues: bool,
+        markdown: Option<String>,
     ) -> Self {
         Self::Review(ReviewEvent::IssuesXmlValidated {
             pass,
             issues_found,
             clean_no_issues,
+            markdown,
         })
     }
 

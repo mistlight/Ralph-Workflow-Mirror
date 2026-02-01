@@ -668,6 +668,10 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
 
         ReviewEvent::PromptPrepared { pass } => PipelineState {
             review_prompt_prepared_pass: Some(pass),
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
 
@@ -685,11 +689,13 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             pass,
             issues_found,
             clean_no_issues,
+            markdown,
         } => PipelineState {
             review_validated_outcome: Some(super::state::ReviewValidatedOutcome {
                 pass,
                 issues_found,
                 clean_no_issues,
+                markdown,
             }),
             ..state
         },
@@ -792,6 +798,10 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
 
         ReviewEvent::FixPromptPrepared { pass } => PipelineState {
             fix_prompt_prepared_pass: Some(pass),
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
 

@@ -336,6 +336,7 @@ src/lib.rs</ralph-files-changed>
 
             Effect::ValidateReviewIssuesXml { pass } => {
                 // Default mock: clean, no issues.
+                let markdown = "# Issues\n\nNo issues.\n".to_string();
                 let ui = vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::ReviewIssues,
                     content: r#"<ralph-issues><no-issues-found>ok</no-issues-found></ralph-issues>"#
@@ -346,7 +347,15 @@ src/lib.rs</ralph-files-changed>
                         snippets: Vec::new(),
                     }),
                 }];
-                (PipelineEvent::review_issues_xml_validated(pass, false, true), ui)
+                (
+                    PipelineEvent::review_issues_xml_validated(
+                        pass,
+                        false,
+                        true,
+                        Some(markdown),
+                    ),
+                    ui,
+                )
             }
 
             Effect::WriteIssuesMarkdown { pass } => {

@@ -646,6 +646,8 @@ pub struct ReviewValidatedOutcome {
     pub pass: u32,
     pub issues_found: bool,
     pub clean_no_issues: bool,
+    #[serde(default)]
+    pub markdown: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

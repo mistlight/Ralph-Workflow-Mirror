@@ -622,7 +622,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "test-utils")]
     #[test]
     fn test_event_loop_includes_review_when_reviewer_reviews_nonzero() {
         use crate::agents::AgentRegistry;
@@ -696,7 +695,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "test-utils")]
     #[test]
     fn test_event_loop_skips_review_when_reviewer_reviews_zero_but_still_commits_dev_iteration() {
         use crate::agents::AgentRegistry;
@@ -782,7 +780,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "test-utils")]
     #[test]
     fn test_event_loop_effect_order_dev_then_commit_then_review_then_complete() {
         use crate::agents::AgentRegistry;
@@ -880,7 +877,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "test-utils")]
     #[test]
     fn test_event_loop_skips_planning_and_development_when_developer_iters_zero() {
         use crate::agents::AgentRegistry;
@@ -974,7 +970,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "test-utils")]
     #[test]
     fn test_event_loop_reviews_and_commits_when_developer_iters_zero_and_reviewer_reviews_nonzero()
     {

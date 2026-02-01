@@ -96,12 +96,14 @@ impl MainEffectHandler {
             "developer_iteration_xml"
         };
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&dev_prompt) {
-            return Err(crate::prompts::TemplateVariablesInvalidError {
-                template_name: template_name.to_string(),
-                missing_variables: Vec::new(),
-                unresolved_placeholders: err.unresolved_placeholders,
-            }
-            .into());
+            return Ok(EffectResult::event(
+                PipelineEvent::agent_template_variables_invalid(
+                    AgentRole::Developer,
+                    template_name.to_string(),
+                    Vec::new(),
+                    err.unresolved_placeholders,
+                ),
+            ));
         }
 
         let tmp_dir = Path::new(".agent/tmp");
