@@ -448,7 +448,7 @@ fn test_commit_phase_effect_sequence() {
             AgentRole::Commit,
         );
 
-        // NotStarted (with chain) -> PrepareCommitPrompt
+        // NotStarted (with chain) -> CheckCommitDiff (before PrepareCommitPrompt)
         let state_not_started = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
@@ -457,8 +457,23 @@ fn test_commit_phase_effect_sequence() {
         };
         let effect = determine_next_effect(&state_not_started);
         assert!(
+            matches!(effect, Effect::CheckCommitDiff),
+            "NotStarted with chain should emit CheckCommitDiff first, got {:?}",
+            effect
+        );
+
+        // After diff checked, NotStarted -> PrepareCommitPrompt
+        let state_not_started_diff_prepared = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: CommitState::NotStarted,
+            commit_diff_prepared: true,
+            agent_chain: commit_chain.clone(),
+            ..PipelineState::initial(5, 2)
+        };
+        let effect = determine_next_effect(&state_not_started_diff_prepared);
+        assert!(
             matches!(effect, Effect::PrepareCommitPrompt),
-            "NotStarted with chain should emit PrepareCommitPrompt, got {:?}",
+            "NotStarted with diff prepared should emit PrepareCommitPrompt, got {:?}",
             effect
         );
 

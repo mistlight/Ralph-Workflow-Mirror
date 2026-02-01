@@ -925,6 +925,9 @@ mod tests {
                         PipelineEvent::development_iteration_completed(iteration, true),
                     );
                 }
+                Effect::CheckCommitDiff => {
+                    state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                }
                 Effect::PrepareCommitPrompt => {
                     state = reduce(state, PipelineEvent::commit_generation_started());
                     state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
@@ -1355,6 +1358,9 @@ mod tests {
                 Effect::ApplyFixOutcome { pass } => {
                     state = reduce(state, PipelineEvent::fix_attempt_completed(pass, true));
                 }
+                Effect::CheckCommitDiff => {
+                    state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                }
                 Effect::PrepareCommitPrompt => {
                     state = reduce(state, PipelineEvent::commit_generation_started());
                     state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
@@ -1496,6 +1502,9 @@ mod tests {
                     state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
                     state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
                     state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
+                }
+                Effect::CheckCommitDiff => {
+                    state = reduce(state, PipelineEvent::commit_diff_prepared(false));
                 }
                 Effect::PrepareCommitPrompt => {
                     state = reduce(state, PipelineEvent::commit_generation_started());
@@ -1674,9 +1683,11 @@ mod tests {
     #[test]
     fn test_determine_effect_commit_message_not_started() {
         // With initialized agent chain, commit phase should generate message
+        // (after checking diff first if not already done)
         let state = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
+            commit_diff_prepared: true, // Skip diff check
             agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
                 vec!["commit-agent".to_string()],
                 vec![vec![]],
@@ -1696,6 +1707,7 @@ mod tests {
                 attempt: 2,
                 max_attempts: 5,
             },
+            commit_diff_prepared: true, // Skip diff check
             commit_prompt_prepared: false,
             commit_agent_invoked: false,
             commit_xml_extracted: false,

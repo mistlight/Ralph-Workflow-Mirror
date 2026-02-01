@@ -891,6 +891,7 @@ fn test_effects_are_single_task() {
             ArchiveFixResultXml,
             RunRebase,
             ResolveRebaseConflicts,
+            CheckCommitDiff,
             PrepareCommitPrompt,
             InvokeCommitAgent,
             ExtractCommitXml,
@@ -944,6 +945,7 @@ fn test_effects_are_single_task() {
                 Effect::ArchiveFixResultXml { .. } => EffectTask::ArchiveFixResultXml,
                 Effect::RunRebase { .. } => EffectTask::RunRebase,
                 Effect::ResolveRebaseConflicts { .. } => EffectTask::ResolveRebaseConflicts,
+                Effect::CheckCommitDiff => EffectTask::CheckCommitDiff,
                 Effect::PrepareCommitPrompt => EffectTask::PrepareCommitPrompt,
                 Effect::InvokeCommitAgent => EffectTask::InvokeCommitAgent,
                 Effect::ExtractCommitXml => EffectTask::ExtractCommitXml,
@@ -993,7 +995,23 @@ fn test_effects_are_single_task() {
             Effect::ApplyDevelopmentOutcome { iteration: 0 },
             Effect::ArchiveDevelopmentXml { iteration: 0 },
             Effect::PrepareReviewContext { pass: 0 },
+            Effect::PrepareReviewPrompt { pass: 0 },
+            Effect::InvokeReviewAgent { pass: 0 },
+            Effect::ExtractReviewIssuesXml { pass: 0 },
+            Effect::ValidateReviewIssuesXml { pass: 0 },
+            Effect::WriteIssuesMarkdown { pass: 0 },
+            Effect::ArchiveReviewIssuesXml { pass: 0 },
+            Effect::ApplyReviewOutcome {
+                pass: 0,
+                issues_found: false,
+                clean_no_issues: true,
+            },
             Effect::PrepareFixPrompt { pass: 0 },
+            Effect::InvokeFixAgent { pass: 0 },
+            Effect::ExtractFixResultXml { pass: 0 },
+            Effect::ValidateFixResultXml { pass: 0 },
+            Effect::ApplyFixOutcome { pass: 0 },
+            Effect::ArchiveFixResultXml { pass: 0 },
             Effect::RunRebase {
                 phase: RebasePhase::Initial,
                 target_branch: "main".to_string(),
@@ -1001,6 +1019,7 @@ fn test_effects_are_single_task() {
             Effect::ResolveRebaseConflicts {
                 strategy: ConflictStrategy::Abort,
             },
+            Effect::CheckCommitDiff,
             Effect::PrepareCommitPrompt,
             Effect::InvokeCommitAgent,
             Effect::ExtractCommitXml,
@@ -1046,8 +1065,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            31,
-            "Expected 31 Effect variants; update this test if variants were added or removed"
+            49,
+            "Expected 49 Effect variants; update this test if variants were added or removed"
         );
     });
 }
