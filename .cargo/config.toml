@@ -8,4 +8,13 @@
 #   cargo test -p ralph-workflow-tests
 
 [build]
-# Use default build settings
+# Use default build settings.
+#
+# When `cargo dylint ...` runs, it sets `RUSTUP_TOOLCHAIN` and compiles workspace
+# crates with a nightly driver, but dependencies may still be built with the
+# user's default `rustc`. That can lead to:
+#   "found crate ... compiled by an incompatible version of rustc"
+#
+# This wrapper only activates for Dylint builds and forces dependency builds to
+# use the same toolchain.
+rustc-wrapper = "./.cargo/rustc-wrapper-dylint"
