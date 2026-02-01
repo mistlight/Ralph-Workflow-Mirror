@@ -857,28 +857,75 @@ fn test_effects_are_single_task() {
         // a single logical operation. The match is exhaustive so the test will
         // fail to compile if new variants are added without consideration.
 
-        fn describe_effect_task(effect: &Effect) -> &'static str {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum EffectTask {
+            AgentInvocation,
+            InitializeAgentChain,
+            GeneratePlan,
+            RunDevelopmentIteration,
+            PrepareReviewContext,
+            PrepareReviewPrompt,
+            InvokeReviewAgent,
+            ExtractReviewIssuesXml,
+            ValidateReviewIssuesXml,
+            WriteIssuesMarkdown,
+            ArchiveReviewIssuesXml,
+            ApplyReviewOutcome,
+            PrepareFixPrompt,
+            InvokeFixAgent,
+            ExtractFixResultXml,
+            ValidateFixResultXml,
+            ApplyFixOutcome,
+            ArchiveFixResultXml,
+            RunRebase,
+            ResolveRebaseConflicts,
+            GenerateCommitMessage,
+            CreateCommit,
+            SkipCommit,
+            BackoffWait,
+            AbortPipeline,
+            ValidateFinalState,
+            SaveCheckpoint,
+            CleanupContext,
+            RestorePromptPermissions,
+            WriteContinuationContext,
+            CleanupContinuationContext,
+        }
+
+        fn describe_effect_task(effect: &Effect) -> EffectTask {
             match effect {
                 // Each match arm describes the SINGLE task the effect performs
-                Effect::AgentInvocation { .. } => "Run ONE agent invocation",
-                Effect::InitializeAgentChain { .. } => "Initialize agent chain for ONE role",
-                Effect::GeneratePlan { .. } => "Generate plan for ONE iteration",
-                Effect::RunDevelopmentIteration { .. } => "Run ONE development iteration",
-                Effect::RunReviewPass { .. } => "Run ONE review pass",
-                Effect::RunFixAttempt { .. } => "Run ONE fix attempt",
-                Effect::RunRebase { .. } => "Run ONE rebase operation",
-                Effect::ResolveRebaseConflicts { .. } => "Resolve conflicts ONCE",
-                Effect::GenerateCommitMessage => "Generate ONE commit message",
-                Effect::CreateCommit { .. } => "Create ONE commit",
-                Effect::SkipCommit { .. } => "Skip commit ONCE",
-                Effect::BackoffWait { .. } => "Wait ONE backoff delay",
-                Effect::AbortPipeline { .. } => "Abort pipeline ONCE",
-                Effect::ValidateFinalState => "Validate final state ONCE",
-                Effect::SaveCheckpoint { .. } => "Save ONE checkpoint",
-                Effect::CleanupContext => "Clean context ONCE",
-                Effect::RestorePromptPermissions => "Restore permissions ONCE",
-                Effect::WriteContinuationContext(_) => "Write ONE context file",
-                Effect::CleanupContinuationContext => "Clean ONE context file",
+                Effect::AgentInvocation { .. } => EffectTask::AgentInvocation,
+                Effect::InitializeAgentChain { .. } => EffectTask::InitializeAgentChain,
+                Effect::GeneratePlan { .. } => EffectTask::GeneratePlan,
+                Effect::RunDevelopmentIteration { .. } => EffectTask::RunDevelopmentIteration,
+                Effect::PrepareReviewContext { .. } => EffectTask::PrepareReviewContext,
+                Effect::PrepareReviewPrompt { .. } => EffectTask::PrepareReviewPrompt,
+                Effect::InvokeReviewAgent { .. } => EffectTask::InvokeReviewAgent,
+                Effect::ExtractReviewIssuesXml { .. } => EffectTask::ExtractReviewIssuesXml,
+                Effect::ValidateReviewIssuesXml { .. } => EffectTask::ValidateReviewIssuesXml,
+                Effect::WriteIssuesMarkdown { .. } => EffectTask::WriteIssuesMarkdown,
+                Effect::ArchiveReviewIssuesXml { .. } => EffectTask::ArchiveReviewIssuesXml,
+                Effect::ApplyReviewOutcome { .. } => EffectTask::ApplyReviewOutcome,
+                Effect::PrepareFixPrompt { .. } => EffectTask::PrepareFixPrompt,
+                Effect::InvokeFixAgent { .. } => EffectTask::InvokeFixAgent,
+                Effect::ExtractFixResultXml { .. } => EffectTask::ExtractFixResultXml,
+                Effect::ValidateFixResultXml { .. } => EffectTask::ValidateFixResultXml,
+                Effect::ApplyFixOutcome { .. } => EffectTask::ApplyFixOutcome,
+                Effect::ArchiveFixResultXml { .. } => EffectTask::ArchiveFixResultXml,
+                Effect::RunRebase { .. } => EffectTask::RunRebase,
+                Effect::ResolveRebaseConflicts { .. } => EffectTask::ResolveRebaseConflicts,
+                Effect::GenerateCommitMessage => EffectTask::GenerateCommitMessage,
+                Effect::CreateCommit { .. } => EffectTask::CreateCommit,
+                Effect::SkipCommit { .. } => EffectTask::SkipCommit,
+                Effect::BackoffWait { .. } => EffectTask::BackoffWait,
+                Effect::AbortPipeline { .. } => EffectTask::AbortPipeline,
+                Effect::ValidateFinalState => EffectTask::ValidateFinalState,
+                Effect::SaveCheckpoint { .. } => EffectTask::SaveCheckpoint,
+                Effect::CleanupContext => EffectTask::CleanupContext,
+                Effect::RestorePromptPermissions => EffectTask::RestorePromptPermissions,
+                Effect::WriteContinuationContext(_) => EffectTask::WriteContinuationContext,
+                Effect::CleanupContinuationContext => EffectTask::CleanupContinuationContext,
             }
         }
 
@@ -896,8 +943,8 @@ fn test_effects_are_single_task() {
             },
             Effect::GeneratePlan { iteration: 0 },
             Effect::RunDevelopmentIteration { iteration: 0 },
-            Effect::RunReviewPass { pass: 0 },
-            Effect::RunFixAttempt { pass: 0 },
+            Effect::PrepareReviewContext { pass: 0 },
+            Effect::PrepareFixPrompt { pass: 0 },
             Effect::RunRebase {
                 phase: RebasePhase::Initial,
                 target_branch: "main".to_string(),
@@ -937,15 +984,9 @@ fn test_effects_are_single_task() {
             Effect::CleanupContinuationContext,
         ];
 
-        // Verify each effect has a single-task description
+        // Verify each effect maps to a single-task category.
         for effect in &effects {
-            let description = describe_effect_task(effect);
-            assert!(
-                description.contains("ONE") || description.contains("ONCE"),
-                "Effect {:?} should have a single-task description, got: {}",
-                effect,
-                description
-            );
+            let _task = describe_effect_task(effect);
         }
 
         // Verify we covered all variants (update when Effect changes)
@@ -1102,7 +1143,7 @@ fn test_legacy_artifacts_ignored_during_execution() {
         // Effect determination for review should not check for legacy ISSUES.md
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::RunReviewPass { .. }),
+            matches!(effect, Effect::PrepareReviewContext { .. }),
             "Review effect should be determined from state alone, got {:?}",
             effect
         );

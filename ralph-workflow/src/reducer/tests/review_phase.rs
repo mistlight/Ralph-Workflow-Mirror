@@ -514,7 +514,7 @@ fn test_commit_created_clears_agent_chain_when_transitioning_to_review() {
 ///
 /// This test simulates the full flow:
 /// 1. Initialize reviewer agent chain with specific agents
-/// 2. Verify that RunReviewPass is emitted (not InitializeAgentChain)
+/// 2. Verify that PrepareReviewContext is emitted (not InitializeAgentChain)
 /// 3. Verify the first agent in the chain is used (not a fallback)
 #[test]
 fn test_review_uses_agent_from_state_chain_not_context() {
@@ -812,7 +812,7 @@ fn test_full_pipeline_flow_uses_correct_reviewer_agent() {
 ///
 /// This test simulates:
 /// 1. State after ChainInitialized is processed and stored in handler
-/// 2. Orchestration returns RunReviewPass
+/// 2. Orchestration returns PrepareReviewContext
 /// 3. Handler reads current_agent() from its state
 ///
 /// The handler should have the updated state with populated agent chain.
@@ -910,20 +910,20 @@ fn test_event_loop_state_consistency_for_review_agent() {
         effect
     );
 
-    // Handler executes RunReviewPass, reads current_agent from its state
-    // This is exactly what handler.run_review_pass does at line 618
+    // Handler executes InvokeReviewAgent, reads current_agent from its state
+    // This is exactly what handler.invoke_review_agent does
     let review_agent = handler_state.agent_chain.current_agent().cloned();
 
     // CRITICAL ASSERTION: review_agent must be Some("codex")
     assert!(
         review_agent.is_some(),
         "Handler should get Some(agent) from state.agent_chain.current_agent(), got None. \
-        This means the agent chain was not properly populated before RunReviewPass."
+        This means the agent chain was not properly populated before InvokeReviewAgent."
     );
     assert_eq!(
         review_agent,
         Some("codex".to_string()),
-        "Handler should pass 'codex' to run_review_pass, got {:?}. \
+        "Handler should pass 'codex' to InvokeReviewAgent, got {:?}. \
         This means the wrong agent is being used.",
         review_agent
     );

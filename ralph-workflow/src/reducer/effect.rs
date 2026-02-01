@@ -23,6 +23,13 @@
 //!
 //! This principle is tested in `reducer_legacy_rejection.rs::test_effects_are_single_task`.
 //!
+//! **This rule is absolute.**
+//!
+//! If you touch this codebase for any reason and you notice an effect that bundles
+//! hidden logic (multiple responsibilities, policy decisions, retries, phase transitions,
+//! parsing + writing + archiving, etc.), you must refactor it into a sequence of
+//! single-task effects and explicit events. Do not leave effect "shortcuts" behind.
+//!
 //! # Redux-Style Event Modeling
 //!
 //! This project intentionally follows the Redux style-guide guidance:
@@ -86,10 +93,6 @@ pub enum Effect {
 
     RunDevelopmentIteration {
         iteration: u32,
-    },
-
-    RunReviewPass {
-        pass: u32,
     },
 
     /// Prepare review context files (single-task).
@@ -156,7 +159,51 @@ pub enum Effect {
         clean_no_issues: bool,
     },
 
-    RunFixAttempt {
+    /// Prepare the fix prompt for a review pass (single-task).
+    ///
+    /// This effect must only render/write the prompt that will be used for the
+    /// subsequent fix agent invocation.
+    PrepareFixPrompt {
+        pass: u32,
+    },
+
+    /// Invoke the fix agent for a review pass (single-task).
+    ///
+    /// This effect must only perform agent execution using the prepared fix prompt
+    /// (written by `PrepareFixPrompt`) and must not parse/validate outputs.
+    InvokeFixAgent {
+        pass: u32,
+    },
+
+    /// Extract the fix result XML from the canonical workspace path (single-task).
+    ///
+    /// This effect must only verify that `.agent/tmp/fix_result.xml` exists and is readable.
+    /// It must not validate XML, apply outcomes, or archive files.
+    ExtractFixResultXml {
+        pass: u32,
+    },
+
+    /// Validate the extracted fix result XML (single-task).
+    ///
+    /// This effect must only validate/parses the XML at `.agent/tmp/fix_result.xml` and
+    /// emit a fix validation event. It must not apply outcomes or archive files.
+    ValidateFixResultXml {
+        pass: u32,
+    },
+
+    /// Apply the already-validated fix outcome to advance the reducer state (single-task).
+    ///
+    /// This effect must only emit the appropriate fix outcome event.
+    ApplyFixOutcome {
+        pass: u32,
+    },
+
+    /// Archive `.agent/tmp/fix_result.xml` after validation (single-task).
+    ///
+    /// This is intentionally sequenced before `ApplyFixOutcome` so the reducer can
+    /// archive artifacts while still in the fix chain (before state transitions
+    /// reset per-pass tracking).
+    ArchiveFixResultXml {
         pass: u32,
     },
 

@@ -531,7 +531,7 @@ pub struct PipelineState {
     pub review_issues_found: bool,
     /// Tracks whether review context was prepared for the current pass.
     ///
-    /// Used to sequence single-task review effects (PrepareReviewContext -> RunReviewPass).
+    /// Used to sequence single-task review effects (PrepareReviewContext -> ...).
     #[serde(default)]
     pub review_context_prepared_pass: Option<u32>,
     /// Tracks whether the review prompt was prepared for the current pass.
@@ -554,6 +554,21 @@ pub struct PipelineState {
     pub review_issues_markdown_written_pass: Option<u32>,
     #[serde(default)]
     pub review_issues_xml_archived_pass: Option<u32>,
+
+    #[serde(default)]
+    pub fix_prompt_prepared_pass: Option<u32>,
+
+    #[serde(default)]
+    pub fix_agent_invoked_pass: Option<u32>,
+
+    #[serde(default)]
+    pub fix_result_xml_extracted_pass: Option<u32>,
+
+    #[serde(default)]
+    pub fix_validated_outcome: Option<FixValidatedOutcome>,
+
+    #[serde(default)]
+    pub fix_result_xml_archived_pass: Option<u32>,
     pub context_cleaned: bool,
     pub agent_chain: AgentChainState,
     pub rebase: RebaseState,
@@ -578,6 +593,13 @@ pub struct ReviewValidatedOutcome {
     pub pass: u32,
     pub issues_found: bool,
     pub clean_no_issues: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FixValidatedOutcome {
+    pub pass: u32,
+    pub status: FixStatus,
+    pub summary: Option<String>,
 }
 
 impl PipelineState {
@@ -629,6 +651,11 @@ impl PipelineState {
             review_validated_outcome: None,
             review_issues_markdown_written_pass: None,
             review_issues_xml_archived_pass: None,
+            fix_prompt_prepared_pass: None,
+            fix_agent_invoked_pass: None,
+            fix_result_xml_extracted_pass: None,
+            fix_validated_outcome: None,
+            fix_result_xml_archived_pass: None,
             context_cleaned: false,
             agent_chain: AgentChainState::initial(),
             rebase: RebaseState::NotStarted,
@@ -671,6 +698,11 @@ impl From<PipelineCheckpoint> for PipelineState {
             review_validated_outcome: None,
             review_issues_markdown_written_pass: None,
             review_issues_xml_archived_pass: None,
+            fix_prompt_prepared_pass: None,
+            fix_agent_invoked_pass: None,
+            fix_result_xml_extracted_pass: None,
+            fix_validated_outcome: None,
+            fix_result_xml_archived_pass: None,
             context_cleaned: false,
             agent_chain,
             rebase: rebase_state,

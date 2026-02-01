@@ -2,4 +2,5 @@
 // Individual test modules will be added here as the handler implementation is
 // decomposed into single-task effects.
 
+mod fix_outcome;
 mod review_prompt;

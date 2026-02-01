@@ -40,6 +40,7 @@ fn create_state_with_agent_chain_in_development() -> PipelineState {
         continuation: ContinuationState::new(),
         checkpoint_saved_count: 0,
         execution_history: Vec::new(),
+        ..PipelineState::initial(5, 2)
     }
 }
 
@@ -296,6 +297,7 @@ fn test_rate_limit_continuation_prompt_cleared_on_success() {
             continuation: ContinuationState::new(),
             checkpoint_saved_count: 0,
             execution_history: Vec::new(),
+            ..PipelineState::initial(5, 2)
         };
 
         // Agent succeeds
@@ -341,6 +343,7 @@ fn test_all_agents_exhausted_pipeline_graceful_abort() {
             continuation: ContinuationState::new(),
             checkpoint_saved_count: 0,
             execution_history: Vec::new(),
+            ..PipelineState::initial(5, 2)
         };
 
         let exhausted_state = ralph_workflow::reducer::state_reduction::reduce(
@@ -384,6 +387,7 @@ fn test_agent_exhaustion_transitions_to_next_phase() {
             continuation: ContinuationState::new(),
             checkpoint_saved_count: 0,
             execution_history: Vec::new(),
+            ..PipelineState::initial(5, 2)
         };
 
         assert_eq!(state.phase, PipelinePhase::Development);

@@ -507,26 +507,35 @@ impl OpenCodeParser {
         let c = &self.colors;
         let prefix = &self.display_name;
 
-        // Create unique step ID for duplicate detection
-        // Use part.message_id if available, otherwise combine session_id + part.id
-        let step_id = event.part.as_ref().map_or_else(
-            || {
-                event
-                    .session_id
-                    .clone()
-                    .unwrap_or_else(|| "unknown".to_string())
-            },
-            |part| {
-                part.message_id.as_ref().map_or_else(
-                    || {
-                        let session = event.session_id.as_deref().unwrap_or("unknown");
-                        let part_id = part.id.as_deref().unwrap_or("step");
-                        format!("{session}:{part_id}")
-                    },
-                    std::clone::Clone::clone,
-                )
-            },
-        );
+        // Create unique step ID for duplicate detection.
+        //
+        // OpenCode normally includes a stable `part.id` and/or `part.messageID`. However,
+        // in minimal / test fixtures those fields may be absent. In that case, do NOT
+        // fall back to a constant like "{session}:step" (it would collapse multiple
+        // steps into one and break lifecycle state).
+        //
+        // Priority:
+        // 1) part.message_id (best)
+        // 2) session_id + part.id
+        // 3) session_id + timestamp (best-effort uniqueness)
+        // 4) session_id
+        let step_id = event.part.as_ref().and_then(|part| {
+            part.message_id.clone().or_else(|| {
+                part.id.as_ref().map(|id| {
+                    let session = event.session_id.as_deref().unwrap_or("unknown");
+                    format!("{session}:{id}")
+                })
+            })
+        });
+
+        let step_id = step_id.unwrap_or_else(|| {
+            let session = event.session_id.as_deref().unwrap_or("unknown");
+            if let Some(ts) = event.timestamp {
+                format!("{session}:{ts}")
+            } else {
+                session.to_string()
+            }
+        });
 
         // Defensive: OpenCode can emit duplicate `step_start` events for the same message.
         // Suppress duplicates to avoid spamming and to avoid resetting streaming state mid-step.

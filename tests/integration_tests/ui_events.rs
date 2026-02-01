@@ -46,7 +46,7 @@ fn test_review_pass_emits_progress_ui() {
         let mut handler = MockEffectHandler::new(state);
 
         // Simulate review pass
-        let _result = handler.execute_mock(Effect::RunReviewPass { pass: 2 });
+        let _result = handler.execute_mock(Effect::PrepareReviewContext { pass: 2 });
 
         // Verify UI event was emitted
         assert!(
@@ -458,8 +458,8 @@ fn test_review_pass_emits_xml_output() {
         let state = PipelineState::initial(1, 1);
         let mut handler = MockEffectHandler::new(state);
 
-        // Run review pass
-        let _result = handler.execute_mock(Effect::RunReviewPass { pass: 1 });
+        // Validate review issues XML (single-task)
+        let _result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 1 });
 
         // Verify XmlOutput event was emitted with ReviewIssues type
         assert!(
@@ -470,7 +470,7 @@ fn test_review_pass_emits_xml_output() {
                     ..
                 }
             )),
-            "RunReviewPass should emit XmlOutput event with ReviewIssues type"
+            "ValidateReviewIssuesXml should emit XmlOutput event with ReviewIssues type"
         );
     });
 }
@@ -481,8 +481,8 @@ fn test_fix_attempt_emits_xml_output() {
         let state = PipelineState::initial(1, 1);
         let mut handler = MockEffectHandler::new(state);
 
-        // Run fix attempt
-        let _result = handler.execute_mock(Effect::RunFixAttempt { pass: 1 });
+        // Validate fix result XML (single-task)
+        let _result = handler.execute_mock(Effect::ValidateFixResultXml { pass: 1 });
 
         // Verify XmlOutput event was emitted with FixResult type
         assert!(
@@ -493,7 +493,7 @@ fn test_fix_attempt_emits_xml_output() {
                     ..
                 }
             )),
-            "RunFixAttempt should emit XmlOutput event with FixResult type"
+            "ValidateFixResultXml should emit XmlOutput event with FixResult type"
         );
     });
 }
@@ -556,8 +556,8 @@ fn test_xml_output_context_includes_pass() {
         let state = PipelineState::initial(1, 3);
         let mut handler = MockEffectHandler::new(state);
 
-        // Run review pass 2
-        let result = handler.execute_mock(Effect::RunReviewPass { pass: 2 });
+        // Validate review issues XML for pass 2 (emits XmlOutput)
+        let result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 2 });
 
         // Find the XmlOutput event and check context
         let xml_output = result

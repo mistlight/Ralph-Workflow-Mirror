@@ -255,30 +255,14 @@ src/lib.rs</ralph-files-changed>
                 )
             }
 
-            Effect::RunReviewPass { pass } => {
-                let mock_issues_xml = r#"<ralph-issues>
-<ralph-no-issues-found>Mock review found no issues</ralph-no-issues-found>
-</ralph-issues>"#;
-                let ui = vec![
-                    UIEvent::ReviewProgress {
+            Effect::PrepareReviewContext { pass } => {
+                (
+                    PipelineEvent::review_context_prepared(pass),
+                    vec![UIEvent::ReviewProgress {
                         pass,
                         total: self.state.total_reviewer_passes,
-                    },
-                    UIEvent::XmlOutput {
-                        xml_type: XmlOutputType::ReviewIssues,
-                        content: mock_issues_xml.to_string(),
-                        context: Some(XmlOutputContext {
-                            iteration: None,
-                            pass: Some(pass),
-                            snippets: Vec::new(),
-                        }),
-                    },
-                ];
-                (PipelineEvent::review_completed(pass, false), ui)
-            }
-
-            Effect::PrepareReviewContext { pass } => {
-                (PipelineEvent::review_context_prepared(pass), vec![])
+                    }],
+                )
             }
 
             Effect::PrepareReviewPrompt { pass } => {
@@ -296,10 +280,17 @@ src/lib.rs</ralph-files-changed>
 
             Effect::ValidateReviewIssuesXml { pass } => {
                 // Default mock: clean, no issues.
-                (
-                    PipelineEvent::review_issues_xml_validated(pass, false, true),
-                    vec![],
-                )
+                let ui = vec![UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::ReviewIssues,
+                    content: r#"<ralph-issues><no-issues-found>ok</no-issues-found></ralph-issues>"#
+                        .to_string(),
+                    context: Some(XmlOutputContext {
+                        iteration: None,
+                        pass: Some(pass),
+                        snippets: Vec::new(),
+                    }),
+                }];
+                (PipelineEvent::review_issues_xml_validated(pass, false, true), ui)
             }
 
             Effect::WriteIssuesMarkdown { pass } => {
@@ -322,21 +313,38 @@ src/lib.rs</ralph-files-changed>
                 }
             }
 
-            Effect::RunFixAttempt { pass } => {
-                let mock_fix_xml = r#"<ralph-fix-result>
-<ralph-status>all_issues_addressed</ralph-status>
-<ralph-summary>Mock fix completed - all issues addressed</ralph-summary>
-</ralph-fix-result>"#;
-                let ui = vec![UIEvent::XmlOutput {
+            Effect::PrepareFixPrompt { pass } => (PipelineEvent::fix_prompt_prepared(pass), vec![]),
+
+            Effect::InvokeFixAgent { pass } => (PipelineEvent::fix_agent_invoked(pass), vec![]),
+
+            Effect::ExtractFixResultXml { pass } => {
+                (PipelineEvent::fix_result_xml_extracted(pass), vec![])
+            }
+
+            Effect::ValidateFixResultXml { pass } => (
+                PipelineEvent::fix_result_xml_validated(
+                    pass,
+                    crate::reducer::state::FixStatus::AllIssuesAddressed,
+                    None,
+                ),
+                vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::FixResult,
-                    content: mock_fix_xml.to_string(),
+                    content: r#"<ralph-fix-result><ralph-status>all_issues_addressed</ralph-status></ralph-fix-result>"#
+                        .to_string(),
                     context: Some(XmlOutputContext {
                         iteration: None,
                         pass: Some(pass),
                         snippets: Vec::new(),
                     }),
-                }];
-                (PipelineEvent::fix_attempt_completed(pass, true), ui)
+                }],
+            ),
+
+            Effect::ApplyFixOutcome { pass } => {
+                (PipelineEvent::fix_attempt_completed(pass, true), vec![])
+            }
+
+            Effect::ArchiveFixResultXml { pass } => {
+                (PipelineEvent::fix_result_xml_archived(pass), vec![])
             }
 
             Effect::RunRebase {
@@ -815,7 +823,7 @@ mod tests {
         let state = PipelineState::initial(1, 1);
         let mut handler = MockEffectHandler::new(state);
 
-        let _result = handler.execute_mock(Effect::RunReviewPass { pass: 1 });
+        let _result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 1 });
 
         // Verify XmlOutput event was emitted with ReviewIssues type
         assert!(
@@ -836,7 +844,7 @@ mod tests {
         let state = PipelineState::initial(1, 1);
         let mut handler = MockEffectHandler::new(state);
 
-        let _result = handler.execute_mock(Effect::RunFixAttempt { pass: 1 });
+        let _result = handler.execute_mock(Effect::ValidateFixResultXml { pass: 1 });
 
         // Verify XmlOutput event was emitted with FixResult type
         assert!(

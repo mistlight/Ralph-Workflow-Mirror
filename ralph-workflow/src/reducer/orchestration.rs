@@ -22,12 +22,12 @@ fn derive_xsd_retry_effect(state: &PipelineState) -> Effect {
             iteration: state.iteration,
         },
         PipelinePhase::Review => {
-            if state.review_issues_found {
-                Effect::RunFixAttempt {
+            if state.review_issues_found || state.continuation.fix_continue_pending {
+                Effect::PrepareFixPrompt {
                     pass: state.reviewer_pass,
                 }
             } else {
-                Effect::RunReviewPass {
+                Effect::PrepareReviewPrompt {
                     pass: state.reviewer_pass,
                 }
             }
@@ -76,13 +76,14 @@ fn derive_continuation_effect(state: &PipelineState) -> Effect {
                 }
             }
         }
-        // Fix continuation: run fix attempt with continuation context
-        PipelinePhase::Review if state.continuation.fix_continue_pending => Effect::RunFixAttempt {
-            pass: state.reviewer_pass,
-        },
-        PipelinePhase::Review if state.review_issues_found => Effect::RunFixAttempt {
-            pass: state.reviewer_pass,
-        },
+        // Fix continuation: start the fix chain with a fresh session
+        PipelinePhase::Review
+            if state.continuation.fix_continue_pending || state.review_issues_found =>
+        {
+            Effect::PrepareFixPrompt {
+                pass: state.reviewer_pass,
+            }
+        }
         // Other phases don't support continuation
         _ => Effect::SaveCheckpoint {
             trigger: CheckpointTrigger::PhaseTransition,
@@ -314,9 +315,45 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     };
                 }
 
-                return Effect::RunFixAttempt {
+                if state.fix_prompt_prepared_pass != Some(state.reviewer_pass) {
+                    return Effect::PrepareFixPrompt {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.fix_agent_invoked_pass != Some(state.reviewer_pass) {
+                    return Effect::InvokeFixAgent {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.fix_result_xml_extracted_pass != Some(state.reviewer_pass) {
+                    return Effect::ExtractFixResultXml {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                let fix_validated_is_for_pass = state
+                    .fix_validated_outcome
+                    .as_ref()
+                    .is_some_and(|o| o.pass == state.reviewer_pass);
+                if !fix_validated_is_for_pass {
+                    return Effect::ValidateFixResultXml {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.fix_result_xml_archived_pass != Some(state.reviewer_pass) {
+                    return Effect::ArchiveFixResultXml {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                return Effect::ApplyFixOutcome {
                     pass: state.reviewer_pass,
                 };
+
+                // Legacy super-effect placeholder. Removed once the fix chain is complete.
             }
 
             if state.agent_chain.agents.is_empty() {
@@ -862,11 +899,11 @@ mod tests {
             ..create_test_state()
         };
 
-        // Initially should run review pass
+        // Initially should begin review chain
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::RunReviewPass { pass: 0 }),
-            "Expected RunReviewPass, got {:?}",
+            matches!(effect, Effect::PrepareReviewContext { pass: 0 }),
+            "Expected PrepareReviewContext, got {:?}",
             effect
         );
 
@@ -879,11 +916,11 @@ mod tests {
             "review_issues_found should be true"
         );
 
-        // With a populated Reviewer chain, orchestration should run the fix attempt directly.
+        // With a populated Reviewer chain, orchestration should begin the fix chain.
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::RunFixAttempt { pass: 0 }),
-            "Expected RunFixAttempt after issues found, got {:?}",
+            matches!(effect, Effect::PrepareFixPrompt { pass: 0 }),
+            "Expected PrepareFixPrompt after issues found, got {:?}",
             effect
         );
 
@@ -979,14 +1016,70 @@ mod tests {
                         PipelineEvent::development_iteration_completed(iteration, true),
                     );
                 }
-                Effect::RunReviewPass { pass } => {
+                Effect::PrepareReviewContext { pass } => {
                     review_passes_run.push(pass);
+                    state = reduce(state, PipelineEvent::review_context_prepared(pass));
+                }
+                Effect::PrepareReviewPrompt { pass } => {
+                    state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
+                }
+                Effect::InvokeReviewAgent { pass } => {
+                    state = reduce(state, PipelineEvent::review_agent_invoked(pass));
+                }
+                Effect::ExtractReviewIssuesXml { pass } => {
+                    state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
+                }
+                Effect::ValidateReviewIssuesXml { pass } => {
+                    // Simulate finding issues
                     state = reduce(
                         state,
-                        PipelineEvent::review_completed(pass, true), // Simulate finding issues
+                        PipelineEvent::review_issues_xml_validated(pass, true, false),
                     );
                 }
-                Effect::RunFixAttempt { pass } => {
+                Effect::WriteIssuesMarkdown { pass } => {
+                    state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
+                }
+                Effect::ArchiveReviewIssuesXml { pass } => {
+                    state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
+                }
+                Effect::ApplyReviewOutcome {
+                    pass,
+                    issues_found,
+                    clean_no_issues,
+                } => {
+                    state = reduce(
+                        state,
+                        if clean_no_issues {
+                            PipelineEvent::review_pass_completed_clean(pass)
+                        } else {
+                            PipelineEvent::review_completed(pass, issues_found)
+                        },
+                    );
+                }
+
+                Effect::PrepareFixPrompt { pass } => {
+                    state = reduce(state, PipelineEvent::fix_prompt_prepared(pass));
+                }
+                Effect::InvokeFixAgent { pass } => {
+                    state = reduce(state, PipelineEvent::fix_agent_invoked(pass));
+                }
+                Effect::ExtractFixResultXml { pass } => {
+                    state = reduce(state, PipelineEvent::fix_result_xml_extracted(pass));
+                }
+                Effect::ValidateFixResultXml { pass } => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::fix_result_xml_validated(
+                            pass,
+                            crate::reducer::state::FixStatus::AllIssuesAddressed,
+                            None,
+                        ),
+                    );
+                }
+                Effect::ArchiveFixResultXml { pass } => {
+                    state = reduce(state, PipelineEvent::fix_result_xml_archived(pass));
+                }
+                Effect::ApplyFixOutcome { pass } => {
                     state = reduce(state, PipelineEvent::fix_attempt_completed(pass, true));
                 }
                 Effect::GenerateCommitMessage => {
@@ -1098,12 +1191,20 @@ mod tests {
                         ),
                     );
                 }
-                Effect::RunReviewPass { pass } => {
+                Effect::PrepareReviewContext { pass } => {
                     review_passes.push(pass);
+                    // Simulate full clean pass
+                    state = reduce(state, PipelineEvent::review_context_prepared(pass));
+                    state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
+                    state = reduce(state, PipelineEvent::review_agent_invoked(pass));
+                    state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
                     state = reduce(
                         state,
-                        PipelineEvent::review_completed(pass, false), // No issues
+                        PipelineEvent::review_issues_xml_validated(pass, false, true),
                     );
+                    state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
+                    state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
+                    state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
                 }
                 Effect::GenerateCommitMessage => {
                     state = reduce(
@@ -1164,12 +1265,19 @@ mod tests {
                         ),
                     );
                 }
-                Effect::RunReviewPass { pass } => {
+                Effect::PrepareReviewContext { pass } => {
                     passes_run.push(pass);
+                    state = reduce(state, PipelineEvent::review_context_prepared(pass));
+                    state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
+                    state = reduce(state, PipelineEvent::review_agent_invoked(pass));
+                    state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
                     state = reduce(
                         state,
-                        PipelineEvent::review_completed(pass, false), // No issues, no fix needed
+                        PipelineEvent::review_issues_xml_validated(pass, false, true),
                     );
+                    state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
+                    state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
+                    state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
                 }
                 Effect::SaveCheckpoint { .. } => {
                     // Review complete
@@ -1209,9 +1317,9 @@ mod tests {
             ..create_test_state()
         };
 
-        // Run review pass
+        // Begin review chain
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::RunReviewPass { pass: 0 }));
+        assert!(matches!(effect, Effect::PrepareReviewContext { pass: 0 }));
 
         // Review completes with NO issues
         state = reduce(state, PipelineEvent::review_completed(0, false));
@@ -1226,11 +1334,11 @@ mod tests {
             "Should increment to next pass when no issues"
         );
 
-        // Should run next review pass (pass 1), NOT fix attempt
+        // Should begin next review chain (pass 1), NOT fix chain
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::RunReviewPass { pass: 1 }),
-            "Expected RunReviewPass pass 1 when no issues, got {:?}",
+            matches!(effect, Effect::PrepareReviewContext { pass: 1 }),
+            "Expected PrepareReviewContext pass 1 when no issues, got {:?}",
             effect
         );
     }

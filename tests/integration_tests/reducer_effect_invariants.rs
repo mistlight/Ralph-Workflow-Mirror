@@ -44,9 +44,9 @@ fn test_run_development_iteration_requires_agent_chain() {
     });
 }
 
-/// Test that RunReviewPass is NOT emitted when agent chain is empty.
+/// Test that review effects are NOT emitted when agent chain is empty.
 ///
-/// RunReviewPass should use the agent from state.agent_chain.
+/// Review should use the agent from state.agent_chain.
 /// It should NOT be emitted when the chain is empty.
 #[test]
 fn test_run_review_pass_requires_agent_chain() {
@@ -61,18 +61,18 @@ fn test_run_review_pass_requires_agent_chain() {
 
         let effect = determine_next_effect(&state);
 
-        // Must NOT be RunReviewPass when chain is empty
+        // Must NOT begin review chain when chain is empty
         assert!(
-            !matches!(effect, Effect::RunReviewPass { .. }),
-            "Must initialize agent chain before running review pass, got {:?}",
+            !matches!(effect, Effect::PrepareReviewContext { .. }),
+            "Must initialize agent chain before running review, got {:?}",
             effect
         );
     });
 }
 
-/// Test that RunFixAttempt is NOT emitted when agent chain is empty.
+/// Test that fix effects are NOT emitted when agent chain is empty.
 ///
-/// RunFixAttempt should use the agent from state.agent_chain.
+/// Fix should use the agent from state.agent_chain.
 /// It should NOT be emitted when the chain is empty.
 #[test]
 fn test_run_fix_attempt_requires_agent_chain() {
@@ -88,10 +88,10 @@ fn test_run_fix_attempt_requires_agent_chain() {
 
         let effect = determine_next_effect(&state);
 
-        // Must NOT be RunFixAttempt when chain is empty
+        // Must NOT begin fix chain when chain is empty
         assert!(
-            !matches!(effect, Effect::RunFixAttempt { .. }),
-            "Must initialize agent chain before running fix attempt, got {:?}",
+            !matches!(effect, Effect::PrepareFixPrompt { .. }),
+            "Must initialize agent chain before running fix, got {:?}",
             effect
         );
     });
@@ -230,13 +230,52 @@ fn test_effect_types_are_single_task() {
         let effect_responsibilities = vec![
             ("AgentInvocation", "Invoke a single agent with a prompt"),
             ("InitializeAgentChain", "Set up fallback chain for a role"),
-            ("GeneratePlan", "Generate plan for one iteration"),
+            (
+                "GeneratePlan",
+                "Generate plan for one iteration (legacy; to be removed)",
+            ),
             (
                 "RunDevelopmentIteration",
-                "Execute one development iteration",
+                "Execute one development iteration (legacy; to be removed)",
             ),
-            ("RunReviewPass", "Execute one review pass"),
-            ("RunFixAttempt", "Execute one fix attempt"),
+            (
+                "PrepareReviewContext",
+                "Prepare review context files for one pass",
+            ),
+            (
+                "PrepareReviewPrompt",
+                "Render and persist the review prompt for one pass",
+            ),
+            ("InvokeReviewAgent", "Invoke reviewer agent for one pass"),
+            (
+                "ExtractReviewIssuesXml",
+                "Extract review issues XML from canonical path",
+            ),
+            ("ValidateReviewIssuesXml", "Validate review issues XML"),
+            ("WriteIssuesMarkdown", "Write .agent/ISSUES.md"),
+            (
+                "ArchiveReviewIssuesXml",
+                "Archive .agent/tmp/issues.xml after writing ISSUES.md",
+            ),
+            (
+                "ApplyReviewOutcome",
+                "Apply validated review outcome to advance review state",
+            ),
+            (
+                "PrepareFixPrompt",
+                "Render and persist the fix prompt for one pass",
+            ),
+            ("InvokeFixAgent", "Invoke fix agent for one pass"),
+            (
+                "ExtractFixResultXml",
+                "Extract fix result XML from canonical path",
+            ),
+            ("ValidateFixResultXml", "Validate fix result XML"),
+            (
+                "ApplyFixOutcome",
+                "Apply validated fix outcome to advance fix state",
+            ),
+            ("ArchiveFixResultXml", "Archive .agent/tmp/fix_result.xml"),
             ("RunRebase", "Execute one rebase operation"),
             ("ResolveRebaseConflicts", "Resolve conflicts once"),
             ("GenerateCommitMessage", "Generate one commit message"),
@@ -438,7 +477,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
             Effect::RunDevelopmentIteration { .. }
         ));
 
-        // Review -> RunReviewPass
+        // Review -> PrepareReviewContext (start of single-task review chain)
         let state = PipelineState {
             phase: PipelinePhase::Review,
             reviewer_pass: 0,
@@ -448,7 +487,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
         };
         assert!(matches!(
             determine_next_effect(&state),
-            Effect::RunReviewPass { .. }
+            Effect::PrepareReviewContext { .. }
         ));
 
         // FinalValidation -> ValidateFinalState
@@ -523,7 +562,7 @@ fn test_development_iteration_does_not_bundle_context_writing() {
 
 /// Test that each phase effect is independent and doesn't bundle with cleanup.
 ///
-/// Phase effects (RunDevelopmentIteration, RunReviewPass, etc.) should only
+/// Phase effects (RunDevelopmentIteration, PrepareReviewContext, etc.) should only
 /// execute their primary task. Cleanup operations should be separate effects.
 #[test]
 fn test_phase_effects_do_not_bundle_cleanup() {
@@ -538,20 +577,20 @@ fn test_phase_effects_do_not_bundle_cleanup() {
             _ => panic!("Wrong effect type"),
         }
 
-        // RunReviewPass - only pass field
-        let review_effect = Effect::RunReviewPass { pass: 1 };
+        // PrepareReviewContext - only pass field
+        let review_effect = Effect::PrepareReviewContext { pass: 1 };
         match review_effect {
-            Effect::RunReviewPass { pass } => {
-                assert_eq!(pass, 1, "RunReviewPass only has pass");
+            Effect::PrepareReviewContext { pass } => {
+                assert_eq!(pass, 1, "PrepareReviewContext only has pass");
             }
             _ => panic!("Wrong effect type"),
         }
 
-        // RunFixAttempt - only pass field
-        let fix_effect = Effect::RunFixAttempt { pass: 0 };
+        // PrepareFixPrompt - only pass field
+        let fix_effect = Effect::PrepareFixPrompt { pass: 0 };
         match fix_effect {
-            Effect::RunFixAttempt { pass } => {
-                assert_eq!(pass, 0, "RunFixAttempt only has pass");
+            Effect::PrepareFixPrompt { pass } => {
+                assert_eq!(pass, 0, "PrepareFixPrompt only has pass");
             }
             _ => panic!("Wrong effect type"),
         }

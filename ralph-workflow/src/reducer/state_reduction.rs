@@ -599,6 +599,44 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                 xsd_retry_pending: false,
                 ..state.continuation
             },
+            fix_prompt_prepared_pass: None,
+            fix_agent_invoked_pass: None,
+            fix_result_xml_extracted_pass: None,
+            fix_validated_outcome: None,
+            fix_result_xml_archived_pass: None,
+            ..state
+        },
+
+        ReviewEvent::FixPromptPrepared { pass } => PipelineState {
+            fix_prompt_prepared_pass: Some(pass),
+            ..state
+        },
+
+        ReviewEvent::FixAgentInvoked { pass } => PipelineState {
+            fix_agent_invoked_pass: Some(pass),
+            ..state
+        },
+
+        ReviewEvent::FixResultXmlExtracted { pass } => PipelineState {
+            fix_result_xml_extracted_pass: Some(pass),
+            ..state
+        },
+
+        ReviewEvent::FixResultXmlValidated {
+            pass,
+            status,
+            summary,
+        } => PipelineState {
+            fix_validated_outcome: Some(super::state::FixValidatedOutcome {
+                pass,
+                status,
+                summary,
+            }),
+            ..state
+        },
+
+        ReviewEvent::FixResultXmlArchived { pass } => PipelineState {
+            fix_result_xml_archived_pass: Some(pass),
             ..state
         },
         ReviewEvent::FixAttemptCompleted { pass, .. } => PipelineState {
@@ -606,6 +644,11 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             previous_phase: Some(super::event::PipelinePhase::Review),
             reviewer_pass: pass,
             review_issues_found: false,
+            fix_prompt_prepared_pass: None,
+            fix_agent_invoked_pass: None,
+            fix_result_xml_extracted_pass: None,
+            fix_validated_outcome: None,
+            fix_result_xml_archived_pass: None,
             commit: super::state::CommitState::NotStarted,
             continuation: super::state::ContinuationState {
                 invalid_output_attempts: 0,
@@ -725,6 +768,11 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             // Fix output is valid but indicates work is incomplete (issues_remain)
             PipelineState {
                 reviewer_pass: pass,
+                fix_prompt_prepared_pass: None,
+                fix_agent_invoked_pass: None,
+                fix_result_xml_extracted_pass: None,
+                fix_validated_outcome: None,
+                fix_result_xml_archived_pass: None,
                 continuation: state.continuation.trigger_fix_continuation(status, summary),
                 ..state
             }

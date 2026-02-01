@@ -233,17 +233,23 @@ pub enum ReviewEvent {
     /// Review prompt prepared for a pass.
     ///
     /// Emitted after `Effect::PrepareReviewPrompt` completes.
-    PromptPrepared { pass: u32 },
+    PromptPrepared {
+        pass: u32,
+    },
 
     /// Reviewer agent was invoked for a pass.
     ///
     /// Emitted after `Effect::InvokeReviewAgent` completes.
-    AgentInvoked { pass: u32 },
+    AgentInvoked {
+        pass: u32,
+    },
 
     /// Review issues XML exists and was read successfully for the pass.
     ///
     /// Emitted after `Effect::ExtractReviewIssuesXml` completes.
-    IssuesXmlExtracted { pass: u32 },
+    IssuesXmlExtracted {
+        pass: u32,
+    },
 
     /// Review issues XML validated for a pass.
     ///
@@ -256,10 +262,40 @@ pub enum ReviewEvent {
     },
 
     /// ISSUES.md was written for a pass.
-    IssuesMarkdownWritten { pass: u32 },
+    IssuesMarkdownWritten {
+        pass: u32,
+    },
 
     /// Review issues XML archived for a pass.
-    IssuesXmlArchived { pass: u32 },
+    IssuesXmlArchived {
+        pass: u32,
+    },
+
+    /// Fix prompt prepared for a review pass.
+    FixPromptPrepared {
+        pass: u32,
+    },
+
+    /// Fix agent was invoked for a review pass.
+    FixAgentInvoked {
+        pass: u32,
+    },
+
+    /// Fix result XML exists and was read successfully for the pass.
+    FixResultXmlExtracted {
+        pass: u32,
+    },
+
+    /// Fix result XML validated for a pass.
+    FixResultXmlValidated {
+        pass: u32,
+        status: crate::reducer::state::FixStatus,
+        summary: Option<String>,
+    },
+
+    FixResultXmlArchived {
+        pass: u32,
+    },
     /// A review pass completed with results.
     Completed {
         /// The pass number that completed.
@@ -916,6 +952,34 @@ impl PipelineEvent {
 
     pub fn review_issues_xml_archived(pass: u32) -> Self {
         Self::Review(ReviewEvent::IssuesXmlArchived { pass })
+    }
+
+    pub fn fix_prompt_prepared(pass: u32) -> Self {
+        Self::Review(ReviewEvent::FixPromptPrepared { pass })
+    }
+
+    pub fn fix_agent_invoked(pass: u32) -> Self {
+        Self::Review(ReviewEvent::FixAgentInvoked { pass })
+    }
+
+    pub fn fix_result_xml_extracted(pass: u32) -> Self {
+        Self::Review(ReviewEvent::FixResultXmlExtracted { pass })
+    }
+
+    pub fn fix_result_xml_validated(
+        pass: u32,
+        status: crate::reducer::state::FixStatus,
+        summary: Option<String>,
+    ) -> Self {
+        Self::Review(ReviewEvent::FixResultXmlValidated {
+            pass,
+            status,
+            summary,
+        })
+    }
+
+    pub fn fix_result_xml_archived(pass: u32) -> Self {
+        Self::Review(ReviewEvent::FixResultXmlArchived { pass })
     }
 
     /// Create a ReviewCompleted event.

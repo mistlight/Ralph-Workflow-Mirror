@@ -220,9 +220,9 @@ fn test_orchestration_requires_initialized_chain_for_development() {
     });
 }
 
-/// Test that orchestration returns RunReviewPass only when chain is initialized.
+/// Test that orchestration begins the review chain only when chain is initialized.
 ///
-/// Must NOT return RunReviewPass when chain is empty.
+/// Must NOT emit review effects when chain is empty.
 #[test]
 fn test_orchestration_requires_initialized_chain_for_review() {
     with_default_timeout(|| {
@@ -235,8 +235,8 @@ fn test_orchestration_requires_initialized_chain_for_review() {
 
         let effect_empty = determine_next_effect(&state_empty);
         assert!(
-            !matches!(effect_empty, Effect::RunReviewPass { .. }),
-            "Must initialize agent chain before running review pass"
+            !matches!(effect_empty, Effect::PrepareReviewContext { .. }),
+            "Must initialize agent chain before running review"
         );
 
         // Initialized chain
@@ -254,8 +254,8 @@ fn test_orchestration_requires_initialized_chain_for_review() {
 
         let effect_initialized = determine_next_effect(&state_initialized);
         assert!(
-            matches!(effect_initialized, Effect::RunReviewPass { .. }),
-            "Should run review pass when chain is initialized, got {:?}",
+            matches!(effect_initialized, Effect::PrepareReviewContext { pass: 0 }),
+            "Should begin review chain when chain is initialized, got {:?}",
             effect_initialized
         );
     });

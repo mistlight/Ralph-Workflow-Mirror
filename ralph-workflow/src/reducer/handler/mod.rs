@@ -96,8 +96,6 @@ impl MainEffectHandler {
                 self.run_development_iteration(ctx, iteration)
             }
 
-            Effect::RunReviewPass { pass } => self.run_review_pass(ctx, pass),
-
             Effect::PrepareReviewContext { pass } => self.prepare_review_context(ctx, pass),
 
             Effect::PrepareReviewPrompt { pass } => self.prepare_review_prompt(ctx, pass),
@@ -118,7 +116,17 @@ impl MainEffectHandler {
                 clean_no_issues,
             } => self.apply_review_outcome(ctx, pass, issues_found, clean_no_issues),
 
-            Effect::RunFixAttempt { pass } => self.run_fix_attempt(ctx, pass),
+            Effect::PrepareFixPrompt { pass } => self.prepare_fix_prompt(ctx, pass),
+
+            Effect::InvokeFixAgent { pass } => self.invoke_fix_agent(ctx, pass),
+
+            Effect::ExtractFixResultXml { pass } => self.extract_fix_result_xml(ctx, pass),
+
+            Effect::ValidateFixResultXml { pass } => self.validate_fix_result_xml(ctx, pass),
+
+            Effect::ApplyFixOutcome { pass } => self.apply_fix_outcome(ctx, pass),
+
+            Effect::ArchiveFixResultXml { pass } => self.archive_fix_result_xml(ctx, pass),
 
             Effect::RunRebase {
                 phase,
