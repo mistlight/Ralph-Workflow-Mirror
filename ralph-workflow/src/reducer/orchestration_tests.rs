@@ -349,6 +349,7 @@ fn test_fix_chain_applies_all_issues_addressed_to_fix_attempt_completed() {
             status: crate::reducer::state::FixStatus::AllIssuesAddressed,
             summary: Some("ok".to_string()),
         }),
+        fix_result_xml_archived_pass: Some(0),
         agent_chain: PipelineState::initial(1, 1).agent_chain.with_agents(
             vec!["mock".to_string()],
             vec![vec![]],
@@ -371,10 +372,7 @@ fn test_fix_chain_applies_all_issues_addressed_to_fix_attempt_completed() {
 
     assert!(matches!(
         handler_event,
-        PipelineEvent::Review(crate::reducer::event::ReviewEvent::FixAttemptCompleted {
-            pass: 0,
-            ..
-        })
+        PipelineEvent::Review(crate::reducer::event::ReviewEvent::FixOutcomeApplied { pass: 0 })
     ));
 }
 
@@ -639,10 +637,10 @@ fn test_development_runs_exactly_n_iterations() {
             }
             Effect::ApplyDevelopmentOutcome { iteration } => {
                 iterations_run.push(iteration);
-                state = reduce(
-                    state,
-                    PipelineEvent::development_iteration_completed(iteration, true),
-                );
+                state = reduce(state, PipelineEvent::development_outcome_applied(iteration));
+            }
+            Effect::CheckCommitDiff => {
+                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
             }
             Effect::PrepareCommitPrompt => {
                 state = reduce(state, PipelineEvent::commit_generation_started());
@@ -850,6 +848,9 @@ fn test_review_triggers_fix_when_issues_found() {
 
     // Commit message chain
     let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::CheckCommitDiff));
+    state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+    let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::PrepareCommitPrompt));
     state = reduce(state, PipelineEvent::commit_generation_started());
     state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
@@ -970,7 +971,45 @@ fn test_commit_not_started_prepares_prompt() {
         ..create_test_state()
     };
     let effect = determine_next_effect(&state);
-    assert!(matches!(effect, Effect::PrepareCommitPrompt));
+    assert!(matches!(effect, Effect::CheckCommitDiff));
+}
+
+#[test]
+fn test_commit_checks_diff_before_prompt() {
+    use crate::reducer::state::AgentChainState;
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        commit: crate::reducer::state::CommitState::NotStarted,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::CheckCommitDiff));
+}
+
+#[test]
+fn test_commit_skips_when_diff_empty() {
+    use crate::reducer::state::AgentChainState;
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        commit: crate::reducer::state::CommitState::NotStarted,
+        commit_diff_prepared: true,
+        commit_diff_empty: true,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::SkipCommit { .. }));
 }
 
 #[test]
@@ -982,6 +1021,8 @@ fn test_commit_does_not_apply_outcome_without_xml_extracted() {
             attempt: 1,
             max_attempts: 3,
         },
+        commit_diff_prepared: true,
+        commit_diff_empty: false,
         commit_prompt_prepared: true,
         commit_agent_invoked: true,
         commit_xml_extracted: false,
@@ -1068,7 +1109,7 @@ fn test_complete_pipeline_flow() {
     let mut iterations_run = Vec::new();
     let mut review_passes_run = Vec::new();
 
-    let max_steps = 50;
+    let max_steps = 80;
     for step in 0..max_steps {
         phase_sequence.push(state.phase);
         let effect = determine_next_effect(&state);
@@ -1159,10 +1200,7 @@ fn test_complete_pipeline_flow() {
             }
             Effect::ApplyDevelopmentOutcome { iteration } => {
                 iterations_run.push(iteration);
-                state = reduce(
-                    state,
-                    PipelineEvent::development_iteration_completed(iteration, true),
-                );
+                state = reduce(state, PipelineEvent::development_outcome_applied(iteration));
             }
             Effect::PrepareReviewContext { pass } => {
                 review_passes_run.push(pass);
@@ -1192,11 +1230,14 @@ fn test_complete_pipeline_flow() {
                     ),
                 );
                 state = reduce(state, PipelineEvent::fix_result_xml_archived(pass));
-                state = reduce(state, PipelineEvent::fix_attempt_completed(pass, true));
+                state = reduce(state, PipelineEvent::fix_outcome_applied(pass));
             }
             Effect::PrepareCommitPrompt => {
                 state = reduce(state, PipelineEvent::commit_generation_started());
                 state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+            }
+            Effect::CheckCommitDiff => {
+                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
             }
             Effect::InvokeCommitAgent => {
                 state = reduce(state, PipelineEvent::commit_agent_invoked(1));
@@ -1301,6 +1342,9 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
             Effect::PrepareCommitPrompt => {
                 state = reduce(state, PipelineEvent::commit_generation_started());
                 state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+            }
+            Effect::CheckCommitDiff => {
+                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
             }
             Effect::InvokeCommitAgent => {
                 state = reduce(state, PipelineEvent::commit_agent_invoked(1));

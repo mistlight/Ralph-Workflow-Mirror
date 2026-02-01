@@ -93,6 +93,13 @@ pub enum PlanningEvent {
         /// The iteration number this plan is for.
         iteration: u32,
     },
+    /// Planning XML missing for an iteration.
+    PlanXmlMissing {
+        /// The iteration number this plan is for.
+        iteration: u32,
+        /// The invalid output attempt count.
+        attempt: u32,
+    },
     /// Planning XML validated for an iteration.
     PlanXmlValidated {
         /// The iteration number this plan is for.
@@ -188,6 +195,15 @@ pub enum DevelopmentEvent {
         /// The iteration number the XML was extracted for.
         iteration: u32,
     },
+    /// Development result XML missing for an iteration.
+    ///
+    /// Emitted after `Effect::ExtractDevelopmentXml` when the XML was absent.
+    XmlMissing {
+        /// The iteration number the XML was extracted for.
+        iteration: u32,
+        /// The invalid output attempt count.
+        attempt: u32,
+    },
 
     /// Development result XML validated for an iteration.
     ///
@@ -203,6 +219,12 @@ pub enum DevelopmentEvent {
         files_changed: Option<Vec<String>>,
         /// Agent's recommended next steps.
         next_steps: Option<String>,
+    },
+
+    /// Development outcome applied for an iteration.
+    OutcomeApplied {
+        /// The iteration number the outcome was applied for.
+        iteration: u32,
     },
 
     /// Development result XML archived for an iteration.
@@ -335,6 +357,14 @@ pub enum ReviewEvent {
     IssuesXmlExtracted {
         pass: u32,
     },
+    /// Review issues XML missing for the pass.
+    ///
+    /// Emitted after `Effect::ExtractReviewIssuesXml` when the XML was absent.
+    IssuesXmlMissing {
+        pass: u32,
+        /// The invalid output attempt count.
+        attempt: u32,
+    },
 
     /// Review issues XML validated for a pass.
     ///
@@ -371,12 +401,23 @@ pub enum ReviewEvent {
     FixResultXmlExtracted {
         pass: u32,
     },
+    /// Fix result XML missing for the pass.
+    FixResultXmlMissing {
+        pass: u32,
+        /// The invalid output attempt count.
+        attempt: u32,
+    },
 
     /// Fix result XML validated for a pass.
     FixResultXmlValidated {
         pass: u32,
         status: crate::reducer::state::FixStatus,
         summary: Option<String>,
+    },
+
+    /// Fix outcome applied for a pass.
+    FixOutcomeApplied {
+        pass: u32,
     },
 
     FixResultXmlArchived {
@@ -719,6 +760,11 @@ pub enum RebaseEvent {
 pub enum CommitEvent {
     /// Commit message generation started.
     GenerationStarted,
+    /// Commit diff computed for commit generation.
+    DiffPrepared {
+        /// True when the diff is empty.
+        empty: bool,
+    },
     /// Commit prompt prepared for a commit attempt.
     PromptPrepared {
         /// The attempt number.
@@ -731,6 +777,11 @@ pub enum CommitEvent {
     },
     /// Commit message XML extracted for a commit attempt.
     CommitXmlExtracted {
+        /// The attempt number.
+        attempt: u32,
+    },
+    /// Commit message XML missing for a commit attempt.
+    CommitXmlMissing {
         /// The attempt number.
         attempt: u32,
     },
@@ -942,6 +993,11 @@ impl PipelineEvent {
         Self::Planning(PlanningEvent::PlanXmlExtracted { iteration })
     }
 
+    /// Create a PlanningXmlMissing event.
+    pub fn planning_xml_missing(iteration: u32, attempt: u32) -> Self {
+        Self::Planning(PlanningEvent::PlanXmlMissing { iteration, attempt })
+    }
+
     /// Create a PlanningXmlValidated event.
     pub fn planning_xml_validated(iteration: u32, valid: bool, markdown: Option<String>) -> Self {
         Self::Planning(PlanningEvent::PlanXmlValidated {
@@ -1002,6 +1058,11 @@ impl PipelineEvent {
         Self::Development(DevelopmentEvent::XmlExtracted { iteration })
     }
 
+    /// Create a DevelopmentXmlMissing event.
+    pub fn development_xml_missing(iteration: u32, attempt: u32) -> Self {
+        Self::Development(DevelopmentEvent::XmlMissing { iteration, attempt })
+    }
+
     /// Create a DevelopmentXmlValidated event.
     pub fn development_xml_validated(
         iteration: u32,
@@ -1017,6 +1078,11 @@ impl PipelineEvent {
             files_changed,
             next_steps,
         })
+    }
+
+    /// Create a DevelopmentOutcomeApplied event.
+    pub fn development_outcome_applied(iteration: u32) -> Self {
+        Self::Development(DevelopmentEvent::OutcomeApplied { iteration })
     }
 
     /// Create a DevelopmentXmlArchived event.
@@ -1124,6 +1190,11 @@ impl PipelineEvent {
         Self::Review(ReviewEvent::IssuesXmlExtracted { pass })
     }
 
+    /// Create a ReviewIssuesXmlMissing event.
+    pub fn review_issues_xml_missing(pass: u32, attempt: u32) -> Self {
+        Self::Review(ReviewEvent::IssuesXmlMissing { pass, attempt })
+    }
+
     /// Create a ReviewIssuesXmlValidated event.
     pub fn review_issues_xml_validated(
         pass: u32,
@@ -1159,6 +1230,10 @@ impl PipelineEvent {
         Self::Review(ReviewEvent::FixResultXmlExtracted { pass })
     }
 
+    pub fn fix_result_xml_missing(pass: u32, attempt: u32) -> Self {
+        Self::Review(ReviewEvent::FixResultXmlMissing { pass, attempt })
+    }
+
     pub fn fix_result_xml_validated(
         pass: u32,
         status: crate::reducer::state::FixStatus,
@@ -1169,6 +1244,10 @@ impl PipelineEvent {
             status,
             summary,
         })
+    }
+
+    pub fn fix_outcome_applied(pass: u32) -> Self {
+        Self::Review(ReviewEvent::FixOutcomeApplied { pass })
     }
 
     pub fn fix_result_xml_archived(pass: u32) -> Self {
@@ -1422,6 +1501,11 @@ impl PipelineEvent {
         Self::Commit(CommitEvent::GenerationStarted)
     }
 
+    /// Create a CommitDiffPrepared event.
+    pub fn commit_diff_prepared(empty: bool) -> Self {
+        Self::Commit(CommitEvent::DiffPrepared { empty })
+    }
+
     /// Create a CommitPromptPrepared event.
     pub fn commit_prompt_prepared(attempt: u32) -> Self {
         Self::Commit(CommitEvent::PromptPrepared { attempt })
@@ -1435,6 +1519,11 @@ impl PipelineEvent {
     /// Create a CommitXmlExtracted event.
     pub fn commit_xml_extracted(attempt: u32) -> Self {
         Self::Commit(CommitEvent::CommitXmlExtracted { attempt })
+    }
+
+    /// Create a CommitXmlMissing event.
+    pub fn commit_xml_missing(attempt: u32) -> Self {
+        Self::Commit(CommitEvent::CommitXmlMissing { attempt })
     }
 
     /// Create a CommitXmlValidated event.

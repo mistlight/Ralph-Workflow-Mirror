@@ -62,9 +62,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_issues_remain() {
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Review(
-            crate::reducer::event::ReviewEvent::FixContinuationTriggered { pass: 0, .. }
-        )
+        PipelineEvent::Review(crate::reducer::event::ReviewEvent::FixOutcomeApplied { pass: 0 })
     ));
 }
 
@@ -116,10 +114,7 @@ fn test_apply_fix_outcome_emits_fix_attempt_completed_for_all_issues_addressed()
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Review(crate::reducer::event::ReviewEvent::FixAttemptCompleted {
-            pass: 0,
-            ..
-        })
+        PipelineEvent::Review(crate::reducer::event::ReviewEvent::FixOutcomeApplied { pass: 0 })
     ));
 }
 
@@ -171,9 +166,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_triggered_for_failed() {
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Review(
-            crate::reducer::event::ReviewEvent::FixContinuationTriggered { pass: 0, .. }
-        )
+        PipelineEvent::Review(crate::reducer::event::ReviewEvent::FixOutcomeApplied { pass: 0 })
     ));
 }
 
@@ -227,12 +220,6 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Review(
-            crate::reducer::event::ReviewEvent::FixContinuationBudgetExhausted {
-                pass: 0,
-                total_attempts: 3,
-                last_status: FixStatus::IssuesRemain
-            }
-        )
+        PipelineEvent::Review(crate::reducer::event::ReviewEvent::FixOutcomeApplied { pass: 0 })
     ));
 }

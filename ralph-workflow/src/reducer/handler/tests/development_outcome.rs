@@ -71,7 +71,7 @@ fn test_apply_development_outcome_exhausts_when_next_attempt_reaches_limit() {
     assert!(matches!(
         result.event,
         crate::reducer::event::PipelineEvent::Development(
-            crate::reducer::event::DevelopmentEvent::ContinuationBudgetExhausted { .. }
+            crate::reducer::event::DevelopmentEvent::OutcomeApplied { .. }
         )
     ));
 }

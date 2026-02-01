@@ -317,6 +317,11 @@ pub enum Effect {
         strategy: ConflictStrategy,
     },
 
+    /// Compute the commit diff for the current attempt (single-task).
+    ///
+    /// This effect must only compute/write the diff and emit whether it is empty.
+    CheckCommitDiff,
+
     /// Prepare the commit prompt (single-task).
     ///
     /// This effect must only render/write the commit prompt that will be used for

@@ -179,7 +179,7 @@ impl MainEffectHandler {
                 ))
             }
             Err(_) => Ok(EffectResult::with_ui(
-                PipelineEvent::development_output_validation_failed(
+                PipelineEvent::development_xml_missing(
                     iteration,
                     self.state.continuation.invalid_output_attempts,
                 ),
@@ -274,53 +274,9 @@ impl MainEffectHandler {
             }
         };
 
-        let continuation_state = &self.state.continuation;
-        let max_continuations = continuation_state.max_continue_count.saturating_sub(1);
-
-        if matches!(
-            outcome.status,
-            crate::reducer::state::DevelopmentStatus::Completed
-        ) {
-            let event = if continuation_state.is_continuation() {
-                PipelineEvent::development_iteration_continuation_succeeded(
-                    iteration,
-                    continuation_state.continuation_attempt,
-                )
-            } else {
-                PipelineEvent::development_iteration_completed(iteration, true)
-            };
-            return Ok(EffectResult::event(event));
-        }
-
-        if continuation_state.continuation_attempt > max_continuations {
-            return Ok(EffectResult::event(
-                PipelineEvent::development_continuation_budget_exhausted(
-                    iteration,
-                    continuation_state.continuation_attempt,
-                    outcome.status.clone(),
-                ),
-            ));
-        }
-
-        let next_attempt = continuation_state.continuation_attempt + 1;
-        if next_attempt > max_continuations {
-            return Ok(EffectResult::event(
-                PipelineEvent::development_continuation_budget_exhausted(
-                    iteration,
-                    continuation_state.continuation_attempt,
-                    outcome.status.clone(),
-                ),
-            ));
-        }
-
+        let _ = outcome;
         Ok(EffectResult::event(
-            PipelineEvent::development_iteration_continuation_triggered(
-                iteration,
-                outcome.status.clone(),
-                outcome.summary.clone(),
-                outcome.files_changed.clone(),
-                outcome.next_steps.clone(),
-            ),
+            PipelineEvent::development_outcome_applied(iteration),
         ))
     }
 }

@@ -610,6 +610,12 @@ pub struct PipelineState {
     /// Tracks whether the commit prompt was prepared for the current commit attempt.
     #[serde(default)]
     pub commit_prompt_prepared: bool,
+    /// Tracks whether the commit diff has been computed for the current attempt.
+    #[serde(default)]
+    pub commit_diff_prepared: bool,
+    /// Tracks whether the computed commit diff was empty.
+    #[serde(default)]
+    pub commit_diff_empty: bool,
     /// Tracks whether the commit agent was invoked for the current commit attempt.
     #[serde(default)]
     pub commit_agent_invoked: bool,
@@ -748,6 +754,8 @@ impl PipelineState {
             fix_validated_outcome: None,
             fix_result_xml_archived_pass: None,
             commit_prompt_prepared: false,
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
             commit_agent_invoked: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,
@@ -812,6 +820,8 @@ impl From<PipelineCheckpoint> for PipelineState {
             fix_validated_outcome: None,
             fix_result_xml_archived_pass: None,
             commit_prompt_prepared: false,
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
             commit_agent_invoked: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,

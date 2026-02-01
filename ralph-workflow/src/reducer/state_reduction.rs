@@ -25,7 +25,8 @@ use super::event::{
     RebaseEvent, ReviewEvent,
 };
 use super::state::{
-    CommitState, ContinuationState, PipelineState, PlanningValidatedOutcome, RebaseState,
+    CommitState, ContinuationState, DevelopmentStatus, FixStatus, PipelineState,
+    PlanningValidatedOutcome, RebaseState,
 };
 use crate::agents::AgentRole;
 
@@ -214,7 +215,8 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
             }
         }
 
-        PlanningEvent::OutputValidationFailed { iteration, attempt } => {
+        PlanningEvent::OutputValidationFailed { iteration, attempt }
+        | PlanningEvent::PlanXmlMissing { iteration, attempt } => {
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
             if attempt >= super::state::MAX_PLAN_INVALID_OUTPUT_RERUNS
                 || new_xsd_count >= state.continuation.max_xsd_retry_count
@@ -349,6 +351,50 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
             development_xml_archived_iteration: Some(iteration),
             ..state
         },
+        DevelopmentEvent::OutcomeApplied { iteration } => {
+            let Some(outcome) = state
+                .development_validated_outcome
+                .as_ref()
+                .filter(|o| o.iteration == iteration)
+            else {
+                return state;
+            };
+
+            let continuation_state = &state.continuation;
+            let max_continuations = continuation_state.max_continue_count.saturating_sub(1);
+
+            let next_event = if matches!(outcome.status, DevelopmentStatus::Completed) {
+                if continuation_state.is_continuation() {
+                    DevelopmentEvent::ContinuationSucceeded {
+                        iteration,
+                        total_continuation_attempts: continuation_state.continuation_attempt,
+                    }
+                } else {
+                    DevelopmentEvent::IterationCompleted {
+                        iteration,
+                        output_valid: true,
+                    }
+                }
+            } else if continuation_state.continuation_attempt > max_continuations
+                || continuation_state.continuation_attempt + 1 > max_continuations
+            {
+                DevelopmentEvent::ContinuationBudgetExhausted {
+                    iteration,
+                    total_attempts: continuation_state.continuation_attempt,
+                    last_status: outcome.status.clone(),
+                }
+            } else {
+                DevelopmentEvent::ContinuationTriggered {
+                    iteration,
+                    status: outcome.status.clone(),
+                    summary: outcome.summary.clone(),
+                    files_changed: outcome.files_changed.clone(),
+                    next_steps: outcome.next_steps.clone(),
+                }
+            };
+
+            reduce_development_event(state, next_event)
+        }
         DevelopmentEvent::IterationCompleted {
             iteration,
             output_valid,
@@ -361,6 +407,8 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                     iteration,
                     commit: super::state::CommitState::NotStarted,
                     commit_prompt_prepared: false,
+                    commit_diff_prepared: false,
+                    commit_diff_empty: false,
                     commit_agent_invoked: false,
                     commit_xml_extracted: false,
                     commit_validated_outcome: None,
@@ -472,6 +520,8 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                 iteration,
                 commit: super::state::CommitState::NotStarted,
                 commit_prompt_prepared: false,
+                commit_diff_prepared: false,
+                commit_diff_empty: false,
                 commit_agent_invoked: false,
                 commit_xml_extracted: false,
                 commit_validated_outcome: None,
@@ -490,7 +540,8 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                 ..state
             }
         }
-        DevelopmentEvent::OutputValidationFailed { iteration, attempt } => {
+        DevelopmentEvent::OutputValidationFailed { iteration, attempt }
+        | DevelopmentEvent::XmlMissing { iteration, attempt } => {
             // Policy: After MAX_DEV_INVALID_OUTPUT_RERUNS, switch to next agent.
             // This keeps invalid output retry logic in the reducer, not the handler.
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
@@ -832,6 +883,37 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             fix_result_xml_archived_pass: Some(pass),
             ..state
         },
+        ReviewEvent::FixOutcomeApplied { pass } => {
+            let Some(outcome) = state
+                .fix_validated_outcome
+                .as_ref()
+                .filter(|o| o.pass == pass)
+            else {
+                return state;
+            };
+
+            let next_event = if outcome.status.needs_continuation() {
+                let next_attempt = state.continuation.fix_continuation_attempt + 1;
+                if next_attempt >= state.continuation.max_fix_continue_count {
+                    ReviewEvent::FixContinuationBudgetExhausted {
+                        pass,
+                        total_attempts: next_attempt,
+                        last_status: outcome.status.clone(),
+                    }
+                } else {
+                    ReviewEvent::FixContinuationTriggered {
+                        pass,
+                        status: outcome.status.clone(),
+                        summary: outcome.summary.clone(),
+                    }
+                }
+            } else {
+                let changes_made = matches!(outcome.status, FixStatus::AllIssuesAddressed);
+                ReviewEvent::FixAttemptCompleted { pass, changes_made }
+            };
+
+            reduce_review_event(state, next_event)
+        }
         ReviewEvent::FixAttemptCompleted { pass, .. } => PipelineState {
             phase: super::event::PipelinePhase::CommitMessage,
             previous_phase: Some(super::event::PipelinePhase::Review),
@@ -844,6 +926,8 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             fix_result_xml_archived_pass: None,
             commit: super::state::CommitState::NotStarted,
             commit_prompt_prepared: false,
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
             commit_agent_invoked: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,
@@ -859,6 +943,8 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             previous_phase: None,
             commit: super::state::CommitState::NotStarted,
             commit_prompt_prepared: false,
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
             commit_agent_invoked: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,
@@ -928,7 +1014,8 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                 }
             }
         }
-        ReviewEvent::OutputValidationFailed { pass, attempt } => {
+        ReviewEvent::OutputValidationFailed { pass, attempt }
+        | ReviewEvent::IssuesXmlMissing { pass, attempt } => {
             // Policy: The reducer maintains retry state for determinism.
             // Handlers should emit `attempt` from state (checkpoint-resume safe).
             const MAX_REVIEW_INVALID_OUTPUT_RERUNS: u32 = 2;
@@ -1031,7 +1118,8 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             }
         }
 
-        ReviewEvent::FixOutputValidationFailed { pass, attempt } => {
+        ReviewEvent::FixOutputValidationFailed { pass, attempt }
+        | ReviewEvent::FixResultXmlMissing { pass, attempt } => {
             // Same policy as review output validation failure
             const MAX_FIX_INVALID_OUTPUT_RERUNS: u32 = 2;
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
@@ -1270,6 +1358,11 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
                 ..state
             }
         }
+        CommitEvent::DiffPrepared { empty } => PipelineState {
+            commit_diff_prepared: true,
+            commit_diff_empty: empty,
+            ..state
+        },
         CommitEvent::PromptPrepared { .. } => PipelineState {
             commit_prompt_prepared: true,
             continuation: super::state::ContinuationState {
@@ -1284,6 +1377,15 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
         },
         CommitEvent::CommitXmlExtracted { .. } => PipelineState {
             commit_xml_extracted: true,
+            ..state
+        },
+        CommitEvent::CommitXmlMissing { attempt } => PipelineState {
+            commit_xml_extracted: true,
+            commit_validated_outcome: Some(super::state::CommitValidatedOutcome {
+                attempt,
+                message: None,
+                reason: Some("Commit XML missing".to_string()),
+            }),
             ..state
         },
         CommitEvent::CommitXmlValidated { message, attempt } => PipelineState {
@@ -1354,6 +1456,8 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
         CommitEvent::GenerationFailed { .. } => PipelineState {
             commit: CommitState::NotStarted,
             commit_prompt_prepared: false,
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
             commit_agent_invoked: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,
@@ -1769,10 +1873,16 @@ mod tests {
 
     #[test]
     fn test_reduce_commit_generation_started() {
-        let state = create_test_state();
+        let state = PipelineState {
+            commit_diff_prepared: true,
+            commit_diff_empty: false,
+            ..create_test_state()
+        };
         let new_state = reduce(state, PipelineEvent::commit_generation_started());
 
         assert!(matches!(new_state.commit, CommitState::Generating { .. }));
+        assert!(new_state.commit_diff_prepared);
+        assert!(!new_state.commit_diff_empty);
     }
 
     #[test]

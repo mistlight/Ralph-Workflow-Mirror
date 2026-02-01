@@ -307,7 +307,7 @@ src/lib.rs</ralph-files-changed>
             }
 
             Effect::ApplyDevelopmentOutcome { iteration } => (
-                PipelineEvent::development_iteration_completed(iteration, true),
+                PipelineEvent::development_outcome_applied(iteration),
                 vec![],
             ),
 
@@ -405,7 +405,7 @@ src/lib.rs</ralph-files-changed>
             ),
 
             Effect::ApplyFixOutcome { pass } => {
-                (PipelineEvent::fix_attempt_completed(pass, true), vec![])
+                (PipelineEvent::fix_outcome_applied(pass), vec![])
             }
 
             Effect::ArchiveFixResultXml { pass } => {
@@ -424,29 +424,25 @@ src/lib.rs</ralph-files-changed>
                 (PipelineEvent::rebase_conflict_resolved(vec![]), vec![])
             }
 
+            Effect::CheckCommitDiff => {
+                let empty = self.simulate_empty_diff;
+                (PipelineEvent::commit_diff_prepared(empty), vec![])
+            }
+
             Effect::PrepareCommitPrompt => {
                 let attempt = match self.state.commit {
                     crate::reducer::state::CommitState::Generating { attempt, .. } => attempt,
                     _ => 1,
                 };
-                if self.simulate_empty_diff {
-                    (
-                        PipelineEvent::commit_skipped(
-                            "No changes to commit (empty diff)".to_string(),
-                        ),
-                        vec![],
-                    )
+                let ui = vec![UIEvent::PhaseTransition {
+                    from: Some(self.state.phase),
+                    to: PipelinePhase::CommitMessage,
+                }];
+                if matches!(self.state.commit, crate::reducer::state::CommitState::NotStarted) {
+                    additional_events.push(PipelineEvent::commit_prompt_prepared(attempt));
+                    (PipelineEvent::commit_generation_started(), ui)
                 } else {
-                    let ui = vec![UIEvent::PhaseTransition {
-                        from: Some(self.state.phase),
-                        to: PipelinePhase::CommitMessage,
-                    }];
-                    if matches!(self.state.commit, crate::reducer::state::CommitState::NotStarted) {
-                        additional_events.push(PipelineEvent::commit_prompt_prepared(attempt));
-                        (PipelineEvent::commit_generation_started(), ui)
-                    } else {
-                        (PipelineEvent::commit_prompt_prepared(attempt), ui)
-                    }
+                    (PipelineEvent::commit_prompt_prepared(attempt), ui)
                 }
             }
 
@@ -633,28 +629,19 @@ mod tests {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state).with_empty_diff();
 
-        // PrepareCommitPrompt should return CommitSkipped when empty diff is simulated
-        let result = handler.execute_mock(Effect::PrepareCommitPrompt);
+        // CheckCommitDiff should mark empty diff
+        let result = handler.execute_mock(Effect::CheckCommitDiff);
 
         assert!(
             matches!(
                 result.event,
-                PipelineEvent::Commit(crate::reducer::event::CommitEvent::Skipped { .. })
+                PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared {
+                    empty: true
+                })
             ),
-            "Should return CommitSkipped when empty diff is simulated, got: {:?}",
+            "Should return CommitDiffPrepared when empty diff is simulated, got: {:?}",
             result.event
         );
-
-        // Verify the reason message
-        if let PipelineEvent::Commit(crate::reducer::event::CommitEvent::Skipped { reason }) =
-            result.event
-        {
-            assert!(
-                reason.contains("empty diff"),
-                "Reason should mention empty diff: {}",
-                reason
-            );
-        }
     }
 
     #[test]

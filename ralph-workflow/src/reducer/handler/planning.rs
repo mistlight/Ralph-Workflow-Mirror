@@ -128,12 +128,10 @@ impl MainEffectHandler {
             Ok(_) => Ok(EffectResult::event(PipelineEvent::planning_xml_extracted(
                 iteration,
             ))),
-            Err(_) => Ok(EffectResult::event(
-                PipelineEvent::planning_output_validation_failed(
-                    iteration,
-                    self.state.continuation.invalid_output_attempts,
-                ),
-            )),
+            Err(_) => Ok(EffectResult::event(PipelineEvent::planning_xml_missing(
+                iteration,
+                self.state.continuation.invalid_output_attempts,
+            ))),
         }
     }
 

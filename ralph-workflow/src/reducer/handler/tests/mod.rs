@@ -5,6 +5,7 @@
 mod commit_handler;
 mod development_outcome;
 mod development_prompt;
+mod extract_missing;
 mod fix_outcome;
 mod invoke_prompt;
 mod planning_markdown;

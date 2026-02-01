@@ -529,6 +529,14 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                             return Effect::ApplyCommitMessageOutcome;
                         }
                     }
+                    if !state.commit_diff_prepared {
+                        return Effect::CheckCommitDiff;
+                    }
+                    if state.commit_diff_empty {
+                        return Effect::SkipCommit {
+                            reason: "No changes to commit (empty diff)".to_string(),
+                        };
+                    }
                     if !state.commit_prompt_prepared {
                         return Effect::PrepareCommitPrompt;
                     }

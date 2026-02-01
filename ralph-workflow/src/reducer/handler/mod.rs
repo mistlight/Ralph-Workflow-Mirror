@@ -180,6 +180,8 @@ impl MainEffectHandler {
 
             Effect::PrepareCommitPrompt => self.prepare_commit_prompt(ctx),
 
+            Effect::CheckCommitDiff => self.check_commit_diff(ctx),
+
             Effect::InvokeCommitAgent => self.invoke_commit_agent(ctx),
 
             Effect::ExtractCommitXml => self.extract_commit_xml(ctx),

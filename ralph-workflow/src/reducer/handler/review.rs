@@ -98,8 +98,8 @@ impl MainEffectHandler {
                         prompt_review_xsd_retry_with_context(
                             ctx.template_context,
                             "",
-                            "",
-                            "",
+                            &plan_content,
+                            &diff_content,
                             "XML output failed validation. Provide valid XML output.",
                             &last_output,
                             ctx.workspace,
@@ -198,7 +198,7 @@ impl MainEffectHandler {
                 PipelineEvent::review_issues_xml_extracted(pass),
             )),
             Err(_) => Ok(EffectResult::event(
-                PipelineEvent::review_output_validation_failed(
+                PipelineEvent::review_issues_xml_missing(
                     pass,
                     self.state.continuation.invalid_output_attempts,
                 ),
@@ -459,12 +459,10 @@ impl MainEffectHandler {
             Ok(_) => Ok(EffectResult::event(
                 PipelineEvent::fix_result_xml_extracted(pass),
             )),
-            Err(_) => Ok(EffectResult::event(
-                PipelineEvent::fix_output_validation_failed(
-                    pass,
-                    self.state.continuation.invalid_output_attempts,
-                ),
-            )),
+            Err(_) => Ok(EffectResult::event(PipelineEvent::fix_result_xml_missing(
+                pass,
+                self.state.continuation.invalid_output_attempts,
+            ))),
         }
     }
 
@@ -527,34 +525,9 @@ impl MainEffectHandler {
             .filter(|o| o.pass == pass)
             .ok_or_else(|| anyhow::anyhow!("missing validated fix outcome for pass {pass}"))?;
 
-        if outcome.status.needs_continuation() {
-            let next_attempt = self.state.continuation.fix_continuation_attempt + 1;
-            if next_attempt >= self.state.continuation.max_fix_continue_count {
-                return Ok(EffectResult::event(
-                    PipelineEvent::fix_continuation_budget_exhausted(
-                        pass,
-                        next_attempt,
-                        outcome.status.clone(),
-                    ),
-                ));
-            }
-
-            return Ok(EffectResult::event(
-                PipelineEvent::fix_continuation_triggered(
-                    pass,
-                    outcome.status.clone(),
-                    outcome.summary.clone(),
-                ),
-            ));
-        }
-
-        let changes_made = matches!(
-            outcome.status,
-            crate::reducer::state::FixStatus::AllIssuesAddressed
-        );
-        Ok(EffectResult::event(PipelineEvent::fix_attempt_completed(
+        let _ = outcome;
+        Ok(EffectResult::event(PipelineEvent::fix_outcome_applied(
             pass,
-            changes_made,
         )))
     }
 

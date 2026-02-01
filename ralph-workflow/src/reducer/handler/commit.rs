@@ -27,8 +27,37 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
-        let diff = crate::git_helpers::git_diff().unwrap_or_default();
+        let diff = match ctx.workspace.read(Path::new(".agent/tmp/commit_diff.txt")) {
+            Ok(diff) => diff,
+            Err(_) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing commit diff at .agent/tmp/commit_diff.txt".to_string(),
+                )));
+            }
+        };
         self.prepare_commit_prompt_with_diff(ctx, &diff)
+    }
+
+    pub(super) fn check_commit_diff(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+        let diff = crate::git_helpers::git_diff().unwrap_or_default();
+        self.check_commit_diff_with_content(ctx, &diff)
+    }
+
+    pub(super) fn check_commit_diff_with_content(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        diff: &str,
+    ) -> Result<EffectResult> {
+        let tmp_dir = Path::new(".agent/tmp");
+        if !ctx.workspace.exists(tmp_dir) {
+            ctx.workspace.create_dir_all(tmp_dir)?;
+        }
+        ctx.workspace
+            .write(Path::new(".agent/tmp/commit_diff.txt"), diff)?;
+
+        Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
+            diff.trim().is_empty(),
+        )))
     }
 
     pub(super) fn prepare_commit_prompt_with_diff(
@@ -37,16 +66,6 @@ impl MainEffectHandler {
         diff: &str,
     ) -> Result<EffectResult> {
         let attempt = current_commit_attempt(&self.state.commit);
-        if diff.trim().is_empty() {
-            ctx.logger
-                .info("No changes to commit (empty diff), skipping commit");
-            let _ = ctx
-                .workspace
-                .remove_if_exists(Path::new(".agent/tmp/commit_prompt.txt"));
-            return Ok(EffectResult::event(PipelineEvent::commit_skipped(
-                "No changes to commit (empty diff)".to_string(),
-            )));
-        }
 
         let commit_agent = self
             .state
@@ -148,13 +167,9 @@ impl MainEffectHandler {
             Ok(_) => Ok(EffectResult::event(PipelineEvent::commit_xml_extracted(
                 attempt,
             ))),
-            Err(_) => Ok(EffectResult::event(
-                PipelineEvent::commit_xml_validation_failed(
-                    "XML output missing or invalid; agent must write .agent/tmp/commit_message.xml"
-                        .to_string(),
-                    attempt,
-                ),
-            )),
+            Err(_) => Ok(EffectResult::event(PipelineEvent::commit_xml_missing(
+                attempt,
+            ))),
         }
     }
 
