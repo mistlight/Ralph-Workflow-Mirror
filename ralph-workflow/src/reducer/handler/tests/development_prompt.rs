@@ -113,7 +113,12 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
     let repo_root = PathBuf::from("/mock/repo");
 
     let mut prompt_history = HashMap::new();
-    prompt_history.insert("development_0".to_string(), "{{UNRESOLVED}}".to_string());
+    // Store a continuation prompt containing unresolved placeholders.
+    // Normal mode must NOT replay this continuation prompt.
+    prompt_history.insert(
+        "development_0_continuation_1".to_string(),
+        "{{UNRESOLVED}}".to_string(),
+    );
 
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -147,8 +152,8 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
         .prepare_development_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_development_prompt should succeed");
 
-    // Since PROMPT.md is in ignore_sources, the {{LITERAL}} placeholder
-    // should be ignored and prompt generation should succeed.
+    // Even though a stored continuation prompt contains unresolved placeholders,
+    // PromptMode::Normal must ignore continuation state and prepare a normal prompt.
     assert!(
         matches!(
             result.event,
