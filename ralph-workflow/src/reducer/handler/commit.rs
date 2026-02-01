@@ -9,6 +9,7 @@ use crate::prompts::{
     get_stored_or_generate_prompt, prompt_generate_commit_message_with_diff_with_context,
 };
 use crate::reducer::effect::EffectResult;
+use crate::reducer::event::AgentEvent;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::state::CommitState;
 use crate::reducer::ui_event::{UIEvent, XmlOutputType};
@@ -87,7 +88,10 @@ impl MainEffectHandler {
                 )
             });
 
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&prompt) {
+        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+            &prompt,
+            &[diff],
+        ) {
             return Ok(EffectResult::event(
                 PipelineEvent::agent_template_variables_invalid(
                     AgentRole::Commit,
@@ -110,16 +114,11 @@ impl MainEffectHandler {
         ctx.workspace
             .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)?;
 
-        let result = if matches!(self.state.commit, CommitState::NotStarted) {
-            EffectResult::event(PipelineEvent::commit_generation_started())
-                .with_additional_event(PipelineEvent::commit_prompt_prepared(attempt))
-        } else {
-            EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt))
-        };
-
-        Ok(result.with_ui_event(
-            self.phase_transition_ui(crate::reducer::event::PipelinePhase::CommitMessage),
-        ))
+        Ok(
+            EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
+                self.phase_transition_ui(crate::reducer::event::PipelinePhase::CommitMessage),
+            ),
+        )
     }
 
     pub(super) fn invoke_commit_agent(
@@ -152,7 +151,12 @@ impl MainEffectHandler {
             .expect("commit agent should be initialized via InitializeAgentChain effect");
 
         let mut result = self.invoke_agent(ctx, AgentRole::Commit, agent, None, prompt)?;
-        result = result.with_additional_event(PipelineEvent::commit_agent_invoked(attempt));
+        if matches!(
+            result.event,
+            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        ) {
+            result = result.with_additional_event(PipelineEvent::commit_agent_invoked(attempt));
+        }
         Ok(result)
     }
 

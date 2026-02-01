@@ -82,8 +82,8 @@ pub use template_context::TemplateContext;
 pub use template_engine::Template;
 pub use template_validator::{
     extract_metadata, extract_partials, extract_variables, validate_no_unresolved_placeholders,
-    validate_template, RenderedPromptError, TemplateVariablesInvalidError, ValidationError,
-    ValidationWarning,
+    validate_no_unresolved_placeholders_with_ignored_content, validate_template,
+    RenderedPromptError, TemplateVariablesInvalidError, ValidationError, ValidationWarning,
 };
 pub use types::ContextLevel;
 #[cfg(any(test, feature = "test-utils"))]

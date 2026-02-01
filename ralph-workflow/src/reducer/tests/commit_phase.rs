@@ -27,6 +27,24 @@ fn test_commit_generation_started_sets_generating_state() {
 }
 
 #[test]
+fn test_commit_prompt_prepared_starts_generation_when_not_started() {
+    let state = PipelineState {
+        commit: CommitState::NotStarted,
+        ..create_test_state()
+    };
+
+    let new_state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+
+    assert!(matches!(
+        new_state.commit,
+        CommitState::Generating {
+            attempt: 1,
+            max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS
+        }
+    ));
+}
+
+#[test]
 fn test_commit_message_generated_sets_commit_to_generated() {
     let state = create_test_state();
     let new_state = reduce(
@@ -152,7 +170,7 @@ fn test_commit_message_validation_failed_exhausts_attempts_with_more_agents() {
 }
 
 #[test]
-fn test_commit_prompt_prepared_clears_xsd_retry_pending() {
+fn test_commit_prompt_prepared_preserves_xsd_retry_pending() {
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -164,8 +182,8 @@ fn test_commit_prompt_prepared_clears_xsd_retry_pending() {
     let new_state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
 
     assert!(
-        !new_state.continuation.xsd_retry_pending,
-        "commit prompt preparation should clear xsd_retry_pending"
+        new_state.continuation.xsd_retry_pending,
+        "commit prompt preparation should not clear xsd_retry_pending"
     );
 }
 

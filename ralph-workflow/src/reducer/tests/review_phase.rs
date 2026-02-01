@@ -194,7 +194,7 @@ fn test_fix_attempt_started_resets_agent_chain() {
 }
 
 #[test]
-fn test_review_prompt_prepared_clears_xsd_retry_pending() {
+fn test_review_prompt_prepared_preserves_xsd_retry_pending() {
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -206,13 +206,13 @@ fn test_review_prompt_prepared_clears_xsd_retry_pending() {
     let new_state = reduce(state, PipelineEvent::review_prompt_prepared(0));
 
     assert!(
-        !new_state.continuation.xsd_retry_pending,
-        "review prompt preparation should clear xsd_retry_pending"
+        new_state.continuation.xsd_retry_pending,
+        "review prompt preparation should not clear xsd_retry_pending"
     );
 }
 
 #[test]
-fn test_fix_prompt_prepared_clears_xsd_retry_pending() {
+fn test_fix_prompt_prepared_preserves_xsd_retry_pending() {
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -224,8 +224,8 @@ fn test_fix_prompt_prepared_clears_xsd_retry_pending() {
     let new_state = reduce(state, PipelineEvent::fix_prompt_prepared(0));
 
     assert!(
-        !new_state.continuation.xsd_retry_pending,
-        "fix prompt preparation should clear xsd_retry_pending"
+        new_state.continuation.xsd_retry_pending,
+        "fix prompt preparation should not clear xsd_retry_pending"
     );
 }
 

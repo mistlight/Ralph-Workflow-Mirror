@@ -2,7 +2,7 @@ use super::MainEffectHandler;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::PipelineEvent;
+use crate::reducer::event::{AgentEvent, PipelineEvent};
 use crate::reducer::ui_event::{UIEvent, XmlCodeSnippet, XmlOutputContext, XmlOutputType};
 use anyhow::Result;
 use regex::Regex;
@@ -83,6 +83,7 @@ impl MainEffectHandler {
             .to_string();
 
         let continuation_state = &self.state.continuation;
+        let ignore_sources = [plan_content.as_str(), diff_content.as_str()];
         let (prompt_key, review_prompt_xml, was_replayed) =
             if continuation_state.invalid_output_attempts > 0 {
                 let last_output = ctx
@@ -120,11 +121,19 @@ impl MainEffectHandler {
                 (prompt_key, prompt, was_replayed)
             };
 
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&review_prompt_xml) {
+        let template_name = if continuation_state.invalid_output_attempts > 0 {
+            "review_xsd_retry"
+        } else {
+            "review_xml"
+        };
+        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+            &review_prompt_xml,
+            &ignore_sources,
+        ) {
             return Ok(EffectResult::event(
                 PipelineEvent::agent_template_variables_invalid(
                     AgentRole::Reviewer,
-                    "review_xml".to_string(),
+                    template_name.to_string(),
                     Vec::new(),
                     err.unresolved_placeholders,
                 ),
@@ -176,7 +185,12 @@ impl MainEffectHandler {
             .unwrap_or_else(|| ctx.reviewer_agent.to_string());
 
         let mut result = self.invoke_agent(ctx, AgentRole::Reviewer, agent, None, prompt)?;
-        result = result.with_additional_event(PipelineEvent::review_agent_invoked(pass));
+        if matches!(
+            result.event,
+            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        ) {
+            result = result.with_additional_event(PipelineEvent::review_agent_invoked(pass));
+        }
         Ok(result)
     }
 
@@ -355,12 +369,23 @@ impl MainEffectHandler {
             .unwrap_or_default();
 
         let continuation_state = &self.state.continuation;
+        let mut last_output = String::new();
+        if continuation_state.invalid_output_attempts > 0 {
+            last_output = ctx
+                .workspace
+                .read(Path::new(xml_paths::FIX_RESULT_XML))
+                .unwrap_or_default();
+        }
+        let mut ignore_sources = vec![
+            prompt_content.as_str(),
+            plan_content.as_str(),
+            issues_content.as_str(),
+        ];
+        if continuation_state.invalid_output_attempts > 0 {
+            ignore_sources.push(last_output.as_str());
+        }
         let (prompt_key, fix_prompt, was_replayed) =
             if continuation_state.invalid_output_attempts > 0 {
-                let last_output = ctx
-                    .workspace
-                    .read(Path::new(xml_paths::FIX_RESULT_XML))
-                    .unwrap_or_default();
                 let prompt_key = format!(
                     "fix_{pass}_xsd_retry_{}",
                     continuation_state.invalid_output_attempts
@@ -391,11 +416,19 @@ impl MainEffectHandler {
                 (prompt_key, prompt, was_replayed)
             };
 
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&fix_prompt) {
+        let template_name = if continuation_state.invalid_output_attempts > 0 {
+            "fix_mode_xsd_retry"
+        } else {
+            "fix_mode_xml"
+        };
+        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+            &fix_prompt,
+            &ignore_sources,
+        ) {
             return Ok(EffectResult::event(
                 PipelineEvent::agent_template_variables_invalid(
                     AgentRole::Reviewer,
-                    "fix_mode_xml".to_string(),
+                    template_name.to_string(),
                     Vec::new(),
                     err.unresolved_placeholders,
                 ),
@@ -442,7 +475,12 @@ impl MainEffectHandler {
             .unwrap_or_else(|| ctx.reviewer_agent.to_string());
 
         let mut result = self.invoke_agent(ctx, AgentRole::Reviewer, agent, None, prompt)?;
-        result = result.with_additional_event(PipelineEvent::fix_agent_invoked(pass));
+        if matches!(
+            result.event,
+            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        ) {
+            result = result.with_additional_event(PipelineEvent::fix_agent_invoked(pass));
+        }
         Ok(result)
     }
 

@@ -128,7 +128,10 @@ pub fn run_review_pass(
 
     // Enforce that the rendered prompt does not contain unresolved template placeholders.
     // This must happen before any agent invocation.
-    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&review_prompt_xml) {
+    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+        &review_prompt_xml,
+        &[plan_content.as_str(), changes_content.as_str()],
+    ) {
         return Err(crate::prompts::TemplateVariablesInvalidError {
             template_name: "review_xml".to_string(),
             missing_variables: Vec::new(),
@@ -466,7 +469,14 @@ pub fn run_fix_pass(
 
     // Enforce that the rendered prompt does not contain unresolved template placeholders.
     // This must happen before any agent invocation.
-    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&fix_prompt) {
+    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+        &fix_prompt,
+        &[
+            prompt_content.as_str(),
+            plan_content.as_str(),
+            issues_content.as_str(),
+        ],
+    ) {
         return Err(crate::prompts::TemplateVariablesInvalidError {
             template_name: "fix_mode_xml".to_string(),
             missing_variables: Vec::new(),

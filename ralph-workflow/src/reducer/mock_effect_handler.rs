@@ -130,7 +130,7 @@ impl MockEffectHandler {
         self.captured_effects.borrow_mut().push(effect.clone());
 
         // Generate appropriate mock events based on effect type
-        let mut additional_events = Vec::new();
+        let additional_events = Vec::new();
         let (event, ui_events) = match effect {
             Effect::AgentInvocation {
                 role,
@@ -438,12 +438,7 @@ src/lib.rs</ralph-files-changed>
                     from: Some(self.state.phase),
                     to: PipelinePhase::CommitMessage,
                 }];
-                if matches!(self.state.commit, crate::reducer::state::CommitState::NotStarted) {
-                    additional_events.push(PipelineEvent::commit_prompt_prepared(attempt));
-                    (PipelineEvent::commit_generation_started(), ui)
-                } else {
-                    (PipelineEvent::commit_prompt_prepared(attempt), ui)
-                }
+                (PipelineEvent::commit_prompt_prepared(attempt), ui)
             }
 
             Effect::InvokeCommitAgent => {

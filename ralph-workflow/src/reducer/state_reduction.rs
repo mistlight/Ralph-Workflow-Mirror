@@ -148,14 +148,14 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
         },
         PlanningEvent::PromptPrepared { iteration } => PipelineState {
             planning_prompt_prepared_iteration: Some(iteration),
-            continuation: ContinuationState {
-                xsd_retry_pending: false,
-                ..state.continuation
-            },
             ..state
         },
         PlanningEvent::AgentInvoked { iteration } => PipelineState {
             planning_agent_invoked_iteration: Some(iteration),
+            continuation: ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         PlanningEvent::PlanXmlExtracted { iteration } => PipelineState {
@@ -313,18 +313,14 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
         },
         DevelopmentEvent::PromptPrepared { iteration } => PipelineState {
             development_prompt_prepared_iteration: Some(iteration),
-            continuation: if state.continuation.xsd_retry_pending {
-                super::state::ContinuationState {
-                    xsd_retry_pending: false,
-                    ..state.continuation
-                }
-            } else {
-                state.continuation
-            },
             ..state
         },
         DevelopmentEvent::AgentInvoked { iteration } => PipelineState {
             development_agent_invoked_iteration: Some(iteration),
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         DevelopmentEvent::XmlExtracted { iteration } => PipelineState {
@@ -719,15 +715,15 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
 
         ReviewEvent::PromptPrepared { pass } => PipelineState {
             review_prompt_prepared_pass: Some(pass),
-            continuation: super::state::ContinuationState {
-                xsd_retry_pending: false,
-                ..state.continuation
-            },
             ..state
         },
 
         ReviewEvent::AgentInvoked { pass } => PipelineState {
             review_agent_invoked_pass: Some(pass),
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
 
@@ -783,6 +779,8 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     review_issues_xml_archived_pass: None,
                     commit: super::state::CommitState::NotStarted,
                     commit_prompt_prepared: false,
+                    commit_diff_prepared: false,
+                    commit_diff_empty: false,
                     commit_agent_invoked: false,
                     commit_xml_extracted: false,
                     commit_validated_outcome: None,
@@ -849,15 +847,15 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
 
         ReviewEvent::FixPromptPrepared { pass } => PipelineState {
             fix_prompt_prepared_pass: Some(pass),
-            continuation: super::state::ContinuationState {
-                xsd_retry_pending: false,
-                ..state.continuation
-            },
             ..state
         },
 
         ReviewEvent::FixAgentInvoked { pass } => PipelineState {
             fix_agent_invoked_pass: Some(pass),
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
 
@@ -980,6 +978,8 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     review_issues_xml_archived_pass: None,
                     commit: super::state::CommitState::NotStarted,
                     commit_prompt_prepared: false,
+                    commit_diff_prepared: false,
+                    commit_diff_empty: false,
                     commit_agent_invoked: false,
                     commit_xml_extracted: false,
                     commit_validated_outcome: None,
@@ -1333,46 +1333,40 @@ fn reduce_rebase_event(state: PipelineState, event: RebaseEvent) -> PipelineStat
 /// - MessageValidationFailed: Retry or advance agent
 fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineState {
     match event {
-        CommitEvent::GenerationStarted => {
-            // Clear xsd_retry_pending when generation starts, similar to PlanningEvent::PromptPrepared.
-            // This prevents infinite loops if the handler somehow fails to emit a validation event
-            // after the XSD retry effect runs.
-            PipelineState {
-                commit: CommitState::Generating {
-                    attempt: 1,
-                    max_attempts: super::state::MAX_VALIDATION_RETRY_ATTEMPTS,
-                },
-                commit_prompt_prepared: false,
-                commit_agent_invoked: false,
-                commit_xml_extracted: false,
-                commit_validated_outcome: None,
-                commit_xml_archived: false,
-                continuation: if state.continuation.xsd_retry_pending {
-                    super::state::ContinuationState {
-                        xsd_retry_pending: false,
-                        ..state.continuation
-                    }
-                } else {
-                    state.continuation
-                },
-                ..state
-            }
-        }
+        CommitEvent::GenerationStarted => PipelineState {
+            commit: CommitState::Generating {
+                attempt: 1,
+                max_attempts: super::state::MAX_VALIDATION_RETRY_ATTEMPTS,
+            },
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
+            ..state
+        },
         CommitEvent::DiffPrepared { empty } => PipelineState {
             commit_diff_prepared: true,
             commit_diff_empty: empty,
             ..state
         },
         CommitEvent::PromptPrepared { .. } => PipelineState {
-            commit_prompt_prepared: true,
-            continuation: super::state::ContinuationState {
-                xsd_retry_pending: false,
-                ..state.continuation
+            commit: match state.commit {
+                CommitState::NotStarted => CommitState::Generating {
+                    attempt: 1,
+                    max_attempts: super::state::MAX_VALIDATION_RETRY_ATTEMPTS,
+                },
+                _ => state.commit.clone(),
             },
+            commit_prompt_prepared: true,
             ..state
         },
         CommitEvent::AgentInvoked { .. } => PipelineState {
             commit_agent_invoked: true,
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         CommitEvent::CommitXmlExtracted { .. } => PipelineState {
@@ -3443,6 +3437,131 @@ mod tests {
             !new_state.continuation.xsd_retry_pending,
             "XSD retry pending should be cleared"
         );
+    }
+
+    #[test]
+    fn test_planning_prompt_prepared_preserves_xsd_retry_pending() {
+        let state = PipelineState {
+            continuation: ContinuationState {
+                xsd_retry_pending: true,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::planning_prompt_prepared(0));
+
+        assert!(
+            new_state.continuation.xsd_retry_pending,
+            "Prompt preparation should not clear xsd retry pending"
+        );
+    }
+
+    #[test]
+    fn test_planning_agent_invoked_clears_xsd_retry_pending() {
+        let state = PipelineState {
+            continuation: ContinuationState {
+                xsd_retry_pending: true,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::planning_agent_invoked(0));
+
+        assert!(
+            !new_state.continuation.xsd_retry_pending,
+            "Agent invocation should clear xsd retry pending"
+        );
+    }
+
+    #[test]
+    fn test_review_prompt_prepared_preserves_xsd_retry_pending() {
+        let state = PipelineState {
+            continuation: ContinuationState {
+                xsd_retry_pending: true,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::review_prompt_prepared(0));
+
+        assert!(
+            new_state.continuation.xsd_retry_pending,
+            "Prompt preparation should not clear xsd retry pending"
+        );
+    }
+
+    #[test]
+    fn test_review_agent_invoked_clears_xsd_retry_pending() {
+        let state = PipelineState {
+            continuation: ContinuationState {
+                xsd_retry_pending: true,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::review_agent_invoked(0));
+
+        assert!(
+            !new_state.continuation.xsd_retry_pending,
+            "Agent invocation should clear xsd retry pending"
+        );
+    }
+
+    #[test]
+    fn test_commit_prompt_prepared_preserves_xsd_retry_pending() {
+        let state = PipelineState {
+            continuation: ContinuationState {
+                xsd_retry_pending: true,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+
+        assert!(
+            new_state.continuation.xsd_retry_pending,
+            "Prompt preparation should not clear xsd retry pending"
+        );
+    }
+
+    #[test]
+    fn test_commit_agent_invoked_clears_xsd_retry_pending() {
+        let state = PipelineState {
+            continuation: ContinuationState {
+                xsd_retry_pending: true,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::commit_agent_invoked(1));
+
+        assert!(
+            !new_state.continuation.xsd_retry_pending,
+            "Agent invocation should clear xsd retry pending"
+        );
+    }
+
+    #[test]
+    fn test_review_pass_completed_clean_resets_commit_diff_flags() {
+        let state = PipelineState {
+            phase: PipelinePhase::Review,
+            reviewer_pass: 0,
+            total_reviewer_passes: 1,
+            commit_diff_prepared: true,
+            commit_diff_empty: true,
+            ..create_test_state()
+        };
+
+        let new_state = reduce(state, PipelineEvent::review_pass_completed_clean(0));
+
+        assert!(!new_state.commit_diff_prepared);
+        assert!(!new_state.commit_diff_empty);
     }
 
     // =========================================================================

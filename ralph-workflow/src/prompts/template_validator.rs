@@ -141,6 +141,23 @@ impl std::error::Error for TemplateVariablesInvalidError {}
 /// If templates need to include literal `{{...}}` patterns as content, they
 /// should be escaped appropriately during rendering (e.g., using `\{{` or `{{{{`).
 pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), RenderedPromptError> {
+    validate_no_unresolved_placeholders_with_ignored_content(rendered, &[])
+}
+
+/// Validate that a rendered prompt has no unresolved placeholders, ignoring known content.
+///
+/// This variant allows callers to provide trusted content (e.g., diff/plan text)
+/// that may contain literal `{{...}}` patterns. Any placeholder that appears
+/// inside one of the ignored content strings will be skipped.
+pub fn validate_no_unresolved_placeholders_with_ignored_content(
+    rendered: &str,
+    ignored_content: &[&str],
+) -> Result<(), RenderedPromptError> {
+    struct UnresolvedPlaceholder {
+        raw: String,
+        display: String,
+    }
+
     // Use a regex to catch ANY remaining {{...}} patterns, including:
     // - Normal variables: {{VAR}}
     // - Variables with defaults: {{VAR|default="x"}}
@@ -155,9 +172,12 @@ pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), Rendere
     // This is more robust than extract_variables() which parses template syntax
     // and may miss malformed patterns that indicate rendering failures.
     let closed_re = regex::Regex::new(r"\{\{.*?\}\}").expect("regex should be valid");
-    let mut unresolved: Vec<String> = closed_re
+    let mut unresolved: Vec<UnresolvedPlaceholder> = closed_re
         .find_iter(rendered)
-        .map(|m| m.as_str().to_string())
+        .map(|m| UnresolvedPlaceholder {
+            raw: m.as_str().to_string(),
+            display: m.as_str().to_string(),
+        })
         .collect();
 
     // Also check for unclosed {{ patterns that never close.
@@ -167,15 +187,30 @@ pub fn validate_no_unresolved_placeholders(rendered: &str) -> Result<(), Rendere
     for line in rendered.lines() {
         // Check if line has {{ without matching }}
         if let Some(m) = unclosed_re.find(line) {
-            unresolved.push(format!("{} (unclosed)", m.as_str()));
+            let raw = m.as_str().to_string();
+            unresolved.push(UnresolvedPlaceholder {
+                raw: raw.clone(),
+                display: format!("{} (unclosed)", raw),
+            });
         }
+    }
+
+    if !ignored_content.is_empty() {
+        unresolved.retain(|placeholder| {
+            !ignored_content
+                .iter()
+                .any(|content| content.contains(&placeholder.raw))
+        });
     }
 
     if unresolved.is_empty() {
         Ok(())
     } else {
         Err(RenderedPromptError {
-            unresolved_placeholders: unresolved,
+            unresolved_placeholders: unresolved
+                .into_iter()
+                .map(|placeholder| placeholder.display)
+                .collect(),
         })
     }
 }

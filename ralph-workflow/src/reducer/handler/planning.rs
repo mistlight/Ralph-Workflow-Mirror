@@ -9,7 +9,7 @@ use crate::prompts::{
     prompt_planning_xsd_retry_with_context,
 };
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{PipelineEvent, PipelinePhase};
+use crate::reducer::event::{AgentEvent, PipelineEvent, PipelinePhase};
 use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use anyhow::Result;
 use std::path::Path;
@@ -33,11 +33,19 @@ impl MainEffectHandler {
             .unwrap_or_default();
         let prompt_md_str = prompt_md.as_str();
 
-        let prompt = if self.state.continuation.invalid_output_attempts > 0 {
-            let last_output = ctx
+        let mut last_output = String::new();
+        if self.state.continuation.invalid_output_attempts > 0 {
+            last_output = ctx
                 .workspace
                 .read(Path::new(xml_paths::PLAN_XML))
                 .unwrap_or_default();
+        }
+        let mut ignore_sources = vec![prompt_md_str];
+        if self.state.continuation.invalid_output_attempts > 0 {
+            ignore_sources.push(last_output.as_str());
+        }
+
+        let prompt = if self.state.continuation.invalid_output_attempts > 0 {
             prompt_planning_xsd_retry_with_context(
                 ctx.template_context,
                 prompt_md_str,
@@ -68,7 +76,10 @@ impl MainEffectHandler {
         } else {
             "planning_xml"
         };
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&prompt) {
+        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+            &prompt,
+            &ignore_sources,
+        ) {
             return Ok(EffectResult::event(
                 PipelineEvent::agent_template_variables_invalid(
                     AgentRole::Developer,
@@ -112,7 +123,12 @@ impl MainEffectHandler {
             .unwrap_or_else(|| ctx.developer_agent.to_string());
 
         let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
-        result = result.with_additional_event(PipelineEvent::planning_agent_invoked(iteration));
+        if matches!(
+            result.event,
+            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        ) {
+            result = result.with_additional_event(PipelineEvent::planning_agent_invoked(iteration));
+        }
         Ok(result)
     }
 

@@ -19,24 +19,6 @@ impl MainEffectHandler {
         model: Option<String>,
         prompt: String,
     ) -> Result<EffectResult> {
-        // Validate template before invoking agent (per reducer fallback spec)
-        // If the rendered prompt still contains unresolved placeholders, emit
-        // TemplateVariablesInvalid event to trigger reducer-driven fallback.
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&prompt) {
-            ctx.logger.warn(&format!(
-                "Template validation failed: {}",
-                err.unresolved_placeholders.join(", ")
-            ));
-            return Ok(EffectResult::event(
-                PipelineEvent::agent_template_variables_invalid(
-                    role,
-                    "unknown".to_string(), // Template name not tracked at this level
-                    Vec::new(),            // Missing variables not tracked
-                    err.unresolved_placeholders,
-                ),
-            ));
-        }
-
         // Use agent from state.agent_chain if available
         let effective_agent = self
             .state

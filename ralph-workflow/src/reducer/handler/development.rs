@@ -4,7 +4,7 @@ use crate::files::llm_output_extraction::file_based_extraction::paths as xml_pat
 use crate::phases::PhaseContext;
 use crate::reducer::effect::ContinuationContextData;
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::PipelineEvent;
+use crate::reducer::event::{AgentEvent, PipelineEvent};
 use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use crate::workspace::Workspace;
 use anyhow::Result;
@@ -42,6 +42,7 @@ impl MainEffectHandler {
             .workspace
             .read(Path::new(".agent/PLAN.md"))
             .unwrap_or_default();
+        let ignore_sources = [prompt_md.as_str(), plan_md.as_str()];
 
         let dev_prompt = if continuation_state.is_continuation() {
             let prompt_key = format!(
@@ -95,7 +96,10 @@ impl MainEffectHandler {
         } else {
             "developer_iteration_xml"
         };
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&dev_prompt) {
+        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+            &dev_prompt,
+            &ignore_sources,
+        ) {
             return Ok(EffectResult::event(
                 PipelineEvent::agent_template_variables_invalid(
                     AgentRole::Developer,
@@ -147,7 +151,13 @@ impl MainEffectHandler {
             .unwrap_or_else(|| ctx.developer_agent.to_string());
 
         let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
-        result = result.with_additional_event(PipelineEvent::development_agent_invoked(iteration));
+        if matches!(
+            result.event,
+            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        ) {
+            result =
+                result.with_additional_event(PipelineEvent::development_agent_invoked(iteration));
+        }
         Ok(result)
     }
 
