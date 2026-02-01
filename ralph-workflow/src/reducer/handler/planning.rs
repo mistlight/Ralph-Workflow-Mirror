@@ -101,6 +101,9 @@ impl MainEffectHandler {
             }
         };
 
+        let plan_xml = Path::new(xml_paths::PLAN_XML);
+        let _ = ctx.workspace.remove_if_exists(plan_xml);
+
         let agent = self
             .state
             .agent_chain

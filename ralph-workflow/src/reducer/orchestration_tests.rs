@@ -974,6 +974,35 @@ fn test_commit_not_started_prepares_prompt() {
 }
 
 #[test]
+fn test_commit_does_not_apply_outcome_without_xml_extracted() {
+    use crate::reducer::state::{AgentChainState, CommitValidatedOutcome};
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        commit: crate::reducer::state::CommitState::Generating {
+            attempt: 1,
+            max_attempts: 3,
+        },
+        commit_prompt_prepared: true,
+        commit_agent_invoked: true,
+        commit_xml_extracted: false,
+        commit_validated_outcome: Some(CommitValidatedOutcome {
+            attempt: 1,
+            message: Some("msg".to_string()),
+            reason: None,
+        }),
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::ExtractCommitXml));
+}
+
+#[test]
 fn test_commit_generated_creates_commit() {
     use crate::reducer::state::AgentChainState;
     let state = PipelineState {

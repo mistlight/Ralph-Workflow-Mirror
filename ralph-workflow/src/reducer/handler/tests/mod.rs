@@ -3,9 +3,11 @@
 // decomposed into single-task effects.
 
 mod commit_handler;
+mod development_outcome;
 mod development_prompt;
 mod fix_outcome;
 mod invoke_prompt;
 mod planning_markdown;
 mod review_prompt;
 mod review_validation;
+mod stale_xml_cleanup;

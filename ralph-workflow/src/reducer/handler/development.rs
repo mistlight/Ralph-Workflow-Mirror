@@ -136,6 +136,9 @@ impl MainEffectHandler {
             }
         };
 
+        let result_xml = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
+        let _ = ctx.workspace.remove_if_exists(result_xml);
+
         let agent = self
             .state
             .agent_chain

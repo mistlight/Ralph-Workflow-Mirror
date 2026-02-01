@@ -8,7 +8,7 @@ use crate::pipeline::{Stats, Timer};
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::PipelineState;
+use crate::reducer::state::{ContinuationState, PipelineState};
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
@@ -241,4 +241,115 @@ fn test_prepare_fix_prompt_emits_template_invalid_event() {
             ..
         }) if template_name == "fix_mode_xml"
     ));
+}
+
+#[test]
+fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_file(".agent/tmp/issues.xml", "<ralph-issues>bad</ralph-issues>");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            invalid_output_attempts: 1,
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(0, 1)
+    });
+
+    handler
+        .prepare_review_prompt(&mut ctx, 0)
+        .expect("prepare_review_prompt should succeed");
+
+    assert!(
+        ctx.prompt_history.contains_key("review_0_xsd_retry_1"),
+        "expected retry prompt to be captured with retry key"
+    );
+}
+
+#[test]
+fn test_prepare_fix_prompt_uses_prompt_history_replay() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/ISSUES.md", "Issue\n");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut prompt_history = HashMap::new();
+    prompt_history.insert("fix_0".to_string(), "REPLAYED PROMPT".to_string());
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    handler
+        .prepare_fix_prompt(&mut ctx, 0)
+        .expect("prepare_fix_prompt should succeed");
+
+    let content = workspace
+        .read(std::path::Path::new(".agent/tmp/fix_prompt.txt"))
+        .expect("fix prompt should be written");
+    assert!(content.contains("REPLAYED PROMPT"));
 }

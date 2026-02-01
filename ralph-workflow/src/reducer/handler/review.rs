@@ -1,4 +1,5 @@
 use super::MainEffectHandler;
+use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::PipelineEvent;
@@ -55,7 +56,8 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::agents::AgentRole;
         use crate::prompts::{
-            get_stored_or_generate_prompt, prompt_review_xml_with_references, PromptContentBuilder,
+            get_stored_or_generate_prompt, prompt_review_xml_with_references,
+            prompt_review_xsd_retry_with_context, PromptContentBuilder,
         };
         use std::path::Path;
 
@@ -80,16 +82,43 @@ impl MainEffectHandler {
             .trim()
             .to_string();
 
-        let prompt_key = format!("review_{pass}");
-        let (review_prompt_xml, was_replayed) =
-            get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                let refs = PromptContentBuilder::new(ctx.workspace)
-                    .with_plan(plan_content.clone())
-                    .with_diff(diff_content.clone(), &baseline_oid_for_prompts)
-                    .build();
+        let continuation_state = &self.state.continuation;
+        let (prompt_key, review_prompt_xml, was_replayed) =
+            if continuation_state.invalid_output_attempts > 0 {
+                let last_output = ctx
+                    .workspace
+                    .read(Path::new(xml_paths::ISSUES_XML))
+                    .unwrap_or_default();
+                let prompt_key = format!(
+                    "review_{pass}_xsd_retry_{}",
+                    continuation_state.invalid_output_attempts
+                );
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        prompt_review_xsd_retry_with_context(
+                            ctx.template_context,
+                            "",
+                            "",
+                            "",
+                            "XML output failed validation. Provide valid XML output.",
+                            &last_output,
+                            ctx.workspace,
+                        )
+                    });
+                (prompt_key, prompt, was_replayed)
+            } else {
+                let prompt_key = format!("review_{pass}");
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        let refs = PromptContentBuilder::new(ctx.workspace)
+                            .with_plan(plan_content.clone())
+                            .with_diff(diff_content.clone(), &baseline_oid_for_prompts)
+                            .build();
 
-                prompt_review_xml_with_references(ctx.template_context, &refs)
-            });
+                        prompt_review_xml_with_references(ctx.template_context, &refs)
+                    });
+                (prompt_key, prompt, was_replayed)
+            };
 
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&review_prompt_xml) {
             return Ok(EffectResult::event(
@@ -135,6 +164,9 @@ impl MainEffectHandler {
                 )));
             }
         };
+
+        let issues_xml = Path::new(xml_paths::ISSUES_XML);
+        let _ = ctx.workspace.remove_if_exists(issues_xml);
 
         let agent = self
             .state
@@ -298,7 +330,10 @@ impl MainEffectHandler {
         pass: u32,
     ) -> Result<EffectResult> {
         use crate::agents::AgentRole;
-        use crate::prompts::prompt_fix_xml_with_context;
+        use crate::prompts::{
+            get_stored_or_generate_prompt, prompt_fix_xml_with_context,
+            prompt_fix_xsd_retry_with_context,
+        };
         use std::path::Path;
 
         let tmp_dir = Path::new(".agent/tmp");
@@ -319,13 +354,42 @@ impl MainEffectHandler {
             .read(Path::new(".agent/ISSUES.md"))
             .unwrap_or_default();
 
-        let fix_prompt = prompt_fix_xml_with_context(
-            ctx.template_context,
-            &prompt_content,
-            &plan_content,
-            &issues_content,
-            &[],
-        );
+        let continuation_state = &self.state.continuation;
+        let (prompt_key, fix_prompt, was_replayed) =
+            if continuation_state.invalid_output_attempts > 0 {
+                let last_output = ctx
+                    .workspace
+                    .read(Path::new(xml_paths::FIX_RESULT_XML))
+                    .unwrap_or_default();
+                let prompt_key = format!(
+                    "fix_{pass}_xsd_retry_{}",
+                    continuation_state.invalid_output_attempts
+                );
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        prompt_fix_xsd_retry_with_context(
+                            ctx.template_context,
+                            &issues_content,
+                            "XML output failed validation. Provide valid XML output.",
+                            &last_output,
+                            ctx.workspace,
+                        )
+                    });
+                (prompt_key, prompt, was_replayed)
+            } else {
+                let prompt_key = format!("fix_{pass}");
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        prompt_fix_xml_with_context(
+                            ctx.template_context,
+                            &prompt_content,
+                            &plan_content,
+                            &issues_content,
+                            &[],
+                        )
+                    });
+                (prompt_key, prompt, was_replayed)
+            };
 
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&fix_prompt) {
             return Ok(EffectResult::event(
@@ -336,6 +400,10 @@ impl MainEffectHandler {
                     err.unresolved_placeholders,
                 ),
             ));
+        }
+
+        if !was_replayed {
+            ctx.capture_prompt(&prompt_key, &fix_prompt);
         }
 
         ctx.workspace
@@ -362,6 +430,9 @@ impl MainEffectHandler {
                 )));
             }
         };
+
+        let fix_xml = Path::new(xml_paths::FIX_RESULT_XML);
+        let _ = ctx.workspace.remove_if_exists(fix_xml);
 
         let agent = self
             .state
@@ -511,17 +582,19 @@ fn extract_issue_snippets(
     let mut seen = HashSet::new();
 
     let location_re = Regex::new(
-        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?",
+        r"(?m)(?P<file>[A-Za-z0-9 ._\-/\\:]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?",
     )
     .unwrap();
     let gh_location_re = Regex::new(
-        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?",
+        r"(?m)(?P<file>[A-Za-z0-9 ._\-/\\:]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?",
     )
     .unwrap();
 
     for issue in issues {
         let (file, line_start, line_end) = if let Some(cap) = location_re.captures(issue) {
-            let file = cap.name("file").map(|m| m.as_str().to_string());
+            let file = cap
+                .name("file")
+                .map(|m| m.as_str().trim().replace('\\', "/"));
             let start = cap
                 .name("start")
                 .and_then(|m| m.as_str().parse::<u32>().ok());
@@ -531,7 +604,9 @@ fn extract_issue_snippets(
                 .or(start);
             (file, start, end)
         } else if let Some(cap) = gh_location_re.captures(issue) {
-            let file = cap.name("file").map(|m| m.as_str().to_string());
+            let file = cap
+                .name("file")
+                .map(|m| m.as_str().trim().replace('\\', "/"));
             let start = cap
                 .name("start")
                 .and_then(|m| m.as_str().parse::<u32>().ok());
@@ -584,8 +659,12 @@ fn extract_snippet_lines(content: &str, start: u32, end: u32) -> Option<String> 
 
     let end_idx = end.saturating_sub(1) as usize;
     let end_idx = end_idx.min(lines.len().saturating_sub(1));
-    let slice = &lines[start_idx..=end_idx];
-    Some(slice.join("\n"))
+    let mut out = String::new();
+    for (offset, line) in lines[start_idx..=end_idx].iter().enumerate() {
+        let line_no = start + offset as u32;
+        out.push_str(&format!("{line_no} | {line}\n"));
+    }
+    Some(out.trim_end().to_string())
 }
 
 fn render_issues_markdown(

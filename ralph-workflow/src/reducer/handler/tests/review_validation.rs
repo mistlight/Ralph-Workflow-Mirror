@@ -272,7 +272,69 @@ fn test_validate_review_issues_xml_includes_snippets_for_locations() {
     assert_eq!(snippets[0].file, "src/lib.rs");
     assert_eq!(snippets[0].line_start, 2);
     assert_eq!(snippets[0].line_end, 2);
+    assert!(snippets[0].content.contains("2 |"));
     assert!(snippets[0].content.contains("let x = 1;"));
+}
+
+#[test]
+fn test_validate_review_issues_xml_includes_snippets_for_windows_paths() {
+    let issues_xml =
+        "<ralph-issues><ralph-issue>[high] C:\\repo\\src\\lib.rs:2 - adjust logic</ralph-issue></ralph-issues>";
+    let workspace = MemoryWorkspace::new_test()
+        .with_file("C:/repo/src/lib.rs", "fn main() {\n    let y = 2;\n}\n")
+        .with_file(xml_paths::ISSUES_XML, issues_xml);
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let result = handler
+        .validate_review_issues_xml(&mut ctx, 0)
+        .expect("validate_review_issues_xml should succeed");
+
+    let snippets = result.ui_events.iter().find_map(|event| {
+        if let UIEvent::XmlOutput { context, .. } = event {
+            context.as_ref().map(|ctx| ctx.snippets.clone())
+        } else {
+            None
+        }
+    });
+
+    let snippets = snippets.expect("expected XmlOutput context with snippets");
+    assert_eq!(snippets.len(), 1);
+    assert!(snippets[0].content.contains("2 |"));
+    assert!(snippets[0].content.contains("let y = 2;"));
 }
 
 #[test]

@@ -76,3 +76,51 @@ fn test_invoke_commit_agent_clears_stale_commit_xml() {
         "stale commit XML should be cleared before invoking commit agent"
     );
 }
+
+#[test]
+fn test_prepare_commit_prompt_removes_prompt_on_empty_diff() {
+    let workspace =
+        MemoryWorkspace::new_test().with_file(".agent/tmp/commit_prompt.txt", "stale prompt");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler
+        .prepare_commit_prompt_with_diff(&mut ctx, "")
+        .expect("prepare_commit_prompt_with_diff should succeed");
+
+    assert!(
+        !workspace.exists(Path::new(".agent/tmp/commit_prompt.txt")),
+        "stale commit prompt should be removed when diff is empty"
+    );
+}

@@ -525,7 +525,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                             CommitState::Generating { attempt, .. } => attempt,
                             _ => 1,
                         };
-                        if outcome.attempt == current_attempt {
+                        if outcome.attempt == current_attempt && state.commit_xml_extracted {
                             return Effect::ApplyCommitMessageOutcome;
                         }
                     }

@@ -27,11 +27,22 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
-        let attempt = current_commit_attempt(&self.state.commit);
         let diff = crate::git_helpers::git_diff().unwrap_or_default();
+        self.prepare_commit_prompt_with_diff(ctx, &diff)
+    }
+
+    pub(super) fn prepare_commit_prompt_with_diff(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        diff: &str,
+    ) -> Result<EffectResult> {
+        let attempt = current_commit_attempt(&self.state.commit);
         if diff.trim().is_empty() {
             ctx.logger
                 .info("No changes to commit (empty diff), skipping commit");
+            let _ = ctx
+                .workspace
+                .remove_if_exists(Path::new(".agent/tmp/commit_prompt.txt"));
             return Ok(EffectResult::event(PipelineEvent::commit_skipped(
                 "No changes to commit (empty diff)".to_string(),
             )));
@@ -45,7 +56,7 @@ impl MainEffectHandler {
             .expect("commit agent should be initialized via InitializeAgentChain effect");
 
         let (working_diff, _diff_truncated) =
-            check_and_pre_truncate_diff(&diff, &commit_agent, ctx.logger);
+            check_and_pre_truncate_diff(diff, &commit_agent, ctx.logger);
 
         let prompt_key = format!("commit_message_attempt_{attempt}");
         let (prompt, was_replayed) =
