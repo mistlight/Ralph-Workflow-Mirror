@@ -8,7 +8,7 @@ use crate::pipeline::{Stats, Timer};
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::PipelineState;
+use crate::reducer::state::{PipelineState, PromptMode};
 use crate::workspace::MemoryWorkspace;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -53,6 +53,9 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
     let executor_ref = executor_arc.clone();
     let repo_root = PathBuf::from("/mock/repo");
 
+    let mut prompt_history = HashMap::new();
+    prompt_history.insert("development_0".to_string(), "{{MISSING}}".to_string());
+
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
         registry: &registry,
@@ -66,7 +69,7 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
         template_context: &template_context,
         run_context: RunContext::new(),
         execution_history: ExecutionHistory::new(),
-        prompt_history: HashMap::new(),
+        prompt_history,
         executor: executor_ref.as_ref(),
         executor_arc,
         repo_root: repo_root.as_path(),
@@ -75,7 +78,73 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
     let result = handler
-        .prepare_development_prompt(&mut ctx, 0)
+        .prepare_development_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect("prepare_development_prompt should succeed");
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid {
+            role: AgentRole::Developer,
+            template_name,
+            ..
+        }) if template_name == "developer_iteration_xml"
+    ));
+}
+
+#[test]
+fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file("PROMPT.md", "Prompt")
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut prompt_history = HashMap::new();
+    prompt_history.insert("development_0".to_string(), "{{UNRESOLVED}}".to_string());
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history,
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: crate::reducer::state::ContinuationState {
+            continuation_attempt: 1,
+            ..crate::reducer::state::ContinuationState::new()
+        },
+        ..PipelineState::initial(1, 1)
+    });
+
+    let result = handler
+        .prepare_development_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_development_prompt should succeed");
 
     // Since PROMPT.md is in ignore_sources, the {{LITERAL}} placeholder

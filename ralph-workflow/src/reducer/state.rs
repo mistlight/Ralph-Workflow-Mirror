@@ -31,6 +31,17 @@ pub enum ArtifactType {
     CommitMessage,
 }
 
+/// Prompt rendering mode chosen by the reducer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PromptMode {
+    /// Standard prompt rendering.
+    Normal,
+    /// XSD retry prompt rendering for invalid XML outputs.
+    XsdRetry,
+    /// Continuation prompt rendering for partial/failed outputs.
+    Continuation,
+}
+
 impl std::fmt::Display for ArtifactType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -532,6 +543,9 @@ pub struct PipelineState {
     /// Tracks whether the planning prompt was prepared for the current iteration.
     #[serde(default)]
     pub planning_prompt_prepared_iteration: Option<u32>,
+    /// Tracks whether `.agent/tmp/plan.xml` was cleaned for the current iteration.
+    #[serde(default)]
+    pub planning_xml_cleaned_iteration: Option<u32>,
     /// Tracks whether the planning agent was invoked for the current iteration.
     #[serde(default)]
     pub planning_agent_invoked_iteration: Option<u32>,
@@ -555,6 +569,9 @@ pub struct PipelineState {
     /// Tracks whether the development prompt was prepared for the current iteration.
     #[serde(default)]
     pub development_prompt_prepared_iteration: Option<u32>,
+    /// Tracks whether `.agent/tmp/development_result.xml` was cleaned for the current iteration.
+    #[serde(default)]
+    pub development_xml_cleaned_iteration: Option<u32>,
     /// Tracks whether the developer agent was invoked for the current iteration.
     #[serde(default)]
     pub development_agent_invoked_iteration: Option<u32>,
@@ -575,6 +592,9 @@ pub struct PipelineState {
     /// Tracks whether the review prompt was prepared for the current pass.
     #[serde(default)]
     pub review_prompt_prepared_pass: Option<u32>,
+    /// Tracks whether `.agent/tmp/issues.xml` was cleaned for the current pass.
+    #[serde(default)]
+    pub review_issues_xml_cleaned_pass: Option<u32>,
     /// Tracks whether the reviewer agent was invoked for the current pass.
     #[serde(default)]
     pub review_agent_invoked_pass: Option<u32>,
@@ -590,11 +610,17 @@ pub struct PipelineState {
     /// Tracks whether ISSUES.md has been written for the current pass.
     #[serde(default)]
     pub review_issues_markdown_written_pass: Option<u32>,
+    /// Tracks whether review issue snippets were extracted for the current pass.
+    #[serde(default)]
+    pub review_issue_snippets_extracted_pass: Option<u32>,
     #[serde(default)]
     pub review_issues_xml_archived_pass: Option<u32>,
 
     #[serde(default)]
     pub fix_prompt_prepared_pass: Option<u32>,
+
+    #[serde(default)]
+    pub fix_result_xml_cleaned_pass: Option<u32>,
 
     #[serde(default)]
     pub fix_agent_invoked_pass: Option<u32>,
@@ -619,6 +645,9 @@ pub struct PipelineState {
     /// Tracks whether the commit agent was invoked for the current commit attempt.
     #[serde(default)]
     pub commit_agent_invoked: bool,
+    /// Tracks whether `.agent/tmp/commit_message.xml` was cleaned for the current attempt.
+    #[serde(default)]
+    pub commit_xml_cleaned: bool,
     /// Tracks whether `.agent/tmp/commit_message.xml` was extracted for the current attempt.
     #[serde(default)]
     pub commit_xml_extracted: bool,
@@ -653,7 +682,9 @@ pub struct ReviewValidatedOutcome {
     pub issues_found: bool,
     pub clean_no_issues: bool,
     #[serde(default)]
-    pub markdown: Option<String>,
+    pub issues: Vec<String>,
+    #[serde(default)]
+    pub no_issues_found: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -730,6 +761,7 @@ impl PipelineState {
             total_reviewer_passes: reviewer_reviews,
             review_issues_found: false,
             planning_prompt_prepared_iteration: None,
+            planning_xml_cleaned_iteration: None,
             planning_agent_invoked_iteration: None,
             planning_xml_extracted_iteration: None,
             planning_validated_outcome: None,
@@ -737,18 +769,22 @@ impl PipelineState {
             planning_xml_archived_iteration: None,
             development_context_prepared_iteration: None,
             development_prompt_prepared_iteration: None,
+            development_xml_cleaned_iteration: None,
             development_agent_invoked_iteration: None,
             development_xml_extracted_iteration: None,
             development_validated_outcome: None,
             development_xml_archived_iteration: None,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
+            review_issues_xml_cleaned_pass: None,
             review_agent_invoked_pass: None,
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
             review_issues_markdown_written_pass: None,
+            review_issue_snippets_extracted_pass: None,
             review_issues_xml_archived_pass: None,
             fix_prompt_prepared_pass: None,
+            fix_result_xml_cleaned_pass: None,
             fix_agent_invoked_pass: None,
             fix_result_xml_extracted_pass: None,
             fix_validated_outcome: None,
@@ -757,6 +793,7 @@ impl PipelineState {
             commit_diff_prepared: false,
             commit_diff_empty: false,
             commit_agent_invoked: false,
+            commit_xml_cleaned: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,
             commit_xml_archived: false,
@@ -796,6 +833,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             total_reviewer_passes: checkpoint.total_reviewer_passes,
             review_issues_found: false,
             planning_prompt_prepared_iteration: None,
+            planning_xml_cleaned_iteration: None,
             planning_agent_invoked_iteration: None,
             planning_xml_extracted_iteration: None,
             planning_validated_outcome: None,
@@ -803,18 +841,22 @@ impl From<PipelineCheckpoint> for PipelineState {
             planning_xml_archived_iteration: None,
             development_context_prepared_iteration: None,
             development_prompt_prepared_iteration: None,
+            development_xml_cleaned_iteration: None,
             development_agent_invoked_iteration: None,
             development_xml_extracted_iteration: None,
             development_validated_outcome: None,
             development_xml_archived_iteration: None,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
+            review_issues_xml_cleaned_pass: None,
             review_agent_invoked_pass: None,
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
             review_issues_markdown_written_pass: None,
+            review_issue_snippets_extracted_pass: None,
             review_issues_xml_archived_pass: None,
             fix_prompt_prepared_pass: None,
+            fix_result_xml_cleaned_pass: None,
             fix_agent_invoked_pass: None,
             fix_result_xml_extracted_pass: None,
             fix_validated_outcome: None,
@@ -823,6 +865,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             commit_diff_prepared: false,
             commit_diff_empty: false,
             commit_agent_invoked: false,
+            commit_xml_cleaned: false,
             commit_xml_extracted: false,
             commit_validated_outcome: None,
             commit_xml_archived: false,

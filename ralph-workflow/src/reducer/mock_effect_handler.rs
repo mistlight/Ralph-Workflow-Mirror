@@ -179,8 +179,15 @@ impl MockEffectHandler {
                 )
             }
 
-            Effect::PreparePlanningPrompt { iteration } => {
+            Effect::PreparePlanningPrompt {
+                iteration,
+                prompt_mode: _,
+            } => {
                 (PipelineEvent::planning_prompt_prepared(iteration), vec![])
+            }
+
+            Effect::CleanupPlanningXml { iteration } => {
+                (PipelineEvent::planning_xml_cleaned(iteration), vec![])
             }
 
             Effect::InvokePlanningAgent { iteration } => {
@@ -258,8 +265,15 @@ impl MockEffectHandler {
                 (PipelineEvent::development_context_prepared(iteration), vec![])
             }
 
-            Effect::PrepareDevelopmentPrompt { iteration } => {
+            Effect::PrepareDevelopmentPrompt {
+                iteration,
+                prompt_mode: _,
+            } => {
                 (PipelineEvent::development_prompt_prepared(iteration), vec![])
+            }
+
+            Effect::CleanupDevelopmentXml { iteration } => {
+                (PipelineEvent::development_xml_cleaned(iteration), vec![])
             }
 
             Effect::InvokeDevelopmentAgent { iteration } => {
@@ -321,8 +335,15 @@ src/lib.rs</ralph-files-changed>
                 )
             }
 
-            Effect::PrepareReviewPrompt { pass } => {
+            Effect::PrepareReviewPrompt {
+                pass,
+                prompt_mode: _,
+            } => {
                 (PipelineEvent::review_prompt_prepared(pass), vec![])
+            }
+
+            Effect::CleanupReviewIssuesXml { pass } => {
+                (PipelineEvent::review_issues_xml_cleaned(pass), vec![])
             }
 
             Effect::InvokeReviewAgent { pass } => {
@@ -335,9 +356,25 @@ src/lib.rs</ralph-files-changed>
             }
 
             Effect::ValidateReviewIssuesXml { pass } => {
-                // Default mock: clean, no issues.
-                let markdown = "# Issues\n\nNo issues.\n".to_string();
-                let ui = vec![UIEvent::XmlOutput {
+                (
+                    PipelineEvent::review_issues_xml_validated(
+                        pass,
+                        false,
+                        true,
+                        Vec::new(),
+                        Some("ok".to_string()),
+                    ),
+                    vec![],
+                )
+            }
+
+            Effect::WriteIssuesMarkdown { pass } => {
+                (PipelineEvent::review_issues_markdown_written(pass), vec![])
+            }
+
+            Effect::ExtractReviewIssueSnippets { pass } => (
+                PipelineEvent::review_issue_snippets_extracted(pass),
+                vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::ReviewIssues,
                     content: r#"<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>"#
                         .to_string(),
@@ -346,21 +383,8 @@ src/lib.rs</ralph-files-changed>
                         pass: Some(pass),
                         snippets: Vec::new(),
                     }),
-                }];
-                (
-                    PipelineEvent::review_issues_xml_validated(
-                        pass,
-                        false,
-                        true,
-                        Some(markdown),
-                    ),
-                    ui,
-                )
-            }
-
-            Effect::WriteIssuesMarkdown { pass } => {
-                (PipelineEvent::review_issues_markdown_written(pass), vec![])
-            }
+                }],
+            ),
 
             Effect::ArchiveReviewIssuesXml { pass } => {
                 (PipelineEvent::review_issues_xml_archived(pass), vec![])
@@ -378,7 +402,14 @@ src/lib.rs</ralph-files-changed>
                 }
             }
 
-            Effect::PrepareFixPrompt { pass } => (PipelineEvent::fix_prompt_prepared(pass), vec![]),
+            Effect::PrepareFixPrompt {
+                pass,
+                prompt_mode: _,
+            } => (PipelineEvent::fix_prompt_prepared(pass), vec![]),
+
+            Effect::CleanupFixResultXml { pass } => {
+                (PipelineEvent::fix_result_xml_cleaned(pass), vec![])
+            }
 
             Effect::InvokeFixAgent { pass } => (PipelineEvent::fix_agent_invoked(pass), vec![]),
 
@@ -429,7 +460,7 @@ src/lib.rs</ralph-files-changed>
                 (PipelineEvent::commit_diff_prepared(empty), vec![])
             }
 
-            Effect::PrepareCommitPrompt => {
+            Effect::PrepareCommitPrompt { prompt_mode: _ } => {
                 let attempt = match self.state.commit {
                     crate::reducer::state::CommitState::Generating { attempt, .. } => attempt,
                     _ => 1,
@@ -447,6 +478,14 @@ src/lib.rs</ralph-files-changed>
                     _ => 1,
                 };
                 (PipelineEvent::commit_agent_invoked(attempt), vec![])
+            }
+
+            Effect::CleanupCommitXml => {
+                let attempt = match self.state.commit {
+                    crate::reducer::state::CommitState::Generating { attempt, .. } => attempt,
+                    _ => 1,
+                };
+                (PipelineEvent::commit_xml_cleaned(attempt), vec![])
             }
 
             Effect::ExtractCommitXml => {
@@ -667,25 +706,20 @@ mod tests {
     }
 
     #[test]
-    fn mock_effect_handler_review_validation_uses_schema_no_issues_tag() {
+    fn mock_effect_handler_review_validation_emits_no_issues_outcome() {
         let state = PipelineState::initial(1, 1);
         let mut handler = MockEffectHandler::new(state);
 
         let result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 0 });
 
-        let xml_output = result.ui_events.iter().find_map(|event| {
-            if let UIEvent::XmlOutput { content, .. } = event {
-                Some(content.as_str())
-            } else {
-                None
-            }
-        });
-
-        let xml_output = xml_output.expect("expected XmlOutput for review issues");
-        assert!(
-            xml_output.contains("<ralph-no-issues-found>"),
-            "expected mock review XML to use ralph-no-issues-found tag"
-        );
+        assert!(matches!(
+            result.event,
+            PipelineEvent::Review(crate::reducer::event::ReviewEvent::IssuesXmlValidated {
+                issues,
+                no_issues_found: Some(ref message),
+                ..
+            }) if issues.is_empty() && message == "ok"
+        ));
     }
 
     /// TDD test: MockEffectHandler must implement EffectHandler trait
@@ -768,7 +802,10 @@ mod tests {
         handler
             .captured_effects
             .borrow_mut()
-            .push(Effect::PreparePlanningPrompt { iteration: 1 });
+            .push(Effect::PreparePlanningPrompt {
+                iteration: 1,
+                prompt_mode: crate::reducer::state::PromptMode::Normal,
+            });
 
         assert!(handler.was_effect_executed(|e| matches!(e, Effect::CreateCommit { .. })));
         assert!(handler.was_effect_executed(|e| matches!(e, Effect::PreparePlanningPrompt { .. })));
@@ -962,11 +999,11 @@ mod tests {
 
     /// Test that MockEffectHandler emits XmlOutput events for review pass.
     #[test]
-    fn mock_effect_handler_emits_xml_output_for_review() {
+    fn mock_effect_handler_emits_xml_output_for_review_snippets() {
         let state = PipelineState::initial(1, 1);
         let mut handler = MockEffectHandler::new(state);
 
-        let _result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 1 });
+        let _result = handler.execute_mock(Effect::ExtractReviewIssueSnippets { pass: 1 });
 
         // Verify XmlOutput event was emitted with ReviewIssues type
         assert!(
@@ -977,7 +1014,7 @@ mod tests {
                     ..
                 }
             )),
-            "Should emit XmlOutput event for review issues"
+            "Should emit XmlOutput event for review issue snippets"
         );
     }
 

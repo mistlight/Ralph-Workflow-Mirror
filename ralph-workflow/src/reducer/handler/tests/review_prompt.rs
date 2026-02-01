@@ -8,7 +8,7 @@ use crate::pipeline::{Stats, Timer};
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::{ContinuationState, PipelineState};
+use crate::reducer::state::{ContinuationState, PipelineState, PromptMode};
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
@@ -57,7 +57,7 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let _ = handler
-        .prepare_review_prompt(&mut ctx, 0)
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_review_prompt should succeed");
 
     let prompt = workspace
@@ -118,7 +118,7 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let _ = handler
-        .prepare_review_prompt(&mut ctx, 0)
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_review_prompt should succeed");
 
     let prompt = workspace
@@ -176,7 +176,7 @@ fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .prepare_review_prompt(&mut ctx, 0)
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_review_prompt should succeed");
 
     assert!(matches!(result.event, PipelineEvent::Review(_)));
@@ -223,7 +223,7 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
-        .prepare_fix_prompt(&mut ctx, 0)
+        .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_fix_prompt should succeed");
 
     assert!(matches!(result.event, PipelineEvent::Review(_)));
@@ -278,13 +278,139 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
     });
 
     handler
-        .prepare_review_prompt(&mut ctx, 0)
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::XsdRetry)
         .expect("prepare_review_prompt should succeed");
 
     assert!(
         ctx.prompt_history.contains_key("review_0_xsd_retry_1"),
         "expected retry prompt to be captured with retry key"
     );
+}
+
+#[test]
+fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut prompt_history = HashMap::new();
+    prompt_history.insert("review_0".to_string(), "{{UNRESOLVED}}".to_string());
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            invalid_output_attempts: 1,
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(0, 1)
+    });
+
+    let result = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect("prepare_review_prompt should succeed");
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { template_name, .. })
+            if template_name == "review_xml"
+    ));
+}
+
+#[test]
+fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_file(
+            crate::files::llm_output_extraction::file_based_extraction::paths::ISSUES_XML,
+            "{{MISSING}}",
+        );
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut prompt_history = HashMap::new();
+    prompt_history.insert(
+        "review_0_xsd_retry_1".to_string(),
+        "Last output was {{MISSING}}".to_string(),
+    );
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history,
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            invalid_output_attempts: 1,
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(0, 1)
+    });
+
+    let result = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect("prepare_review_prompt should succeed");
+
+    assert!(matches!(result.event, PipelineEvent::Review(_)));
 }
 
 #[test]
@@ -342,7 +468,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
     });
 
     let result = handler
-        .prepare_review_prompt(&mut ctx, 0)
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::XsdRetry)
         .expect("prepare_review_prompt should succeed");
 
     assert!(matches!(
@@ -407,7 +533,7 @@ fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
     });
 
     let result = handler
-        .prepare_fix_prompt(&mut ctx, 0)
+        .prepare_fix_prompt(&mut ctx, 0, PromptMode::XsdRetry)
         .expect("prepare_fix_prompt should succeed");
 
     assert!(matches!(
@@ -461,7 +587,7 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     handler
-        .prepare_fix_prompt(&mut ctx, 0)
+        .prepare_fix_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_fix_prompt should succeed");
 
     let content = workspace

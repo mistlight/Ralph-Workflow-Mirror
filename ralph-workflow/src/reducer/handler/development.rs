@@ -5,6 +5,7 @@ use crate::phases::PhaseContext;
 use crate::reducer::effect::ContinuationContextData;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
+use crate::reducer::state::PromptMode;
 use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use crate::workspace::Workspace;
 use anyhow::Result;
@@ -26,6 +27,7 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
+        prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
         use crate::prompts::{
             get_stored_or_generate_prompt, prompt_developer_iteration_continuation_xml,
@@ -44,57 +46,56 @@ impl MainEffectHandler {
             .unwrap_or_default();
         let ignore_sources = [prompt_md.as_str(), plan_md.as_str()];
 
-        let dev_prompt = if continuation_state.is_continuation() {
-            let prompt_key = format!(
-                "development_{}_continuation_{}",
-                iteration, continuation_state.continuation_attempt
-            );
-            let (prompt, was_replayed) =
-                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                    prompt_developer_iteration_continuation_xml(
-                        ctx.template_context,
-                        continuation_state,
-                    )
-                });
-
-            if !was_replayed {
-                ctx.capture_prompt(&prompt_key, &prompt);
+        let (dev_prompt, template_name, prompt_key, was_replayed) = match prompt_mode {
+            PromptMode::Continuation => {
+                let prompt_key = format!(
+                    "development_{}_continuation_{}",
+                    iteration, continuation_state.continuation_attempt
+                );
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        prompt_developer_iteration_continuation_xml(
+                            ctx.template_context,
+                            continuation_state,
+                        )
+                    });
+                (
+                    prompt,
+                    "developer_iteration_continuation_xml",
+                    Some(prompt_key),
+                    was_replayed,
+                )
             }
-
-            prompt
-        } else if continuation_state.invalid_output_attempts > 0 {
-            prompt_developer_iteration_xsd_retry_with_context(
-                ctx.template_context,
-                &prompt_md,
-                &plan_md,
-                "XML output failed validation. Provide valid XML output.",
-                "",
-                ctx.workspace,
-            )
-        } else {
-            let prompt_key = format!("development_{}", iteration);
-            let (prompt, was_replayed) =
-                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                    prompt_developer_iteration_xml_with_context(
-                        ctx.template_context,
-                        &prompt_md,
-                        &plan_md,
-                    )
-                });
-
-            if !was_replayed {
-                ctx.capture_prompt(&prompt_key, &prompt);
+            PromptMode::XsdRetry => (
+                prompt_developer_iteration_xsd_retry_with_context(
+                    ctx.template_context,
+                    &prompt_md,
+                    &plan_md,
+                    "XML output failed validation. Provide valid XML output.",
+                    "",
+                    ctx.workspace,
+                ),
+                "developer_iteration_xsd_retry",
+                None,
+                false,
+            ),
+            PromptMode::Normal => {
+                let prompt_key = format!("development_{}", iteration);
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        prompt_developer_iteration_xml_with_context(
+                            ctx.template_context,
+                            &prompt_md,
+                            &plan_md,
+                        )
+                    });
+                (
+                    prompt,
+                    "developer_iteration_xml",
+                    Some(prompt_key),
+                    was_replayed,
+                )
             }
-
-            prompt
-        };
-
-        let template_name = if continuation_state.is_continuation() {
-            "developer_iteration_continuation_xml"
-        } else if continuation_state.invalid_output_attempts > 0 {
-            "developer_iteration_xsd_retry"
-        } else {
-            "developer_iteration_xml"
         };
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
             &dev_prompt,
@@ -108,6 +109,12 @@ impl MainEffectHandler {
                     err.unresolved_placeholders,
                 ),
             ));
+        }
+
+        if let Some(prompt_key) = prompt_key {
+            if !was_replayed {
+                ctx.capture_prompt(&prompt_key, &dev_prompt);
+            }
         }
 
         let tmp_dir = Path::new(".agent/tmp");
@@ -140,9 +147,6 @@ impl MainEffectHandler {
             }
         };
 
-        let result_xml = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
-        let _ = ctx.workspace.remove_if_exists(result_xml);
-
         let agent = self
             .state
             .agent_chain
@@ -159,6 +163,18 @@ impl MainEffectHandler {
                 result.with_additional_event(PipelineEvent::development_agent_invoked(iteration));
         }
         Ok(result)
+    }
+
+    pub(super) fn cleanup_development_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        let result_xml = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
+        let _ = ctx.workspace.remove_if_exists(result_xml);
+        Ok(EffectResult::event(PipelineEvent::development_xml_cleaned(
+            iteration,
+        )))
     }
 
     pub(super) fn extract_development_xml(

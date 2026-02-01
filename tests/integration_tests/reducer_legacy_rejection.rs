@@ -881,6 +881,7 @@ fn test_effects_are_single_task() {
             ExtractReviewIssuesXml,
             ValidateReviewIssuesXml,
             WriteIssuesMarkdown,
+            ExtractReviewIssueSnippets,
             ArchiveReviewIssuesXml,
             ApplyReviewOutcome,
             PrepareFixPrompt,
@@ -935,6 +936,7 @@ fn test_effects_are_single_task() {
                 Effect::ExtractReviewIssuesXml { .. } => EffectTask::ExtractReviewIssuesXml,
                 Effect::ValidateReviewIssuesXml { .. } => EffectTask::ValidateReviewIssuesXml,
                 Effect::WriteIssuesMarkdown { .. } => EffectTask::WriteIssuesMarkdown,
+                Effect::ExtractReviewIssueSnippets { .. } => EffectTask::ExtractReviewIssueSnippets,
                 Effect::ArchiveReviewIssuesXml { .. } => EffectTask::ArchiveReviewIssuesXml,
                 Effect::ApplyReviewOutcome { .. } => EffectTask::ApplyReviewOutcome,
                 Effect::PrepareFixPrompt { .. } => EffectTask::PrepareFixPrompt,
@@ -946,7 +948,7 @@ fn test_effects_are_single_task() {
                 Effect::RunRebase { .. } => EffectTask::RunRebase,
                 Effect::ResolveRebaseConflicts { .. } => EffectTask::ResolveRebaseConflicts,
                 Effect::CheckCommitDiff => EffectTask::CheckCommitDiff,
-                Effect::PrepareCommitPrompt => EffectTask::PrepareCommitPrompt,
+                Effect::PrepareCommitPrompt { .. } => EffectTask::PrepareCommitPrompt,
                 Effect::InvokeCommitAgent => EffectTask::InvokeCommitAgent,
                 Effect::ExtractCommitXml => EffectTask::ExtractCommitXml,
                 Effect::ValidateCommitXml => EffectTask::ValidateCommitXml,
@@ -977,7 +979,10 @@ fn test_effects_are_single_task() {
             Effect::InitializeAgentChain {
                 role: AgentRole::Developer,
             },
-            Effect::PreparePlanningPrompt { iteration: 0 },
+            Effect::PreparePlanningPrompt {
+                iteration: 0,
+                prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+            },
             Effect::InvokePlanningAgent { iteration: 0 },
             Effect::ExtractPlanningXml { iteration: 0 },
             Effect::ValidatePlanningXml { iteration: 0 },
@@ -988,25 +993,37 @@ fn test_effects_are_single_task() {
                 valid: true,
             },
             Effect::PrepareDevelopmentContext { iteration: 0 },
-            Effect::PrepareDevelopmentPrompt { iteration: 0 },
+            Effect::PrepareDevelopmentPrompt {
+                iteration: 0,
+                prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+            },
             Effect::InvokeDevelopmentAgent { iteration: 0 },
             Effect::ExtractDevelopmentXml { iteration: 0 },
             Effect::ValidateDevelopmentXml { iteration: 0 },
             Effect::ApplyDevelopmentOutcome { iteration: 0 },
             Effect::ArchiveDevelopmentXml { iteration: 0 },
             Effect::PrepareReviewContext { pass: 0 },
-            Effect::PrepareReviewPrompt { pass: 0 },
+            Effect::PrepareReviewPrompt {
+                pass: 0,
+                prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+            },
+            Effect::CleanupReviewIssuesXml { pass: 0 },
             Effect::InvokeReviewAgent { pass: 0 },
             Effect::ExtractReviewIssuesXml { pass: 0 },
             Effect::ValidateReviewIssuesXml { pass: 0 },
             Effect::WriteIssuesMarkdown { pass: 0 },
+            Effect::ExtractReviewIssueSnippets { pass: 0 },
             Effect::ArchiveReviewIssuesXml { pass: 0 },
             Effect::ApplyReviewOutcome {
                 pass: 0,
                 issues_found: false,
                 clean_no_issues: true,
             },
-            Effect::PrepareFixPrompt { pass: 0 },
+            Effect::PrepareFixPrompt {
+                pass: 0,
+                prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+            },
+            Effect::CleanupFixResultXml { pass: 0 },
             Effect::InvokeFixAgent { pass: 0 },
             Effect::ExtractFixResultXml { pass: 0 },
             Effect::ValidateFixResultXml { pass: 0 },
@@ -1020,7 +1037,10 @@ fn test_effects_are_single_task() {
                 strategy: ConflictStrategy::Abort,
             },
             Effect::CheckCommitDiff,
-            Effect::PrepareCommitPrompt,
+            Effect::PrepareCommitPrompt {
+                prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+            },
+            Effect::CleanupCommitXml,
             Effect::InvokeCommitAgent,
             Effect::ExtractCommitXml,
             Effect::ValidateCommitXml,
@@ -1065,8 +1085,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            49,
-            "Expected 49 Effect variants; update this test if variants were added or removed"
+            53,
+            "Expected 53 Effect variants; update this test if variants were added or removed"
         );
     });
 }
