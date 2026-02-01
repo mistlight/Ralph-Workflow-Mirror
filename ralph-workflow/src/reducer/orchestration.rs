@@ -1243,7 +1243,7 @@ mod tests {
 
     #[test]
     fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
-        // Test the COMPLETE flow: Planning → Development → Review → Fix → Commit → FinalValidation
+        // Test the COMPLETE flow: Planning -> Development -> Review -> Fix -> Commit -> FinalValidation
         let mut state = PipelineState::initial(2, 1); // 2 dev iterations, 1 review pass
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
@@ -1284,11 +1284,11 @@ mod tests {
                         ),
                     );
                 }
-                Effect::PreparePlanningPrompt { iteration, .. } => {
-                    state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
-                }
                 Effect::CleanupPlanningXml { iteration } => {
                     state = reduce(state, PipelineEvent::planning_xml_cleaned(iteration));
+                }
+                Effect::PreparePlanningPrompt { iteration, .. } => {
+                    state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
                 }
                 Effect::InvokePlanningAgent { iteration } => {
                     state = reduce(state, PipelineEvent::planning_agent_invoked(iteration));
@@ -1324,11 +1324,11 @@ mod tests {
                         PipelineEvent::development_context_prepared(iteration),
                     );
                 }
-                Effect::PrepareDevelopmentPrompt { iteration, .. } => {
-                    state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
-                }
                 Effect::CleanupDevelopmentXml { iteration } => {
                     state = reduce(state, PipelineEvent::development_xml_cleaned(iteration));
+                }
+                Effect::PrepareDevelopmentPrompt { iteration, .. } => {
+                    state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
                 }
                 Effect::InvokeDevelopmentAgent { iteration } => {
                     state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
@@ -1411,11 +1411,11 @@ mod tests {
                     );
                 }
 
-                Effect::PrepareFixPrompt { pass, .. } => {
-                    state = reduce(state, PipelineEvent::fix_prompt_prepared(pass));
-                }
                 Effect::CleanupFixResultXml { pass } => {
                     state = reduce(state, PipelineEvent::fix_result_xml_cleaned(pass));
+                }
+                Effect::PrepareFixPrompt { pass, .. } => {
+                    state = reduce(state, PipelineEvent::fix_prompt_prepared(pass));
                 }
                 Effect::InvokeFixAgent { pass } => {
                     state = reduce(state, PipelineEvent::fix_agent_invoked(pass));

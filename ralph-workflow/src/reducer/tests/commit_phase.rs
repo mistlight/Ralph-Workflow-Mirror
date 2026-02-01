@@ -171,6 +171,7 @@ fn test_commit_message_validation_failed_exhausts_attempts_with_more_agents() {
 
 #[test]
 fn test_commit_prompt_prepared_clears_xsd_retry_pending() {
+    // Preparing a prompt starts a new attempt, so xsd_retry_pending should be cleared.
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,

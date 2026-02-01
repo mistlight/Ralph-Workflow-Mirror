@@ -216,29 +216,38 @@ fn test_agent_model_fallback_triggered_advances_to_next_model() {
 }
 
 #[test]
-fn test_agent_retry_cycle_started_is_noop() {
-    let state = PipelineState {
+fn test_agent_retry_cycle_started_clears_backoff_pending() {
+    let mut base_state = PipelineState {
         phase: PipelinePhase::Development,
         iteration: 3,
         reviewer_pass: 1,
         ..create_test_state()
     };
+    // Set backoff_pending_ms to verify it gets cleared
+    base_state.agent_chain.backoff_pending_ms = Some(1000);
+
     let new_state = reduce(
-        state.clone(),
+        base_state.clone(),
         PipelineEvent::agent_retry_cycle_started(AgentRole::Developer, 2),
     );
 
-    // AgentRetryCycleStarted is a no-op - all state should be preserved
-    assert_eq!(new_state.phase, state.phase);
-    assert_eq!(new_state.iteration, state.iteration);
-    assert_eq!(new_state.reviewer_pass, state.reviewer_pass);
+    // RetryCycleStarted clears backoff_pending_ms to allow the retry cycle to proceed.
+    // Other state fields are preserved.
+    assert_eq!(new_state.phase, base_state.phase);
+    assert_eq!(new_state.iteration, base_state.iteration);
+    assert_eq!(new_state.reviewer_pass, base_state.reviewer_pass);
     assert_eq!(
         new_state.agent_chain.current_agent_index,
-        state.agent_chain.current_agent_index
+        base_state.agent_chain.current_agent_index
     );
     assert_eq!(
         new_state.agent_chain.current_model_index,
-        state.agent_chain.current_model_index
+        base_state.agent_chain.current_model_index
+    );
+    // Verify backoff_pending_ms is cleared (the critical behavior)
+    assert!(
+        new_state.agent_chain.backoff_pending_ms.is_none(),
+        "backoff_pending_ms should be cleared after RetryCycleStarted"
     );
 }
 
@@ -632,5 +641,71 @@ fn test_timeout_fallback_from_last_agent_increments_retry_cycle() {
     assert_eq!(
         new_state.agent_chain.retry_cycle, 1,
         "Should increment retry cycle when wrapping"
+    );
+}
+
+// ============================================================================
+// Integration-Style Tests (Event Loop Simulation)
+// ============================================================================
+
+/// Simulates running the event loop to verify backoff wait does not cause infinite loops.
+///
+/// This test starts with a state that has `backoff_pending_ms=Some(...)` and runs
+/// through the effect/reduce cycle to verify the pipeline progresses correctly
+/// without getting stuck repeating BackoffWait effects.
+#[test]
+fn test_backoff_wait_does_not_cause_infinite_loop_in_event_loop_simulation() {
+    use crate::reducer::effect::Effect;
+    use crate::reducer::orchestration::determine_next_effect;
+    use crate::reducer::state::{AgentChainState, ContinuationState};
+
+    let mut state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 1,
+        agent_chain: AgentChainState::initial()
+            .with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(2),
+        continuation: ContinuationState::default(),
+        development_context_prepared_iteration: Some(1),
+        development_prompt_prepared_iteration: Some(1),
+        development_xml_cleaned_iteration: Some(1),
+        ..create_test_state()
+    };
+    // Set backoff pending to trigger the backoff wait path
+    state.agent_chain.backoff_pending_ms = Some(100);
+
+    let max_iterations = 20;
+    let mut backoff_wait_count = 0;
+
+    for _ in 0..max_iterations {
+        let effect = determine_next_effect(&state);
+
+        match effect {
+            Effect::BackoffWait { role, cycle, .. } => {
+                backoff_wait_count += 1;
+                if backoff_wait_count > 2 {
+                    panic!(
+                        "BackoffWait repeated {} times - potential infinite loop",
+                        backoff_wait_count
+                    );
+                }
+                // Simulate handler emitting RetryCycleStarted
+                state = reduce(state, PipelineEvent::agent_retry_cycle_started(role, cycle));
+            }
+            _ => {
+                // Successfully progressed past backoff - test passes
+                break;
+            }
+        }
+    }
+
+    // Verify backoff_pending_ms was cleared
+    assert!(
+        state.agent_chain.backoff_pending_ms.is_none(),
+        "backoff_pending_ms should be cleared after RetryCycleStarted event"
     );
 }

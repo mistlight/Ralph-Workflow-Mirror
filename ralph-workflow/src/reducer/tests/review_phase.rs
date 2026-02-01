@@ -195,6 +195,7 @@ fn test_fix_attempt_started_resets_agent_chain() {
 
 #[test]
 fn test_review_prompt_prepared_clears_xsd_retry_pending() {
+    // Preparing a prompt starts a new attempt, so xsd_retry_pending should be cleared.
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -213,6 +214,7 @@ fn test_review_prompt_prepared_clears_xsd_retry_pending() {
 
 #[test]
 fn test_fix_prompt_prepared_clears_xsd_retry_pending() {
+    // Preparing a prompt starts a new attempt, so xsd_retry_pending should be cleared.
     let state = PipelineState {
         continuation: ContinuationState {
             xsd_retry_pending: true,
@@ -397,14 +399,15 @@ fn test_review_output_validation_failed_retries_within_limit() {
 fn test_review_output_validation_failed_switches_agent_at_limit() {
     use crate::reducer::state::ContinuationState;
 
+    // The reducer switches agents when XSD retry count reaches the configured limit.
     let agent_chain = crate::reducer::state::AgentChainState::initial().with_agents(
         vec!["agent1".to_string(), "agent2".to_string()],
         vec![vec![], vec![]],
         crate::agents::AgentRole::Reviewer,
     );
-    // Set xsd_retry_count to max-1 so next failure triggers agent switch
     let continuation = ContinuationState {
-        xsd_retry_count: 9, // default max is 10, so 9+1 >= 10 triggers switch
+        xsd_retry_count: 1,
+        max_xsd_retry_count: 2,
         ..ContinuationState::new()
     };
     let state = PipelineState {
@@ -415,14 +418,14 @@ fn test_review_output_validation_failed_switches_agent_at_limit() {
         ..create_test_state()
     };
 
-    // This validation failure should trigger agent switch since xsd_retry_count is at limit
+    // This validation failure should trigger agent switch since xsd_retry_count is at the limit.
     let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
-    // Should switch to next agent
+    assert_eq!(new_state.agent_chain.current_agent_index, 1);
     assert_eq!(
-        new_state.agent_chain.current_agent_index, 1,
-        "Should switch to next agent after max XSD retries"
+        new_state.continuation.invalid_output_attempts, 0,
+        "Invalid output attempts should be reset after switching agents"
     );
 }
 
