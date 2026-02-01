@@ -4,7 +4,7 @@
 //! based on current pipeline state.
 
 use super::event::{CheckpointTrigger, PipelinePhase, RebasePhase};
-use super::state::{CommitState, PipelineState, RebaseState};
+use super::state::{CommitState, PipelineState, PromptMode, RebaseState};
 
 use crate::agents::AgentRole;
 use crate::reducer::effect::{ContinuationContextData, Effect};
@@ -17,22 +17,28 @@ fn derive_xsd_retry_effect(state: &PipelineState) -> Effect {
     match state.phase {
         PipelinePhase::Planning => Effect::PreparePlanningPrompt {
             iteration: state.iteration,
+            prompt_mode: PromptMode::XsdRetry,
         },
         PipelinePhase::Development => Effect::PrepareDevelopmentPrompt {
             iteration: state.iteration,
+            prompt_mode: PromptMode::XsdRetry,
         },
         PipelinePhase::Review => {
             if state.review_issues_found || state.continuation.fix_continue_pending {
                 Effect::PrepareFixPrompt {
                     pass: state.reviewer_pass,
+                    prompt_mode: PromptMode::XsdRetry,
                 }
             } else {
                 Effect::PrepareReviewPrompt {
                     pass: state.reviewer_pass,
+                    prompt_mode: PromptMode::XsdRetry,
                 }
             }
         }
-        PipelinePhase::CommitMessage => Effect::PrepareCommitPrompt,
+        PipelinePhase::CommitMessage => Effect::PrepareCommitPrompt {
+            prompt_mode: PromptMode::XsdRetry,
+        },
         // Other phases don't have XSD retry
         _ => Effect::SaveCheckpoint {
             trigger: CheckpointTrigger::PhaseTransition,
@@ -82,6 +88,7 @@ fn derive_continuation_effect(state: &PipelineState) -> Effect {
         {
             Effect::PrepareFixPrompt {
                 pass: state.reviewer_pass,
+                prompt_mode: PromptMode::Normal,
             }
         }
         // Other phases don't support continuation
@@ -260,6 +267,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             if state.planning_prompt_prepared_iteration != Some(state.iteration) {
                 return Effect::PreparePlanningPrompt {
                     iteration: state.iteration,
+                    prompt_mode: PromptMode::Normal,
                 };
             }
 
@@ -352,8 +360,14 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 }
 
                 if state.development_prompt_prepared_iteration != Some(state.iteration) {
+                    let prompt_mode = if state.continuation.is_continuation() {
+                        PromptMode::Continuation
+                    } else {
+                        PromptMode::Normal
+                    };
                     return Effect::PrepareDevelopmentPrompt {
                         iteration: state.iteration,
+                        prompt_mode,
                     };
                 }
 
@@ -415,6 +429,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 if state.fix_prompt_prepared_pass != Some(state.reviewer_pass) {
                     return Effect::PrepareFixPrompt {
                         pass: state.reviewer_pass,
+                        prompt_mode: PromptMode::Normal,
                     };
                 }
 
@@ -476,6 +491,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 if state.review_prompt_prepared_pass != Some(state.reviewer_pass) {
                     return Effect::PrepareReviewPrompt {
                         pass: state.reviewer_pass,
+                        prompt_mode: PromptMode::Normal,
                     };
                 }
 
@@ -509,6 +525,12 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 
                 if state.review_issues_markdown_written_pass != Some(state.reviewer_pass) {
                     return Effect::WriteIssuesMarkdown {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.review_issue_snippets_extracted_pass != Some(state.reviewer_pass) {
+                    return Effect::ExtractReviewIssueSnippets {
                         pass: state.reviewer_pass,
                     };
                 }
@@ -562,7 +584,9 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                         };
                     }
                     if !state.commit_prompt_prepared {
-                        return Effect::PrepareCommitPrompt;
+                        return Effect::PrepareCommitPrompt {
+                            prompt_mode: PromptMode::Normal,
+                        };
                     }
                     if !state.commit_xml_cleaned {
                         return Effect::CleanupCommitXml;
@@ -884,8 +908,11 @@ mod tests {
                         PipelineEvent::development_continuation_context_cleaned(),
                     );
                 }
-                Effect::PreparePlanningPrompt { iteration } => {
+                Effect::PreparePlanningPrompt { iteration, .. } => {
                     state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
+                }
+                Effect::CleanupPlanningXml { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_xml_cleaned(iteration));
                 }
                 Effect::InvokePlanningAgent { iteration } => {
                     state = reduce(state, PipelineEvent::planning_agent_invoked(iteration));
@@ -921,8 +948,11 @@ mod tests {
                         PipelineEvent::development_context_prepared(iteration),
                     );
                 }
-                Effect::PrepareDevelopmentPrompt { iteration } => {
+                Effect::PrepareDevelopmentPrompt { iteration, .. } => {
                     state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
+                }
+                Effect::CleanupDevelopmentXml { iteration } => {
+                    state = reduce(state, PipelineEvent::development_xml_cleaned(iteration));
                 }
                 Effect::InvokeDevelopmentAgent { iteration } => {
                     state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
@@ -952,9 +982,15 @@ mod tests {
                         PipelineEvent::development_iteration_completed(iteration, true),
                     );
                 }
-                Effect::PrepareCommitPrompt => {
+                Effect::CheckCommitDiff => {
+                    state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                }
+                Effect::PrepareCommitPrompt { .. } => {
                     state = reduce(state, PipelineEvent::commit_generation_started());
                     state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+                }
+                Effect::CleanupCommitXml => {
+                    state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
                 }
                 Effect::InvokeCommitAgent => {
                     state = reduce(state, PipelineEvent::commit_agent_invoked(1));
@@ -1164,7 +1200,7 @@ mod tests {
         // With a populated Reviewer chain, orchestration should begin the fix chain.
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::PrepareFixPrompt { pass: 0 }),
+            matches!(effect, Effect::PrepareFixPrompt { pass: 0, .. }),
             "Expected PrepareFixPrompt after issues found, got {:?}",
             effect
         );
@@ -1248,7 +1284,7 @@ mod tests {
                         ),
                     );
                 }
-                Effect::PreparePlanningPrompt { iteration } => {
+                Effect::PreparePlanningPrompt { iteration, .. } => {
                     state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
                 }
                 Effect::InvokePlanningAgent { iteration } => {
@@ -1285,7 +1321,7 @@ mod tests {
                         PipelineEvent::development_context_prepared(iteration),
                     );
                 }
-                Effect::PrepareDevelopmentPrompt { iteration } => {
+                Effect::PrepareDevelopmentPrompt { iteration, .. } => {
                     state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
                 }
                 Effect::InvokeDevelopmentAgent { iteration } => {
@@ -1320,8 +1356,11 @@ mod tests {
                     review_passes_run.push(pass);
                     state = reduce(state, PipelineEvent::review_context_prepared(pass));
                 }
-                Effect::PrepareReviewPrompt { pass } => {
+                Effect::PrepareReviewPrompt { pass, .. } => {
                     state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
+                }
+                Effect::CleanupReviewIssuesXml { pass } => {
+                    state = reduce(state, PipelineEvent::review_issues_xml_cleaned(pass));
                 }
                 Effect::InvokeReviewAgent { pass } => {
                     state = reduce(state, PipelineEvent::review_agent_invoked(pass));
@@ -1333,11 +1372,20 @@ mod tests {
                     // Simulate finding issues
                     state = reduce(
                         state,
-                        PipelineEvent::review_issues_xml_validated(pass, true, false, None),
+                        PipelineEvent::review_issues_xml_validated(
+                            pass,
+                            true,
+                            false,
+                            vec!["issue".to_string()],
+                            None,
+                        ),
                     );
                 }
                 Effect::WriteIssuesMarkdown { pass } => {
                     state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
+                }
+                Effect::ExtractReviewIssueSnippets { pass } => {
+                    state = reduce(state, PipelineEvent::review_issue_snippets_extracted(pass));
                 }
                 Effect::ArchiveReviewIssuesXml { pass } => {
                     state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
@@ -1357,7 +1405,7 @@ mod tests {
                     );
                 }
 
-                Effect::PrepareFixPrompt { pass } => {
+                Effect::PrepareFixPrompt { pass, .. } => {
                     state = reduce(state, PipelineEvent::fix_prompt_prepared(pass));
                 }
                 Effect::InvokeFixAgent { pass } => {
@@ -1382,9 +1430,15 @@ mod tests {
                 Effect::ApplyFixOutcome { pass } => {
                     state = reduce(state, PipelineEvent::fix_attempt_completed(pass, true));
                 }
-                Effect::PrepareCommitPrompt => {
+                Effect::CheckCommitDiff => {
+                    state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                }
+                Effect::PrepareCommitPrompt { .. } => {
                     state = reduce(state, PipelineEvent::commit_generation_started());
                     state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+                }
+                Effect::CleanupCommitXml => {
+                    state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
                 }
                 Effect::InvokeCommitAgent => {
                     state = reduce(state, PipelineEvent::commit_agent_invoked(1));
@@ -1514,19 +1568,33 @@ mod tests {
                     // Simulate full clean pass
                     state = reduce(state, PipelineEvent::review_context_prepared(pass));
                     state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
+                    state = reduce(state, PipelineEvent::review_issues_xml_cleaned(pass));
                     state = reduce(state, PipelineEvent::review_agent_invoked(pass));
                     state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
                     state = reduce(
                         state,
-                        PipelineEvent::review_issues_xml_validated(pass, false, true, None),
+                        PipelineEvent::review_issues_xml_validated(
+                            pass,
+                            false,
+                            true,
+                            Vec::new(),
+                            Some("ok".to_string()),
+                        ),
                     );
                     state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
+                    state = reduce(state, PipelineEvent::review_issue_snippets_extracted(pass));
                     state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
                     state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
                 }
-                Effect::PrepareCommitPrompt => {
+                Effect::CheckCommitDiff => {
+                    state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                }
+                Effect::PrepareCommitPrompt { .. } => {
                     state = reduce(state, PipelineEvent::commit_generation_started());
                     state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+                }
+                Effect::CleanupCommitXml => {
+                    state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
                 }
                 Effect::InvokeCommitAgent => {
                     state = reduce(state, PipelineEvent::commit_agent_invoked(1));
@@ -1606,13 +1674,21 @@ mod tests {
                     passes_run.push(pass);
                     state = reduce(state, PipelineEvent::review_context_prepared(pass));
                     state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
+                    state = reduce(state, PipelineEvent::review_issues_xml_cleaned(pass));
                     state = reduce(state, PipelineEvent::review_agent_invoked(pass));
                     state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
                     state = reduce(
                         state,
-                        PipelineEvent::review_issues_xml_validated(pass, false, true, None),
+                        PipelineEvent::review_issues_xml_validated(
+                            pass,
+                            false,
+                            true,
+                            Vec::new(),
+                            Some("ok".to_string()),
+                        ),
                     );
                     state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
+                    state = reduce(state, PipelineEvent::review_issue_snippets_extracted(pass));
                     state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
                     state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
                 }
@@ -1712,7 +1788,7 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::PrepareCommitPrompt));
+        assert!(matches!(effect, Effect::CheckCommitDiff));
     }
 
     #[test]
@@ -1740,7 +1816,7 @@ mod tests {
         };
 
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::PrepareCommitPrompt));
+        assert!(matches!(effect, Effect::CheckCommitDiff));
     }
 
     #[test]

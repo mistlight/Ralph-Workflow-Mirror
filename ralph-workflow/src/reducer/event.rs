@@ -384,11 +384,17 @@ pub enum ReviewEvent {
         pass: u32,
         issues_found: bool,
         clean_no_issues: bool,
-        markdown: Option<String>,
+        issues: Vec<String>,
+        no_issues_found: Option<String>,
     },
 
     /// ISSUES.md was written for a pass.
     IssuesMarkdownWritten {
+        pass: u32,
+    },
+
+    /// Review issue snippets were extracted for a pass.
+    IssueSnippetsExtracted {
         pass: u32,
     },
 
@@ -784,6 +790,11 @@ pub enum CommitEvent {
     DiffPrepared {
         /// True when the diff is empty.
         empty: bool,
+    },
+    /// Commit diff computation failed.
+    DiffFailed {
+        /// The error message for the diff failure.
+        error: String,
     },
     /// Commit prompt prepared for a commit attempt.
     PromptPrepared {
@@ -1240,18 +1251,24 @@ impl PipelineEvent {
         pass: u32,
         issues_found: bool,
         clean_no_issues: bool,
-        markdown: Option<String>,
+        issues: Vec<String>,
+        no_issues_found: Option<String>,
     ) -> Self {
         Self::Review(ReviewEvent::IssuesXmlValidated {
             pass,
             issues_found,
             clean_no_issues,
-            markdown,
+            issues,
+            no_issues_found,
         })
     }
 
     pub fn review_issues_markdown_written(pass: u32) -> Self {
         Self::Review(ReviewEvent::IssuesMarkdownWritten { pass })
+    }
+
+    pub fn review_issue_snippets_extracted(pass: u32) -> Self {
+        Self::Review(ReviewEvent::IssueSnippetsExtracted { pass })
     }
 
     pub fn review_issues_xml_archived(pass: u32) -> Self {
@@ -1548,6 +1565,11 @@ impl PipelineEvent {
     /// Create a CommitDiffPrepared event.
     pub fn commit_diff_prepared(empty: bool) -> Self {
         Self::Commit(CommitEvent::DiffPrepared { empty })
+    }
+
+    /// Create a CommitDiffFailed event.
+    pub fn commit_diff_failed(error: String) -> Self {
+        Self::Commit(CommitEvent::DiffFailed { error })
     }
 
     /// Create a CommitPromptPrepared event.

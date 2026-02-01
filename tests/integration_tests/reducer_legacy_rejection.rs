@@ -881,6 +881,7 @@ fn test_effects_are_single_task() {
             ExtractReviewIssuesXml,
             ValidateReviewIssuesXml,
             WriteIssuesMarkdown,
+            ExtractReviewIssueSnippets,
             ArchiveReviewIssuesXml,
             ApplyReviewOutcome,
             PrepareFixPrompt,
@@ -934,6 +935,7 @@ fn test_effects_are_single_task() {
                 Effect::ExtractReviewIssuesXml { .. } => EffectTask::ExtractReviewIssuesXml,
                 Effect::ValidateReviewIssuesXml { .. } => EffectTask::ValidateReviewIssuesXml,
                 Effect::WriteIssuesMarkdown { .. } => EffectTask::WriteIssuesMarkdown,
+                Effect::ExtractReviewIssueSnippets { .. } => EffectTask::ExtractReviewIssueSnippets,
                 Effect::ArchiveReviewIssuesXml { .. } => EffectTask::ArchiveReviewIssuesXml,
                 Effect::ApplyReviewOutcome { .. } => EffectTask::ApplyReviewOutcome,
                 Effect::PrepareFixPrompt { .. } => EffectTask::PrepareFixPrompt,
@@ -944,7 +946,7 @@ fn test_effects_are_single_task() {
                 Effect::ArchiveFixResultXml { .. } => EffectTask::ArchiveFixResultXml,
                 Effect::RunRebase { .. } => EffectTask::RunRebase,
                 Effect::ResolveRebaseConflicts { .. } => EffectTask::ResolveRebaseConflicts,
-                Effect::PrepareCommitPrompt => EffectTask::PrepareCommitPrompt,
+                Effect::PrepareCommitPrompt { .. } => EffectTask::PrepareCommitPrompt,
                 Effect::InvokeCommitAgent => EffectTask::InvokeCommitAgent,
                 Effect::ExtractCommitXml => EffectTask::ExtractCommitXml,
                 Effect::ValidateCommitXml => EffectTask::ValidateCommitXml,
@@ -975,7 +977,10 @@ fn test_effects_are_single_task() {
             Effect::InitializeAgentChain {
                 role: AgentRole::Developer,
             },
-            Effect::PreparePlanningPrompt { iteration: 0 },
+            Effect::PreparePlanningPrompt {
+                iteration: 0,
+                prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+            },
             Effect::InvokePlanningAgent { iteration: 0 },
             Effect::ExtractPlanningXml { iteration: 0 },
             Effect::ValidatePlanningXml { iteration: 0 },
@@ -986,14 +991,21 @@ fn test_effects_are_single_task() {
                 valid: true,
             },
             Effect::PrepareDevelopmentContext { iteration: 0 },
-            Effect::PrepareDevelopmentPrompt { iteration: 0 },
+            Effect::PrepareDevelopmentPrompt {
+                iteration: 0,
+                prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+            },
             Effect::InvokeDevelopmentAgent { iteration: 0 },
             Effect::ExtractDevelopmentXml { iteration: 0 },
             Effect::ValidateDevelopmentXml { iteration: 0 },
             Effect::ApplyDevelopmentOutcome { iteration: 0 },
             Effect::ArchiveDevelopmentXml { iteration: 0 },
             Effect::PrepareReviewContext { pass: 0 },
-            Effect::PrepareFixPrompt { pass: 0 },
+            Effect::ExtractReviewIssueSnippets { pass: 0 },
+            Effect::PrepareFixPrompt {
+                pass: 0,
+                prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+            },
             Effect::RunRebase {
                 phase: RebasePhase::Initial,
                 target_branch: "main".to_string(),
@@ -1001,7 +1013,9 @@ fn test_effects_are_single_task() {
             Effect::ResolveRebaseConflicts {
                 strategy: ConflictStrategy::Abort,
             },
-            Effect::PrepareCommitPrompt,
+            Effect::PrepareCommitPrompt {
+                prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+            },
             Effect::InvokeCommitAgent,
             Effect::ExtractCommitXml,
             Effect::ValidateCommitXml,
@@ -1046,8 +1060,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            31,
-            "Expected 31 Effect variants; update this test if variants were added or removed"
+            32,
+            "Expected 32 Effect variants; update this test if variants were added or removed"
         );
     });
 }

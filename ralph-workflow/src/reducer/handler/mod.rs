@@ -89,9 +89,10 @@ impl MainEffectHandler {
 
             Effect::InitializeAgentChain { role } => self.initialize_agent_chain(ctx, role),
 
-            Effect::PreparePlanningPrompt { iteration } => {
-                self.prepare_planning_prompt(ctx, iteration)
-            }
+            Effect::PreparePlanningPrompt {
+                iteration,
+                prompt_mode,
+            } => self.prepare_planning_prompt(ctx, iteration, prompt_mode),
 
             Effect::CleanupPlanningXml { iteration } => self.cleanup_planning_xml(ctx, iteration),
 
@@ -115,9 +116,10 @@ impl MainEffectHandler {
                 self.prepare_development_context(ctx, iteration)
             }
 
-            Effect::PrepareDevelopmentPrompt { iteration } => {
-                self.prepare_development_prompt(ctx, iteration)
-            }
+            Effect::PrepareDevelopmentPrompt {
+                iteration,
+                prompt_mode,
+            } => self.prepare_development_prompt(ctx, iteration, prompt_mode),
 
             Effect::CleanupDevelopmentXml { iteration } => {
                 self.cleanup_development_xml(ctx, iteration)
@@ -145,7 +147,9 @@ impl MainEffectHandler {
 
             Effect::PrepareReviewContext { pass } => self.prepare_review_context(ctx, pass),
 
-            Effect::PrepareReviewPrompt { pass } => self.prepare_review_prompt(ctx, pass),
+            Effect::PrepareReviewPrompt { pass, prompt_mode } => {
+                self.prepare_review_prompt(ctx, pass, prompt_mode)
+            }
 
             Effect::CleanupReviewIssuesXml { pass } => self.cleanup_review_issues_xml(ctx, pass),
 
@@ -157,6 +161,10 @@ impl MainEffectHandler {
 
             Effect::WriteIssuesMarkdown { pass } => self.write_issues_markdown(ctx, pass),
 
+            Effect::ExtractReviewIssueSnippets { pass } => {
+                self.extract_review_issue_snippets(ctx, pass)
+            }
+
             Effect::ArchiveReviewIssuesXml { pass } => self.archive_review_issues_xml(ctx, pass),
 
             Effect::ApplyReviewOutcome {
@@ -165,7 +173,9 @@ impl MainEffectHandler {
                 clean_no_issues,
             } => self.apply_review_outcome(ctx, pass, issues_found, clean_no_issues),
 
-            Effect::PrepareFixPrompt { pass } => self.prepare_fix_prompt(ctx, pass),
+            Effect::PrepareFixPrompt { pass, prompt_mode } => {
+                self.prepare_fix_prompt(ctx, pass, prompt_mode)
+            }
 
             Effect::CleanupFixResultXml { pass } => self.cleanup_fix_result_xml(ctx, pass),
 
@@ -188,7 +198,9 @@ impl MainEffectHandler {
                 self.resolve_rebase_conflicts(ctx, strategy)
             }
 
-            Effect::PrepareCommitPrompt => self.prepare_commit_prompt(ctx),
+            Effect::PrepareCommitPrompt { prompt_mode } => {
+                self.prepare_commit_prompt(ctx, prompt_mode)
+            }
 
             Effect::CheckCommitDiff => self.check_commit_diff(ctx),
 

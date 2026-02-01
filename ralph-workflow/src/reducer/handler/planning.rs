@@ -10,6 +10,7 @@ use crate::prompts::{
 };
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{AgentEvent, PipelineEvent, PipelinePhase};
+use crate::reducer::state::PromptMode;
 use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use anyhow::Result;
 use std::path::Path;
@@ -21,6 +22,7 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
+        prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
         let tmp_dir = Path::new(".agent/tmp");
         if !ctx.workspace.exists(tmp_dir) {
@@ -33,48 +35,50 @@ impl MainEffectHandler {
             .unwrap_or_default();
         let prompt_md_str = prompt_md.as_str();
 
-        let mut last_output = String::new();
-        if self.state.continuation.invalid_output_attempts > 0 {
-            last_output = ctx
-                .workspace
+        let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
+        let last_output = if is_xsd_retry {
+            ctx.workspace
                 .read(Path::new(xml_paths::PLAN_XML))
-                .unwrap_or_default();
-        }
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         let mut ignore_sources = vec![prompt_md_str];
-        if self.state.continuation.invalid_output_attempts > 0 {
+        if is_xsd_retry {
             ignore_sources.push(last_output.as_str());
         }
-
-        let prompt = if self.state.continuation.invalid_output_attempts > 0 {
-            prompt_planning_xsd_retry_with_context(
-                ctx.template_context,
-                prompt_md_str,
-                "Previous XML output failed XSD validation. Please provide valid XML conforming to the schema.",
-                &last_output,
-                ctx.workspace,
-            )
-        } else {
-            let prompt_key = format!("planning_{iteration}");
-            let (prompt, was_replayed) =
-                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                    prompt_planning_xml_with_context(
+        let (prompt, template_name, prompt_key, was_replayed) = match prompt_mode {
+            PromptMode::XsdRetry => {
+                (
+                    prompt_planning_xsd_retry_with_context(
                         ctx.template_context,
-                        Some(prompt_md_str),
+                        prompt_md_str,
+                        "Previous XML output failed XSD validation. Please provide valid XML conforming to the schema.",
+                        &last_output,
                         ctx.workspace,
-                    )
-                });
-
-            if !was_replayed {
-                ctx.capture_prompt(&prompt_key, &prompt);
+                    ),
+                    "planning_xsd_retry",
+                    None,
+                    false,
+                )
             }
-
-            prompt
-        };
-
-        let template_name = if self.state.continuation.invalid_output_attempts > 0 {
-            "planning_xsd_retry"
-        } else {
-            "planning_xml"
+            PromptMode::Normal => {
+                let prompt_key = format!("planning_{iteration}");
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        prompt_planning_xml_with_context(
+                            ctx.template_context,
+                            Some(prompt_md_str),
+                            ctx.workspace,
+                        )
+                    });
+                (prompt, "planning_xml", Some(prompt_key), was_replayed)
+            }
+            PromptMode::Continuation => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Planning does not support continuation prompts".to_string(),
+                )));
+            }
         };
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
             &prompt,
@@ -88,6 +92,12 @@ impl MainEffectHandler {
                     err.unresolved_placeholders,
                 ),
             ));
+        }
+
+        if let Some(prompt_key) = prompt_key {
+            if !was_replayed {
+                ctx.capture_prompt(&prompt_key, &prompt);
+            }
         }
 
         ctx.workspace

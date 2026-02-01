@@ -697,6 +697,7 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             // development continuation context into review/fix/rebase logic.
             continuation: super::state::ContinuationState::new(),
             review_issues_xml_cleaned_pass: None,
+            review_issue_snippets_extracted_pass: None,
             fix_result_xml_cleaned_pass: None,
             ..state
         },
@@ -710,6 +711,7 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
             review_issues_markdown_written_pass: None,
+            review_issue_snippets_extracted_pass: None,
             review_issues_xml_archived_pass: None,
             agent_chain: if pass == state.reviewer_pass {
                 // If orchestration re-emits PassStarted for the same pass (e.g., retry after
@@ -771,19 +773,26 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             pass,
             issues_found,
             clean_no_issues,
-            markdown,
+            issues,
+            no_issues_found,
         } => PipelineState {
             review_validated_outcome: Some(super::state::ReviewValidatedOutcome {
                 pass,
                 issues_found,
                 clean_no_issues,
-                markdown,
+                issues,
+                no_issues_found,
             }),
             ..state
         },
 
         ReviewEvent::IssuesMarkdownWritten { pass } => PipelineState {
             review_issues_markdown_written_pass: Some(pass),
+            ..state
+        },
+
+        ReviewEvent::IssueSnippetsExtracted { pass } => PipelineState {
+            review_issue_snippets_extracted_pass: Some(pass),
             ..state
         },
 
@@ -812,6 +821,7 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     review_issues_xml_extracted_pass: None,
                     review_validated_outcome: None,
                     review_issues_markdown_written_pass: None,
+                    review_issue_snippets_extracted_pass: None,
                     review_issues_xml_archived_pass: None,
                     commit: super::state::CommitState::NotStarted,
                     commit_prompt_prepared: false,
@@ -843,6 +853,7 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     review_issues_xml_extracted_pass: None,
                     review_validated_outcome: None,
                     review_issues_markdown_written_pass: None,
+                    review_issue_snippets_extracted_pass: None,
                     review_issues_xml_archived_pass: None,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: 0,
@@ -1027,6 +1038,7 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     review_issues_xml_extracted_pass: None,
                     review_validated_outcome: None,
                     review_issues_markdown_written_pass: None,
+                    review_issue_snippets_extracted_pass: None,
                     review_issues_xml_archived_pass: None,
                     commit: super::state::CommitState::NotStarted,
                     commit_prompt_prepared: false,
@@ -1058,6 +1070,7 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     review_issues_xml_extracted_pass: None,
                     review_validated_outcome: None,
                     review_issues_markdown_written_pass: None,
+                    review_issue_snippets_extracted_pass: None,
                     review_issues_xml_archived_pass: None,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: 0,
@@ -1414,6 +1427,12 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
         CommitEvent::DiffPrepared { empty } => PipelineState {
             commit_diff_prepared: true,
             commit_diff_empty: empty,
+            ..state
+        },
+        CommitEvent::DiffFailed { .. } => PipelineState {
+            phase: super::event::PipelinePhase::Interrupted,
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
             ..state
         },
         CommitEvent::PromptPrepared { .. } => PipelineState {
@@ -1952,6 +1971,19 @@ mod tests {
 
         assert!(matches!(new_state.commit, CommitState::Generating { .. }));
         assert!(new_state.commit_diff_prepared);
+        assert!(!new_state.commit_diff_empty);
+    }
+
+    #[test]
+    fn test_reduce_commit_diff_failed_interrupts_pipeline() {
+        let state = create_test_state();
+        let new_state = reduce(
+            state,
+            PipelineEvent::commit_diff_failed("diff failed".to_string()),
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        assert!(!new_state.commit_diff_prepared);
         assert!(!new_state.commit_diff_empty);
     }
 

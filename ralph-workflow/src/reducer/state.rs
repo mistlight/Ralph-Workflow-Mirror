@@ -31,6 +31,17 @@ pub enum ArtifactType {
     CommitMessage,
 }
 
+/// Prompt rendering mode chosen by the reducer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PromptMode {
+    /// Standard prompt rendering.
+    Normal,
+    /// XSD retry prompt rendering for invalid XML outputs.
+    XsdRetry,
+    /// Continuation prompt rendering for partial/failed outputs.
+    Continuation,
+}
+
 impl std::fmt::Display for ArtifactType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -599,6 +610,9 @@ pub struct PipelineState {
     /// Tracks whether ISSUES.md has been written for the current pass.
     #[serde(default)]
     pub review_issues_markdown_written_pass: Option<u32>,
+    /// Tracks whether review issue snippets were extracted for the current pass.
+    #[serde(default)]
+    pub review_issue_snippets_extracted_pass: Option<u32>,
     #[serde(default)]
     pub review_issues_xml_archived_pass: Option<u32>,
 
@@ -668,7 +682,9 @@ pub struct ReviewValidatedOutcome {
     pub issues_found: bool,
     pub clean_no_issues: bool,
     #[serde(default)]
-    pub markdown: Option<String>,
+    pub issues: Vec<String>,
+    #[serde(default)]
+    pub no_issues_found: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -765,6 +781,7 @@ impl PipelineState {
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
             review_issues_markdown_written_pass: None,
+            review_issue_snippets_extracted_pass: None,
             review_issues_xml_archived_pass: None,
             fix_prompt_prepared_pass: None,
             fix_result_xml_cleaned_pass: None,
@@ -836,6 +853,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             review_issues_xml_extracted_pass: None,
             review_validated_outcome: None,
             review_issues_markdown_written_pass: None,
+            review_issue_snippets_extracted_pass: None,
             review_issues_xml_archived_pass: None,
             fix_prompt_prepared_pass: None,
             fix_result_xml_cleaned_pass: None,

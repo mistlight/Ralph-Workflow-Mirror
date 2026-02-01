@@ -12,6 +12,7 @@ use crate::reducer::effect::EffectResult;
 use crate::reducer::event::AgentEvent;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::state::CommitState;
+use crate::reducer::state::PromptMode;
 use crate::reducer::ui_event::{UIEvent, XmlOutputType};
 use anyhow::Result;
 use std::path::Path;
@@ -27,7 +28,13 @@ impl MainEffectHandler {
     pub(super) fn prepare_commit_prompt(
         &mut self,
         ctx: &mut PhaseContext<'_>,
+        prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
+        if matches!(prompt_mode, PromptMode::Continuation) {
+            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                "Commit message generation does not support continuation prompts".to_string(),
+            )));
+        }
         let diff = match ctx.workspace.read(Path::new(".agent/tmp/commit_diff.txt")) {
             Ok(diff) => diff,
             Err(_) => {
@@ -40,8 +47,21 @@ impl MainEffectHandler {
     }
 
     pub(super) fn check_commit_diff(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
-        let diff = crate::git_helpers::git_diff().unwrap_or_default();
-        self.check_commit_diff_with_content(ctx, &diff)
+        let diff = crate::git_helpers::git_diff().map_err(anyhow::Error::from);
+        self.check_commit_diff_with_result(ctx, diff)
+    }
+
+    pub(super) fn check_commit_diff_with_result(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        diff: Result<String, anyhow::Error>,
+    ) -> Result<EffectResult> {
+        match diff {
+            Ok(diff) => self.check_commit_diff_with_content(ctx, &diff),
+            Err(err) => Ok(EffectResult::event(PipelineEvent::commit_diff_failed(
+                err.to_string(),
+            ))),
+        }
     }
 
     pub(super) fn check_commit_diff_with_content(

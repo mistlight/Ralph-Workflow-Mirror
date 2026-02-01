@@ -3,11 +3,13 @@ use crate::files::llm_output_extraction::file_based_extraction::paths as xml_pat
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
+use crate::reducer::state::PromptMode;
 use crate::reducer::ui_event::{UIEvent, XmlCodeSnippet, XmlOutputContext, XmlOutputType};
 use anyhow::Result;
 use regex::Regex;
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::OnceLock;
 
 impl MainEffectHandler {
     const DIFF_BASELINE_PATH: &str = ".agent/DIFF.base";
@@ -53,6 +55,7 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
         pass: u32,
+        prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
         use crate::agents::AgentRole;
         use crate::prompts::{
@@ -82,20 +85,21 @@ impl MainEffectHandler {
             .trim()
             .to_string();
 
-        let continuation_state = &self.state.continuation;
-        let mut last_output = String::new();
-        if continuation_state.invalid_output_attempts > 0 {
-            last_output = ctx
-                .workspace
-                .read(Path::new(xml_paths::ISSUES_XML))
-                .unwrap_or_default();
-        }
         let mut ignore_sources = vec![plan_content.as_str(), diff_content.as_str()];
-        if continuation_state.invalid_output_attempts > 0 {
+        let continuation_state = &self.state.continuation;
+        let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
+        let last_output = if is_xsd_retry {
+            ctx.workspace
+                .read(Path::new(xml_paths::ISSUES_XML))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        if is_xsd_retry {
             ignore_sources.push(last_output.as_str());
         }
-        let (prompt_key, review_prompt_xml, was_replayed) =
-            if continuation_state.invalid_output_attempts > 0 {
+        let (prompt_key, review_prompt_xml, was_replayed, template_name) = match prompt_mode {
+            PromptMode::XsdRetry => {
                 let prompt_key = format!(
                     "review_{pass}_xsd_retry_{}",
                     continuation_state.invalid_output_attempts
@@ -112,8 +116,9 @@ impl MainEffectHandler {
                             ctx.workspace,
                         )
                     });
-                (prompt_key, prompt, was_replayed)
-            } else {
+                (prompt_key, prompt, was_replayed, "review_xsd_retry")
+            }
+            PromptMode::Normal => {
                 let prompt_key = format!("review_{pass}");
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
@@ -124,13 +129,13 @@ impl MainEffectHandler {
 
                         prompt_review_xml_with_references(ctx.template_context, &refs)
                     });
-                (prompt_key, prompt, was_replayed)
-            };
-
-        let template_name = if continuation_state.invalid_output_attempts > 0 {
-            "review_xsd_retry"
-        } else {
-            "review_xml"
+                (prompt_key, prompt, was_replayed, "review_xml")
+            }
+            PromptMode::Continuation => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Review does not support continuation prompts".to_string(),
+                )));
+            }
         };
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
             &review_prompt_xml,
@@ -262,24 +267,14 @@ impl MainEffectHandler {
                 let issues_found = !elements.issues.is_empty();
                 let clean_no_issues =
                     elements.no_issues_found.is_some() && elements.issues.is_empty();
-                let markdown = render_issues_markdown(&elements);
-                let snippets = extract_issue_snippets(&elements.issues, ctx.workspace);
-                Ok(EffectResult::with_ui(
+                Ok(EffectResult::event(
                     PipelineEvent::review_issues_xml_validated(
                         pass,
                         issues_found,
                         clean_no_issues,
-                        Some(markdown),
+                        elements.issues,
+                        elements.no_issues_found,
                     ),
-                    vec![UIEvent::XmlOutput {
-                        xml_type: XmlOutputType::ReviewIssues,
-                        content: issues_xml,
-                        context: Some(XmlOutputContext {
-                            iteration: None,
-                            pass: Some(pass),
-                            snippets,
-                        }),
-                    }],
                 ))
             }
             Err(_) => Ok(EffectResult::event(
@@ -298,25 +293,75 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use std::path::Path;
 
-        let markdown = match self
+        let outcome = match self
             .state
             .review_validated_outcome
             .as_ref()
             .filter(|outcome| outcome.pass == pass)
-            .and_then(|outcome| outcome.markdown.clone())
         {
-            Some(markdown) => markdown,
+            Some(outcome) => outcome,
             None => {
                 return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing validated review markdown".to_string(),
+                    "Missing validated review outcome".to_string(),
                 )));
             }
         };
+        let elements = crate::files::llm_output_extraction::IssuesElements {
+            issues: outcome.issues.clone(),
+            no_issues_found: outcome.no_issues_found.clone(),
+        };
+        let markdown = render_issues_markdown(&elements);
         ctx.workspace
             .write(Path::new(".agent/ISSUES.md"), &markdown)?;
 
         Ok(EffectResult::event(
             PipelineEvent::review_issues_markdown_written(pass),
+        ))
+    }
+
+    pub(super) fn extract_review_issue_snippets(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        pass: u32,
+    ) -> Result<EffectResult> {
+        use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
+        use std::path::Path;
+
+        let outcome = match self
+            .state
+            .review_validated_outcome
+            .as_ref()
+            .filter(|outcome| outcome.pass == pass)
+        {
+            Some(outcome) => outcome,
+            None => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing validated review outcome".to_string(),
+                )));
+            }
+        };
+
+        let issues_xml = match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
+            Ok(content) => content,
+            Err(_) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing review issues XML for snippet extraction".to_string(),
+                )));
+            }
+        };
+
+        let snippets = extract_issue_snippets(&outcome.issues, ctx.workspace);
+        Ok(EffectResult::with_ui(
+            PipelineEvent::review_issue_snippets_extracted(pass),
+            vec![UIEvent::XmlOutput {
+                xml_type: XmlOutputType::ReviewIssues,
+                content: issues_xml,
+                context: Some(XmlOutputContext {
+                    iteration: None,
+                    pass: Some(pass),
+                    snippets,
+                }),
+            }],
         ))
     }
 
@@ -357,6 +402,7 @@ impl MainEffectHandler {
         &mut self,
         ctx: &mut PhaseContext<'_>,
         pass: u32,
+        prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
         use crate::agents::AgentRole;
         use crate::prompts::{
@@ -384,23 +430,24 @@ impl MainEffectHandler {
             .unwrap_or_default();
 
         let continuation_state = &self.state.continuation;
-        let mut last_output = String::new();
-        if continuation_state.invalid_output_attempts > 0 {
-            last_output = ctx
-                .workspace
+        let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
+        let last_output = if is_xsd_retry {
+            ctx.workspace
                 .read(Path::new(xml_paths::FIX_RESULT_XML))
-                .unwrap_or_default();
-        }
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         let mut ignore_sources = vec![
             prompt_content.as_str(),
             plan_content.as_str(),
             issues_content.as_str(),
         ];
-        if continuation_state.invalid_output_attempts > 0 {
+        if is_xsd_retry {
             ignore_sources.push(last_output.as_str());
         }
-        let (prompt_key, fix_prompt, was_replayed) =
-            if continuation_state.invalid_output_attempts > 0 {
+        let (prompt_key, fix_prompt, was_replayed, template_name) = match prompt_mode {
+            PromptMode::XsdRetry => {
                 let prompt_key = format!(
                     "fix_{pass}_xsd_retry_{}",
                     continuation_state.invalid_output_attempts
@@ -415,8 +462,9 @@ impl MainEffectHandler {
                             ctx.workspace,
                         )
                     });
-                (prompt_key, prompt, was_replayed)
-            } else {
+                (prompt_key, prompt, was_replayed, "fix_mode_xsd_retry")
+            }
+            PromptMode::Normal => {
                 let prompt_key = format!("fix_{pass}");
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
@@ -428,13 +476,13 @@ impl MainEffectHandler {
                             &[],
                         )
                     });
-                (prompt_key, prompt, was_replayed)
-            };
-
-        let template_name = if continuation_state.invalid_output_attempts > 0 {
-            "fix_mode_xsd_retry"
-        } else {
-            "fix_mode_xml"
+                (prompt_key, prompt, was_replayed, "fix_mode_xml")
+            }
+            PromptMode::Continuation => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Fix does not support continuation prompts".to_string(),
+                )));
+            }
         };
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
             &fix_prompt,
@@ -584,10 +632,14 @@ impl MainEffectHandler {
             .state
             .fix_validated_outcome
             .as_ref()
-            .filter(|o| o.pass == pass)
-            .ok_or_else(|| anyhow::anyhow!("missing validated fix outcome for pass {pass}"))?;
+            .filter(|o| o.pass == pass);
 
-        let _ = outcome;
+        if outcome.is_none() {
+            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                format!("Missing validated fix outcome for pass {pass}"),
+            )));
+        }
+
         Ok(EffectResult::event(PipelineEvent::fix_outcome_applied(
             pass,
         )))
@@ -616,14 +668,8 @@ fn extract_issue_snippets(
     let mut snippets = Vec::new();
     let mut seen = HashSet::new();
 
-    let location_re = Regex::new(
-        r"(?m)(?P<file>[A-Za-z0-9 ._\-/\\:]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?",
-    )
-    .unwrap();
-    let gh_location_re = Regex::new(
-        r"(?m)(?P<file>[A-Za-z0-9 ._\-/\\:]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?",
-    )
-    .unwrap();
+    let location_re = issue_location_regex();
+    let gh_location_re = issue_gh_location_regex();
 
     for issue in issues {
         let (file, line_start, line_end) = if let Some(cap) = location_re.captures(issue) {
@@ -679,6 +725,26 @@ fn extract_issue_snippets(
     }
 
     snippets
+}
+
+fn issue_location_regex() -> &'static Regex {
+    static LOCATION_RE: OnceLock<Regex> = OnceLock::new();
+    LOCATION_RE.get_or_init(|| {
+        Regex::new(
+            r"(?m)(?P<file>[A-Za-z0-9 ._\-/\\:]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?",
+        )
+        .unwrap_or_else(|_| Regex::new(r"$^").expect("valid fallback regex"))
+    })
+}
+
+fn issue_gh_location_regex() -> &'static Regex {
+    static GH_LOCATION_RE: OnceLock<Regex> = OnceLock::new();
+    GH_LOCATION_RE.get_or_init(|| {
+        Regex::new(
+            r"(?m)(?P<file>[A-Za-z0-9 ._\-/\\:]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?",
+        )
+        .unwrap_or_else(|_| Regex::new(r"$^").expect("valid fallback regex"))
+    })
 }
 
 fn extract_snippet_lines(content: &str, start: u32, end: u32) -> Option<String> {

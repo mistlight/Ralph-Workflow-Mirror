@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[test]
-fn test_invoke_commit_agent_clears_stale_commit_xml() {
+fn test_cleanup_commit_xml_removes_stale_commit_xml() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/tmp/commit_prompt.txt", "commit prompt")
         .with_file(
@@ -69,8 +69,8 @@ fn test_invoke_commit_agent_clears_stale_commit_xml() {
     );
 
     handler
-        .invoke_commit_agent(&mut ctx)
-        .expect("invoke_commit_agent should succeed");
+        .cleanup_commit_xml(&mut ctx)
+        .expect("cleanup_commit_xml should succeed");
 
     assert!(
         !workspace.exists(Path::new(xml_paths::COMMIT_MESSAGE_XML)),
@@ -184,6 +184,59 @@ fn test_check_commit_diff_emits_prepared_event() {
     assert!(matches!(
         result.event,
         PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared { empty: true })
+    ));
+}
+
+#[test]
+fn test_check_commit_diff_emits_failed_event_on_error() {
+    let workspace = MemoryWorkspace::new_test();
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+    let result = handler
+        .check_commit_diff_with_result(&mut ctx, Err(anyhow::anyhow!("diff failed")))
+        .expect("check_commit_diff_with_result should succeed");
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffFailed { .. })
     ));
 }
 
