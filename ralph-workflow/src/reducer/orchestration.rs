@@ -1284,6 +1284,9 @@ mod tests {
                         ),
                     );
                 }
+                Effect::CleanupPlanningXml { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_xml_cleaned(iteration));
+                }
                 Effect::PreparePlanningPrompt { iteration, .. } => {
                     state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
                 }
@@ -1320,6 +1323,9 @@ mod tests {
                         state,
                         PipelineEvent::development_context_prepared(iteration),
                     );
+                }
+                Effect::CleanupDevelopmentXml { iteration } => {
+                    state = reduce(state, PipelineEvent::development_xml_cleaned(iteration));
                 }
                 Effect::PrepareDevelopmentPrompt { iteration, .. } => {
                     state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
@@ -1405,6 +1411,9 @@ mod tests {
                     );
                 }
 
+                Effect::CleanupFixResultXml { pass } => {
+                    state = reduce(state, PipelineEvent::fix_result_xml_cleaned(pass));
+                }
                 Effect::PrepareFixPrompt { pass, .. } => {
                     state = reduce(state, PipelineEvent::fix_prompt_prepared(pass));
                 }
@@ -1777,11 +1786,11 @@ mod tests {
     #[test]
     fn test_determine_effect_commit_message_not_started() {
         // With initialized agent chain, commit phase should generate message
-        // (after checking diff first if not already done)
+        // Diff check already done, so proceed to prompt preparation
         let state = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
-            commit_diff_prepared: true, // Skip diff check
+            commit_diff_prepared: true, // Diff check already done
             agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
                 vec!["commit-agent".to_string()],
                 vec![vec![]],
@@ -1790,23 +1799,26 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::CheckCommitDiff));
+        assert!(matches!(effect, Effect::PrepareCommitPrompt { .. }));
     }
 
     #[test]
     fn test_determine_effect_commit_message_ignores_stale_validated_outcome() {
+        // Test that stale validated outcomes (from previous attempts) are ignored
+        // State: generating attempt 2, but validated outcome is from attempt 1 (stale)
+        // Expected: proceed to PrepareCommitPrompt since diff is already prepared
         let state = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::Generating {
                 attempt: 2,
                 max_attempts: 5,
             },
-            commit_diff_prepared: true, // Skip diff check
+            commit_diff_prepared: true, // Diff check already done
             commit_prompt_prepared: false,
             commit_agent_invoked: false,
             commit_xml_extracted: false,
             commit_validated_outcome: Some(crate::reducer::state::CommitValidatedOutcome {
-                attempt: 1,
+                attempt: 1, // Stale: from previous attempt
                 message: Some("stale message".to_string()),
                 reason: None,
             }),
@@ -1819,7 +1831,9 @@ mod tests {
         };
 
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::CheckCommitDiff));
+        // Since commit_diff_prepared is true and commit_prompt_prepared is false,
+        // the next effect should be PrepareCommitPrompt
+        assert!(matches!(effect, Effect::PrepareCommitPrompt { .. }));
     }
 
     #[test]
