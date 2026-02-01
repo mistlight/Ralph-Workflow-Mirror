@@ -28,23 +28,23 @@ impl MainEffectHandler {
             .unwrap_or(&agent)
             .clone();
 
-        let model_name = self.state.agent_chain.current_model();
-
         // Use continuation prompt if available (from rate-limited predecessor).
         //
-        // Important: only use it when it's the *same* prompt as this invocation.
-        // If the pipeline has generated a new prompt (retry/fallback instructions,
-        // different phase/role, etc.), do not override it with stale continuation
-        // context.
-        let effective_prompt = match self
+        // When an agent hits a rate limit, the prompt is saved in
+        // rate_limit_continuation_prompt. On the next invocation (with a new
+        // agent), we use this saved prompt to continue the same work.
+        // The `InvocationSucceeded` event handler clears the saved prompt
+        // in the reducer, so we don't need to handle that here.
+        //
+        // Note: We take() before current_model() to avoid borrow conflicts.
+        let effective_prompt = self
             .state
             .agent_chain
             .rate_limit_continuation_prompt
-            .as_ref()
-        {
-            Some(saved) if saved == &prompt => saved.clone(),
-            _ => prompt,
-        };
+            .take()
+            .unwrap_or(prompt);
+
+        let model_name = self.state.agent_chain.current_model();
 
         ctx.logger.info(&format!(
             "Executing with agent: {}, model: {:?}",

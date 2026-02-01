@@ -266,6 +266,9 @@ pub enum MonitorResult {
     TimedOut,
 }
 
+/// Default check interval for the idle monitor (1 second).
+const DEFAULT_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+
 /// Monitors activity and kills a process if idle timeout is exceeded.
 ///
 /// This function runs in a loop, checking the activity timestamp periodically.
@@ -294,13 +297,41 @@ pub fn monitor_idle_timeout(
     should_stop: Arc<std::sync::atomic::AtomicBool>,
     executor: Arc<dyn ProcessExecutor>,
 ) -> MonitorResult {
+    monitor_idle_timeout_with_interval(
+        activity_timestamp,
+        child_id,
+        timeout_secs,
+        should_stop,
+        executor,
+        DEFAULT_CHECK_INTERVAL,
+    )
+}
+
+/// Like [`monitor_idle_timeout`] but with a configurable check interval.
+///
+/// This variant is primarily used for testing with shorter intervals to avoid
+/// long test execution times.
+///
+/// # Arguments
+///
+/// * `activity_timestamp` - Shared timestamp updated by the reader
+/// * `child_id` - Process ID to kill if timeout exceeded
+/// * `timeout_secs` - Maximum seconds of inactivity before killing
+/// * `should_stop` - Atomic flag to signal monitor should exit (set when process completes)
+/// * `executor` - Process executor for killing the subprocess
+/// * `check_interval` - How often to check for timeout/stop signal
+pub fn monitor_idle_timeout_with_interval(
+    activity_timestamp: SharedActivityTimestamp,
+    child_id: u32,
+    timeout_secs: u64,
+    should_stop: Arc<std::sync::atomic::AtomicBool>,
+    executor: Arc<dyn ProcessExecutor>,
+    check_interval: Duration,
+) -> MonitorResult {
     use std::sync::atomic::Ordering;
 
-    // Check every second
-    const CHECK_INTERVAL: Duration = Duration::from_secs(1);
-
     loop {
-        std::thread::sleep(CHECK_INTERVAL);
+        std::thread::sleep(check_interval);
 
         // Check if we should stop (process completed normally)
         if should_stop.load(Ordering::Acquire) {
@@ -542,9 +573,21 @@ mod tests {
         let executor: Arc<dyn crate::executor::ProcessExecutor> =
             Arc::new(crate::executor::MockProcessExecutor::new());
 
-        // Spawn monitor in a thread
+        // Use a short check interval (10ms) to speed up the test.
+        // With the default 1s interval, this test would block for ~1s even
+        // when should_stop is set quickly.
+        let check_interval = Duration::from_millis(10);
+
+        // Spawn monitor in a thread with short interval
         let handle = thread::spawn(move || {
-            monitor_idle_timeout(timestamp, fake_pid, 60, should_stop_clone, executor)
+            monitor_idle_timeout_with_interval(
+                timestamp,
+                fake_pid,
+                60,
+                should_stop_clone,
+                executor,
+                check_interval,
+            )
         });
 
         // Signal stop after a short delay
