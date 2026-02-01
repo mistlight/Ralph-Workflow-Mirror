@@ -364,7 +364,16 @@ src/lib.rs</ralph-files-changed>
                         Vec::new(),
                         Some("ok".to_string()),
                     ),
-                    vec![],
+                    vec![UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::ReviewIssues,
+                        content: r#"<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>"#
+                            .to_string(),
+                        context: Some(XmlOutputContext {
+                            iteration: None,
+                            pass: Some(pass),
+                            snippets: Vec::new(),
+                        }),
+                    }],
                 )
             }
 

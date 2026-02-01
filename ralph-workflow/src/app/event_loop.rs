@@ -10,6 +10,9 @@ use crate::reducer::{
     determine_next_effect, reduce, EffectHandler, MainEffectHandler, PipelineState,
 };
 use anyhow::Result;
+use serde::Serialize;
+use std::collections::VecDeque;
+use std::path::Path;
 
 /// Create initial pipeline state with continuation limits from config.
 ///
@@ -59,6 +62,237 @@ pub struct EventLoopResult {
     pub events_processed: usize,
 }
 
+const EVENT_LOOP_TRACE_PATH: &str = ".agent/tmp/event_loop_trace.jsonl";
+const DEFAULT_EVENT_LOOP_TRACE_CAPACITY: usize = 200;
+
+#[derive(Clone, Serialize, Debug)]
+struct EventTraceEntry {
+    iteration: usize,
+    effect: String,
+    event: String,
+    phase: String,
+    xsd_retry_pending: bool,
+    xsd_retry_count: u32,
+    invalid_output_attempts: u32,
+    agent_index: usize,
+    model_index: usize,
+    retry_cycle: u32,
+}
+
+#[derive(Debug)]
+struct EventTraceBuffer {
+    capacity: usize,
+    entries: VecDeque<EventTraceEntry>,
+}
+
+impl EventTraceBuffer {
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity: capacity.max(1),
+            entries: VecDeque::new(),
+        }
+    }
+
+    fn push(&mut self, entry: EventTraceEntry) {
+        self.entries.push_back(entry);
+        while self.entries.len() > self.capacity {
+            self.entries.pop_front();
+        }
+    }
+
+    fn entries(&self) -> &VecDeque<EventTraceEntry> {
+        &self.entries
+    }
+}
+
+#[derive(Serialize)]
+struct EventTraceFinalState<'a> {
+    kind: &'static str,
+    reason: &'a str,
+    state: &'a PipelineState,
+}
+
+fn build_trace_entry(
+    iteration: usize,
+    state: &PipelineState,
+    effect: &str,
+    event: &str,
+) -> EventTraceEntry {
+    EventTraceEntry {
+        iteration,
+        effect: effect.to_string(),
+        event: event.to_string(),
+        phase: format!("{:?}", state.phase),
+        xsd_retry_pending: state.continuation.xsd_retry_pending,
+        xsd_retry_count: state.continuation.xsd_retry_count,
+        invalid_output_attempts: state.continuation.invalid_output_attempts,
+        agent_index: state.agent_chain.current_agent_index,
+        model_index: state.agent_chain.current_model_index,
+        retry_cycle: state.agent_chain.retry_cycle,
+    }
+}
+
+fn dump_event_loop_trace(
+    ctx: &mut PhaseContext<'_>,
+    trace: &EventTraceBuffer,
+    final_state: &PipelineState,
+    reason: &str,
+) -> bool {
+    let mut out = String::new();
+
+    for entry in trace.entries() {
+        match serde_json::to_string(entry) {
+            Ok(line) => {
+                out.push_str(&line);
+                out.push('\n');
+            }
+            Err(err) => {
+                ctx.logger.error(&format!(
+                    "Failed to serialize event loop trace entry: {err}"
+                ));
+            }
+        }
+    }
+
+    let final_line = match serde_json::to_string(&EventTraceFinalState {
+        kind: "final_state",
+        reason,
+        state: final_state,
+    }) {
+        Ok(line) => line,
+        Err(err) => {
+            ctx.logger.error(&format!(
+                "Failed to serialize event loop final state: {err}"
+            ));
+            // Ensure the file still contains something useful.
+            format!(
+                "{{\"kind\":\"final_state\",\"reason\":{},\"phase\":{}}}",
+                serde_json::to_string(reason).unwrap_or_else(|_| "\"unknown\"".to_string()),
+                serde_json::to_string(&format!("{:?}", final_state.phase))
+                    .unwrap_or_else(|_| "\"unknown\"".to_string())
+            )
+        }
+    };
+    out.push_str(&final_line);
+    out.push('\n');
+
+    match ctx.workspace.write(Path::new(EVENT_LOOP_TRACE_PATH), &out) {
+        Ok(()) => true,
+        Err(err) => {
+            ctx.logger
+                .error(&format!("Failed to write event loop trace: {err}"));
+            false
+        }
+    }
+}
+
+fn run_event_loop_with_handler_traced<'ctx, H>(
+    ctx: &mut PhaseContext<'_>,
+    initial_state: Option<PipelineState>,
+    config: EventLoopConfig,
+    handler: &mut H,
+) -> Result<EventLoopResult>
+where
+    H: EffectHandler<'ctx> + StatefulHandler,
+{
+    let mut state = initial_state.unwrap_or_else(|| create_initial_state_with_config(ctx));
+
+    handler.update_state(state.clone());
+    let mut events_processed = 0;
+    let mut trace = EventTraceBuffer::new(DEFAULT_EVENT_LOOP_TRACE_CAPACITY);
+
+    ctx.logger.info("Starting reducer-based event loop");
+
+    while events_processed < config.max_iterations {
+        let effect = determine_next_effect(&state);
+
+        if state.is_complete() {
+            break;
+        }
+
+        let effect_str = format!("{effect:?}");
+
+        // Execute returns EffectResult with both PipelineEvent and UIEvents.
+        // Catch panics here so we can still dump a best-effort trace.
+        let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            handler.execute(effect, ctx)
+        })) {
+            Ok(Ok(result)) => result,
+            Ok(Err(err)) => return Err(err),
+            Err(_) => {
+                let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
+                if dumped {
+                    ctx.logger.error(&format!(
+                        "Event loop recovered from panic (trace: {EVENT_LOOP_TRACE_PATH})"
+                    ));
+                } else {
+                    ctx.logger.error("Event loop recovered from panic");
+                }
+
+                return Ok(EventLoopResult {
+                    completed: false,
+                    events_processed,
+                });
+            }
+        };
+
+        // Display UI events (does not affect state)
+        for ui_event in &result.ui_events {
+            ctx.logger
+                .info(&crate::rendering::render_ui_event(ui_event));
+        }
+
+        let event_str = format!("{:?}", result.event);
+
+        // Apply pipeline event to state (reducer remains pure)
+        let mut new_state = reduce(state, result.event.clone());
+        trace.push(build_trace_entry(
+            events_processed,
+            &new_state,
+            &effect_str,
+            &event_str,
+        ));
+        handler.update_state(new_state.clone());
+        state = new_state;
+        events_processed += 1;
+
+        // Apply additional pipeline events in order.
+        for event in result.additional_events {
+            let event_str = format!("{:?}", event);
+            new_state = reduce(state, event);
+            trace.push(build_trace_entry(
+                events_processed,
+                &new_state,
+                &effect_str,
+                &event_str,
+            ));
+            handler.update_state(new_state.clone());
+            state = new_state;
+            events_processed += 1;
+        }
+    }
+
+    if events_processed >= config.max_iterations && !state.is_complete() {
+        let dumped = dump_event_loop_trace(ctx, &trace, &state, "max_iterations");
+        if dumped {
+            ctx.logger.warn(&format!(
+                "Event loop reached max iterations ({}) without completion (trace: {EVENT_LOOP_TRACE_PATH})",
+                config.max_iterations
+            ));
+        } else {
+            ctx.logger.warn(&format!(
+                "Event loop reached max iterations ({}) without completion",
+                config.max_iterations
+            ));
+        }
+    }
+
+    Ok(EventLoopResult {
+        completed: state.is_complete(),
+        events_processed,
+    })
+}
+
 /// Run the main event loop for the reducer-based pipeline.
 ///
 /// This function orchestrates pipeline execution by repeatedly:
@@ -84,23 +318,9 @@ pub fn run_event_loop(
     initial_state: Option<PipelineState>,
     config: EventLoopConfig,
 ) -> Result<EventLoopResult> {
-    let loop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_event_loop_internal(ctx, initial_state.clone(), config)
-    }));
-
-    match loop_result {
-        Ok(result) => result,
-        Err(_) => {
-            ctx.logger.error("Event loop recovered from panic");
-            let _fallback_state =
-                initial_state.unwrap_or_else(|| create_initial_state_with_config(ctx));
-
-            Ok(EventLoopResult {
-                completed: false,
-                events_processed: 0,
-            })
-        }
-    }
+    let state = initial_state.unwrap_or_else(|| create_initial_state_with_config(ctx));
+    let mut handler = MainEffectHandler::new(state.clone());
+    run_event_loop_with_handler_traced(ctx, Some(state), config, &mut handler)
 }
 
 /// Run the event loop with a custom effect handler.
@@ -127,59 +347,7 @@ pub fn run_event_loop_with_handler<'ctx, H>(
 where
     H: EffectHandler<'ctx> + StatefulHandler,
 {
-    let mut state = initial_state.unwrap_or_else(|| create_initial_state_with_config(ctx));
-
-    handler.update_state(state.clone());
-    let mut events_processed = 0;
-
-    ctx.logger.info("Starting reducer-based event loop");
-
-    while events_processed < config.max_iterations {
-        let effect = determine_next_effect(&state);
-
-        if state.is_complete() {
-            break;
-        }
-
-        // IMPORTANT: Do not bypass SaveCheckpoint when checkpointing is disabled.
-        // Checkpoint writing is an effect concern (handler) and may also emit
-        // additional reducer events to advance phase boundaries.
-
-        // Execute returns EffectResult with both PipelineEvent and UIEvents
-        let result = handler.execute(effect, ctx)?;
-
-        // Display UI events (does not affect state)
-        for ui_event in &result.ui_events {
-            ctx.logger
-                .info(&crate::rendering::render_ui_event(ui_event));
-        }
-
-        // Apply pipeline event to state (reducer remains pure)
-        let mut new_state = reduce(state, result.event.clone());
-        handler.update_state(new_state.clone());
-        state = new_state;
-        events_processed += 1;
-
-        // Apply additional pipeline events in order.
-        for event in result.additional_events {
-            new_state = reduce(state, event);
-            handler.update_state(new_state.clone());
-            state = new_state;
-            events_processed += 1;
-        }
-    }
-
-    if events_processed >= config.max_iterations {
-        ctx.logger.warn(&format!(
-            "Event loop reached max iterations ({}) without completion",
-            config.max_iterations
-        ));
-    }
-
-    Ok(EventLoopResult {
-        completed: state.is_complete(),
-        events_processed,
-    })
+    run_event_loop_with_handler_traced(ctx, initial_state, config, handler)
 }
 
 /// Trait for handlers that maintain internal state.
@@ -189,66 +357,6 @@ where
 pub trait StatefulHandler {
     /// Update the handler's internal state.
     fn update_state(&mut self, state: PipelineState);
-}
-
-fn run_event_loop_internal(
-    ctx: &mut PhaseContext<'_>,
-    initial_state: Option<PipelineState>,
-    config: EventLoopConfig,
-) -> Result<EventLoopResult> {
-    let mut state = initial_state.unwrap_or_else(|| create_initial_state_with_config(ctx));
-
-    let mut handler = MainEffectHandler::new(state.clone());
-    let mut events_processed = 0;
-
-    ctx.logger.info("Starting reducer-based event loop");
-
-    while events_processed < config.max_iterations {
-        let effect = determine_next_effect(&state);
-
-        if state.is_complete() {
-            break;
-        }
-
-        // IMPORTANT: Do not bypass SaveCheckpoint when checkpointing is disabled.
-        // Checkpoint writing is an effect concern (handler) and may also emit
-        // additional reducer events to advance phase boundaries.
-
-        // Execute returns EffectResult with both PipelineEvent and UIEvents
-        let result = handler.execute(effect, ctx)?;
-
-        // Display UI events (does not affect state)
-        for ui_event in &result.ui_events {
-            ctx.logger
-                .info(&crate::rendering::render_ui_event(ui_event));
-        }
-
-        // Apply pipeline event to state (reducer remains pure)
-        let mut new_state = reduce(state, result.event.clone());
-        handler.state = new_state.clone();
-        state = new_state;
-        events_processed += 1;
-
-        // Apply additional pipeline events in order.
-        for event in result.additional_events {
-            new_state = reduce(state, event);
-            handler.state = new_state.clone();
-            state = new_state;
-            events_processed += 1;
-        }
-    }
-
-    if events_processed >= config.max_iterations {
-        ctx.logger.warn(&format!(
-            "Event loop reached max iterations ({}) without completion",
-            config.max_iterations
-        ));
-    }
-
-    Ok(EventLoopResult {
-        completed: state.is_complete(),
-        events_processed,
-    })
 }
 
 #[cfg(test)]
@@ -1048,5 +1156,31 @@ mod tests {
                 .any(|e| matches!(e, Effect::CreateCommit { .. })),
             "expected commit to occur after review"
         );
+    }
+
+    #[test]
+    fn test_event_trace_buffer_keeps_last_n_entries() {
+        fn entry(iteration: usize) -> EventTraceEntry {
+            EventTraceEntry {
+                iteration,
+                effect: format!("Effect{iteration}"),
+                event: format!("Event{iteration}"),
+                phase: "Planning".to_string(),
+                xsd_retry_pending: false,
+                xsd_retry_count: 0,
+                invalid_output_attempts: 0,
+                agent_index: 0,
+                model_index: 0,
+                retry_cycle: 0,
+            }
+        }
+
+        let mut buf = EventTraceBuffer::new(3);
+        for i in 0..5 {
+            buf.push(entry(i));
+        }
+
+        let iterations: Vec<usize> = buf.entries().iter().map(|e| e.iteration).collect();
+        assert_eq!(iterations, vec![2, 3, 4]);
     }
 }

@@ -161,6 +161,17 @@ fn try_agent_execution(
                 });
             }
 
+            // Special handling for auth failure: emit fallback event without prompt context
+            if is_auth_error(&error_kind) {
+                return Ok(AgentExecutionResult {
+                    event: PipelineEvent::agent_auth_fallback(
+                        config.role,
+                        config.agent_name.to_string(),
+                    ),
+                    session_id: None,
+                });
+            }
+
             let retriable = is_retriable_agent_error(&error_kind);
 
             Ok(AgentExecutionResult {
@@ -213,9 +224,15 @@ fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
                 || stderr_lower.contains("timeout")
             {
                 AgentErrorKind::Network
-            } else if stderr_lower.contains("auth")
+            } else if stderr_lower.contains("unauthorized")
+                || stderr_lower.contains("authentication")
+                || stderr_lower.contains("401")
                 || stderr_lower.contains("api key")
-                || stderr_lower.contains("unauthorized")
+                || stderr_lower.contains("invalid token")
+                || stderr_lower.contains("forbidden")
+                || stderr_lower.contains("403")
+                || stderr_lower.contains("access denied")
+                || stderr_lower.contains("credential")
             {
                 AgentErrorKind::Authentication
             } else if is_rate_limit_stderr(&stderr_lower, stderr) {
@@ -229,9 +246,9 @@ fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
                 || stderr_lower.contains("malformed")
             {
                 AgentErrorKind::ParsingError
-            } else if stderr_lower.contains("permission")
-                || stderr_lower.contains("access denied")
-                || stderr_lower.contains("file")
+            } else if stderr_lower.contains("permission denied")
+                || stderr_lower.contains("operation not permitted")
+                || stderr_lower.contains("no such file")
             {
                 AgentErrorKind::FileSystem
             } else {
@@ -345,6 +362,14 @@ fn is_rate_limit_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::RateLimit)
 }
 
+/// Check if an error kind represents an authentication error.
+///
+/// Auth errors get special handling - they trigger immediate agent
+/// fallback via `AgentAuthFallback` event instead of generic InvocationFailed.
+fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
+    matches!(error_kind, AgentErrorKind::Authentication)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,6 +468,50 @@ mod tests {
         assert!(!is_rate_limit_error(&AgentErrorKind::ParsingError));
         assert!(!is_rate_limit_error(&AgentErrorKind::FileSystem));
         assert!(!is_rate_limit_error(&AgentErrorKind::InternalError));
+    }
+
+    #[test]
+    fn test_is_auth_error() {
+        // Only Authentication should match
+        assert!(is_auth_error(&AgentErrorKind::Authentication));
+        // All others should NOT be auth errors
+        assert!(!is_auth_error(&AgentErrorKind::RateLimit));
+        assert!(!is_auth_error(&AgentErrorKind::Network));
+        assert!(!is_auth_error(&AgentErrorKind::Timeout));
+        assert!(!is_auth_error(&AgentErrorKind::ModelUnavailable));
+        assert!(!is_auth_error(&AgentErrorKind::ParsingError));
+        assert!(!is_auth_error(&AgentErrorKind::FileSystem));
+        assert!(!is_auth_error(&AgentErrorKind::InternalError));
+    }
+
+    #[test]
+    fn test_classify_agent_error_auth_401() {
+        let error_kind = classify_agent_error(1, "HTTP 401 Unauthorized");
+        assert_eq!(error_kind, AgentErrorKind::Authentication);
+    }
+
+    #[test]
+    fn test_classify_agent_error_auth_403_forbidden() {
+        let error_kind = classify_agent_error(1, "HTTP 403 Forbidden");
+        assert_eq!(error_kind, AgentErrorKind::Authentication);
+    }
+
+    #[test]
+    fn test_classify_agent_error_auth_invalid_token() {
+        let error_kind = classify_agent_error(1, "Error: Invalid token provided");
+        assert_eq!(error_kind, AgentErrorKind::Authentication);
+    }
+
+    #[test]
+    fn test_classify_agent_error_auth_credential() {
+        let error_kind = classify_agent_error(1, "Error: This credential is not authorized");
+        assert_eq!(error_kind, AgentErrorKind::Authentication);
+    }
+
+    #[test]
+    fn test_classify_agent_error_auth_access_denied() {
+        let error_kind = classify_agent_error(1, "Access denied: insufficient permissions");
+        assert_eq!(error_kind, AgentErrorKind::Authentication);
     }
 
     #[test]

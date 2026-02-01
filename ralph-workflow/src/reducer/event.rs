@@ -656,6 +656,18 @@ pub enum AgentEvent {
         prompt_context: Option<String>,
     },
 
+    /// Agent hit authentication failure (401/403) - should fallback immediately.
+    ///
+    /// Unlike rate limits, auth failures indicate a credentials problem with
+    /// the current agent/provider. We switch to the next agent without
+    /// preserving prompt context since the issue is not transient exhaustion.
+    AuthFallback {
+        /// The role being fulfilled.
+        role: AgentRole,
+        /// The agent that failed authentication.
+        agent: String,
+    },
+
     /// Session established with agent.
     ///
     /// Emitted when an agent response includes a session ID that can be
@@ -1476,6 +1488,11 @@ impl PipelineEvent {
             agent,
             prompt_context,
         })
+    }
+
+    /// Create an AgentAuthFallback event.
+    pub fn agent_auth_fallback(role: AgentRole, agent: String) -> Self {
+        Self::Agent(AgentEvent::AuthFallback { role, agent })
     }
 
     /// Create an AgentSessionEstablished event.

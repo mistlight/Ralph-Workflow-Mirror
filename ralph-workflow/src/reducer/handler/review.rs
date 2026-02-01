@@ -267,7 +267,7 @@ impl MainEffectHandler {
                 let issues_found = !elements.issues.is_empty();
                 let clean_no_issues =
                     elements.no_issues_found.is_some() && elements.issues.is_empty();
-                Ok(EffectResult::event(
+                Ok(EffectResult::with_ui(
                     PipelineEvent::review_issues_xml_validated(
                         pass,
                         issues_found,
@@ -275,6 +275,15 @@ impl MainEffectHandler {
                         elements.issues,
                         elements.no_issues_found,
                     ),
+                    vec![UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::ReviewIssues,
+                        content: issues_xml,
+                        context: Some(XmlOutputContext {
+                            iteration: None,
+                            pass: Some(pass),
+                            snippets: Vec::new(),
+                        }),
+                    }],
                 ))
             }
             Err(_) => Ok(EffectResult::event(

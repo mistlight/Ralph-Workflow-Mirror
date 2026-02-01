@@ -32,6 +32,7 @@ mod commit;
 mod common;
 mod deduplication;
 mod development_xml_validation;
+mod event_loop_trace_dump;
 mod fix_xml_validation;
 mod gemini_parser_tests;
 mod git;

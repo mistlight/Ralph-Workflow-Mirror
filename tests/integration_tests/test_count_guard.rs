@@ -93,6 +93,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("development_xml_validation.rs"),
     },
     SourceFile {
+        path: "event_loop_trace_dump.rs",
+        contents: include_str!("event_loop_trace_dump.rs"),
+    },
+    SourceFile {
         path: "fix_xml_validation.rs",
         contents: include_str!("fix_xml_validation.rs"),
     },
