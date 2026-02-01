@@ -148,18 +148,21 @@ impl MainEffectHandler {
         };
 
         match validate_plan_xml(&plan_xml) {
-            Ok(_) => Ok(EffectResult::with_ui(
-                PipelineEvent::planning_xml_validated(iteration, true),
-                vec![UIEvent::XmlOutput {
-                    xml_type: XmlOutputType::DevelopmentPlan,
-                    content: plan_xml,
-                    context: Some(XmlOutputContext {
-                        iteration: Some(iteration),
-                        pass: None,
-                        snippets: Vec::new(),
-                    }),
-                }],
-            )),
+            Ok(elements) => {
+                let markdown = format_plan_as_markdown(&elements);
+                Ok(EffectResult::with_ui(
+                    PipelineEvent::planning_xml_validated(iteration, true, Some(markdown)),
+                    vec![UIEvent::XmlOutput {
+                        xml_type: XmlOutputType::DevelopmentPlan,
+                        content: plan_xml,
+                        context: Some(XmlOutputContext {
+                            iteration: Some(iteration),
+                            pass: None,
+                            snippets: Vec::new(),
+                        }),
+                    }],
+                ))
+            }
             Err(_) => Ok(EffectResult::event(
                 PipelineEvent::planning_output_validation_failed(
                     iteration,
@@ -174,9 +177,15 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let plan_xml = match ctx.workspace.read(Path::new(xml_paths::PLAN_XML)) {
-            Ok(s) => s,
-            Err(_) => {
+        let markdown = match self
+            .state
+            .planning_validated_outcome
+            .as_ref()
+            .filter(|outcome| outcome.iteration == iteration)
+            .and_then(|outcome| outcome.markdown.clone())
+        {
+            Some(markdown) => markdown,
+            None => {
                 return Ok(EffectResult::event(
                     PipelineEvent::planning_output_validation_failed(
                         iteration,
@@ -185,20 +194,6 @@ impl MainEffectHandler {
                 ));
             }
         };
-
-        let plan_elements = match validate_plan_xml(&plan_xml) {
-            Ok(e) => e,
-            Err(_) => {
-                return Ok(EffectResult::event(
-                    PipelineEvent::planning_output_validation_failed(
-                        iteration,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
-                ));
-            }
-        };
-
-        let markdown = format_plan_as_markdown(&plan_elements);
         ctx.workspace
             .write(Path::new(".agent/PLAN.md"), &markdown)?;
 

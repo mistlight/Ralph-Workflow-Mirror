@@ -99,6 +99,8 @@ pub enum PlanningEvent {
         iteration: u32,
         /// Whether the generated plan passed validation.
         valid: bool,
+        /// Markdown generated from the validated plan XML.
+        markdown: Option<String>,
     },
     /// Planning markdown written for an iteration.
     PlanMarkdownWritten {
@@ -940,8 +942,12 @@ impl PipelineEvent {
     }
 
     /// Create a PlanningXmlValidated event.
-    pub fn planning_xml_validated(iteration: u32, valid: bool) -> Self {
-        Self::Planning(PlanningEvent::PlanXmlValidated { iteration, valid })
+    pub fn planning_xml_validated(iteration: u32, valid: bool, markdown: Option<String>) -> Self {
+        Self::Planning(PlanningEvent::PlanXmlValidated {
+            iteration,
+            valid,
+            markdown,
+        })
     }
 
     /// Create a PlanningMarkdownWritten event.

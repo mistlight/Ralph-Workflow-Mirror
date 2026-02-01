@@ -194,7 +194,7 @@ use crate::common::truncate_text;
 use crate::config::Verbosity;
 use crate::logger::{Colors, CHECK, CROSS};
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -337,6 +337,8 @@ pub struct OpenCodeParser {
     show_streaming_metrics: bool,
     /// Output printer for capturing or displaying output
     printer: SharedPrinter,
+    /// Counter for step IDs when events lack stable identifiers
+    fallback_step_counter: Cell<u64>,
 }
 
 impl OpenCodeParser {
@@ -375,6 +377,7 @@ impl OpenCodeParser {
             terminal_mode: RefCell::new(TerminalMode::detect()),
             show_streaming_metrics: false,
             printer,
+            fallback_step_counter: Cell::new(0),
         }
     }
 
@@ -507,6 +510,8 @@ impl OpenCodeParser {
         let c = &self.colors;
         let prefix = &self.display_name;
 
+        let session = event.session_id.as_deref().unwrap_or("unknown");
+
         // Create unique step ID for duplicate detection.
         //
         // OpenCode normally includes a stable `part.id` and/or `part.messageID`. However,
@@ -517,25 +522,23 @@ impl OpenCodeParser {
         // Priority:
         // 1) part.message_id (best)
         // 2) session_id + part.id
-        // 3) session_id + timestamp (best-effort uniqueness)
-        // 4) session_id
+        // 3) session_id + part.snapshot
+        // 4) session_id + timestamp + counter (best-effort uniqueness)
         let step_id = event.part.as_ref().and_then(|part| {
             part.message_id.clone().or_else(|| {
-                part.id.as_ref().map(|id| {
-                    let session = event.session_id.as_deref().unwrap_or("unknown");
-                    format!("{session}:{id}")
-                })
+                part.id
+                    .as_ref()
+                    .map(|id| format!("{session}:{id}"))
+                    .or_else(|| {
+                        part.snapshot
+                            .as_ref()
+                            .map(|snapshot| format!("{session}:{snapshot}"))
+                    })
             })
         });
 
-        let step_id = step_id.unwrap_or_else(|| {
-            let session = event.session_id.as_deref().unwrap_or("unknown");
-            if let Some(ts) = event.timestamp {
-                format!("{session}:{ts}")
-            } else {
-                session.to_string()
-            }
-        });
+        let step_id =
+            step_id.unwrap_or_else(|| self.next_fallback_step_id(session, event.timestamp));
 
         // Defensive: OpenCode can emit duplicate `step_start` events for the same message.
         // Suppress duplicates to avoid spamming and to avoid resetting streaming state mid-step.
@@ -571,6 +574,15 @@ impl OpenCodeParser {
             snapshot,
             c.reset()
         )
+    }
+
+    fn next_fallback_step_id(&self, session: &str, timestamp: Option<u64>) -> String {
+        let counter = self.fallback_step_counter.get().saturating_add(1);
+        self.fallback_step_counter.set(counter);
+        match timestamp {
+            Some(ts) => format!("{session}:{ts}:{counter}"),
+            None => format!("{session}:fallback:{counter}"),
+        }
     }
 
     /// Format a `step_finish` event
@@ -1276,6 +1288,18 @@ mod tests {
         // Defensive behavior: OpenCode can emit duplicate step_start events; we should not spam.
         let second = parser.parse_event(json);
         assert!(second.is_none());
+    }
+
+    #[test]
+    fn test_opencode_step_start_missing_ids_use_unique_fallback() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"step_start","timestamp":1,"sessionID":"ses_test","part":{"type":"step-start"}}"#;
+
+        let first = parser.parse_event(json);
+        assert!(first.is_some());
+
+        let second = parser.parse_event(json);
+        assert!(second.is_some());
     }
 
     #[test]

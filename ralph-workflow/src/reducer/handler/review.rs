@@ -4,8 +4,11 @@ use crate::reducer::effect::EffectResult;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::ui_event::UIEvent;
 use anyhow::Result;
+use std::path::Path;
 
 impl MainEffectHandler {
+    const DIFF_BASELINE_PATH: &str = ".agent/DIFF.base";
+
     pub(super) fn prepare_review_context(
         &mut self,
         ctx: &mut PhaseContext<'_>,
@@ -15,15 +18,24 @@ impl MainEffectHandler {
 
         let _ = create_prompt_backup_with_workspace(ctx.workspace);
 
-        let diff = match crate::git_helpers::get_git_diff_for_review_with_workspace(ctx.workspace) {
-            Ok((diff, _baseline_oid)) => diff,
-            Err(err) => {
-                ctx.logger
-                    .warn(&format!("Failed to compute review diff: {err}"));
-                String::new()
-            }
-        };
+        let (diff, baseline_oid) =
+            match crate::git_helpers::get_git_diff_for_review_with_workspace(ctx.workspace) {
+                Ok((diff, baseline_oid)) => (diff, baseline_oid),
+                Err(err) => {
+                    ctx.logger
+                        .warn(&format!("Failed to compute review diff: {err}"));
+                    (String::new(), String::new())
+                }
+            };
         let _ = write_diff_backup_with_workspace(ctx.workspace, &diff);
+
+        let baseline_path = Path::new(Self::DIFF_BASELINE_PATH);
+        if baseline_oid.trim().is_empty() {
+            let _ = ctx.workspace.remove_if_exists(baseline_path);
+        } else if let Err(err) = ctx.workspace.write(baseline_path, &baseline_oid) {
+            ctx.logger
+                .warn(&format!("Failed to write review diff baseline: {err}"));
+        }
 
         Ok(EffectResult::with_ui(
             PipelineEvent::review_context_prepared(pass),
@@ -58,7 +70,12 @@ impl MainEffectHandler {
             .read(Path::new(".agent/DIFF.backup"))
             .unwrap_or_default();
 
-        let baseline_oid_for_prompts = String::new();
+        let baseline_oid_for_prompts = ctx
+            .workspace
+            .read(Path::new(Self::DIFF_BASELINE_PATH))
+            .unwrap_or_default()
+            .trim()
+            .to_string();
 
         let prompt_key = format!("review_{pass}");
         let (review_prompt_xml, was_replayed) =

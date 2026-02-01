@@ -652,6 +652,8 @@ pub struct ReviewValidatedOutcome {
 pub struct PlanningValidatedOutcome {
     pub iteration: u32,
     pub valid: bool,
+    #[serde(default)]
+    pub markdown: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

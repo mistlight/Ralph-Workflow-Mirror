@@ -588,7 +588,11 @@ fn test_development_runs_exactly_n_iterations() {
             Effect::ValidatePlanningXml { iteration } => {
                 state = reduce(
                     state,
-                    PipelineEvent::planning_xml_validated(iteration, true),
+                    PipelineEvent::planning_xml_validated(
+                        iteration,
+                        true,
+                        Some("# Plan\n\n- step\n".to_string()),
+                    ),
                 );
             }
             Effect::WritePlanningMarkdown { iteration } => {
@@ -1075,7 +1079,11 @@ fn test_complete_pipeline_flow() {
             Effect::ValidatePlanningXml { iteration } => {
                 state = reduce(
                     state,
-                    PipelineEvent::planning_xml_validated(iteration, true),
+                    PipelineEvent::planning_xml_validated(
+                        iteration,
+                        true,
+                        Some("# Plan\n\n- step\n".to_string()),
+                    ),
                 );
             }
             Effect::WritePlanningMarkdown { iteration } => {

@@ -3,4 +3,5 @@
 // decomposed into single-task effects.
 
 mod fix_outcome;
+mod planning_markdown;
 mod review_prompt;

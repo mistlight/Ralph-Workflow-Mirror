@@ -228,8 +228,9 @@ impl MockEffectHandler {
                         snippets: Vec::new(),
                     }),
                 }];
+                let markdown = "# Plan\n\n- Mock step\n".to_string();
                 (
-                    PipelineEvent::planning_xml_validated(iteration, true),
+                    PipelineEvent::planning_xml_validated(iteration, true, Some(markdown)),
                     ui,
                 )
             }

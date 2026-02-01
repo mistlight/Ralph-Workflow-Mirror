@@ -161,8 +161,16 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
             planning_xml_extracted_iteration: Some(iteration),
             ..state
         },
-        PlanningEvent::PlanXmlValidated { iteration, valid } => PipelineState {
-            planning_validated_outcome: Some(PlanningValidatedOutcome { iteration, valid }),
+        PlanningEvent::PlanXmlValidated {
+            iteration,
+            valid,
+            markdown,
+        } => PipelineState {
+            planning_validated_outcome: Some(PlanningValidatedOutcome {
+                iteration,
+                valid,
+                markdown,
+            }),
             ..state
         },
         PlanningEvent::PlanMarkdownWritten { iteration } => PipelineState {

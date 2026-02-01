@@ -520,8 +520,14 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             }
             match state.commit {
                 CommitState::NotStarted | CommitState::Generating { .. } => {
-                    if state.commit_validated_outcome.is_some() {
-                        return Effect::ApplyCommitMessageOutcome;
+                    if let Some(outcome) = state.commit_validated_outcome.as_ref() {
+                        let current_attempt = match state.commit {
+                            CommitState::Generating { attempt, .. } => attempt,
+                            _ => 1,
+                        };
+                        if outcome.attempt == current_attempt {
+                            return Effect::ApplyCommitMessageOutcome;
+                        }
                     }
                     if !state.commit_prompt_prepared {
                         return Effect::PrepareCommitPrompt;
@@ -855,7 +861,11 @@ mod tests {
                 Effect::ValidatePlanningXml { iteration } => {
                     state = reduce(
                         state,
-                        PipelineEvent::planning_xml_validated(iteration, true),
+                        PipelineEvent::planning_xml_validated(
+                            iteration,
+                            true,
+                            Some("# Plan\n\n- step\n".to_string()),
+                        ),
                     );
                 }
                 Effect::WritePlanningMarkdown { iteration } => {
@@ -1215,7 +1225,11 @@ mod tests {
                 Effect::ValidatePlanningXml { iteration } => {
                     state = reduce(
                         state,
-                        PipelineEvent::planning_xml_validated(iteration, true),
+                        PipelineEvent::planning_xml_validated(
+                            iteration,
+                            true,
+                            Some("# Plan\n\n- step\n".to_string()),
+                        ),
                     );
                 }
                 Effect::WritePlanningMarkdown { iteration } => {
@@ -1662,6 +1676,34 @@ mod tests {
             ),
             ..create_test_state()
         };
+        let effect = determine_next_effect(&state);
+        assert!(matches!(effect, Effect::PrepareCommitPrompt));
+    }
+
+    #[test]
+    fn test_determine_effect_commit_message_ignores_stale_validated_outcome() {
+        let state = PipelineState {
+            phase: PipelinePhase::CommitMessage,
+            commit: CommitState::Generating {
+                attempt: 2,
+                max_attempts: 5,
+            },
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: Some(crate::reducer::state::CommitValidatedOutcome {
+                attempt: 1,
+                message: Some("stale message".to_string()),
+                reason: None,
+            }),
+            agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+                vec!["commit-agent".to_string()],
+                vec![vec![]],
+                AgentRole::Commit,
+            ),
+            ..create_test_state()
+        };
+
         let effect = determine_next_effect(&state);
         assert!(matches!(effect, Effect::PrepareCommitPrompt));
     }

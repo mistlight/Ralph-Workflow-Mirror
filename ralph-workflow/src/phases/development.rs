@@ -295,12 +295,3 @@ fn format_list(
 
     result
 }
-
-fn stderr_contains_auth_error(stderr: &str) -> bool {
-    let combined = stderr.to_lowercase();
-    combined.contains("authentication")
-        || combined.contains("unauthorized")
-        || combined.contains("credential")
-        || combined.contains("api key")
-        || combined.contains("not authorized")
-}
