@@ -183,6 +183,10 @@ impl MockEffectHandler {
                 (PipelineEvent::planning_prompt_prepared(iteration), vec![])
             }
 
+            Effect::CleanupPlanningXml { iteration } => {
+                (PipelineEvent::planning_xml_cleaned(iteration), vec![])
+            }
+
             Effect::InvokePlanningAgent { iteration } => {
                 (PipelineEvent::planning_agent_invoked(iteration), vec![])
             }
@@ -262,6 +266,10 @@ impl MockEffectHandler {
                 (PipelineEvent::development_prompt_prepared(iteration), vec![])
             }
 
+            Effect::CleanupDevelopmentXml { iteration } => {
+                (PipelineEvent::development_xml_cleaned(iteration), vec![])
+            }
+
             Effect::InvokeDevelopmentAgent { iteration } => {
                 (PipelineEvent::development_agent_invoked(iteration), vec![])
             }
@@ -325,6 +333,10 @@ src/lib.rs</ralph-files-changed>
                 (PipelineEvent::review_prompt_prepared(pass), vec![])
             }
 
+            Effect::CleanupReviewIssuesXml { pass } => {
+                (PipelineEvent::review_issues_xml_cleaned(pass), vec![])
+            }
+
             Effect::InvokeReviewAgent { pass } => {
                 // In mock mode we only emit the review-specific progress event.
                 (PipelineEvent::review_agent_invoked(pass), vec![])
@@ -379,6 +391,10 @@ src/lib.rs</ralph-files-changed>
             }
 
             Effect::PrepareFixPrompt { pass } => (PipelineEvent::fix_prompt_prepared(pass), vec![]),
+
+            Effect::CleanupFixResultXml { pass } => {
+                (PipelineEvent::fix_result_xml_cleaned(pass), vec![])
+            }
 
             Effect::InvokeFixAgent { pass } => (PipelineEvent::fix_agent_invoked(pass), vec![]),
 
@@ -447,6 +463,14 @@ src/lib.rs</ralph-files-changed>
                     _ => 1,
                 };
                 (PipelineEvent::commit_agent_invoked(attempt), vec![])
+            }
+
+            Effect::CleanupCommitXml => {
+                let attempt = match self.state.commit {
+                    crate::reducer::state::CommitState::Generating { attempt, .. } => attempt,
+                    _ => 1,
+                };
+                (PipelineEvent::commit_xml_cleaned(attempt), vec![])
             }
 
             Effect::ExtractCommitXml => {

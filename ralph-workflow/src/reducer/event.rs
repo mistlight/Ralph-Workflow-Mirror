@@ -119,6 +119,11 @@ pub enum PlanningEvent {
         /// The iteration number this plan is for.
         iteration: u32,
     },
+    /// Planning XML cleaned before invoking the planning agent.
+    PlanXmlCleaned {
+        /// The iteration number this plan is for.
+        iteration: u32,
+    },
     /// Plan generation completed with validation result.
     GenerationCompleted {
         /// The iteration number this plan was for.
@@ -232,6 +237,11 @@ pub enum DevelopmentEvent {
     /// Emitted after `Effect::ArchiveDevelopmentXml` completes.
     XmlArchived {
         /// The iteration number the XML was archived for.
+        iteration: u32,
+    },
+    /// Development result XML cleaned before invoking the developer agent.
+    XmlCleaned {
+        /// The iteration number the XML was cleaned for.
         iteration: u32,
     },
     /// A development iteration completed with validation result.
@@ -387,6 +397,11 @@ pub enum ReviewEvent {
         pass: u32,
     },
 
+    /// Review issues XML cleaned before invoking the reviewer agent.
+    IssuesXmlCleaned {
+        pass: u32,
+    },
+
     /// Fix prompt prepared for a review pass.
     FixPromptPrepared {
         pass: u32,
@@ -413,6 +428,11 @@ pub enum ReviewEvent {
         pass: u32,
         status: crate::reducer::state::FixStatus,
         summary: Option<String>,
+    },
+
+    /// Fix result XML cleaned before invoking the fix agent.
+    FixResultXmlCleaned {
+        pass: u32,
     },
 
     /// Fix outcome applied for a pass.
@@ -804,6 +824,11 @@ pub enum CommitEvent {
         /// The attempt number.
         attempt: u32,
     },
+    /// Commit message XML cleaned before invoking the commit agent.
+    CommitXmlCleaned {
+        /// The attempt number.
+        attempt: u32,
+    },
     /// Commit message was generated.
     MessageGenerated {
         /// The generated commit message.
@@ -988,6 +1013,11 @@ impl PipelineEvent {
         Self::Planning(PlanningEvent::AgentInvoked { iteration })
     }
 
+    /// Create a PlanningXmlCleaned event.
+    pub fn planning_xml_cleaned(iteration: u32) -> Self {
+        Self::Planning(PlanningEvent::PlanXmlCleaned { iteration })
+    }
+
     /// Create a PlanningXmlExtracted event.
     pub fn planning_xml_extracted(iteration: u32) -> Self {
         Self::Planning(PlanningEvent::PlanXmlExtracted { iteration })
@@ -1056,6 +1086,11 @@ impl PipelineEvent {
     /// Create a DevelopmentXmlExtracted event.
     pub fn development_xml_extracted(iteration: u32) -> Self {
         Self::Development(DevelopmentEvent::XmlExtracted { iteration })
+    }
+
+    /// Create a DevelopmentXmlCleaned event.
+    pub fn development_xml_cleaned(iteration: u32) -> Self {
+        Self::Development(DevelopmentEvent::XmlCleaned { iteration })
     }
 
     /// Create a DevelopmentXmlMissing event.
@@ -1190,6 +1225,11 @@ impl PipelineEvent {
         Self::Review(ReviewEvent::IssuesXmlExtracted { pass })
     }
 
+    /// Create a ReviewIssuesXmlCleaned event.
+    pub fn review_issues_xml_cleaned(pass: u32) -> Self {
+        Self::Review(ReviewEvent::IssuesXmlCleaned { pass })
+    }
+
     /// Create a ReviewIssuesXmlMissing event.
     pub fn review_issues_xml_missing(pass: u32, attempt: u32) -> Self {
         Self::Review(ReviewEvent::IssuesXmlMissing { pass, attempt })
@@ -1244,6 +1284,10 @@ impl PipelineEvent {
             status,
             summary,
         })
+    }
+
+    pub fn fix_result_xml_cleaned(pass: u32) -> Self {
+        Self::Review(ReviewEvent::FixResultXmlCleaned { pass })
     }
 
     pub fn fix_outcome_applied(pass: u32) -> Self {
@@ -1539,6 +1583,10 @@ impl PipelineEvent {
     /// Create a CommitXmlArchived event.
     pub fn commit_xml_archived(attempt: u32) -> Self {
         Self::Commit(CommitEvent::CommitXmlArchived { attempt })
+    }
+
+    pub fn commit_xml_cleaned(attempt: u32) -> Self {
+        Self::Commit(CommitEvent::CommitXmlCleaned { attempt })
     }
 
     /// Create a CommitMessageGenerated event.

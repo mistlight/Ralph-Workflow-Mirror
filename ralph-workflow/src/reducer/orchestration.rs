@@ -263,6 +263,12 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 };
             }
 
+            if state.planning_xml_cleaned_iteration != Some(state.iteration) {
+                return Effect::CleanupPlanningXml {
+                    iteration: state.iteration,
+                };
+            }
+
             if state.planning_agent_invoked_iteration != Some(state.iteration) {
                 return Effect::InvokePlanningAgent {
                     iteration: state.iteration,
@@ -351,6 +357,12 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     };
                 }
 
+                if state.development_xml_cleaned_iteration != Some(state.iteration) {
+                    return Effect::CleanupDevelopmentXml {
+                        iteration: state.iteration,
+                    };
+                }
+
                 if state.development_agent_invoked_iteration != Some(state.iteration) {
                     return Effect::InvokeDevelopmentAgent {
                         iteration: state.iteration,
@@ -406,6 +418,12 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     };
                 }
 
+                if state.fix_result_xml_cleaned_pass != Some(state.reviewer_pass) {
+                    return Effect::CleanupFixResultXml {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
                 if state.fix_agent_invoked_pass != Some(state.reviewer_pass) {
                     return Effect::InvokeFixAgent {
                         pass: state.reviewer_pass,
@@ -457,6 +475,12 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 
                 if state.review_prompt_prepared_pass != Some(state.reviewer_pass) {
                     return Effect::PrepareReviewPrompt {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
+                if state.review_issues_xml_cleaned_pass != Some(state.reviewer_pass) {
+                    return Effect::CleanupReviewIssuesXml {
                         pass: state.reviewer_pass,
                     };
                 }
@@ -539,6 +563,9 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                     }
                     if !state.commit_prompt_prepared {
                         return Effect::PrepareCommitPrompt;
+                    }
+                    if !state.commit_xml_cleaned {
+                        return Effect::CleanupCommitXml;
                     }
                     if !state.commit_agent_invoked {
                         return Effect::InvokeCommitAgent;

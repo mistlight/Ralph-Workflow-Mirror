@@ -112,9 +112,6 @@ impl MainEffectHandler {
             }
         };
 
-        let plan_xml = Path::new(xml_paths::PLAN_XML);
-        let _ = ctx.workspace.remove_if_exists(plan_xml);
-
         let agent = self
             .state
             .agent_chain
@@ -130,6 +127,18 @@ impl MainEffectHandler {
             result = result.with_additional_event(PipelineEvent::planning_agent_invoked(iteration));
         }
         Ok(result)
+    }
+
+    pub(super) fn cleanup_planning_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        let plan_xml = Path::new(xml_paths::PLAN_XML);
+        let _ = ctx.workspace.remove_if_exists(plan_xml);
+        Ok(EffectResult::event(PipelineEvent::planning_xml_cleaned(
+            iteration,
+        )))
     }
 
     pub(super) fn extract_planning_xml(

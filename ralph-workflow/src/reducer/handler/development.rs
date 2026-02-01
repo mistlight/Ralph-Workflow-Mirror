@@ -140,9 +140,6 @@ impl MainEffectHandler {
             }
         };
 
-        let result_xml = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
-        let _ = ctx.workspace.remove_if_exists(result_xml);
-
         let agent = self
             .state
             .agent_chain
@@ -159,6 +156,18 @@ impl MainEffectHandler {
                 result.with_additional_event(PipelineEvent::development_agent_invoked(iteration));
         }
         Ok(result)
+    }
+
+    pub(super) fn cleanup_development_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        let result_xml = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
+        let _ = ctx.workspace.remove_if_exists(result_xml);
+        Ok(EffectResult::event(PipelineEvent::development_xml_cleaned(
+            iteration,
+        )))
     }
 
     pub(super) fn extract_development_xml(

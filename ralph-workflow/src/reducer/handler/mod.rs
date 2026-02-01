@@ -93,6 +93,8 @@ impl MainEffectHandler {
                 self.prepare_planning_prompt(ctx, iteration)
             }
 
+            Effect::CleanupPlanningXml { iteration } => self.cleanup_planning_xml(ctx, iteration),
+
             Effect::InvokePlanningAgent { iteration } => self.invoke_planning_agent(ctx, iteration),
 
             Effect::ExtractPlanningXml { iteration } => self.extract_planning_xml(ctx, iteration),
@@ -115,6 +117,10 @@ impl MainEffectHandler {
 
             Effect::PrepareDevelopmentPrompt { iteration } => {
                 self.prepare_development_prompt(ctx, iteration)
+            }
+
+            Effect::CleanupDevelopmentXml { iteration } => {
+                self.cleanup_development_xml(ctx, iteration)
             }
 
             Effect::InvokeDevelopmentAgent { iteration } => {
@@ -141,6 +147,8 @@ impl MainEffectHandler {
 
             Effect::PrepareReviewPrompt { pass } => self.prepare_review_prompt(ctx, pass),
 
+            Effect::CleanupReviewIssuesXml { pass } => self.cleanup_review_issues_xml(ctx, pass),
+
             Effect::InvokeReviewAgent { pass } => self.invoke_review_agent(ctx, pass),
 
             Effect::ExtractReviewIssuesXml { pass } => self.extract_review_issues_xml(ctx, pass),
@@ -158,6 +166,8 @@ impl MainEffectHandler {
             } => self.apply_review_outcome(ctx, pass, issues_found, clean_no_issues),
 
             Effect::PrepareFixPrompt { pass } => self.prepare_fix_prompt(ctx, pass),
+
+            Effect::CleanupFixResultXml { pass } => self.cleanup_fix_result_xml(ctx, pass),
 
             Effect::InvokeFixAgent { pass } => self.invoke_fix_agent(ctx, pass),
 
@@ -183,6 +193,8 @@ impl MainEffectHandler {
             Effect::CheckCommitDiff => self.check_commit_diff(ctx),
 
             Effect::InvokeCommitAgent => self.invoke_commit_agent(ctx),
+
+            Effect::CleanupCommitXml => self.cleanup_commit_xml(ctx),
 
             Effect::ExtractCommitXml => self.extract_commit_xml(ctx),
 

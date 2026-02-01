@@ -95,6 +95,11 @@ pub enum Effect {
         iteration: u32,
     },
 
+    /// Clean up stale planning XML before invoking the planning agent (single-task).
+    CleanupPlanningXml {
+        iteration: u32,
+    },
+
     /// Invoke the planning agent for an iteration (single-task).
     ///
     /// This effect must only perform agent execution using the prepared planning prompt
@@ -158,6 +163,11 @@ pub enum Effect {
         iteration: u32,
     },
 
+    /// Clean up stale development XML before invoking the developer agent (single-task).
+    CleanupDevelopmentXml {
+        iteration: u32,
+    },
+
     /// Invoke the developer agent for an iteration (single-task).
     ///
     /// This effect must only perform agent execution using the prepared prompt
@@ -209,6 +219,11 @@ pub enum Effect {
     /// This effect must only render/write the prompt that will be used for the
     /// subsequent reviewer agent invocation.
     PrepareReviewPrompt {
+        pass: u32,
+    },
+
+    /// Clean up stale review issues XML before invoking the reviewer agent (single-task).
+    CleanupReviewIssuesXml {
         pass: u32,
     },
 
@@ -265,6 +280,11 @@ pub enum Effect {
     /// This effect must only render/write the prompt that will be used for the
     /// subsequent fix agent invocation.
     PrepareFixPrompt {
+        pass: u32,
+    },
+
+    /// Clean up stale fix result XML before invoking the fix agent (single-task).
+    CleanupFixResultXml {
         pass: u32,
     },
 
@@ -334,6 +354,9 @@ pub enum Effect {
     /// This effect must only perform agent execution using the prepared commit prompt
     /// and must not parse/validate outputs.
     InvokeCommitAgent,
+
+    /// Clean up stale commit XML before invoking the commit agent (single-task).
+    CleanupCommitXml,
 
     /// Extract the commit XML from the canonical workspace path (single-task).
     ///

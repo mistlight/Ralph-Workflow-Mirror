@@ -180,9 +180,6 @@ impl MainEffectHandler {
             }
         };
 
-        let issues_xml = Path::new(xml_paths::ISSUES_XML);
-        let _ = ctx.workspace.remove_if_exists(issues_xml);
-
         let agent = self
             .state
             .agent_chain
@@ -198,6 +195,18 @@ impl MainEffectHandler {
             result = result.with_additional_event(PipelineEvent::review_agent_invoked(pass));
         }
         Ok(result)
+    }
+
+    pub(super) fn cleanup_review_issues_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        pass: u32,
+    ) -> Result<EffectResult> {
+        let issues_xml = Path::new(xml_paths::ISSUES_XML);
+        let _ = ctx.workspace.remove_if_exists(issues_xml);
+        Ok(EffectResult::event(
+            PipelineEvent::review_issues_xml_cleaned(pass),
+        ))
     }
 
     pub(super) fn extract_review_issues_xml(
@@ -470,9 +479,6 @@ impl MainEffectHandler {
             }
         };
 
-        let fix_xml = Path::new(xml_paths::FIX_RESULT_XML);
-        let _ = ctx.workspace.remove_if_exists(fix_xml);
-
         let agent = self
             .state
             .agent_chain
@@ -488,6 +494,18 @@ impl MainEffectHandler {
             result = result.with_additional_event(PipelineEvent::fix_agent_invoked(pass));
         }
         Ok(result)
+    }
+
+    pub(super) fn cleanup_fix_result_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        pass: u32,
+    ) -> Result<EffectResult> {
+        let fix_xml = Path::new(xml_paths::FIX_RESULT_XML);
+        let _ = ctx.workspace.remove_if_exists(fix_xml);
+        Ok(EffectResult::event(PipelineEvent::fix_result_xml_cleaned(
+            pass,
+        )))
     }
 
     pub(super) fn extract_fix_result_xml(

@@ -138,11 +138,6 @@ impl MainEffectHandler {
             }
         };
 
-        let commit_xml = Path::new(xml_paths::COMMIT_MESSAGE_XML);
-        if ctx.workspace.exists(commit_xml) {
-            let _ = ctx.workspace.remove(commit_xml);
-        }
-
         let agent = self
             .state
             .agent_chain
@@ -158,6 +153,18 @@ impl MainEffectHandler {
             result = result.with_additional_event(PipelineEvent::commit_agent_invoked(attempt));
         }
         Ok(result)
+    }
+
+    pub(super) fn cleanup_commit_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+    ) -> Result<EffectResult> {
+        let attempt = current_commit_attempt(&self.state.commit);
+        let commit_xml = Path::new(xml_paths::COMMIT_MESSAGE_XML);
+        let _ = ctx.workspace.remove_if_exists(commit_xml);
+        Ok(EffectResult::event(PipelineEvent::commit_xml_cleaned(
+            attempt,
+        )))
     }
 
     pub(super) fn extract_commit_xml(
