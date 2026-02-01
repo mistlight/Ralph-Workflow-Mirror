@@ -21,7 +21,7 @@ else
     PLATFORM := unknown
 endif
 
-.PHONY: all build release test clean install uninstall check fmt lint help
+.PHONY: all build release test clean install uninstall check fmt lint dylint help
 
 # Default target
 all: build
@@ -89,6 +89,10 @@ lint:
 	$(CARGO) clippy $(CARGO_FLAGS) --all-targets -- -D warnings
 	echo "Lint check passed"
 
+# Run custom dylint lints (safe default: lib only)
+dylint:
+	$(CARGO) dylint -p ralph-workflow --lib file_too_long -- --lib
+
 # Run all checks (format, lint, test)
 ci: fmt-check lint test
 	echo "All CI checks passed"
@@ -121,6 +125,7 @@ help:
 	echo "  check         Run type checks"
 	echo "  fmt           Format source code"
 	echo "  lint          Run clippy lints"
+	echo "  dylint        Run custom dylint lints (lib only)"
 	echo "  ci            Run all CI checks"
 	echo "  doc           Build and open documentation"
 	echo "  version       Print version information"

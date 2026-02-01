@@ -183,8 +183,16 @@ cargo build --release
 
 # Custom lints (dylint) - check for files exceeding line limits
 # This runs the file_too_long lint from lints/file_too_long
-# YOU SHOULD FIX EVERYTHING HERE NO MATTER WHAT THE ORIGINAL PROMPT IS
-cargo dylint --lib file_too_long
+#
+# IMPORTANT:
+# - Running dylint against the `ralph` binary target can fail the build because the binary uses
+#   `#![deny(warnings)]` (warnings become hard errors).
+# - Run the lint against the `ralph-workflow` *library* target instead.
+#
+# Recommended (library target only):
+make dylint
+# or:
+cargo dylint -p ralph-workflow --lib file_too_long -- --lib
 ```
 
 **If ANY command produces output, FIX IT before continuing.** No ignored tests allowed.
@@ -207,8 +215,10 @@ This repository uses [dylint](https://github.com/trailofbits/dylint) for custom 
 # Run all custom lints
 cargo dylint --all
 
-# Run a specific lint
-cargo dylint --lib file_too_long
+# Run a specific lint (recommended: library target only)
+make dylint
+# or:
+cargo dylint -p ralph-workflow --lib file_too_long -- --lib
 ```
 
 ### Developing Lints
