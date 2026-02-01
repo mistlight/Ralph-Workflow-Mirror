@@ -2297,6 +2297,94 @@ mod tests {
     }
 
     #[test]
+    fn test_auth_fallback_does_not_set_continuation_prompt() {
+        // Setup: state with NO existing continuation prompt
+        let chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            agent_chain: chain,
+            ..PipelineState::initial(5, 2)
+        };
+
+        // Auth fallback should NOT set a continuation prompt
+        let new_state = reduce(
+            state,
+            PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        // Key assertion: AuthFallback does NOT set prompt context
+        // (unlike RateLimitFallback which preserves the prompt)
+        assert!(
+            new_state
+                .agent_chain
+                .rate_limit_continuation_prompt
+                .is_none(),
+            "AuthFallback should not set continuation prompt (only RateLimitFallback does)"
+        );
+    }
+
+    #[test]
+    fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
+        // This test documents the key semantic difference between the two fallback types
+        let base_chain = AgentChainState::initial().with_agents(
+            vec![
+                "agent1".to_string(),
+                "agent2".to_string(),
+                "agent3".to_string(),
+            ],
+            vec![vec![], vec![], vec![]],
+            AgentRole::Developer,
+        );
+
+        // Test 1: RateLimitFallback preserves prompt
+        let state1 = PipelineState {
+            phase: PipelinePhase::Development,
+            agent_chain: base_chain.clone(),
+            ..PipelineState::initial(5, 2)
+        };
+
+        let after_rate_limit = reduce(
+            state1,
+            PipelineEvent::agent_rate_limit_fallback(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                Some("preserved prompt".to_string()),
+            ),
+        );
+
+        assert_eq!(
+            after_rate_limit.agent_chain.rate_limit_continuation_prompt,
+            Some("preserved prompt".to_string()),
+            "RateLimitFallback should preserve prompt context"
+        );
+
+        // Test 2: AuthFallback does NOT set prompt (credentials issue, not exhaustion)
+        let state2 = PipelineState {
+            phase: PipelinePhase::Development,
+            agent_chain: base_chain,
+            ..PipelineState::initial(5, 2)
+        };
+
+        let after_auth = reduce(
+            state2,
+            PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        assert!(
+            after_auth
+                .agent_chain
+                .rate_limit_continuation_prompt
+                .is_none(),
+            "AuthFallback should not set prompt context (credentials issue, not exhaustion)"
+        );
+    }
+
+    #[test]
     fn test_reduce_finalizing_started() {
         let state = PipelineState {
             phase: PipelinePhase::FinalValidation,

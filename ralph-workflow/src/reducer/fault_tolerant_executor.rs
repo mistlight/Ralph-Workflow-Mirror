@@ -277,7 +277,10 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
         return stderr_lower.contains("rate limit") || stderr_lower.contains("too many requests");
     }
 
-    if stderr_lower.contains("exceeded your current quota") {
+    // Quota exhaustion patterns - align with agents/error.rs
+    if stderr_lower.contains("exceeded your current quota")
+        || stderr_lower.contains("quota exceeded")
+    {
         return true;
     }
 
@@ -533,5 +536,154 @@ mod tests {
         let error = io::Error::new(io::ErrorKind::BrokenPipe, "Broken pipe");
         let error_kind = classify_io_error(&error);
         assert_eq!(error_kind, AgentErrorKind::Network);
+    }
+
+    // ========================================================================
+    // Step 2: Quota exceeded pattern alignment tests
+    // ========================================================================
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_quota_exceeded() {
+        let error_kind = classify_agent_error(1, "API quota exceeded, please try again later");
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    #[test]
+    fn test_classify_agent_error_rate_limit_anthropic_quota() {
+        let error_kind =
+            classify_agent_error(1, "You have exceeded your current quota for this API tier");
+        assert_eq!(error_kind, AgentErrorKind::RateLimit);
+    }
+
+    // ========================================================================
+    // Step 3: Comprehensive tests for auth and rate-limit fallback flow
+    // ========================================================================
+
+    #[test]
+    fn test_auth_error_triggers_auth_fallback_classification() {
+        // All these patterns should result in Authentication error kind
+        // which triggers AuthFallback event via is_auth_error()
+        let auth_patterns = vec![
+            "HTTP 401 Unauthorized",
+            "HTTP 403 Forbidden",
+            "Error: Invalid API key",
+            "Error: Invalid token provided",
+            "Access denied: insufficient permissions",
+            "This credential is only authorized for use with Claude Code",
+            "Authentication failed: bad credentials",
+        ];
+
+        for pattern in auth_patterns {
+            let error_kind = classify_agent_error(1, pattern);
+            assert_eq!(
+                error_kind,
+                AgentErrorKind::Authentication,
+                "Pattern '{}' should classify as Authentication",
+                pattern
+            );
+            assert!(
+                is_auth_error(&error_kind),
+                "Authentication error kind should trigger auth fallback for pattern '{}'",
+                pattern
+            );
+        }
+    }
+
+    #[test]
+    fn test_rate_limit_error_triggers_rate_limit_fallback_classification() {
+        // All these patterns should result in RateLimit error kind
+        // which triggers RateLimitFallback event via is_rate_limit_error()
+        let rate_limit_patterns = vec![
+            "Rate limit exceeded",
+            "Rate limit reached for requests",
+            "HTTP 429 Too Many Requests",
+            "Error: too many requests, please slow down",
+            "exceeded your current quota",
+            "API quota exceeded",
+        ];
+
+        for pattern in rate_limit_patterns {
+            let error_kind = classify_agent_error(1, pattern);
+            assert_eq!(
+                error_kind,
+                AgentErrorKind::RateLimit,
+                "Pattern '{}' should classify as RateLimit",
+                pattern
+            );
+            assert!(
+                is_rate_limit_error(&error_kind),
+                "RateLimit error kind should trigger rate limit fallback for pattern '{}'",
+                pattern
+            );
+        }
+    }
+
+    // ========================================================================
+    // Step 5: Structured JSON auth error detection tests
+    // ========================================================================
+
+    #[test]
+    fn test_classify_agent_error_auth_from_json_error() {
+        // Auth error embedded in JSON structure (common for some providers)
+        let stderr = r#"✗ Error: {"type":"error","error":{"type":"auth","code":"unauthorized","message":"Invalid API key provided"}}"#;
+        let error_kind = classify_agent_error(1, stderr);
+        // The "unauthorized" keyword should still be detected via substring matching
+        assert_eq!(error_kind, AgentErrorKind::Authentication);
+    }
+
+    #[test]
+    fn test_classify_agent_error_403_from_json_error() {
+        let stderr =
+            r#"{"error":{"code":"403","message":"Forbidden: API key does not have access"}}"#;
+        let error_kind = classify_agent_error(1, stderr);
+        assert_eq!(error_kind, AgentErrorKind::Authentication);
+    }
+
+    // ========================================================================
+    // Step 6: Non-auth, non-rate-limit error behavior tests
+    // ========================================================================
+
+    #[test]
+    fn test_non_special_errors_maintain_retry_semantics() {
+        // Network errors: retriable (model fallback, NOT agent fallback)
+        let network_error = classify_agent_error(1, "Connection timeout");
+        assert_eq!(network_error, AgentErrorKind::Network);
+        assert!(
+            is_retriable_agent_error(&network_error),
+            "Network should be retriable"
+        );
+        assert!(
+            !is_rate_limit_error(&network_error),
+            "Network should not trigger rate limit fallback"
+        );
+        assert!(
+            !is_auth_error(&network_error),
+            "Network should not trigger auth fallback"
+        );
+
+        // Timeout errors: retriable
+        let timeout_error = classify_agent_error(143, ""); // SIGTERM
+        assert_eq!(timeout_error, AgentErrorKind::Timeout);
+        assert!(is_retriable_agent_error(&timeout_error));
+
+        // Model unavailable: retriable
+        let model_error = classify_agent_error(1, "Model not found");
+        assert_eq!(model_error, AgentErrorKind::ModelUnavailable);
+        assert!(is_retriable_agent_error(&model_error));
+
+        // Internal errors: NOT retriable (agent fallback)
+        let internal_error = classify_agent_error(139, ""); // SIGSEGV
+        assert_eq!(internal_error, AgentErrorKind::InternalError);
+        assert!(!is_retriable_agent_error(&internal_error));
+
+        // Parsing errors: NOT retriable
+        let parse_error = classify_agent_error(1, "Parse error: invalid syntax");
+        assert_eq!(parse_error, AgentErrorKind::ParsingError);
+        assert!(!is_retriable_agent_error(&parse_error));
+
+        // Filesystem errors: NOT retriable
+        let fs_error = classify_agent_error(1, "Permission denied: /tmp/foo");
+        assert_eq!(fs_error, AgentErrorKind::FileSystem);
+        assert!(!is_retriable_agent_error(&fs_error));
     }
 }
