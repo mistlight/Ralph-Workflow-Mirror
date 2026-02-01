@@ -14,9 +14,7 @@ use ralph_workflow::agents::AgentRole;
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::orchestration::determine_next_effect;
-use ralph_workflow::reducer::state::{
-    AgentChainState, PipelineState, MAX_DEV_INVALID_OUTPUT_RERUNS,
-};
+use ralph_workflow::reducer::state::{AgentChainState, ContinuationState, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
 
 use ralph_workflow::app::event_loop::{run_event_loop_with_handler, EventLoopConfig};
@@ -53,6 +51,7 @@ fn test_xsd_retry_loops_are_removed() {
         // Handlers should execute a single attempt per effect.
         let mut state = PipelineState::initial(2, 1);
         state.phase = PipelinePhase::Development;
+        state.continuation = ContinuationState::new().with_max_xsd_retry(2);
         state.agent_chain = AgentChainState::initial().with_agents(
             vec!["dev-primary".to_string(), "dev-fallback".to_string()],
             vec![vec![], vec![]],
@@ -74,10 +73,16 @@ fn test_xsd_retry_loops_are_removed() {
 
         // At max attempts, reducer should advance agent chain.
         let exhausted = reduce(
-            state,
+            PipelineState {
+                continuation: ContinuationState {
+                    xsd_retry_count: 1,
+                    max_xsd_retry_count: 2,
+                    ..ContinuationState::new()
+                },
+                ..state
+            },
             ralph_workflow::reducer::event::PipelineEvent::development_output_validation_failed(
-                0,
-                MAX_DEV_INVALID_OUTPUT_RERUNS,
+                0, 0,
             ),
         );
         assert_eq!(
@@ -95,11 +100,10 @@ fn test_xsd_retry_loops_are_removed() {
 #[test]
 fn test_planning_output_validation_retries_are_reducer_driven() {
     with_default_timeout(|| {
-        use ralph_workflow::reducer::state::MAX_PLAN_INVALID_OUTPUT_RERUNS;
-
         let mut state = PipelineState::initial(2, 1);
         state.phase = PipelinePhase::Planning;
         state.context_cleaned = true;
+        state.continuation = ContinuationState::new().with_max_xsd_retry(2);
         state.agent_chain = AgentChainState::initial().with_agents(
             vec!["dev-primary".to_string(), "dev-fallback".to_string()],
             vec![vec![], vec![]],
@@ -119,11 +123,15 @@ fn test_planning_output_validation_retries_are_reducer_driven() {
 
         // At max attempts, reducer should advance agent chain and reset counter.
         let advanced = reduce(
-            state,
-            ralph_workflow::reducer::event::PipelineEvent::planning_output_validation_failed(
-                0,
-                MAX_PLAN_INVALID_OUTPUT_RERUNS,
-            ),
+            PipelineState {
+                continuation: ContinuationState {
+                    xsd_retry_count: 1,
+                    max_xsd_retry_count: 2,
+                    ..ContinuationState::new()
+                },
+                ..state
+            },
+            ralph_workflow::reducer::event::PipelineEvent::planning_output_validation_failed(0, 0),
         );
         assert_eq!(advanced.continuation.invalid_output_attempts, 0);
         assert_eq!(

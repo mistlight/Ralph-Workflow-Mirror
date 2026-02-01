@@ -53,6 +53,7 @@
 use std::panic;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -123,8 +124,15 @@ where
     let completed = Arc::new(AtomicBool::new(false));
     let completed_clone = Arc::clone(&completed);
 
+    let panic_payload: Arc<Mutex<Option<Box<dyn std::any::Any + Send>>>> =
+        Arc::new(Mutex::new(None));
+    let panic_payload_clone = Arc::clone(&panic_payload);
+
     let handle = thread::spawn(move || {
-        f();
+        let res = panic::catch_unwind(panic::AssertUnwindSafe(f));
+        if let Err(payload) = res {
+            *panic_payload_clone.lock().unwrap() = Some(payload);
+        }
         completed_clone.store(true, Ordering::Release);
     });
 
@@ -138,6 +146,13 @@ where
     }
 
     handle.join().unwrap();
+
+    // Re-throw panic from the worker thread so the test fails with the real
+    // assertion/panic message instead of timing out.
+    let payload = panic_payload.lock().unwrap().take();
+    if let Some(payload) = payload {
+        panic::resume_unwind(payload);
+    }
 }
 
 /// Run a closure with the default 5-second timeout.
@@ -256,6 +271,21 @@ mod tests {
         with_timeout(
             || {
                 thread::sleep(Duration::from_secs(2));
+            },
+            Duration::from_millis(100),
+        );
+    }
+
+    /// Test that panics inside the closure propagate and do not turn into timeouts.
+    ///
+    /// This is critical for TDD: when an assertion fails, we want the failure
+    /// message to surface immediately instead of waiting for the timeout.
+    #[test]
+    #[should_panic(expected = "boom")]
+    fn test_with_timeout_propagates_panic() {
+        with_timeout(
+            || {
+                panic!("boom");
             },
             Duration::from_millis(100),
         );

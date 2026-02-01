@@ -150,6 +150,10 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
         },
         PlanningEvent::PromptPrepared { iteration } => PipelineState {
             planning_prompt_prepared_iteration: Some(iteration),
+            continuation: ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         PlanningEvent::PlanXmlCleaned { iteration } => PipelineState {
@@ -226,9 +230,7 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
         PlanningEvent::OutputValidationFailed { iteration, attempt }
         | PlanningEvent::PlanXmlMissing { iteration, attempt } => {
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
-            if attempt >= super::state::MAX_PLAN_INVALID_OUTPUT_RERUNS
-                || new_xsd_count >= state.continuation.max_xsd_retry_count
-            {
+            if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent
                 let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
                 PipelineState {
@@ -325,6 +327,10 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
         },
         DevelopmentEvent::PromptPrepared { iteration } => PipelineState {
             development_prompt_prepared_iteration: Some(iteration),
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         DevelopmentEvent::XmlCleaned { iteration } => PipelineState {
@@ -562,12 +568,10 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
         }
         DevelopmentEvent::OutputValidationFailed { iteration, attempt }
         | DevelopmentEvent::XmlMissing { iteration, attempt } => {
-            // Policy: After MAX_DEV_INVALID_OUTPUT_RERUNS, switch to next agent.
+            // Policy: After configured XSD retries are exhausted, switch to next agent.
             // This keeps invalid output retry logic in the reducer, not the handler.
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
-            if attempt >= super::state::MAX_DEV_INVALID_OUTPUT_RERUNS
-                || new_xsd_count >= state.continuation.max_xsd_retry_count
-            {
+            if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent
                 let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
                 PipelineState {
@@ -747,6 +751,10 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
 
         ReviewEvent::PromptPrepared { pass } => PipelineState {
             review_prompt_prepared_pass: Some(pass),
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
 
@@ -899,6 +907,10 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
 
         ReviewEvent::FixPromptPrepared { pass } => PipelineState {
             fix_prompt_prepared_pass: Some(pass),
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
 
@@ -1087,12 +1099,9 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
         | ReviewEvent::IssuesXmlMissing { pass, attempt } => {
             // Policy: The reducer maintains retry state for determinism.
             // Handlers should emit `attempt` from state (checkpoint-resume safe).
-            const MAX_REVIEW_INVALID_OUTPUT_RERUNS: u32 = 2;
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
 
-            if attempt >= MAX_REVIEW_INVALID_OUTPUT_RERUNS
-                || new_xsd_count >= state.continuation.max_xsd_retry_count
-            {
+            if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent
                 let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
                 PipelineState {
@@ -1197,12 +1206,9 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
         ReviewEvent::FixOutputValidationFailed { pass, attempt }
         | ReviewEvent::FixResultXmlMissing { pass, attempt } => {
             // Same policy as review output validation failure
-            const MAX_FIX_INVALID_OUTPUT_RERUNS: u32 = 2;
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
 
-            if attempt >= MAX_FIX_INVALID_OUTPUT_RERUNS
-                || new_xsd_count >= state.continuation.max_xsd_retry_count
-            {
+            if new_xsd_count >= state.continuation.max_xsd_retry_count {
                 // XSD retries exhausted - switch to next agent
                 let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
                 PipelineState {
@@ -1244,6 +1250,7 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
 /// - InvocationFailed(retriable=true): Try next model
 /// - InvocationFailed(retriable=false): Switch to next agent
 /// - RateLimitFallback: Immediate agent switch with prompt preservation
+/// - AuthFallback: Immediate agent switch, clear session (no prompt preservation)
 /// - ChainExhausted: Start new retry cycle
 /// - ChainInitialized: Set up agent chain for a role
 fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState {
@@ -1262,6 +1269,14 @@ fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState 
             agent_chain: state
                 .agent_chain
                 .switch_to_next_agent_with_prompt(prompt_context),
+            ..state
+        },
+        // Auth failure (401/403): immediate agent fallback, clear session
+        // Unlike rate limits, auth failures indicate credential issues with
+        // the current agent, so we don't preserve prompt context - the next
+        // agent may have different (valid) credentials.
+        AgentEvent::AuthFallback { .. } => PipelineState {
+            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
             ..state
         },
         // Other retriable errors (Network, Timeout): try next model
@@ -1444,6 +1459,10 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
                 _ => state.commit.clone(),
             },
             commit_prompt_prepared: true,
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         CommitEvent::AgentInvoked { .. } => PipelineState {
@@ -2245,6 +2264,39 @@ mod tests {
     }
 
     #[test]
+    fn test_auth_fallback_clears_session_and_advances_agent() {
+        let mut chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Developer,
+            )
+            .with_session_id(Some("session-123".to_string()));
+        chain.rate_limit_continuation_prompt = Some("some saved prompt".to_string());
+
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            agent_chain: chain,
+            ..PipelineState::initial(5, 2)
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        // Should advance to next agent
+        assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent2");
+
+        // Session should be cleared
+        assert!(new_state.agent_chain.last_session_id.is_none());
+
+        // Existing continuation prompt should remain (auth fallback doesn't touch it,
+        // but also doesn't SET a new prompt like rate limit does)
+        // The key semantic: auth fallback does NOT set rate_limit_continuation_prompt
+    }
+
+    #[test]
     fn test_reduce_finalizing_started() {
         let state = PipelineState {
             phase: PipelinePhase::FinalValidation,
@@ -2623,12 +2675,19 @@ mod tests {
 
     #[test]
     fn test_output_validation_failed_switches_agent_at_limit() {
-        use crate::reducer::state::MAX_DEV_INVALID_OUTPUT_RERUNS;
+        use crate::reducer::state::ContinuationState;
 
-        let state = create_test_state();
+        let state = PipelineState {
+            continuation: ContinuationState {
+                xsd_retry_count: 1,
+                max_xsd_retry_count: 2,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
         let new_state = reduce(
             state,
-            PipelineEvent::development_output_validation_failed(0, MAX_DEV_INVALID_OUTPUT_RERUNS),
+            PipelineEvent::development_output_validation_failed(0, 0),
         );
         assert_eq!(new_state.continuation.invalid_output_attempts, 0);
         assert!(
@@ -2639,14 +2698,21 @@ mod tests {
 
     #[test]
     fn test_output_validation_failed_resets_counter_on_agent_switch() {
-        use crate::reducer::state::MAX_DEV_INVALID_OUTPUT_RERUNS;
+        use crate::reducer::state::ContinuationState;
 
-        let mut state = create_test_state();
-        state.continuation.invalid_output_attempts = MAX_DEV_INVALID_OUTPUT_RERUNS;
+        let mut state = PipelineState {
+            continuation: ContinuationState {
+                xsd_retry_count: 1,
+                max_xsd_retry_count: 2,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
+        state.continuation.invalid_output_attempts = 2;
 
         let new_state = reduce(
             state,
-            PipelineEvent::development_output_validation_failed(0, MAX_DEV_INVALID_OUTPUT_RERUNS),
+            PipelineEvent::development_output_validation_failed(0, 0),
         );
         assert_eq!(
             new_state.continuation.invalid_output_attempts, 0,
@@ -2670,6 +2736,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_output_validation_failed_respects_configured_xsd_retry_limit() {
+        use crate::reducer::state::ContinuationState;
+
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 1,
+            continuation: ContinuationState {
+                xsd_retry_count: 1,
+                max_xsd_retry_count: 5,
+                ..ContinuationState::new()
+            },
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Developer,
+            ),
+            ..create_test_state()
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_output_validation_failed(1, 0),
+        );
+
+        assert_eq!(
+            new_state.agent_chain.current_agent_index, 0,
+            "Configured XSD retry limit should allow retries before agent fallback"
+        );
+        assert!(
+            new_state.continuation.xsd_retry_pending,
+            "Should request XSD retry while under configured limit"
+        );
+    }
+
     // =========================================================================
     // Review output validation / clean pass tests
     // =========================================================================
@@ -2690,18 +2791,22 @@ mod tests {
 
     #[test]
     fn test_review_output_validation_failed_switches_agent_after_limit() {
-        let mut state = create_test_state();
+        use crate::reducer::state::ContinuationState;
+
+        let mut state = PipelineState {
+            continuation: ContinuationState {
+                xsd_retry_count: 1,
+                max_xsd_retry_count: 2,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
         state.phase = PipelinePhase::Review;
         state.reviewer_pass = 0;
         state.total_reviewer_passes = 2;
-        // Simulate reaching the retry limit before this failure.
         state.continuation.invalid_output_attempts = 2;
 
-        let new_state = reduce(
-            state,
-            // `attempt` should be sourced from state for determinism.
-            PipelineEvent::review_output_validation_failed(0, 2),
-        );
+        let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
 
         assert_eq!(new_state.phase, PipelinePhase::Review);
         assert_eq!(new_state.reviewer_pass, 0);
@@ -2910,9 +3015,15 @@ mod tests {
 
     #[test]
     fn test_event_sequence_output_validation_retry_then_success() {
-        use crate::reducer::state::MAX_DEV_INVALID_OUTPUT_RERUNS;
+        use crate::reducer::state::ContinuationState;
 
-        let mut state = create_test_state();
+        let mut state = PipelineState {
+            continuation: ContinuationState {
+                max_xsd_retry_count: 3,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
         state.phase = PipelinePhase::Development;
 
         // Simulate: validation fail -> validation fail -> success
@@ -2929,13 +3040,10 @@ mod tests {
         );
         assert_eq!(state.continuation.invalid_output_attempts, 2);
 
-        // Still within limit (MAX_DEV_INVALID_OUTPUT_RERUNS is 2)
-        if 2 < MAX_DEV_INVALID_OUTPUT_RERUNS {
-            assert_eq!(
-                state.agent_chain.current_agent_index, 0,
-                "Should not switch agents yet"
-            );
-        }
+        assert_eq!(
+            state.agent_chain.current_agent_index, 0,
+            "Should not switch agents yet"
+        );
 
         // Now succeed
         state = reduce(
@@ -2947,9 +3055,15 @@ mod tests {
 
     #[test]
     fn test_event_sequence_validation_failures_trigger_agent_switch() {
-        use crate::reducer::state::MAX_DEV_INVALID_OUTPUT_RERUNS;
+        use crate::reducer::state::ContinuationState;
 
-        let mut state = create_test_state();
+        let mut state = PipelineState {
+            continuation: ContinuationState {
+                max_xsd_retry_count: 3,
+                ..ContinuationState::new()
+            },
+            ..create_test_state()
+        };
         state.phase = PipelinePhase::Development;
 
         // First validation failure
@@ -2967,7 +3081,7 @@ mod tests {
         // Third validation failure - should trigger agent switch
         state = reduce(
             state,
-            PipelineEvent::development_output_validation_failed(0, MAX_DEV_INVALID_OUTPUT_RERUNS),
+            PipelineEvent::development_output_validation_failed(0, 2),
         );
 
         // After max failures, should switch agents and reset counter
@@ -3548,7 +3662,7 @@ mod tests {
     }
 
     #[test]
-    fn test_planning_prompt_prepared_preserves_xsd_retry_pending() {
+    fn test_planning_prompt_prepared_clears_xsd_retry_pending() {
         let state = PipelineState {
             continuation: ContinuationState {
                 xsd_retry_pending: true,
@@ -3560,8 +3674,8 @@ mod tests {
         let new_state = reduce(state, PipelineEvent::planning_prompt_prepared(0));
 
         assert!(
-            new_state.continuation.xsd_retry_pending,
-            "Prompt preparation should not clear xsd retry pending"
+            !new_state.continuation.xsd_retry_pending,
+            "Prompt preparation should clear xsd retry pending"
         );
     }
 
@@ -3584,7 +3698,7 @@ mod tests {
     }
 
     #[test]
-    fn test_review_prompt_prepared_preserves_xsd_retry_pending() {
+    fn test_review_prompt_prepared_clears_xsd_retry_pending() {
         let state = PipelineState {
             continuation: ContinuationState {
                 xsd_retry_pending: true,
@@ -3596,8 +3710,8 @@ mod tests {
         let new_state = reduce(state, PipelineEvent::review_prompt_prepared(0));
 
         assert!(
-            new_state.continuation.xsd_retry_pending,
-            "Prompt preparation should not clear xsd retry pending"
+            !new_state.continuation.xsd_retry_pending,
+            "Prompt preparation should clear xsd retry pending"
         );
     }
 
@@ -3620,7 +3734,7 @@ mod tests {
     }
 
     #[test]
-    fn test_commit_prompt_prepared_preserves_xsd_retry_pending() {
+    fn test_commit_prompt_prepared_clears_xsd_retry_pending() {
         let state = PipelineState {
             continuation: ContinuationState {
                 xsd_retry_pending: true,
@@ -3632,8 +3746,8 @@ mod tests {
         let new_state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
 
         assert!(
-            new_state.continuation.xsd_retry_pending,
-            "Prompt preparation should not clear xsd retry pending"
+            !new_state.continuation.xsd_retry_pending,
+            "Prompt preparation should clear xsd retry pending"
         );
     }
 

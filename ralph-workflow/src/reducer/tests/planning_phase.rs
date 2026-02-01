@@ -70,10 +70,15 @@ fn test_planning_output_validation_failed_stays_in_planning_phase() {
 
 #[test]
 fn test_planning_output_validation_failed_switches_agent_at_max_attempts() {
-    use crate::reducer::state::MAX_PLAN_INVALID_OUTPUT_RERUNS;
+    use crate::reducer::state::ContinuationState;
 
     let mut state = create_state_in_phase(PipelinePhase::Planning);
     state.iteration = 1;
+    state.continuation = ContinuationState {
+        xsd_retry_count: 1,
+        max_xsd_retry_count: 2,
+        ..ContinuationState::new()
+    };
 
     // Initialize agent chain with multiple agents
     state.agent_chain.agents = vec!["agent1".to_string(), "agent2".to_string()];
@@ -82,7 +87,7 @@ fn test_planning_output_validation_failed_switches_agent_at_max_attempts() {
     // Attempt at MAX should trigger agent switch
     let new_state = reduce(
         state,
-        PipelineEvent::planning_output_validation_failed(1, MAX_PLAN_INVALID_OUTPUT_RERUNS),
+        PipelineEvent::planning_output_validation_failed(1, 0),
     );
 
     // Agent chain should have moved to next agent
@@ -108,9 +113,13 @@ fn test_planning_output_validation_failed_preserves_iteration() {
 
 #[test]
 fn test_planning_output_validation_failed_multiple_attempts_before_switch() {
-    use crate::reducer::state::MAX_PLAN_INVALID_OUTPUT_RERUNS;
+    use crate::reducer::state::ContinuationState;
 
     let mut state = create_state_in_phase(PipelinePhase::Planning);
+    state.continuation = ContinuationState {
+        max_xsd_retry_count: 3,
+        ..ContinuationState::new()
+    };
     state.agent_chain.agents = vec!["agent1".to_string(), "agent2".to_string()];
     state.agent_chain.current_agent_index = 0;
 
@@ -122,15 +131,13 @@ fn test_planning_output_validation_failed_multiple_attempts_before_switch() {
     assert_eq!(state.agent_chain.current_agent_index, 0);
     assert_eq!(state.continuation.invalid_output_attempts, 1);
 
-    // Second failure (attempt 1) should not switch agent if MAX is 2
-    if MAX_PLAN_INVALID_OUTPUT_RERUNS > 1 {
-        let state = reduce(
-            state,
-            PipelineEvent::planning_output_validation_failed(1, 1),
-        );
-        assert_eq!(state.agent_chain.current_agent_index, 0);
-        assert_eq!(state.continuation.invalid_output_attempts, 2);
-    }
+    // Second failure (attempt 1) should not switch agent when max is 3
+    let state = reduce(
+        state,
+        PipelineEvent::planning_output_validation_failed(1, 1),
+    );
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+    assert_eq!(state.continuation.invalid_output_attempts, 2);
 }
 
 #[test]

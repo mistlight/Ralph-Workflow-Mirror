@@ -331,6 +331,54 @@ fn test_rate_limit_fallback_preserves_prompt() {
     });
 }
 
+/// Test that auth fallback switches agent and does NOT preserve prompt.
+///
+/// Unlike rate limit fallback which preserves prompt context for continuation,
+/// auth fallback indicates a credential issue with the current agent.
+/// The next agent may have different (valid) credentials, so we don't
+/// carry over prompt context.
+#[test]
+fn test_auth_fallback_switches_agent_without_prompt() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Developer,
+            ),
+            ..PipelineState::initial(5, 2)
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        // Should switch to next agent
+        assert_eq!(
+            new_state.agent_chain.current_agent().unwrap(),
+            "agent2",
+            "Auth fallback should switch to next agent"
+        );
+
+        // Session should be cleared
+        assert!(
+            new_state.agent_chain.last_session_id.is_none(),
+            "Auth fallback should clear session ID"
+        );
+
+        // Prompt context should NOT be preserved (unlike rate limit)
+        assert!(
+            new_state
+                .agent_chain
+                .rate_limit_continuation_prompt
+                .is_none(),
+            "Auth fallback should NOT preserve prompt context"
+        );
+    });
+}
+
 /// Test that reducer clears continuation prompt on success.
 ///
 /// When an agent invocation succeeds, any saved continuation prompt

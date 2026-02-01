@@ -152,7 +152,9 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
     assert!(
         matches!(
             result.event,
-            PipelineEvent::Development(crate::reducer::event::DevelopmentEvent::PromptPrepared { .. })
+            PipelineEvent::Development(
+                crate::reducer::event::DevelopmentEvent::PromptPrepared { .. }
+            )
         ),
         "Expected PromptPrepared event when placeholders in PROMPT.md are ignored, got {:?}",
         result.event

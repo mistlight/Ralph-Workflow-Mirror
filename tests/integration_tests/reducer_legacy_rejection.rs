@@ -715,18 +715,19 @@ fn test_xsd_retry_count_in_reducer_state() {
 
 /// Test that max XSD retries triggers agent advancement via reducer.
 ///
-/// After MAX_DEV_INVALID_OUTPUT_RERUNS XSD failures, the reducer should
+/// After configured XSD failures, the reducer should
 /// advance the agent chain, making fallback behavior explicit in state.
 #[test]
 fn test_max_xsd_retries_advances_agent_chain_via_reducer() {
     use ralph_workflow::agents::AgentRole;
     use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase};
-    use ralph_workflow::reducer::state::{PipelineState, MAX_DEV_INVALID_OUTPUT_RERUNS};
+    use ralph_workflow::reducer::state::{ContinuationState, PipelineState};
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
         let mut state = PipelineState::initial(3, 1);
         state.phase = PipelinePhase::Development;
+        state.continuation = ContinuationState::new().with_max_xsd_retry(3);
         state.agent_chain = state.agent_chain.with_agents(
             vec!["primary-agent".to_string(), "fallback-agent".to_string()],
             vec![vec![], vec![]],
@@ -740,9 +741,9 @@ fn test_max_xsd_retries_advances_agent_chain_via_reducer() {
             "Should start with primary agent"
         );
 
-        // Exhaust retries up to MAX (typically 2)
+        // Exhaust retries up to configured limit (3)
         let mut current_state = state;
-        for attempt in 0..MAX_DEV_INVALID_OUTPUT_RERUNS {
+        for attempt in 0..2 {
             current_state = reduce(
                 current_state,
                 PipelineEvent::development_output_validation_failed(0, attempt),
@@ -751,14 +752,14 @@ fn test_max_xsd_retries_advances_agent_chain_via_reducer() {
 
         // After max retries, invalid_output_attempts should be at max
         assert_eq!(
-            current_state.continuation.invalid_output_attempts, MAX_DEV_INVALID_OUTPUT_RERUNS,
-            "Should have max invalid_output_attempts"
+            current_state.continuation.invalid_output_attempts, 2,
+            "Should have expected invalid_output_attempts before exhaustion"
         );
 
         // One more failure should trigger agent advancement and reset counter
         let final_state = reduce(
             current_state,
-            PipelineEvent::development_output_validation_failed(0, MAX_DEV_INVALID_OUTPUT_RERUNS),
+            PipelineEvent::development_output_validation_failed(0, 2),
         );
 
         // Counter should be reset after agent switch
@@ -909,6 +910,11 @@ fn test_effects_are_single_task() {
             RestorePromptPermissions,
             WriteContinuationContext,
             CleanupContinuationContext,
+            CleanupPlanningXml,
+            CleanupDevelopmentXml,
+            CleanupReviewIssuesXml,
+            CleanupFixResultXml,
+            CleanupCommitXml,
         }
 
         fn describe_effect_task(effect: &Effect) -> EffectTask {
@@ -964,6 +970,11 @@ fn test_effects_are_single_task() {
                 Effect::RestorePromptPermissions => EffectTask::RestorePromptPermissions,
                 Effect::WriteContinuationContext(_) => EffectTask::WriteContinuationContext,
                 Effect::CleanupContinuationContext => EffectTask::CleanupContinuationContext,
+                Effect::CleanupPlanningXml { .. } => EffectTask::CleanupPlanningXml,
+                Effect::CleanupDevelopmentXml { .. } => EffectTask::CleanupDevelopmentXml,
+                Effect::CleanupReviewIssuesXml { .. } => EffectTask::CleanupReviewIssuesXml,
+                Effect::CleanupFixResultXml { .. } => EffectTask::CleanupFixResultXml,
+                Effect::CleanupCommitXml => EffectTask::CleanupCommitXml,
             }
         }
 
@@ -1448,12 +1459,13 @@ fn test_development_continuation_is_reducer_driven() {
 fn test_xsd_retry_exhaustion_triggers_state_transition() {
     use ralph_workflow::agents::AgentRole;
     use ralph_workflow::reducer::event::{PipelineEvent, PipelinePhase};
-    use ralph_workflow::reducer::state::{PipelineState, MAX_DEV_INVALID_OUTPUT_RERUNS};
+    use ralph_workflow::reducer::state::{ContinuationState, PipelineState};
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
         let mut state = PipelineState::initial(3, 1);
         state.phase = PipelinePhase::Development;
+        state.continuation = ContinuationState::new().with_max_xsd_retry(3);
         state.agent_chain = state.agent_chain.with_agents(
             vec!["agent-1".to_string(), "agent-2".to_string()],
             vec![vec![], vec![]],
@@ -1462,7 +1474,7 @@ fn test_xsd_retry_exhaustion_triggers_state_transition() {
 
         // Exhaust retries via reducer events (not hidden in phase code)
         let mut current = state;
-        for attempt in 0..=MAX_DEV_INVALID_OUTPUT_RERUNS {
+        for attempt in 0..3 {
             current = reduce(
                 current,
                 PipelineEvent::development_output_validation_failed(0, attempt),

@@ -12,6 +12,7 @@ use crate::files::llm_output_extraction::xml_helpers::{
 };
 use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValidationError};
 use quick_xml::events::Event;
+use std::borrow::Cow;
 
 /// Example of a valid development result XML for error messages.
 const EXAMPLE_DEVELOPMENT_RESULT_XML: &str = r#"<ralph-development-result>
@@ -47,8 +48,9 @@ const VALID_STATUSES: [&str; 3] = ["completed", "partial", "failed"];
 pub fn validate_development_result_xml(
     xml_content: &str,
 ) -> Result<DevelopmentResultElements, XsdValidationError> {
-    let content = xml_content.trim();
-    let mut reader = create_reader(content);
+    let trimmed = xml_content.trim();
+    let content = unwrap_cdata_wrapper(trimmed);
+    let mut reader = create_reader(content.as_ref());
     let mut buf = Vec::new();
 
     // Find the root element
@@ -76,7 +78,7 @@ pub fn validate_development_result_xml(
                     error_type: XsdErrorType::MissingRequiredElement,
                     element_path: "ralph-development-result".to_string(),
                     expected: "<ralph-development-result> as root element".to_string(),
-                    found: format_content_preview(content),
+                    found: format_content_preview(content.as_ref()),
                     suggestion:
                         "Wrap your result in <ralph-development-result>...</ralph-development-result> tags."
                             .to_string(),
@@ -241,6 +243,17 @@ pub fn validate_development_result_xml(
         files_changed: files_changed.filter(|s| !s.is_empty()),
         next_steps: next_steps.filter(|s| !s.is_empty()),
     })
+}
+
+fn unwrap_cdata_wrapper(content: &str) -> Cow<'_, str> {
+    let trimmed = content.trim();
+    let Some(stripped) = trimmed.strip_prefix("<![CDATA[") else {
+        return Cow::Borrowed(trimmed);
+    };
+    let Some(inner) = stripped.strip_suffix("]]>") else {
+        return Cow::Borrowed(trimmed);
+    };
+    Cow::Borrowed(inner.trim())
 }
 
 /// Parsed development result elements from valid XML.
@@ -456,6 +469,18 @@ mod tests {
 <ralph-status>completed</ralph-status>
 <ralph-summary>Test</ralph-summary>
 </ralph-development-result>"#;
+
+        let result = validate_development_result_xml(xml);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_cdata_wrapped_xml() {
+        let xml = r#"<![CDATA[<?xml version="1.0"?>
+<ralph-development-result>
+<ralph-status>completed</ralph-status>
+<ralph-summary>Done</ralph-summary>
+</ralph-development-result>]]>"#;
 
         let result = validate_development_result_xml(xml);
         assert!(result.is_ok());
