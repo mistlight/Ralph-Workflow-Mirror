@@ -154,8 +154,9 @@ pub fn validate_no_unresolved_placeholders_with_ignored_content(
     ignored_content: &[&str],
 ) -> Result<(), RenderedPromptError> {
     struct UnresolvedPlaceholder {
-        raw: String,
         display: String,
+        start: usize,
+        end: usize,
     }
 
     // Use a regex to catch ANY remaining {{...}} patterns, including:
@@ -175,8 +176,9 @@ pub fn validate_no_unresolved_placeholders_with_ignored_content(
     let mut unresolved: Vec<UnresolvedPlaceholder> = closed_re
         .find_iter(rendered)
         .map(|m| UnresolvedPlaceholder {
-            raw: m.as_str().to_string(),
             display: m.as_str().to_string(),
+            start: m.start(),
+            end: m.end(),
         })
         .collect();
 
@@ -184,22 +186,39 @@ pub fn validate_no_unresolved_placeholders_with_ignored_content(
     // This catches malformed templates like "Hello {{VAR" where the closing }} is missing.
     // We look for {{ that is NOT followed by a matching }} on the same line.
     let unclosed_re = regex::Regex::new(r"\{\{[^}]*$").expect("regex should be valid");
-    for line in rendered.lines() {
+    let mut offset = 0;
+    for line in rendered.split_inclusive('\n') {
+        let line_trimmed = line.strip_suffix('\n').unwrap_or(line);
         // Check if line has {{ without matching }}
-        if let Some(m) = unclosed_re.find(line) {
+        if let Some(m) = unclosed_re.find(line_trimmed) {
             let raw = m.as_str().to_string();
             unresolved.push(UnresolvedPlaceholder {
-                raw: raw.clone(),
                 display: format!("{} (unclosed)", raw),
+                start: offset + m.start(),
+                end: offset + m.end(),
             });
         }
+        offset += line.len();
     }
 
     if !ignored_content.is_empty() {
+        let mut ignored_ranges = Vec::new();
+        for content in ignored_content {
+            if content.is_empty() {
+                continue;
+            }
+            let mut search_start = 0;
+            while let Some(pos) = rendered[search_start..].find(content) {
+                let range_start = search_start + pos;
+                let range_end = range_start + content.len();
+                ignored_ranges.push((range_start, range_end));
+                search_start = range_end;
+            }
+        }
         unresolved.retain(|placeholder| {
-            !ignored_content
+            !ignored_ranges
                 .iter()
-                .any(|content| content.contains(&placeholder.raw))
+                .any(|(start, end)| placeholder.start >= *start && placeholder.end <= *end)
         });
     }
 
@@ -848,6 +867,19 @@ Content here";
         let rendered = "Hello {{NAME|default='Guest'}}";
         let result = validate_no_unresolved_placeholders(rendered);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_no_unresolved_placeholders_ignored_content_does_not_mask_outside() {
+        let rendered = "Intro {{MISSING}}\nDIFF:\n{{MISSING}}";
+        let ignored = ["DIFF:\n{{MISSING}}"];
+        let result = validate_no_unresolved_placeholders_with_ignored_content(rendered, &ignored);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.unresolved_placeholders.len(), 1);
+        assert!(err
+            .unresolved_placeholders
+            .contains(&"{{MISSING}}".to_string()));
     }
 
     #[test]
