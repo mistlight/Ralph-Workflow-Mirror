@@ -1243,7 +1243,7 @@ mod tests {
 
     #[test]
     fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
-        // Test the COMPLETE flow: Planning → Development → Review → Fix → Commit → FinalValidation
+        // Test the COMPLETE flow: Planning -> Development -> Review -> Fix -> Commit -> FinalValidation
         let mut state = PipelineState::initial(2, 1); // 2 dev iterations, 1 review pass
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],

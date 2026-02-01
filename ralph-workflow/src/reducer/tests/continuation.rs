@@ -17,7 +17,7 @@ use crate::reducer::state::{AgentChainState, ContinuationState};
 /// 2. `determine_next_effect()` returns `PrepareDevelopmentContext`
 /// 3. Handler emits `ContextPrepared`
 /// 4. Reducer does NOT clear `continue_pending`
-/// 5. `determine_next_effect()` returns `PrepareDevelopmentContext` again → infinite loop
+/// 5. `determine_next_effect()` returns `PrepareDevelopmentContext` again -> infinite loop
 ///
 /// Fix: `DevelopmentEvent::ContextPrepared` must clear `continue_pending`.
 #[test]
@@ -113,7 +113,7 @@ fn test_context_prepared_is_idempotent_on_continue_pending() {
 /// 2. `determine_next_effect()` returns `PrepareFixPrompt` (via `derive_continuation_effect`)
 /// 3. Handler emits `FixPromptPrepared`
 /// 4. Reducer does NOT clear `fix_continue_pending`
-/// 5. `determine_next_effect()` returns `PrepareFixPrompt` again → infinite loop
+/// 5. `determine_next_effect()` returns `PrepareFixPrompt` again -> infinite loop
 ///
 /// Fix: `ReviewEvent::FixPromptPrepared` must clear `fix_continue_pending`.
 #[test]
