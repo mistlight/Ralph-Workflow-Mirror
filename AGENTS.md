@@ -180,6 +180,45 @@ cargo test -p ralph-workflow-tests
 
 # Release build
 cargo build --release
+
+# Custom lints (dylint) - check for files exceeding line limits
+# This runs the file_too_long lint from lints/file_too_long
+# Note: Warnings are informational; new files should not exceed 1000 lines
+cargo dylint --lib file_too_long
 ```
 
 **If ANY command produces output, FIX IT before continuing.** No ignored tests allowed.
+
+---
+
+## Custom Lints (dylint)
+
+This repository uses [dylint](https://github.com/trailofbits/dylint) for custom Rust lints.
+
+### Available Lints
+
+| Lint | Description |
+|------|-------------|
+| `file_too_long` | Warns when a source file exceeds 500 lines (consider refactoring) or 1000 lines (MUST refactor) |
+
+### Running Lints
+
+```bash
+# Run all custom lints
+cargo dylint --all
+
+# Run a specific lint
+cargo dylint --lib file_too_long
+```
+
+### Developing Lints
+
+Custom lints are in the `lints/` directory. Each lint is a separate crate that compiles to a dynamic library.
+
+To build and test a lint:
+```bash
+cd lints/file_too_long
+cargo +nightly test
+```
+
+**Note:** Dylint lints require nightly Rust due to use of rustc internals.

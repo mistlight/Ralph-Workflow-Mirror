@@ -7,6 +7,11 @@ resolver = "2"
 # Integration tests are in a separate workspace
 test-members = ["tests"]
 
+[workspace.metadata.dylint]
+libraries = [
+    { path = "lints/file_too_long" },
+]
+
 [workspace.dependencies]
 # Shared dependencies for all workspace members
 git2 = "0.18"

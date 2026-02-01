@@ -49,3 +49,7 @@ wt-*/
 
 # Editor/agent backups
 **/*.bak
+
+# Dylint build artifacts
+lints/*/target/
+lints/*/Cargo.lock
