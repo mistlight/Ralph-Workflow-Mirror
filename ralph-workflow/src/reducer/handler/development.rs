@@ -1,178 +1,274 @@
-use super::util::read_xml_and_archive_if_present;
 use super::MainEffectHandler;
 use crate::agents::AgentRole;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
-use crate::phases::{development, PhaseContext};
-use crate::prompts::ContextLevel;
+use crate::phases::PhaseContext;
 use crate::reducer::effect::ContinuationContextData;
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{AgentErrorKind, PipelineEvent};
+use crate::reducer::event::PipelineEvent;
 use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use crate::workspace::Workspace;
 use anyhow::Result;
 use std::path::Path;
 
-pub(super) fn is_auth_failure(err: &anyhow::Error) -> bool {
-    if err.chain().any(|cause| {
-        cause
-            .downcast_ref::<development::AuthFailureError>()
-            .is_some()
-    }) {
-        return true;
-    }
-
-    let msg = err.to_string().to_lowercase();
-    msg.contains("authentication error")
-        || msg.contains("auth/credential")
-        || msg.contains("unauthorized")
-        || msg.contains("credential")
-        || msg.contains("api key")
-}
-
 impl MainEffectHandler {
-    pub(super) fn run_development_iteration(
+    pub(super) fn prepare_development_context(
         &mut self,
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        use crate::checkpoint::restore::ResumeContext;
+        let _ = crate::files::create_prompt_backup_with_workspace(ctx.workspace);
+        Ok(EffectResult::event(
+            PipelineEvent::development_context_prepared(iteration),
+        ))
+    }
 
-        let developer_context = ContextLevel::from(ctx.config.developer_context);
-
-        // Get current agent from agent chain
-        let dev_agent = self.state.agent_chain.current_agent().cloned();
-
-        // Get continuation state from reducer state
-        let continuation_state = &self.state.continuation;
-
-        // Config semantics: max_dev_continuations counts *continuation attempts* (fresh sessions)
-        // allowed after the initial attempt. Total valid attempts per iteration is
-        // `1 + max_dev_continuations`.
-        let max_continuations = ctx.config.max_dev_continuations.unwrap_or(2);
-
-        // Defensive guard: if checkpoint state already exceeds the configured limit,
-        // emit a domain event and let the reducer/orchestration decide the policy.
-        if continuation_state.continuation_attempt > max_continuations {
-            let last_status = continuation_state
-                .previous_status
-                .clone()
-                .unwrap_or(crate::reducer::state::DevelopmentStatus::Failed);
-            let reason = development_continuation_budget_exhausted_abort_reason(
-                iteration,
-                continuation_state.continuation_attempt,
-                max_continuations,
-                last_status.clone(),
-            );
-            ctx.logger.warn(&reason);
-
-            return Ok(EffectResult::with_ui(
-                PipelineEvent::development_continuation_budget_exhausted(
-                    iteration,
-                    continuation_state.continuation_attempt,
-                    last_status,
-                ),
-                vec![UIEvent::IterationProgress {
-                    current: iteration,
-                    total: self.state.total_iterations,
-                }],
-            ));
-        }
-
-        // Run a single development attempt (one session) with validation.
-        let attempt = development::run_development_attempt(
-            ctx,
-            iteration,
-            developer_context,
-            false,
-            None::<&ResumeContext>,
-            dev_agent.as_deref(),
-            continuation_state,
-        );
-
-        let attempt = match attempt {
-            Ok(a) => a,
-            Err(err) => {
-                if let Some(tpl_err) =
-                    err.downcast_ref::<crate::prompts::TemplateVariablesInvalidError>()
-                {
-                    return Ok(EffectResult::event(
-                        PipelineEvent::agent_template_variables_invalid(
-                            AgentRole::Developer,
-                            tpl_err.template_name.clone(),
-                            tpl_err.missing_variables.clone(),
-                            tpl_err.unresolved_placeholders.clone(),
-                        ),
-                    ));
-                }
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    format!("Development attempt failed: {err}"),
-                )));
-            }
+    pub(super) fn prepare_development_prompt(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        use crate::prompts::{
+            get_stored_or_generate_prompt, prompt_developer_iteration_continuation_xml,
+            prompt_developer_iteration_xml_with_context,
+            prompt_developer_iteration_xsd_retry_with_context,
         };
 
-        // Check for auth failure - trigger agent fallback immediately
-        if attempt.auth_failure {
-            let current_agent = dev_agent.clone().unwrap_or_else(|| "unknown".to_string());
-            return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                AgentRole::Developer,
-                current_agent,
-                attempt.exit_code,
-                AgentErrorKind::Authentication,
-                false,
-            )));
-        }
+        let continuation_state = &self.state.continuation;
+        let prompt_md = ctx
+            .workspace
+            .read(Path::new("PROMPT.md"))
+            .unwrap_or_default();
+        let plan_md = ctx
+            .workspace
+            .read(Path::new(".agent/PLAN.md"))
+            .unwrap_or_default();
 
-        if attempt.had_error {
-            let current_agent = dev_agent.clone().unwrap_or_else(|| "unknown".to_string());
-            return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                AgentRole::Developer,
-                current_agent,
-                attempt.exit_code,
-                AgentErrorKind::InternalError,
-                false,
-            )));
-        }
+        let dev_prompt = if continuation_state.is_continuation() {
+            let prompt_key = format!(
+                "development_{}_continuation_{}",
+                iteration, continuation_state.continuation_attempt
+            );
+            let (prompt, was_replayed) =
+                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                    prompt_developer_iteration_continuation_xml(
+                        ctx.template_context,
+                        continuation_state,
+                    )
+                });
 
-        // Check if output is invalid (XSD/XML parsing failed) - emit event, let reducer decide
-        if !attempt.output_valid {
-            let mut ui_events = vec![UIEvent::IterationProgress {
-                current: iteration,
-                total: self.state.total_iterations,
-            }];
+            if !was_replayed {
+                ctx.capture_prompt(&prompt_key, &prompt);
+            }
 
-            // Try to read development result XML for semantic rendering via helper.
-            if let Some(xml_content) = read_xml_and_archive_if_present(
+            prompt
+        } else if continuation_state.invalid_output_attempts > 0 {
+            prompt_developer_iteration_xsd_retry_with_context(
+                ctx.template_context,
+                &prompt_md,
+                &plan_md,
+                "XML output failed validation. Provide valid XML output.",
+                "",
                 ctx.workspace,
-                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-            ) {
+            )
+        } else {
+            let prompt_key = format!("development_{}", iteration);
+            let (prompt, was_replayed) =
+                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                    prompt_developer_iteration_xml_with_context(
+                        ctx.template_context,
+                        &prompt_md,
+                        &plan_md,
+                    )
+                });
+
+            if !was_replayed {
+                ctx.capture_prompt(&prompt_key, &prompt);
+            }
+
+            prompt
+        };
+
+        let template_name = if continuation_state.is_continuation() {
+            "developer_iteration_continuation_xml"
+        } else if continuation_state.invalid_output_attempts > 0 {
+            "developer_iteration_xsd_retry"
+        } else {
+            "developer_iteration_xml"
+        };
+        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&dev_prompt) {
+            return Err(crate::prompts::TemplateVariablesInvalidError {
+                template_name: template_name.to_string(),
+                missing_variables: Vec::new(),
+                unresolved_placeholders: err.unresolved_placeholders,
+            }
+            .into());
+        }
+
+        let tmp_dir = Path::new(".agent/tmp");
+        if !ctx.workspace.exists(tmp_dir) {
+            ctx.workspace.create_dir_all(tmp_dir)?;
+        }
+
+        ctx.workspace
+            .write(Path::new(".agent/tmp/development_prompt.txt"), &dev_prompt)?;
+
+        Ok(EffectResult::event(
+            PipelineEvent::development_prompt_prepared(iteration),
+        ))
+    }
+
+    pub(super) fn invoke_development_agent(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        let prompt = ctx
+            .workspace
+            .read(Path::new(".agent/tmp/development_prompt.txt"))
+            .unwrap_or_default();
+
+        let agent = self
+            .state
+            .agent_chain
+            .current_agent()
+            .cloned()
+            .unwrap_or_else(|| ctx.developer_agent.to_string());
+
+        let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
+        result = result.with_additional_event(PipelineEvent::development_agent_invoked(iteration));
+        Ok(result)
+    }
+
+    pub(super) fn extract_development_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        let xml_path = Path::new(xml_paths::DEVELOPMENT_RESULT_XML);
+        let mut ui_events = vec![UIEvent::IterationProgress {
+            current: iteration,
+            total: self.state.total_iterations,
+        }];
+
+        match ctx.workspace.read(xml_path) {
+            Ok(content) => {
                 ui_events.push(UIEvent::XmlOutput {
                     xml_type: XmlOutputType::DevelopmentResult,
-                    content: xml_content,
+                    content,
                     context: Some(XmlOutputContext {
                         iteration: Some(iteration),
                         pass: None,
                         snippets: Vec::new(),
                     }),
                 });
+                Ok(EffectResult::with_ui(
+                    PipelineEvent::development_xml_extracted(iteration),
+                    ui_events,
+                ))
             }
-
-            // Emit OutputValidationFailed - reducer decides whether to retry or switch agents
-            return Ok(EffectResult::with_ui(
+            Err(_) => Ok(EffectResult::with_ui(
                 PipelineEvent::development_output_validation_failed(
                     iteration,
-                    continuation_state.invalid_output_attempts,
+                    self.state.continuation.invalid_output_attempts,
                 ),
                 ui_events,
-            ));
+            )),
         }
+    }
 
-        // If we reached completed, the iteration can transition to commit.
-        if attempt.output_valid
-            && matches!(
-                attempt.status,
-                crate::reducer::state::DevelopmentStatus::Completed
-            )
+    pub(super) fn validate_development_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        use crate::files::llm_output_extraction::validate_development_result_xml;
+
+        let xml = match ctx
+            .workspace
+            .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
         {
+            Ok(s) => s,
+            Err(_) => {
+                return Ok(EffectResult::event(
+                    PipelineEvent::development_output_validation_failed(
+                        iteration,
+                        self.state.continuation.invalid_output_attempts,
+                    ),
+                ));
+            }
+        };
+
+        match validate_development_result_xml(&xml) {
+            Ok(elements) => {
+                let status = if elements.is_completed() {
+                    crate::reducer::state::DevelopmentStatus::Completed
+                } else if elements.is_partial() {
+                    crate::reducer::state::DevelopmentStatus::Partial
+                } else {
+                    crate::reducer::state::DevelopmentStatus::Failed
+                };
+
+                let files_changed = elements
+                    .files_changed
+                    .as_ref()
+                    .map(|f| f.lines().map(|s| s.to_string()).collect());
+
+                Ok(EffectResult::event(
+                    PipelineEvent::development_xml_validated(
+                        iteration,
+                        status,
+                        elements.summary.clone(),
+                        files_changed,
+                        elements.next_steps.clone(),
+                    ),
+                ))
+            }
+            Err(_) => Ok(EffectResult::event(
+                PipelineEvent::development_output_validation_failed(
+                    iteration,
+                    self.state.continuation.invalid_output_attempts,
+                ),
+            )),
+        }
+    }
+
+    pub(super) fn archive_development_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
+
+        archive_xml_file_with_workspace(
+            ctx.workspace,
+            Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
+        );
+        Ok(EffectResult::event(
+            PipelineEvent::development_xml_archived(iteration),
+        ))
+    }
+
+    pub(super) fn apply_development_outcome(
+        &mut self,
+        _ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        let outcome = match self.state.development_validated_outcome.as_ref() {
+            Some(outcome) if outcome.iteration == iteration => outcome,
+            _ => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing validated development outcome".to_string(),
+                )));
+            }
+        };
+
+        let continuation_state = &self.state.continuation;
+        let max_continuations = continuation_state.max_continue_count.saturating_sub(1);
+
+        if matches!(
+            outcome.status,
+            crate::reducer::state::DevelopmentStatus::Completed
+        ) {
             let event = if continuation_state.is_continuation() {
                 PipelineEvent::development_iteration_continuation_succeeded(
                     iteration,
@@ -181,110 +277,39 @@ impl MainEffectHandler {
             } else {
                 PipelineEvent::development_iteration_completed(iteration, true)
             };
-
-            let mut ui_events = vec![UIEvent::IterationProgress {
-                current: iteration,
-                total: self.state.total_iterations,
-            }];
-
-            if let Some(xml_content) = read_xml_and_archive_if_present(
-                ctx.workspace,
-                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-            ) {
-                ui_events.push(UIEvent::XmlOutput {
-                    xml_type: XmlOutputType::DevelopmentResult,
-                    content: xml_content,
-                    context: Some(XmlOutputContext {
-                        iteration: Some(iteration),
-                        pass: None,
-                        snippets: Vec::new(),
-                    }),
-                });
-            }
-
-            return Ok(EffectResult::with_ui(event, ui_events));
+            return Ok(EffectResult::event(event));
         }
 
-        // Not completed (valid output): partial/failed status triggers a continuation attempt.
-        // Check if continuation budget is exhausted - emit event, let reducer decide
+        if continuation_state.continuation_attempt > max_continuations {
+            return Ok(EffectResult::event(
+                PipelineEvent::development_continuation_budget_exhausted(
+                    iteration,
+                    continuation_state.continuation_attempt,
+                    outcome.status.clone(),
+                ),
+            ));
+        }
+
         let next_attempt = continuation_state.continuation_attempt + 1;
         if next_attempt > max_continuations {
-            let reason = development_continuation_budget_exhausted_abort_reason(
-                iteration,
-                continuation_state.continuation_attempt,
-                max_continuations,
-                attempt.status.clone(),
-            );
-            ctx.logger.warn(&reason);
-
-            let event = PipelineEvent::development_continuation_budget_exhausted(
-                iteration,
-                continuation_state.continuation_attempt,
-                attempt.status.clone(),
-            );
-
-            let mut ui_events = vec![UIEvent::IterationProgress {
-                current: iteration,
-                total: self.state.total_iterations,
-            }];
-
-            if let Some(xml_content) = read_xml_and_archive_if_present(
-                ctx.workspace,
-                Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-            ) {
-                ui_events.push(UIEvent::XmlOutput {
-                    xml_type: XmlOutputType::DevelopmentResult,
-                    content: xml_content,
-                    context: Some(XmlOutputContext {
-                        iteration: Some(iteration),
-                        pass: None,
-                        snippets: Vec::new(),
-                    }),
-                });
-            }
-
-            return Ok(EffectResult::with_ui(event, ui_events));
+            return Ok(EffectResult::event(
+                PipelineEvent::development_continuation_budget_exhausted(
+                    iteration,
+                    continuation_state.continuation_attempt,
+                    outcome.status.clone(),
+                ),
+            ));
         }
 
-        ctx.logger.info(&format!(
-            "Triggering development continuation attempt {}/{} (previous status={})",
-            next_attempt, max_continuations, attempt.status
-        ));
-
-        let status = attempt.status.clone();
-        let summary = attempt.summary.clone();
-        let files_changed = attempt.files_changed.clone();
-        let next_steps = attempt.next_steps.clone();
-
-        let event = PipelineEvent::development_iteration_continuation_triggered(
-            iteration,
-            status,
-            summary,
-            files_changed,
-            next_steps,
-        );
-
-        let mut ui_events = vec![UIEvent::IterationProgress {
-            current: iteration,
-            total: self.state.total_iterations,
-        }];
-
-        if let Some(xml_content) = read_xml_and_archive_if_present(
-            ctx.workspace,
-            Path::new(xml_paths::DEVELOPMENT_RESULT_XML),
-        ) {
-            ui_events.push(UIEvent::XmlOutput {
-                xml_type: XmlOutputType::DevelopmentResult,
-                content: xml_content,
-                context: Some(XmlOutputContext {
-                    iteration: Some(iteration),
-                    pass: None,
-                    snippets: Vec::new(),
-                }),
-            });
-        }
-
-        Ok(EffectResult::with_ui(event, ui_events))
+        Ok(EffectResult::event(
+            PipelineEvent::development_iteration_continuation_triggered(
+                iteration,
+                outcome.status.clone(),
+                outcome.summary.clone(),
+                outcome.files_changed.clone(),
+                outcome.next_steps.clone(),
+            ),
+        ))
     }
 }
 
@@ -332,15 +357,4 @@ pub(super) fn write_continuation_context_to_workspace(
     logger.info("Continuation context written to .agent/tmp/continuation_context.md");
 
     Ok(())
-}
-
-fn development_continuation_budget_exhausted_abort_reason(
-    iteration: u32,
-    total_attempts: u32,
-    max_continuations: u32,
-    last_status: crate::reducer::state::DevelopmentStatus,
-) -> String {
-    format!(
-        "Development continuation attempts exhausted (iteration={iteration}, total_attempts={total_attempts}, max_continuations={max_continuations}, last_status={last_status})"
-    )
 }

@@ -193,7 +193,11 @@ fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
     result
 }
 
-fn check_and_pre_truncate_diff(diff: &str, commit_agent: &str, logger: &Logger) -> (String, bool) {
+pub(crate) fn check_and_pre_truncate_diff(
+    diff: &str,
+    commit_agent: &str,
+    logger: &Logger,
+) -> (String, bool) {
     let max_size = max_prompt_size_for_agent(commit_agent);
     if diff.len() > max_size {
         logger.warn(&format!(

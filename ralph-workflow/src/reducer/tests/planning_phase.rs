@@ -19,12 +19,11 @@ fn test_planning_phase_completed_transitions_to_development() {
 }
 
 #[test]
-fn test_plan_generation_started_is_noop() {
+fn test_planning_prompt_prepared_sets_iteration() {
     let state = create_test_state();
-    let new_state = reduce(state.clone(), PipelineEvent::plan_generation_started(1));
+    let new_state = reduce(state, PipelineEvent::planning_prompt_prepared(1));
 
-    assert_eq!(new_state.phase, state.phase);
-    assert_eq!(new_state.iteration, state.iteration);
+    assert_eq!(new_state.planning_prompt_prepared_iteration, Some(1));
 }
 
 #[test]

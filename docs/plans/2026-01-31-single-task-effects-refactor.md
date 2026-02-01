@@ -4,7 +4,7 @@
 
 **Goal:** Refactor the reducer/effects pipeline so every `Effect` is truly single-task, all branching/policy lives in the reducer, and phases progress via explicit `PipelineEvent`s (no hidden logic in handlers/phases).
 
-**Architecture:** Replace macro-effects like `RunReviewPass/RunFixAttempt/RunDevelopmentIteration/GeneratePlan/GenerateCommitMessage` with explicit, composable effect chains: (1) prepare context files, (2) invoke agent, (3) extract output, (4) validate output, (5) write derived artifacts, (6) archive/cleanup. XSD retry and continuation are reducer-driven and represented only via reducer state + events.
+**Architecture:** Replace macro-effects like `RunReviewPass/RunFixAttempt/RunDevelopmentIteration/GeneratePlan` with explicit, composable effect chains: (1) prepare context files, (2) invoke agent, (3) extract output, (4) validate output, (5) write derived artifacts, (6) archive/cleanup. XSD retry and continuation are reducer-driven and represented only via reducer state + events.
 
 **Tech Stack:** Rust, reducer/event-loop architecture (`ralph-workflow/src/reducer/*`), `Workspace` trait + `MemoryWorkspace` tests, integration tests under `tests/integration_tests/*`.
 

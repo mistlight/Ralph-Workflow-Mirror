@@ -24,7 +24,9 @@ use super::event::{
     AgentEvent, CommitEvent, DevelopmentEvent, LifecycleEvent, PipelineEvent, PlanningEvent,
     RebaseEvent, ReviewEvent,
 };
-use super::state::{CommitState, ContinuationState, PipelineState, RebaseState};
+use super::state::{
+    CommitState, ContinuationState, PipelineState, PlanningValidatedOutcome, RebaseState,
+};
 use crate::agents::AgentRole;
 
 /// Pure reducer - no side effects, exhaustive match.
@@ -117,6 +119,12 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
     match event {
         PlanningEvent::PhaseStarted => PipelineState {
             phase: super::event::PipelinePhase::Planning,
+            planning_prompt_prepared_iteration: None,
+            planning_agent_invoked_iteration: None,
+            planning_xml_extracted_iteration: None,
+            planning_validated_outcome: None,
+            planning_markdown_written_iteration: None,
+            planning_xml_archived_iteration: None,
             continuation: ContinuationState {
                 invalid_output_attempts: 0,
                 ..state.continuation
@@ -125,32 +133,56 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
         },
         PlanningEvent::PhaseCompleted => PipelineState {
             phase: super::event::PipelinePhase::Development,
+            planning_prompt_prepared_iteration: None,
+            planning_agent_invoked_iteration: None,
+            planning_xml_extracted_iteration: None,
+            planning_validated_outcome: None,
+            planning_markdown_written_iteration: None,
+            planning_xml_archived_iteration: None,
             continuation: ContinuationState {
                 invalid_output_attempts: 0,
                 ..state.continuation
             },
             ..state
         },
-        PlanningEvent::GenerationStarted { .. } => {
-            // Clear xsd_retry_pending when generation starts.
-            // This prevents infinite loops if the handler somehow fails to emit
-            // a completion/validation event after the XSD retry effect runs.
-            if state.continuation.xsd_retry_pending {
-                PipelineState {
-                    continuation: ContinuationState {
-                        xsd_retry_pending: false,
-                        ..state.continuation
-                    },
-                    ..state
-                }
-            } else {
-                state
-            }
-        }
+        PlanningEvent::PromptPrepared { iteration } => PipelineState {
+            planning_prompt_prepared_iteration: Some(iteration),
+            continuation: ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
+            ..state
+        },
+        PlanningEvent::AgentInvoked { iteration } => PipelineState {
+            planning_agent_invoked_iteration: Some(iteration),
+            ..state
+        },
+        PlanningEvent::PlanXmlExtracted { iteration } => PipelineState {
+            planning_xml_extracted_iteration: Some(iteration),
+            ..state
+        },
+        PlanningEvent::PlanXmlValidated { iteration, valid } => PipelineState {
+            planning_validated_outcome: Some(PlanningValidatedOutcome { iteration, valid }),
+            ..state
+        },
+        PlanningEvent::PlanMarkdownWritten { iteration } => PipelineState {
+            planning_markdown_written_iteration: Some(iteration),
+            ..state
+        },
+        PlanningEvent::PlanXmlArchived { iteration } => PipelineState {
+            planning_xml_archived_iteration: Some(iteration),
+            ..state
+        },
         PlanningEvent::GenerationCompleted { valid, .. } => {
             if valid {
                 PipelineState {
                     phase: super::event::PipelinePhase::Development,
+                    planning_prompt_prepared_iteration: None,
+                    planning_agent_invoked_iteration: None,
+                    planning_xml_extracted_iteration: None,
+                    planning_validated_outcome: None,
+                    planning_markdown_written_iteration: None,
+                    planning_xml_archived_iteration: None,
                     continuation: ContinuationState {
                         invalid_output_attempts: 0,
                         xsd_retry_count: 0,
@@ -163,6 +195,12 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
                 // Do not proceed to Development without a valid plan.
                 PipelineState {
                     phase: super::event::PipelinePhase::Planning,
+                    planning_prompt_prepared_iteration: None,
+                    planning_agent_invoked_iteration: None,
+                    planning_xml_extracted_iteration: None,
+                    planning_validated_outcome: None,
+                    planning_markdown_written_iteration: None,
+                    planning_xml_archived_iteration: None,
                     ..state
                 }
             }
@@ -179,6 +217,12 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
                     phase: super::event::PipelinePhase::Planning,
                     iteration,
                     agent_chain: new_agent_chain,
+                    planning_prompt_prepared_iteration: None,
+                    planning_agent_invoked_iteration: None,
+                    planning_xml_extracted_iteration: None,
+                    planning_validated_outcome: None,
+                    planning_markdown_written_iteration: None,
+                    planning_xml_archived_iteration: None,
                     continuation: ContinuationState {
                         invalid_output_attempts: 0,
                         xsd_retry_count: 0,
@@ -192,6 +236,12 @@ fn reduce_planning_event(state: PipelineState, event: PlanningEvent) -> Pipeline
                 PipelineState {
                     phase: super::event::PipelinePhase::Planning,
                     iteration,
+                    planning_prompt_prepared_iteration: None,
+                    planning_agent_invoked_iteration: None,
+                    planning_xml_extracted_iteration: None,
+                    planning_validated_outcome: None,
+                    planning_markdown_written_iteration: None,
+                    planning_xml_archived_iteration: None,
                     continuation: ContinuationState {
                         invalid_output_attempts: attempt + 1,
                         xsd_retry_count: new_xsd_count,
@@ -223,6 +273,12 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                 context_cleanup_pending: false,
                 ..state.continuation
             },
+            development_context_prepared_iteration: None,
+            development_prompt_prepared_iteration: None,
+            development_agent_invoked_iteration: None,
+            development_xml_extracted_iteration: None,
+            development_validated_outcome: None,
+            development_xml_archived_iteration: None,
             ..state
         },
         DevelopmentEvent::IterationStarted { iteration } => PipelineState {
@@ -233,6 +289,56 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                 context_cleanup_pending: true,
                 ..state.continuation.reset()
             },
+            development_context_prepared_iteration: None,
+            development_prompt_prepared_iteration: None,
+            development_agent_invoked_iteration: None,
+            development_xml_extracted_iteration: None,
+            development_validated_outcome: None,
+            development_xml_archived_iteration: None,
+            ..state
+        },
+        DevelopmentEvent::ContextPrepared { iteration } => PipelineState {
+            development_context_prepared_iteration: Some(iteration),
+            ..state
+        },
+        DevelopmentEvent::PromptPrepared { iteration } => PipelineState {
+            development_prompt_prepared_iteration: Some(iteration),
+            continuation: if state.continuation.xsd_retry_pending {
+                super::state::ContinuationState {
+                    xsd_retry_pending: false,
+                    ..state.continuation
+                }
+            } else {
+                state.continuation
+            },
+            ..state
+        },
+        DevelopmentEvent::AgentInvoked { iteration } => PipelineState {
+            development_agent_invoked_iteration: Some(iteration),
+            ..state
+        },
+        DevelopmentEvent::XmlExtracted { iteration } => PipelineState {
+            development_xml_extracted_iteration: Some(iteration),
+            ..state
+        },
+        DevelopmentEvent::XmlValidated {
+            iteration,
+            status,
+            summary,
+            files_changed,
+            next_steps,
+        } => PipelineState {
+            development_validated_outcome: Some(super::state::DevelopmentValidatedOutcome {
+                iteration,
+                status,
+                summary,
+                files_changed,
+                next_steps,
+            }),
+            ..state
+        },
+        DevelopmentEvent::XmlArchived { iteration } => PipelineState {
+            development_xml_archived_iteration: Some(iteration),
             ..state
         },
         DevelopmentEvent::IterationCompleted {
@@ -246,6 +352,11 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                     previous_phase: Some(super::event::PipelinePhase::Development),
                     iteration,
                     commit: super::state::CommitState::NotStarted,
+                    commit_prompt_prepared: false,
+                    commit_agent_invoked: false,
+                    commit_xml_extracted: false,
+                    commit_validated_outcome: None,
+                    commit_xml_archived: false,
                     context_cleaned: false,
                     // Reset continuation state on successful completion
                     // Use reset() to preserve configured limits (max_xsd_retry_count, etc.)
@@ -253,6 +364,12 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                         context_cleanup_pending: true,
                         ..state.continuation.reset()
                     },
+                    development_context_prepared_iteration: None,
+                    development_prompt_prepared_iteration: None,
+                    development_agent_invoked_iteration: None,
+                    development_xml_extracted_iteration: None,
+                    development_validated_outcome: None,
+                    development_xml_archived_iteration: None,
                     ..state
                 }
             } else {
@@ -270,6 +387,12 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                         iteration,
                         continuation,
                         agent_chain: new_agent_chain,
+                        development_context_prepared_iteration: None,
+                        development_prompt_prepared_iteration: None,
+                        development_agent_invoked_iteration: None,
+                        development_xml_extracted_iteration: None,
+                        development_validated_outcome: None,
+                        development_xml_archived_iteration: None,
                         ..state
                     }
                 } else {
@@ -282,6 +405,12 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                         phase: super::event::PipelinePhase::Development,
                         iteration,
                         continuation,
+                        development_context_prepared_iteration: None,
+                        development_prompt_prepared_iteration: None,
+                        development_agent_invoked_iteration: None,
+                        development_xml_extracted_iteration: None,
+                        development_validated_outcome: None,
+                        development_xml_archived_iteration: None,
                         ..state
                     }
                 }
@@ -291,6 +420,12 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
             phase: super::event::PipelinePhase::Review,
             // Reset continuation state when phase completes
             continuation: ContinuationState::new(),
+            development_context_prepared_iteration: None,
+            development_prompt_prepared_iteration: None,
+            development_agent_invoked_iteration: None,
+            development_xml_extracted_iteration: None,
+            development_validated_outcome: None,
+            development_xml_archived_iteration: None,
             ..state
         },
         DevelopmentEvent::ContinuationTriggered {
@@ -309,6 +444,12 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                     files_changed,
                     next_steps,
                 ),
+                development_context_prepared_iteration: None,
+                development_prompt_prepared_iteration: None,
+                development_agent_invoked_iteration: None,
+                development_xml_extracted_iteration: None,
+                development_validated_outcome: None,
+                development_xml_archived_iteration: None,
                 ..state
             }
         }
@@ -322,11 +463,22 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                 previous_phase: Some(super::event::PipelinePhase::Development),
                 iteration,
                 commit: super::state::CommitState::NotStarted,
+                commit_prompt_prepared: false,
+                commit_agent_invoked: false,
+                commit_xml_extracted: false,
+                commit_validated_outcome: None,
+                commit_xml_archived: false,
                 context_cleaned: false,
                 continuation: ContinuationState {
                     context_cleanup_pending: true,
                     ..ContinuationState::new()
                 },
+                development_context_prepared_iteration: None,
+                development_prompt_prepared_iteration: None,
+                development_agent_invoked_iteration: None,
+                development_xml_extracted_iteration: None,
+                development_validated_outcome: None,
+                development_xml_archived_iteration: None,
                 ..state
             }
         }
@@ -349,6 +501,12 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                         xsd_retry_pending: false,
                         ..state.continuation
                     },
+                    development_context_prepared_iteration: None,
+                    development_prompt_prepared_iteration: None,
+                    development_agent_invoked_iteration: None,
+                    development_xml_extracted_iteration: None,
+                    development_validated_outcome: None,
+                    development_xml_archived_iteration: None,
                     ..state
                 }
             } else {
@@ -362,6 +520,12 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                         xsd_retry_pending: true,
                         ..state.continuation
                     },
+                    development_context_prepared_iteration: None,
+                    development_prompt_prepared_iteration: None,
+                    development_agent_invoked_iteration: None,
+                    development_xml_extracted_iteration: None,
+                    development_validated_outcome: None,
+                    development_xml_archived_iteration: None,
                     ..state
                 }
             }
@@ -380,6 +544,12 @@ fn reduce_development_event(state: PipelineState, event: DevelopmentEvent) -> Pi
                     context_cleanup_pending: true,
                     ..ContinuationState::new()
                 },
+                development_context_prepared_iteration: None,
+                development_prompt_prepared_iteration: None,
+                development_agent_invoked_iteration: None,
+                development_xml_extracted_iteration: None,
+                development_validated_outcome: None,
+                development_xml_archived_iteration: None,
                 ..state
             }
         }
@@ -547,6 +717,11 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     review_issues_markdown_written_pass: None,
                     review_issues_xml_archived_pass: None,
                     commit: super::state::CommitState::NotStarted,
+                    commit_prompt_prepared: false,
+                    commit_agent_invoked: false,
+                    commit_xml_extracted: false,
+                    commit_validated_outcome: None,
+                    commit_xml_archived: false,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: 0,
                         xsd_retry_count: 0,
@@ -650,6 +825,11 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             fix_validated_outcome: None,
             fix_result_xml_archived_pass: None,
             commit: super::state::CommitState::NotStarted,
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
             continuation: super::state::ContinuationState {
                 invalid_output_attempts: 0,
                 ..state.continuation
@@ -660,6 +840,11 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
             phase: super::event::PipelinePhase::CommitMessage,
             previous_phase: None,
             commit: super::state::CommitState::NotStarted,
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
             continuation: super::state::ContinuationState {
                 invalid_output_attempts: 0,
                 ..state.continuation
@@ -690,6 +875,11 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                     review_issues_markdown_written_pass: None,
                     review_issues_xml_archived_pass: None,
                     commit: super::state::CommitState::NotStarted,
+                    commit_prompt_prepared: false,
+                    commit_agent_invoked: false,
+                    commit_xml_extracted: false,
+                    commit_validated_outcome: None,
+                    commit_xml_archived: false,
                     continuation: super::state::ContinuationState {
                         invalid_output_attempts: 0,
                         xsd_retry_count: 0,
@@ -790,6 +980,11 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                 reviewer_pass: pass,
                 review_issues_found: false,
                 commit: super::state::CommitState::NotStarted,
+                commit_prompt_prepared: false,
+                commit_agent_invoked: false,
+                commit_xml_extracted: false,
+                commit_validated_outcome: None,
+                commit_xml_archived: false,
                 continuation: state.continuation.reset(),
                 ..state
             }
@@ -808,6 +1003,11 @@ fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> PipelineStat
                 previous_phase: Some(super::event::PipelinePhase::Review),
                 reviewer_pass: pass,
                 commit: super::state::CommitState::NotStarted,
+                commit_prompt_prepared: false,
+                commit_agent_invoked: false,
+                commit_xml_extracted: false,
+                commit_validated_outcome: None,
+                commit_xml_archived: false,
                 continuation: state.continuation.reset(),
                 ..state
             }
@@ -1028,7 +1228,7 @@ fn reduce_rebase_event(state: PipelineState, event: RebaseEvent) -> PipelineStat
 fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineState {
     match event {
         CommitEvent::GenerationStarted => {
-            // Clear xsd_retry_pending when generation starts, similar to PlanningEvent::GenerationStarted.
+            // Clear xsd_retry_pending when generation starts, similar to PlanningEvent::PromptPrepared.
             // This prevents infinite loops if the handler somehow fails to emit a validation event
             // after the XSD retry effect runs.
             PipelineState {
@@ -1036,6 +1236,11 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
                     attempt: 1,
                     max_attempts: super::state::MAX_VALIDATION_RETRY_ATTEMPTS,
                 },
+                commit_prompt_prepared: false,
+                commit_agent_invoked: false,
+                commit_xml_extracted: false,
+                commit_validated_outcome: None,
+                commit_xml_archived: false,
                 continuation: if state.continuation.xsd_retry_pending {
                     super::state::ContinuationState {
                         xsd_retry_pending: false,
@@ -1047,6 +1252,38 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
                 ..state
             }
         }
+        CommitEvent::PromptPrepared { .. } => PipelineState {
+            commit_prompt_prepared: true,
+            ..state
+        },
+        CommitEvent::AgentInvoked { .. } => PipelineState {
+            commit_agent_invoked: true,
+            ..state
+        },
+        CommitEvent::CommitXmlExtracted { .. } => PipelineState {
+            commit_xml_extracted: true,
+            ..state
+        },
+        CommitEvent::CommitXmlValidated { message, attempt } => PipelineState {
+            commit_validated_outcome: Some(super::state::CommitValidatedOutcome {
+                attempt,
+                message: Some(message),
+                reason: None,
+            }),
+            ..state
+        },
+        CommitEvent::CommitXmlValidationFailed { reason, attempt } => PipelineState {
+            commit_validated_outcome: Some(super::state::CommitValidatedOutcome {
+                attempt,
+                message: None,
+                reason: Some(reason),
+            }),
+            ..state
+        },
+        CommitEvent::CommitXmlArchived { .. } => PipelineState {
+            commit_xml_archived: true,
+            ..state
+        },
         CommitEvent::MessageGenerated { message, .. } => PipelineState {
             commit: CommitState::Generated { message },
             ..state
@@ -1094,6 +1331,11 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
         }
         CommitEvent::GenerationFailed { .. } => PipelineState {
             commit: CommitState::NotStarted,
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
             ..state
         },
         CommitEvent::Skipped { .. } => {
@@ -1131,6 +1373,11 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
                 previous_phase: None,
                 iteration: next_iter,
                 reviewer_pass: next_reviewer_pass,
+                commit_prompt_prepared: false,
+                commit_agent_invoked: false,
+                commit_xml_extracted: false,
+                commit_validated_outcome: None,
+                commit_xml_archived: false,
                 context_cleaned: false,
                 agent_chain,
                 continuation,
@@ -1221,6 +1468,11 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
                     attempt: 1,
                     max_attempts,
                 },
+                commit_prompt_prepared: false,
+                commit_agent_invoked: false,
+                commit_xml_extracted: false,
+                commit_validated_outcome: None,
+                commit_xml_archived: false,
                 continuation: super::state::ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
@@ -1233,6 +1485,11 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
             PipelineState {
                 agent_chain: new_agent_chain,
                 commit: CommitState::NotStarted,
+                commit_prompt_prepared: false,
+                commit_agent_invoked: false,
+                commit_xml_extracted: false,
+                commit_validated_outcome: None,
+                commit_xml_archived: false,
                 continuation: super::state::ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
@@ -1248,6 +1505,11 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
                 attempt: attempt + 1,
                 max_attempts,
             },
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
             continuation: super::state::ContinuationState {
                 xsd_retry_count: new_xsd_count,
                 xsd_retry_pending: true,

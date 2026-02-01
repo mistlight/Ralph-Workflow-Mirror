@@ -15,10 +15,10 @@ use crate::reducer::effect::{ContinuationContextData, Effect};
 /// Returns the appropriate phase-specific effect with retry context.
 fn derive_xsd_retry_effect(state: &PipelineState) -> Effect {
     match state.phase {
-        PipelinePhase::Planning => Effect::GeneratePlan {
+        PipelinePhase::Planning => Effect::PreparePlanningPrompt {
             iteration: state.iteration,
         },
-        PipelinePhase::Development => Effect::RunDevelopmentIteration {
+        PipelinePhase::Development => Effect::PrepareDevelopmentPrompt {
             iteration: state.iteration,
         },
         PipelinePhase::Review => {
@@ -32,7 +32,7 @@ fn derive_xsd_retry_effect(state: &PipelineState) -> Effect {
                 }
             }
         }
-        PipelinePhase::CommitMessage => Effect::GenerateCommitMessage,
+        PipelinePhase::CommitMessage => Effect::PrepareCommitPrompt,
         // Other phases don't have XSD retry
         _ => Effect::SaveCheckpoint {
             trigger: CheckpointTrigger::PhaseTransition,
@@ -71,7 +71,7 @@ fn derive_continuation_effect(state: &PipelineState) -> Effect {
                     next_steps,
                 })
             } else {
-                Effect::RunDevelopmentIteration {
+                Effect::PrepareDevelopmentContext {
                     iteration: state.iteration,
                 }
             }
@@ -257,8 +257,53 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 return Effect::CleanupContext;
             }
 
-            Effect::GeneratePlan {
-                iteration: state.iteration,
+            if state.planning_prompt_prepared_iteration != Some(state.iteration) {
+                return Effect::PreparePlanningPrompt {
+                    iteration: state.iteration,
+                };
+            }
+
+            if state.planning_agent_invoked_iteration != Some(state.iteration) {
+                return Effect::InvokePlanningAgent {
+                    iteration: state.iteration,
+                };
+            }
+
+            if state.planning_xml_extracted_iteration != Some(state.iteration) {
+                return Effect::ExtractPlanningXml {
+                    iteration: state.iteration,
+                };
+            }
+
+            let planning_validated_is_for_iteration = state
+                .planning_validated_outcome
+                .as_ref()
+                .is_some_and(|o| o.iteration == state.iteration);
+            if !planning_validated_is_for_iteration {
+                return Effect::ValidatePlanningXml {
+                    iteration: state.iteration,
+                };
+            }
+
+            if state.planning_markdown_written_iteration != Some(state.iteration) {
+                return Effect::WritePlanningMarkdown {
+                    iteration: state.iteration,
+                };
+            }
+
+            if state.planning_xml_archived_iteration != Some(state.iteration) {
+                return Effect::ArchivePlanningXml {
+                    iteration: state.iteration,
+                };
+            }
+
+            let outcome = state
+                .planning_validated_outcome
+                .as_ref()
+                .expect("validated outcome should exist before applying planning outcome");
+            Effect::ApplyPlanningOutcome {
+                iteration: outcome.iteration,
+                valid: outcome.valid,
             }
         }
 
@@ -294,7 +339,47 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             }
 
             if state.iteration < state.total_iterations {
-                Effect::RunDevelopmentIteration {
+                if state.development_context_prepared_iteration != Some(state.iteration) {
+                    return Effect::PrepareDevelopmentContext {
+                        iteration: state.iteration,
+                    };
+                }
+
+                if state.development_prompt_prepared_iteration != Some(state.iteration) {
+                    return Effect::PrepareDevelopmentPrompt {
+                        iteration: state.iteration,
+                    };
+                }
+
+                if state.development_agent_invoked_iteration != Some(state.iteration) {
+                    return Effect::InvokeDevelopmentAgent {
+                        iteration: state.iteration,
+                    };
+                }
+
+                if state.development_xml_extracted_iteration != Some(state.iteration) {
+                    return Effect::ExtractDevelopmentXml {
+                        iteration: state.iteration,
+                    };
+                }
+
+                let dev_validated_is_for_iteration = state
+                    .development_validated_outcome
+                    .as_ref()
+                    .is_some_and(|o| o.iteration == state.iteration);
+                if !dev_validated_is_for_iteration {
+                    return Effect::ValidateDevelopmentXml {
+                        iteration: state.iteration,
+                    };
+                }
+
+                if state.development_xml_archived_iteration != Some(state.iteration) {
+                    return Effect::ArchiveDevelopmentXml {
+                        iteration: state.iteration,
+                    };
+                }
+
+                Effect::ApplyDevelopmentOutcome {
                     iteration: state.iteration,
                 }
             } else {
@@ -434,14 +519,33 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
                 };
             }
             match state.commit {
-                CommitState::NotStarted => Effect::GenerateCommitMessage,
-                CommitState::Generated { ref message } => Effect::CreateCommit {
-                    message: message.clone(),
-                },
+                CommitState::NotStarted | CommitState::Generating { .. } => {
+                    if state.commit_validated_outcome.is_some() {
+                        return Effect::ApplyCommitMessageOutcome;
+                    }
+                    if !state.commit_prompt_prepared {
+                        return Effect::PrepareCommitPrompt;
+                    }
+                    if !state.commit_agent_invoked {
+                        return Effect::InvokeCommitAgent;
+                    }
+                    if !state.commit_xml_extracted {
+                        return Effect::ExtractCommitXml;
+                    }
+                    Effect::ValidateCommitXml
+                }
+                CommitState::Generated { ref message } => {
+                    if !state.commit_xml_archived {
+                        Effect::ArchiveCommitXml
+                    } else {
+                        Effect::CreateCommit {
+                            message: message.clone(),
+                        }
+                    }
+                }
                 CommitState::Committed { .. } | CommitState::Skipped => Effect::SaveCheckpoint {
                     trigger: CheckpointTrigger::PhaseTransition,
                 },
-                CommitState::Generating { .. } => Effect::GenerateCommitMessage,
             }
         }
 
@@ -513,7 +617,31 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::GeneratePlan { .. }));
+        assert!(matches!(effect, Effect::PreparePlanningPrompt { .. }));
+    }
+
+    #[test]
+    fn test_planning_phase_emits_single_task_effect() {
+        let state = PipelineState {
+            phase: PipelinePhase::Planning,
+            context_cleaned: true,
+            iteration: 0,
+            total_iterations: 3,
+            agent_chain: PipelineState::initial(3, 0).agent_chain.with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
+            ..create_test_state()
+        };
+
+        let effect = determine_next_effect(&state);
+
+        assert!(
+            matches!(effect, Effect::PreparePlanningPrompt { .. }),
+            "Planning should emit PreparePlanningPrompt, got {:?}",
+            effect
+        );
     }
 
     #[test]
@@ -541,11 +669,11 @@ mod tests {
             "Phase should transition to Development after PlanGenerationCompleted"
         );
 
-        // Orchestration should now return RunDevelopmentIteration, not GeneratePlan
+        // Orchestration should now return PrepareDevelopmentContext
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::RunDevelopmentIteration { .. }),
-            "Expected RunDevelopmentIteration, got {:?}",
+            matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+            "Expected PrepareDevelopmentContext, got {:?}",
             effect
         );
     }
@@ -664,7 +792,7 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::RunDevelopmentIteration { .. }));
+        assert!(matches!(effect, Effect::PrepareDevelopmentContext { .. }));
     }
 
     #[test]
@@ -715,24 +843,96 @@ mod tests {
                         PipelineEvent::development_continuation_context_cleaned(),
                     );
                 }
-                Effect::GeneratePlan { iteration } => {
-                    // Complete planning
+                Effect::PreparePlanningPrompt { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
+                }
+                Effect::InvokePlanningAgent { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_agent_invoked(iteration));
+                }
+                Effect::ExtractPlanningXml { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_xml_extracted(iteration));
+                }
+                Effect::ValidatePlanningXml { iteration } => {
                     state = reduce(
                         state,
-                        PipelineEvent::plan_generation_completed(iteration, true),
+                        PipelineEvent::planning_xml_validated(iteration, true),
                     );
                 }
-                Effect::RunDevelopmentIteration { iteration } => {
+                Effect::WritePlanningMarkdown { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_markdown_written(iteration));
+                }
+                Effect::ArchivePlanningXml { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_xml_archived(iteration));
+                }
+                Effect::ApplyPlanningOutcome { iteration, valid } => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::plan_generation_completed(iteration, valid),
+                    );
+                }
+                Effect::PrepareDevelopmentContext { iteration } => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::development_context_prepared(iteration),
+                    );
+                }
+                Effect::PrepareDevelopmentPrompt { iteration } => {
+                    state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
+                }
+                Effect::InvokeDevelopmentAgent { iteration } => {
+                    state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
+                }
+                Effect::ExtractDevelopmentXml { iteration } => {
+                    state = reduce(state, PipelineEvent::development_xml_extracted(iteration));
+                }
+                Effect::ValidateDevelopmentXml { iteration } => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::development_xml_validated(
+                            iteration,
+                            crate::reducer::state::DevelopmentStatus::Completed,
+                            "done".to_string(),
+                            None,
+                            None,
+                        ),
+                    );
+                }
+                Effect::ArchiveDevelopmentXml { iteration } => {
+                    state = reduce(state, PipelineEvent::development_xml_archived(iteration));
+                }
+                Effect::ApplyDevelopmentOutcome { iteration } => {
                     iterations_run.push(iteration);
-                    // Complete the iteration (goes to CommitMessage phase)
                     state = reduce(
                         state,
                         PipelineEvent::development_iteration_completed(iteration, true),
                     );
                 }
-                Effect::GenerateCommitMessage => {
-                    // Generate and commit
+                Effect::PrepareCommitPrompt => {
                     state = reduce(state, PipelineEvent::commit_generation_started());
+                    state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+                }
+                Effect::InvokeCommitAgent => {
+                    state = reduce(state, PipelineEvent::commit_agent_invoked(1));
+                }
+                Effect::ExtractCommitXml => {
+                    state = reduce(state, PipelineEvent::commit_xml_extracted(1));
+                }
+                Effect::ValidateCommitXml => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::commit_xml_validated("test".to_string(), 1),
+                    );
+                }
+                Effect::ApplyCommitMessageOutcome => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::commit_message_generated("test".to_string(), 1),
+                    );
+                }
+                Effect::ArchiveCommitXml => {
+                    state = reduce(state, PipelineEvent::commit_xml_archived(1));
+                }
+                Effect::CreateCommit { .. } => {
                     state = reduce(
                         state,
                         PipelineEvent::commit_created(
@@ -1003,13 +1203,64 @@ mod tests {
                         ),
                     );
                 }
-                Effect::GeneratePlan { iteration } => {
+                Effect::PreparePlanningPrompt { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
+                }
+                Effect::InvokePlanningAgent { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_agent_invoked(iteration));
+                }
+                Effect::ExtractPlanningXml { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_xml_extracted(iteration));
+                }
+                Effect::ValidatePlanningXml { iteration } => {
                     state = reduce(
                         state,
-                        PipelineEvent::plan_generation_completed(iteration, true),
+                        PipelineEvent::planning_xml_validated(iteration, true),
                     );
                 }
-                Effect::RunDevelopmentIteration { iteration } => {
+                Effect::WritePlanningMarkdown { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_markdown_written(iteration));
+                }
+                Effect::ArchivePlanningXml { iteration } => {
+                    state = reduce(state, PipelineEvent::planning_xml_archived(iteration));
+                }
+                Effect::ApplyPlanningOutcome { iteration, valid } => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::plan_generation_completed(iteration, valid),
+                    );
+                }
+                Effect::PrepareDevelopmentContext { iteration } => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::development_context_prepared(iteration),
+                    );
+                }
+                Effect::PrepareDevelopmentPrompt { iteration } => {
+                    state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
+                }
+                Effect::InvokeDevelopmentAgent { iteration } => {
+                    state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
+                }
+                Effect::ExtractDevelopmentXml { iteration } => {
+                    state = reduce(state, PipelineEvent::development_xml_extracted(iteration));
+                }
+                Effect::ValidateDevelopmentXml { iteration } => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::development_xml_validated(
+                            iteration,
+                            crate::reducer::state::DevelopmentStatus::Completed,
+                            "done".to_string(),
+                            None,
+                            None,
+                        ),
+                    );
+                }
+                Effect::ArchiveDevelopmentXml { iteration } => {
+                    state = reduce(state, PipelineEvent::development_xml_archived(iteration));
+                }
+                Effect::ApplyDevelopmentOutcome { iteration } => {
                     iterations_run.push(iteration);
                     state = reduce(
                         state,
@@ -1082,12 +1333,30 @@ mod tests {
                 Effect::ApplyFixOutcome { pass } => {
                     state = reduce(state, PipelineEvent::fix_attempt_completed(pass, true));
                 }
-                Effect::GenerateCommitMessage => {
+                Effect::PrepareCommitPrompt => {
                     state = reduce(state, PipelineEvent::commit_generation_started());
+                    state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+                }
+                Effect::InvokeCommitAgent => {
+                    state = reduce(state, PipelineEvent::commit_agent_invoked(1));
+                }
+                Effect::ExtractCommitXml => {
+                    state = reduce(state, PipelineEvent::commit_xml_extracted(1));
+                }
+                Effect::ValidateCommitXml => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::commit_xml_validated("test commit".to_string(), 1),
+                    );
+                }
+                Effect::ApplyCommitMessageOutcome => {
                     state = reduce(
                         state,
                         PipelineEvent::commit_message_generated("test commit".to_string(), 1),
                     );
+                }
+                Effect::ArchiveCommitXml => {
+                    state = reduce(state, PipelineEvent::commit_xml_archived(1));
                 }
                 Effect::CreateCommit { .. } => {
                     state = reduce(
@@ -1206,11 +1475,30 @@ mod tests {
                     state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
                     state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
                 }
-                Effect::GenerateCommitMessage => {
+                Effect::PrepareCommitPrompt => {
+                    state = reduce(state, PipelineEvent::commit_generation_started());
+                    state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+                }
+                Effect::InvokeCommitAgent => {
+                    state = reduce(state, PipelineEvent::commit_agent_invoked(1));
+                }
+                Effect::ExtractCommitXml => {
+                    state = reduce(state, PipelineEvent::commit_xml_extracted(1));
+                }
+                Effect::ValidateCommitXml => {
+                    state = reduce(
+                        state,
+                        PipelineEvent::commit_xml_validated("test".to_string(), 1),
+                    );
+                }
+                Effect::ApplyCommitMessageOutcome => {
                     state = reduce(
                         state,
                         PipelineEvent::commit_message_generated("test".to_string(), 1),
                     );
+                }
+                Effect::ArchiveCommitXml => {
+                    state = reduce(state, PipelineEvent::commit_xml_archived(1));
                 }
                 Effect::CreateCommit { .. } => {
                     state = reduce(
@@ -1375,7 +1663,7 @@ mod tests {
             ..create_test_state()
         };
         let effect = determine_next_effect(&state);
-        assert!(matches!(effect, Effect::GenerateCommitMessage));
+        assert!(matches!(effect, Effect::PrepareCommitPrompt));
     }
 
     #[test]
@@ -1385,6 +1673,7 @@ mod tests {
             commit: CommitState::Generated {
                 message: "test commit message".to_string(),
             },
+            commit_xml_archived: true,
             agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
                 vec!["commit-agent".to_string()],
                 vec![vec![]],

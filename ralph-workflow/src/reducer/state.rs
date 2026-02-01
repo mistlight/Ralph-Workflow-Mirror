@@ -529,6 +529,44 @@ pub struct PipelineState {
     pub reviewer_pass: u32,
     pub total_reviewer_passes: u32,
     pub review_issues_found: bool,
+    /// Tracks whether the planning prompt was prepared for the current iteration.
+    #[serde(default)]
+    pub planning_prompt_prepared_iteration: Option<u32>,
+    /// Tracks whether the planning agent was invoked for the current iteration.
+    #[serde(default)]
+    pub planning_agent_invoked_iteration: Option<u32>,
+    /// Tracks whether `.agent/tmp/plan.xml` was successfully extracted for the iteration.
+    #[serde(default)]
+    pub planning_xml_extracted_iteration: Option<u32>,
+    /// Stores the validated outcome for the current planning iteration.
+    #[serde(default)]
+    pub planning_validated_outcome: Option<PlanningValidatedOutcome>,
+    /// Tracks whether PLAN.md has been written for the current iteration.
+    #[serde(default)]
+    pub planning_markdown_written_iteration: Option<u32>,
+    /// Tracks whether `.agent/tmp/plan.xml` was archived for the current iteration.
+    #[serde(default)]
+    pub planning_xml_archived_iteration: Option<u32>,
+    /// Tracks whether development context was prepared for the current iteration.
+    ///
+    /// Used to sequence single-task development effects.
+    #[serde(default)]
+    pub development_context_prepared_iteration: Option<u32>,
+    /// Tracks whether the development prompt was prepared for the current iteration.
+    #[serde(default)]
+    pub development_prompt_prepared_iteration: Option<u32>,
+    /// Tracks whether the developer agent was invoked for the current iteration.
+    #[serde(default)]
+    pub development_agent_invoked_iteration: Option<u32>,
+    /// Tracks whether `.agent/tmp/development_result.xml` was extracted for the current iteration.
+    #[serde(default)]
+    pub development_xml_extracted_iteration: Option<u32>,
+    /// Stores the validated development outcome for the current iteration.
+    #[serde(default)]
+    pub development_validated_outcome: Option<DevelopmentValidatedOutcome>,
+    /// Tracks whether the development XML was archived for the current iteration.
+    #[serde(default)]
+    pub development_xml_archived_iteration: Option<u32>,
     /// Tracks whether review context was prepared for the current pass.
     ///
     /// Used to sequence single-task review effects (PrepareReviewContext -> ...).
@@ -569,6 +607,21 @@ pub struct PipelineState {
 
     #[serde(default)]
     pub fix_result_xml_archived_pass: Option<u32>,
+    /// Tracks whether the commit prompt was prepared for the current commit attempt.
+    #[serde(default)]
+    pub commit_prompt_prepared: bool,
+    /// Tracks whether the commit agent was invoked for the current commit attempt.
+    #[serde(default)]
+    pub commit_agent_invoked: bool,
+    /// Tracks whether `.agent/tmp/commit_message.xml` was extracted for the current attempt.
+    #[serde(default)]
+    pub commit_xml_extracted: bool,
+    /// Stores the validated commit outcome for the current attempt.
+    #[serde(default)]
+    pub commit_validated_outcome: Option<CommitValidatedOutcome>,
+    /// Tracks whether commit XML has been archived for the current attempt.
+    #[serde(default)]
+    pub commit_xml_archived: bool,
     pub context_cleaned: bool,
     pub agent_chain: AgentChainState,
     pub rebase: RebaseState,
@@ -596,10 +649,32 @@ pub struct ReviewValidatedOutcome {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlanningValidatedOutcome {
+    pub iteration: u32,
+    pub valid: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DevelopmentValidatedOutcome {
+    pub iteration: u32,
+    pub status: DevelopmentStatus,
+    pub summary: String,
+    pub files_changed: Option<Vec<String>>,
+    pub next_steps: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FixValidatedOutcome {
     pub pass: u32,
     pub status: FixStatus,
     pub summary: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CommitValidatedOutcome {
+    pub attempt: u32,
+    pub message: Option<String>,
+    pub reason: Option<String>,
 }
 
 impl PipelineState {
@@ -644,6 +719,18 @@ impl PipelineState {
             reviewer_pass: 0,
             total_reviewer_passes: reviewer_reviews,
             review_issues_found: false,
+            planning_prompt_prepared_iteration: None,
+            planning_agent_invoked_iteration: None,
+            planning_xml_extracted_iteration: None,
+            planning_validated_outcome: None,
+            planning_markdown_written_iteration: None,
+            planning_xml_archived_iteration: None,
+            development_context_prepared_iteration: None,
+            development_prompt_prepared_iteration: None,
+            development_agent_invoked_iteration: None,
+            development_xml_extracted_iteration: None,
+            development_validated_outcome: None,
+            development_xml_archived_iteration: None,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
             review_agent_invoked_pass: None,
@@ -656,6 +743,11 @@ impl PipelineState {
             fix_result_xml_extracted_pass: None,
             fix_validated_outcome: None,
             fix_result_xml_archived_pass: None,
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
             context_cleaned: false,
             agent_chain: AgentChainState::initial(),
             rebase: RebaseState::NotStarted,
@@ -691,6 +783,18 @@ impl From<PipelineCheckpoint> for PipelineState {
             reviewer_pass: checkpoint.reviewer_pass,
             total_reviewer_passes: checkpoint.total_reviewer_passes,
             review_issues_found: false,
+            planning_prompt_prepared_iteration: None,
+            planning_agent_invoked_iteration: None,
+            planning_xml_extracted_iteration: None,
+            planning_validated_outcome: None,
+            planning_markdown_written_iteration: None,
+            planning_xml_archived_iteration: None,
+            development_context_prepared_iteration: None,
+            development_prompt_prepared_iteration: None,
+            development_agent_invoked_iteration: None,
+            development_xml_extracted_iteration: None,
+            development_validated_outcome: None,
+            development_xml_archived_iteration: None,
             review_context_prepared_pass: None,
             review_prompt_prepared_pass: None,
             review_agent_invoked_pass: None,
@@ -703,6 +807,11 @@ impl From<PipelineCheckpoint> for PipelineState {
             fix_result_xml_extracted_pass: None,
             fix_validated_outcome: None,
             fix_result_xml_archived_pass: None,
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
             context_cleaned: false,
             agent_chain,
             rebase: rebase_state,

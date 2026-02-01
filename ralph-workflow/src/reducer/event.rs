@@ -78,8 +78,35 @@ pub enum PlanningEvent {
     PhaseStarted,
     /// Planning phase completed, ready to proceed.
     PhaseCompleted,
-    /// Plan generation started for an iteration.
-    GenerationStarted {
+    /// Planning prompt prepared for an iteration.
+    PromptPrepared {
+        /// The iteration number this plan is for.
+        iteration: u32,
+    },
+    /// Planning agent invoked for an iteration.
+    AgentInvoked {
+        /// The iteration number this plan is for.
+        iteration: u32,
+    },
+    /// Planning XML extracted for an iteration.
+    PlanXmlExtracted {
+        /// The iteration number this plan is for.
+        iteration: u32,
+    },
+    /// Planning XML validated for an iteration.
+    PlanXmlValidated {
+        /// The iteration number this plan is for.
+        iteration: u32,
+        /// Whether the generated plan passed validation.
+        valid: bool,
+    },
+    /// Planning markdown written for an iteration.
+    PlanMarkdownWritten {
+        /// The iteration number this plan is for.
+        iteration: u32,
+    },
+    /// Planning XML archived for an iteration.
+    PlanXmlArchived {
         /// The iteration number this plan is for.
         iteration: u32,
     },
@@ -125,6 +152,62 @@ pub enum DevelopmentEvent {
     /// A development iteration has started.
     IterationStarted {
         /// The iteration number starting.
+        iteration: u32,
+    },
+
+    /// Development context prepared for an iteration.
+    ///
+    /// Emitted after `Effect::PrepareDevelopmentContext` completes.
+    ContextPrepared {
+        /// The iteration number the context was prepared for.
+        iteration: u32,
+    },
+
+    /// Development prompt prepared for an iteration.
+    ///
+    /// Emitted after `Effect::PrepareDevelopmentPrompt` completes.
+    PromptPrepared {
+        /// The iteration number the prompt was prepared for.
+        iteration: u32,
+    },
+
+    /// Developer agent was invoked for an iteration.
+    ///
+    /// Emitted after `Effect::InvokeDevelopmentAgent` completes.
+    AgentInvoked {
+        /// The iteration number the agent was invoked for.
+        iteration: u32,
+    },
+
+    /// Development result XML exists and was read successfully for the iteration.
+    ///
+    /// Emitted after `Effect::ExtractDevelopmentXml` completes.
+    XmlExtracted {
+        /// The iteration number the XML was extracted for.
+        iteration: u32,
+    },
+
+    /// Development result XML validated for an iteration.
+    ///
+    /// This event captures the parsed development outcome.
+    XmlValidated {
+        /// The iteration number the XML was validated for.
+        iteration: u32,
+        /// The parsed development status.
+        status: DevelopmentStatus,
+        /// Summary of what was accomplished.
+        summary: String,
+        /// Files changed in this attempt.
+        files_changed: Option<Vec<String>>,
+        /// Agent's recommended next steps.
+        next_steps: Option<String>,
+    },
+
+    /// Development result XML archived for an iteration.
+    ///
+    /// Emitted after `Effect::ArchiveDevelopmentXml` completes.
+    XmlArchived {
+        /// The iteration number the XML was archived for.
         iteration: u32,
     },
     /// A development iteration completed with validation result.
@@ -633,6 +716,40 @@ pub enum RebaseEvent {
 pub enum CommitEvent {
     /// Commit message generation started.
     GenerationStarted,
+    /// Commit prompt prepared for a commit attempt.
+    PromptPrepared {
+        /// The attempt number.
+        attempt: u32,
+    },
+    /// Commit agent invoked for a commit attempt.
+    AgentInvoked {
+        /// The attempt number.
+        attempt: u32,
+    },
+    /// Commit message XML extracted for a commit attempt.
+    CommitXmlExtracted {
+        /// The attempt number.
+        attempt: u32,
+    },
+    /// Commit message XML validated successfully.
+    CommitXmlValidated {
+        /// The generated commit message.
+        message: String,
+        /// The attempt number.
+        attempt: u32,
+    },
+    /// Commit message XML validation failed.
+    CommitXmlValidationFailed {
+        /// The reason for validation failure.
+        reason: String,
+        /// The attempt number.
+        attempt: u32,
+    },
+    /// Commit message XML archived.
+    CommitXmlArchived {
+        /// The attempt number.
+        attempt: u32,
+    },
     /// Commit message was generated.
     MessageGenerated {
         /// The generated commit message.
@@ -807,9 +924,34 @@ impl PipelineEvent {
         Self::Planning(PlanningEvent::PhaseCompleted)
     }
 
-    /// Create a PlanGenerationStarted event.
-    pub fn plan_generation_started(iteration: u32) -> Self {
-        Self::Planning(PlanningEvent::GenerationStarted { iteration })
+    /// Create a PlanningPromptPrepared event.
+    pub fn planning_prompt_prepared(iteration: u32) -> Self {
+        Self::Planning(PlanningEvent::PromptPrepared { iteration })
+    }
+
+    /// Create a PlanningAgentInvoked event.
+    pub fn planning_agent_invoked(iteration: u32) -> Self {
+        Self::Planning(PlanningEvent::AgentInvoked { iteration })
+    }
+
+    /// Create a PlanningXmlExtracted event.
+    pub fn planning_xml_extracted(iteration: u32) -> Self {
+        Self::Planning(PlanningEvent::PlanXmlExtracted { iteration })
+    }
+
+    /// Create a PlanningXmlValidated event.
+    pub fn planning_xml_validated(iteration: u32, valid: bool) -> Self {
+        Self::Planning(PlanningEvent::PlanXmlValidated { iteration, valid })
+    }
+
+    /// Create a PlanningMarkdownWritten event.
+    pub fn planning_markdown_written(iteration: u32) -> Self {
+        Self::Planning(PlanningEvent::PlanMarkdownWritten { iteration })
+    }
+
+    /// Create a PlanningXmlArchived event.
+    pub fn planning_xml_archived(iteration: u32) -> Self {
+        Self::Planning(PlanningEvent::PlanXmlArchived { iteration })
     }
 
     /// Create a PlanGenerationCompleted event.
@@ -831,6 +973,48 @@ impl PipelineEvent {
     /// Create a DevelopmentIterationStarted event.
     pub fn development_iteration_started(iteration: u32) -> Self {
         Self::Development(DevelopmentEvent::IterationStarted { iteration })
+    }
+
+    /// Create a DevelopmentContextPrepared event.
+    pub fn development_context_prepared(iteration: u32) -> Self {
+        Self::Development(DevelopmentEvent::ContextPrepared { iteration })
+    }
+
+    /// Create a DevelopmentPromptPrepared event.
+    pub fn development_prompt_prepared(iteration: u32) -> Self {
+        Self::Development(DevelopmentEvent::PromptPrepared { iteration })
+    }
+
+    /// Create a DevelopmentAgentInvoked event.
+    pub fn development_agent_invoked(iteration: u32) -> Self {
+        Self::Development(DevelopmentEvent::AgentInvoked { iteration })
+    }
+
+    /// Create a DevelopmentXmlExtracted event.
+    pub fn development_xml_extracted(iteration: u32) -> Self {
+        Self::Development(DevelopmentEvent::XmlExtracted { iteration })
+    }
+
+    /// Create a DevelopmentXmlValidated event.
+    pub fn development_xml_validated(
+        iteration: u32,
+        status: DevelopmentStatus,
+        summary: String,
+        files_changed: Option<Vec<String>>,
+        next_steps: Option<String>,
+    ) -> Self {
+        Self::Development(DevelopmentEvent::XmlValidated {
+            iteration,
+            status,
+            summary,
+            files_changed,
+            next_steps,
+        })
+    }
+
+    /// Create a DevelopmentXmlArchived event.
+    pub fn development_xml_archived(iteration: u32) -> Self {
+        Self::Development(DevelopmentEvent::XmlArchived { iteration })
     }
 
     /// Create a DevelopmentIterationCompleted event.
@@ -1227,6 +1411,36 @@ impl PipelineEvent {
     /// Create a CommitGenerationStarted event.
     pub fn commit_generation_started() -> Self {
         Self::Commit(CommitEvent::GenerationStarted)
+    }
+
+    /// Create a CommitPromptPrepared event.
+    pub fn commit_prompt_prepared(attempt: u32) -> Self {
+        Self::Commit(CommitEvent::PromptPrepared { attempt })
+    }
+
+    /// Create a CommitAgentInvoked event.
+    pub fn commit_agent_invoked(attempt: u32) -> Self {
+        Self::Commit(CommitEvent::AgentInvoked { attempt })
+    }
+
+    /// Create a CommitXmlExtracted event.
+    pub fn commit_xml_extracted(attempt: u32) -> Self {
+        Self::Commit(CommitEvent::CommitXmlExtracted { attempt })
+    }
+
+    /// Create a CommitXmlValidated event.
+    pub fn commit_xml_validated(message: String, attempt: u32) -> Self {
+        Self::Commit(CommitEvent::CommitXmlValidated { message, attempt })
+    }
+
+    /// Create a CommitXmlValidationFailed event.
+    pub fn commit_xml_validation_failed(reason: String, attempt: u32) -> Self {
+        Self::Commit(CommitEvent::CommitXmlValidationFailed { reason, attempt })
+    }
+
+    /// Create a CommitXmlArchived event.
+    pub fn commit_xml_archived(attempt: u32) -> Self {
+        Self::Commit(CommitEvent::CommitXmlArchived { attempt })
     }
 
     /// Create a CommitMessageGenerated event.

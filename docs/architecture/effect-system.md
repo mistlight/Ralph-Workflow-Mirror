@@ -174,7 +174,12 @@ pub enum Effect {
     ResolveRebaseConflicts { strategy: ConflictStrategy },
 
     // Commit operations
-    GenerateCommitMessage,
+    PrepareCommitPrompt,
+    InvokeCommitAgent,
+    ExtractCommitXml,
+    ValidateCommitXml,
+    ApplyCommitMessageOutcome,
+    ArchiveCommitXml,
     CreateCommit { message: String },
     SkipCommit { reason: String },
 

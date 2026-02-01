@@ -20,8 +20,8 @@ fn test_development_iteration_emits_progress_ui() {
         let state = PipelineState::initial(3, 1);
         let mut handler = MockEffectHandler::new(state);
 
-        // Simulate development iteration
-        let _result = handler.execute_mock(Effect::RunDevelopmentIteration { iteration: 1 });
+        // Simulate development XML extraction
+        let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
 
         // Verify UI event was emitted
         assert!(
@@ -210,13 +210,16 @@ fn test_agent_activity_ui_event() {
 }
 
 #[test]
-fn test_generate_plan_emits_phase_transition_on_success() {
+fn test_apply_planning_outcome_emits_phase_transition_on_success() {
     with_default_timeout(|| {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        // Simulate plan generation
-        let _result = handler.execute_mock(Effect::GeneratePlan { iteration: 1 });
+        // Simulate planning completion
+        let _result = handler.execute_mock(Effect::ApplyPlanningOutcome {
+            iteration: 1,
+            valid: true,
+        });
 
         // Verify phase transition UI event was emitted
         assert!(
@@ -239,7 +242,7 @@ fn test_captured_ui_events_cleared_on_clear() {
         let mut handler = MockEffectHandler::new(state);
 
         // Emit some UI events
-        let _result = handler.execute_mock(Effect::RunDevelopmentIteration { iteration: 1 });
+        let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
 
         // Verify UI events were captured
         assert!(
@@ -338,8 +341,11 @@ fn test_complete_phase_transition_sequence() {
         });
         all_ui_events.extend(result.ui_events);
 
-        // 2. Development phase (via GeneratePlan success)
-        let result = handler.execute_mock(Effect::GeneratePlan { iteration: 1 });
+        // 2. Development phase (via ApplyPlanningOutcome success)
+        let result = handler.execute_mock(Effect::ApplyPlanningOutcome {
+            iteration: 1,
+            valid: true,
+        });
         all_ui_events.extend(result.ui_events);
 
         // Update handler state to Review phase
@@ -407,13 +413,13 @@ fn test_complete_phase_transition_sequence() {
 // =========================================================================
 
 #[test]
-fn test_generate_plan_emits_xml_output() {
+fn test_validate_planning_xml_emits_xml_output() {
     with_default_timeout(|| {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        // Generate plan
-        let _result = handler.execute_mock(Effect::GeneratePlan { iteration: 1 });
+        // Validate plan XML
+        let _result = handler.execute_mock(Effect::ValidatePlanningXml { iteration: 1 });
 
         // Verify XmlOutput event was emitted with DevelopmentPlan type
         assert!(
@@ -424,7 +430,7 @@ fn test_generate_plan_emits_xml_output() {
                     ..
                 }
             )),
-            "GeneratePlan should emit XmlOutput event with DevelopmentPlan type"
+            "ValidatePlanningXml should emit XmlOutput event with DevelopmentPlan type"
         );
     });
 }
@@ -435,8 +441,8 @@ fn test_development_iteration_emits_xml_output() {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        // Run development iteration
-        let _result = handler.execute_mock(Effect::RunDevelopmentIteration { iteration: 1 });
+        // Extract development XML
+        let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
 
         // Verify XmlOutput event was emitted with DevelopmentResult type
         assert!(
@@ -447,7 +453,7 @@ fn test_development_iteration_emits_xml_output() {
                     ..
                 }
             )),
-            "RunDevelopmentIteration should emit XmlOutput event with DevelopmentResult type"
+            "ExtractDevelopmentXml should emit XmlOutput event with DevelopmentResult type"
         );
     });
 }
@@ -504,8 +510,8 @@ fn test_commit_message_emits_xml_output() {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        // Generate commit message
-        let _result = handler.execute_mock(Effect::GenerateCommitMessage);
+        // Validate commit XML
+        let _result = handler.execute_mock(Effect::ValidateCommitXml);
 
         // Verify XmlOutput event was emitted with CommitMessage type
         assert!(
@@ -516,7 +522,7 @@ fn test_commit_message_emits_xml_output() {
                     ..
                 }
             )),
-            "GenerateCommitMessage should emit XmlOutput event with CommitMessage type"
+            "ValidateCommitXml should emit XmlOutput event with CommitMessage type"
         );
     });
 }
@@ -527,8 +533,8 @@ fn test_xml_output_context_includes_iteration() {
         let state = PipelineState::initial(3, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        // Generate plan for iteration 2
-        let result = handler.execute_mock(Effect::GeneratePlan { iteration: 2 });
+        // Validate plan XML for iteration 2
+        let result = handler.execute_mock(Effect::ValidatePlanningXml { iteration: 2 });
 
         // Find the XmlOutput event and check context
         let xml_output = result

@@ -555,8 +555,8 @@ fn test_effects_determined_from_state_only() {
         state.context_cleaned = true;
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::GeneratePlan { .. }),
-            "Should generate plan when state is ready: {:?}",
+            matches!(effect, Effect::PreparePlanningPrompt { .. }),
+            "Should prepare planning prompt when state is ready: {:?}",
             effect
         );
 
@@ -571,8 +571,8 @@ fn test_effects_determined_from_state_only() {
         );
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::RunDevelopmentIteration { .. }),
-            "Should run dev iteration from state: {:?}",
+            matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+            "Should start development chain from state: {:?}",
             effect
         );
     });
@@ -604,8 +604,8 @@ fn test_agent_selection_from_reducer_state() {
         // The effect doesn't contain agent name - handler reads from state.agent_chain
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::RunDevelopmentIteration { iteration: 1 }),
-            "Expected RunDevelopmentIteration, got {:?}",
+            matches!(effect, Effect::PrepareDevelopmentContext { iteration: 1 }),
+            "Expected PrepareDevelopmentContext, got {:?}",
             effect
         );
 
@@ -861,8 +861,20 @@ fn test_effects_are_single_task() {
         enum EffectTask {
             AgentInvocation,
             InitializeAgentChain,
-            GeneratePlan,
-            RunDevelopmentIteration,
+            PreparePlanningPrompt,
+            InvokePlanningAgent,
+            ExtractPlanningXml,
+            ValidatePlanningXml,
+            WritePlanningMarkdown,
+            ArchivePlanningXml,
+            ApplyPlanningOutcome,
+            PrepareDevelopmentContext,
+            PrepareDevelopmentPrompt,
+            InvokeDevelopmentAgent,
+            ExtractDevelopmentXml,
+            ValidateDevelopmentXml,
+            ApplyDevelopmentOutcome,
+            ArchiveDevelopmentXml,
             PrepareReviewContext,
             PrepareReviewPrompt,
             InvokeReviewAgent,
@@ -879,7 +891,12 @@ fn test_effects_are_single_task() {
             ArchiveFixResultXml,
             RunRebase,
             ResolveRebaseConflicts,
-            GenerateCommitMessage,
+            PrepareCommitPrompt,
+            InvokeCommitAgent,
+            ExtractCommitXml,
+            ValidateCommitXml,
+            ApplyCommitMessageOutcome,
+            ArchiveCommitXml,
             CreateCommit,
             SkipCommit,
             BackoffWait,
@@ -897,8 +914,20 @@ fn test_effects_are_single_task() {
                 // Each match arm describes the SINGLE task the effect performs
                 Effect::AgentInvocation { .. } => EffectTask::AgentInvocation,
                 Effect::InitializeAgentChain { .. } => EffectTask::InitializeAgentChain,
-                Effect::GeneratePlan { .. } => EffectTask::GeneratePlan,
-                Effect::RunDevelopmentIteration { .. } => EffectTask::RunDevelopmentIteration,
+                Effect::PreparePlanningPrompt { .. } => EffectTask::PreparePlanningPrompt,
+                Effect::InvokePlanningAgent { .. } => EffectTask::InvokePlanningAgent,
+                Effect::ExtractPlanningXml { .. } => EffectTask::ExtractPlanningXml,
+                Effect::ValidatePlanningXml { .. } => EffectTask::ValidatePlanningXml,
+                Effect::WritePlanningMarkdown { .. } => EffectTask::WritePlanningMarkdown,
+                Effect::ArchivePlanningXml { .. } => EffectTask::ArchivePlanningXml,
+                Effect::ApplyPlanningOutcome { .. } => EffectTask::ApplyPlanningOutcome,
+                Effect::PrepareDevelopmentContext { .. } => EffectTask::PrepareDevelopmentContext,
+                Effect::PrepareDevelopmentPrompt { .. } => EffectTask::PrepareDevelopmentPrompt,
+                Effect::InvokeDevelopmentAgent { .. } => EffectTask::InvokeDevelopmentAgent,
+                Effect::ExtractDevelopmentXml { .. } => EffectTask::ExtractDevelopmentXml,
+                Effect::ValidateDevelopmentXml { .. } => EffectTask::ValidateDevelopmentXml,
+                Effect::ApplyDevelopmentOutcome { .. } => EffectTask::ApplyDevelopmentOutcome,
+                Effect::ArchiveDevelopmentXml { .. } => EffectTask::ArchiveDevelopmentXml,
                 Effect::PrepareReviewContext { .. } => EffectTask::PrepareReviewContext,
                 Effect::PrepareReviewPrompt { .. } => EffectTask::PrepareReviewPrompt,
                 Effect::InvokeReviewAgent { .. } => EffectTask::InvokeReviewAgent,
@@ -915,7 +944,12 @@ fn test_effects_are_single_task() {
                 Effect::ArchiveFixResultXml { .. } => EffectTask::ArchiveFixResultXml,
                 Effect::RunRebase { .. } => EffectTask::RunRebase,
                 Effect::ResolveRebaseConflicts { .. } => EffectTask::ResolveRebaseConflicts,
-                Effect::GenerateCommitMessage => EffectTask::GenerateCommitMessage,
+                Effect::PrepareCommitPrompt => EffectTask::PrepareCommitPrompt,
+                Effect::InvokeCommitAgent => EffectTask::InvokeCommitAgent,
+                Effect::ExtractCommitXml => EffectTask::ExtractCommitXml,
+                Effect::ValidateCommitXml => EffectTask::ValidateCommitXml,
+                Effect::ApplyCommitMessageOutcome => EffectTask::ApplyCommitMessageOutcome,
+                Effect::ArchiveCommitXml => EffectTask::ArchiveCommitXml,
                 Effect::CreateCommit { .. } => EffectTask::CreateCommit,
                 Effect::SkipCommit { .. } => EffectTask::SkipCommit,
                 Effect::BackoffWait { .. } => EffectTask::BackoffWait,
@@ -941,8 +975,23 @@ fn test_effects_are_single_task() {
             Effect::InitializeAgentChain {
                 role: AgentRole::Developer,
             },
-            Effect::GeneratePlan { iteration: 0 },
-            Effect::RunDevelopmentIteration { iteration: 0 },
+            Effect::PreparePlanningPrompt { iteration: 0 },
+            Effect::InvokePlanningAgent { iteration: 0 },
+            Effect::ExtractPlanningXml { iteration: 0 },
+            Effect::ValidatePlanningXml { iteration: 0 },
+            Effect::WritePlanningMarkdown { iteration: 0 },
+            Effect::ArchivePlanningXml { iteration: 0 },
+            Effect::ApplyPlanningOutcome {
+                iteration: 0,
+                valid: true,
+            },
+            Effect::PrepareDevelopmentContext { iteration: 0 },
+            Effect::PrepareDevelopmentPrompt { iteration: 0 },
+            Effect::InvokeDevelopmentAgent { iteration: 0 },
+            Effect::ExtractDevelopmentXml { iteration: 0 },
+            Effect::ValidateDevelopmentXml { iteration: 0 },
+            Effect::ApplyDevelopmentOutcome { iteration: 0 },
+            Effect::ArchiveDevelopmentXml { iteration: 0 },
             Effect::PrepareReviewContext { pass: 0 },
             Effect::PrepareFixPrompt { pass: 0 },
             Effect::RunRebase {
@@ -952,7 +1001,12 @@ fn test_effects_are_single_task() {
             Effect::ResolveRebaseConflicts {
                 strategy: ConflictStrategy::Abort,
             },
-            Effect::GenerateCommitMessage,
+            Effect::PrepareCommitPrompt,
+            Effect::InvokeCommitAgent,
+            Effect::ExtractCommitXml,
+            Effect::ValidateCommitXml,
+            Effect::ApplyCommitMessageOutcome,
+            Effect::ArchiveCommitXml,
             Effect::CreateCommit {
                 message: "test".to_string(),
             },
@@ -992,8 +1046,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            19,
-            "Expected 19 Effect variants; update this test if variants were added or removed"
+            31,
+            "Expected 31 Effect variants; update this test if variants were added or removed"
         );
     });
 }
@@ -1126,7 +1180,7 @@ fn test_legacy_artifacts_ignored_during_execution() {
         // (determine_next_effect is a pure function of state)
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::RunDevelopmentIteration { .. }),
+            matches!(effect, Effect::PrepareDevelopmentContext { .. }),
             "Effect should be determined from state alone, got {:?}",
             effect
         );
@@ -1188,7 +1242,7 @@ fn test_legacy_artifact_files_completely_ignored() {
         // Effect determination must be pure - workspace contents must not affect it
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::RunDevelopmentIteration { .. }),
+            matches!(effect, Effect::PrepareDevelopmentContext { .. }),
             "Effect must be determined from state alone, not workspace files"
         );
 
@@ -1230,17 +1284,17 @@ fn test_effect_determination_is_pure_function_of_state() {
 
         // All calls should produce the same effect (purity)
         assert!(
-            matches!(&effect1, Effect::RunDevelopmentIteration { iteration: 1 }),
+            matches!(&effect1, Effect::PrepareDevelopmentContext { iteration: 1 }),
             "First call: {:?}",
             effect1
         );
         assert!(
-            matches!(&effect2, Effect::RunDevelopmentIteration { iteration: 1 }),
+            matches!(&effect2, Effect::PrepareDevelopmentContext { iteration: 1 }),
             "Second call: {:?}",
             effect2
         );
         assert!(
-            matches!(&effect3, Effect::RunDevelopmentIteration { iteration: 1 }),
+            matches!(&effect3, Effect::PrepareDevelopmentContext { iteration: 1 }),
             "Third call: {:?}",
             effect3
         );

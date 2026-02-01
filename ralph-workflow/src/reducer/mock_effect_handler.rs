@@ -54,7 +54,7 @@ pub struct MockEffectHandler {
     captured_effects: RefCell<Vec<Effect>>,
     /// All UI events that have been emitted, in order.
     captured_ui_events: RefCell<Vec<UIEvent>>,
-    /// When true, GenerateCommitMessage returns CommitSkipped instead of CommitMessageGenerated.
+    /// When true, PrepareCommitPrompt returns CommitSkipped instead of proceeding.
     simulate_empty_diff: bool,
 }
 
@@ -71,7 +71,7 @@ impl MockEffectHandler {
 
     /// Configure the mock to simulate empty diff scenario.
     ///
-    /// When enabled, GenerateCommitMessage returns CommitSkipped instead of
+    /// When enabled, PrepareCommitPrompt returns CommitSkipped instead of
     /// CommitMessageGenerated, simulating the case where there are no changes
     /// to commit.
     pub fn with_empty_diff(mut self) -> Self {
@@ -130,6 +130,7 @@ impl MockEffectHandler {
         self.captured_effects.borrow_mut().push(effect.clone());
 
         // Generate appropriate mock events based on effect type
+        let mut additional_events = Vec::new();
         let (event, ui_events) = match effect {
             Effect::AgentInvocation {
                 role,
@@ -178,56 +179,93 @@ impl MockEffectHandler {
                 )
             }
 
-            Effect::GeneratePlan { iteration } => {
+            Effect::PreparePlanningPrompt { iteration } => {
+                (PipelineEvent::planning_prompt_prepared(iteration), vec![])
+            }
+
+            Effect::InvokePlanningAgent { iteration } => {
+                (PipelineEvent::planning_agent_invoked(iteration), vec![])
+            }
+
+            Effect::ExtractPlanningXml { iteration } => {
+                (PipelineEvent::planning_xml_extracted(iteration), vec![])
+            }
+
+            Effect::ValidatePlanningXml { iteration } => {
                 let mock_plan_xml = r#"<ralph-plan>
-<ralph-summary>
-<context>Mock plan for testing</context>
-<scope-items>
-<scope-item count="1">test item</scope-item>
-<scope-item count="1">another item</scope-item>
-<scope-item count="1">third item</scope-item>
-</scope-items>
-</ralph-summary>
-<ralph-implementation-steps>
-<step number="1" type="file-change">
-<title>Mock step</title>
-<target-files><file path="src/test.rs" action="modify"/></target-files>
-<content><paragraph>Test content</paragraph></content>
-</step>
-</ralph-implementation-steps>
-<ralph-critical-files>
-<primary-files><file path="src/test.rs" action="modify"/></primary-files>
-<reference-files><file path="src/lib.rs" purpose="reference"/></reference-files>
-</ralph-critical-files>
-<ralph-risks-mitigations>
-<risk-pair severity="low"><risk>Test risk</risk><mitigation>Test mitigation</mitigation></risk-pair>
-</ralph-risks-mitigations>
-<ralph-verification-strategy>
-<verification><method>Test method</method><expected-outcome>Pass</expected-outcome></verification>
-</ralph-verification-strategy>
-</ralph-plan>"#;
-                let ui = vec![
-                    UIEvent::PhaseTransition {
-                        from: Some(self.state.phase),
-                        to: PipelinePhase::Development,
-                    },
-                    UIEvent::XmlOutput {
-                        xml_type: XmlOutputType::DevelopmentPlan,
-                        content: mock_plan_xml.to_string(),
-                        context: Some(XmlOutputContext {
-                            iteration: Some(iteration),
-                            pass: None,
-                            snippets: Vec::new(),
-                        }),
-                    },
-                ];
+ <ralph-summary>
+ <context>Mock plan for testing</context>
+ <scope-items>
+ <scope-item count="1">test item</scope-item>
+ <scope-item count="1">another item</scope-item>
+ <scope-item count="1">third item</scope-item>
+ </scope-items>
+ </ralph-summary>
+ <ralph-implementation-steps>
+ <step number="1" type="file-change">
+ <title>Mock step</title>
+ <target-files><file path="src/test.rs" action="modify"/></target-files>
+ <content><paragraph>Test content</paragraph></content>
+ </step>
+ </ralph-implementation-steps>
+ <ralph-critical-files>
+ <primary-files><file path="src/test.rs" action="modify"/></primary-files>
+ <reference-files><file path="src/lib.rs" purpose="reference"/></reference-files>
+ </ralph-critical-files>
+ <ralph-risks-mitigations>
+ <risk-pair severity="low"><risk>Test risk</risk><mitigation>Test mitigation</mitigation></risk-pair>
+ </ralph-risks-mitigations>
+ <ralph-verification-strategy>
+ <verification><method>Test method</method><expected-outcome>Pass</expected-outcome></verification>
+ </ralph-verification-strategy>
+ </ralph-plan>"#;
+                let ui = vec![UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::DevelopmentPlan,
+                    content: mock_plan_xml.to_string(),
+                    context: Some(XmlOutputContext {
+                        iteration: Some(iteration),
+                        pass: None,
+                        snippets: Vec::new(),
+                    }),
+                }];
                 (
-                    PipelineEvent::plan_generation_completed(iteration, true),
+                    PipelineEvent::planning_xml_validated(iteration, true),
                     ui,
                 )
             }
 
-            Effect::RunDevelopmentIteration { iteration } => {
+            Effect::WritePlanningMarkdown { iteration } => {
+                (PipelineEvent::planning_markdown_written(iteration), vec![])
+            }
+
+            Effect::ArchivePlanningXml { iteration } => {
+                (PipelineEvent::planning_xml_archived(iteration), vec![])
+            }
+
+            Effect::ApplyPlanningOutcome { iteration, valid } => {
+                let mut ui = Vec::new();
+                if valid {
+                    ui.push(UIEvent::PhaseTransition {
+                        from: Some(self.state.phase),
+                        to: PipelinePhase::Development,
+                    });
+                }
+                (PipelineEvent::plan_generation_completed(iteration, valid), ui)
+            }
+
+            Effect::PrepareDevelopmentContext { iteration } => {
+                (PipelineEvent::development_context_prepared(iteration), vec![])
+            }
+
+            Effect::PrepareDevelopmentPrompt { iteration } => {
+                (PipelineEvent::development_prompt_prepared(iteration), vec![])
+            }
+
+            Effect::InvokeDevelopmentAgent { iteration } => {
+                (PipelineEvent::development_agent_invoked(iteration), vec![])
+            }
+
+            Effect::ExtractDevelopmentXml { iteration } => {
                 let mock_dev_result_xml = r#"<ralph-development-result>
 <ralph-status>completed</ralph-status>
 <ralph-summary>Mock development iteration completed successfully</ralph-summary>
@@ -249,11 +287,28 @@ src/lib.rs</ralph-files-changed>
                         }),
                     },
                 ];
-                (
-                    PipelineEvent::development_iteration_completed(iteration, true),
-                    ui,
-                )
+                (PipelineEvent::development_xml_extracted(iteration), ui)
             }
+
+            Effect::ValidateDevelopmentXml { iteration } => (
+                PipelineEvent::development_xml_validated(
+                    iteration,
+                    crate::reducer::state::DevelopmentStatus::Completed,
+                    "Mock development iteration completed successfully".to_string(),
+                    Some(vec!["src/test.rs".to_string(), "src/lib.rs".to_string()]),
+                    None,
+                ),
+                vec![],
+            ),
+
+            Effect::ArchiveDevelopmentXml { iteration } => {
+                (PipelineEvent::development_xml_archived(iteration), vec![])
+            }
+
+            Effect::ApplyDevelopmentOutcome { iteration } => (
+                PipelineEvent::development_iteration_completed(iteration, true),
+                vec![],
+            ),
 
             Effect::PrepareReviewContext { pass } => {
                 (
@@ -359,7 +414,11 @@ src/lib.rs</ralph-files-changed>
                 (PipelineEvent::rebase_conflict_resolved(vec![]), vec![])
             }
 
-            Effect::GenerateCommitMessage => {
+            Effect::PrepareCommitPrompt => {
+                let attempt = match self.state.commit {
+                    crate::reducer::state::CommitState::Generating { attempt, .. } => attempt,
+                    _ => 1,
+                };
                 if self.simulate_empty_diff {
                     (
                         PipelineEvent::commit_skipped(
@@ -368,32 +427,89 @@ src/lib.rs</ralph-files-changed>
                         vec![],
                     )
                 } else {
-                    let mock_commit_xml = r#"<ralph-commit>
+                    let ui = vec![UIEvent::PhaseTransition {
+                        from: Some(self.state.phase),
+                        to: PipelinePhase::CommitMessage,
+                    }];
+                    if matches!(self.state.commit, crate::reducer::state::CommitState::NotStarted) {
+                        additional_events.push(PipelineEvent::commit_prompt_prepared(attempt));
+                        (PipelineEvent::commit_generation_started(), ui)
+                    } else {
+                        (PipelineEvent::commit_prompt_prepared(attempt), ui)
+                    }
+                }
+            }
+
+            Effect::InvokeCommitAgent => {
+                let attempt = match self.state.commit {
+                    crate::reducer::state::CommitState::Generating { attempt, .. } => attempt,
+                    _ => 1,
+                };
+                (PipelineEvent::commit_agent_invoked(attempt), vec![])
+            }
+
+            Effect::ExtractCommitXml => {
+                let attempt = match self.state.commit {
+                    crate::reducer::state::CommitState::Generating { attempt, .. } => attempt,
+                    _ => 1,
+                };
+                (PipelineEvent::commit_xml_extracted(attempt), vec![])
+            }
+
+            Effect::ValidateCommitXml => {
+                let attempt = match self.state.commit {
+                    crate::reducer::state::CommitState::Generating { attempt, .. } => attempt,
+                    _ => 1,
+                };
+                let mock_commit_xml = r#"<ralph-commit>
 <ralph-subject>feat: mock commit message for testing</ralph-subject>
 <ralph-body>This is a mock commit body generated for testing purposes.
 
 - Changed some files
 - Added new features</ralph-body>
 </ralph-commit>"#;
-                    let ui = vec![
-                        UIEvent::PhaseTransition {
-                            from: Some(self.state.phase),
-                            to: PipelinePhase::CommitMessage,
-                        },
-                        UIEvent::XmlOutput {
-                            xml_type: XmlOutputType::CommitMessage,
-                            content: mock_commit_xml.to_string(),
-                            context: None,
-                        },
-                    ];
-                    (
-                        PipelineEvent::commit_message_generated(
-                            "mock commit message".to_string(),
-                            1,
+                let ui = vec![UIEvent::XmlOutput {
+                    xml_type: XmlOutputType::CommitMessage,
+                    content: mock_commit_xml.to_string(),
+                    context: None,
+                }];
+                (
+                    PipelineEvent::commit_xml_validated(
+                        "mock commit message".to_string(),
+                        attempt,
+                    ),
+                    ui,
+                )
+            }
+
+            Effect::ApplyCommitMessageOutcome => {
+                let event = match self.state.commit_validated_outcome.as_ref() {
+                    Some(outcome) => match (&outcome.message, &outcome.reason) {
+                        (Some(message), _) => PipelineEvent::commit_message_generated(
+                            message.clone(),
+                            outcome.attempt,
                         ),
-                        ui,
-                    )
-                }
+                        (None, Some(reason)) => PipelineEvent::commit_message_validation_failed(
+                            reason.clone(),
+                            outcome.attempt,
+                        ),
+                        _ => PipelineEvent::commit_generation_failed(
+                            "Mock commit outcome missing message and reason".to_string(),
+                        ),
+                    },
+                    None => PipelineEvent::commit_generation_failed(
+                        "Mock commit outcome missing".to_string(),
+                    ),
+                };
+                (event, vec![])
+            }
+
+            Effect::ArchiveCommitXml => {
+                let attempt = match self.state.commit {
+                    crate::reducer::state::CommitState::Generating { attempt, .. } => attempt,
+                    _ => 1,
+                };
+                (PipelineEvent::commit_xml_archived(attempt), vec![])
             }
 
             Effect::CreateCommit { message } => (
@@ -455,7 +571,11 @@ src/lib.rs</ralph-files-changed>
             .borrow_mut()
             .extend(ui_events.clone());
 
-        EffectResult::with_ui(event, ui_events)
+        EffectResult {
+            event,
+            additional_events,
+            ui_events,
+        }
     }
 }
 
@@ -503,8 +623,8 @@ mod tests {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state).with_empty_diff();
 
-        // GenerateCommitMessage should return CommitSkipped when empty diff is simulated
-        let result = handler.execute_mock(Effect::GenerateCommitMessage);
+        // PrepareCommitPrompt should return CommitSkipped when empty diff is simulated
+        let result = handler.execute_mock(Effect::PrepareCommitPrompt);
 
         assert!(
             matches!(
@@ -529,18 +649,27 @@ mod tests {
 
     #[test]
     fn mock_effect_handler_normal_commit_generation() {
-        let state = PipelineState::initial(1, 0);
+        use crate::reducer::state::CommitValidatedOutcome;
+
+        let state = PipelineState {
+            commit_validated_outcome: Some(CommitValidatedOutcome {
+                attempt: 1,
+                message: Some("mock commit message".to_string()),
+                reason: None,
+            }),
+            ..PipelineState::initial(1, 0)
+        };
         let mut handler = MockEffectHandler::new(state); // No with_empty_diff()
 
-        // GenerateCommitMessage should return CommitMessageGenerated normally
-        let result = handler.execute_mock(Effect::GenerateCommitMessage);
+        // ApplyCommitMessageOutcome should return CommitMessageGenerated normally
+        let result = handler.execute_mock(Effect::ApplyCommitMessageOutcome);
 
         assert!(
             matches!(
                 result.event,
                 PipelineEvent::Commit(crate::reducer::event::CommitEvent::MessageGenerated { .. })
             ),
-            "Should return CommitMessageGenerated when empty diff is not simulated, got: {:?}",
+            "Should return CommitMessageGenerated when validated outcome exists, got: {:?}",
             result.event
         );
     }
@@ -625,10 +754,10 @@ mod tests {
         handler
             .captured_effects
             .borrow_mut()
-            .push(Effect::GeneratePlan { iteration: 1 });
+            .push(Effect::PreparePlanningPrompt { iteration: 1 });
 
         assert!(handler.was_effect_executed(|e| matches!(e, Effect::CreateCommit { .. })));
-        assert!(handler.was_effect_executed(|e| matches!(e, Effect::GeneratePlan { .. })));
+        assert!(handler.was_effect_executed(|e| matches!(e, Effect::PreparePlanningPrompt { .. })));
         assert!(!handler.was_effect_executed(|e| matches!(e, Effect::ValidateFinalState)));
     }
 
@@ -714,14 +843,14 @@ mod tests {
         assert_eq!(handler.effect_count(), 1);
     }
 
-    /// Test that MockEffectHandler captures UI events for development iteration.
+    /// Test that MockEffectHandler captures UI events for development extraction.
     #[test]
     fn mock_effect_handler_captures_iteration_progress_ui() {
         let state = PipelineState::initial(3, 1);
         let mut handler = MockEffectHandler::new(state);
 
-        // Simulate development iteration
-        let _result = handler.execute_mock(Effect::RunDevelopmentIteration { iteration: 1 });
+        // Simulate development XML extraction
+        let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
 
         // Verify UI event was emitted
         assert!(handler.was_ui_event_emitted(|e| {
@@ -775,13 +904,13 @@ mod tests {
         assert_eq!(state.phase, state_clone.phase);
     }
 
-    /// Test that MockEffectHandler emits XmlOutput events for plan generation.
+    /// Test that MockEffectHandler emits XmlOutput events for plan validation.
     #[test]
     fn mock_effect_handler_emits_xml_output_for_plan() {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        let _result = handler.execute_mock(Effect::GeneratePlan { iteration: 1 });
+        let _result = handler.execute_mock(Effect::ValidatePlanningXml { iteration: 1 });
 
         // Verify XmlOutput event was emitted with DevelopmentPlan type
         assert!(
@@ -792,17 +921,17 @@ mod tests {
                     ..
                 }
             )),
-            "Should emit XmlOutput event for plan generation"
+            "Should emit XmlOutput event for plan validation"
         );
     }
 
-    /// Test that MockEffectHandler emits XmlOutput events for development iteration.
+    /// Test that MockEffectHandler emits XmlOutput events for development extraction.
     #[test]
     fn mock_effect_handler_emits_xml_output_for_development() {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        let _result = handler.execute_mock(Effect::RunDevelopmentIteration { iteration: 1 });
+        let _result = handler.execute_mock(Effect::ExtractDevelopmentXml { iteration: 1 });
 
         // Verify XmlOutput event was emitted with DevelopmentResult type
         assert!(
@@ -865,7 +994,7 @@ mod tests {
         let state = PipelineState::initial(1, 0);
         let mut handler = MockEffectHandler::new(state);
 
-        let _result = handler.execute_mock(Effect::GenerateCommitMessage);
+        let _result = handler.execute_mock(Effect::ValidateCommitXml);
 
         // Verify XmlOutput event was emitted with CommitMessage type
         assert!(

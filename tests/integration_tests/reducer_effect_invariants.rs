@@ -18,12 +18,12 @@ use ralph_workflow::reducer::event::PipelinePhase;
 use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::{AgentChainState, CommitState, PipelineState};
 
-/// Test that RunDevelopmentIteration is NOT emitted when agent chain is empty.
+/// Test that development effects are NOT emitted when agent chain is empty.
 ///
-/// RunDevelopmentIteration should use the agent from state.agent_chain.
+/// Development should use the agent from state.agent_chain.
 /// It should NOT be emitted when the chain is empty.
 #[test]
-fn test_run_development_iteration_requires_agent_chain() {
+fn test_development_requires_agent_chain() {
     with_default_timeout(|| {
         let state = PipelineState {
             phase: PipelinePhase::Development,
@@ -35,10 +35,10 @@ fn test_run_development_iteration_requires_agent_chain() {
 
         let effect = determine_next_effect(&state);
 
-        // Must NOT be RunDevelopmentIteration when chain is empty
+        // Must NOT be PrepareDevelopmentContext when chain is empty
         assert!(
-            !matches!(effect, Effect::RunDevelopmentIteration { .. }),
-            "Must initialize agent chain before running development iteration, got {:?}",
+            !matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+            "Must initialize agent chain before running development, got {:?}",
             effect
         );
     });
@@ -97,12 +97,12 @@ fn test_run_fix_attempt_requires_agent_chain() {
     });
 }
 
-/// Test that GeneratePlan is NOT emitted when agent chain is empty.
+/// Test that planning prompt preparation is NOT emitted when agent chain is empty.
 ///
-/// GeneratePlan should use the agent from state.agent_chain.
+/// Planning prompt preparation should use the agent from state.agent_chain.
 /// It should NOT be emitted when the chain is empty.
 #[test]
-fn test_generate_plan_requires_agent_chain() {
+fn test_planning_prompt_requires_agent_chain() {
     with_default_timeout(|| {
         let state = PipelineState {
             phase: PipelinePhase::Planning,
@@ -114,10 +114,66 @@ fn test_generate_plan_requires_agent_chain() {
 
         let effect = determine_next_effect(&state);
 
-        // Must NOT be GeneratePlan when chain is empty
+        // Must NOT be PreparePlanningPrompt when chain is empty
         assert!(
-            !matches!(effect, Effect::GeneratePlan { .. }),
-            "Must initialize agent chain before generating plan, got {:?}",
+            !matches!(effect, Effect::PreparePlanningPrompt { .. }),
+            "Must initialize agent chain before preparing plan prompt, got {:?}",
+            effect
+        );
+    });
+}
+
+/// Planning phase should emit the first single-task planning effect.
+///
+/// Planning must be decomposed into single-task effects; orchestration should
+/// emit the first planning step, not a bundled legacy effect.
+#[test]
+fn test_planning_phase_emits_prepare_prompt() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            phase: PipelinePhase::Planning,
+            context_cleaned: true,
+            iteration: 0,
+            total_iterations: 5,
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
+            ..PipelineState::initial(5, 2)
+        };
+
+        let effect = determine_next_effect(&state);
+
+        assert!(
+            matches!(effect, Effect::PreparePlanningPrompt { .. }),
+            "Planning should emit PreparePlanningPrompt, got {:?}",
+            effect
+        );
+    });
+}
+
+/// Development phase should emit the first single-task development effect.
+#[test]
+fn test_development_phase_emits_prepare_development_context() {
+    with_default_timeout(|| {
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            iteration: 0,
+            total_iterations: 5,
+            agent_chain: AgentChainState::initial().with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            ),
+            ..PipelineState::initial(5, 2)
+        };
+
+        let effect = determine_next_effect(&state);
+
+        assert!(
+            matches!(effect, Effect::PrepareDevelopmentContext { .. }),
+            "Development should emit PrepareDevelopmentContext, got {:?}",
             effect
         );
     });
@@ -231,12 +287,48 @@ fn test_effect_types_are_single_task() {
             ("AgentInvocation", "Invoke a single agent with a prompt"),
             ("InitializeAgentChain", "Set up fallback chain for a role"),
             (
-                "GeneratePlan",
-                "Generate plan for one iteration (legacy; to be removed)",
+                "PreparePlanningPrompt",
+                "Render and persist planning prompt",
             ),
             (
-                "RunDevelopmentIteration",
-                "Execute one development iteration (legacy; to be removed)",
+                "InvokePlanningAgent",
+                "Invoke planning agent for one iteration",
+            ),
+            ("ExtractPlanningXml", "Extract plan XML from canonical path"),
+            ("ValidatePlanningXml", "Validate plan XML"),
+            ("WritePlanningMarkdown", "Write PLAN.md from plan XML"),
+            (
+                "ArchivePlanningXml",
+                "Archive plan XML after writing PLAN.md",
+            ),
+            (
+                "ApplyPlanningOutcome",
+                "Apply planning outcome to reducer state",
+            ),
+            (
+                "PrepareDevelopmentContext",
+                "Prepare development context files for one iteration",
+            ),
+            (
+                "PrepareDevelopmentPrompt",
+                "Render and persist the development prompt for one iteration",
+            ),
+            (
+                "InvokeDevelopmentAgent",
+                "Invoke developer agent for one iteration",
+            ),
+            (
+                "ExtractDevelopmentXml",
+                "Extract development result XML from canonical path",
+            ),
+            ("ValidateDevelopmentXml", "Validate development result XML"),
+            (
+                "ApplyDevelopmentOutcome",
+                "Apply validated development outcome to advance state",
+            ),
+            (
+                "ArchiveDevelopmentXml",
+                "Archive .agent/tmp/development_result.xml",
             ),
             (
                 "PrepareReviewContext",
@@ -278,7 +370,15 @@ fn test_effect_types_are_single_task() {
             ("ArchiveFixResultXml", "Archive .agent/tmp/fix_result.xml"),
             ("RunRebase", "Execute one rebase operation"),
             ("ResolveRebaseConflicts", "Resolve conflicts once"),
-            ("GenerateCommitMessage", "Generate one commit message"),
+            ("PrepareCommitPrompt", "Prepare commit prompt"),
+            ("InvokeCommitAgent", "Invoke commit agent once"),
+            ("ExtractCommitXml", "Extract commit XML from canonical path"),
+            ("ValidateCommitXml", "Validate commit XML"),
+            (
+                "ApplyCommitMessageOutcome",
+                "Apply validated commit outcome",
+            ),
+            ("ArchiveCommitXml", "Archive .agent/tmp/commit_message.xml"),
             ("CreateCommit", "Create one commit"),
             ("SkipCommit", "Skip commit once"),
             ("ValidateFinalState", "Validate final state once"),
@@ -335,7 +435,7 @@ fn test_commit_phase_requires_agent_chain() {
 /// Test that CommitMessage phase effects follow correct sequence.
 ///
 /// CommitMessage phase should (after agent chain is initialized):
-/// 1. GenerateCommitMessage when commit is NotStarted
+/// 1. PrepareCommitPrompt when commit is NotStarted
 /// 2. CreateCommit when commit is Generated
 /// 3. SaveCheckpoint when commit is Committed/Skipped
 #[test]
@@ -348,7 +448,7 @@ fn test_commit_phase_effect_sequence() {
             AgentRole::Commit,
         );
 
-        // NotStarted (with chain) -> GenerateCommitMessage
+        // NotStarted (with chain) -> PrepareCommitPrompt
         let state_not_started = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
@@ -357,12 +457,12 @@ fn test_commit_phase_effect_sequence() {
         };
         let effect = determine_next_effect(&state_not_started);
         assert!(
-            matches!(effect, Effect::GenerateCommitMessage),
-            "NotStarted with chain should emit GenerateCommitMessage, got {:?}",
+            matches!(effect, Effect::PrepareCommitPrompt),
+            "NotStarted with chain should emit PrepareCommitPrompt, got {:?}",
             effect
         );
 
-        // Generated -> CreateCommit
+        // Generated -> ArchiveCommitXml (before CreateCommit)
         let state_generated = PipelineState {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::Generated {
@@ -373,8 +473,8 @@ fn test_commit_phase_effect_sequence() {
         };
         let effect = determine_next_effect(&state_generated);
         assert!(
-            matches!(effect, Effect::CreateCommit { .. }),
-            "Generated should emit CreateCommit, got {:?}",
+            matches!(effect, Effect::ArchiveCommitXml),
+            "Generated should emit ArchiveCommitXml, got {:?}",
             effect
         );
 
@@ -421,15 +521,15 @@ fn test_context_cleaned_before_planning() {
             effect
         );
 
-        // After cleanup, should generate plan
+        // After cleanup, should prepare planning prompt
         let state_cleaned = PipelineState {
             context_cleaned: true,
             ..state
         };
         let effect = determine_next_effect(&state_cleaned);
         assert!(
-            matches!(effect, Effect::GeneratePlan { .. }),
-            "Should generate plan after cleanup, got {:?}",
+            matches!(effect, Effect::PreparePlanningPrompt { .. }),
+            "Should prepare planning prompt after cleanup, got {:?}",
             effect
         );
     });
@@ -452,7 +552,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
             AgentRole::Reviewer,
         );
 
-        // Planning -> GeneratePlan
+        // Planning -> PreparePlanningPrompt
         let state = PipelineState {
             phase: PipelinePhase::Planning,
             context_cleaned: true,
@@ -461,10 +561,10 @@ fn test_phases_emit_expected_effects_when_initialized() {
         };
         assert!(matches!(
             determine_next_effect(&state),
-            Effect::GeneratePlan { .. }
+            Effect::PreparePlanningPrompt { .. }
         ));
 
-        // Development -> RunDevelopmentIteration
+        // Development -> PrepareDevelopmentContext
         let state = PipelineState {
             phase: PipelinePhase::Development,
             iteration: 0,
@@ -474,7 +574,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
         };
         assert!(matches!(
             determine_next_effect(&state),
-            Effect::RunDevelopmentIteration { .. }
+            Effect::PrepareDevelopmentContext { .. }
         ));
 
         // Review -> PrepareReviewContext (start of single-task review chain)
@@ -512,27 +612,27 @@ fn test_phases_emit_expected_effects_when_initialized() {
     });
 }
 
-/// Test that RunDevelopmentIteration effect does not bundle context writing.
+/// Test that ApplyDevelopmentOutcome effect does not bundle context writing.
 ///
 /// The handler should emit proper events that trigger WriteContinuationContext
 /// as a separate effect, not write context files as a side effect of execution.
 /// This test verifies the architectural invariant that effects are single-task.
 #[test]
-fn test_development_iteration_does_not_bundle_context_writing() {
+fn test_development_outcome_does_not_bundle_context_writing() {
     use ralph_workflow::reducer::effect::ContinuationContextData;
     use ralph_workflow::reducer::state::DevelopmentStatus;
 
     with_default_timeout(|| {
-        // Verify RunDevelopmentIteration is a single-task effect
-        let effect = Effect::RunDevelopmentIteration { iteration: 0 };
+        // Verify ApplyDevelopmentOutcome is a single-task effect
+        let effect = Effect::ApplyDevelopmentOutcome { iteration: 0 };
 
         // The effect variant should only contain the iteration number
         // If someone adds context_data or similar, this match would fail
         match effect {
-            Effect::RunDevelopmentIteration { iteration } => {
+            Effect::ApplyDevelopmentOutcome { iteration } => {
                 assert_eq!(iteration, 0);
             }
-            _ => panic!("Expected RunDevelopmentIteration"),
+            _ => panic!("Expected ApplyDevelopmentOutcome"),
         }
 
         // WriteContinuationContext is its own separate effect
@@ -548,10 +648,10 @@ fn test_development_iteration_does_not_bundle_context_writing() {
         // These are distinct effects, not bundled
         assert!(
             !matches!(
-                Effect::RunDevelopmentIteration { iteration: 0 },
+                Effect::ApplyDevelopmentOutcome { iteration: 0 },
                 Effect::WriteContinuationContext(_)
             ),
-            "RunDevelopmentIteration and WriteContinuationContext must be separate effects"
+            "ApplyDevelopmentOutcome and WriteContinuationContext must be separate effects"
         );
         assert!(
             matches!(write_effect, Effect::WriteContinuationContext(_)),
@@ -562,17 +662,17 @@ fn test_development_iteration_does_not_bundle_context_writing() {
 
 /// Test that each phase effect is independent and doesn't bundle with cleanup.
 ///
-/// Phase effects (RunDevelopmentIteration, PrepareReviewContext, etc.) should only
+/// Phase effects (PrepareDevelopmentContext, PrepareReviewContext, etc.) should only
 /// execute their primary task. Cleanup operations should be separate effects.
 #[test]
 fn test_phase_effects_do_not_bundle_cleanup() {
     with_default_timeout(|| {
         // Verify that phase effects don't include cleanup fields
-        // RunDevelopmentIteration - only iteration field
-        let dev_effect = Effect::RunDevelopmentIteration { iteration: 2 };
+        // PrepareDevelopmentContext - only iteration field
+        let dev_effect = Effect::PrepareDevelopmentContext { iteration: 2 };
         match dev_effect {
-            Effect::RunDevelopmentIteration { iteration } => {
-                assert_eq!(iteration, 2, "RunDevelopmentIteration only has iteration");
+            Effect::PrepareDevelopmentContext { iteration } => {
+                assert_eq!(iteration, 2, "PrepareDevelopmentContext only has iteration");
             }
             _ => panic!("Wrong effect type"),
         }
@@ -595,11 +695,11 @@ fn test_phase_effects_do_not_bundle_cleanup() {
             _ => panic!("Wrong effect type"),
         }
 
-        // GeneratePlan - only iteration field
-        let plan_effect = Effect::GeneratePlan { iteration: 1 };
+        // PreparePlanningPrompt - only iteration field
+        let plan_effect = Effect::PreparePlanningPrompt { iteration: 1 };
         match plan_effect {
-            Effect::GeneratePlan { iteration } => {
-                assert_eq!(iteration, 1, "GeneratePlan only has iteration");
+            Effect::PreparePlanningPrompt { iteration } => {
+                assert_eq!(iteration, 1, "PreparePlanningPrompt only has iteration");
             }
             _ => panic!("Wrong effect type"),
         }
@@ -639,12 +739,12 @@ fn test_continuation_context_is_effect_driven() {
             next_steps: None,
         });
 
-        // Verify it's distinct from development iteration effect
-        let dev_effect = Effect::RunDevelopmentIteration { iteration: 0 };
+        // Verify it's distinct from development context effect
+        let dev_effect = Effect::PrepareDevelopmentContext { iteration: 0 };
 
         assert!(
             !matches!(&dev_effect, Effect::WriteContinuationContext(_)),
-            "Continuation context writing must be separate from development iteration"
+            "Continuation context writing must be separate from development context"
         );
 
         // Verify WriteContinuationContext carries the necessary data for reducer policy

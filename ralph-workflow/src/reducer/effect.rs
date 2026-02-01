@@ -87,11 +87,112 @@ pub enum Effect {
         role: AgentRole,
     },
 
-    GeneratePlan {
+    /// Prepare the planning prompt for an iteration (single-task).
+    ///
+    /// This effect must only render/write the prompt that will be used for the
+    /// subsequent planning agent invocation.
+    PreparePlanningPrompt {
         iteration: u32,
     },
 
-    RunDevelopmentIteration {
+    /// Invoke the planning agent for an iteration (single-task).
+    ///
+    /// This effect must only perform agent execution using the prepared planning prompt
+    /// (written by `PreparePlanningPrompt`) and must not parse/validate outputs.
+    InvokePlanningAgent {
+        iteration: u32,
+    },
+
+    /// Extract the planning XML from the canonical workspace path (single-task).
+    ///
+    /// This effect must only verify that `.agent/tmp/plan.xml` exists and is readable.
+    /// It must not validate XML, write PLAN.md, or change phase.
+    ExtractPlanningXml {
+        iteration: u32,
+    },
+
+    /// Validate the extracted planning XML (single-task).
+    ///
+    /// This effect must only validate/parse the XML at `.agent/tmp/plan.xml` and
+    /// emit a planning validation event. It must not write PLAN.md, archive files,
+    /// or transition phases.
+    ValidatePlanningXml {
+        iteration: u32,
+    },
+
+    /// Write `.agent/PLAN.md` from the validated planning XML (single-task).
+    ///
+    /// This effect must only write markdown. It must not archive XML or transition phases.
+    WritePlanningMarkdown {
+        iteration: u32,
+    },
+
+    /// Archive `.agent/tmp/plan.xml` after PLAN.md is written (single-task).
+    ///
+    /// This effect must only archive the canonical plan XML (move to `.processed`).
+    ArchivePlanningXml {
+        iteration: u32,
+    },
+
+    /// Apply the already-validated planning outcome to advance the reducer state (single-task).
+    ///
+    /// This effect must only emit the appropriate planning outcome event.
+    ApplyPlanningOutcome {
+        iteration: u32,
+        valid: bool,
+    },
+
+    /// Prepare development context files for an iteration (single-task).
+    ///
+    /// This effect must only write any context artifacts needed for the
+    /// development prompt and must not render prompts or invoke agents.
+    PrepareDevelopmentContext {
+        iteration: u32,
+    },
+
+    /// Prepare the development prompt for an iteration (single-task).
+    ///
+    /// This effect must only render/write the prompt that will be used for
+    /// the subsequent developer agent invocation.
+    PrepareDevelopmentPrompt {
+        iteration: u32,
+    },
+
+    /// Invoke the developer agent for an iteration (single-task).
+    ///
+    /// This effect must only perform agent execution using the prepared prompt
+    /// and must not parse/validate outputs.
+    InvokeDevelopmentAgent {
+        iteration: u32,
+    },
+
+    /// Extract the development result XML from the canonical workspace path (single-task).
+    ///
+    /// This effect must only verify that `.agent/tmp/development_result.xml` exists and is readable.
+    /// It must not validate XML, apply outcomes, or archive files.
+    ExtractDevelopmentXml {
+        iteration: u32,
+    },
+
+    /// Validate the extracted development result XML (single-task).
+    ///
+    /// This effect must only validate/parse the XML at `.agent/tmp/development_result.xml` and
+    /// emit a validation event. It must not apply outcomes or archive files.
+    ValidateDevelopmentXml {
+        iteration: u32,
+    },
+
+    /// Apply the already-validated development outcome to advance the reducer state (single-task).
+    ///
+    /// This effect must only emit the appropriate development outcome event.
+    ApplyDevelopmentOutcome {
+        iteration: u32,
+    },
+
+    /// Archive `.agent/tmp/development_result.xml` after validation (single-task).
+    ///
+    /// This effect must only archive the canonical development result XML.
+    ArchiveDevelopmentXml {
         iteration: u32,
     },
 
@@ -216,7 +317,40 @@ pub enum Effect {
         strategy: ConflictStrategy,
     },
 
-    GenerateCommitMessage,
+    /// Prepare the commit prompt (single-task).
+    ///
+    /// This effect must only render/write the commit prompt that will be used for
+    /// the subsequent commit agent invocation. It must not invoke agents or
+    /// validate outputs.
+    PrepareCommitPrompt,
+
+    /// Invoke the commit agent (single-task).
+    ///
+    /// This effect must only perform agent execution using the prepared commit prompt
+    /// and must not parse/validate outputs.
+    InvokeCommitAgent,
+
+    /// Extract the commit XML from the canonical workspace path (single-task).
+    ///
+    /// This effect must only verify that `.agent/tmp/commit_message.xml` exists and is readable.
+    /// It must not validate XML or archive files.
+    ExtractCommitXml,
+
+    /// Validate the extracted commit XML (single-task).
+    ///
+    /// This effect must only validate/parse the XML at `.agent/tmp/commit_message.xml`
+    /// and emit a commit validation event. It must not create commits or archive files.
+    ValidateCommitXml,
+
+    /// Apply the already-validated commit message outcome (single-task).
+    ///
+    /// This effect must only emit the appropriate commit outcome event.
+    ApplyCommitMessageOutcome,
+
+    /// Archive `.agent/tmp/commit_message.xml` after validation (single-task).
+    ///
+    /// This effect must only archive the canonical commit XML (move to `.processed`).
+    ArchiveCommitXml,
 
     CreateCommit {
         message: String,

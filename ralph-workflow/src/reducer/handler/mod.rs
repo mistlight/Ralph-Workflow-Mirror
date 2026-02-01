@@ -20,7 +20,6 @@ mod development;
 mod planning;
 mod rebase;
 mod review;
-mod util;
 
 #[cfg(test)]
 mod tests;
@@ -90,10 +89,52 @@ impl MainEffectHandler {
 
             Effect::InitializeAgentChain { role } => self.initialize_agent_chain(ctx, role),
 
-            Effect::GeneratePlan { iteration } => self.generate_plan(ctx, iteration),
+            Effect::PreparePlanningPrompt { iteration } => {
+                self.prepare_planning_prompt(ctx, iteration)
+            }
 
-            Effect::RunDevelopmentIteration { iteration } => {
-                self.run_development_iteration(ctx, iteration)
+            Effect::InvokePlanningAgent { iteration } => self.invoke_planning_agent(ctx, iteration),
+
+            Effect::ExtractPlanningXml { iteration } => self.extract_planning_xml(ctx, iteration),
+
+            Effect::ValidatePlanningXml { iteration } => self.validate_planning_xml(ctx, iteration),
+
+            Effect::WritePlanningMarkdown { iteration } => {
+                self.write_planning_markdown(ctx, iteration)
+            }
+
+            Effect::ArchivePlanningXml { iteration } => self.archive_planning_xml(ctx, iteration),
+
+            Effect::ApplyPlanningOutcome { iteration, valid } => {
+                self.apply_planning_outcome(ctx, iteration, valid)
+            }
+
+            Effect::PrepareDevelopmentContext { iteration } => {
+                self.prepare_development_context(ctx, iteration)
+            }
+
+            Effect::PrepareDevelopmentPrompt { iteration } => {
+                self.prepare_development_prompt(ctx, iteration)
+            }
+
+            Effect::InvokeDevelopmentAgent { iteration } => {
+                self.invoke_development_agent(ctx, iteration)
+            }
+
+            Effect::ExtractDevelopmentXml { iteration } => {
+                self.extract_development_xml(ctx, iteration)
+            }
+
+            Effect::ValidateDevelopmentXml { iteration } => {
+                self.validate_development_xml(ctx, iteration)
+            }
+
+            Effect::ApplyDevelopmentOutcome { iteration } => {
+                self.apply_development_outcome(ctx, iteration)
+            }
+
+            Effect::ArchiveDevelopmentXml { iteration } => {
+                self.archive_development_xml(ctx, iteration)
             }
 
             Effect::PrepareReviewContext { pass } => self.prepare_review_context(ctx, pass),
@@ -137,7 +178,17 @@ impl MainEffectHandler {
                 self.resolve_rebase_conflicts(ctx, strategy)
             }
 
-            Effect::GenerateCommitMessage => self.generate_commit_message(ctx),
+            Effect::PrepareCommitPrompt => self.prepare_commit_prompt(ctx),
+
+            Effect::InvokeCommitAgent => self.invoke_commit_agent(ctx),
+
+            Effect::ExtractCommitXml => self.extract_commit_xml(ctx),
+
+            Effect::ValidateCommitXml => self.validate_commit_xml(ctx),
+
+            Effect::ApplyCommitMessageOutcome => self.apply_commit_message_outcome(ctx),
+
+            Effect::ArchiveCommitXml => self.archive_commit_xml(ctx),
 
             Effect::CreateCommit { message } => self.create_commit(ctx, message),
 
@@ -185,9 +236,5 @@ impl MainEffectHandler {
 
             Effect::CleanupContinuationContext => self.cleanup_continuation_context(ctx),
         }
-    }
-
-    fn is_auth_failure(err: &anyhow::Error) -> bool {
-        development::is_auth_failure(err)
     }
 }

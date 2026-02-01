@@ -765,8 +765,8 @@ mod tests {
         assert!(
             effects
                 .iter()
-                .any(|e| matches!(e, Effect::RunDevelopmentIteration { .. })),
-            "expected development iteration to run when developer_iters>0"
+                .any(|e| matches!(e, Effect::PrepareDevelopmentContext { .. })),
+            "expected development chain to run when developer_iters>0"
         );
         assert!(
             effects
@@ -854,9 +854,9 @@ mod tests {
         }
 
         let dev_idx = idx(&effects, |e| {
-            matches!(e, Effect::RunDevelopmentIteration { .. })
+            matches!(e, Effect::ApplyDevelopmentOutcome { .. })
         })
-        .expect("expected development iteration effect");
+        .expect("expected development outcome effect");
         let commit_idx = idx(&effects, |e| matches!(e, Effect::CreateCommit { .. }))
             .expect("expected commit creation effect");
         let review_ctx_idx = idx(&effects, |e| {
@@ -949,7 +949,20 @@ mod tests {
         assert!(
             !effects.iter().any(|e| matches!(
                 e,
-                Effect::GeneratePlan { .. } | Effect::RunDevelopmentIteration { .. }
+                Effect::PreparePlanningPrompt { .. }
+                    | Effect::InvokePlanningAgent { .. }
+                    | Effect::ExtractPlanningXml { .. }
+                    | Effect::ValidatePlanningXml { .. }
+                    | Effect::WritePlanningMarkdown { .. }
+                    | Effect::ArchivePlanningXml { .. }
+                    | Effect::ApplyPlanningOutcome { .. }
+                    | Effect::PrepareDevelopmentContext { .. }
+                    | Effect::PrepareDevelopmentPrompt { .. }
+                    | Effect::InvokeDevelopmentAgent { .. }
+                    | Effect::ExtractDevelopmentXml { .. }
+                    | Effect::ValidateDevelopmentXml { .. }
+                    | Effect::ApplyDevelopmentOutcome { .. }
+                    | Effect::ArchiveDevelopmentXml { .. }
             )),
             "expected no planning/development effects when developer_iters=0"
         );

@@ -1,22 +1,33 @@
-use super::util::read_commit_message_xml;
 use super::MainEffectHandler;
 use crate::agents::AgentRole;
-use crate::phases::{commit, PhaseContext};
+use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
+use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
+use crate::files::llm_output_extraction::try_extract_xml_commit_with_trace;
+use crate::phases::commit::check_and_pre_truncate_diff;
+use crate::phases::PhaseContext;
+use crate::prompts::{
+    get_stored_or_generate_prompt, prompt_generate_commit_message_with_diff_with_context,
+};
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};
+use crate::reducer::event::PipelineEvent;
+use crate::reducer::state::CommitState;
 use crate::reducer::ui_event::{UIEvent, XmlOutputType};
 use anyhow::Result;
+use std::path::Path;
+
+fn current_commit_attempt(commit: &CommitState) -> u32 {
+    match commit {
+        CommitState::Generating { attempt, .. } => *attempt,
+        _ => 1,
+    }
+}
 
 impl MainEffectHandler {
-    pub(super) fn generate_commit_message(
+    pub(super) fn prepare_commit_prompt(
         &mut self,
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
-        let attempt = match &self.state.commit {
-            crate::reducer::state::CommitState::Generating { attempt, .. } => *attempt,
-            _ => 1,
-        };
-
+        let attempt = current_commit_attempt(&self.state.commit);
         let diff = crate::git_helpers::git_diff().unwrap_or_default();
         if diff.trim().is_empty() {
             ctx.logger
@@ -33,73 +44,166 @@ impl MainEffectHandler {
             .cloned()
             .expect("commit agent should be initialized via InitializeAgentChain effect");
 
-        let attempt_result = match commit::run_commit_attempt(ctx, attempt, &diff, &commit_agent) {
-            Ok(r) => r,
-            Err(err) => {
-                if let Some(tpl_err) =
-                    err.downcast_ref::<crate::prompts::TemplateVariablesInvalidError>()
-                {
-                    return Ok(EffectResult::event(
-                        PipelineEvent::agent_template_variables_invalid(
-                            AgentRole::Commit,
-                            tpl_err.template_name.clone(),
-                            tpl_err.missing_variables.clone(),
-                            tpl_err.unresolved_placeholders.clone(),
-                        ),
-                    ));
-                }
+        let (working_diff, _diff_truncated) =
+            check_and_pre_truncate_diff(&diff, &commit_agent, ctx.logger);
 
-                return Ok(EffectResult::event(
-                    PipelineEvent::commit_generation_failed(err.to_string()),
-                ));
-            }
-        };
+        let prompt_key = format!("commit_message_attempt_{attempt}");
+        let (prompt, was_replayed) =
+            get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                prompt_generate_commit_message_with_diff_with_context(
+                    ctx.template_context,
+                    &working_diff,
+                    ctx.workspace,
+                )
+            });
 
-        if attempt_result.auth_failure {
-            return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                AgentRole::Commit,
-                commit_agent,
-                1,
-                AgentErrorKind::Authentication,
-                false,
-            )));
-        }
-
-        if attempt_result.had_error {
-            return Ok(EffectResult::event(PipelineEvent::agent_invocation_failed(
-                AgentRole::Commit,
-                commit_agent,
-                1,
-                AgentErrorKind::InternalError,
-                false,
-            )));
-        }
-
-        if !attempt_result.output_valid {
+        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders(&prompt) {
             return Ok(EffectResult::event(
-                PipelineEvent::commit_message_validation_failed(
-                    attempt_result.validation_detail,
-                    attempt,
+                PipelineEvent::agent_template_variables_invalid(
+                    AgentRole::Commit,
+                    "commit_message_xml".to_string(),
+                    Vec::new(),
+                    err.unresolved_placeholders,
                 ),
             ));
         }
 
-        let message = attempt_result
-            .message
-            .expect("commit attempt reported output_valid=true but message was missing");
+        if !was_replayed {
+            ctx.capture_prompt(&prompt_key, &prompt);
+        }
 
-        let event = PipelineEvent::commit_message_generated(message.clone(), attempt);
+        let tmp_dir = Path::new(".agent/tmp");
+        if !ctx.workspace.exists(tmp_dir) {
+            ctx.workspace.create_dir_all(tmp_dir)?;
+        }
 
-        let mut ui_events = vec![self.phase_transition_ui(PipelinePhase::CommitMessage)];
-        if let Some(xml_content) = read_commit_message_xml(ctx.workspace) {
-            ui_events.push(UIEvent::XmlOutput {
+        ctx.workspace
+            .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)?;
+
+        let result = if matches!(self.state.commit, CommitState::NotStarted) {
+            EffectResult::event(PipelineEvent::commit_generation_started())
+                .with_additional_event(PipelineEvent::commit_prompt_prepared(attempt))
+        } else {
+            EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt))
+        };
+
+        Ok(result.with_ui_event(
+            self.phase_transition_ui(crate::reducer::event::PipelinePhase::CommitMessage),
+        ))
+    }
+
+    pub(super) fn invoke_commit_agent(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+    ) -> Result<EffectResult> {
+        let attempt = current_commit_attempt(&self.state.commit);
+        let prompt = ctx
+            .workspace
+            .read(Path::new(".agent/tmp/commit_prompt.txt"))
+            .unwrap_or_default();
+
+        let agent = self
+            .state
+            .agent_chain
+            .current_agent()
+            .cloned()
+            .expect("commit agent should be initialized via InitializeAgentChain effect");
+
+        let mut result = self.invoke_agent(ctx, AgentRole::Commit, agent, None, prompt)?;
+        result = result.with_additional_event(PipelineEvent::commit_agent_invoked(attempt));
+        Ok(result)
+    }
+
+    pub(super) fn extract_commit_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+    ) -> Result<EffectResult> {
+        let attempt = current_commit_attempt(&self.state.commit);
+        let commit_xml = Path::new(xml_paths::COMMIT_MESSAGE_XML);
+
+        match ctx.workspace.read(commit_xml) {
+            Ok(_) => Ok(EffectResult::event(PipelineEvent::commit_xml_extracted(
+                attempt,
+            ))),
+            Err(_) => Ok(EffectResult::event(
+                PipelineEvent::commit_xml_validation_failed(
+                    "XML output missing or invalid; agent must write .agent/tmp/commit_message.xml"
+                        .to_string(),
+                    attempt,
+                ),
+            )),
+        }
+    }
+
+    pub(super) fn validate_commit_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+    ) -> Result<EffectResult> {
+        let attempt = current_commit_attempt(&self.state.commit);
+        let commit_xml = Path::new(xml_paths::COMMIT_MESSAGE_XML);
+
+        let xml_content = match ctx.workspace.read(commit_xml) {
+            Ok(s) => s,
+            Err(_) => {
+                return Ok(EffectResult::event(
+                    PipelineEvent::commit_xml_validation_failed(
+                        "XML output missing or invalid; agent must write .agent/tmp/commit_message.xml"
+                            .to_string(),
+                        attempt,
+                    ),
+                ));
+            }
+        };
+
+        let (message, detail) = try_extract_xml_commit_with_trace(&xml_content);
+        let event = match message {
+            Some(msg) => PipelineEvent::commit_xml_validated(msg, attempt),
+            None => PipelineEvent::commit_xml_validation_failed(detail, attempt),
+        };
+
+        Ok(EffectResult::with_ui(
+            event,
+            vec![UIEvent::XmlOutput {
                 xml_type: XmlOutputType::CommitMessage,
                 content: xml_content,
                 context: None,
-            });
-        }
+            }],
+        ))
+    }
 
-        Ok(EffectResult::with_ui(event, ui_events))
+    pub(super) fn apply_commit_message_outcome(
+        &mut self,
+        _ctx: &mut PhaseContext<'_>,
+    ) -> Result<EffectResult> {
+        let outcome =
+            self.state.commit_validated_outcome.as_ref().expect(
+                "validated commit outcome should exist before applying commit message outcome",
+            );
+
+        let event = match (&outcome.message, &outcome.reason) {
+            (Some(message), _) => {
+                PipelineEvent::commit_message_generated(message.clone(), outcome.attempt)
+            }
+            (None, Some(reason)) => {
+                PipelineEvent::commit_message_validation_failed(reason.clone(), outcome.attempt)
+            }
+            _ => PipelineEvent::commit_generation_failed(
+                "Commit validation outcome missing message and reason".to_string(),
+            ),
+        };
+
+        Ok(EffectResult::event(event))
+    }
+
+    pub(super) fn archive_commit_xml(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+    ) -> Result<EffectResult> {
+        let attempt = current_commit_attempt(&self.state.commit);
+        archive_xml_file_with_workspace(ctx.workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML));
+        Ok(EffectResult::event(PipelineEvent::commit_xml_archived(
+            attempt,
+        )))
     }
 
     pub(super) fn create_commit(

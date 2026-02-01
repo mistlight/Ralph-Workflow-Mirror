@@ -21,7 +21,7 @@ use ralph_workflow::reducer::state_reduction::reduce;
 /// Test that Development phase with empty agent chain emits InitializeAgentChain effect.
 ///
 /// When the Development phase starts with an empty agent chain,
-/// orchestration MUST return InitializeAgentChain effect, not RunDevelopmentIteration.
+/// orchestration MUST return InitializeAgentChain effect, not PrepareDevelopmentContext.
 #[test]
 fn test_development_phase_with_empty_chain_emits_initialize_effect() {
     with_default_timeout(|| {
@@ -48,7 +48,7 @@ fn test_development_phase_with_empty_chain_emits_initialize_effect() {
 /// Test that Planning phase with empty agent chain emits InitializeAgentChain effect.
 ///
 /// When the Planning phase starts with an empty agent chain,
-/// orchestration MUST return InitializeAgentChain effect, not GeneratePlan.
+/// orchestration MUST return InitializeAgentChain effect, not PreparePlanningPrompt.
 #[test]
 fn test_planning_phase_with_empty_chain_emits_initialize_effect() {
     with_default_timeout(|| {
@@ -179,9 +179,9 @@ fn test_agent_chain_clears_on_dev_to_review_transition() {
     });
 }
 
-/// Test that orchestration returns RunDevelopmentIteration only when chain is initialized.
+/// Test that orchestration returns PrepareDevelopmentContext only when chain is initialized.
 ///
-/// Must NOT return RunDevelopmentIteration when chain is empty.
+/// Must NOT return PrepareDevelopmentContext when chain is empty.
 #[test]
 fn test_orchestration_requires_initialized_chain_for_development() {
     with_default_timeout(|| {
@@ -194,8 +194,8 @@ fn test_orchestration_requires_initialized_chain_for_development() {
 
         let effect_empty = determine_next_effect(&state_empty);
         assert!(
-            !matches!(effect_empty, Effect::RunDevelopmentIteration { .. }),
-            "Must initialize agent chain before running development iteration"
+            !matches!(effect_empty, Effect::PrepareDevelopmentContext { .. }),
+            "Must initialize agent chain before running development"
         );
 
         // Initialized chain
@@ -213,8 +213,8 @@ fn test_orchestration_requires_initialized_chain_for_development() {
 
         let effect_initialized = determine_next_effect(&state_initialized);
         assert!(
-            matches!(effect_initialized, Effect::RunDevelopmentIteration { .. }),
-            "Should run development iteration when chain is initialized, got {:?}",
+            matches!(effect_initialized, Effect::PrepareDevelopmentContext { .. }),
+            "Should start development chain when initialized, got {:?}",
             effect_initialized
         );
     });
