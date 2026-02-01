@@ -339,7 +339,7 @@ src/lib.rs</ralph-files-changed>
                 let markdown = "# Issues\n\nNo issues.\n".to_string();
                 let ui = vec![UIEvent::XmlOutput {
                     xml_type: XmlOutputType::ReviewIssues,
-                    content: r#"<ralph-issues><no-issues-found>ok</no-issues-found></ralph-issues>"#
+                    content: r#"<ralph-issues><ralph-no-issues-found>ok</ralph-no-issues-found></ralph-issues>"#
                         .to_string(),
                     context: Some(XmlOutputContext {
                         iteration: None,
@@ -681,6 +681,28 @@ mod tests {
             ),
             "Should return CommitMessageGenerated when validated outcome exists, got: {:?}",
             result.event
+        );
+    }
+
+    #[test]
+    fn mock_effect_handler_review_validation_uses_schema_no_issues_tag() {
+        let state = PipelineState::initial(1, 1);
+        let mut handler = MockEffectHandler::new(state);
+
+        let result = handler.execute_mock(Effect::ValidateReviewIssuesXml { pass: 0 });
+
+        let xml_output = result.ui_events.iter().find_map(|event| {
+            if let UIEvent::XmlOutput { content, .. } = event {
+                Some(content.as_str())
+            } else {
+                None
+            }
+        });
+
+        let xml_output = xml_output.expect("expected XmlOutput for review issues");
+        assert!(
+            xml_output.contains("<ralph-no-issues-found>"),
+            "expected mock review XML to use ralph-no-issues-found tag"
         );
     }
 

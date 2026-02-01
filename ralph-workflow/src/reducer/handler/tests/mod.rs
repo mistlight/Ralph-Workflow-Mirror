@@ -2,8 +2,10 @@
 // Individual test modules will be added here as the handler implementation is
 // decomposed into single-task effects.
 
-mod fix_outcome;
+mod commit_handler;
 mod development_prompt;
+mod fix_outcome;
+mod invoke_prompt;
 mod planning_markdown;
 mod review_prompt;
 mod review_validation;

@@ -92,10 +92,14 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let prompt = ctx
-            .workspace
-            .read(Path::new(PLANNING_PROMPT_PATH))
-            .unwrap_or_default();
+        let prompt = match ctx.workspace.read(Path::new(PLANNING_PROMPT_PATH)) {
+            Ok(prompt) => prompt,
+            Err(_) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    format!("Missing planning prompt at {PLANNING_PROMPT_PATH}"),
+                )));
+            }
+        };
 
         let agent = self
             .state
@@ -186,12 +190,9 @@ impl MainEffectHandler {
         {
             Some(markdown) => markdown,
             None => {
-                return Ok(EffectResult::event(
-                    PipelineEvent::planning_output_validation_failed(
-                        iteration,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
-                ));
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing validated planning markdown".to_string(),
+                )));
             }
         };
         ctx.workspace

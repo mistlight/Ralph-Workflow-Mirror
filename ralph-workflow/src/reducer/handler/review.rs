@@ -2,8 +2,10 @@ use super::MainEffectHandler;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::PipelineEvent;
-use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
+use crate::reducer::ui_event::{UIEvent, XmlCodeSnippet, XmlOutputContext, XmlOutputType};
 use anyhow::Result;
+use regex::Regex;
+use std::collections::HashSet;
 use std::path::Path;
 
 impl MainEffectHandler {
@@ -122,10 +124,17 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use std::path::Path;
 
-        let prompt = ctx
+        let prompt = match ctx
             .workspace
             .read(Path::new(".agent/tmp/review_prompt.txt"))
-            .unwrap_or_default();
+        {
+            Ok(prompt) => prompt,
+            Err(_) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing review prompt at .agent/tmp/review_prompt.txt".to_string(),
+                )));
+            }
+        };
 
         let agent = self
             .state
@@ -193,6 +202,7 @@ impl MainEffectHandler {
                 let clean_no_issues =
                     elements.no_issues_found.is_some() && elements.issues.is_empty();
                 let markdown = render_issues_markdown(&elements);
+                let snippets = extract_issue_snippets(&elements.issues, ctx.workspace);
                 Ok(EffectResult::with_ui(
                     PipelineEvent::review_issues_xml_validated(
                         pass,
@@ -206,7 +216,7 @@ impl MainEffectHandler {
                         context: Some(XmlOutputContext {
                             iteration: None,
                             pass: Some(pass),
-                            snippets: Vec::new(),
+                            snippets,
                         }),
                     }],
                 ))
@@ -236,12 +246,9 @@ impl MainEffectHandler {
         {
             Some(markdown) => markdown,
             None => {
-                return Ok(EffectResult::event(
-                    PipelineEvent::review_output_validation_failed(
-                        pass,
-                        self.state.continuation.invalid_output_attempts,
-                    ),
-                ));
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing validated review markdown".to_string(),
+                )));
             }
         };
         ctx.workspace
@@ -347,10 +354,14 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use std::path::Path;
 
-        let prompt = ctx
-            .workspace
-            .read(Path::new(".agent/tmp/fix_prompt.txt"))
-            .unwrap_or_default();
+        let prompt = match ctx.workspace.read(Path::new(".agent/tmp/fix_prompt.txt")) {
+            Ok(prompt) => prompt,
+            Err(_) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing fix prompt at .agent/tmp/fix_prompt.txt".to_string(),
+                )));
+            }
+        };
 
         let agent = self
             .state
@@ -490,6 +501,91 @@ impl MainEffectHandler {
             pass,
         )))
     }
+}
+
+fn extract_issue_snippets(
+    issues: &[String],
+    workspace: &dyn crate::workspace::Workspace,
+) -> Vec<XmlCodeSnippet> {
+    let mut snippets = Vec::new();
+    let mut seen = HashSet::new();
+
+    let location_re = Regex::new(
+        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+):(?P<start>\d+)(?:[-–—](?P<end>\d+))?(?::(?P<col>\d+))?",
+    )
+    .unwrap();
+    let gh_location_re = Regex::new(
+        r"(?m)(?P<file>[-_./A-Za-z0-9]+\.[A-Za-z0-9]+)#L(?P<start>\d+)(?:-L(?P<end>\d+))?",
+    )
+    .unwrap();
+
+    for issue in issues {
+        let (file, line_start, line_end) = if let Some(cap) = location_re.captures(issue) {
+            let file = cap.name("file").map(|m| m.as_str().to_string());
+            let start = cap
+                .name("start")
+                .and_then(|m| m.as_str().parse::<u32>().ok());
+            let end = cap
+                .name("end")
+                .and_then(|m| m.as_str().parse::<u32>().ok())
+                .or(start);
+            (file, start, end)
+        } else if let Some(cap) = gh_location_re.captures(issue) {
+            let file = cap.name("file").map(|m| m.as_str().to_string());
+            let start = cap
+                .name("start")
+                .and_then(|m| m.as_str().parse::<u32>().ok());
+            let end = cap
+                .name("end")
+                .and_then(|m| m.as_str().parse::<u32>().ok())
+                .or(start);
+            (file, start, end)
+        } else {
+            (None, None, None)
+        };
+
+        let Some(file) = file else { continue };
+        let Some(start) = line_start else { continue };
+        let end = line_end.unwrap_or(start);
+
+        let key = (file.clone(), start, end);
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let content = match workspace.read(Path::new(&file)) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+
+        if let Some(snippet) = extract_snippet_lines(&content, start, end) {
+            snippets.push(XmlCodeSnippet {
+                file,
+                line_start: start,
+                line_end: end,
+                content: snippet,
+            });
+        }
+    }
+
+    snippets
+}
+
+fn extract_snippet_lines(content: &str, start: u32, end: u32) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return None;
+    }
+
+    let start_idx = start.saturating_sub(1) as usize;
+    if start_idx >= lines.len() {
+        return None;
+    }
+
+    let end_idx = end.saturating_sub(1) as usize;
+    let end_idx = end_idx.min(lines.len().saturating_sub(1));
+    let slice = &lines[start_idx..=end_idx];
+    Some(slice.join("\n"))
 }
 
 fn render_issues_markdown(

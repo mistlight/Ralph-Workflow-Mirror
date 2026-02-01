@@ -97,10 +97,22 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
         let attempt = current_commit_attempt(&self.state.commit);
-        let prompt = ctx
+        let prompt = match ctx
             .workspace
             .read(Path::new(".agent/tmp/commit_prompt.txt"))
-            .unwrap_or_default();
+        {
+            Ok(prompt) => prompt,
+            Err(_) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing commit prompt at .agent/tmp/commit_prompt.txt".to_string(),
+                )));
+            }
+        };
+
+        let commit_xml = Path::new(xml_paths::COMMIT_MESSAGE_XML);
+        if ctx.workspace.exists(commit_xml) {
+            let _ = ctx.workspace.remove(commit_xml);
+        }
 
         let agent = self
             .state

@@ -1272,6 +1272,10 @@ fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> PipelineStat
         }
         CommitEvent::PromptPrepared { .. } => PipelineState {
             commit_prompt_prepared: true,
+            continuation: super::state::ContinuationState {
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         CommitEvent::AgentInvoked { .. } => PipelineState {

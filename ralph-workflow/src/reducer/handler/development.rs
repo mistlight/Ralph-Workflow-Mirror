@@ -124,10 +124,17 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let prompt = ctx
+        let prompt = match ctx
             .workspace
             .read(Path::new(".agent/tmp/development_prompt.txt"))
-            .unwrap_or_default();
+        {
+            Ok(prompt) => prompt,
+            Err(_) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Missing development prompt at .agent/tmp/development_prompt.txt".to_string(),
+                )));
+            }
+        };
 
         let agent = self
             .state

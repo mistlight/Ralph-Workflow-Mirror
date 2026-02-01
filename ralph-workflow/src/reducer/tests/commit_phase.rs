@@ -6,7 +6,7 @@
 use super::*;
 use crate::agents::AgentRole;
 use crate::reducer::event::CheckpointTrigger;
-use crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS;
+use crate::reducer::state::{ContinuationState, MAX_VALIDATION_RETRY_ATTEMPTS};
 
 #[test]
 fn test_commit_generation_started_sets_generating_state() {
@@ -149,6 +149,24 @@ fn test_commit_message_validation_failed_exhausts_attempts_with_more_agents() {
         new_state.commit,
         CommitState::Generating { attempt: 1, .. }
     ));
+}
+
+#[test]
+fn test_commit_prompt_prepared_clears_xsd_retry_pending() {
+    let state = PipelineState {
+        continuation: ContinuationState {
+            xsd_retry_pending: true,
+            ..ContinuationState::new()
+        },
+        ..create_state_in_phase(PipelinePhase::CommitMessage)
+    };
+
+    let new_state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+
+    assert!(
+        !new_state.continuation.xsd_retry_pending,
+        "commit prompt preparation should clear xsd_retry_pending"
+    );
 }
 
 #[test]

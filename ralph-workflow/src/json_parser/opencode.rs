@@ -590,6 +590,32 @@ impl OpenCodeParser {
         let c = &self.colors;
         let prefix = &self.display_name;
 
+        if self
+            .streaming_session
+            .borrow()
+            .get_current_message_id()
+            .is_none()
+        {
+            let session = event.session_id.as_deref().unwrap_or("unknown");
+            let step_id = event.part.as_ref().and_then(|part| {
+                part.message_id.clone().or_else(|| {
+                    part.id
+                        .as_ref()
+                        .map(|id| format!("{session}:{id}"))
+                        .or_else(|| {
+                            part.snapshot
+                                .as_ref()
+                                .map(|snapshot| format!("{session}:{snapshot}"))
+                        })
+                })
+            });
+            let step_id =
+                step_id.unwrap_or_else(|| self.next_fallback_step_id(session, event.timestamp));
+            self.streaming_session
+                .borrow_mut()
+                .set_current_message_id(Some(step_id));
+        }
+
         // Check for duplicate final message using message ID or fallback to streaming content check
         let session = self.streaming_session.borrow();
         let is_duplicate = session.get_current_message_id().map_or_else(
@@ -1300,6 +1326,22 @@ mod tests {
 
         let second = parser.parse_event(json);
         assert!(second.is_some());
+    }
+
+    #[test]
+    fn test_opencode_step_finish_sets_fallback_message_id_when_missing() {
+        let parser = OpenCodeParser::new(Colors { enabled: false }, Verbosity::Normal);
+        let json = r#"{"type":"step_finish","timestamp":2,"sessionID":"ses_test","part":{"type":"step-finish","reason":"end_turn"}}"#;
+
+        let output = parser.parse_event(json);
+        assert!(output.is_some());
+
+        let session = parser.streaming_session.borrow();
+        let current = session.get_current_message_id();
+        assert!(
+            current.is_some(),
+            "expected fallback message id to be set for step_finish without identifiers"
+        );
     }
 
     #[test]
