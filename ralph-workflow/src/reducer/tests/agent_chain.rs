@@ -491,3 +491,69 @@ fn test_agent_chain_initialized_contains_full_fallback_chain() {
         "Current agent should be the first in the chain"
     );
 }
+
+// ============================================================================
+// Integration-Style Tests (Event Loop Simulation)
+// ============================================================================
+
+use crate::reducer::effect::Effect;
+use crate::reducer::orchestration::determine_next_effect;
+use crate::reducer::state::{AgentChainState, ContinuationState};
+
+/// Simulates running the event loop to verify backoff wait does not cause infinite loops.
+///
+/// This test starts with a state that has `backoff_pending_ms=Some(...)` and runs
+/// through the effect/reduce cycle to verify the pipeline progresses correctly
+/// without getting stuck repeating BackoffWait effects.
+#[test]
+fn test_backoff_wait_does_not_cause_infinite_loop_in_event_loop_simulation() {
+    let mut state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 1,
+        agent_chain: AgentChainState::initial()
+            .with_agents(
+                vec!["claude".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(2),
+        continuation: ContinuationState::default(),
+        development_context_prepared_iteration: Some(1),
+        development_prompt_prepared_iteration: Some(1),
+        development_xml_cleaned_iteration: Some(1),
+        ..create_test_state()
+    };
+    // Set backoff pending to trigger the backoff wait path
+    state.agent_chain.backoff_pending_ms = Some(100);
+
+    let max_iterations = 20;
+    let mut backoff_wait_count = 0;
+
+    for _ in 0..max_iterations {
+        let effect = determine_next_effect(&state);
+
+        match effect {
+            Effect::BackoffWait { role, cycle, .. } => {
+                backoff_wait_count += 1;
+                if backoff_wait_count > 2 {
+                    panic!(
+                        "BackoffWait repeated {} times - potential infinite loop",
+                        backoff_wait_count
+                    );
+                }
+                // Simulate handler emitting RetryCycleStarted
+                state = reduce(state, PipelineEvent::agent_retry_cycle_started(role, cycle));
+            }
+            _ => {
+                // Successfully progressed past backoff - test passes
+                break;
+            }
+        }
+    }
+
+    // Verify backoff_pending_ms was cleared
+    assert!(
+        state.agent_chain.backoff_pending_ms.is_none(),
+        "backoff_pending_ms should be cleared after RetryCycleStarted event"
+    );
+}

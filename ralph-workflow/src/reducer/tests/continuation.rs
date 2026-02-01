@@ -299,3 +299,98 @@ fn test_continuation_does_not_cause_infinite_loop_in_event_loop_simulation() {
 
     // Test passes if we exit without detecting an infinite loop
 }
+
+use crate::reducer::state::FixStatus;
+
+/// Simulates running the event loop to verify fix continuation does not cause infinite loops.
+///
+/// This test starts with a state that has `fix_continue_pending=true` and runs
+/// through the Review phase fix chain to verify the pipeline progresses correctly.
+#[test]
+fn test_fix_continuation_does_not_cause_infinite_loop_in_event_loop_simulation() {
+    let mut state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 2,
+        review_issues_found: true,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        continuation: ContinuationState {
+            fix_continue_pending: true,
+            fix_continuation_attempt: 1,
+            ..ContinuationState::default()
+        },
+        fix_prompt_prepared_pass: None,
+        ..PipelineState::initial(5, 2)
+    };
+
+    let max_iterations = 100;
+    let mut last_effect_discriminant = None;
+    let mut repeat_count = 0;
+
+    for i in 0..max_iterations {
+        let effect = determine_next_effect(&state);
+        let current_discriminant = std::mem::discriminant(&effect);
+
+        // Track consecutive repeats of the same effect type
+        if Some(current_discriminant) == last_effect_discriminant {
+            repeat_count += 1;
+            if repeat_count > 5 {
+                panic!(
+                    "Potential infinite loop at iteration {}: effect {:?} repeated {} times",
+                    i, effect, repeat_count
+                );
+            }
+        } else {
+            repeat_count = 1;
+            last_effect_discriminant = Some(current_discriminant);
+        }
+
+        // Simulate applying the effect by reducing the corresponding event
+        state = match effect {
+            Effect::PrepareFixPrompt { pass, .. } => {
+                reduce(state, PipelineEvent::fix_prompt_prepared(pass))
+            }
+            Effect::CleanupFixResultXml { pass } => {
+                reduce(state, PipelineEvent::fix_result_xml_cleaned(pass))
+            }
+            Effect::InvokeFixAgent { pass } => {
+                reduce(state, PipelineEvent::fix_agent_invoked(pass))
+            }
+            Effect::ExtractFixResultXml { pass } => {
+                reduce(state, PipelineEvent::fix_result_xml_extracted(pass))
+            }
+            Effect::ValidateFixResultXml { pass } => reduce(
+                state,
+                PipelineEvent::fix_result_xml_validated(
+                    pass,
+                    FixStatus::AllIssuesAddressed,
+                    Some("All issues resolved".to_string()),
+                ),
+            ),
+            Effect::ArchiveFixResultXml { pass } => {
+                reduce(state, PipelineEvent::fix_result_xml_archived(pass))
+            }
+            Effect::ApplyFixOutcome { pass } => {
+                reduce(state, PipelineEvent::fix_outcome_applied(pass))
+            }
+            Effect::SaveCheckpoint { .. } => {
+                // Phase complete - success!
+                break;
+            }
+            _ => {
+                // For other effects, just break to avoid complexity
+                break;
+            }
+        };
+    }
+
+    // Verify fix_continue_pending was cleared
+    assert!(
+        !state.continuation.fix_continue_pending,
+        "fix_continue_pending should be false after FixPromptPrepared"
+    );
+}
