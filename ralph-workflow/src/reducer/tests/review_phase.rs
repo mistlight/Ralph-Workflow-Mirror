@@ -927,7 +927,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
     assert!(
         matches!(
             effect,
-            crate::reducer::effect::Effect::PrepareReviewPrompt { pass: 0 }
+            crate::reducer::effect::Effect::PrepareReviewPrompt { pass: 0, .. }
         ),
         "Expected PrepareReviewPrompt, got {:?}",
         effect
@@ -935,6 +935,20 @@ fn test_event_loop_state_consistency_for_review_agent() {
 
     // Simulate prompt prepared
     state = reduce(state, PipelineEvent::review_prompt_prepared(0));
+
+    // Next: CleanupReviewIssuesXml
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::CleanupReviewIssuesXml { pass: 0 }
+        ),
+        "Expected CleanupReviewIssuesXml, got {:?}",
+        effect
+    );
+
+    // Simulate cleanup
+    state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
 
     // Next: InvokeReviewAgent
     let effect = determine_next_effect(&state);
@@ -1113,9 +1127,19 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
         effect
     );
 
-    // Simulate context + prompt prepared, then orchestration should invoke agent
+    // Simulate context + prompt prepared, then cleanup before invoking agent
     state = reduce(state, PipelineEvent::review_context_prepared(0));
     state = reduce(state, PipelineEvent::review_prompt_prepared(0));
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::CleanupReviewIssuesXml { pass: 0 }
+        ),
+        "Should request CleanupReviewIssuesXml, got {:?}",
+        effect
+    );
+    state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
     let effect = determine_next_effect(&state);
     assert!(
         matches!(

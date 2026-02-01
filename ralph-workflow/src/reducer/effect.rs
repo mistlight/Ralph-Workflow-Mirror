@@ -54,6 +54,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use super::event::{CheckpointTrigger, ConflictStrategy, PipelineEvent, RebasePhase};
+use super::state::PromptMode;
 use super::ui_event::UIEvent;
 
 /// Data for continuation context writing.
@@ -92,6 +93,12 @@ pub enum Effect {
     /// This effect must only render/write the prompt that will be used for the
     /// subsequent planning agent invocation.
     PreparePlanningPrompt {
+        iteration: u32,
+        prompt_mode: PromptMode,
+    },
+
+    /// Clean up stale planning XML before invoking the planning agent (single-task).
+    CleanupPlanningXml {
         iteration: u32,
     },
 
@@ -156,6 +163,12 @@ pub enum Effect {
     /// the subsequent developer agent invocation.
     PrepareDevelopmentPrompt {
         iteration: u32,
+        prompt_mode: PromptMode,
+    },
+
+    /// Clean up stale development XML before invoking the developer agent (single-task).
+    CleanupDevelopmentXml {
+        iteration: u32,
     },
 
     /// Invoke the developer agent for an iteration (single-task).
@@ -210,6 +223,12 @@ pub enum Effect {
     /// subsequent reviewer agent invocation.
     PrepareReviewPrompt {
         pass: u32,
+        prompt_mode: PromptMode,
+    },
+
+    /// Clean up stale review issues XML before invoking the reviewer agent (single-task).
+    CleanupReviewIssuesXml {
+        pass: u32,
     },
 
     /// Invoke the reviewer agent for a review pass (single-task).
@@ -244,6 +263,13 @@ pub enum Effect {
         pass: u32,
     },
 
+    /// Extract review issue snippets for a pass (single-task).
+    ///
+    /// This effect must only extract snippets and emit UI output.
+    ExtractReviewIssueSnippets {
+        pass: u32,
+    },
+
     /// Archive `.agent/tmp/issues.xml` after ISSUES.md is written (single-task).
     ///
     /// This effect must only archive the canonical issues XML (move to `.processed`).
@@ -265,6 +291,12 @@ pub enum Effect {
     /// This effect must only render/write the prompt that will be used for the
     /// subsequent fix agent invocation.
     PrepareFixPrompt {
+        pass: u32,
+        prompt_mode: PromptMode,
+    },
+
+    /// Clean up stale fix result XML before invoking the fix agent (single-task).
+    CleanupFixResultXml {
         pass: u32,
     },
 
@@ -327,13 +359,18 @@ pub enum Effect {
     /// This effect must only render/write the commit prompt that will be used for
     /// the subsequent commit agent invocation. It must not invoke agents or
     /// validate outputs.
-    PrepareCommitPrompt,
+    PrepareCommitPrompt {
+        prompt_mode: PromptMode,
+    },
 
     /// Invoke the commit agent (single-task).
     ///
     /// This effect must only perform agent execution using the prepared commit prompt
     /// and must not parse/validate outputs.
     InvokeCommitAgent,
+
+    /// Clean up stale commit XML before invoking the commit agent (single-task).
+    CleanupCommitXml,
 
     /// Extract the commit XML from the canonical workspace path (single-task).
     ///

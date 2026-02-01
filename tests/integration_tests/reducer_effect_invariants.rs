@@ -346,6 +346,10 @@ fn test_effect_types_are_single_task() {
             ("ValidateReviewIssuesXml", "Validate review issues XML"),
             ("WriteIssuesMarkdown", "Write .agent/ISSUES.md"),
             (
+                "ExtractReviewIssueSnippets",
+                "Extract review issue snippets for UI output",
+            ),
+            (
                 "ArchiveReviewIssuesXml",
                 "Archive .agent/tmp/issues.xml after writing ISSUES.md",
             ),
@@ -472,7 +476,7 @@ fn test_commit_phase_effect_sequence() {
         };
         let effect = determine_next_effect(&state_not_started_diff_prepared);
         assert!(
-            matches!(effect, Effect::PrepareCommitPrompt),
+            matches!(effect, Effect::PrepareCommitPrompt { .. }),
             "NotStarted with diff prepared should emit PrepareCommitPrompt, got {:?}",
             effect
         );
@@ -702,19 +706,25 @@ fn test_phase_effects_do_not_bundle_cleanup() {
         }
 
         // PrepareFixPrompt - only pass field
-        let fix_effect = Effect::PrepareFixPrompt { pass: 0 };
+        let fix_effect = Effect::PrepareFixPrompt {
+            pass: 0,
+            prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+        };
         match fix_effect {
-            Effect::PrepareFixPrompt { pass } => {
-                assert_eq!(pass, 0, "PrepareFixPrompt only has pass");
+            Effect::PrepareFixPrompt { pass, .. } => {
+                assert_eq!(pass, 0, "PrepareFixPrompt has pass");
             }
             _ => panic!("Wrong effect type"),
         }
 
         // PreparePlanningPrompt - only iteration field
-        let plan_effect = Effect::PreparePlanningPrompt { iteration: 1 };
+        let plan_effect = Effect::PreparePlanningPrompt {
+            iteration: 1,
+            prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
+        };
         match plan_effect {
-            Effect::PreparePlanningPrompt { iteration } => {
-                assert_eq!(iteration, 1, "PreparePlanningPrompt only has iteration");
+            Effect::PreparePlanningPrompt { iteration, .. } => {
+                assert_eq!(iteration, 1, "PreparePlanningPrompt has iteration");
             }
             _ => panic!("Wrong effect type"),
         }
