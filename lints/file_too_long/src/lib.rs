@@ -97,26 +97,27 @@ impl FileTooLong {
         let total_lines = source_file.count_lines();
 
         // Check thresholds (check higher threshold first for clearer messaging)
-        if total_lines > MUST_REFACTOR_LINES {
+        // Semantics are inclusive: 500+ warns, 1000+ is MUST refactor.
+        if total_lines >= MUST_REFACTOR_LINES {
             self.warned_files.insert(file_path.clone());
 
             let warning_span = Span::with_root_ctxt(source_file.start_pos, source_file.start_pos);
 
             cx.span_lint(FILE_TOO_LONG, warning_span, |diag| {
                 diag.primary_message(format!(
-                    "file exceeds {MUST_REFACTOR_LINES} lines ({total_lines} lines) - MUST refactor"
+                    "file has {total_lines} lines (>= {MUST_REFACTOR_LINES}) - MUST refactor"
                 ));
                 diag.help("this file is too large and MUST be split into smaller modules");
                 diag.note("see CODE_STYLE.md for design principles on module organization");
             });
-        } else if total_lines > CONSIDER_REFACTOR_LINES {
+        } else if total_lines >= CONSIDER_REFACTOR_LINES {
             self.warned_files.insert(file_path.clone());
 
             let warning_span = Span::with_root_ctxt(source_file.start_pos, source_file.start_pos);
 
             cx.span_lint(FILE_TOO_LONG, warning_span, |diag| {
                 diag.primary_message(format!(
-                    "file exceeds {CONSIDER_REFACTOR_LINES} lines ({total_lines} lines) - consider refactoring"
+                    "file has {total_lines} lines (>= {CONSIDER_REFACTOR_LINES}) - consider refactoring"
                 ));
                 diag.help("consider splitting this file into smaller, more focused modules");
                 diag.note("see CODE_STYLE.md for design principles on module organization");

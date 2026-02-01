@@ -49,8 +49,6 @@ pub const MAX_EVENT_LOOP_ITERATIONS: usize = 1000;
 pub struct EventLoopConfig {
     /// Maximum number of iterations to prevent infinite loops.
     pub max_iterations: usize,
-    /// Whether to enable checkpointing during the event loop.
-    pub enable_checkpointing: bool,
 }
 
 /// Result of event loop execution.
@@ -175,6 +173,15 @@ fn dump_event_loop_trace(
     };
     out.push_str(&final_line);
     out.push('\n');
+
+    // Ensure the trace directory exists. While `Workspace::write` is expected to
+    // create parent directories, we do this explicitly so trace dumping is
+    // resilient even under stricter workspace implementations.
+    if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
+        ctx.logger
+            .error(&format!("Failed to create trace directory: {err}"));
+        return false;
+    }
 
     match ctx.workspace.write(Path::new(EVENT_LOOP_TRACE_PATH), &out) {
         Ok(()) => true,
@@ -364,13 +371,178 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
+        use crate::agents::AgentRegistry;
+        use crate::checkpoint::{ExecutionHistory, RunContext};
+        use crate::config::Config;
+        use crate::executor::MockProcessExecutor;
+        use crate::logger::{Colors, Logger};
+        use crate::pipeline::{Stats, Timer};
+        use crate::prompts::template_context::TemplateContext;
+        use crate::workspace::{MemoryWorkspace, Workspace};
+        use std::io;
+        use std::path::{Path, PathBuf};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        #[derive(Debug)]
+        struct StrictTmpWorkspace {
+            inner: MemoryWorkspace,
+            tmp_created: AtomicBool,
+        }
+
+        impl StrictTmpWorkspace {
+            fn new(inner: MemoryWorkspace) -> Self {
+                Self {
+                    inner,
+                    tmp_created: AtomicBool::new(false),
+                }
+            }
+        }
+
+        impl Workspace for StrictTmpWorkspace {
+            fn root(&self) -> &Path {
+                self.inner.root()
+            }
+
+            fn read(&self, relative: &Path) -> io::Result<String> {
+                self.inner.read(relative)
+            }
+
+            fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+                self.inner.read_bytes(relative)
+            }
+
+            fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+                if relative == Path::new(EVENT_LOOP_TRACE_PATH)
+                    && !self.tmp_created.load(Ordering::Acquire)
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "parent dir missing (strict workspace)",
+                    ));
+                }
+                self.inner.write(relative, content)
+            }
+
+            fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+                self.inner.write_bytes(relative, content)
+            }
+
+            fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+                self.inner.append_bytes(relative, content)
+            }
+
+            fn exists(&self, relative: &Path) -> bool {
+                self.inner.exists(relative)
+            }
+
+            fn is_file(&self, relative: &Path) -> bool {
+                self.inner.is_file(relative)
+            }
+
+            fn is_dir(&self, relative: &Path) -> bool {
+                self.inner.is_dir(relative)
+            }
+
+            fn remove(&self, relative: &Path) -> io::Result<()> {
+                self.inner.remove(relative)
+            }
+
+            fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+                self.inner.remove_if_exists(relative)
+            }
+
+            fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+                self.inner.remove_dir_all(relative)
+            }
+
+            fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+                self.inner.remove_dir_all_if_exists(relative)
+            }
+
+            fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+                if relative == Path::new(".agent/tmp") {
+                    self.tmp_created.store(true, Ordering::Release);
+                }
+                self.inner.create_dir_all(relative)
+            }
+
+            fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
+                self.inner.read_dir(relative)
+            }
+
+            fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+                self.inner.rename(from, to)
+            }
+
+            fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+                self.inner.write_atomic(relative, content)
+            }
+
+            fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+                self.inner.set_readonly(relative)
+            }
+
+            fn set_writable(&self, relative: &Path) -> io::Result<()> {
+                self.inner.set_writable(relative)
+            }
+        }
+
+        let config = Config::default();
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let registry = AgentRegistry::new().unwrap();
+        let executor = Arc::new(MockProcessExecutor::new());
+        let repo_root = PathBuf::from("/test/repo");
+        let strict_workspace = StrictTmpWorkspace::new(MemoryWorkspace::new(repo_root.clone()));
+
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: &strict_workspace,
+        };
+
+        let mut trace = EventTraceBuffer::new(1);
+        let state = PipelineState::initial(1, 0);
+        trace.push(build_trace_entry(0, &state, "Effect::None", "Event::None"));
+
+        let dumped = dump_event_loop_trace(&mut ctx, &trace, &state, "test");
+        assert!(
+            dumped,
+            "expected trace dump to succeed even when .agent/tmp is missing"
+        );
+        assert!(
+            strict_workspace
+                .inner
+                .exists(Path::new(EVENT_LOOP_TRACE_PATH)),
+            "expected trace file to be created"
+        );
+    }
+
+    #[test]
     fn test_event_loop_config_creation() {
         let config = EventLoopConfig {
             max_iterations: 1000,
-            enable_checkpointing: true,
         };
         assert_eq!(config.max_iterations, 1000);
-        assert!(config.enable_checkpointing);
     }
 
     #[test]
@@ -516,10 +688,7 @@ mod tests {
 
         let state = PipelineState::initial(1, 0);
         let mut handler = TestHandler::new(state);
-        let loop_config = EventLoopConfig {
-            max_iterations: 10,
-            enable_checkpointing: false,
-        };
+        let loop_config = EventLoopConfig { max_iterations: 10 };
 
         let result = run_event_loop_with_handler(
             &mut ctx,
@@ -638,10 +807,7 @@ mod tests {
         };
         let mut handler = TestHandler::new(state);
 
-        let loop_config = EventLoopConfig {
-            max_iterations: 10,
-            enable_checkpointing: false,
-        };
+        let loop_config = EventLoopConfig { max_iterations: 10 };
 
         let result = run_event_loop_with_handler(
             &mut ctx,
@@ -715,7 +881,6 @@ mod tests {
 
         let loop_config = EventLoopConfig {
             max_iterations: 100,
-            enable_checkpointing: false,
         };
 
         // This should compile and run with the mock handler
@@ -786,7 +951,6 @@ mod tests {
         let mut handler = MockEffectHandler::new(state.clone());
         let loop_config = EventLoopConfig {
             max_iterations: 500,
-            enable_checkpointing: false,
         };
 
         let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
@@ -859,7 +1023,6 @@ mod tests {
         let mut handler = MockEffectHandler::new(state.clone());
         let loop_config = EventLoopConfig {
             max_iterations: 500,
-            enable_checkpointing: false,
         };
 
         let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
@@ -944,7 +1107,6 @@ mod tests {
         let mut handler = MockEffectHandler::new(state.clone());
         let loop_config = EventLoopConfig {
             max_iterations: 500,
-            enable_checkpointing: false,
         };
 
         let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
@@ -1041,7 +1203,6 @@ mod tests {
         let mut handler = MockEffectHandler::new(state.clone());
         let loop_config = EventLoopConfig {
             max_iterations: 500,
-            enable_checkpointing: false,
         };
 
         let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
@@ -1135,7 +1296,6 @@ mod tests {
         let mut handler = MockEffectHandler::new(state.clone());
         let loop_config = EventLoopConfig {
             max_iterations: 500,
-            enable_checkpointing: false,
         };
 
         let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)

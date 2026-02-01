@@ -52,8 +52,8 @@
 
 use std::panic;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -72,6 +72,22 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Debug)]
 pub struct TimeoutError {
     pub timeout: Duration,
+}
+
+/// Context passed to the test body so it can cooperate with timeouts.
+///
+/// On timeout, the wrapper will set `cancelled=true` and wait briefly for the
+/// test body to exit. Test code that might block should periodically check
+/// `is_cancelled()` and return promptly.
+#[derive(Clone, Debug)]
+pub struct TimeoutContext {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl TimeoutContext {
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
 }
 
 impl std::fmt::Display for TimeoutError {
@@ -121,37 +137,69 @@ pub fn with_timeout<F>(f: F, timeout: Duration)
 where
     F: FnOnce() + Send + 'static,
 {
-    let completed = Arc::new(AtomicBool::new(false));
-    let completed_clone = Arc::clone(&completed);
+    with_timeout_ctx(|_ctx| f(), timeout)
+}
 
-    let panic_payload: Arc<Mutex<Option<Box<dyn std::any::Any + Send>>>> =
-        Arc::new(Mutex::new(None));
-    let panic_payload_clone = Arc::clone(&panic_payload);
+/// Run a closure with a timeout, passing a `TimeoutContext` for cooperative cancellation.
+pub fn with_timeout_ctx<F>(f: F, timeout: Duration)
+where
+    F: FnOnce(&TimeoutContext) + Send + 'static,
+{
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let ctx = TimeoutContext {
+        cancelled: Arc::clone(&cancelled),
+    };
+
+    let (tx, rx) = mpsc::channel::<Result<(), Box<dyn std::any::Any + Send>>>();
 
     let handle = thread::spawn(move || {
-        let res = panic::catch_unwind(panic::AssertUnwindSafe(f));
-        if let Err(payload) = res {
-            *panic_payload_clone.lock().unwrap() = Some(payload);
-        }
-        completed_clone.store(true, Ordering::Release);
+        let res = panic::catch_unwind(panic::AssertUnwindSafe(|| f(&ctx)));
+        let _ = match res {
+            Ok(()) => tx.send(Ok(())),
+            Err(payload) => tx.send(Err(payload)),
+        };
     });
 
-    let start = std::time::Instant::now();
-    while !completed.load(Ordering::Acquire) {
-        if start.elapsed() >= timeout {
-            panic!("{}", TimeoutError { timeout }.to_string());
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(())) => {
+            // Worker finished successfully.
+            handle.join().unwrap();
         }
-        // Small sleep to avoid busy-waiting
-        thread::sleep(Duration::from_millis(50));
-    }
+        Ok(Err(payload)) => {
+            // Worker panicked; join then rethrow on the calling thread so the
+            // test fails with the real assertion message.
+            handle.join().unwrap();
+            panic::resume_unwind(payload);
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            // Timeout: request cooperative cancellation and wait briefly for
+            // the worker to exit so we don't leave runaway threads behind.
+            cancelled.store(true, Ordering::Release);
 
-    handle.join().unwrap();
-
-    // Re-throw panic from the worker thread so the test fails with the real
-    // assertion/panic message instead of timing out.
-    let payload = panic_payload.lock().unwrap().take();
-    if let Some(payload) = payload {
-        panic::resume_unwind(payload);
+            let grace = Duration::from_millis(250);
+            match rx.recv_timeout(grace) {
+                Ok(_outcome) => {
+                    handle.join().unwrap();
+                    panic!("{}", TimeoutError { timeout }.to_string());
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    eprintln!(
+                        "FATAL: integration test exceeded timeout ({timeout:?}) and did not exit after cancellation. Aborting to avoid runaway threads."
+                    );
+                    std::process::abort();
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    // Worker exited without sending (shouldn't happen), but ensure we join.
+                    let _ = handle.join();
+                    panic!("{}", TimeoutError { timeout }.to_string());
+                }
+            }
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            // Worker exited without sending. Join best-effort and fail loudly.
+            let _ = handle.join();
+            panic!("integration test worker thread exited unexpectedly");
+        }
     }
 }
 
@@ -268,9 +316,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "Test exceeded timeout")]
     fn test_with_timeout_panic_on_slow_operation() {
-        with_timeout(
-            || {
-                thread::sleep(Duration::from_secs(2));
+        // Use cooperative cancellation so the worker exits promptly.
+        with_timeout_ctx(
+            |ctx| {
+                while !ctx.is_cancelled() {
+                    thread::sleep(Duration::from_millis(10));
+                }
             },
             Duration::from_millis(100),
         );
@@ -306,5 +357,31 @@ mod tests {
             assert!(msg.contains("10s"));
             assert!(msg.contains("external I/O"));
         });
+    }
+
+    #[test]
+    fn test_with_timeout_does_not_detach_worker_on_timeout() {
+        // Regression: on timeout, with_timeout must not leave the worker thread
+        // running in the background (which can hang the test process).
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stopped_clone = Arc::clone(&stopped);
+
+        let res = panic::catch_unwind(|| {
+            with_timeout_ctx(
+                move |ctx| {
+                    while !ctx.is_cancelled() {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    stopped_clone.store(true, Ordering::Release);
+                },
+                Duration::from_millis(50),
+            );
+        });
+
+        assert!(res.is_err(), "expected timeout to panic");
+        assert!(
+            stopped.load(Ordering::Acquire),
+            "expected worker to exit before timeout unwinds"
+        );
     }
 }

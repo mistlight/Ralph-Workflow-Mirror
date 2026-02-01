@@ -222,10 +222,7 @@ fn test_event_loop_does_not_inject_checkpoint_saved_events() {
         initial_state.phase = PipelinePhase::FinalValidation;
         let mut handler = MockEffectHandler::new(initial_state.clone());
 
-        let loop_config = EventLoopConfig {
-            max_iterations: 10,
-            enable_checkpointing: true,
-        };
+        let loop_config = EventLoopConfig { max_iterations: 10 };
 
         let res =
             run_event_loop_with_handler(&mut ctx, Some(initial_state), loop_config, &mut handler)

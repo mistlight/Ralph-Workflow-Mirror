@@ -219,10 +219,7 @@ fn test_event_loop_dumps_trace_on_max_iterations() {
             state: initial_state.clone(),
         };
 
-        let loop_config = EventLoopConfig {
-            max_iterations: 3,
-            enable_checkpointing: false,
-        };
+        let loop_config = EventLoopConfig { max_iterations: 3 };
 
         let res =
             run_event_loop_with_handler(&mut ctx, Some(initial_state), loop_config, &mut handler)
@@ -262,10 +259,7 @@ fn test_event_loop_dumps_trace_on_panic() {
             state: initial_state.clone(),
         };
 
-        let loop_config = EventLoopConfig {
-            max_iterations: 10,
-            enable_checkpointing: false,
-        };
+        let loop_config = EventLoopConfig { max_iterations: 10 };
 
         let res =
             run_event_loop_with_handler(&mut ctx, Some(initial_state), loop_config, &mut handler)
@@ -306,10 +300,7 @@ fn test_trace_records_additional_events() {
             state: initial_state.clone(),
         };
 
-        let loop_config = EventLoopConfig {
-            max_iterations: 2,
-            enable_checkpointing: false,
-        };
+        let loop_config = EventLoopConfig { max_iterations: 2 };
 
         let res =
             run_event_loop_with_handler(&mut ctx, Some(initial_state), loop_config, &mut handler)
@@ -346,10 +337,7 @@ fn test_trace_entry_phase_reflects_state_after_event_applied() {
             state: initial_state.clone(),
         };
 
-        let loop_config = EventLoopConfig {
-            max_iterations: 1,
-            enable_checkpointing: false,
-        };
+        let loop_config = EventLoopConfig { max_iterations: 1 };
 
         let _res =
             run_event_loop_with_handler(&mut ctx, Some(initial_state), loop_config, &mut handler)
@@ -386,10 +374,7 @@ fn test_max_iterations_logs_trace_path_to_workspace_log() {
             state: initial_state.clone(),
         };
 
-        let loop_config = EventLoopConfig {
-            max_iterations: 1,
-            enable_checkpointing: false,
-        };
+        let loop_config = EventLoopConfig { max_iterations: 1 };
 
         let _res =
             run_event_loop_with_handler(&mut ctx, Some(initial_state), loop_config, &mut handler)

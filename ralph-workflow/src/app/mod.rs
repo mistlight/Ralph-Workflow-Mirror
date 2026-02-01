@@ -1348,7 +1348,6 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     // Configure event loop
     let event_loop_config = EventLoopConfig {
         max_iterations: event_loop::MAX_EVENT_LOOP_ITERATIONS,
-        enable_checkpointing: config.features.checkpoint_enabled,
     };
 
     // Clone execution_history and prompt_history BEFORE running event loop (to avoid borrow issues)
@@ -1626,7 +1625,6 @@ where
     // Configure event loop
     let event_loop_config = EventLoopConfig {
         max_iterations: event_loop::MAX_EVENT_LOOP_ITERATIONS,
-        enable_checkpointing: config.features.checkpoint_enabled,
     };
 
     // Clone execution_history and prompt_history BEFORE running event loop

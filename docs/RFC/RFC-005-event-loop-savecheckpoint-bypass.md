@@ -47,8 +47,9 @@ middleware/sagas in Redux for a subset of dispatched actions. That breaks the co
 
 In `ralph-workflow/src/app/event_loop.rs`, the event loop had special-case logic:
 
-- If `enable_checkpointing == false` and the derived effect is `Effect::SaveCheckpoint`, it would
-  apply `PipelineEvent::CheckpointSaved` directly via the reducer and skip calling the handler.
+- When checkpoint persistence was disabled, and the derived effect was `Effect::SaveCheckpoint`,
+  it would apply `PipelineEvent::CheckpointSaved` directly via the reducer and skip calling the
+  handler.
 
 At phase boundaries, orchestration derives `Effect::SaveCheckpoint` repeatedly until the state
 machine advances.

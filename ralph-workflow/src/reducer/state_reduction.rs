@@ -1268,7 +1268,8 @@ fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState 
         AgentEvent::RateLimitFallback { prompt_context, .. } => PipelineState {
             agent_chain: state
                 .agent_chain
-                .switch_to_next_agent_with_prompt(prompt_context),
+                .switch_to_next_agent_with_prompt(prompt_context)
+                .clear_session_id(),
             ..state
         },
         // Auth failure (401/403): immediate agent fallback, clear session
@@ -1276,7 +1277,11 @@ fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState 
         // the current agent, so we don't preserve prompt context - the next
         // agent may have different (valid) credentials.
         AgentEvent::AuthFallback { .. } => PipelineState {
-            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+            agent_chain: state
+                .agent_chain
+                .switch_to_next_agent()
+                .clear_session_id()
+                .clear_continuation_prompt(),
             ..state
         },
         // Other retriable errors (Network, Timeout): try next model
@@ -2291,9 +2296,54 @@ mod tests {
         // Session should be cleared
         assert!(new_state.agent_chain.last_session_id.is_none());
 
-        // Existing continuation prompt should remain (auth fallback doesn't touch it,
-        // but also doesn't SET a new prompt like rate limit does)
-        // The key semantic: auth fallback does NOT set rate_limit_continuation_prompt
+        // Auth fallback semantics: switch agents WITHOUT prompt context.
+        // Any previously-saved rate-limit continuation prompt must be cleared so we
+        // don't accidentally carry prompt context across an auth fallback.
+        assert!(
+            new_state
+                .agent_chain
+                .rate_limit_continuation_prompt
+                .is_none(),
+            "AuthFallback must clear any existing continuation prompt"
+        );
+    }
+
+    #[test]
+    fn test_rate_limit_fallback_clears_session_id() {
+        // RateLimitFallback preserves prompt context, but MUST NOT preserve session IDs
+        // across agents.
+        let chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent1".to_string(), "agent2".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Developer,
+            )
+            .with_session_id(Some("session-123".to_string()));
+
+        let state = PipelineState {
+            phase: PipelinePhase::Development,
+            agent_chain: chain,
+            ..PipelineState::initial(5, 2)
+        };
+
+        let new_state = reduce(
+            state,
+            PipelineEvent::agent_rate_limit_fallback(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                Some("preserved prompt".to_string()),
+            ),
+        );
+
+        assert!(
+            new_state.agent_chain.last_session_id.is_none(),
+            "RateLimitFallback must clear session IDs when switching agents"
+        );
+        assert_eq!(
+            new_state.agent_chain.rate_limit_continuation_prompt,
+            Some("preserved prompt".to_string()),
+            "RateLimitFallback should preserve prompt context"
+        );
     }
 
     #[test]
