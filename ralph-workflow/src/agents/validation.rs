@@ -141,9 +141,10 @@ mod tests {
     }
 
     fn create_fallback_with_refs(refs: Vec<&str>) -> FallbackConfig {
-        let mut config = FallbackConfig::default();
-        config.developer = refs.iter().map(|s| s.to_string()).collect();
-        config
+        FallbackConfig {
+            developer: refs.iter().map(|s| (*s).to_string()).collect(),
+            ..FallbackConfig::default()
+        }
     }
 
     #[test]

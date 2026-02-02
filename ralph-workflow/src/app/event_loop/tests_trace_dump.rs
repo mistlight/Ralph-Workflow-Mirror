@@ -186,11 +186,13 @@ fn test_create_initial_state_with_config_counts_total_attempts() {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    let mut config = Config::default();
     // Semantics: max_dev_continuations counts *continuations beyond initial*.
     // Total attempts should be 1 + max_dev_continuations.
-    config.max_dev_continuations = Some(2);
-    config.max_xsd_retries = Some(10);
+    let config = Config {
+        max_dev_continuations: Some(2),
+        max_xsd_retries: Some(10),
+        ..Config::default()
+    };
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);

@@ -24,7 +24,7 @@ mod tests {
     #[test]
     fn test_truncate_diff_no_truncation_needed() {
         let small_diff = "diff --git a/src/main.rs b/src/main.rs\n+change\n";
-        let truncated = truncate_diff_if_large(&small_diff, 10_000);
+        let truncated = truncate_diff_if_large(small_diff, 10_000);
 
         assert_eq!(truncated, small_diff);
     }
@@ -33,7 +33,7 @@ mod tests {
     fn test_truncate_diff_preserves_structure() {
         let diff = "diff --git a/src/main.rs b/src/main.rs\n+change1\n\
             diff --git a/src/lib.rs b/src/lib.rs\n+change2\n";
-        let truncated = truncate_diff_if_large(&diff, 10_000);
+        let truncated = truncate_diff_if_large(diff, 10_000);
 
         assert!(truncated.contains("diff --git a/src/main.rs"));
         assert!(truncated.contains("diff --git a/src/lib.rs"));

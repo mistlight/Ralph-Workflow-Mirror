@@ -189,7 +189,7 @@ fn test_review_pass_completed_clean_exits_review_phase() {
         "Clean pass should not exit review when passes remain"
     );
     assert_eq!(new_state.reviewer_pass, 1);
-    assert_eq!(new_state.review_issues_found, false);
+    assert!(!new_state.review_issues_found);
 }
 
 #[test]

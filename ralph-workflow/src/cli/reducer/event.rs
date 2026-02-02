@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn test_all_preset_events_distinct() {
-        let presets = vec![
+        let presets = [
             CliEvent::QuickPresetApplied,
             CliEvent::RapidPresetApplied,
             CliEvent::LongPresetApplied,

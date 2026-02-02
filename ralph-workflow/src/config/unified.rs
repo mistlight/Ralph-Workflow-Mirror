@@ -481,5 +481,4 @@ pub enum ConfigLoadError {
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests;

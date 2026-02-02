@@ -245,7 +245,7 @@ mod tests {
             .unwrap();
 
         let progression = printer.get_content_progression();
-        assert!(progression.len() >= 1);
+        assert!(!progression.is_empty());
         // Later entries should contain more content
         if progression.len() >= 2 {
             assert!(progression[1].len() >= progression[0].len());
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(term.get_visible_lines(), vec!["[agent] Hello World"]);
 
         // Completion (cursor down)
-        write!(term, "\x1b[1B\n").unwrap();
+        writeln!(term, "\x1b[1B").unwrap();
         // Should still show the final content
         assert!(term.get_visible_output().contains("[agent] Hello World"));
     }
@@ -393,7 +393,7 @@ mod tests {
         write!(term, "[agent] A\n\x1b[1A").unwrap();
         write!(term, "\x1b[2K\r[agent] AB\n\x1b[1A").unwrap();
         write!(term, "\x1b[2K\r[agent] ABC\n\x1b[1A").unwrap();
-        write!(term, "\x1b[1B\n").unwrap();
+        writeln!(term, "\x1b[1B").unwrap();
 
         // Should NOT have duplicate lines
         assert!(
@@ -435,7 +435,7 @@ mod tests {
         write!(term, "Hello").unwrap();
         assert_eq!(term.cursor_position(), (0, 5));
 
-        write!(term, "\n").unwrap();
+        writeln!(term).unwrap();
         assert_eq!(term.cursor_position(), (1, 0));
 
         write!(term, "World").unwrap();

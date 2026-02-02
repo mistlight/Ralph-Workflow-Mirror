@@ -319,5 +319,4 @@ pub fn prompt_fix_xsd_retry_with_context(
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests;

@@ -1,0 +1,460 @@
+use crate::test_timeout::with_default_timeout;
+use ralph_workflow::agents::AgentRole;
+use ralph_workflow::reducer::event::{AgentErrorKind, PipelineEvent, PipelinePhase};
+use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
+
+use super::helpers::create_state_with_agent_chain_in_development;
+
+#[test]
+fn test_network_error_triggers_model_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain_in_development();
+
+        let event = PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::Network,
+            true,
+        );
+
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
+
+        assert_eq!(new_state.agent_chain.current_agent_index, 0);
+        assert!(new_state.agent_chain.current_model_index > 0);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+#[test]
+fn test_auth_error_triggers_agent_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain_in_development();
+
+        let event = PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::Authentication,
+            false,
+        );
+
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
+
+        assert!(new_state.agent_chain.current_agent_index > 0);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+#[test]
+fn test_agent_fails_after_10_retries_fallback_to_next_agent() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain_in_development();
+        let initial_model_index = state.agent_chain.current_model_index;
+
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
+        );
+
+        assert_eq!(new_state.agent_chain.current_agent().unwrap(), "agent1");
+        assert!(new_state.agent_chain.current_model_index > initial_model_index);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+/// Test that rate limit (429) errors trigger AGENT fallback, not model fallback.
+///
+/// This verifies the core behavior change: when an agent hits a 429 rate limit,
+/// we immediately switch to the next agent in the chain rather than trying
+/// the same agent with a different model. This allows work to continue without
+/// waiting for rate limits to reset.
+#[test]
+fn test_rate_limit_429_triggers_agent_fallback_not_model_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain_in_development();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        // Simulate 429 rate limit - should switch to next AGENT, not model
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_rate_limit_fallback(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                Some("continue this work".to_string()),
+            ),
+        );
+
+        // Should switch to next agent
+        assert!(
+            new_state.agent_chain.current_agent_index > initial_agent_index,
+            "429 should trigger agent fallback, not model fallback"
+        );
+
+        // Model index should reset to 0 (new agent starts fresh)
+        assert_eq!(new_state.agent_chain.current_model_index, 0);
+
+        // Prompt context should be preserved for continuation
+        assert_eq!(
+            new_state.agent_chain.rate_limit_continuation_prompt,
+            Some("continue this work".to_string())
+        );
+
+        // Phase should remain Development
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+/// Test that auth failure errors (401/403) trigger AGENT fallback, not model fallback.
+///
+/// Auth failures indicate a credentials problem with the current agent/provider.
+/// Like rate limits, we immediately switch to the next agent, but unlike rate
+/// limits, we don't preserve prompt context since the issue is credentials.
+#[test]
+fn test_auth_failure_triggers_agent_fallback_not_model_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain_in_development();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        // Simulate auth failure - should switch to next AGENT, not model
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        // Should switch to next agent
+        assert!(
+            new_state.agent_chain.current_agent_index > initial_agent_index,
+            "Auth failure should trigger agent fallback, not model fallback"
+        );
+
+        // Model index should reset to 0 (new agent starts fresh)
+        assert_eq!(new_state.agent_chain.current_model_index, 0);
+
+        // Prompt context should NOT be preserved (unlike rate limit)
+        assert!(
+            new_state
+                .agent_chain
+                .rate_limit_continuation_prompt
+                .is_none(),
+            "Auth fallback should NOT preserve prompt context"
+        );
+
+        // Phase should remain Development
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+/// Test that network errors still trigger model fallback (same agent, different model).
+///
+/// This verifies that the change to rate limit handling doesn't affect other
+/// retriable errors like Network/Timeout which should still try different models
+/// within the same agent before falling back to the next agent.
+#[test]
+fn test_network_error_still_triggers_model_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain_in_development();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+        let initial_model_index = state.agent_chain.current_model_index;
+
+        // Network error should still trigger model fallback (same agent)
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                true,
+            ),
+        );
+
+        // Should stay on same agent
+        assert_eq!(
+            new_state.agent_chain.current_agent_index, initial_agent_index,
+            "Network error should trigger model fallback, not agent fallback"
+        );
+
+        // Should advance to next model
+        assert!(
+            new_state.agent_chain.current_model_index > initial_model_index,
+            "Network error should advance model index"
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+/// Test that rate limit continuation prompt is cleared on successful agent execution.
+#[test]
+fn test_rate_limit_continuation_prompt_cleared_on_success() {
+    with_default_timeout(|| {
+        use ralph_workflow::reducer::state::{CommitState, ContinuationState, RebaseState};
+
+        // Create state with a saved continuation prompt
+        let mut agent_chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec!["model1".to_string()], vec!["model1".to_string()]],
+            AgentRole::Developer,
+        );
+        agent_chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+        agent_chain.current_agent_index = 1; // On agent2 after rate limit fallback
+
+        let state = PipelineState {
+            agent_chain,
+            phase: PipelinePhase::Development,
+            previous_phase: None,
+            iteration: 1,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            review_issues_found: false,
+            context_cleaned: false,
+            rebase: RebaseState::NotStarted,
+            commit: CommitState::NotStarted,
+            continuation: ContinuationState::new(),
+            checkpoint_saved_count: 0,
+            execution_history: Vec::new(),
+            ..PipelineState::initial(5, 2)
+        };
+
+        // Agent succeeds
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_invocation_succeeded(AgentRole::Developer, "agent2".to_string()),
+        );
+
+        // Continuation prompt should be cleared
+        assert!(
+            new_state
+                .agent_chain
+                .rate_limit_continuation_prompt
+                .is_none(),
+            "Success should clear rate limit continuation prompt"
+        );
+    });
+}
+
+// ============================================================================
+// COMMIT AGENT FALLBACK TO REVIEWER CHAIN TESTS
+// ============================================================================
+
+// ============================================================================
+// TIMEOUT FALLBACK TESTS
+// ============================================================================
+
+/// Test that timeout errors trigger AGENT fallback, not model fallback.
+///
+/// This is the key behavior change for the idle timeout bug fix: when an agent
+/// hits an idle timeout, we immediately switch to the next agent in the chain
+/// rather than trying the same agent with a different model. This is because
+/// timeout errors often indicate the agent is stuck or the task is too complex
+/// for it - retrying with a different model would likely hit the same timeout.
+#[test]
+fn test_timeout_triggers_agent_fallback_not_model_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain_in_development();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        // Simulate idle timeout - should switch to next AGENT, not model
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        // Should switch to next agent
+        assert!(
+            new_state.agent_chain.current_agent_index > initial_agent_index,
+            "Timeout should trigger agent fallback, not model fallback"
+        );
+
+        // Model index should reset to 0 (new agent starts fresh)
+        assert_eq!(new_state.agent_chain.current_model_index, 0);
+
+        // Prompt context should NOT be preserved (unlike rate limit)
+        // because timeout may indicate partial progress that's hard to resume
+        assert!(
+            new_state
+                .agent_chain
+                .rate_limit_continuation_prompt
+                .is_none(),
+            "Timeout fallback should NOT preserve prompt context"
+        );
+
+        // Phase should remain Development
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}
+
+/// Test that timeout fallback clears session ID.
+///
+/// When we switch agents due to timeout, we must clear the session ID
+/// because the new agent will have its own session context.
+#[test]
+fn test_timeout_fallback_clears_session_id() {
+    with_default_timeout(|| {
+        use ralph_workflow::reducer::state::{CommitState, ContinuationState, RebaseState};
+
+        let mut agent_chain = AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec!["model1".to_string()], vec!["model1".to_string()]],
+            AgentRole::Developer,
+        );
+        agent_chain.last_session_id = Some("session-abc".to_string());
+
+        let state = PipelineState {
+            agent_chain,
+            phase: PipelinePhase::Development,
+            previous_phase: None,
+            iteration: 1,
+            total_iterations: 5,
+            reviewer_pass: 0,
+            total_reviewer_passes: 2,
+            review_issues_found: false,
+            context_cleaned: false,
+            rebase: RebaseState::NotStarted,
+            commit: CommitState::NotStarted,
+            continuation: ContinuationState::new(),
+            checkpoint_saved_count: 0,
+            execution_history: Vec::new(),
+            ..PipelineState::initial(5, 2)
+        };
+
+        // Simulate timeout fallback
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        // Session ID should be cleared
+        assert!(
+            new_state.agent_chain.last_session_id.is_none(),
+            "Timeout fallback should clear session ID"
+        );
+    });
+}
+
+/// Test that timeout followed by successful retry with different agent works.
+///
+/// This is the end-to-end flow: first agent times out, second agent succeeds.
+#[test]
+fn test_timeout_followed_by_successful_retry_with_different_agent() {
+    with_default_timeout(|| {
+        let mut state = create_state_with_agent_chain_in_development();
+
+        // Verify starting agent
+        assert_eq!(
+            state.agent_chain.current_agent().map(String::as_str),
+            Some("agent1")
+        );
+
+        // First agent times out
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        // Should have switched to second agent
+        assert_eq!(
+            state.agent_chain.current_agent().map(String::as_str),
+            Some("agent2")
+        );
+
+        // Second agent succeeds
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_invocation_succeeded(AgentRole::Developer, "agent2".to_string()),
+        );
+
+        // Should still be on second agent after success
+        assert_eq!(
+            state.agent_chain.current_agent().map(String::as_str),
+            Some("agent2")
+        );
+
+        // Chain should not be exhausted
+        assert!(!state.agent_chain.is_exhausted());
+
+        // Phase should remain Development
+        assert_eq!(state.phase, PipelinePhase::Development);
+    });
+}
+
+/// Test that multiple consecutive timeouts properly cycle through agents.
+///
+/// When multiple agents timeout in sequence, the system should keep switching
+/// until either an agent succeeds or all agents are exhausted.
+#[test]
+fn test_multiple_timeouts_cycle_through_agents() {
+    with_default_timeout(|| {
+        let mut state = create_state_with_agent_chain_in_development();
+
+        // Agent 1 times out
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent1".to_string()),
+        );
+        assert_eq!(
+            state.agent_chain.current_agent().map(String::as_str),
+            Some("agent2")
+        );
+
+        // Agent 2 times out
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent2".to_string()),
+        );
+        assert_eq!(
+            state.agent_chain.current_agent().map(String::as_str),
+            Some("agent3")
+        );
+
+        // Agent 3 times out - should wrap to agent1 and increment retry cycle
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent3".to_string()),
+        );
+        assert_eq!(
+            state.agent_chain.current_agent().map(String::as_str),
+            Some("agent1"),
+            "Should wrap back to first agent"
+        );
+        assert_eq!(
+            state.agent_chain.retry_cycle, 1,
+            "Should increment retry cycle when wrapping"
+        );
+    });
+}
+
+/// Guard: non-retryable errors should advance the agent chain, even if the kind is typically retryable.
+#[test]
+fn test_network_error_non_retryable_triggers_agent_fallback() {
+    with_default_timeout(|| {
+        let state = create_state_with_agent_chain_in_development();
+        let initial_agent_index = state.agent_chain.current_agent_index;
+
+        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                false,
+            ),
+        );
+
+        assert!(
+            new_state.agent_chain.current_agent_index > initial_agent_index,
+            "Non-retryable failures should fall back to the next agent"
+        );
+        assert_eq!(new_state.agent_chain.current_model_index, 0);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+    });
+}

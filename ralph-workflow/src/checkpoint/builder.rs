@@ -398,5 +398,4 @@ fn review_depth_to_string(depth: ReviewDepth) -> Option<String> {
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests;

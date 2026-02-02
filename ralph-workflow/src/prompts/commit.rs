@@ -303,5 +303,4 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests;

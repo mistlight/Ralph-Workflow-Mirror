@@ -42,7 +42,7 @@ mod tests {
         assert_eq!(got, repo_root);
 
         assert!(matches!(
-            handler.captured.get(0),
+            handler.captured.first(),
             Some(AppEffect::SetCurrentDir { .. })
         ));
         assert!(handler

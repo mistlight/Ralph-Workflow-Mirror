@@ -67,7 +67,7 @@ impl CcsFilesystem for MockCcsFs {
 
     fn read_dir(&self, path: &std::path::Path) -> std::io::Result<Vec<CcsDirEntry>> {
         let mut entries = Vec::new();
-        for (file_path, _) in &self.files {
+        for file_path in self.files.keys() {
             if file_path.parent() == Some(path) {
                 entries.push(CcsDirEntry {
                     path: file_path.clone(),

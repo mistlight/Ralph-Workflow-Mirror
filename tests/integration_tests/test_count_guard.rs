@@ -129,8 +129,20 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("reducer_effect_invariants.rs"),
     },
     SourceFile {
-        path: "reducer_fault_tolerance.rs",
-        contents: include_str!("reducer_fault_tolerance.rs"),
+        path: "reducer_fault_tolerance/mod.rs",
+        contents: include_str!("reducer_fault_tolerance/mod.rs"),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/helpers.rs",
+        contents: include_str!("reducer_fault_tolerance/helpers.rs"),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/agent_crash_handling.rs",
+        contents: include_str!("reducer_fault_tolerance/agent_crash_handling.rs"),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/model_fallback.rs",
+        contents: include_str!("reducer_fault_tolerance/model_fallback.rs"),
     },
     SourceFile {
         path: "reducer_hidden_behavior.rs",
@@ -149,8 +161,28 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("reducer_resume_tests.rs"),
     },
     SourceFile {
-        path: "reducer_legacy_rejection.rs",
-        contents: include_str!("reducer_legacy_rejection.rs"),
+        path: "reducer_legacy_rejection/mod.rs",
+        contents: include_str!("reducer_legacy_rejection/mod.rs"),
+    },
+    SourceFile {
+        path: "reducer_legacy_rejection/checkpoint_format.rs",
+        contents: include_str!("reducer_legacy_rejection/checkpoint_format.rs"),
+    },
+    SourceFile {
+        path: "reducer_legacy_rejection/legacy_phase_rejection.rs",
+        contents: include_str!("reducer_legacy_rejection/legacy_phase_rejection.rs"),
+    },
+    SourceFile {
+        path: "reducer_legacy_rejection/reducer_purity_invariants.rs",
+        contents: include_str!("reducer_legacy_rejection/reducer_purity_invariants.rs"),
+    },
+    SourceFile {
+        path: "reducer_legacy_rejection/xsd_retry_invariants.rs",
+        contents: include_str!("reducer_legacy_rejection/xsd_retry_invariants.rs"),
+    },
+    SourceFile {
+        path: "reducer_legacy_rejection/archival_invariants.rs",
+        contents: include_str!("reducer_legacy_rejection/archival_invariants.rs"),
     },
     SourceFile {
         path: "reducer_state_machine.rs",
@@ -257,8 +289,24 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("workflows/resume/rebase.rs"),
     },
     SourceFile {
-        path: "workflows/resume/v3.rs",
-        contents: include_str!("workflows/resume/v3.rs"),
+        path: "workflows/resume/v3/mod.rs",
+        contents: include_str!("workflows/resume/v3/mod.rs"),
+    },
+    SourceFile {
+        path: "workflows/resume/v3/execution_history.rs",
+        contents: include_str!("workflows/resume/v3/execution_history.rs"),
+    },
+    SourceFile {
+        path: "workflows/resume/v3/file_system_state.rs",
+        contents: include_str!("workflows/resume/v3/file_system_state.rs"),
+    },
+    SourceFile {
+        path: "workflows/resume/v3/prompt_history.rs",
+        contents: include_str!("workflows/resume/v3/prompt_history.rs"),
+    },
+    SourceFile {
+        path: "workflows/resume/v3/smoke.rs",
+        contents: include_str!("workflows/resume/v3/smoke.rs"),
     },
 ];
 
