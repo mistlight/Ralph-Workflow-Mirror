@@ -1,9 +1,3 @@
-//! Event loop for reducer-based pipeline architecture.
-//!
-//! This module implements main event loop that coordinates reducer,
-//! effect handlers, and orchestration logic. It provides a unified way to
-//! run the pipeline using the event-sourced architecture from RFC-004.
-
 use crate::phases::PhaseContext;
 use crate::reducer::state::ContinuationState;
 use crate::reducer::{
@@ -364,13 +358,4 @@ where
 pub trait StatefulHandler {
     /// Update the handler's internal state.
     fn update_state(&mut self, state: PipelineState);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    include!("event_loop/tests_part1.rs");
-    include!("event_loop/tests_part2.rs");
-    include!("event_loop/tests_part3.rs");
 }
