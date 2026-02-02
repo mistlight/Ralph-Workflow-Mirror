@@ -1,43 +1,8 @@
-//! Shared types and utilities for NDJSON stream parsers.
-//!
-//! This module defines the event types emitted by AI agent CLIs during streaming
-//! execution. Each agent (Claude, Codex, Gemini, OpenCode) outputs NDJSON (newline-delimited
-//! JSON) with agent-specific event schemas that get normalized into these types.
-//!
-//! # Event Hierarchy
-//!
-//! The parsers consume raw NDJSON lines and produce typed events:
-//!
-//! - [`ClaudeEvent`] - Claude CLI events (system, assistant, user, result, stream events)
-//! - [`CodexEvent`] - OpenAI Codex CLI events (thread, turn, item lifecycle)
-//! - [`GeminiEvent`] - Gemini CLI events (init, message, tool use/result)
-//!
-//! # Streaming Protocol
-//!
-//! For real-time output, agents use streaming events with deltas:
-//!
-//! - [`StreamInnerEvent`] - Claude's streaming protocol events
-//! - [`ContentBlockDelta`] - Incremental content updates
-//! - [`DeltaAccumulator`] - Accumulates deltas into complete content
-//!
-//! # Display Utilities
-//!
-//! For verbose/debug output:
-//!
-//! - [`format_tool_input`] - Formats tool call parameters for display
-//! - [`format_unknown_json_event`] - Formats unrecognized events with context
-//!
-//! # See Also
-//!
-//! - [`crate::json_parser`] module docs for parser architecture overview
-//! - `stream_classifier` module (internal) for event type classification
-
 use crate::common::truncate_text;
+use crate::json_parser::stream_classifier::{
+    ClassificationResult, StreamEventClassifier, StreamEventType,
+};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
-
-// Import stream classifier for algorithmic event detection
-use super::stream_classifier::{StreamEventClassifier, StreamEventType};
 
 static SECRET_VALUE_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| {
     // Keep this intentionally conservative to reduce false positives in normal text.
@@ -75,400 +40,6 @@ fn looks_like_secret_value(value: &str) -> bool {
         .is_some_and(|re| re.is_match(value))
 }
 
-/// Claude event types
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-pub enum ClaudeEvent {
-    System {
-        subtype: Option<String>,
-        session_id: Option<String>,
-        cwd: Option<String>,
-    },
-    Assistant {
-        message: Option<AssistantMessage>,
-    },
-    User {
-        message: Option<UserMessage>,
-    },
-    Result {
-        subtype: Option<String>,
-        duration_ms: Option<u64>,
-        total_cost_usd: Option<f64>,
-        num_turns: Option<u32>,
-        result: Option<String>,
-        error: Option<String>,
-    },
-    /// Streaming event with nested inner events for delta/partial updates
-    StreamEvent {
-        event: StreamInnerEvent,
-    },
-    #[serde(other)]
-    Unknown,
-}
-
-/// Inner events within a Claude `stream_event`
-///
-/// These events represent the streaming protocol used by Claude CLI
-/// when --include-partial-messages is enabled. The streaming protocol
-/// uses SSE-style events with deltas for incremental content delivery.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-pub enum StreamInnerEvent {
-    /// Message start - initialization of a new message stream
-    MessageStart {
-        message: Option<AssistantMessage>,
-        /// Unique identifier for this message (for deduplication)
-        message_id: Option<String>,
-    },
-    /// Content block start - initialization of a new content block (text, tool use, etc.)
-    ContentBlockStart {
-        index: Option<u64>,
-        content_block: Option<ContentBlock>,
-    },
-    /// Content block delta - incremental update to a content block
-    ContentBlockDelta {
-        index: Option<u64>,
-        delta: Option<ContentBlockDelta>,
-    },
-    /// Text delta - incremental text content update
-    TextDelta { text: Option<String> },
-    /// Content block stop - completion of a content block
-    ContentBlockStop { index: Option<u64> },
-    /// Message delta - final message metadata (`stop_reason`, usage, etc.)
-    MessageDelta {
-        delta: Option<MessageDeltaData>,
-        usage: Option<MessageUsage>,
-    },
-    /// Message stop - completion of the message stream
-    MessageStop,
-    /// Error event during streaming
-    Error { error: Option<StreamError> },
-    /// Ping/keepalive event
-    Ping,
-    #[serde(other)]
-    Unknown,
-}
-
-/// Delta content for streaming updates
-///
-/// Represents incremental updates to content blocks during streaming.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-pub enum ContentBlockDelta {
-    /// Delta for text content blocks
-    TextDelta { text: Option<String> },
-    /// Delta for tool use content blocks (input streaming)
-    ToolUseDelta { tool_use: Option<serde_json::Value> },
-    /// Delta for thinking/reasoning content blocks
-    ThinkingDelta { thinking: Option<String> },
-    #[serde(other)]
-    Unknown,
-}
-
-/// Error information for streaming errors
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct StreamError {
-    pub(crate) message: Option<String>,
-    pub(crate) code: Option<String>,
-}
-
-/// Message delta data for `message_delta` events
-///
-/// Contains final message metadata like `stop_reason` and `stop_sequence`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct MessageDeltaData {
-    pub(crate) stop_reason: Option<String>,
-    pub(crate) stop_sequence: Option<u64>,
-}
-
-/// Message usage information for `message_delta` events
-///
-/// Contains token usage statistics for the completed message.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct MessageUsage {
-    /// Number of input tokens
-    #[serde(alias = "input_tokens")]
-    pub(crate) input: Option<u64>,
-    /// Number of output tokens
-    #[serde(alias = "output_tokens")]
-    pub(crate) output: Option<u64>,
-    /// Number of cache read input tokens
-    #[serde(alias = "cache_read_input_tokens")]
-    pub(crate) cache_read: Option<u64>,
-    /// Number of cache creation input tokens
-    #[serde(alias = "cache_creation_input_tokens")]
-    pub(crate) cache_creation: Option<u64>,
-}
-
-/// Content type for delta accumulation
-///
-/// Distinguishes between different types of content that may be streamed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ContentType {
-    /// Regular text content
-    Text,
-    /// Thinking/reasoning content
-    Thinking,
-    /// Tool input content
-    ToolInput,
-}
-
-/// Maximum buffer size per key to prevent unbounded memory growth
-const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB per key
-
-/// Delta accumulator for streaming content
-///
-/// Tracks partial content across multiple streaming events, accumulating
-/// deltas for different content types. Uses a composite key approach
-/// to track content by (`content_type`, key).
-///
-/// Supports both index-based tracking (for parsers with numeric indices)
-/// and string-based key tracking (for parsers with string identifiers).
-///
-/// # Memory Safety
-///
-/// Each buffer has a maximum size of 10MB to prevent memory exhaustion
-/// in long-running sessions. When a buffer exceeds this limit, new deltas
-/// are ignored for that key.
-#[derive(Debug, Default, Clone)]
-pub struct DeltaAccumulator {
-    /// Accumulated content by (`content_type`, key) composite key
-    /// Using a String key to support both numeric and string-based identifiers
-    buffers: std::collections::HashMap<(ContentType, String), String>,
-    /// Track the order of keys for `most_recent` operations
-    key_order: Vec<(ContentType, String)>,
-}
-
-impl DeltaAccumulator {
-    /// Create a new delta accumulator
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    /// Add a delta for a specific content type and key
-    ///
-    /// This is the generic method that supports both index-based and
-    /// string-based key tracking. Enforces `MAX_BUFFER_SIZE` to prevent
-    /// unbounded memory growth.
-    pub(crate) fn add_delta(&mut self, content_type: ContentType, key: &str, delta: &str) {
-        let composite_key = (content_type, key.to_string());
-        self.buffers
-            .entry(composite_key.clone())
-            .and_modify(|buf| {
-                // Only add delta if buffer hasn't exceeded maximum size
-                if buf.len() < MAX_BUFFER_SIZE {
-                    // Calculate how much we can add without exceeding the limit
-                    let remaining = MAX_BUFFER_SIZE.saturating_sub(buf.len());
-                    if delta.len() <= remaining {
-                        buf.push_str(delta);
-                    } else if remaining > 0 {
-                        // Add partial delta up to the limit
-                        buf.push_str(&delta[..remaining]);
-                    }
-                    // If remaining is 0, buffer is full - ignore new deltas
-                }
-            })
-            .or_insert_with(|| {
-                // For new buffers, truncate delta if it exceeds MAX_BUFFER_SIZE
-                if delta.len() <= MAX_BUFFER_SIZE {
-                    delta.to_string()
-                } else {
-                    delta[..MAX_BUFFER_SIZE].to_string()
-                }
-            });
-
-        // Track order for most_recent operations
-        if !self.key_order.contains(&composite_key) {
-            self.key_order.push(composite_key);
-        }
-    }
-
-    /// Get accumulated content for a specific content type and key
-    pub(crate) fn get(&self, content_type: ContentType, key: &str) -> Option<&str> {
-        self.buffers
-            .get(&(content_type, key.to_string()))
-            .map(std::string::String::as_str)
-    }
-
-    /// Clear all accumulated content
-    pub(crate) fn clear(&mut self) {
-        self.buffers.clear();
-        self.key_order.clear();
-    }
-
-    /// Clear content for a specific content type and key
-    pub(crate) fn clear_key(&mut self, content_type: ContentType, key: &str) {
-        let composite_key = (content_type, key.to_string());
-        self.buffers.remove(&composite_key);
-        self.key_order.retain(|k| k != &composite_key);
-    }
-
-    /// Check if there is any accumulated content (used in tests)
-    #[cfg(test)]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.buffers.is_empty()
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct AssistantMessage {
-    #[serde(default)]
-    pub(crate) id: Option<String>,
-    pub(crate) content: Option<Vec<ContentBlock>>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct UserMessage {
-    pub(crate) content: Option<Vec<ContentBlock>>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-pub enum ContentBlock {
-    Text {
-        text: Option<String>,
-    },
-    ToolUse {
-        name: Option<String>,
-        input: Option<serde_json::Value>,
-    },
-    ToolResult {
-        content: Option<serde_json::Value>,
-    },
-    #[serde(other)]
-    Unknown,
-}
-
-/// Codex event types
-///
-/// Based on `OpenAI` Codex CLI documentation, events include:
-/// - `thread.started`: Thread initialization with `thread_id`
-/// - `turn.started`/`turn.completed`/`turn.failed`: Turn lifecycle events
-/// - `item.started`/`item.completed`: Item events for commands, file ops, messages, etc.
-/// - `error`: Error events
-/// - `result`: Synthetic result event written by the parser (not from Codex CLI itself)
-///
-/// Item types include: `agent_message`, reasoning, `command_execution`, `file_read`,
-/// `file_write`, `file_change`, `mcp_tool_call`, `web_search`, `plan_update`
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-pub enum CodexEvent {
-    #[serde(rename = "thread.started")]
-    ThreadStarted { thread_id: Option<String> },
-    #[serde(rename = "turn.started")]
-    TurnStarted {},
-    #[serde(rename = "turn.completed")]
-    TurnCompleted { usage: Option<CodexUsage> },
-    #[serde(rename = "turn.failed")]
-    TurnFailed { error: Option<String> },
-    #[serde(rename = "item.started")]
-    ItemStarted { item: Option<CodexItem> },
-    #[serde(rename = "item.completed")]
-    ItemCompleted { item: Option<CodexItem> },
-    /// Result event containing aggregated content from `agent_message` items
-    /// This is a synthetic event written by the parser to enable content extraction
-    #[serde(rename = "result")]
-    Result { result: Option<String> },
-    Error {
-        message: Option<String>,
-        error: Option<String>,
-    },
-    #[serde(other)]
-    Unknown,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CodexUsage {
-    pub(crate) input_tokens: Option<u64>,
-    pub(crate) output_tokens: Option<u64>,
-}
-
-/// Codex item structure
-///
-/// Items represent individual operations performed by Codex:
-/// - `command_execution`: Shell command execution
-/// - `agent_message`: Text response from the agent
-/// - `reasoning`: Internal reasoning/thinking content
-/// - `file_read`/`file_write`/`file_change`: File operations
-/// - `mcp_tool_call`: Model Context Protocol tool invocations
-/// - `web_search`: Web search operations
-/// - `plan_update`: Changes to execution plan
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CodexItem {
-    /// Item type (`command_execution`, `agent_message`, reasoning, `file_read`, etc.)
-    #[serde(rename = "type")]
-    pub item_type: Option<String>,
-    /// Command text (for `command_execution`)
-    pub command: Option<String>,
-    /// Message/reasoning text (for `agent_message`, reasoning)
-    pub text: Option<String>,
-    /// File path (for file operations)
-    pub path: Option<String>,
-    /// Tool name (for `mcp_tool_call`)
-    pub tool: Option<String>,
-    /// Tool arguments (for `mcp_tool_call`)
-    pub arguments: Option<serde_json::Value>,
-    /// Search query (for `web_search`)
-    pub query: Option<String>,
-    /// Plan content (for `plan_update`)
-    pub plan: Option<String>,
-}
-
-/// Gemini event types
-///
-/// Based on Gemini CLI documentation, events include:
-/// - `init`: Session initialization with `session_id` and model
-/// - `message`: User or assistant messages with content and role
-/// - `tool_use`: Tool invocations with tool name, ID, and parameters
-/// - `tool_result`: Tool execution results with status and output
-/// - `error`: Non-fatal errors and warnings
-/// - `result`: Final session outcome with aggregated stats
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-pub enum GeminiEvent {
-    Init {
-        session_id: Option<String>,
-        model: Option<String>,
-    },
-    Message {
-        role: Option<String>,
-        content: Option<String>,
-        delta: Option<bool>,
-    },
-    ToolUse {
-        tool_name: Option<String>,
-        parameters: Option<serde_json::Value>,
-    },
-    ToolResult {
-        status: Option<String>,
-        output: Option<String>,
-    },
-    Error {
-        message: Option<String>,
-        code: Option<String>,
-    },
-    Result {
-        status: Option<String>,
-        stats: Option<GeminiStats>,
-    },
-    #[serde(other)]
-    Unknown,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GeminiStats {
-    pub(crate) input_tokens: Option<u64>,
-    pub(crate) output_tokens: Option<u64>,
-    pub(crate) duration_ms: Option<u64>,
-    pub(crate) tool_calls: Option<u32>,
-}
-
 fn format_tool_value(key: Option<&str>, value: &serde_json::Value) -> String {
     if let Some(k) = key {
         if is_sensitive_key(k) {
@@ -493,7 +64,7 @@ fn format_tool_value(key: Option<&str>, value: &serde_json::Value) -> String {
     }
 }
 
-/// Format tool input for display
+/// Format tool input for display.
 ///
 /// Converts JSON input to a human-readable string, showing key parameters.
 /// Uses character-safe truncation to handle UTF-8 properly.
@@ -514,7 +85,7 @@ pub fn format_tool_input(input: &serde_json::Value) -> String {
     }
 }
 
-/// Helper function to extract text from nested JSON structures
+/// Helper function to extract text from nested JSON structures.
 ///
 /// This function attempts to extract text content from common nested patterns
 /// like `{"text": "..."}`, `{"delta": {"text": "..."}}`, etc.
@@ -568,7 +139,7 @@ fn extract_event_type_and_classify(
 /// Returns truncated content info string or None.
 fn extract_partial_content(
     obj: &serde_json::Map<String, serde_json::Value>,
-    classification: &super::stream_classifier::ClassificationResult,
+    classification: &ClassificationResult,
 ) -> Option<String> {
     // Try to extract content from various nested structures
     let extracted_text = classification
@@ -627,7 +198,7 @@ fn extract_partial_content(
 fn build_type_label(
     event_type: &str,
     obj: &serde_json::Map<String, serde_json::Value>,
-    classification: &super::stream_classifier::ClassificationResult,
+    classification: &ClassificationResult,
     is_verbose: bool,
 ) -> String {
     match classification.event_type {
@@ -755,7 +326,7 @@ fn extract_common_fields(obj: &serde_json::Map<String, serde_json::Value>) -> Ve
     fields
 }
 
-/// Format an unknown JSON event for display in verbose/debug mode
+/// Format an unknown JSON event for display in verbose/debug mode.
 ///
 /// This is a generic handler for unknown events that works across all parsers.
 /// It uses algorithmic classification to detect delta/partial events vs control events,

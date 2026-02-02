@@ -25,9 +25,13 @@ pub struct ResumeResult {
     pub checkpoint: PipelineCheckpoint,
 }
 
-// Sub-modules
+// Sub-modules organized by responsibility
 include!("resume/validation.rs");
-include!("resume/checkpoint_resume.rs");
+include!("resume/display_helpers.rs");
+include!("resume/display_summary.rs");
+include!("resume/display_detailed.rs");
+include!("resume/interactive_prompt.rs");
+include!("resume/validation_handlers.rs");
 
 #[cfg(test)]
 include!("resume/tests.rs");

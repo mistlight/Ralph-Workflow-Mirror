@@ -1,408 +1,26 @@
-//! Process execution abstraction for dependency injection.
+//! Mock process executor for testing.
 //!
-//! This module provides a trait-based abstraction for executing external processes,
-//! allowing production code to use real processes and test code to use mocks.
-//! This follows the same pattern as [`crate::workspace::Workspace`] for dependency injection.
-//!
-//! # Purpose
-//!
-//! - Production: [`RealProcessExecutor`] executes actual commands using `std::process::Command`
-//! - Tests: `MockProcessExecutor` captures calls and returns controlled results (with `test-utils` feature)
-//!
-//! # Benefits
-//!
-//! - Test isolation: Tests don't spawn real processes
-//! - Determinism: Tests produce consistent results
-//! - Speed: Tests run faster without subprocess overhead
-//! - Mockability: Full control over process behavior in tests
-//!
-//! # Key Types
-//!
-//! - [`ProcessExecutor`] - The trait abstraction for process execution
-//! - [`AgentSpawnConfig`] - Configuration for spawning agent processes
-//! - [`AgentChildHandle`] - Handle to a spawned agent with streaming output
-//! - [`ProcessOutput`] - Captured output from a completed process
-//!
-//! # Testing with MockProcessExecutor
-//!
-//! The `test-utils` feature enables `MockProcessExecutor` for integration tests:
-//!
-//! ```ignore
-//! use ralph_workflow::{MockProcessExecutor, ProcessExecutor};
-//!
-//! // Create a mock that returns success for 'git' commands
-//! let executor = MockProcessExecutor::new()
-//!     .with_output("git", "On branch main\nnothing to commit");
-//!
-//! // Execute command (captured, returns mock result)
-//! let result = executor.execute("git", &["status"], &[], None)?;
-//! assert!(result.status.success());
-//!
-//! // Verify the call was captured
-//! assert_eq!(executor.execute_count(), 1);
-//! ```
-//!
-//! # See Also
-//!
-//! - [`crate::workspace::Workspace`] - Similar abstraction for filesystem operations
+//! This module provides a mock implementation of ProcessExecutor that
+//! captures all calls and allows tests to control process behavior.
+//! Only available with the `test-utils` feature.
 
+use super::{
+    AgentChild, AgentChildHandle, AgentCommandResult, AgentSpawnConfig, ProcessExecutor,
+    ProcessOutput,
+};
 use crate::agents::JsonParserType;
 use std::collections::HashMap;
-use std::io;
+use std::io::{self, Cursor};
 use std::path::Path;
 use std::process::ExitStatus;
-
-#[cfg(any(test, feature = "test-utils"))]
 use std::sync::Mutex;
-
-#[cfg(any(test, feature = "test-utils"))]
-use std::io::Cursor;
-
-/// Output from an executed process.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcessOutput {
-    /// The exit status of process.
-    pub status: ExitStatus,
-    /// The captured stdout as a UTF-8 string.
-    pub stdout: String,
-    /// The captured stderr as a UTF-8 string.
-    pub stderr: String,
-}
-
-/// Configuration for spawning an agent process with streaming support.
-///
-/// This struct contains all the parameters needed to spawn an agent subprocess,
-/// including the command, arguments, environment variables, prompt, and parser type.
-#[derive(Debug, Clone)]
-pub struct AgentSpawnConfig {
-    /// The command to execute (e.g., "claude", "codex").
-    pub command: String,
-    /// Arguments to pass to the command.
-    pub args: Vec<String>,
-    /// Environment variables to set for the process.
-    pub env: HashMap<String, String>,
-    /// The prompt to pass to the agent.
-    pub prompt: String,
-    /// Path to the log file for output.
-    pub logfile: String,
-    /// The JSON parser type to use for output.
-    pub parser_type: JsonParserType,
-}
-
-/// Result of spawning an agent process.
-///
-/// This wraps the spawned child process with handles to stdout and stderr
-/// for streaming output in real-time.
-pub struct AgentChildHandle {
-    /// The stdout stream for reading agent output.
-    pub stdout: Box<dyn io::Read + Send>,
-    /// The stderr stream for reading error output.
-    pub stderr: Box<dyn io::Read + Send>,
-    /// The inner child process handle.
-    pub inner: Box<dyn AgentChild>,
-}
-
-/// Trait for interacting with a spawned agent child process.
-///
-/// This trait abstracts the `std::process::Child` operations needed for
-/// agent monitoring and output collection. It allows mocking in tests.
-pub trait AgentChild: Send + std::fmt::Debug {
-    /// Get the process ID.
-    fn id(&self) -> u32;
-
-    /// Wait for the process to complete and return the exit status.
-    fn wait(&mut self) -> io::Result<std::process::ExitStatus>;
-
-    /// Try to wait without blocking.
-    fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>>;
-}
-
-/// Wrapper for real `std::process::Child`.
-pub struct RealAgentChild(pub std::process::Child);
-
-impl std::fmt::Debug for RealAgentChild {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RealAgentChild")
-            .field("id", &self.0.id())
-            .finish()
-    }
-}
-
-impl AgentChild for RealAgentChild {
-    fn id(&self) -> u32 {
-        self.0.id()
-    }
-
-    fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
-        self.0.wait()
-    }
-
-    fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
-        self.0.try_wait()
-    }
-}
-
-/// Result of an agent command execution (for testing).
-///
-/// This is used by MockProcessExecutor to return mock results without
-/// actually spawning processes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentCommandResult {
-    /// Exit code from the command (0 = success).
-    pub exit_code: i32,
-    /// Standard error from the command.
-    pub stderr: String,
-}
-
-impl AgentCommandResult {
-    /// Create a successful result.
-    pub fn success() -> Self {
-        Self {
-            exit_code: 0,
-            stderr: String::new(),
-        }
-    }
-
-    /// Create a failed result with the given exit code and stderr.
-    pub fn failure(exit_code: i32, stderr: impl Into<String>) -> Self {
-        Self {
-            exit_code,
-            stderr: stderr.into(),
-        }
-    }
-}
-
-/// Real process executor that uses `std::process::Command`.
-///
-/// This is the production implementation that spawns actual processes.
-#[derive(Debug, Clone, Default)]
-pub struct RealProcessExecutor;
-
-impl RealProcessExecutor {
-    /// Create a new RealProcessExecutor.
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl ProcessExecutor for RealProcessExecutor {
-    fn execute(
-        &self,
-        command: &str,
-        args: &[&str],
-        env: &[(String, String)],
-        workdir: Option<&Path>,
-    ) -> io::Result<ProcessOutput> {
-        let mut cmd = std::process::Command::new(command);
-        cmd.args(args);
-
-        for (key, value) in env {
-            cmd.env(key, value);
-        }
-
-        if let Some(dir) = workdir {
-            cmd.current_dir(dir);
-        }
-
-        let output = cmd.output()?;
-
-        Ok(ProcessOutput {
-            status: output.status,
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        })
-    }
-
-    fn spawn(
-        &self,
-        command: &str,
-        args: &[&str],
-        env: &[(String, String)],
-        workdir: Option<&Path>,
-    ) -> io::Result<std::process::Child> {
-        let mut cmd = std::process::Command::new(command);
-        cmd.args(args);
-
-        for (key, value) in env {
-            cmd.env(key, value);
-        }
-
-        if let Some(dir) = workdir {
-            cmd.current_dir(dir);
-        }
-
-        cmd.stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-    }
-}
-
-/// Trait for executing external processes.
-///
-/// This trait abstracts process execution to allow dependency injection.
-/// Production code uses `RealProcessExecutor` which calls actual commands.
-/// Test code can use `MockProcessExecutor` to control process behavior.
-///
-/// Only external process execution is abstracted. Internal code logic is never mocked.
-pub trait ProcessExecutor: Send + Sync + std::fmt::Debug {
-    /// Execute a command with given arguments and return its output.
-    ///
-    /// # Arguments
-    ///
-    /// * `command` - The program to execute
-    /// * `args` - Command-line arguments to pass to the program
-    /// * `env` - Environment variables to set for the process (optional)
-    /// * `workdir` - Working directory for the process (optional)
-    ///
-    /// # Returns
-    ///
-    /// Returns a `ProcessOutput` containing exit status, stdout, and stderr.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if command cannot be spawned or if output capture fails.
-    fn execute(
-        &self,
-        command: &str,
-        args: &[&str],
-        env: &[(String, String)],
-        workdir: Option<&Path>,
-    ) -> io::Result<ProcessOutput>;
-
-    /// Spawn a process with stdin input and return the child handle.
-    ///
-    /// This method is used when you need to write to the process's stdin
-    /// or stream its output in real-time. Unlike `execute()`, this returns
-    /// a `Child` handle for direct interaction.
-    ///
-    /// # Arguments
-    ///
-    /// * `command` - The program to execute
-    /// * `args` - Command-line arguments to pass to the program
-    /// * `env` - Environment variables to set for the process (optional)
-    /// * `workdir` - Working directory for the process (optional)
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Child` handle that can be used to interact with the process.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if command cannot be spawned.
-    fn spawn(
-        &self,
-        command: &str,
-        args: &[&str],
-        env: &[(String, String)],
-        workdir: Option<&Path>,
-    ) -> io::Result<std::process::Child> {
-        let mut cmd = std::process::Command::new(command);
-        cmd.args(args);
-
-        for (key, value) in env {
-            cmd.env(key, value);
-        }
-
-        if let Some(dir) = workdir {
-            cmd.current_dir(dir);
-        }
-
-        cmd.stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-    }
-
-    /// Spawn an agent process with streaming output support.
-    ///
-    /// This method is specifically designed for spawning AI agent subprocesses
-    /// that need to output streaming JSON in real-time. Unlike `spawn()`, this
-    /// returns a handle with boxed stdout for trait object compatibility.
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Agent spawn configuration including command, args, env, prompt, etc.
-    ///
-    /// # Returns
-    ///
-    /// Returns an `AgentChildHandle` with stdout, stderr, and the child process.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the agent cannot be spawned.
-    ///
-    /// # Default Implementation
-    ///
-    /// The default implementation uses the `spawn()` method with additional
-    /// configuration for agent-specific needs. Mock implementations should
-    /// override this to return mock results without spawning real processes.
-    fn spawn_agent(&self, config: &AgentSpawnConfig) -> io::Result<AgentChildHandle> {
-        let mut cmd = std::process::Command::new(&config.command);
-        cmd.args(&config.args);
-
-        // Set environment variables
-        for (key, value) in &config.env {
-            cmd.env(key, value);
-        }
-
-        // Add the prompt as the final argument
-        cmd.arg(&config.prompt);
-
-        // Set buffering variables for real-time streaming
-        cmd.env("PYTHONUNBUFFERED", "1");
-        cmd.env("NODE_ENV", "production");
-
-        // Spawn the process with piped stdout/stderr
-        let mut child = cmd
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
-
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| io::Error::other("Failed to capture stderr"))?;
-
-        Ok(AgentChildHandle {
-            stdout: Box::new(stdout),
-            stderr: Box::new(stderr),
-            inner: Box::new(RealAgentChild(child)),
-        })
-    }
-
-    /// Check if a command exists and can be executed.
-    ///
-    /// This is a convenience method that executes a command with a
-    /// `--version` or similar flag to check if it's available.
-    ///
-    /// # Arguments
-    ///
-    /// * `command` - The program to check
-    ///
-    /// # Returns
-    ///
-    /// Returns `true` if command exists, `false` otherwise.
-    fn command_exists(&self, command: &str) -> bool {
-        match self.execute(command, &[], &[], None) {
-            Ok(output) => output.status.success(),
-            Err(_) => false,
-        }
-    }
-}
 
 /// Clonable representation of an io::Result.
 ///
 /// Since io::Error doesn't implement Clone, we store error info as strings
-/// and reconstructs the error on demand.
-#[cfg(any(test, feature = "test-utils"))]
+/// and reconstruct the error on demand.
 #[derive(Debug, Clone)]
-enum MockResult<T: Clone> {
+pub(crate) enum MockResult<T: Clone> {
     Ok(T),
     Err {
         kind: io::ErrorKind,
@@ -410,16 +28,15 @@ enum MockResult<T: Clone> {
     },
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl<T: Clone> MockResult<T> {
-    fn to_io_result(&self) -> io::Result<T> {
+    pub(crate) fn to_io_result(&self) -> io::Result<T> {
         match self {
             MockResult::Ok(v) => Ok(v.clone()),
             MockResult::Err { kind, message } => Err(io::Error::new(*kind, message.clone())),
         }
     }
 
-    fn from_io_result(result: io::Result<T>) -> Self {
+    pub(crate) fn from_io_result(result: io::Result<T>) -> Self {
         match result {
             Ok(v) => MockResult::Ok(v),
             Err(e) => MockResult::Err {
@@ -430,7 +47,6 @@ impl<T: Clone> MockResult<T> {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl<T: Clone + Default> Default for MockResult<T> {
     fn default() -> Self {
         MockResult::Ok(T::default())
@@ -440,14 +56,12 @@ impl<T: Clone + Default> Default for MockResult<T> {
 /// Type alias for captured execute calls.
 ///
 /// Each call is a tuple of (command, args, env, workdir).
-#[cfg(any(test, feature = "test-utils"))]
-type ExecuteCall = (String, Vec<String>, Vec<(String, String)>, Option<String>);
+pub type ExecuteCall = (String, Vec<String>, Vec<(String, String)>, Option<String>);
 
 /// Mock process executor for testing.
 ///
 /// This implementation captures all calls and allows tests to control
 /// what each execution returns.
-#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug)]
 pub struct MockProcessExecutor {
     /// Captured execute calls: (command, args, env, workdir).
@@ -464,7 +78,6 @@ pub struct MockProcessExecutor {
     default_agent_result: Mutex<MockResult<AgentCommandResult>>,
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl Default for MockProcessExecutor {
     fn default() -> Self {
         #[cfg(unix)]
@@ -492,7 +105,6 @@ impl Default for MockProcessExecutor {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl MockProcessExecutor {
     /// Create a new MockProcessExecutor with default successful responses.
     pub fn new() -> Self {
@@ -655,6 +267,35 @@ impl MockProcessExecutor {
             .cloned()
             .collect()
     }
+
+    /// Find the agent result for a given command pattern.
+    fn find_agent_result(&self, command: &str) -> AgentCommandResult {
+        // Look for an exact match first
+        if let Some(result) = self.agent_results.lock().unwrap().get(command) {
+            return result
+                .clone()
+                .to_io_result()
+                .unwrap_or_else(|_| AgentCommandResult::success());
+        }
+
+        // Look for a partial pattern match
+        for (pattern, result) in self.agent_results.lock().unwrap().iter() {
+            if command.contains(pattern) {
+                return result
+                    .clone()
+                    .to_io_result()
+                    .unwrap_or_else(|_| AgentCommandResult::success());
+            }
+        }
+
+        // Use default result
+        self.default_agent_result
+            .lock()
+            .unwrap()
+            .clone()
+            .to_io_result()
+            .unwrap_or_else(|_| AgentCommandResult::success())
+    }
 }
 
 /// Generate minimal valid agent output for mock testing.
@@ -671,7 +312,6 @@ impl MockProcessExecutor {
 /// # Returns
 ///
 /// A string containing valid NDJSON output for the given parser type.
-#[cfg(any(test, feature = "test-utils"))]
 fn generate_mock_agent_output(parser_type: JsonParserType, _command: &str) -> String {
     // Valid commit message in XML format for commit generation tests
     let commit_message = r#"<ralph-commit>
@@ -734,20 +374,17 @@ fn generate_mock_agent_output(parser_type: JsonParserType, _command: &str) -> St
 /// Mock agent child process for testing.
 ///
 /// This simulates a real Child process but returns a predetermined exit code.
-#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug)]
 pub struct MockAgentChild {
     exit_code: i32,
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl MockAgentChild {
     fn new(exit_code: i32) -> Self {
         Self { exit_code }
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl AgentChild for MockAgentChild {
     fn id(&self) -> u32 {
         0 // Mock PID
@@ -776,7 +413,6 @@ impl AgentChild for MockAgentChild {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
 impl ProcessExecutor for MockProcessExecutor {
     fn spawn(
         &self,
@@ -839,65 +475,8 @@ impl ProcessExecutor for MockProcessExecutor {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
-impl MockProcessExecutor {
-    /// Find the agent result for a given command pattern.
-    fn find_agent_result(&self, command: &str) -> AgentCommandResult {
-        // Look for an exact match first
-        if let Some(result) = self.agent_results.lock().unwrap().get(command) {
-            return result
-                .clone()
-                .to_io_result()
-                .unwrap_or_else(|_| AgentCommandResult::success());
-        }
-
-        // Look for a partial pattern match
-        for (pattern, result) in self.agent_results.lock().unwrap().iter() {
-            if command.contains(pattern) {
-                return result
-                    .clone()
-                    .to_io_result()
-                    .unwrap_or_else(|_| AgentCommandResult::success());
-            }
-        }
-
-        // Use default result
-        self.default_agent_result
-            .lock()
-            .unwrap()
-            .clone()
-            .to_io_result()
-            .unwrap_or_else(|_| AgentCommandResult::success())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn test_real_executor_can_be_created() {
-        let executor = RealProcessExecutor::new();
-        // Can't test actual execution without real commands
-        let _ = executor;
-    }
-
-    #[test]
-    fn test_real_executor_execute_basic() {
-        let executor = RealProcessExecutor::new();
-        // Use 'echo' command which should exist on all Unix systems
-        let result = executor.execute("echo", &["hello"], &[], None);
-        // Should succeed
-        assert!(result.is_ok());
-        if let Ok(output) = result {
-            assert!(output.status.success());
-            assert_eq!(output.stdout.trim(), "hello");
-        }
-    }
-}
-
-#[cfg(all(test, feature = "test-utils"))]
-mod mock_tests {
     use super::*;
 
     #[test]

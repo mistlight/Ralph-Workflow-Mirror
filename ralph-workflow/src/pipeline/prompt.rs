@@ -2,26 +2,41 @@
 
 use crate::agents::{is_glm_like_agent, JsonParserType};
 use crate::common::{format_argv_for_log, split_command, truncate_text};
-use crate::config::Config;
 use crate::logger::argv_requests_json;
-use crate::logger::Colors;
-use crate::logger::Logger;
 use crate::pipeline::idle_timeout::{
-    monitor_idle_timeout, new_activity_timestamp, time_since_activity, ActivityTrackingReader,
-    MonitorResult, SharedActivityTimestamp, StderrActivityTracker, IDLE_TIMEOUT_SECS,
+    monitor_idle_timeout, new_activity_timestamp, time_since_activity, MonitorResult,
+    StderrActivityTracker, IDLE_TIMEOUT_SECS,
 };
-use crate::pipeline::Timer;
-use crate::rendering::json_pretty::format_generic_json_for_display;
-
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufReader, Read};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-static PROMPT_ARCHIVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
+mod environment;
+mod save;
+mod streaming;
 mod streaming_line_reader;
+mod types;
+
+pub use environment::sanitize_command_env;
+pub use types::{PipelineRuntime, PromptCommand};
+
+#[cfg(test)]
 use streaming_line_reader::StreamingLineReader;
+
+#[cfg(test)]
+use save::build_prompt_archive_filename;
+
+#[cfg(test)]
+use std::io::BufRead;
+
+#[cfg(test)]
+use crate::config::Config;
+
+#[cfg(test)]
+use crate::logger::{Colors, Logger};
+
+#[cfg(test)]
+use crate::pipeline::Timer;
 
 #[cfg(test)]
 use streaming_line_reader::MAX_BUFFER_SIZE;
@@ -120,248 +135,8 @@ fn truncate_prompt_if_needed(prompt: &str, logger: &Logger) -> String {
     )
 }
 
-use super::clipboard::get_platform_clipboard_command;
 use super::types::CommandResult;
-
-/// A single prompt-based agent invocation.
-pub struct PromptCommand<'a> {
-    pub label: &'a str,
-    pub display_name: &'a str,
-    pub cmd_str: &'a str,
-    pub prompt: &'a str,
-    /// Log prefix used for associating artifacts.
-    ///
-    /// Example: `.agent/logs/planning_1` (without extension).
-    pub log_prefix: &'a str,
-    /// Optional model fallback index for attribution.
-    pub model_index: Option<usize>,
-    /// Optional attempt counter for attribution.
-    pub attempt: Option<u32>,
-    pub logfile: &'a str,
-    pub parser_type: JsonParserType,
-    pub env_vars: &'a std::collections::HashMap<String, String>,
-}
-
-/// Runtime services required for running agent commands.
-pub struct PipelineRuntime<'a> {
-    pub timer: &'a mut Timer,
-    pub logger: &'a Logger,
-    pub colors: &'a Colors,
-    pub config: &'a Config,
-    /// Process executor for external process execution.
-    pub executor: &'a dyn crate::executor::ProcessExecutor,
-    /// Arc-wrapped executor for spawning into threads (e.g., idle timeout monitor).
-    pub executor_arc: std::sync::Arc<dyn crate::executor::ProcessExecutor>,
-    /// Workspace for file operations.
-    pub workspace: &'a dyn crate::workspace::Workspace,
-}
-
-/// Options for saving a prompt to file and clipboard.
-struct PromptSaveOptions<'a> {
-    /// Optional prompt archive info for observability.
-    archive_info: Option<PromptArchiveInfo<'a>>,
-    /// Whether to copy to clipboard.
-    interactive: bool,
-    /// Color configuration.
-    colors: Colors,
-}
-
-struct PromptArchiveInfo<'a> {
-    phase_label: &'a str,
-    agent_name: &'a str,
-    log_prefix: &'a str,
-    model_index: Option<usize>,
-    attempt: Option<u32>,
-}
-
-/// Saves the prompt to a file, archives it, and optionally copies it to the clipboard.
-///
-/// # Arguments
-///
-/// * `prompt` - The prompt content to save
-/// * `prompt_path` - Primary path for the prompt (e.g., `.agent/last_prompt.txt`)
-/// * `options` - Options for archiving and clipboard behavior
-/// * `logger` - Logger for status messages
-/// * `executor` - Process executor for clipboard operations
-/// * `workspace` - Workspace for file operations
-///
-/// # Archive Behavior
-///
-/// When `options.archive_info` is provided, the prompt is also saved to a unique timestamped
-/// archive file in `.agent/prompts/`. This enables debugging by preserving each
-/// prompt sent to each agent invocation, rather than overwriting a single file.
-fn save_prompt_to_file_and_clipboard(
-    prompt: &str,
-    prompt_path: &std::path::Path,
-    options: PromptSaveOptions<'_>,
-    logger: &Logger,
-    executor: &dyn crate::executor::ProcessExecutor,
-    workspace: &dyn crate::workspace::Workspace,
-) -> io::Result<()> {
-    // Save prompt to primary location (existing behavior)
-    workspace.write(prompt_path, prompt)?;
-    logger.info(&format!(
-        "Prompt saved to {}{}{}",
-        options.colors.cyan(),
-        prompt_path.display(),
-        options.colors.reset()
-    ));
-
-    // Archive prompt with unique path for debugging
-    if let Some(info) = options.archive_info {
-        if let Err(e) = archive_prompt(prompt, &info, logger, workspace) {
-            // Log but don't fail - archiving is for observability, not critical path
-            logger.warn(&format!("Failed to archive prompt: {}", e));
-        }
-    }
-
-    // Copy to clipboard if interactive
-    if options.interactive {
-        if let Some(clipboard_cmd) = get_platform_clipboard_command() {
-            match executor.spawn(clipboard_cmd.binary, clipboard_cmd.args, &[], None) {
-                Ok(mut child) => {
-                    if let Some(mut stdin) = child.stdin.take() {
-                        let _ = stdin.write_all(prompt.as_bytes());
-                    }
-                    let _ = child.wait();
-                    logger.info(&format!(
-                        "Prompt copied to clipboard {}({}){}",
-                        options.colors.dim(),
-                        clipboard_cmd.paste_hint,
-                        options.colors.reset()
-                    ));
-                }
-                Err(e) => {
-                    logger.warn(&format!("Failed to copy to clipboard: {}", e));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Archive a prompt to a unique timestamped file for debugging.
-///
-/// Prompts are archived to `.agent/prompts/{phase_iteration}_{agent}_{model_index}_a{attempt}_{timestamp}.txt`.
-///
-/// The archive filename is derived from structured components:
-/// - `phase_iteration`: derived from `log_prefix` when possible (e.g., `planning_1`)
-/// - `agent`: sanitized agent name (slashes replaced with hyphens)
-/// - `model_index`: provided explicitly when known
-/// - `attempt`: provided explicitly when known
-/// - `timestamp`: milliseconds since UNIX epoch
-///
-/// This enables post-mortem debugging by preserving every prompt sent to every
-/// agent invocation, even when the same agent is invoked multiple times.
-fn archive_prompt(
-    prompt: &str,
-    info: &PromptArchiveInfo<'_>,
-    logger: &Logger,
-    workspace: &dyn crate::workspace::Workspace,
-) -> io::Result<()> {
-    use std::path::PathBuf;
-
-    let prompts_dir = PathBuf::from(".agent/prompts");
-    workspace.create_dir_all(&prompts_dir)?;
-
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-
-    let archive_filename = build_prompt_archive_filename(
-        info.phase_label,
-        info.agent_name,
-        info.log_prefix,
-        info.model_index,
-        info.attempt,
-        timestamp,
-    );
-    let archive_path = prompts_dir.join(archive_filename);
-
-    workspace.write(&archive_path, prompt)?;
-    logger.info(&format!("Prompt archived to {}", archive_path.display()));
-
-    Ok(())
-}
-
-fn build_prompt_archive_filename(
-    phase_label: &str,
-    agent_name: &str,
-    log_prefix: &str,
-    model_index: Option<usize>,
-    attempt: Option<u32>,
-    timestamp_ms: u128,
-) -> String {
-    use crate::pipeline::logfile::sanitize_agent_name;
-    use std::path::Path;
-
-    // Ensure uniqueness even when multiple invocations land in the same millisecond.
-    // This is per-process and monotonically increasing.
-    let seq = PROMPT_ARCHIVE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-
-    let safe_agent = sanitize_agent_name(&agent_name.to_lowercase());
-
-    let mut prefix_part = Path::new(log_prefix)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .filter(|s| !s.is_empty())
-        .map(|s| sanitize_agent_name(&s.to_lowercase()))
-        .unwrap_or_else(|| "unknown".to_string());
-
-    if prefix_part.is_empty() || prefix_part == "unknown" || prefix_part == safe_agent {
-        prefix_part = sanitize_agent_name(&phase_label.to_lowercase());
-    }
-
-    let mut parts = vec![prefix_part, safe_agent];
-    if let Some(model) = model_index {
-        parts.push(model.to_string());
-    }
-    if let Some(a) = attempt {
-        parts.push(format!("a{}", a));
-    }
-
-    format!("{}_s{}_{}.txt", parts.join("_"), seq, timestamp_ms)
-}
-
-/// Sanitize environment variables for agent subprocess execution.
-///
-/// This function removes problematic Anthropic environment variables from the
-/// provided environment map, unless they were explicitly set by the agent
-/// configuration.
-///
-/// # Arguments
-///
-/// * `env_vars` - Mutable reference to environment variables map
-/// * `agent_env_vars` - Environment variables explicitly set by agent config
-/// * `vars_to_sanitize` - List of environment variable names to remove
-///
-/// # Behavior
-///
-/// - Removes all vars in `vars_to_sanitize` from `env_vars`
-/// - EXCEPT for vars that are present in `agent_env_vars` (explicitly set)
-/// - This prevents GLM CCS credentials from leaking into agent subprocesses
-///
-/// # Example
-///
-/// ```ignore
-/// let mut env = std::env::vars().collect::<HashMap<_, _>>();
-/// let agent_vars = HashMap::from([("ANTHROPIC_API_KEY", "agent-key")]);
-/// sanitize_command_env(&mut env, &agent_vars, ANTHROPIC_VARS);
-/// // env no longer contains ANTHROPIC_BASE_URL (not in agent_vars)
-/// // env still contains ANTHROPIC_API_KEY (explicitly set by agent)
-/// ```
-pub fn sanitize_command_env(
-    env_vars: &mut std::collections::HashMap<String, String>,
-    agent_env_vars: &std::collections::HashMap<String, String>,
-    vars_to_sanitize: &[&str],
-) {
-    for &var in vars_to_sanitize {
-        if !agent_env_vars.contains_key(var) {
-            env_vars.remove(var);
-        }
-    }
-}
+use types::{PromptArchiveInfo, PromptSaveOptions};
 
 /// Waits for process completion and collects stderr output.
 fn wait_for_completion_and_collect_stderr(
@@ -496,7 +271,7 @@ pub fn run_with_prompt(
         colors: *runtime.colors,
     };
 
-    save_prompt_to_file_and_clipboard(
+    save::save_prompt_to_file_and_clipboard(
         cmd.prompt,
         &runtime.config.prompt_path,
         options,
@@ -667,7 +442,7 @@ fn run_with_agent_spawn(
     let activity_timestamp_for_timeout = activity_timestamp.clone();
 
     // Stream agent output using the handle
-    stream_agent_output_from_handle(stdout, cmd, runtime, activity_timestamp)?;
+    streaming::stream_agent_output_from_handle(stdout, cmd, runtime, activity_timestamp)?;
 
     // Signal monitor to stop (process completed or streaming ended)
     monitor_should_stop.store(true, Ordering::Release);
@@ -705,151 +480,13 @@ fn run_with_agent_spawn(
     }
 
     // Extract session_id from the log file (first init event in agent output)
-    let session_id = extract_session_id_from_logfile(cmd.logfile, runtime.workspace);
+    let session_id = streaming::extract_session_id_from_logfile(cmd.logfile, runtime.workspace);
 
     Ok(CommandResult {
         exit_code: final_exit_code,
         stderr: stderr_output,
         session_id,
     })
-}
-
-/// Extract session_id from the agent's log file.
-///
-/// Parses the first few lines of the log file looking for init events
-/// that contain a session_id field. Supports Claude, Gemini, and OpenCode formats.
-fn extract_session_id_from_logfile(
-    logfile: &str,
-    workspace: &dyn crate::workspace::Workspace,
-) -> Option<String> {
-    let logfile_path = Path::new(logfile);
-    let content = workspace.read(logfile_path).ok()?;
-
-    // Look for session_id in the first few lines (init events come first)
-    for line in content.lines().take(10) {
-        if let Some(session_id) = extract_session_id_from_json_line(line) {
-            return Some(session_id);
-        }
-    }
-    None
-}
-
-/// Extract session_id from a single JSON line.
-///
-/// Supports multiple agent formats:
-/// - Claude: `{"type":"system","subtype":"init","session_id":"abc123"}`
-/// - Gemini: `{"type":"init","session_id":"abc123","model":"gemini-pro"}`
-/// - OpenCode: `{"event_type":"...", "session_id":"abc123"}`
-fn extract_session_id_from_json_line(line: &str) -> Option<String> {
-    // Try to parse as JSON
-    let value: serde_json::Value = serde_json::from_str(line).ok()?;
-
-    // Check for session_id field (common across formats)
-    if let Some(session_id) = value.get("session_id").and_then(|v| v.as_str()) {
-        return Some(session_id.to_string());
-    }
-
-    // Check for sessionID field (some agents use camelCase)
-    if let Some(session_id) = value.get("sessionID").and_then(|v| v.as_str()) {
-        return Some(session_id.to_string());
-    }
-
-    None
-}
-
-/// Stream agent output from an AgentChildHandle.
-///
-/// This function streams the agent's stdout in real-time, parsing JSON
-/// output based on the parser type, and tracking activity for idle timeout detection.
-fn stream_agent_output_from_handle(
-    stdout: Box<dyn io::Read + Send>,
-    cmd: &PromptCommand<'_>,
-    runtime: &PipelineRuntime<'_>,
-    activity_timestamp: SharedActivityTimestamp,
-) -> io::Result<()> {
-    // Wrap stdout with activity tracking for idle timeout detection
-    let tracked_stdout = ActivityTrackingReader::new(stdout, activity_timestamp);
-    // Use StreamingLineReader for real-time streaming instead of BufReader::lines().
-    // StreamingLineReader yields lines immediately when newlines are found,
-    // enabling character-by-character streaming for agents that output NDJSON gradually.
-    let reader = StreamingLineReader::new(tracked_stdout);
-
-    if cmd.parser_type != JsonParserType::Generic
-        || argv_requests_json(&split_command(cmd.cmd_str)?)
-    {
-        let stdout_io = io::stdout();
-        let mut out = stdout_io.lock();
-
-        match cmd.parser_type {
-            JsonParserType::Claude => {
-                let p = crate::json_parser::ClaudeParser::new(
-                    *runtime.colors,
-                    runtime.config.verbosity,
-                )
-                .with_display_name(cmd.display_name)
-                .with_log_file(cmd.logfile)
-                .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
-                p.parse_stream(reader, runtime.workspace)?;
-            }
-            JsonParserType::Codex => {
-                let p =
-                    crate::json_parser::CodexParser::new(*runtime.colors, runtime.config.verbosity)
-                        .with_display_name(cmd.display_name)
-                        .with_log_file(cmd.logfile)
-                        .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
-                p.parse_stream(reader, runtime.workspace)?;
-            }
-            JsonParserType::Gemini => {
-                let p = crate::json_parser::GeminiParser::new(
-                    *runtime.colors,
-                    runtime.config.verbosity,
-                )
-                .with_display_name(cmd.display_name)
-                .with_log_file(cmd.logfile)
-                .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
-                p.parse_stream(reader, runtime.workspace)?;
-            }
-            JsonParserType::OpenCode => {
-                let p = crate::json_parser::OpenCodeParser::new(
-                    *runtime.colors,
-                    runtime.config.verbosity,
-                )
-                .with_display_name(cmd.display_name)
-                .with_log_file(cmd.logfile)
-                .with_show_streaming_metrics(runtime.config.show_streaming_metrics);
-                p.parse_stream(reader, runtime.workspace)?;
-            }
-            JsonParserType::Generic => {
-                let logfile_path = Path::new(cmd.logfile);
-                let mut buf = String::new();
-                for line in reader.lines() {
-                    let line = line?;
-                    // Write raw line to log file for extraction using workspace
-                    runtime
-                        .workspace
-                        .append_bytes(logfile_path, format!("{line}\n").as_bytes())?;
-                    buf.push_str(&line);
-                    buf.push('\n');
-                }
-
-                let formatted = format_generic_json_for_display(&buf, runtime.config.verbosity);
-                out.write_all(formatted.as_bytes())?;
-            }
-        }
-    } else {
-        let logfile_path = Path::new(cmd.logfile);
-        let stdout_io = io::stdout();
-        let mut out = stdout_io.lock();
-
-        for line in reader.lines() {
-            let line = line?;
-            writeln!(out, "{line}")?;
-            runtime
-                .workspace
-                .append_bytes(logfile_path, format!("{line}\n").as_bytes())?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
