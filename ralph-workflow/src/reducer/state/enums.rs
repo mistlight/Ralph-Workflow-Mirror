@@ -1,0 +1,234 @@
+// State enums and basic types.
+//
+// Contains ArtifactType, PromptMode, DevelopmentStatus, FixStatus, RebaseState, CommitState.
+
+/// Artifact type being processed by the current phase.
+///
+/// Used to track which XML artifact type is expected for XSD validation,
+/// enabling role-specific retry prompts and error messages.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ArtifactType {
+    /// Plan XML from planning phase.
+    Plan,
+    /// DevelopmentResult XML from development phase.
+    DevelopmentResult,
+    /// Issues XML from review phase.
+    Issues,
+    /// FixResult XML from fix phase.
+    FixResult,
+    /// CommitMessage XML from commit message generation.
+    CommitMessage,
+}
+
+/// Prompt rendering mode chosen by the reducer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PromptMode {
+    /// Standard prompt rendering.
+    Normal,
+    /// XSD retry prompt rendering for invalid XML outputs.
+    XsdRetry,
+    /// Continuation prompt rendering for partial/failed outputs.
+    Continuation,
+}
+
+impl std::fmt::Display for ArtifactType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Plan => write!(f, "plan"),
+            Self::DevelopmentResult => write!(f, "development_result"),
+            Self::Issues => write!(f, "issues"),
+            Self::FixResult => write!(f, "fix_result"),
+            Self::CommitMessage => write!(f, "commit_message"),
+        }
+    }
+}
+
+/// Development status from agent output.
+///
+/// These values map to the `<ralph-status>` element in development_result.xml.
+/// Used to track whether work is complete or needs continuation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DevelopmentStatus {
+    /// Work completed successfully - no continuation needed.
+    Completed,
+    /// Work partially done - needs continuation.
+    Partial,
+    /// Work failed - needs continuation with different approach.
+    Failed,
+}
+
+/// Fix status from agent output.
+///
+/// These values map to the `<ralph-status>` element in fix_result.xml.
+/// Used to track whether fix work is complete or needs continuation.
+///
+/// # Continuation Semantics
+///
+/// - `AllIssuesAddressed`: Complete, no continuation needed
+/// - `NoIssuesFound`: Complete, no continuation needed
+/// - `IssuesRemain`: Work incomplete, needs continuation
+/// - `Failed`: Fix attempt failed, needs continuation with different approach
+#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum FixStatus {
+    /// All issues have been addressed - no continuation needed.
+    #[default]
+    AllIssuesAddressed,
+    /// Issues remain - needs continuation.
+    IssuesRemain,
+    /// No issues were found - nothing to fix.
+    NoIssuesFound,
+    /// Fix attempt failed - needs continuation with different approach.
+    ///
+    /// This status indicates the fix attempt produced valid XML output but
+    /// the agent could not fix the issues (e.g., blocked by external factors,
+    /// needs different strategy). Triggers continuation like `IssuesRemain`.
+    Failed,
+}
+
+impl std::fmt::Display for DevelopmentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Completed => write!(f, "completed"),
+            Self::Partial => write!(f, "partial"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+impl std::fmt::Display for FixStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AllIssuesAddressed => write!(f, "all_issues_addressed"),
+            Self::IssuesRemain => write!(f, "issues_remain"),
+            Self::NoIssuesFound => write!(f, "no_issues_found"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+impl FixStatus {
+    /// Parse a fix status string from XML.
+    ///
+    /// This is intentionally not implementing std::str::FromStr because it returns
+    /// Option<Self> for easier handling of unknown values without error types.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "all_issues_addressed" => Some(Self::AllIssuesAddressed),
+            "issues_remain" => Some(Self::IssuesRemain),
+            "no_issues_found" => Some(Self::NoIssuesFound),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+
+    /// Returns true if the fix is complete (no more work needed).
+    pub fn is_complete(&self) -> bool {
+        matches!(self, Self::AllIssuesAddressed | Self::NoIssuesFound)
+    }
+
+    /// Returns true if continuation is needed (incomplete work or failure).
+    ///
+    /// Both `IssuesRemain` and `Failed` trigger continuation:
+    /// - `IssuesRemain`: Some issues fixed, others remain
+    /// - `Failed`: Fix attempt failed, needs different approach
+    pub fn needs_continuation(&self) -> bool {
+        matches!(self, Self::IssuesRemain | Self::Failed)
+    }
+}
+
+/// Rebase operation state.
+///
+/// Tracks rebase progress through the state machine:
+/// NotStarted → InProgress → Conflicted → Completed/Skipped
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum RebaseState {
+    NotStarted,
+    InProgress {
+        original_head: String,
+        target_branch: String,
+    },
+    Conflicted {
+        original_head: String,
+        target_branch: String,
+        files: Vec<PathBuf>,
+        resolution_attempts: u32,
+    },
+    Completed {
+        new_head: String,
+    },
+    Skipped,
+}
+
+impl RebaseState {
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, RebaseState::Completed { .. } | RebaseState::Skipped)
+    }
+
+    pub fn current_head(&self) -> Option<String> {
+        match self {
+            RebaseState::NotStarted | RebaseState::Skipped => None,
+            RebaseState::InProgress { original_head, .. } => Some(original_head.clone()),
+            RebaseState::Conflicted { .. } => None,
+            RebaseState::Completed { new_head } => Some(new_head.clone()),
+        }
+    }
+
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn is_in_progress(&self) -> bool {
+        matches!(
+            self,
+            RebaseState::InProgress { .. } | RebaseState::Conflicted { .. }
+        )
+    }
+}
+
+/// Maximum number of retry attempts when XML/format validation fails.
+///
+/// This applies across the pipeline for:
+/// - Commit message generation validation failures
+/// - Plan generation validation failures
+/// - Development output validation failures
+/// - Review output validation failures
+///
+/// When an agent produces output that fails XML parsing or format validation,
+/// we retry with corrective prompts up to this many times before giving up.
+pub const MAX_VALIDATION_RETRY_ATTEMPTS: u32 = 100;
+
+/// Maximum number of developer validation retry attempts before giving up.
+///
+/// Specifically for developer iterations - this is for XSD validation failures
+/// (malformed XML). After exhausting these retries, the system will fall back
+/// to a continuation attempt with a fresh prompt rather than failing entirely.
+/// This separates XSD retry (can't parse the response) from continuation
+/// (understood the response but work is incomplete).
+pub const MAX_DEV_VALIDATION_RETRY_ATTEMPTS: u32 = 10;
+
+/// Maximum number of invalid XML output reruns before aborting the iteration.
+pub const MAX_DEV_INVALID_OUTPUT_RERUNS: u32 = 2;
+
+/// Maximum number of invalid planning output reruns before switching agents.
+pub const MAX_PLAN_INVALID_OUTPUT_RERUNS: u32 = 2;
+
+/// Commit generation state.
+///
+/// Tracks commit message generation progress through retries:
+/// NotStarted → Generating → Generated → Committed/Skipped
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum CommitState {
+    NotStarted,
+    Generating { attempt: u32, max_attempts: u32 },
+    Generated { message: String },
+    Committed { hash: String },
+    Skipped,
+}
+
+impl CommitState {
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, CommitState::Committed { .. } | CommitState::Skipped)
+    }
+}

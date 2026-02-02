@@ -48,5 +48,5 @@
 //! side effects (in handlers). See [`CODE_STYLE.md`](https://codeberg.org/mistlight/RalphWithReviewer/src/branch/main/CODE_STYLE.md)
 //! for the full architecture overview.
 
-include!("effect/part1.rs");
-include!("effect/part2.rs");
+include!("effect/types.rs");
+include!("effect/tests.rs");

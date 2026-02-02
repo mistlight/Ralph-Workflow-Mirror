@@ -1,0 +1,540 @@
+// Tests for developer prompts.
+
+use super::*;
+
+#[test]
+fn test_prompt_developer_iteration() {
+    let result =
+        prompt_developer_iteration(2, 5, ContextLevel::Normal, "test prompt", "test plan");
+    // Agent should receive PROMPT and PLAN content directly
+    assert!(result.contains("test prompt"));
+    assert!(result.contains("test plan"));
+    assert!(result.contains("IMPLEMENTATION MODE"));
+    // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
+    assert!(!result.contains("PROMPT.md"));
+    assert!(!result.contains("PLAN.md"));
+    // STATUS.md should NOT be referenced (vague prompts, isolation mode)
+    assert!(!result.contains("STATUS.md"));
+}
+
+#[test]
+fn test_developer_iteration_minimal_context() {
+    let result =
+        prompt_developer_iteration(1, 5, ContextLevel::Minimal, "test prompt", "test plan");
+    // Minimal context should include essential files (not STATUS.md in isolation mode)
+    // Agent should receive PROMPT and PLAN content directly
+    assert!(result.contains("test prompt"));
+    assert!(result.contains("test plan"));
+    // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
+    assert!(!result.contains("PROMPT.md"));
+    assert!(!result.contains("PLAN.md"));
+    // STATUS.md should NOT be referenced (vague prompts, isolation mode)
+    assert!(!result.contains("STATUS.md"));
+}
+
+#[test]
+fn test_prompt_plan() {
+    let result = prompt_plan(None);
+    // Prompt should NOT explicitly mention PROMPT.md file name
+    // Agents receive content directly without knowing the source file
+    assert!(!result.contains("PROMPT.md"));
+    assert!(!result.contains("NEVER read, write, or delete this file"));
+    // Plan is now returned as XML output format
+    assert!(result.contains("PLANNING MODE"));
+    assert!(result.contains("<ralph-implementation-steps>"));
+    assert!(result.contains("<ralph-critical-files>"));
+    assert!(result.contains("<ralph-verification-strategy>"));
+
+    // Ensure strict read-only constraints are present (Claude Code alignment)
+    assert!(result.contains("READ-ONLY"));
+    assert!(result.contains("STRICTLY PROHIBITED"));
+
+    // Ensure 5-phase workflow structure (Claude Code alignment)
+    assert!(result.contains("PHASE 1: UNDERSTANDING"));
+    assert!(result.contains("PHASE 2: EXPLORATION"));
+    assert!(result.contains("PHASE 3: DESIGN"));
+    assert!(result.contains("PHASE 4: REVIEW"));
+    assert!(result.contains("PHASE 5: WRITE STRUCTURED PLAN"));
+
+    // Ensure XML output format is specified
+    assert!(result.contains("<ralph-plan>"));
+    assert!(result.contains("<ralph-summary>"));
+}
+
+#[test]
+fn test_prompt_plan_with_content() {
+    let prompt_md = "# Test Prompt\n\nThis is the content.";
+    let result = prompt_plan(Some(prompt_md));
+    // Should include the content WITHOUT naming PROMPT.md
+    assert!(result.contains("USER REQUIREMENTS:"));
+    assert!(result.contains("This is the content."));
+    // Should NOT mention PROMPT.md file name
+    assert!(!result.contains("PROMPT.md"));
+    // Should still have the planning structure
+    assert!(result.contains("PLANNING MODE"));
+    assert!(result.contains("PHASE 1: UNDERSTANDING"));
+    // Should have XML output format
+    assert!(result.contains("<ralph-plan>"));
+}
+
+#[test]
+fn all_developer_prompts_isolate_agents_from_git() {
+    // Verify developer prompts don't tell agents to run git commands
+    let prompts = vec![
+        prompt_developer_iteration(1, 3, ContextLevel::Minimal, "", ""),
+        prompt_developer_iteration(2, 3, ContextLevel::Normal, "", ""),
+        prompt_plan(None),
+    ];
+
+    for prompt in prompts {
+        assert!(
+            !prompt.contains("git diff"),
+            "Developer prompt should not tell agent to run git diff"
+        );
+        assert!(
+            !prompt.contains("git status"),
+            "Developer prompt should not tell agent to run git status"
+        );
+        assert!(
+            !prompt.contains("git commit"),
+            "Developer prompt should not tell agent to run git commit"
+        );
+        assert!(
+            !prompt.contains("git add"),
+            "Developer prompt should not tell agent to run git add"
+        );
+    }
+}
+
+#[test]
+fn test_prompt_developer_iteration_with_context() {
+    let context = TemplateContext::default();
+    let result = prompt_developer_iteration_with_context(
+        &context,
+        2,
+        5,
+        ContextLevel::Normal,
+        "test prompt",
+        "test plan",
+    );
+    // Agent should receive PROMPT and PLAN content directly
+    assert!(result.contains("test prompt"));
+    assert!(result.contains("test plan"));
+    assert!(result.contains("IMPLEMENTATION MODE"));
+    // Agent should NOT be told to read PROMPT.md (orchestrator handles it)
+    assert!(!result.contains("PROMPT.md"));
+    assert!(!result.contains("PLAN.md"));
+}
+
+#[test]
+fn test_prompt_developer_iteration_with_context_minimal() {
+    let context = TemplateContext::default();
+    let result = prompt_developer_iteration_with_context(
+        &context,
+        1,
+        5,
+        ContextLevel::Minimal,
+        "test prompt",
+        "test plan",
+    );
+    // Agent should receive PROMPT and PLAN content directly
+    assert!(result.contains("test prompt"));
+    assert!(result.contains("test plan"));
+    assert!(!result.contains("PROMPT.md"));
+    assert!(!result.contains("PLAN.md"));
+}
+
+#[test]
+fn test_prompt_plan_with_context() {
+    let context = TemplateContext::default();
+    let result = prompt_plan_with_context(&context, None);
+    assert!(result.contains("PLANNING MODE"));
+    assert!(result.contains("<ralph-implementation-steps>"));
+    assert!(result.contains("<ralph-critical-files>"));
+    assert!(result.contains("<ralph-verification-strategy>"));
+    assert!(result.contains("READ-ONLY"));
+    assert!(result.contains("STRICTLY PROHIBITED"));
+    assert!(result.contains("PHASE 1: UNDERSTANDING"));
+    assert!(result.contains("PHASE 2: EXPLORATION"));
+    assert!(result.contains("PHASE 3: DESIGN"));
+    assert!(result.contains("PHASE 4: REVIEW"));
+    assert!(result.contains("PHASE 5: WRITE STRUCTURED PLAN"));
+    assert!(result.contains("<ralph-plan>"));
+}
+
+#[test]
+fn test_prompt_plan_with_context_and_content() {
+    let context = TemplateContext::default();
+    let prompt_md = "# Test Prompt\n\nThis is the content.";
+    let result = prompt_plan_with_context(&context, Some(prompt_md));
+    assert!(result.contains("USER REQUIREMENTS:"));
+    assert!(result.contains("This is the content."));
+    assert!(!result.contains("PROMPT.md"));
+    assert!(result.contains("PLANNING MODE"));
+    assert!(result.contains("PHASE 1: UNDERSTANDING"));
+}
+
+#[test]
+fn test_context_based_prompts_isolate_from_git() {
+    let context = TemplateContext::default();
+    let prompts = vec![
+        prompt_developer_iteration_with_context(&context, 1, 3, ContextLevel::Minimal, "", ""),
+        prompt_developer_iteration_with_context(&context, 2, 3, ContextLevel::Normal, "", ""),
+        prompt_plan_with_context(&context, None),
+    ];
+
+    for prompt in prompts {
+        assert!(
+            !prompt.contains("git diff"),
+            "Developer prompt should not tell agent to run git diff"
+        );
+        assert!(
+            !prompt.contains("git status"),
+            "Developer prompt should not tell agent to run git status"
+        );
+        assert!(
+            !prompt.contains("git commit"),
+            "Developer prompt should not tell agent to run git commit"
+        );
+        assert!(
+            !prompt.contains("git add"),
+            "Developer prompt should not tell agent to run git add"
+        );
+    }
+}
+
+#[test]
+fn test_context_based_matches_regular_functions() {
+    let context = TemplateContext::default();
+    let regular = prompt_developer_iteration(1, 3, ContextLevel::Normal, "prompt", "plan");
+    let with_context = prompt_developer_iteration_with_context(
+        &context,
+        1,
+        3,
+        ContextLevel::Normal,
+        "prompt",
+        "plan",
+    );
+    // Both should produce equivalent output
+    assert_eq!(regular, with_context);
+
+    let regular_plan = prompt_plan(None);
+    let with_context_plan = prompt_plan_with_context(&context, None);
+    assert_eq!(regular_plan, with_context_plan);
+}
+
+#[test]
+fn test_prompt_developer_iteration_xml_with_context_renders_shared_partials() {
+    let context = TemplateContext::default();
+
+    let result =
+        prompt_developer_iteration_xml_with_context(&context, "test prompt", "test plan");
+
+    assert!(result.contains("test prompt"));
+    assert!(result.contains("test plan"));
+    assert!(result.contains("IMPLEMENTATION MODE"));
+
+    // Shared partials should be expanded
+    assert!(
+        result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+        "developer_iteration_xml should render shared/_unattended_mode partial"
+    );
+    assert!(
+        !result.contains("{{>"),
+        "developer_iteration_xml should not contain raw partial directives"
+    );
+}
+
+// =========================================================================
+// Tests for _with_references variants
+// =========================================================================
+
+#[test]
+fn test_prompt_developer_iteration_xml_with_references_small_content() {
+    use crate::prompts::content_builder::PromptContentBuilder;
+    use crate::workspace::MemoryWorkspace;
+
+    let workspace = MemoryWorkspace::new_test();
+    let context = TemplateContext::default();
+
+    let refs = PromptContentBuilder::new(&workspace)
+        .with_prompt("Small prompt content".to_string())
+        .with_plan("Small plan content".to_string())
+        .build();
+
+    let result = prompt_developer_iteration_xml_with_references(&context, &refs);
+
+    // Should embed content inline
+    assert!(result.contains("Small prompt content"));
+    assert!(result.contains("Small plan content"));
+    assert!(result.contains("IMPLEMENTATION MODE"));
+
+    // Shared partials should be expanded
+    assert!(
+        result.contains("*** UNATTENDED MODE - NO USER INTERACTION ***"),
+        "developer_iteration_xml should render shared/_unattended_mode partial"
+    );
+    assert!(
+        !result.contains("{{>"),
+        "developer_iteration_xml should not contain raw partial directives"
+    );
+}
+
+#[test]
+fn test_prompt_developer_iteration_xml_with_references_large_prompt() {
+    use crate::prompts::content_builder::PromptContentBuilder;
+    use crate::prompts::content_reference::MAX_INLINE_CONTENT_SIZE;
+    use crate::workspace::MemoryWorkspace;
+
+    let workspace = MemoryWorkspace::new_test().with_file(".agent/PROMPT.md.backup", "backup");
+
+    let context = TemplateContext::default();
+    let large_prompt = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+
+    let refs = PromptContentBuilder::new(&workspace)
+        .with_prompt(large_prompt)
+        .with_plan("Small plan".to_string())
+        .build();
+
+    let result = prompt_developer_iteration_xml_with_references(&context, &refs);
+
+    // Should reference backup file, not embed content
+    assert!(result.contains("PROMPT.md.backup"));
+    assert!(result.contains("Read from"));
+    assert!(result.contains("Small plan"));
+}
+
+#[test]
+fn test_prompt_developer_iteration_xml_with_references_large_plan() {
+    use crate::prompts::content_builder::PromptContentBuilder;
+    use crate::prompts::content_reference::MAX_INLINE_CONTENT_SIZE;
+    use crate::workspace::MemoryWorkspace;
+
+    let workspace = MemoryWorkspace::new_test();
+    let context = TemplateContext::default();
+    let large_plan = "p".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+
+    let refs = PromptContentBuilder::new(&workspace)
+        .with_prompt("Small prompt".to_string())
+        .with_plan(large_plan)
+        .build();
+
+    let result = prompt_developer_iteration_xml_with_references(&context, &refs);
+
+    // Should reference PLAN.md file, not embed content
+    assert!(result.contains(".agent/PLAN.md"));
+    assert!(result.contains("plan.xml"));
+    assert!(result.contains("Small prompt"));
+}
+
+#[test]
+fn test_prompt_planning_xml_with_references_small_content() {
+    use crate::prompts::content_reference::PromptContentReference;
+    use crate::workspace::MemoryWorkspace;
+
+    let workspace = MemoryWorkspace::new_test();
+    let context = TemplateContext::default();
+
+    let prompt_ref = PromptContentReference::from_content(
+        "Small requirements".to_string(),
+        Path::new(".agent/PROMPT.md.backup"),
+        "User requirements",
+    );
+
+    let result = prompt_planning_xml_with_references(&context, &prompt_ref, &workspace);
+
+    // Should embed content inline
+    assert!(result.contains("Small requirements"));
+    assert!(result.contains("PLANNING MODE"));
+
+    // Read-only modes: planner must still write exactly one XML file.
+    assert!(
+        result.contains("explicitly authorized") && result.contains("EXACTLY ONE file"),
+        "planning_xml should explicitly authorize writing exactly one XML file"
+    );
+    assert!(
+        result.contains("MANDATORY"),
+        "planning_xml should mark XML file write mandatory"
+    );
+    assert!(
+        result.contains("Not writing") && result.contains("FAILURE"),
+        "planning_xml should say not writing XML is a failure"
+    );
+    assert!(
+        result.contains("does not conform")
+            && result.contains("XSD")
+            && result.contains("FAILURE"),
+        "planning_xml should say non-XSD XML is a failure"
+    );
+    assert!(
+        result.contains("READ-ONLY")
+            && (result.contains("EXCEPT FOR writing")
+                || result.contains("except for writing")
+                || result.contains("Except for writing"))
+            && result.contains("plan.xml"),
+        "planning_xml should be read-only except for writing plan.xml"
+    );
+
+    assert!(
+        !result.contains("DO NOT print")
+            && !result.contains("Do NOT print")
+            && !result.contains("ONLY acceptable output")
+            && !result.contains("The ONLY acceptable output"),
+        "planning_xml should not include stdout suppression wording"
+    );
+}
+
+#[test]
+fn test_prompt_planning_xml_with_references_large_content() {
+    use crate::prompts::content_reference::{PromptContentReference, MAX_INLINE_CONTENT_SIZE};
+    use crate::workspace::MemoryWorkspace;
+
+    let workspace = MemoryWorkspace::new_test().with_file(".agent/PROMPT.md.backup", "backup");
+    let context = TemplateContext::default();
+    let large_content = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+
+    let prompt_ref = PromptContentReference::from_content(
+        large_content,
+        Path::new(".agent/PROMPT.md.backup"),
+        "User requirements",
+    );
+
+    let result = prompt_planning_xml_with_references(&context, &prompt_ref, &workspace);
+
+    // Should reference backup file, not embed content
+    assert!(result.contains("PROMPT.md.backup"));
+    assert!(result.contains("Read from"));
+    assert!(result.contains("PLANNING MODE"));
+}
+
+#[test]
+fn test_prompt_planning_xml_with_references_writes_xsd() {
+    use crate::prompts::content_reference::PromptContentReference;
+    use crate::workspace::MemoryWorkspace;
+
+    let workspace = MemoryWorkspace::new_test();
+    let context = TemplateContext::default();
+
+    let prompt_ref = PromptContentReference::inline("Test requirements".to_string());
+
+    let _result = prompt_planning_xml_with_references(&context, &prompt_ref, &workspace);
+
+    // Should have written the XSD schema file
+    assert!(workspace.exists(Path::new(".agent/tmp/plan.xsd")));
+}
+
+#[test]
+fn test_prompt_planning_xsd_retry_with_context_has_read_only_overrides() {
+    use crate::workspace::MemoryWorkspace;
+
+    let context = TemplateContext::default();
+    let workspace = MemoryWorkspace::new_test();
+
+    let result = prompt_planning_xsd_retry_with_context(
+        &context,
+        "prompt content",
+        "XSD error",
+        "last output",
+        &workspace,
+    );
+
+    assert!(result.contains("XSD error"));
+    assert!(result.contains(".agent/tmp/plan.xsd"));
+    assert!(result.contains(".agent/tmp/last_output.xml"));
+
+    assert!(
+        result.contains("explicitly authorized") && result.contains("EXACTLY ONE file"),
+        "planning_xsd_retry should explicitly authorize writing exactly one XML file"
+    );
+    assert!(
+        result.contains("MANDATORY"),
+        "planning_xsd_retry should mark XML file write mandatory"
+    );
+    assert!(
+        result.contains("Not writing") && result.contains("FAILURE"),
+        "planning_xsd_retry should say not writing XML is a failure"
+    );
+    assert!(
+        result.contains("does not conform")
+            && result.contains("XSD")
+            && result.contains("FAILURE"),
+        "planning_xsd_retry should say non-XSD XML is a failure"
+    );
+    assert!(
+        result.contains("READ-ONLY")
+            && (result.contains("EXCEPT FOR writing")
+                || result.contains("except for writing")
+                || result.contains("Except for writing"))
+            && result.contains("plan.xml"),
+        "planning_xsd_retry should be read-only except for writing plan.xml"
+    );
+
+    assert!(
+        !result.contains("DO NOT print")
+            && !result.contains("Do NOT print")
+            && !result.contains("ONLY acceptable output")
+            && !result.contains("The ONLY acceptable output"),
+        "planning_xsd_retry should not include stdout suppression wording"
+    );
+
+    // Verify files were written to workspace
+    assert!(workspace.was_written(".agent/tmp/plan.xsd"));
+    assert!(workspace.was_written(".agent/tmp/last_output.xml"));
+}
+
+#[test]
+fn test_continuation_prompt_contains_expected_elements() {
+    use crate::reducer::state::{ContinuationState, DevelopmentStatus};
+
+    let context = TemplateContext::default();
+    let continuation_state = ContinuationState::new().trigger_continuation(
+        DevelopmentStatus::Partial,
+        "Implemented half the feature".to_string(),
+        Some(vec!["src/lib.rs".to_string(), "src/main.rs".to_string()]),
+        Some("Add tests for the new functionality".to_string()),
+    );
+
+    let prompt = prompt_developer_iteration_continuation_xml(&context, &continuation_state);
+
+    // Debug: print the prompt to see what we're actually getting
+    eprintln!("Generated prompt:\n{}", prompt);
+
+    // Verify the prompt contains key elements
+    assert!(
+        prompt.contains("CONTINUATION MODE"),
+        "Prompt should indicate continuation mode"
+    );
+    assert!(
+        prompt.contains("partial"),
+        "Prompt should include previous status"
+    );
+    assert!(
+        prompt.contains("Implemented half the feature"),
+        "Prompt should include previous summary"
+    );
+    assert!(
+        prompt.contains("src/lib.rs"),
+        "Prompt should include changed files"
+    );
+    assert!(
+        prompt.contains("Add tests"),
+        "Prompt should include next steps"
+    );
+    assert!(
+        prompt.contains("#1"),
+        "Prompt should include continuation attempt number"
+    );
+    assert!(
+        prompt.contains("PROMPT.md"),
+        "Prompt should reference PROMPT.md"
+    );
+    assert!(
+        prompt.contains("PLAN.md"),
+        "Prompt should reference PLAN.md"
+    );
+    assert!(
+        prompt.contains("do NOT modify") || prompt.contains("DO NOT MODIFY"),
+        "Prompt should warn against modifying original files. Actual prompt: {}",
+        prompt
+    );
+}

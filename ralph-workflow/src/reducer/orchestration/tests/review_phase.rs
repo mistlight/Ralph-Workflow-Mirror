@@ -1,0 +1,300 @@
+// Review phase tests.
+//
+// Tests for review phase effect determination, agent chain states,
+// fix triggering, and pass counting.
+
+use super::*;
+
+#[test]
+fn test_determine_effect_review_phase_empty_chain() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 1,
+        total_reviewer_passes: 2,
+        agent_chain: AgentChainState::initial(),
+        ..create_test_state()
+    };
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::InitializeAgentChain {
+            role: AgentRole::Reviewer
+        }
+    ));
+}
+
+#[test]
+fn test_determine_effect_review_phase_exhausted_chain() {
+    let mut chain = AgentChainState::initial()
+        .with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        )
+        .with_max_cycles(3);
+    chain = chain.start_retry_cycle();
+    chain = chain.start_retry_cycle();
+    chain = chain.start_retry_cycle();
+
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 1,
+        total_reviewer_passes: 2,
+        agent_chain: chain,
+        ..create_test_state()
+    };
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
+}
+
+#[test]
+fn test_determine_effect_review_exhausted_chain_after_checkpoint_aborts() {
+    let mut chain = AgentChainState::initial()
+        .with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        )
+        .with_max_cycles(3);
+    chain = chain.start_retry_cycle();
+    chain = chain.start_retry_cycle();
+    chain = chain.start_retry_cycle();
+
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 1,
+        total_reviewer_passes: 2,
+        checkpoint_saved_count: 1,
+        agent_chain: chain,
+        ..create_test_state()
+    };
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::AbortPipeline { .. }));
+}
+
+#[test]
+fn test_determine_effect_review_phase_with_chain() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 1,
+        total_reviewer_passes: 2,
+        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        ..create_test_state()
+    };
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::PrepareReviewContext { pass: 1 }));
+}
+
+#[test]
+fn test_determine_effect_review_complete() {
+    let state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 2,
+        total_reviewer_passes: 2,
+        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        ..create_test_state()
+    };
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::SaveCheckpoint { .. }));
+}
+
+#[test]
+fn test_review_triggers_fix_when_issues_found() {
+    // Create state in Review phase with issues found
+    let mut state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 2,
+        review_issues_found: false,
+        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        ..create_test_state()
+    };
+
+    // Initially should begin review chain
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(effect, Effect::PrepareReviewContext { pass: 0 }),
+        "Expected PrepareReviewContext, got {:?}",
+        effect
+    );
+
+    // Simulate review completing with issues found
+    state = reduce(state, PipelineEvent::review_completed(0, true));
+
+    // State should now have issues_found flag set
+    assert!(
+        state.review_issues_found,
+        "review_issues_found should be true"
+    );
+
+    // With a populated Reviewer chain, orchestration should begin the fix chain.
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(effect, Effect::PrepareFixPrompt { pass: 0, .. }),
+        "Expected PrepareFixPrompt after issues found, got {:?}",
+        effect
+    );
+
+    // After fix completes, goes to CommitMessage phase
+    state = reduce(state, PipelineEvent::fix_attempt_completed(0, true));
+
+    assert!(
+        !state.review_issues_found,
+        "review_issues_found should be reset after fix"
+    );
+    // After fix, goes to CommitMessage phase (pass increment happens after commit)
+    assert_eq!(
+        state.reviewer_pass, 0,
+        "Pass stays at 0 until CommitCreated"
+    );
+    assert_eq!(
+        state.phase,
+        PipelinePhase::CommitMessage,
+        "Should go to CommitMessage phase after fix"
+    );
+
+    // After commit is created, pass is incremented
+    state = reduce(state, PipelineEvent::commit_generation_started());
+    state = reduce(
+        state,
+        PipelineEvent::commit_created("abc123".to_string(), "fix commit".to_string()),
+    );
+
+    assert_eq!(
+        state.reviewer_pass, 1,
+        "Should increment to next pass after commit"
+    );
+    assert_eq!(
+        state.phase,
+        PipelinePhase::Review,
+        "Should return to Review phase after commit"
+    );
+}
+
+#[test]
+fn test_review_runs_exactly_n_passes() {
+    // Similar to development iteration test, verify review passes count
+    let mut state = PipelineState::initial(0, 3); // 0 dev, 3 review passes
+    state.agent_chain = state.agent_chain.with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        AgentRole::Reviewer,
+    );
+
+    let mut passes_run = Vec::new();
+    let max_steps = 30;
+
+    for _ in 0..max_steps {
+        let effect = determine_next_effect(&state);
+
+        match effect {
+            Effect::InitializeAgentChain { role } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::agent_chain_initialized(
+                        role,
+                        vec!["claude".to_string()],
+                        3,
+                        1000,
+                        2.0,
+                        60000,
+                    ),
+                );
+            }
+            Effect::PrepareReviewContext { pass } => {
+                passes_run.push(pass);
+                state = reduce(state, PipelineEvent::review_context_prepared(pass));
+                state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
+                state = reduce(state, PipelineEvent::review_issues_xml_cleaned(pass));
+                state = reduce(state, PipelineEvent::review_agent_invoked(pass));
+                state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
+                state = reduce(
+                    state,
+                    PipelineEvent::review_issues_xml_validated(
+                        pass,
+                        false,
+                        true,
+                        Vec::new(),
+                        Some("ok".to_string()),
+                    ),
+                );
+                state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
+                state = reduce(state, PipelineEvent::review_issue_snippets_extracted(pass));
+                state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
+                state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
+            }
+            Effect::SaveCheckpoint { .. } => {
+                // Review complete
+                break;
+            }
+            _ => break,
+        }
+    }
+
+    assert_eq!(
+        passes_run.len(),
+        3,
+        "Should run exactly 3 review passes, ran: {:?}",
+        passes_run
+    );
+    assert_eq!(passes_run, vec![0, 1, 2], "Should run passes 0-2");
+    assert_eq!(
+        state.phase,
+        PipelinePhase::CommitMessage,
+        "Should transition to CommitMessage after reviews"
+    );
+}
+
+#[test]
+fn test_review_skips_fix_when_no_issues() {
+    // Create state in Review phase
+    let mut state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 2,
+        review_issues_found: false,
+        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        ..create_test_state()
+    };
+
+    // Begin review chain
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::PrepareReviewContext { pass: 0 }));
+
+    // Review completes with NO issues
+    state = reduce(state, PipelineEvent::review_completed(0, false));
+
+    assert!(
+        !state.review_issues_found,
+        "review_issues_found should be false"
+    );
+
+    assert_eq!(
+        state.reviewer_pass, 1,
+        "Should increment to next pass when no issues"
+    );
+
+    // Should begin next review chain (pass 1), NOT fix chain
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(effect, Effect::PrepareReviewContext { pass: 1 }),
+        "Expected PrepareReviewContext pass 1 when no issues, got {:?}",
+        effect
+    );
+}

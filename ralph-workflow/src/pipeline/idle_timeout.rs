@@ -23,6 +23,6 @@
 //! - Short enough to detect truly stuck agents
 //! - Aligned with typical CI/CD step timeouts
 
-include!("idle_timeout/part1.rs");
-include!("idle_timeout/part2.rs");
-include!("idle_timeout/part3.rs");
+include!("idle_timeout/clock.rs");
+include!("idle_timeout/activity_tracking.rs");
+include!("idle_timeout/tests.rs");

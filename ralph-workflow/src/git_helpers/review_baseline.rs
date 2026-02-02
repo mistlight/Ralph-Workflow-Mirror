@@ -23,8 +23,8 @@ use crate::workspace::{Workspace, WorkspaceFs};
 
 use super::start_commit::get_current_head_oid;
 
-include!("review_baseline/part1.rs");
-include!("review_baseline/part2.rs");
+include!("review_baseline/baseline_persistence.rs");
+include!("review_baseline/diff_stats.rs");
 
 #[cfg(test)]
 mod tests {

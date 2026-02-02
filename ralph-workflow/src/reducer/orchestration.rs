@@ -9,8 +9,8 @@ use super::state::{CommitState, PipelineState, PromptMode, RebaseState};
 use crate::agents::AgentRole;
 use crate::reducer::effect::{ContinuationContextData, Effect};
 
-include!("orchestration/part1.rs");
-include!("orchestration/part2.rs");
+include!("orchestration/xsd_retry.rs");
+include!("orchestration/phase_effects.rs");
 
 #[cfg(test)]
 #[path = "orchestration/tests.rs"]

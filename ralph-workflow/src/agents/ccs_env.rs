@@ -7,9 +7,9 @@
 //!
 //! Source (CCS): `dist/utils/config-manager.js` and `dist/types/config.d.ts`.
 
-include!("ccs_env/part1.rs");
-include!("ccs_env/part2.rs");
-include!("ccs_env/part3.rs");
+include!("ccs_env/traits.rs");
+include!("ccs_env/yaml_parser.rs");
+include!("ccs_env/loader.rs");
 
 #[cfg(test)]
 #[path = "ccs_env/tests.rs"]

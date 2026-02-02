@@ -1,0 +1,411 @@
+// Pipeline flow tests.
+//
+// Tests for complete pipeline flow from Planning through to Complete,
+// and edge cases for zero iterations/reviews.
+
+use super::*;
+
+#[test]
+fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
+    // Test the COMPLETE flow: Planning -> Development -> Review -> Fix -> Commit -> FinalValidation
+    let mut state = PipelineState::initial(2, 1); // 2 dev iterations, 1 review pass
+    state.agent_chain = state.agent_chain.with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
+
+    let mut phase_sequence = Vec::new();
+    let mut iterations_run = Vec::new();
+    let mut review_passes_run = Vec::new();
+
+    // Simulate complete pipeline execution
+    let max_steps = 100; // Safety limit to prevent infinite loops (increased for commit flow)
+    for step in 0..max_steps {
+        phase_sequence.push(state.phase);
+        let effect = determine_next_effect(&state);
+
+        match effect {
+            Effect::CleanupContext => {
+                state = reduce(state, PipelineEvent::ContextCleaned);
+            }
+            Effect::CleanupContinuationContext => {
+                state = reduce(
+                    state,
+                    PipelineEvent::development_continuation_context_cleaned(),
+                );
+            }
+            Effect::InitializeAgentChain { role } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::agent_chain_initialized(
+                        role,
+                        vec!["claude".to_string()],
+                        3,
+                        1000,
+                        2.0,
+                        60000,
+                    ),
+                );
+            }
+            Effect::CleanupPlanningXml { iteration } => {
+                state = reduce(state, PipelineEvent::planning_xml_cleaned(iteration));
+            }
+            Effect::PreparePlanningPrompt { iteration, .. } => {
+                state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
+            }
+            Effect::InvokePlanningAgent { iteration } => {
+                state = reduce(state, PipelineEvent::planning_agent_invoked(iteration));
+            }
+            Effect::ExtractPlanningXml { iteration } => {
+                state = reduce(state, PipelineEvent::planning_xml_extracted(iteration));
+            }
+            Effect::ValidatePlanningXml { iteration } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::planning_xml_validated(
+                        iteration,
+                        true,
+                        Some("# Plan\n\n- step\n".to_string()),
+                    ),
+                );
+            }
+            Effect::WritePlanningMarkdown { iteration } => {
+                state = reduce(state, PipelineEvent::planning_markdown_written(iteration));
+            }
+            Effect::ArchivePlanningXml { iteration } => {
+                state = reduce(state, PipelineEvent::planning_xml_archived(iteration));
+            }
+            Effect::ApplyPlanningOutcome { iteration, valid } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::plan_generation_completed(iteration, valid),
+                );
+            }
+            Effect::PrepareDevelopmentContext { iteration } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::development_context_prepared(iteration),
+                );
+            }
+            Effect::CleanupDevelopmentXml { iteration } => {
+                state = reduce(state, PipelineEvent::development_xml_cleaned(iteration));
+            }
+            Effect::PrepareDevelopmentPrompt { iteration, .. } => {
+                state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
+            }
+            Effect::InvokeDevelopmentAgent { iteration } => {
+                state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
+            }
+            Effect::ExtractDevelopmentXml { iteration } => {
+                state = reduce(state, PipelineEvent::development_xml_extracted(iteration));
+            }
+            Effect::ValidateDevelopmentXml { iteration } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::development_xml_validated(
+                        iteration,
+                        crate::reducer::state::DevelopmentStatus::Completed,
+                        "done".to_string(),
+                        None,
+                        None,
+                    ),
+                );
+            }
+            Effect::ArchiveDevelopmentXml { iteration } => {
+                state = reduce(state, PipelineEvent::development_xml_archived(iteration));
+            }
+            Effect::ApplyDevelopmentOutcome { iteration } => {
+                iterations_run.push(iteration);
+                state = reduce(
+                    state,
+                    PipelineEvent::development_iteration_completed(iteration, true),
+                );
+            }
+            Effect::PrepareReviewContext { pass } => {
+                review_passes_run.push(pass);
+                state = reduce(state, PipelineEvent::review_context_prepared(pass));
+            }
+            Effect::PrepareReviewPrompt { pass, .. } => {
+                state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
+            }
+            Effect::CleanupReviewIssuesXml { pass } => {
+                state = reduce(state, PipelineEvent::review_issues_xml_cleaned(pass));
+            }
+            Effect::InvokeReviewAgent { pass } => {
+                state = reduce(state, PipelineEvent::review_agent_invoked(pass));
+            }
+            Effect::ExtractReviewIssuesXml { pass } => {
+                state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
+            }
+            Effect::ValidateReviewIssuesXml { pass } => {
+                // Simulate finding issues
+                state = reduce(
+                    state,
+                    PipelineEvent::review_issues_xml_validated(
+                        pass,
+                        true,
+                        false,
+                        vec!["issue".to_string()],
+                        None,
+                    ),
+                );
+            }
+            Effect::WriteIssuesMarkdown { pass } => {
+                state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
+            }
+            Effect::ExtractReviewIssueSnippets { pass } => {
+                state = reduce(state, PipelineEvent::review_issue_snippets_extracted(pass));
+            }
+            Effect::ArchiveReviewIssuesXml { pass } => {
+                state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
+            }
+            Effect::ApplyReviewOutcome {
+                pass,
+                issues_found,
+                clean_no_issues,
+            } => {
+                state = reduce(
+                    state,
+                    if clean_no_issues {
+                        PipelineEvent::review_pass_completed_clean(pass)
+                    } else {
+                        PipelineEvent::review_completed(pass, issues_found)
+                    },
+                );
+            }
+
+            Effect::CleanupFixResultXml { pass } => {
+                state = reduce(state, PipelineEvent::fix_result_xml_cleaned(pass));
+            }
+            Effect::PrepareFixPrompt { pass, .. } => {
+                state = reduce(state, PipelineEvent::fix_prompt_prepared(pass));
+            }
+            Effect::InvokeFixAgent { pass } => {
+                state = reduce(state, PipelineEvent::fix_agent_invoked(pass));
+            }
+            Effect::ExtractFixResultXml { pass } => {
+                state = reduce(state, PipelineEvent::fix_result_xml_extracted(pass));
+            }
+            Effect::ValidateFixResultXml { pass } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::fix_result_xml_validated(
+                        pass,
+                        crate::reducer::state::FixStatus::AllIssuesAddressed,
+                        None,
+                    ),
+                );
+            }
+            Effect::ArchiveFixResultXml { pass } => {
+                state = reduce(state, PipelineEvent::fix_result_xml_archived(pass));
+            }
+            Effect::ApplyFixOutcome { pass } => {
+                state = reduce(state, PipelineEvent::fix_attempt_completed(pass, true));
+            }
+            Effect::CheckCommitDiff => {
+                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+            }
+            Effect::PrepareCommitPrompt { .. } => {
+                state = reduce(state, PipelineEvent::commit_generation_started());
+                state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+            }
+            Effect::CleanupCommitXml => {
+                state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
+            }
+            Effect::InvokeCommitAgent => {
+                state = reduce(state, PipelineEvent::commit_agent_invoked(1));
+            }
+            Effect::ExtractCommitXml => {
+                state = reduce(state, PipelineEvent::commit_xml_extracted(1));
+            }
+            Effect::ValidateCommitXml => {
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_xml_validated("test commit".to_string(), 1),
+                );
+            }
+            Effect::ApplyCommitMessageOutcome => {
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_message_generated("test commit".to_string(), 1),
+                );
+            }
+            Effect::ArchiveCommitXml => {
+                state = reduce(state, PipelineEvent::commit_xml_archived(1));
+            }
+            Effect::CreateCommit { .. } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_created("abc123".to_string(), "test commit".to_string()),
+                );
+            }
+            Effect::ValidateFinalState => {
+                state = reduce(state, PipelineEvent::pipeline_completed());
+            }
+            Effect::SaveCheckpoint { .. } => {
+                // Phase transition checkpoint - continue
+                if state.phase == PipelinePhase::Complete {
+                    break;
+                }
+            }
+            _ => panic!("Unexpected effect at step {}: {:?}", step, effect),
+        }
+
+        if state.phase == PipelinePhase::Complete {
+            break;
+        }
+    }
+
+    // Verify the complete flow
+    assert_eq!(
+        iterations_run,
+        vec![0, 1],
+        "Should run exactly 2 development iterations"
+    );
+    assert_eq!(
+        review_passes_run,
+        vec![0],
+        "Should run exactly 1 review pass"
+    );
+    assert_eq!(
+        state.phase,
+        PipelinePhase::Complete,
+        "Pipeline should complete"
+    );
+
+    // Verify phase progression
+    assert!(
+        phase_sequence.contains(&PipelinePhase::Planning),
+        "Should go through Planning"
+    );
+    assert!(
+        phase_sequence.contains(&PipelinePhase::Development),
+        "Should go through Development"
+    );
+    assert!(
+        phase_sequence.contains(&PipelinePhase::Review),
+        "Should go through Review"
+    );
+    assert!(
+        phase_sequence.contains(&PipelinePhase::CommitMessage),
+        "Should go through CommitMessage"
+    );
+    assert!(
+        phase_sequence.contains(&PipelinePhase::FinalValidation),
+        "Should go through FinalValidation"
+    );
+}
+
+#[test]
+fn test_pipeline_flow_skip_planning_when_zero_iterations() {
+    // When developer_iters=0, should skip Planning and Development entirely
+    let mut state = PipelineState::initial(0, 2); // 0 dev iterations, 2 review passes
+    assert_eq!(
+        state.phase,
+        PipelinePhase::Review,
+        "Should start in Review when developer_iters=0"
+    );
+
+    state.agent_chain = state.agent_chain.with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        AgentRole::Reviewer,
+    );
+
+    let mut review_passes = Vec::new();
+    let max_steps = 30;
+
+    for _ in 0..max_steps {
+        let effect = determine_next_effect(&state);
+
+        match effect {
+            Effect::InitializeAgentChain { role } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::agent_chain_initialized(
+                        role,
+                        vec!["claude".to_string()],
+                        3,
+                        1000,
+                        2.0,
+                        60000,
+                    ),
+                );
+            }
+            Effect::PrepareReviewContext { pass } => {
+                review_passes.push(pass);
+                // Simulate full clean pass
+                state = reduce(state, PipelineEvent::review_context_prepared(pass));
+                state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
+                state = reduce(state, PipelineEvent::review_issues_xml_cleaned(pass));
+                state = reduce(state, PipelineEvent::review_agent_invoked(pass));
+                state = reduce(state, PipelineEvent::review_issues_xml_extracted(pass));
+                state = reduce(
+                    state,
+                    PipelineEvent::review_issues_xml_validated(
+                        pass,
+                        false,
+                        true,
+                        Vec::new(),
+                        Some("ok".to_string()),
+                    ),
+                );
+                state = reduce(state, PipelineEvent::review_issues_markdown_written(pass));
+                state = reduce(state, PipelineEvent::review_issue_snippets_extracted(pass));
+                state = reduce(state, PipelineEvent::review_issues_xml_archived(pass));
+                state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
+            }
+            Effect::CheckCommitDiff => {
+                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+            }
+            Effect::PrepareCommitPrompt { .. } => {
+                state = reduce(state, PipelineEvent::commit_generation_started());
+                state = reduce(state, PipelineEvent::commit_prompt_prepared(1));
+            }
+            Effect::CleanupCommitXml => {
+                state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
+            }
+            Effect::InvokeCommitAgent => {
+                state = reduce(state, PipelineEvent::commit_agent_invoked(1));
+            }
+            Effect::ExtractCommitXml => {
+                state = reduce(state, PipelineEvent::commit_xml_extracted(1));
+            }
+            Effect::ValidateCommitXml => {
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_xml_validated("test".to_string(), 1),
+                );
+            }
+            Effect::ApplyCommitMessageOutcome => {
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_message_generated("test".to_string(), 1),
+                );
+            }
+            Effect::ArchiveCommitXml => {
+                state = reduce(state, PipelineEvent::commit_xml_archived(1));
+            }
+            Effect::CreateCommit { .. } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_created("abc".to_string(), "test".to_string()),
+                );
+            }
+            Effect::ValidateFinalState => {
+                state = reduce(state, PipelineEvent::pipeline_completed());
+                break;
+            }
+            Effect::SaveCheckpoint { .. } => {
+                if state.phase == PipelinePhase::Complete {
+                    break;
+                }
+            }
+            _ => panic!("Unexpected effect: {:?}", effect),
+        }
+    }
+
+    assert_eq!(review_passes, vec![0, 1], "Should run 2 review passes");
+    assert_eq!(state.phase, PipelinePhase::Complete);
+}

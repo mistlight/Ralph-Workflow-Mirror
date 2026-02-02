@@ -1,0 +1,141 @@
+// Main validation function (validate_plan_xml)
+
+/// Validate plan XML content against the structured XSD schema.
+///
+/// This validates that the XML content conforms to the expected
+/// structured plan format with rich content elements.
+///
+/// # Arguments
+///
+/// * `xml_content` - The XML content to validate
+///
+/// # Returns
+///
+/// * `Ok(PlanElements)` if the XML is valid and contains all required elements
+/// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
+pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidationError> {
+    let mut reader = Reader::from_str(xml_content);
+    reader.config_mut().trim_text(true);
+
+    let mut buf = Vec::new();
+    let mut summary = None;
+    let mut steps = None;
+    let mut critical_files = None;
+    let mut risks_mitigations = None;
+    let mut verification_strategy = None;
+    let mut found_root = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => match e.name().as_ref() {
+                b"ralph-plan" => {
+                    found_root = true;
+                }
+                b"ralph-summary" if found_root => {
+                    summary = Some(parse_summary(&mut reader)?);
+                }
+                b"ralph-implementation-steps" if found_root => {
+                    steps = Some(parse_steps(&mut reader)?);
+                }
+                b"ralph-critical-files" if found_root => {
+                    critical_files = Some(parse_critical_files(&mut reader)?);
+                }
+                b"ralph-risks-mitigations" if found_root => {
+                    risks_mitigations = Some(parse_risks_mitigations(&mut reader)?);
+                }
+                b"ralph-verification-strategy" if found_root => {
+                    verification_strategy = Some(parse_verification_strategy(&mut reader)?);
+                }
+                _ => {
+                    // Skip unknown elements
+                    let _ = skip_to_end(&mut reader, e.name().as_ref());
+                }
+            },
+            Ok(Event::End(e)) if e.name().as_ref() == b"ralph-plan" => break,
+            Ok(Event::Eof) => break,
+            Ok(_) => {}
+            Err(e) => {
+                return Err(XsdValidationError {
+                    error_type: XsdErrorType::MalformedXml,
+                    element_path: "ralph-plan".to_string(),
+                    expected: "valid XML".to_string(),
+                    found: format!("parse error: {}", e),
+                    suggestion: "Check XML syntax".to_string(),
+                    example: None,
+                });
+            }
+        }
+        buf.clear();
+    }
+
+    if !found_root {
+        return Err(XsdValidationError {
+            error_type: XsdErrorType::MissingRequiredElement,
+            element_path: "ralph-plan".to_string(),
+            expected: "<ralph-plan> as root element".to_string(),
+            found: "no <ralph-plan> found".to_string(),
+            suggestion: "Wrap your plan in <ralph-plan> tags".to_string(),
+            example: None,
+        });
+    }
+
+    let summary = summary.ok_or_else(|| XsdValidationError {
+        error_type: XsdErrorType::MissingRequiredElement,
+        element_path: "ralph-summary".to_string(),
+        expected: "<ralph-summary> element".to_string(),
+        found: "no <ralph-summary> found".to_string(),
+        suggestion:
+            "Add <ralph-summary><context>...</context><scope-items>...</scope-items></ralph-summary>"
+                .to_string(),
+        example: None,
+    })?;
+
+    let steps = steps.ok_or_else(|| XsdValidationError {
+        error_type: XsdErrorType::MissingRequiredElement,
+        element_path: "ralph-implementation-steps".to_string(),
+        expected: "<ralph-implementation-steps> element".to_string(),
+        found: "no <ralph-implementation-steps> found".to_string(),
+        suggestion: "Add <ralph-implementation-steps><step>...</step></ralph-implementation-steps>"
+            .to_string(),
+        example: None,
+    })?;
+
+    let critical_files = critical_files.ok_or_else(|| XsdValidationError {
+        error_type: XsdErrorType::MissingRequiredElement,
+        element_path: "ralph-critical-files".to_string(),
+        expected: "<ralph-critical-files> element".to_string(),
+        found: "no <ralph-critical-files> found".to_string(),
+        suggestion:
+            "Add <ralph-critical-files><primary-files>...</primary-files></ralph-critical-files>"
+                .to_string(),
+        example: None,
+    })?;
+
+    let risks_mitigations = risks_mitigations.ok_or_else(|| XsdValidationError {
+        error_type: XsdErrorType::MissingRequiredElement,
+        element_path: "ralph-risks-mitigations".to_string(),
+        expected: "<ralph-risks-mitigations> element".to_string(),
+        found: "no <ralph-risks-mitigations> found".to_string(),
+        suggestion:
+            "Add <ralph-risks-mitigations><risk-pair>...</risk-pair></ralph-risks-mitigations>"
+                .to_string(),
+        example: None,
+    })?;
+
+    let verification_strategy = verification_strategy.ok_or_else(|| XsdValidationError {
+        error_type: XsdErrorType::MissingRequiredElement,
+        element_path: "ralph-verification-strategy".to_string(),
+        expected: "<ralph-verification-strategy> element".to_string(),
+        found: "no <ralph-verification-strategy> found".to_string(),
+        suggestion: "Add <ralph-verification-strategy><verification>...</verification></ralph-verification-strategy>".to_string(),
+        example: None,
+    })?;
+
+    Ok(PlanElements {
+        summary,
+        steps,
+        critical_files,
+        risks_mitigations,
+        verification_strategy,
+    })
+}

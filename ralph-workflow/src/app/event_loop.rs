@@ -370,7 +370,7 @@ pub trait StatefulHandler {
 mod tests {
     use super::*;
 
-    include!("event_loop/tests_part1.rs");
-    include!("event_loop/tests_part2.rs");
-    include!("event_loop/tests_part3.rs");
+    include!("event_loop/tests_trace_dump.rs");
+    include!("event_loop/tests_checkpoint.rs");
+    include!("event_loop/tests_review_flow.rs");
 }

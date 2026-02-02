@@ -70,6 +70,6 @@
 //! cargo test queue --lib
 //! ```
 
-include!("event_queue/part1.rs");
-include!("event_queue/part2.rs");
-include!("event_queue/part3.rs");
+include!("event_queue/config.rs");
+include!("event_queue/bounded_queue.rs");
+include!("event_queue/tests.rs");
