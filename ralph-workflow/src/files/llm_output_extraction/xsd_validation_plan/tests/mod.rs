@@ -7,14 +7,14 @@ use super::*;
 
 // Test modules organized by category
 mod cdata_escaping;
+mod content_parsing;
 mod edge_cases;
 mod file_validation;
 mod list_item_flexibility;
 mod llm_output_patterns;
-mod content_parsing;
 mod real_world_plan;
-mod structure_tests;
 mod rich_content;
 mod risk_verification;
 mod scope_validation;
 mod step_validation;
+mod structure_tests;

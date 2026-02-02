@@ -117,4 +117,3 @@ pub struct TemplateMetadata {
     /// Template purpose description
     pub purpose: Option<String>,
 }
-

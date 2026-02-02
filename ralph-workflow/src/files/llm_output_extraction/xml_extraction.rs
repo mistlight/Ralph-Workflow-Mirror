@@ -1,59 +1,10 @@
-//! Flexible XML extraction module for AI-generated commit messages.
+//! Flexible XML extraction helpers.
 //!
-//! This module provides robust extraction of XML commit messages from various
-//! AI output formats. AI agents may embed XML in unpredictable ways:
-//! - Markdown code fences (```xml, ```)
-//! - JSON strings (escaped XML)
-//! - Preceding/succeeding analysis text
-//! - Mixed with other content
-//!
-//! The extraction strategies are ordered from most specific to most permissive:
-//! 1. Direct XML tags (already in correct format)
-//! 2. XML in markdown code fences
-//! 3. XML in JSON strings (unescaped)
-//! 4. XML embedded in text (search for tags anywhere)
+//! Extracts `<ralph-commit>...</ralph-commit>` blocks from common embedding patterns.
 
 use crate::files::llm_output_extraction::cleaning::unescape_json_strings_aggressive;
 
-/// Extract XML commit message from AI output using multiple strategies.
-///
-/// This function tries multiple extraction strategies in order, returning
-/// the first successful extraction. Each strategy is increasingly permissive
-/// to handle various ways AI agents might embed XML.
-///
-/// # Strategies (tried in order)
-///
-/// 1. **Direct extraction**: Content starts with `<ralph-commit>` tag
-/// 2. **Markdown code fence**: XML wrapped in ```xml or ``` fences
-/// 3. **JSON string**: XML escaped in a JSON string value
-/// 4. **Embedded search**: Look for `<ralph-commit>` anywhere in content
-///
-/// # Arguments
-///
-/// * `content` - The raw AI agent output
-///
-/// # Returns
-///
-/// * `Some(xml_content)` - The extracted XML content including tags
-/// * `None` - No valid XML commit message found
-///
-/// # Examples
-///
-/// ```
-/// use ralph_workflow::files::llm_output_extraction::xml_extraction::extract_xml_commit;
-///
-/// // Direct XML
-/// let xml = extract_xml_commit("<ralph-commit>...</ralph-commit>");
-/// assert!(xml.is_some());
-///
-/// // In markdown fence
-/// let md = "Here's the commit:\n```xml\n<ralph-commit>...</ralph-commit>\n```";
-/// assert!(extract_xml_commit(md).is_some());
-///
-/// // Embedded in text
-/// let text = "Analysis...\n<ralph-commit>...</ralph-commit>\nMore text";
-/// assert!(extract_xml_commit(text).is_some());
-/// ```
+/// Extract an XML commit message from AI output using multiple strategies.
 pub fn extract_xml_commit(content: &str) -> Option<String> {
     // Strategy 1: Direct XML at start (most efficient)
     if let Some(xml) = try_extract_direct_xml(content) {

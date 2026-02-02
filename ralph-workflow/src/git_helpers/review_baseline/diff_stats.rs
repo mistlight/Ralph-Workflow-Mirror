@@ -1,4 +1,4 @@
-// Part 2: Diff statistics and baseline summary
+// Diff statistics and baseline summary
 
 /// Diff statistics for the changes since baseline.
 #[derive(Debug, Clone, Default)]

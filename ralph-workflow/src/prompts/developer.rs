@@ -14,7 +14,8 @@ use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute
 use crate::workspace::Workspace;
 
 include!("developer/context_injection.rs");
-include!("developer/system_prompt.rs");
+include!("developer/system_prompt_iteration.rs");
+include!("developer/system_prompt_planning.rs");
 
 #[cfg(test)]
 mod tests {

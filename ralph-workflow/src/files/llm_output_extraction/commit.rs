@@ -29,47 +29,10 @@ impl CommitExtractionResult {
     }
 }
 
-/// Try to extract commit message from XML format with detailed tracing.
+/// Try to extract a commit message from the XML format, with a trace string for debugging.
 ///
-/// This function uses flexible XML extraction to handle various AI embedding patterns:
-/// - Direct XML tags at content start
-/// - XML in markdown code fences (```xml, ```)
-/// - XML in JSON strings (escaped)
-/// - XML embedded within analysis text
-///
-/// The XML format is preferred because:
-/// - No escape sequence issues (actual newlines work fine)
-/// - Distinctive tags unlikely to appear in LLM analysis text
-/// - Clear boundaries for parsing
-///
-/// # Expected Format
-///
-/// ```xml
-/// <ralph-commit>
-/// <ralph-subject>type(scope): description</ralph-subject>
-/// <ralph-body>Optional body text here.
-/// Can span multiple lines.</ralph-body>
-/// </ralph-commit>
-/// ```
-///
-/// Or with detailed body elements:
-///
-/// ```xml
-/// <ralph-commit>
-/// <ralph-subject>type(scope): description</ralph-subject>
-/// <ralph-body-summary>Brief summary</ralph-body-summary>
-/// <ralph-body-details>Detailed bullet points</ralph-body-details>
-/// <ralph-body-footer>BREAKING CHANGE or Fixes #123</ralph-body-footer>
-/// </ralph-commit>
-/// ```
-///
-/// The `<ralph-body>` tag is optional and may be omitted for commits without a body.
-///
-/// # Returns
-///
-/// A tuple of `(Option<String>, String)`:
-/// - First element: `Some(message)` if valid XML with a valid conventional commit subject was found, `None` otherwise
-/// - Second element: Detailed reason string explaining what was found/not found (for debugging)
+/// This uses flexible XML extraction (direct tags, fenced blocks, escaped JSON strings, embedded
+/// text) and validates the resulting XML against the commit XSD.
 pub fn try_extract_xml_commit_with_trace(content: &str) -> (Option<String>, String) {
     // Try flexible XML extraction that handles various AI embedding patterns.
     // If extraction fails, use the raw content directly - XSD validation will

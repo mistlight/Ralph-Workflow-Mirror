@@ -3,9 +3,7 @@
 //! This module provides the production implementation that spawns actual processes
 //! using `std::process::Command`.
 
-use super::{
-    AgentChildHandle, AgentSpawnConfig, ProcessExecutor, ProcessOutput, RealAgentChild,
-};
+use super::{AgentChildHandle, AgentSpawnConfig, ProcessExecutor, ProcessOutput, RealAgentChild};
 use std::io;
 use std::path::Path;
 

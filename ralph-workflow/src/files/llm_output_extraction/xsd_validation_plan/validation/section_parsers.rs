@@ -1,10 +1,4 @@
-// Section parsing functions (parse_inline_elements, parse_rich_content, parse_list, parse_table, parse_summary, parse_scope_items)
-
-/// Strip block-level elements from content for inline parsing.
-///
-/// This allows list items to contain block-level elements like `<code-block>`,
-/// `<paragraph>`, and nested `<list>` without breaking inline parsing.
-/// The block elements are removed, leaving only inline content to be parsed.
+// Section parsing helpers.
 /// Strip block-level elements from content for inline parsing.
 ///
 /// This allows list items to contain block-level elements like `<code-block>`,
@@ -13,7 +7,6 @@
 // pub(super) for test access from tests submodule
 pub(super) fn strip_block_elements_for_inline_parsing(content: &str) -> String {
     let mut result = content.to_string();
-
     // Remove <list>...</list> blocks (handled separately for nesting)
     while let Some(start) = result.find("<list") {
         if let Some(end) = result[start..].find("</list>") {
@@ -502,6 +495,5 @@ fn parse_scope_items(reader: &mut Reader<&[u8]>) -> Result<Vec<ScopeItem>, XsdVa
         }
         buf.clear();
     }
-
     Ok(items)
 }

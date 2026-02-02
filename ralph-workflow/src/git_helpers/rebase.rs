@@ -42,7 +42,12 @@ use std::path::Path;
 
 use super::git2_to_io_error;
 
-include!("rebase/error_types.rs");
+include!("rebase/error_types/kinds.rs");
+include!("rebase/error_types/classification.rs");
 include!("rebase/conflict_detection.rs");
-include!("rebase/operations.rs");
+include!("rebase/operations/preconditions.rs");
+include!("rebase/operations/run.rs");
+include!("rebase/operations/abort.rs");
+include!("rebase/operations/conflicts.rs");
+include!("rebase/operations/continuation.rs");
 include!("rebase/tests.rs");

@@ -4,11 +4,11 @@
 //! including the Loggable trait implementation.
 
 use super::loggable::Loggable;
+use crate::checkpoint::timestamp;
+use crate::json_parser::printer::Printable;
 use crate::logger::{
     Colors, ARROW, BOX_BL, BOX_BR, BOX_H, BOX_TL, BOX_TR, BOX_V, CHECK, CROSS, INFO, WARN,
 };
-use crate::checkpoint::timestamp;
-use crate::json_parser::printer::Printable;
 use crate::workspace::Workspace;
 use std::fs::{self, OpenOptions};
 use std::io::{IsTerminal, Write};

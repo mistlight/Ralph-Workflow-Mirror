@@ -1,4 +1,4 @@
-// Part 1: Baseline persistence, parsing, and commit distance
+// Review baseline persistence, parsing, and commit-distance calculation.
 
 /// Path to the review baseline file.
 ///

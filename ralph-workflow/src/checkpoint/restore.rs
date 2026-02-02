@@ -85,20 +85,7 @@ impl PipelineCheckpoint {
     }
 }
 
-/// Apply checkpoint CLI args to a config.
-///
-/// This function modifies the config to use values from the checkpoint's
-/// CLI args snapshot, ensuring the resumed pipeline uses the same settings
-/// as the original run.
-///
-/// # Arguments
-///
-/// * `config` - The config to modify
-/// * `checkpoint` - The checkpoint to restore from
-///
-/// # Returns
-///
-/// The modified config with checkpoint values applied.
+/// Apply checkpoint values to the current config for deterministic resume.
 pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineCheckpoint) {
     let cli_args = &checkpoint.cli_args;
 
@@ -156,17 +143,7 @@ pub fn apply_checkpoint_to_config(config: &mut Config, checkpoint: &PipelineChec
 
 /// Restore environment variables from a checkpoint.
 ///
-/// This function restores environment variables that were captured in the
-/// checkpoint's environment snapshot, ensuring the resumed pipeline uses
-/// the same environment configuration as the original run.
-///
-/// # Arguments
-///
-/// * `checkpoint` - The checkpoint to restore environment from
-///
-/// # Returns
-///
-/// The number of environment variables restored.
+/// Restore safe environment variables from the checkpoint snapshot.
 pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> usize {
     let Some(ref env_snap) = checkpoint.env_snapshot else {
         return 0;
@@ -196,18 +173,6 @@ pub fn restore_environment_from_checkpoint(checkpoint: &PipelineCheckpoint) -> u
 }
 
 /// Calculate the starting iteration for development phase resume.
-///
-/// When resuming from a checkpoint in the development phase, this determines
-/// which iteration to start from based on the checkpoint state.
-///
-/// # Arguments
-///
-/// * `checkpoint` - The checkpoint to calculate from
-/// * `max_iterations` - Maximum iterations configured
-///
-/// # Returns
-///
-/// The iteration number to start from (1-indexed).
 pub fn calculate_start_iteration(checkpoint: &PipelineCheckpoint, max_iterations: u32) -> u32 {
     match checkpoint.phase {
         PipelinePhase::Planning | PipelinePhase::Development => {
@@ -269,30 +234,16 @@ fn phase_rank(phase: PipelinePhase) -> u32 {
         PipelinePhase::Rebase | PipelinePhase::PostRebase | PipelinePhase::PostRebaseConflict => 2,
     }
 }
-///
-/// # Arguments
-///
-/// Restored context from a checkpoint.
-///
-/// Contains all the information needed to resume a pipeline from a checkpoint.
 #[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct RestoredContext {
-    /// The phase to resume from.
     pub phase: PipelinePhase,
-    /// The iteration to resume from (for development phase).
     pub resume_iteration: u32,
-    /// The total number of iterations configured.
     pub total_iterations: u32,
-    /// The reviewer pass to resume from.
     pub resume_reviewer_pass: u32,
-    /// The total number of reviewer passes configured.
     pub total_reviewer_passes: u32,
-    /// Developer agent name from checkpoint.
     pub developer_agent: String,
-    /// Reviewer agent name from checkpoint.
     pub reviewer_agent: String,
-    /// CLI arguments snapshot (if available).
     pub cli_args: Option<crate::checkpoint::state::CliArgsSnapshot>,
 }
 

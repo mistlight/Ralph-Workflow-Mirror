@@ -8,6 +8,8 @@
 
 // Include sub-modules
 include!("pipeline_execution/discovery.rs");
-include!("pipeline_execution/entry_points.rs");
-include!("pipeline_execution/pipeline.rs");
+include!("pipeline_execution/entry_points/main.rs");
+include!("pipeline_execution/entry_points/testing.rs");
+include!("pipeline_execution/pipeline/execution.rs");
+include!("pipeline_execution/pipeline/testing.rs");
 include!("pipeline_execution/helpers.rs");

@@ -12,28 +12,28 @@
 use std::collections::HashSet;
 
 // Sub-modules
-#[path = "template_types.rs"]
-mod template_types;
 #[path = "rendered_validation.rs"]
 mod rendered_validation;
-#[path = "template_extraction.rs"]
-mod template_extraction;
 #[path = "syntax_validation.rs"]
 mod syntax_validation;
+#[path = "template_extraction.rs"]
+mod template_extraction;
+#[path = "template_types.rs"]
+mod template_types;
 
 // Re-export public types and functions that are currently used
 // Note: TemplateMetadata and VariableInfo are defined in template_types.rs
 // but not re-exported here because they're not currently used by any consumers.
 // If needed in the future, they can be added to this re-export list.
-pub use template_types::{
-    RenderedPromptError, TemplateVariablesInvalidError, ValidationError,
-    ValidationResult, ValidationWarning,
-};
 pub use rendered_validation::{
     validate_no_unresolved_placeholders, validate_no_unresolved_placeholders_with_ignored_content,
 };
-pub use template_extraction::{extract_metadata, extract_partials, extract_variables};
 pub use syntax_validation::validate_syntax;
+pub use template_extraction::{extract_metadata, extract_partials, extract_variables};
+pub use template_types::{
+    RenderedPromptError, TemplateVariablesInvalidError, ValidationError, ValidationResult,
+    ValidationWarning,
+};
 
 /// Validate a complete template.
 ///

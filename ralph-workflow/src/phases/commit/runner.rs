@@ -1,0 +1,259 @@
+/// Result of commit message generation.
+pub struct CommitMessageResult {
+    /// The generated commit message
+    pub message: String,
+    /// Whether the generation was successful
+    pub success: bool,
+    /// Path to the agent log file for debugging (currently unused)
+    pub _log_path: String,
+    /// Prompts that were generated during this commit generation (key -> prompt)
+    pub generated_prompts: HashMap<String, String>,
+}
+
+/// Outcome from a single commit attempt.
+pub struct CommitAttemptResult {
+    pub had_error: bool,
+    pub output_valid: bool,
+    pub message: Option<String>,
+    pub validation_detail: String,
+    pub auth_failure: bool,
+}
+
+/// Run a single commit generation attempt with explicit agent and prompt.
+///
+/// This does **not** perform in-session XSD retries. If validation fails, the
+/// caller should emit a MessageValidationFailed event and let the reducer decide
+/// retry/fallback behavior.
+pub fn run_commit_attempt(
+    ctx: &mut PhaseContext<'_>,
+    attempt: u32,
+    diff: &str,
+    commit_agent: &str,
+) -> anyhow::Result<CommitAttemptResult> {
+    let (working_diff, diff_truncated) =
+        check_and_pre_truncate_diff(diff, commit_agent, ctx.logger);
+
+    let prompt_key = format!("commit_message_attempt_{attempt}");
+    let (prompt, was_replayed) = build_commit_prompt(
+        &prompt_key,
+        ctx.template_context,
+        &working_diff,
+        ctx.workspace,
+        &ctx.prompt_history,
+    );
+
+    // Enforce that the rendered prompt does not contain unresolved template placeholders.
+    // This must happen before any agent invocation.
+    if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+        &prompt,
+        &[working_diff.as_str()],
+    ) {
+        return Err(crate::prompts::TemplateVariablesInvalidError {
+            template_name: "commit_message_xml".to_string(),
+            missing_variables: Vec::new(),
+            unresolved_placeholders: err.unresolved_placeholders,
+        }
+        .into());
+    }
+
+    if !was_replayed {
+        ctx.capture_prompt(&prompt_key, &prompt);
+    }
+
+    let mut runtime = PipelineRuntime {
+        timer: ctx.timer,
+        logger: ctx.logger,
+        colors: ctx.colors,
+        config: ctx.config,
+        executor: ctx.executor,
+        executor_arc: std::sync::Arc::clone(&ctx.executor_arc),
+        workspace: ctx.workspace,
+    };
+
+    let log_dir = Path::new(".agent/logs/commit_generation");
+    let mut session = CommitLogSession::new(log_dir.to_str().unwrap(), ctx.workspace)
+        .unwrap_or_else(|_| CommitLogSession::noop());
+    let mut attempt_log = session.new_attempt(commit_agent, "single");
+    attempt_log.set_prompt_size(prompt.len());
+    attempt_log.set_diff_info(working_diff.len(), diff_truncated);
+
+    let agent_config = ctx
+        .registry
+        .resolve_config(commit_agent)
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", commit_agent))?;
+    let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
+
+    let log_prefix = ".agent/logs/commit_generation/commit_generation";
+    let model_index = 0usize;
+    let agent_for_log = commit_agent.to_lowercase();
+    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
+        log_prefix,
+        &agent_for_log,
+        model_index,
+        attempt,
+    );
+    let prompt_cmd = PromptCommand {
+        label: commit_agent,
+        display_name: commit_agent,
+        cmd_str: &cmd_str,
+        prompt: &prompt,
+        log_prefix,
+        model_index: Some(model_index),
+        attempt: Some(attempt),
+        logfile: &logfile,
+        parser_type: agent_config.json_parser,
+        env_vars: &agent_config.env_vars,
+    };
+
+    let result = run_with_prompt(&prompt_cmd, &mut runtime)?;
+    let had_error = result.exit_code != 0;
+    let auth_failure = had_error && stderr_contains_auth_error(&result.stderr);
+    attempt_log.set_raw_output(&result.stderr);
+
+    if auth_failure {
+        attempt_log.set_outcome(AttemptOutcome::ExtractionFailed(
+            "Authentication error detected".to_string(),
+        ));
+        if !session.is_noop() {
+            let _ = attempt_log.write_to_workspace(session.run_dir(), ctx.workspace);
+            let _ = session.write_summary(1, "AUTHENTICATION_FAILURE", ctx.workspace);
+        }
+        return Ok(CommitAttemptResult {
+            had_error,
+            output_valid: false,
+            message: None,
+            validation_detail: "Authentication error detected".to_string(),
+            auth_failure: true,
+        });
+    }
+
+    let extraction = extract_commit_message_from_file_with_workspace(ctx.workspace);
+    let (outcome, detail, extraction_result) = match extraction {
+        CommitExtractionOutcome::Valid(result) => (
+            AttemptOutcome::Success(result.clone().into_message()),
+            "Valid commit message extracted".to_string(),
+            Some(result),
+        ),
+        CommitExtractionOutcome::InvalidXml(detail) => (
+            AttemptOutcome::XsdValidationFailed(detail.clone()),
+            detail,
+            None,
+        ),
+        CommitExtractionOutcome::MissingFile(detail) => (
+            AttemptOutcome::ExtractionFailed(detail.clone()),
+            detail,
+            None,
+        ),
+    };
+    attempt_log.add_extraction_attempt(match &extraction_result {
+        Some(_) => ExtractionAttempt::success("XML", detail.clone()),
+        None => ExtractionAttempt::failure("XML", detail.clone()),
+    });
+    attempt_log.set_outcome(outcome.clone());
+
+    if !session.is_noop() {
+        let _ = attempt_log.write_to_workspace(session.run_dir(), ctx.workspace);
+        let final_outcome = format!("{outcome}");
+        let _ = session.write_summary(1, &final_outcome, ctx.workspace);
+    }
+
+    if let Some(result) = extraction_result {
+        let message = result.into_message();
+        return Ok(CommitAttemptResult {
+            had_error,
+            output_valid: true,
+            message: Some(message),
+            validation_detail: detail,
+            auth_failure: false,
+        });
+    }
+
+    Ok(CommitAttemptResult {
+        had_error,
+        output_valid: false,
+        message: None,
+        validation_detail: detail,
+        auth_failure: false,
+    })
+}
+
+/// Generate a commit message using a single agent attempt.
+///
+/// Returns an error if XML validation fails or the agent output is missing.
+pub fn generate_commit_message(
+    diff: &str,
+    registry: &AgentRegistry,
+    runtime: &mut PipelineRuntime,
+    commit_agent: &str,
+    template_context: &TemplateContext,
+    workspace: &dyn Workspace,
+    prompt_history: &HashMap<String, String>,
+) -> anyhow::Result<CommitMessageResult> {
+    let (working_diff, _diff_truncated) =
+        check_and_pre_truncate_diff(diff, commit_agent, runtime.logger);
+
+    let prompt_key = "commit_message_attempt_1";
+    let (prompt, was_replayed) = build_commit_prompt(
+        prompt_key,
+        template_context,
+        &working_diff,
+        workspace,
+        prompt_history,
+    );
+
+    let mut generated_prompts = HashMap::new();
+    if !was_replayed {
+        generated_prompts.insert(prompt_key.to_string(), prompt.clone());
+    }
+
+    let agent_config = registry
+        .resolve_config(commit_agent)
+        .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", commit_agent))?;
+    let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
+
+    let log_prefix = ".agent/logs/commit_generation/commit_generation";
+    let model_index = 0usize;
+    let attempt = 1u32;
+    let agent_for_log = commit_agent.to_lowercase();
+    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
+        log_prefix,
+        &agent_for_log,
+        model_index,
+        attempt,
+    );
+    let prompt_cmd = PromptCommand {
+        label: commit_agent,
+        display_name: commit_agent,
+        cmd_str: &cmd_str,
+        prompt: &prompt,
+        log_prefix,
+        model_index: Some(model_index),
+        attempt: Some(attempt),
+        logfile: &logfile,
+        parser_type: agent_config.json_parser,
+        env_vars: &agent_config.env_vars,
+    };
+
+    let result = run_with_prompt(&prompt_cmd, runtime)?;
+    let had_error = result.exit_code != 0;
+    let auth_failure = had_error && stderr_contains_auth_error(&result.stderr);
+    if auth_failure {
+        anyhow::bail!("Authentication error detected");
+    }
+
+    let extraction = extract_commit_message_from_file_with_workspace(workspace);
+    let result = match extraction {
+        CommitExtractionOutcome::Valid(result) => result,
+        CommitExtractionOutcome::InvalidXml(detail)
+        | CommitExtractionOutcome::MissingFile(detail) => anyhow::bail!(detail),
+    };
+
+    archive_xml_file_with_workspace(workspace, Path::new(xml_paths::COMMIT_MESSAGE_XML));
+
+    Ok(CommitMessageResult {
+        message: result.into_message(),
+        success: true,
+        _log_path: String::new(),
+        generated_prompts,
+    })
+}

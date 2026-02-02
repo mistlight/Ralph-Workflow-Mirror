@@ -30,12 +30,12 @@ fn test_delta_accumulator_thinking() {
 #[test]
 fn test_delta_accumulator_generic() {
     let mut acc = super::types::DeltaAccumulator::new();
-    acc.add_delta(super::types::ContentType::Text, "custom_key", "Part 1 ");
-    acc.add_delta(super::types::ContentType::Text, "custom_key", "Part 2");
+    acc.add_delta(super::types::ContentType::Text, "custom_key", "Alpha ");
+    acc.add_delta(super::types::ContentType::Text, "custom_key", "Beta");
 
     assert_eq!(
         acc.get(super::types::ContentType::Text, "custom_key"),
-        Some("Part 1 Part 2")
+        Some("Alpha Beta")
     );
 }
 

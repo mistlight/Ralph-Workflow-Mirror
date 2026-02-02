@@ -4,17 +4,19 @@
 //! based on role and action, as well as prompt replay functionality for checkpoint resume.
 
 #[cfg(any(test, feature = "test-utils"))]
-use super::resume_note::generate_resume_note;
-#[cfg(any(test, feature = "test-utils"))]
 use super::prompt_config::PromptConfig;
+#[cfg(any(test, feature = "test-utils"))]
+use super::resume_note::generate_resume_note;
 #[cfg(any(test, feature = "test-utils"))]
 use super::types::{Action, Role};
 #[cfg(any(test, feature = "test-utils"))]
+use super::ContextLevel;
+#[cfg(any(test, feature = "test-utils"))]
 use super::TemplateContext;
 #[cfg(any(test, feature = "test-utils"))]
-use super::{prompt_developer_iteration_with_context, prompt_fix_with_context, prompt_plan_with_context};
-#[cfg(any(test, feature = "test-utils"))]
-use super::ContextLevel;
+use super::{
+    prompt_developer_iteration_with_context, prompt_fix_with_context, prompt_plan_with_context,
+};
 
 /// Generate a prompt for any agent type.
 ///

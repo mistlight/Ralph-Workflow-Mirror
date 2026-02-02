@@ -1,28 +1,7 @@
 //! OpenCode API catalog data structures.
 //!
-//! This module defines the types for parsing and representing the OpenCode
-//! model catalog from <https://models.dev/api.json>.
-//!
-//! The actual API format is:
-//! ```json
-//! {
-//!   "provider_id": {
-//!     "id": "provider_id",
-//!     "name": "Provider Name",
-//!     "models": {
-//!       "model_id": { "id": "model_id", "name": "Model Name", ... }
-//!     }
-//!   }
-//! }
-//! ```
-//!
-//! The cache format (used for local storage) is:
-//! ```json
-//! {
-//!   "providers": { "provider_id": { "id": "...", "name": "...", "description": "..." } },
-//!   "models": { "provider_id": [{ "id": "...", "name": "...", ... }] }
-//! }
-//! ```
+//! Parses and represents the OpenCode model catalog (see <https://models.dev/api.json>), and a
+//! simplified cache format used for local storage.
 
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
@@ -407,50 +386,8 @@ mod tests {
 
     #[test]
     fn test_deserialize_real_api_format() {
-        // This is a simplified version of the actual models.dev/api.json format
-        let json = r#"{
-            "opencode": {
-                "id": "opencode",
-                "name": "OpenCode Zen",
-                "doc": "https://opencode.ai/docs/zen",
-                "models": {
-                    "glm-4.7-free": {
-                        "id": "glm-4.7-free",
-                        "name": "GLM-4.7",
-                        "family": "glm-free",
-                        "limit": {
-                            "context": 204800,
-                            "output": 131072
-                        }
-                    },
-                    "claude-sonnet-4-5": {
-                        "id": "claude-sonnet-4-5",
-                        "name": "Claude Sonnet 4.5",
-                        "family": "claude-sonnet",
-                        "limit": {
-                            "context": 1000000,
-                            "output": 64000
-                        }
-                    }
-                }
-            },
-            "anthropic": {
-                "id": "anthropic",
-                "name": "Anthropic",
-                "doc": "https://docs.anthropic.com",
-                "models": {
-                    "claude-opus-4": {
-                        "id": "claude-opus-4",
-                        "name": "Claude Opus 4",
-                        "family": "claude-opus",
-                        "limit": {
-                            "context": 200000,
-                            "output": 32000
-                        }
-                    }
-                }
-            }
-        }"#;
+        // This is a simplified version of the actual models.dev/api.json format.
+        let json = r#"{"opencode":{"id":"opencode","name":"OpenCode Zen","doc":"https://opencode.ai/docs/zen","models":{"glm-4.7-free":{"id":"glm-4.7-free","name":"GLM-4.7","family":"glm-free","limit":{"context":204800,"output":131072}},"claude-sonnet-4-5":{"id":"claude-sonnet-4-5","name":"Claude Sonnet 4.5","family":"claude-sonnet","limit":{"context":1000000,"output":64000}}}},"anthropic":{"id":"anthropic","name":"Anthropic","doc":"https://docs.anthropic.com","models":{"claude-opus-4":{"id":"claude-opus-4","name":"Claude Opus 4","family":"claude-opus","limit":{"context":200000,"output":32000}}}}}"#;
 
         let catalog: ApiCatalog = serde_json::from_str(json).expect("Failed to parse API format");
 
@@ -478,26 +415,8 @@ mod tests {
 
     #[test]
     fn test_deserialize_cache_format() {
-        // This is the format used for local caching
-        let json = r#"{
-            "providers": {
-                "opencode": {
-                    "id": "opencode",
-                    "name": "OpenCode Zen",
-                    "description": "OpenCode API"
-                }
-            },
-            "models": {
-                "opencode": [
-                    {
-                        "id": "glm-4.7-free",
-                        "name": "GLM-4.7",
-                        "description": "Free GLM model",
-                        "context_length": 204800
-                    }
-                ]
-            }
-        }"#;
+        // This is the format used for local caching.
+        let json = r#"{"providers":{"opencode":{"id":"opencode","name":"OpenCode Zen","description":"OpenCode API"}},"models":{"opencode":[{"id":"glm-4.7-free","name":"GLM-4.7","description":"Free GLM model","context_length":204800}]}}"#;
 
         let catalog: ApiCatalog = serde_json::from_str(json).expect("Failed to parse cache format");
 

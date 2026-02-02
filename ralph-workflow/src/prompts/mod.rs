@@ -48,10 +48,10 @@ mod types;
 #[cfg(any(test, feature = "test-utils"))]
 #[path = "prompt_config.rs"]
 mod prompt_config;
-#[path = "resume_note.rs"]
-mod resume_note;
 #[path = "prompt_dispatch.rs"]
 mod prompt_dispatch;
+#[path = "resume_note.rs"]
+mod resume_note;
 
 // Re-export ResumeContext for use in prompts
 pub use crate::checkpoint::restore::ResumeContext;
@@ -59,10 +59,10 @@ pub use crate::checkpoint::restore::ResumeContext;
 // Re-export items from split modules
 #[cfg(any(test, feature = "test-utils"))]
 pub use prompt_config::PromptConfig;
-pub use resume_note::{generate_resume_note, BriefDescription};
 pub use prompt_dispatch::get_stored_or_generate_prompt;
 #[cfg(any(test, feature = "test-utils"))]
 pub use prompt_dispatch::prompt_for_agent;
+pub use resume_note::{generate_resume_note, BriefDescription};
 
 // Re-export public items for API convenience
 #[cfg(any(test, feature = "test-utils"))]

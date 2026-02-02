@@ -70,32 +70,22 @@ impl SeverityCheck {
     }
 }
 
-/// Review guidelines for a specific technology stack
+/// Review guidelines for a specific technology stack.
+///
+/// Each field is a category of checks/expectations used to generate review guidance.
 #[derive(Debug, Clone)]
 pub struct ReviewGuidelines {
-    /// Language-specific code quality checks
     pub(crate) quality_checks: Vec<String>,
-    /// Security considerations specific to this stack
     pub(crate) security_checks: Vec<String>,
-    /// Performance considerations
     pub(crate) performance_checks: Vec<String>,
-    /// Testing expectations
     pub(crate) testing_checks: Vec<String>,
-    /// Documentation requirements
     pub(crate) documentation_checks: Vec<String>,
-    /// Common idioms and patterns to follow
     pub(crate) idioms: Vec<String>,
-    /// Anti-patterns to avoid
     pub(crate) anti_patterns: Vec<String>,
-    /// Concurrency and thread safety checks
     pub(crate) concurrency_checks: Vec<String>,
-    /// Resource management checks (file handles, connections, memory)
     pub(crate) resource_checks: Vec<String>,
-    /// Logging and observability checks
     pub(crate) observability_checks: Vec<String>,
-    /// Configuration and secrets management checks
     pub(crate) secrets_checks: Vec<String>,
-    /// API design checks (for libraries/services)
     pub(crate) api_design_checks: Vec<String>,
 }
 

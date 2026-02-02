@@ -64,7 +64,7 @@ fn test_opencode_parser_text_streaming() {
         let parser =
             OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
 
-        let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"test","part":{"id":"part1","type":"step-start"}}
+        let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"test","part":{"id":"step_start_1","type":"step-start"}}
 {"type":"text","timestamp":1001,"sessionID":"test","part":{"id":"text1","type":"text","text":"Hello"}}
 {"type":"text","timestamp":1002,"sessionID":"test","part":{"id":"text2","type":"text","text":" World"}}
 {"type":"step_finish","timestamp":1003,"sessionID":"test","part":{"id":"finish1","type":"step-finish","reason":"end-turn"}}"#;

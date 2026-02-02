@@ -46,19 +46,19 @@
 //!
 //! - [`crate::workspace::Workspace`] - Similar abstraction for filesystem operations
 
-mod types;
 mod executor_trait;
-mod real;
 #[cfg(any(test, feature = "test-utils"))]
 mod mock;
+mod real;
+mod types;
 
 // Re-export all public types
+pub use executor_trait::ProcessExecutor;
+pub use real::RealProcessExecutor;
 pub use types::{
     AgentChild, AgentChildHandle, AgentCommandResult, AgentSpawnConfig, ProcessOutput,
     RealAgentChild,
 };
-pub use executor_trait::ProcessExecutor;
-pub use real::RealProcessExecutor;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub use mock::{MockAgentChild, MockProcessExecutor};

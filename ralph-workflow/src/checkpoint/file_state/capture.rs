@@ -1,0 +1,211 @@
+impl FileSystemState {
+    /// Create a new file system state.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Internal implementation for CWD-relative file state capture.
+    ///
+    /// This is a crate-internal function that uses CWD-relative paths. It exists to support
+    /// CLI-layer code that operates before a workspace is available. New pipeline code
+    /// should use `capture_with_workspace` instead.
+    pub(crate) fn capture_with_optional_executor_impl(
+        executor: Option<&dyn ProcessExecutor>,
+    ) -> Self {
+        match executor {
+            Some(exec) => Self::capture_current_with_executor_impl(exec),
+            None => {
+                let real_executor = RealProcessExecutor::new();
+                Self::capture_current_with_executor_impl(&real_executor)
+            }
+        }
+    }
+
+    /// Internal implementation for CWD-relative file state capture with executor.
+    ///
+    /// This is a crate-internal function that uses CWD-relative paths. It exists to support
+    /// CLI-layer code that operates before a workspace is available. New pipeline code
+    /// should use `capture_with_workspace` instead.
+    fn capture_current_with_executor_impl(executor: &dyn ProcessExecutor) -> Self {
+        let mut state = Self::new();
+
+        // Always capture PROMPT.md
+        state.capture_file_impl("PROMPT.md");
+
+        // Capture .agent/PLAN.md if it exists (moved to .agent directory)
+        if Path::new(".agent/PLAN.md").exists() {
+            state.capture_file_impl(".agent/PLAN.md");
+        }
+
+        // Capture .agent/ISSUES.md if it exists (moved to .agent directory)
+        if Path::new(".agent/ISSUES.md").exists() {
+            state.capture_file_impl(".agent/ISSUES.md");
+        }
+
+        // Capture .agent/config.toml if it exists
+        if Path::new(".agent/config.toml").exists() {
+            state.capture_file_impl(".agent/config.toml");
+        }
+
+        // Capture .agent/start_commit if it exists
+        if Path::new(".agent/start_commit").exists() {
+            state.capture_file_impl(".agent/start_commit");
+        }
+
+        // Capture .agent/NOTES.md if it exists
+        if Path::new(".agent/NOTES.md").exists() {
+            state.capture_file_impl(".agent/NOTES.md");
+        }
+
+        // Capture .agent/status if it exists
+        if Path::new(".agent/status").exists() {
+            state.capture_file_impl(".agent/status");
+        }
+
+        // Try to capture git state
+        state.capture_git_state(executor);
+
+        state
+    }
+
+    /// Capture the current state of key files using a workspace.
+    ///
+    /// This includes files that are critical for pipeline execution:
+    /// - PROMPT.md: The primary task description
+    /// - .agent/PLAN.md: The implementation plan (if exists)
+    /// - .agent/ISSUES.md: Review findings (if exists)
+    /// - .agent/config.toml: Agent configuration (if exists)
+    /// - .agent/start_commit: Baseline commit reference (if exists)
+    /// - .agent/NOTES.md: Development notes (if exists)
+    /// - .agent/status: Pipeline status file (if exists)
+    pub fn capture_with_workspace(
+        workspace: &dyn Workspace,
+        executor: &dyn ProcessExecutor,
+    ) -> Self {
+        let mut state = Self::new();
+
+        // Always capture PROMPT.md
+        state.capture_file_with_workspace(workspace, "PROMPT.md");
+
+        // Capture .agent/PLAN.md if it exists
+        if workspace.exists(Path::new(".agent/PLAN.md")) {
+            state.capture_file_with_workspace(workspace, ".agent/PLAN.md");
+        }
+
+        // Capture .agent/ISSUES.md if it exists
+        if workspace.exists(Path::new(".agent/ISSUES.md")) {
+            state.capture_file_with_workspace(workspace, ".agent/ISSUES.md");
+        }
+
+        // Capture .agent/config.toml if it exists
+        if workspace.exists(Path::new(".agent/config.toml")) {
+            state.capture_file_with_workspace(workspace, ".agent/config.toml");
+        }
+
+        // Capture .agent/start_commit if it exists
+        if workspace.exists(Path::new(".agent/start_commit")) {
+            state.capture_file_with_workspace(workspace, ".agent/start_commit");
+        }
+
+        // Capture .agent/NOTES.md if it exists
+        if workspace.exists(Path::new(".agent/NOTES.md")) {
+            state.capture_file_with_workspace(workspace, ".agent/NOTES.md");
+        }
+
+        // Capture .agent/status if it exists
+        if workspace.exists(Path::new(".agent/status")) {
+            state.capture_file_with_workspace(workspace, ".agent/status");
+        }
+
+        // Try to capture git state
+        state.capture_git_state(executor);
+
+        state
+    }
+
+    /// Capture a single file's state using a workspace.
+    pub fn capture_file_with_workspace(&mut self, workspace: &dyn Workspace, path: &str) {
+        let path_ref = Path::new(path);
+        let snapshot = if workspace.exists(path_ref) {
+            if let Ok(content) = workspace.read_bytes(path_ref) {
+                let checksum = crate::checkpoint::state::calculate_checksum_from_bytes(&content);
+                let size = content.len() as u64;
+                FileSnapshot::new(path, checksum, size, true)
+            } else {
+                FileSnapshot::not_found(path)
+            }
+        } else {
+            FileSnapshot::not_found(path)
+        };
+
+        self.files.insert(path.to_string(), snapshot);
+    }
+
+    /// Internal implementation of file capture using CWD-relative paths.
+    ///
+    /// This is the core logic used by capture_current_with_executor_impl.
+    fn capture_file_impl(&mut self, path: &str) {
+        let path_obj = Path::new(path);
+        let snapshot = if path_obj.exists() {
+            if let Ok(content) = std::fs::read(path_obj) {
+                let checksum = crate::checkpoint::state::calculate_checksum_from_bytes(&content);
+                let size = content.len() as u64;
+                FileSnapshot::new(path, checksum, size, true)
+            } else {
+                FileSnapshot::not_found(path)
+            }
+        } else {
+            FileSnapshot::not_found(path)
+        };
+
+        self.files.insert(path.to_string(), snapshot);
+    }
+
+    /// Capture git HEAD state and working tree status.
+    fn capture_git_state(&mut self, executor: &dyn ProcessExecutor) {
+        // Try to get HEAD OID
+        if let Ok(output) = executor.execute("git", &["rev-parse", "HEAD"], &[], None) {
+            if output.status.success() {
+                let oid = output.stdout.trim().to_string();
+                self.git_head_oid = Some(oid);
+            }
+        }
+
+        // Try to get branch name
+        if let Ok(output) =
+            executor.execute("git", &["rev-parse", "--abbrev-ref", "HEAD"], &[], None)
+        {
+            if output.status.success() {
+                let branch = output.stdout.trim().to_string();
+                if !branch.is_empty() && branch != "HEAD" {
+                    self.git_branch = Some(branch);
+                }
+            }
+        }
+
+        // Capture git status --porcelain for tracking staged/unstaged changes
+        if let Ok(output) = executor.execute("git", &["status", "--porcelain"], &[], None) {
+            if output.status.success() {
+                let status = output.stdout.trim().to_string();
+                if !status.is_empty() {
+                    self.git_status = Some(status);
+                }
+            }
+        }
+
+        // Capture list of modified files from git diff
+        if let Ok(output) = executor.execute("git", &["diff", "--name-only"], &[], None) {
+            if output.status.success() {
+                let diff_output = &output.stdout;
+                let modified_files: Vec<String> = diff_output
+                    .lines()
+                    .map(|line| line.trim().to_string())
+                    .filter(|line| !line.is_empty())
+                    .collect();
+                if !modified_files.is_empty() {
+                    self.git_modified_files = Some(modified_files);
+                }
+            }
+        }
+    }
+}

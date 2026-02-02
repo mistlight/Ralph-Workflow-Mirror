@@ -215,7 +215,9 @@ include!("opencode/event_types.rs");
 include!("opencode/parser.rs");
 
 // Event formatting methods
-include!("opencode/formatting.rs");
+include!("opencode/formatting/step.rs");
+include!("opencode/formatting/tool.rs");
+include!("opencode/formatting/text_and_error.rs");
 
 // Tests
 include!("opencode/tests.rs");

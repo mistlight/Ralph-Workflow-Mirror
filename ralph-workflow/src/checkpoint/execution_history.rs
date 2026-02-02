@@ -14,42 +14,29 @@ use std::path::Path;
 pub enum StepOutcome {
     /// Step completed successfully
     Success {
-        /// Optional output data (for small outputs)
         output: Option<String>,
-        /// Files modified by this step
         files_modified: Vec<String>,
-        /// Exit code if applicable (0 for success)
         #[serde(default)]
         exit_code: Option<i32>,
     },
     /// Step failed with error
     Failure {
-        /// Error message
         error: String,
-        /// Whether this is recoverable
         recoverable: bool,
-        /// Exit code if applicable (non-zero for failure)
         #[serde(default)]
         exit_code: Option<i32>,
-        /// Signals received during execution (e.g., "SIGINT", "SIGTERM")
         #[serde(default)]
         signals: Vec<String>,
     },
     /// Step partially completed (may need retry)
     Partial {
-        /// What was completed
         completed: String,
-        /// What remains
         remaining: String,
-        /// Exit code if applicable
         #[serde(default)]
         exit_code: Option<i32>,
     },
     /// Step was skipped (e.g., already done)
-    Skipped {
-        /// Reason for skipping
-        reason: String,
-    },
+    Skipped { reason: String },
 }
 
 impl StepOutcome {
@@ -90,13 +77,10 @@ impl StepOutcome {
 /// Detailed information about files modified in a step.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct ModifiedFilesDetail {
-    /// Files added
     #[serde(default)]
     pub added: Vec<String>,
-    /// Files modified
     #[serde(default)]
     pub modified: Vec<String>,
-    /// Files deleted
     #[serde(default)]
     pub deleted: Vec<String>,
 }
@@ -413,9 +397,7 @@ mod tests {
     #[test]
     fn test_execution_step_new() {
         let outcome = StepOutcome::success(None, vec!["test.txt".to_string()]);
-
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
-
         assert_eq!(step.phase, "Development");
         assert_eq!(step.iteration, 1);
         assert_eq!(step.step_type, "dev_run");
@@ -431,11 +413,9 @@ mod tests {
     #[test]
     fn test_execution_step_with_agent() {
         let outcome = StepOutcome::success(None, vec![]);
-
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome)
             .with_agent("claude")
             .with_duration(120);
-
         assert_eq!(step.agent, Some("claude".to_string()));
         assert_eq!(step.duration_secs, Some(120));
     }
@@ -444,7 +424,6 @@ mod tests {
     fn test_execution_step_new_fields_default() {
         let outcome = StepOutcome::success(None, vec![]);
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
-
         // Verify new fields are None by default
         assert!(step.git_commit_oid.is_none());
         assert!(step.modified_files_detail.is_none());
@@ -471,7 +450,6 @@ mod tests {
     #[test]
     fn test_file_snapshot() {
         let snapshot = FileSnapshot::new("test.txt", "abc123".to_string(), 100, true);
-
         assert_eq!(snapshot.path, "test.txt");
         assert_eq!(snapshot.checksum, "abc123");
         assert_eq!(snapshot.size, 100);
@@ -481,7 +459,6 @@ mod tests {
     #[test]
     fn test_file_snapshot_not_found() {
         let snapshot = FileSnapshot::not_found("missing.txt");
-
         assert_eq!(snapshot.path, "missing.txt");
         assert!(!snapshot.exists);
         assert_eq!(snapshot.size, 0);
@@ -491,11 +468,8 @@ mod tests {
     fn test_execution_history_add_step() {
         let mut history = ExecutionHistory::new();
         let outcome = StepOutcome::success(None, vec![]);
-
         let step = ExecutionStep::new("Development", 1, "dev_run", outcome);
-
         history.add_step(step);
-
         assert_eq!(history.steps.len(), 1);
         assert_eq!(history.steps[0].phase, "Development");
         assert_eq!(history.steps[0].iteration, 1);
@@ -504,31 +478,8 @@ mod tests {
     #[test]
     fn test_execution_step_serialization_with_new_fields() {
         // Create a step with new fields via JSON to test backward compatibility
-        let json_str = r#"{
-            "phase": "Review",
-            "iteration": 1,
-            "step_type": "review",
-            "timestamp": "2025-01-20 12:00:00",
-            "outcome": {"Success": {"output": null, "files_modified": [], "exit_code": 0}},
-            "agent": null,
-            "duration_secs": null,
-            "checkpoint_saved_at": null,
-            "git_commit_oid": "abc123",
-            "modified_files_detail": {
-                "added": ["a.rs"],
-                "modified": [],
-                "deleted": []
-            },
-            "prompt_used": "Fix issues",
-            "issues_summary": {
-                "found": 2,
-                "fixed": 2,
-                "description": "All fixed"
-            }
-        }"#;
-
+        let json_str = r#"{"phase":"Review","iteration":1,"step_type":"review","timestamp":"2025-01-20 12:00:00","outcome":{"Success":{"output":null,"files_modified":[],"exit_code":0}},"agent":null,"duration_secs":null,"checkpoint_saved_at":null,"git_commit_oid":"abc123","modified_files_detail":{"added":["a.rs"],"modified":[],"deleted":[]},"prompt_used":"Fix issues","issues_summary":{"found":2,"fixed":2,"description":"All fixed"}}"#;
         let deserialized: ExecutionStep = serde_json::from_str(json_str).unwrap();
-
         assert_eq!(deserialized.git_commit_oid, Some("abc123".to_string()));
         assert_eq!(
             deserialized.modified_files_detail.as_ref().unwrap().added,

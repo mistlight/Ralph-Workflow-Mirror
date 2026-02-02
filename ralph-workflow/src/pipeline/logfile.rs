@@ -1,30 +1,7 @@
 //! Unified log file path management.
 //!
-//! This module provides a single source of truth for log file path operations:
-//! - Creating log file paths from components
-//! - Parsing agent names from log file paths
-//! - Finding log files matching a prefix
-//!
-//! # Log File Naming Convention
-//!
-//! Log files follow the pattern: `{prefix}_{agent}_{model_index}.log`
-//!
-//! Where:
-//! - `prefix` is the log prefix (e.g., "planning_1", "developer_2")
-//! - `agent` is the sanitized agent name (slashes replaced with hyphens)
-//! - `model_index` is the model fallback index (0 for primary)
-//!
-//! Examples:
-//! - `.agent/logs/planning_1_ccs-glm_0.log`
-//! - `.agent/logs/developer_2_opencode-anthropic-claude-sonnet-4_1.log`
-//! - `.agent/logs/reviewer_1_claude_0.log`
-//!
-//! # Agent Name Sanitization
-//!
-//! Agent registry names may contain slashes (e.g., "ccs/glm", "opencode/anthropic/model").
-//! These are sanitized to hyphens for file system safety:
-//! - `ccs/glm` → `ccs-glm`
-//! - `opencode/anthropic/claude-sonnet-4` → `opencode-anthropic-claude-sonnet-4`
+//! Log files follow the pattern: `{prefix}_{agent}_{model_index}.log` (and an optional
+//! attempt suffix: `{prefix}_{agent}_{model_index}_a{attempt}.log`).
 
 use crate::workspace::Workspace;
 use std::path::{Path, PathBuf};
@@ -32,39 +9,11 @@ use std::path::{Path, PathBuf};
 /// Sanitize an agent name for use in file paths.
 ///
 /// Replaces slashes with hyphens to avoid creating subdirectories.
-///
-/// # Examples
-///
-/// ```
-/// use ralph_workflow::pipeline::logfile::sanitize_agent_name;
-///
-/// assert_eq!(sanitize_agent_name("ccs/glm"), "ccs-glm");
-/// assert_eq!(sanitize_agent_name("opencode/anthropic/claude-sonnet-4"),
-///            "opencode-anthropic-claude-sonnet-4");
-/// assert_eq!(sanitize_agent_name("claude"), "claude");
-/// ```
 pub fn sanitize_agent_name(agent_name: &str) -> String {
     agent_name.replace('/', "-")
 }
 
 /// Build a log file path from components.
-///
-/// # Arguments
-///
-/// * `prefix` - The log file prefix (e.g., ".agent/logs/planning_1")
-/// * `agent_name` - The agent registry name (will be sanitized)
-/// * `model_index` - The model fallback index
-///
-/// # Examples
-///
-/// ```
-/// use ralph_workflow::pipeline::logfile::build_logfile_path;
-///
-/// assert_eq!(
-///     build_logfile_path(".agent/logs/planning_1", "ccs/glm", 0),
-///     ".agent/logs/planning_1_ccs-glm_0.log"
-/// );
-/// ```
 pub fn build_logfile_path(prefix: &str, agent_name: &str, model_index: usize) -> String {
     let safe_agent_name = sanitize_agent_name(agent_name);
     format!("{}_{safe_agent_name}_{model_index}.log", prefix)
@@ -76,31 +25,6 @@ pub fn build_logfile_path(prefix: &str, agent_name: &str, model_index: usize) ->
 /// multiple invocations of the same agent/model combination (e.g., during
 /// XSD retry cycles or after timeout-triggered agent switches).
 ///
-/// # Arguments
-///
-/// * `prefix` - The log file prefix (e.g., ".agent/logs/planning_1")
-/// * `agent_name` - The agent registry name (will be sanitized)
-/// * `model_index` - The model fallback index
-/// * `attempt` - The retry attempt number (0 for first attempt)
-///
-/// # Pattern
-///
-/// `{prefix}_{agent}_{model_index}_a{attempt}.log`
-///
-/// # Examples
-///
-/// ```
-/// use ralph_workflow::pipeline::logfile::build_logfile_path_with_attempt;
-///
-/// assert_eq!(
-///     build_logfile_path_with_attempt(".agent/logs/planning_1", "claude", 0, 0),
-///     ".agent/logs/planning_1_claude_0_a0.log"
-/// );
-/// assert_eq!(
-///     build_logfile_path_with_attempt(".agent/logs/planning_1", "ccs/glm", 1, 2),
-///     ".agent/logs/planning_1_ccs-glm_1_a2.log"
-/// );
-/// ```
 pub fn build_logfile_path_with_attempt(
     prefix: &str,
     agent_name: &str,

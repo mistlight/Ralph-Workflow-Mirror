@@ -1,85 +1,14 @@
-# Ralph Agents Configuration File
-# ================================
+# Ralph Agents Configuration (example)
+# Copy to `.agent/agents.toml` to override built-in defaults.
 #
-# This file configures AI coding agents for the Ralph orchestrator.
-# Ralph uses a "developer" agent to implement code and a "reviewer" agent
-# to review and improve the code quality.
+# Fields you may set per agent:
+# - cmd, output_flag, yolo_flag, verbose_flag, can_commit
+# - json_parser: claude | codex | gemini | opencode | generic
+# - model_flag, display_name, session_flag, print_flag, streaming_flag
 #
-# QUICK START
-# -----------
-# If you copied this file from `examples/agents.toml` to `.agent/agents.toml`,
-# you can customize it for your project. Otherwise, Ralph uses built-in defaults.
-#
-# USAGE
-# -----
-# Select agents via CLI:
-#   ralph --developer-agent claude --reviewer-agent codex
-#
-# Or via environment variables:
-#   RALPH_DEVELOPER_AGENT=claude RALPH_REVIEWER_AGENT=codex ralph
-#
-# Or use presets:
-#   ralph --preset opencode  # Uses opencode for both roles
-#
-# AGENT CONFIGURATION FIELDS
-# --------------------------
-# cmd          - Base command to invoke the agent (required)
-# output_flag  - Output-format flag (JSON streaming, text mode, etc.; optional)
-# yolo_flag    - Flag for autonomous mode (no prompts, optional)
-# verbose_flag - Flag for verbose output (optional)
-# can_commit   - Whether agent can make repo changes via tools (default: true)
-# json_parser  - Output parser: "claude", "codex", or "generic" (default: "generic")
-# model_flag   - Model/provider selection flag (e.g., "-m provider/model"; optional)
-#                Used by agents that support multiple providers like opencode
-# display_name - Human-readable name for UI/logging (e.g., "My Custom Agent"; optional)
-#                Defaults to agent name if not specified
-#
-# JSON PARSERS
-# ------------
-# - "claude"   : Parses Claude Code's stream-json format
-# - "codex"    : Parses OpenAI Codex CLI JSON format
-# - "gemini"   : Parses Google Gemini CLI JSON format
-# - "opencode" : Parses OpenCode's NDJSON format (step_start, step_finish, tool_use, text)
-# - "generic"  : Line-by-line output (no JSON parsing)
-#
-# AGENT CHAIN CONFIGURATION
-# -------------------------
-# Define preferred agents and automatic fallback switching.
-#
-# The agent chain serves two purposes:
-# 1. **Preferred agent**: The first agent in the list is the primary choice
-# 2. **Fallback agents**: Remaining agents are tried in order if the preferred fails
-#
-# Configure defaults and fallback ordering via `[agent_chain]`.
-#
-# [agent_chain]
-# developer = ["claude", "codex", "opencode"]  # claude is preferred, others are fallbacks
-# reviewer = ["codex", "claude"]               # codex is preferred for reviews
-# max_retries = 3                              # Retries per agent before trying next
-# retry_delay_ms = 1000                        # Delay between retries (ms)
-#
-# PROVIDER-LEVEL FALLBACK
-# -----------------------
-# For agents that support multiple providers (like opencode), you can configure
-# provider-level fallback. Ralph will try different models within the same agent
-# before switching to the next agent in the chain.
-#
-# provider_fallback.opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]
-#
-# This allows you to utilize free or cheaper models as primary, with premium
-# models as backup when hitting rate limits or token exhaustion.
-#
-# The first agent in each list is the primary choice for that role.
-# Ralph automatically switches to fallback agents on:
-#   - Rate limits (429 errors)
-#   - Authentication failures
-#   - Token/context exhaustion
-#   - Command not found
-
-# =============================================================================
-# BUILT-IN AGENTS (defaults shown - uncomment to override)
-# =============================================================================
-
+# Optional fallback configuration:
+# - [agent_chain] developer/reviewer ordering, retries
+# - [provider_fallback] model-level fallback for multi-provider agents
 # Claude Code - Anthropic's AI coding assistant
 # https://claude.ai/code
 [agents.claude]
@@ -93,7 +22,6 @@ display_name = "Claude Code"
 # Session continuation: --resume <session_id> (from `claude --help`)
 # Allows XSD retries to continue the same conversation so AI retains memory
 session_flag = "--resume {}"
-
 # CCS (Claude Code Switch) - Universal AI profile manager
 # https://github.com/kaitranntt/ccs
 # CCS wraps Claude Code and provides multi-profile/multi-provider support.

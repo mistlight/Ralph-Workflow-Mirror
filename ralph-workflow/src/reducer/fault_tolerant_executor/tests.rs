@@ -117,8 +117,7 @@ fn test_timeout_error_from_run_with_prompt_err_arm_triggers_timeout_fallback() {
 
     // Use a workspace that times out when saving the prompt.
     let inner_ws = MemoryWorkspace::new_test();
-    let workspace =
-        TimedOutWriteWorkspace::new(inner_ws, PathBuf::from(".agent/last_prompt.txt"));
+    let workspace = TimedOutWriteWorkspace::new(inner_ws, PathBuf::from(".agent/last_prompt.txt"));
 
     let executor = Arc::new(crate::executor::MockProcessExecutor::new());
     let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor;
@@ -438,8 +437,7 @@ fn test_classify_agent_error_auth_from_json_error() {
 
 #[test]
 fn test_classify_agent_error_403_from_json_error() {
-    let stderr =
-        r#"{"error":{"code":"403","message":"Forbidden: API key does not have access"}}"#;
+    let stderr = r#"{"error":{"code":"403","message":"Forbidden: API key does not have access"}}"#;
     let error_kind = classify_agent_error(1, stderr);
     assert_eq!(error_kind, AgentErrorKind::Authentication);
 }

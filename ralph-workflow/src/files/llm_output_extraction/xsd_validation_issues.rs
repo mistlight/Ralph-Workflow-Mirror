@@ -23,35 +23,10 @@ const EXAMPLE_NO_ISSUES_XML: &str = r#"<ralph-issues>
 <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
 </ralph-issues>"#;
 
-/// Validate issues XML content against the XSD schema.
+/// Validate issues XML content against the issues XSD.
 ///
-/// This function validates that the XML content conforms to the expected
-/// issues format defined in issues.xsd:
-///
-/// ```xml
-/// <ralph-issues>
-///   <ralph-issue>First issue description</ralph-issue>
-///   <ralph-issue>Second issue description</ralph-issue>
-///   ...
-/// </ralph-issues>
-/// ```
-///
-/// OR for no issues:
-///
-/// ```xml
-/// <ralph-issues>
-///   <ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
-/// </ralph-issues>
-/// ```
-///
-/// # Arguments
-///
-/// * `xml_content` - The XML content to validate
-///
-/// # Returns
-///
-/// * `Ok(IssuesElements)` if the XML is valid and contains all required elements
-/// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
+/// Accepts either `<ralph-issues><ralph-issue>...` items or a single
+/// `<ralph-no-issues-found>` entry.
 pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValidationError> {
     let content = xml_content.trim();
     let mut reader = create_reader(content);
@@ -251,9 +226,7 @@ mod tests {
 
     #[test]
     fn test_validate_valid_no_issues_found() {
-        let xml = r#"<ralph-issues>
-<ralph-no-issues-found>No issues were found during review</ralph-no-issues-found>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-no-issues-found>No issues were found during review</ralph-no-issues-found></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_ok());
@@ -275,8 +248,7 @@ mod tests {
 
     #[test]
     fn test_validate_empty_issues() {
-        let xml = r#"<ralph-issues>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_err());
@@ -286,10 +258,7 @@ mod tests {
 
     #[test]
     fn test_validate_mixed_issues_and_no_issues_found() {
-        let xml = r#"<ralph-issues>
-<ralph-issue>First issue</ralph-issue>
-<ralph-no-issues-found>No issues</ralph-no-issues-found>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>First issue</ralph-issue><ralph-no-issues-found>No issues</ralph-no-issues-found></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_err());
@@ -299,10 +268,7 @@ mod tests {
 
     #[test]
     fn test_validate_duplicate_no_issues_found() {
-        let xml = r#"<ralph-issues>
-<ralph-no-issues-found>No issues</ralph-no-issues-found>
-<ralph-no-issues-found>Also no issues</ralph-no-issues-found>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-no-issues-found>No issues</ralph-no-issues-found><ralph-no-issues-found>Also no issues</ralph-no-issues-found></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_err());
@@ -320,10 +286,7 @@ mod tests {
 
     #[test]
     fn test_validate_with_xml_declaration() {
-        let xml = r#"<?xml version="1.0"?>
-<ralph-issues>
-<ralph-issue>Issue text</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<?xml version="1.0"?><ralph-issues><ralph-issue>Issue text</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_ok());
@@ -332,9 +295,7 @@ mod tests {
     #[test]
     fn test_validate_issue_with_code_element() {
         // XSD now allows <code> elements for escaping special characters
-        let xml = r#"<ralph-issues>
-<ralph-issue>Check if <code>a &lt; b</code> is valid</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>Check if <code>a &lt; b</code> is valid</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_ok());
@@ -348,9 +309,7 @@ mod tests {
 
     #[test]
     fn test_validate_no_issues_with_code_element() {
-        let xml = r#"<ralph-issues>
-<ralph-no-issues-found>All <code>Record&lt;string, T&gt;</code> types are correct</ralph-no-issues-found>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-no-issues-found>All <code>Record&lt;string, T&gt;</code> types are correct</ralph-no-issues-found></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_ok());
@@ -401,10 +360,8 @@ Suggested fix: Change the comparison operator.</ralph-issue>
     #[test]
     fn test_llm_realistic_issue_with_logical_operators_escaped() {
         // LLM escapes && and || operators
-        let xml = r#"<ralph-issues>
-<ralph-issue>[Low] src/filter.rs:88 - The expression <code>a &amp;&amp; b || c</code> has ambiguous precedence.
-Suggested fix: Add explicit parentheses.</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>[Low] src/filter.rs:88 - The expression <code>a &amp;&amp; b || c</code> has ambiguous precedence.
+Suggested fix: Add explicit parentheses.</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(
@@ -419,10 +376,8 @@ Suggested fix: Add explicit parentheses.</ralph-issue>
     #[test]
     fn test_llm_realistic_issue_with_rust_lifetime() {
         // LLM references Rust lifetime syntax
-        let xml = r#"<ralph-issues>
-<ralph-issue>[High] src/buffer.rs:23 - The lifetime <code>&amp;'a str</code> should match the struct lifetime.
-Suggested fix: Ensure lifetime annotations are consistent.</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>[High] src/buffer.rs:23 - The lifetime <code>&amp;'a str</code> should match the struct lifetime.
+Suggested fix: Ensure lifetime annotations are consistent.</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_ok(), "Should parse lifetime syntax: {:?}", result);
@@ -433,10 +388,8 @@ Suggested fix: Ensure lifetime annotations are consistent.</ralph-issue>
     #[test]
     fn test_llm_realistic_issue_with_html_in_description() {
         // LLM describes HTML-related code
-        let xml = r#"<ralph-issues>
-<ralph-issue>[Medium] src/template.rs:56 - The HTML template uses <code>&lt;div class="container"&gt;</code> but should use semantic tags.
-Suggested fix: Replace with appropriate semantic HTML elements.</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>[Medium] src/template.rs:56 - The HTML template uses <code>&lt;div class="container"&gt;</code> but should use semantic tags.
+Suggested fix: Replace with appropriate semantic HTML elements.</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_ok(), "Should parse HTML in code: {:?}", result);
@@ -447,13 +400,7 @@ Suggested fix: Replace with appropriate semantic HTML elements.</ralph-issue>
     #[test]
     fn test_llm_realistic_no_issues_with_detailed_explanation() {
         // LLM provides detailed explanation when no issues found
-        let xml = r#"<ralph-issues>
-<ralph-no-issues-found>The implementation correctly handles all edge cases:
-- Input validation properly rejects values where <code>x &lt; 0</code>
-- The generic <code>Result&lt;T, E&gt;</code> type is used consistently
-- Error handling follows the project's established patterns
-No issues require attention.</ralph-no-issues-found>
-</ralph-issues>"#;
+        let xml = "<ralph-issues><ralph-no-issues-found>The implementation correctly handles all edge cases:\n- Input validation properly rejects values where <code>x &lt; 0</code>\n- The generic <code>Result&lt;T, E&gt;</code> type is used consistently\n- Error handling follows the project's established patterns\nNo issues require attention.</ralph-no-issues-found></ralph-issues>";
 
         let result = validate_issues_xml(xml);
         assert!(
@@ -470,11 +417,7 @@ No issues require attention.</ralph-no-issues-found>
     #[test]
     fn test_llm_realistic_multiple_issues_with_mixed_content() {
         // LLM reports multiple issues with various escaped content
-        let xml = r#"<ralph-issues>
-<ralph-issue>[Critical] src/auth.rs:12 - SQL injection vulnerability: user input in <code>query &amp;&amp; filter</code> is not sanitized.</ralph-issue>
-<ralph-issue>[High] src/api.rs:45 - Missing null check: <code>response.data</code> may be undefined when <code>status &lt; 200</code>.</ralph-issue>
-<ralph-issue>[Medium] src/utils.rs:78 - The type <code>Option&lt;Vec&lt;T&gt;&gt;</code> could be simplified to <code>Vec&lt;T&gt;</code> with empty default.</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>[Critical] src/auth.rs:12 - SQL injection vulnerability: user input in <code>query &amp;&amp; filter</code> is not sanitized.</ralph-issue><ralph-issue>[High] src/api.rs:45 - Missing null check: <code>response.data</code> may be undefined when <code>status &lt; 200</code>.</ralph-issue><ralph-issue>[Medium] src/utils.rs:78 - The type <code>Option&lt;Vec&lt;T&gt;&gt;</code> could be simplified to <code>Vec&lt;T&gt;</code> with empty default.</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(
@@ -492,9 +435,7 @@ No issues require attention.</ralph-no-issues-found>
     #[test]
     fn test_llm_mistake_unescaped_less_than_fails() {
         // LLM forgets to escape < - this SHOULD fail
-        let xml = r#"<ralph-issues>
-<ralph-issue>[High] src/compare.rs:10 - The condition a < b is wrong.</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>[High] src/compare.rs:10 - The condition a < b is wrong.</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(
@@ -507,9 +448,7 @@ No issues require attention.</ralph-no-issues-found>
     #[test]
     fn test_llm_mistake_unescaped_generic_fails() {
         // LLM forgets to escape generic type - this SHOULD fail
-        let xml = r#"<ralph-issues>
-<ralph-issue>[High] src/types.rs:5 - The type Vec<String> is incorrect.</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>[High] src/types.rs:5 - The type Vec<String> is incorrect.</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(
@@ -522,9 +461,7 @@ No issues require attention.</ralph-no-issues-found>
     #[test]
     fn test_llm_mistake_unescaped_ampersand_fails() {
         // LLM forgets to escape & - this SHOULD fail
-        let xml = r#"<ralph-issues>
-<ralph-issue>[High] src/logic.rs:20 - The expression a && b is wrong.</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>[High] src/logic.rs:20 - The expression a && b is wrong.</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(
@@ -537,9 +474,7 @@ No issues require attention.</ralph-no-issues-found>
     #[test]
     fn test_llm_uses_cdata_for_code_content() {
         // LLM uses CDATA instead of escaping (valid alternative)
-        let xml = r#"<ralph-issues>
-<ralph-issue>[High] src/cmp.rs:10 - The condition <code><![CDATA[a < b && c > d]]></code> has issues.</ralph-issue>
-</ralph-issues>"#;
+        let xml = r#"<ralph-issues><ralph-issue>[High] src/cmp.rs:10 - The condition <code><![CDATA[a < b && c > d]]></code> has issues.</ralph-issue></ralph-issues>"#;
 
         let result = validate_issues_xml(xml);
         assert!(result.is_ok(), "CDATA should be valid: {:?}", result);
