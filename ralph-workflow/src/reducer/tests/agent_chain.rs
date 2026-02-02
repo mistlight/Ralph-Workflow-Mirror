@@ -47,8 +47,28 @@ fn test_agent_chain_initialized_for_reviewer() {
 }
 
 #[test]
-fn test_agent_invocation_started_resets_agent_chain() {
-    let state = create_test_state();
+fn test_agent_invocation_started_preserves_agent_chain_indices() {
+    let base_state = create_test_state();
+    let mut agent_chain = base_state.agent_chain.with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![
+            vec!["model1".to_string()],
+            vec!["model2".to_string(), "model3".to_string()],
+        ],
+        AgentRole::Developer,
+    );
+    agent_chain.retry_cycle = 2;
+
+    // Start from a non-zero position so the test actually verifies reset behavior.
+    let state = PipelineState {
+        agent_chain: agent_chain.switch_to_next_agent().advance_to_next_model(),
+        ..base_state
+    };
+
+    assert_eq!(state.agent_chain.current_agent_index, 1);
+    assert_eq!(state.agent_chain.current_model_index, 1);
+    assert_eq!(state.agent_chain.retry_cycle, 2);
+
     let new_state = reduce(
         state,
         PipelineEvent::agent_invocation_started(
@@ -58,9 +78,11 @@ fn test_agent_invocation_started_resets_agent_chain() {
         ),
     );
 
-    // AgentInvocationStarted resets the agent chain
-    assert_eq!(new_state.agent_chain.current_agent_index, 0);
-    assert_eq!(new_state.agent_chain.current_model_index, 0);
+    // InvocationStarted is a no-op for agent-chain position; it should not change
+    // indices or cycle tracking.
+    assert_eq!(new_state.agent_chain.current_agent_index, 1);
+    assert_eq!(new_state.agent_chain.current_model_index, 1);
+    assert_eq!(new_state.agent_chain.retry_cycle, 2);
 }
 
 #[test]

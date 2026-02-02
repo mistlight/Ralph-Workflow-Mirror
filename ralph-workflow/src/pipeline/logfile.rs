@@ -111,6 +111,60 @@ pub fn build_logfile_path_with_attempt(
     format!("{}_{safe_agent_name}_{model_index}_a{attempt}.log", prefix)
 }
 
+/// Determine the next attempt index for a given `(prefix, agent, model_index)` logfile family.
+///
+/// This scans the parent directory for existing log files matching:
+///
+/// `{prefix_filename}_{agent}_{model_index}_a{attempt}.log`
+///
+/// and returns `max(attempt)+1`, or `0` if no matching files exist.
+///
+/// This avoids collisions when attempt numbers are computed from multiple counters
+/// (retry cycles, continuation attempts, XSD retry count) that may exceed assumed bounds.
+pub fn next_logfile_attempt_index(
+    log_prefix: &Path,
+    agent_name: &str,
+    model_index: usize,
+    workspace: &dyn Workspace,
+) -> u32 {
+    let parent = log_prefix.parent().unwrap_or(Path::new("."));
+    let prefix_filename = match log_prefix.file_name().and_then(|s| s.to_str()) {
+        Some(s) if !s.is_empty() => s,
+        _ => return 0,
+    };
+
+    let safe_agent = sanitize_agent_name(&agent_name.to_lowercase());
+    let start = format!("{prefix_filename}_{safe_agent}_{model_index}_a");
+
+    let mut max_attempt: Option<u32> = None;
+    if let Ok(entries) = workspace.read_dir(parent) {
+        for entry in entries {
+            if !entry.is_file() {
+                continue;
+            }
+            let Some(filename) = entry.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !filename.starts_with(&start) || !filename.ends_with(".log") {
+                continue;
+            }
+
+            let attempt_digits = &filename[start.len()..filename.len().saturating_sub(4)];
+            if attempt_digits.is_empty() || !attempt_digits.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            if let Ok(n) = attempt_digits.parse::<u32>() {
+                max_attempt = Some(match max_attempt {
+                    Some(prev) => prev.max(n),
+                    None => n,
+                });
+            }
+        }
+    }
+
+    max_attempt.map_or(0, |n| n.saturating_add(1))
+}
+
 /// Extract the agent name from a log file path.
 ///
 /// Parses a log file name like `planning_1_ccs-glm_0.log` to extract
@@ -331,6 +385,33 @@ mod tests {
                 5
             ),
             ".agent/logs/dev_2_opencode-anthropic-claude-sonnet-4_0_a5.log"
+        );
+    }
+
+    #[test]
+    fn test_next_logfile_attempt_index_returns_zero_when_no_matches() {
+        let workspace = MemoryWorkspace::new_test();
+        let prefix = Path::new(".agent/logs/planning_1");
+        assert_eq!(
+            next_logfile_attempt_index(prefix, "claude", 0, &workspace),
+            0
+        );
+    }
+
+    #[test]
+    fn test_next_logfile_attempt_index_increments_from_existing_attempts() {
+        let workspace = MemoryWorkspace::new_test()
+            .with_file(".agent/logs/planning_1_claude_0_a0.log", "")
+            .with_file(".agent/logs/planning_1_claude_0_a2.log", "")
+            .with_file(".agent/logs/planning_1_claude_0_a10.log", "")
+            // Different agent/model should be ignored
+            .with_file(".agent/logs/planning_1_other_0_a99.log", "")
+            .with_file(".agent/logs/planning_1_claude_1_a7.log", "");
+
+        let prefix = Path::new(".agent/logs/planning_1");
+        assert_eq!(
+            next_logfile_attempt_index(prefix, "claude", 0, &workspace),
+            11
         );
     }
 

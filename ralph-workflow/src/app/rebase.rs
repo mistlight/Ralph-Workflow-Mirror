@@ -683,15 +683,30 @@ fn run_ai_conflict_resolution(
         .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", reviewer_agent))?;
     let cmd_str = agent_config.build_cmd_with_model(true, true, true, None);
 
+    let log_prefix = format!("{log_dir}/conflict_resolution");
+    let model_index = 0usize;
+    let attempt = crate::pipeline::logfile::next_logfile_attempt_index(
+        Path::new(&log_prefix),
+        reviewer_agent,
+        model_index,
+        workspace,
+    );
+    let logfile = crate::pipeline::logfile::build_logfile_path_with_attempt(
+        &log_prefix,
+        reviewer_agent,
+        model_index,
+        attempt,
+    );
+
     let prompt_cmd = PromptCommand {
         label: reviewer_agent,
         display_name: reviewer_agent,
         cmd_str: &cmd_str,
         prompt: resolution_prompt,
-        log_prefix: ".agent/logs/rebase_conflict_resolution/conflict_resolution",
-        model_index: None,
-        attempt: None,
-        logfile: ".agent/logs/rebase_conflict_resolution/conflict_resolution.log",
+        log_prefix: &log_prefix,
+        model_index: Some(model_index),
+        attempt: Some(attempt),
+        logfile: &logfile,
         parser_type: agent_config.json_parser,
         env_vars: &agent_config.env_vars,
     };
@@ -772,4 +787,56 @@ pub fn try_resolve_conflicts_without_phase_ctx(
         "RebaseOnly",
         &*executor,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::workspace::{MemoryWorkspace, Workspace};
+    use std::path::Path;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_run_ai_conflict_resolution_uses_unique_logfile_with_attempt_index() {
+        let config = crate::config::Config::default();
+        let registry = crate::agents::AgentRegistry::new().expect("registry");
+
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+
+        let executor: Arc<MockProcessExecutor> = Arc::new(MockProcessExecutor::new());
+
+        let workspace = MemoryWorkspace::new_test();
+        workspace
+            .create_dir_all(Path::new(".agent/logs/rebase_conflict_resolution"))
+            .expect("create log dir");
+        // Simulate an earlier invocation that already wrote attempt 0.
+        workspace
+            .write(
+                Path::new(
+                    ".agent/logs/rebase_conflict_resolution/conflict_resolution_codex_0_a0.log",
+                ),
+                "old",
+            )
+            .expect("write existing log");
+
+        let _ = run_ai_conflict_resolution(
+            "resolve conflicts",
+            &config,
+            &registry,
+            &logger,
+            colors,
+            Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+            &workspace,
+        )
+        .expect("run");
+
+        let calls = executor.agent_calls();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0]
+            .logfile
+            .ends_with("rebase_conflict_resolution/conflict_resolution_codex_0_a1.log"));
+    }
 }

@@ -11,3 +11,7 @@ use crate::reducer::effect::{ContinuationContextData, Effect};
 
 include!("orchestration/part1.rs");
 include!("orchestration/part2.rs");
+
+#[cfg(test)]
+#[path = "orchestration/tests.rs"]
+mod tests;
