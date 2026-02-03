@@ -1,8 +1,6 @@
 //! Prompt configuration types.
 //!
 //! Groups related parameters for prompt generation to reduce function argument count.
-//!
-//! This module is only available in test builds and when the `test-utils` feature is enabled.
 
 use crate::checkpoint::restore::ResumeContext;
 
@@ -77,7 +75,6 @@ impl PromptConfig {
     }
 
     /// Set whether this is a resumed session.
-    #[cfg(test)]
     #[must_use = "returns the updated configuration for chaining"]
     pub const fn with_resume(mut self, is_resume: bool) -> Self {
         self.is_resume = is_resume;

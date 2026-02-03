@@ -41,7 +41,6 @@ pub fn prompt_plan(prompt_content: Option<&str>) -> String {
 }
 
 /// Generate prompt for planning phase using template registry.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_plan_with_context(context: &TemplateContext, prompt_content: Option<&str>) -> String {
     let partials = get_shared_partials();
     let template_content = context

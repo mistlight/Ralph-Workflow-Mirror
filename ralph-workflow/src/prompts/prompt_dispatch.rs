@@ -3,17 +3,11 @@
 //! Contains the main dispatcher functions for routing to appropriate prompt generators
 //! based on role and action, as well as prompt replay functionality for checkpoint resume.
 
-#[cfg(any(test, feature = "test-utils"))]
 use super::prompt_config::PromptConfig;
-#[cfg(any(test, feature = "test-utils"))]
 use super::resume_note::generate_resume_note;
-#[cfg(any(test, feature = "test-utils"))]
 use super::types::{Action, Role};
-#[cfg(any(test, feature = "test-utils"))]
 use super::ContextLevel;
-#[cfg(any(test, feature = "test-utils"))]
 use super::TemplateContext;
-#[cfg(any(test, feature = "test-utils"))]
 use super::{
     prompt_developer_iteration_with_context, prompt_fix_with_context, prompt_plan_with_context,
 };
@@ -35,7 +29,6 @@ use super::{
 /// * `context` - The context level (minimal or normal)
 /// * `template_context` - Template context for user template overrides
 /// * `config` - Prompt configuration with content variables
-#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_for_agent(
     role: Role,
     action: Action,

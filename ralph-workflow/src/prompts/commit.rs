@@ -11,9 +11,7 @@ use std::collections::HashMap;
 const COMMIT_MESSAGE_XSD_SCHEMA: &str =
     include_str!("../files/llm_output_extraction/commit_message.xsd");
 
-#[cfg(any(test, feature = "test-utils"))]
 use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
-#[cfg(any(test, feature = "test-utils"))]
 use crate::files::result_extraction::extract_file_paths_from_issues;
 
 /// Generate fix prompt (applies to either role).
@@ -87,7 +85,6 @@ pub fn prompt_fix(prompt_content: &str, plan_content: &str, issues_content: &str
 /// * `prompt_content` - Content of PROMPT.md for context about the original request
 /// * `plan_content` - Content of PLAN.md for context about the implementation plan
 /// * `issues_content` - Content of ISSUES.md for context about issues to fix
-#[cfg(any(test, feature = "test-utils"))]
 pub fn prompt_fix_with_context(
     context: &TemplateContext,
     prompt_content: &str,
@@ -133,7 +130,6 @@ pub fn prompt_fix_with_context(
 /// If files are found, formats them as a bulleted list with a clear header.
 /// If no files are found, provides a fallback message indicating that the
 /// agent may work on any files in the repository to fix the issues.
-#[cfg(any(test, feature = "test-utils"))]
 fn format_files_section(files: &[String]) -> String {
     if files.is_empty() {
         "================================================================================

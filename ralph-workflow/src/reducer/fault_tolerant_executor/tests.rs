@@ -199,6 +199,35 @@ fn test_classify_agent_error_rate_limit_matches_http_429() {
 }
 
 #[test]
+fn test_classify_agent_error_rate_limit_matches_bare_http_429() {
+    // Providers sometimes emit a bare status without additional wording.
+    let error_kind = classify_agent_error(1, "HTTP 429");
+    assert_eq!(error_kind, AgentErrorKind::RateLimit);
+}
+
+#[test]
+fn test_classify_agent_error_rate_limit_matches_bare_status_429() {
+    // Alternative "status" phrasing seen across SDKs.
+    let error_kind = classify_agent_error(1, "status 429");
+    assert_eq!(error_kind, AgentErrorKind::RateLimit);
+}
+
+#[test]
+fn test_classify_agent_error_rate_limit_overrides_auth_for_403_forbidden_rate_limit() {
+    // Some providers return 403 for quota/rate-limit conditions; in those cases we must
+    // treat it as RateLimit to preserve the intended fallback semantics.
+    let error_kind = classify_agent_error(1, "HTTP 403 Forbidden: rate limit exceeded");
+    assert_eq!(error_kind, AgentErrorKind::RateLimit);
+}
+
+#[test]
+fn test_classify_agent_error_rate_limit_overrides_auth_for_403_forbidden_quota_exceeded() {
+    // Quota exhaustion can also surface as 403. It should be treated as RateLimit.
+    let error_kind = classify_agent_error(1, "HTTP 403 Forbidden: exceeded your current quota");
+    assert_eq!(error_kind, AgentErrorKind::RateLimit);
+}
+
+#[test]
 fn test_classify_agent_error_rate_limit_from_opencode_json_error() {
     let stderr = r#"✗ Error: {"type":"error","sequence_number":2,"error":{"type":"tokens","code":"rate_limit_exceeded","message":"Rate limit reached"}}"#;
     let error_kind = classify_agent_error(1, stderr);

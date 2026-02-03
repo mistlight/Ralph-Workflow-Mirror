@@ -21,6 +21,11 @@ pub fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
 
             if is_timeout_stderr(&stderr_lower) {
                 AgentErrorKind::Timeout
+            } else if is_rate_limit_stderr(&stderr_lower, stderr) {
+                // Rate limit detection must run before broad auth heuristics.
+                // Some providers encode quota/rate-limit as 403 Forbidden, and we
+                // still want the "429 => rate-limit policy" semantics.
+                AgentErrorKind::RateLimit
             } else if stderr_lower.contains("unauthorized")
                 || stderr_lower.contains("authentication")
                 || stderr_lower.contains("401")
@@ -32,8 +37,6 @@ pub fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
                 || stderr_lower.contains("credential")
             {
                 AgentErrorKind::Authentication
-            } else if is_rate_limit_stderr(&stderr_lower, stderr) {
-                AgentErrorKind::RateLimit
             } else if stderr_lower.contains("network") || stderr_lower.contains("connection") {
                 AgentErrorKind::Network
             } else if stderr_lower.contains("model")
@@ -109,8 +112,10 @@ fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
         return true;
     }
 
+    // Providers sometimes emit a bare status indication (e.g., "HTTP 429") without additional
+    // phrases; treat any clear HTTP/status 429 marker as RateLimit.
     if stderr_lower.contains("http 429") || stderr_lower.contains("status 429") {
-        return stderr_lower.contains("rate limit") || stderr_lower.contains("too many requests");
+        return true;
     }
 
     // Quota exhaustion patterns - align with agents/error.rs

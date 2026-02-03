@@ -45,8 +45,6 @@ mod template_validator;
 mod types;
 
 // Sub-modules for split functionality
-#[cfg(any(test, feature = "test-utils"))]
-#[path = "prompt_config.rs"]
 mod prompt_config;
 #[path = "prompt_dispatch.rs"]
 mod prompt_dispatch;
@@ -57,16 +55,13 @@ mod resume_note;
 pub use crate::checkpoint::restore::ResumeContext;
 
 // Re-export items from split modules
-#[cfg(any(test, feature = "test-utils"))]
 pub use prompt_config::PromptConfig;
 pub use prompt_dispatch::get_stored_or_generate_prompt;
-#[cfg(any(test, feature = "test-utils"))]
 pub use prompt_dispatch::prompt_for_agent;
 pub use resume_note::{generate_resume_note, BriefDescription};
 
 // Re-export public items for API convenience
 pub use commit::prompt_commit_xsd_retry_with_context;
-#[cfg(any(test, feature = "test-utils"))]
 pub use commit::prompt_fix_with_context;
 pub use commit::prompt_generate_commit_message_with_diff_with_context;
 
@@ -78,7 +73,6 @@ pub use developer::{
     prompt_planning_xml_with_references, prompt_planning_xsd_retry_with_context,
     prompt_planning_xsd_retry_with_context_files,
 };
-#[cfg(any(test, feature = "test-utils"))]
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
 pub use rebase::{
     build_conflict_resolution_prompt_with_context, collect_conflict_info_with_workspace,
@@ -91,11 +85,9 @@ pub use review::{
     prompt_review_xsd_retry_with_context_files,
 };
 
-#[cfg(any(test, feature = "test-utils"))]
 pub use rebase::build_enhanced_conflict_resolution_prompt;
 
 // Types only used in tests
-#[cfg(any(test, feature = "test-utils"))]
 pub use rebase::{collect_branch_info, BranchInfo};
 
 // Re-export non-context variants for test compatibility
@@ -111,7 +103,6 @@ pub use template_validator::{
     RenderedPromptError, TemplateVariablesInvalidError, ValidationError, ValidationWarning,
 };
 pub use types::ContextLevel;
-#[cfg(any(test, feature = "test-utils"))]
 pub use types::{Action, Role};
 
 // Content reference types for oversized prompt handling

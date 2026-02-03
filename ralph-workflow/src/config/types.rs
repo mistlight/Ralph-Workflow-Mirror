@@ -281,11 +281,6 @@ impl Config {
     /// This function creates a Config suitable for integration tests,
     /// with all agent execution disabled and isolation mode enabled.
     /// It does NOT load from environment variables or config files.
-    ///
-    /// # Test-Utils Only
-    ///
-    /// This function is only available when the `test-utils` feature is enabled.
-    #[cfg(feature = "test-utils")]
     #[must_use]
     pub fn test_default() -> Self {
         Self {
@@ -330,11 +325,6 @@ impl Config {
     }
 
     /// Set isolation mode and return self (builder pattern).
-    ///
-    /// # Test-Utils Only
-    ///
-    /// This function is only available when the `test-utils` feature is enabled.
-    #[cfg(feature = "test-utils")]
     #[must_use]
     pub fn with_isolation_mode(mut self, isolation_mode: bool) -> Self {
         self.isolation_mode = isolation_mode;
@@ -342,9 +332,6 @@ impl Config {
     }
 
     /// Set developer iterations and return self (builder pattern).
-    ///
-    /// # Test-Utils Only
-    #[cfg(feature = "test-utils")]
     #[must_use]
     pub fn with_developer_iters(mut self, iters: u32) -> Self {
         self.developer_iters = iters;
@@ -352,9 +339,6 @@ impl Config {
     }
 
     /// Set reviewer reviews and return self (builder pattern).
-    ///
-    /// # Test-Utils Only
-    #[cfg(feature = "test-utils")]
     #[must_use]
     pub fn with_reviewer_reviews(mut self, reviews: u32) -> Self {
         self.reviewer_reviews = reviews;
@@ -362,9 +346,6 @@ impl Config {
     }
 
     /// Set auto_detect_stack and return self (builder pattern).
-    ///
-    /// # Test-Utils Only
-    #[cfg(feature = "test-utils")]
     #[must_use]
     pub fn with_auto_detect_stack(mut self, auto_detect: bool) -> Self {
         self.behavior.auto_detect_stack = auto_detect;
@@ -372,9 +353,6 @@ impl Config {
     }
 
     /// Set verbosity and return self (builder pattern).
-    ///
-    /// # Test-Utils Only
-    #[cfg(feature = "test-utils")]
     #[must_use]
     pub fn with_verbosity(mut self, verbosity: Verbosity) -> Self {
         self.verbosity = verbosity;
@@ -382,9 +360,6 @@ impl Config {
     }
 
     /// Set review_depth and return self (builder pattern).
-    ///
-    /// # Test-Utils Only
-    #[cfg(feature = "test-utils")]
     #[must_use]
     pub fn with_review_depth(mut self, review_depth: ReviewDepth) -> Self {
         self.review_depth = review_depth;
@@ -392,9 +367,6 @@ impl Config {
     }
 
     /// Set developer_agent and return self (builder pattern).
-    ///
-    /// # Test-Utils Only
-    #[cfg(feature = "test-utils")]
     #[must_use]
     pub fn with_developer_agent(mut self, agent: String) -> Self {
         self.developer_agent = Some(agent);
@@ -402,9 +374,6 @@ impl Config {
     }
 
     /// Set reviewer_agent and return self (builder pattern).
-    ///
-    /// # Test-Utils Only
-    #[cfg(feature = "test-utils")]
     #[must_use]
     pub fn with_reviewer_agent(mut self, agent: String) -> Self {
         self.reviewer_agent = Some(agent);

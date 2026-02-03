@@ -28,7 +28,6 @@ impl From<u8> for ContextLevel {
 /// Role types for agents.
 ///
 /// Determines which type of agent is being configured.
-#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
     /// Developer agent - implements features
@@ -40,7 +39,6 @@ pub enum Role {
 /// Action types for prompts.
 ///
 /// Specifies what action the agent should perform.
-#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// Create an implementation plan
