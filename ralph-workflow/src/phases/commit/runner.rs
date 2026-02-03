@@ -192,12 +192,25 @@ pub fn run_commit_attempt(
 ///
 /// Returns an error if XML validation fails or the agent output is missing.
 ///
-/// **NOTE:** This function is used by CLI plumbing commands (`--generate-commit-msg`)
-/// that run outside the reducer. It handles truncation internally using
-/// `truncate_diff_to_model_budget` with the agent-specific budget.
+/// # Truncation Behavior (CLI vs Reducer)
 ///
-/// For reducer-driven commit generation, the reducer handles truncation via
-/// `MaterializeCommitInputs` which writes to `.agent/tmp/commit_diff.model_safe.txt`.
+/// **IMPORTANT:** This function uses **single-agent budget** for truncation, which
+/// differs from the reducer-driven path that uses **chain-minimum budget**.
+///
+/// | Path | Budget Calculation | When Used |
+/// |------|-------------------|-----------|
+/// | CLI (`--generate-commit-msg`) | `model_budget_bytes_for_agent_name(agent)` | Single agent, no fallback chain |
+/// | Reducer (`MaterializeCommitInputs`) | `effective_model_budget_bytes(&agents)` | Agent chain with potential fallbacks |
+///
+/// **Why this is acceptable:**
+/// - CLI plumbing commands (`--generate-commit-msg`) invoke a single, explicitly-specified
+///   agent with no fallback chain. There's no need to compute min budget across agents.
+/// - The reducer path handles multi-agent chains where the diff must fit the smallest
+///   agent's context window to ensure fallback attempts can succeed.
+///
+/// **Implication:** A diff that works via CLI might fail via reducer if the chain
+/// includes an agent with a smaller budget. This is by design - the CLI user
+/// explicitly chose the agent and accepts its budget constraints.
 pub fn generate_commit_message(
     diff: &str,
     registry: &AgentRegistry,

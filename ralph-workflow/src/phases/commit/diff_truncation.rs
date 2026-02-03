@@ -279,4 +279,164 @@ mod diff_truncation_tests {
             "truncate_lines_to_fit must not exceed max_size after adding suffix (got {total_size} > {max_size})"
         );
     }
+
+    // =========================================================================
+    // Exhaustive edge case tests for truncation invariants
+    // =========================================================================
+
+    /// Test that truncation output never exceeds max_size for various edge cases.
+    ///
+    /// This exhaustively tests boundary conditions around the truncation summary
+    /// appending logic to ensure the invariant "output.len() <= max_size" holds.
+    #[test]
+    fn truncate_diff_invariant_never_exceeds_max_size_edge_cases() {
+        // Test various max_size values around the summary length
+        let summary_len = "\n[Truncated: 1 of 2 files shown]\n".len();
+
+        for max_size in [
+            10,                 // Very small
+            summary_len - 1,    // Just under summary
+            summary_len,        // Exactly summary
+            summary_len + 1,    // Just over summary
+            summary_len + 10,   // Summary + small content
+            100,                // Reasonable small size
+            1000,               // Reasonable larger size
+        ] {
+            let file1 = format!(
+                "diff --git a/src/a.rs b/src/a.rs\n+{}\n",
+                "x".repeat(max_size)
+            );
+            let file2 = "diff --git a/tests/b.rs b/tests/b.rs\n+extra\n";
+            let diff = format!("{file1}{file2}");
+
+            let (truncated, _) = truncate_diff_to_model_budget(&diff, max_size as u64);
+            assert!(
+                truncated.len() <= max_size,
+                "truncated diff exceeded max_size {} (got {}): {:?}",
+                max_size,
+                truncated.len(),
+                &truncated[..truncated.len().min(100)]
+            );
+        }
+    }
+
+    /// Test truncation with content exactly at boundary conditions.
+    #[test]
+    fn truncate_diff_boundary_content_sizes() {
+        for max_size in [50usize, 100, 200, 500] {
+            // Content exactly at max_size - should not truncate
+            let header = "diff --git a/a b/a\n+";
+            let exact_diff = format!(
+                "{}{}",
+                header,
+                "x".repeat(max_size.saturating_sub(header.len()))
+            );
+            if exact_diff.len() == max_size {
+                let (result, was_truncated) =
+                    truncate_diff_to_model_budget(&exact_diff, max_size as u64);
+                assert!(!was_truncated, "exact size should not trigger truncation");
+                assert_eq!(result.len(), max_size);
+            }
+
+            // Content one byte over max_size - should truncate
+            let over_diff = format!(
+                "{}{}",
+                header,
+                "x".repeat(max_size + 1 - header.len())
+            );
+            let (result, was_truncated) =
+                truncate_diff_to_model_budget(&over_diff, max_size as u64);
+            assert!(was_truncated, "over size should trigger truncation");
+            assert!(
+                result.len() <= max_size,
+                "truncated result {} should not exceed max_size {}",
+                result.len(),
+                max_size
+            );
+        }
+    }
+
+    /// Test that single-file diffs that exceed max_size are properly truncated.
+    #[test]
+    fn truncate_single_large_file_stays_within_budget() {
+        let max_size = 100usize;
+
+        // Single file that's way too big
+        let large_file = format!(
+            "diff --git a/src/big.rs b/src/big.rs\n+{}\n",
+            "x".repeat(max_size * 3)
+        );
+
+        let (truncated, was_truncated) =
+            truncate_diff_to_model_budget(&large_file, max_size as u64);
+        assert!(was_truncated, "large file should be truncated");
+        assert!(
+            truncated.len() <= max_size,
+            "single large file truncation {} exceeded max_size {}",
+            truncated.len(),
+            max_size
+        );
+    }
+
+    /// Test truncation with unicode content (multi-byte characters).
+    #[test]
+    fn truncate_diff_handles_unicode_boundaries() {
+        let max_size = 50usize;
+
+        // Unicode content: each emoji is 4 bytes
+        let emoji_line = "🎉".repeat(20); // 80 bytes
+        let diff = format!("diff --git a/a b/a\n+{}\n", emoji_line);
+
+        let (truncated, was_truncated) = truncate_diff_to_model_budget(&diff, max_size as u64);
+        assert!(was_truncated, "unicode diff should be truncated");
+        assert!(
+            truncated.len() <= max_size,
+            "unicode truncation {} exceeded max_size {}",
+            truncated.len(),
+            max_size
+        );
+        // Verify we didn't split a multi-byte character
+        assert!(
+            std::str::from_utf8(truncated.as_bytes()).is_ok(),
+            "truncated output should be valid UTF-8"
+        );
+    }
+
+    /// Test that empty diff is handled correctly.
+    #[test]
+    fn truncate_empty_diff() {
+        let (result, was_truncated) = truncate_diff_to_model_budget("", 100);
+        assert!(!was_truncated, "empty diff should not be truncated");
+        assert_eq!(result, "");
+    }
+
+    /// Test truncation with multiple small files.
+    #[test]
+    fn truncate_multiple_small_files_prefers_high_priority() {
+        let max_size = 200usize;
+
+        // Create multiple files with different priorities
+        let src_file = "diff --git a/src/main.rs b/src/main.rs\n+high priority\n";
+        let test_file = "diff --git a/tests/test.rs b/tests/test.rs\n+medium priority\n";
+        let doc_file = "diff --git a/README.md b/README.md\n+low priority docs\n";
+        let extra = "diff --git a/extra.rs b/extra.rs\n+extra content that exceeds budget\n";
+
+        let diff = format!("{doc_file}{test_file}{src_file}{extra}");
+
+        let (truncated, was_truncated) = truncate_diff_to_model_budget(&diff, max_size as u64);
+        assert!(was_truncated, "should truncate when files exceed budget");
+        assert!(
+            truncated.len() <= max_size,
+            "truncated {} exceeded max_size {}",
+            truncated.len(),
+            max_size
+        );
+        // High priority src file should be included before low priority docs
+        if truncated.contains("priority") {
+            assert!(
+                truncated.contains("high priority") || truncated.contains("medium priority"),
+                "should prioritize src/tests over docs"
+            );
+        }
+    }
 }

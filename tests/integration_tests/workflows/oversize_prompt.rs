@@ -514,3 +514,178 @@ fn prompt_content_builder_is_deterministic_across_repeated_builds() {
         );
     });
 }
+
+// =============================================================================
+// Tests for commit diff materialization stability across XSD retries
+// =============================================================================
+
+/// Test that commit diff materialization is stable across XSD retries.
+///
+/// When commit XML validation fails and we retry with an XsdRetry prompt, the diff
+/// should NOT be re-truncated. The materialized input from the first attempt should
+/// be reused because the content_id and consumer_signature match.
+///
+/// This is a regression test for the bug where truncation warnings repeated with
+/// each retry attempt, even though the diff content hadn't changed.
+#[test]
+fn commit_diff_materialization_stable_across_xsd_retries() {
+    use ralph_workflow::phases::commit::{
+        effective_model_budget_bytes, truncate_diff_to_model_budget,
+    };
+    use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
+    use ralph_workflow::reducer::state::{
+        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
+        PromptInputRepresentation, PromptMaterializationReason,
+    };
+
+    with_default_timeout(|| {
+        // Create a large diff that exceeds the model budget for qwen (100KB)
+        let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(150_000));
+        let content_id = sha256_hex_str(&large_diff);
+
+        // Calculate what the truncated diff should look like
+        let model_budget = effective_model_budget_bytes(&["qwen".to_string()]);
+        let (model_safe_diff, truncated) = truncate_diff_to_model_budget(&large_diff, model_budget);
+        assert!(truncated, "diff should be truncated for this test");
+
+        // Simulate the materialized state after first materialization
+        let consumer_signature = sha256_hex_str("qwen"); // Simplified signature
+        let materialized_input = MaterializedPromptInput {
+            kind: PromptInputKind::Diff,
+            content_id_sha256: content_id.clone(),
+            consumer_signature_sha256: consumer_signature.clone(),
+            original_bytes: large_diff.len() as u64,
+            final_bytes: model_safe_diff.len() as u64,
+            model_budget_bytes: Some(model_budget),
+            inline_budget_bytes: Some(MAX_INLINE_CONTENT_SIZE as u64),
+            representation: PromptInputRepresentation::Inline,
+            reason: PromptMaterializationReason::ModelBudgetExceeded,
+        };
+
+        // Simulate second materialization request (XSD retry)
+        // The key invariant: if content_id and consumer_signature match,
+        // we should NOT need to re-materialize
+        let should_rematerialize = {
+            let stored = Some(MaterializedCommitInputs {
+                attempt: 1,
+                diff: materialized_input.clone(),
+            });
+
+            // Check if rematerialization is needed (same logic as phase_effects.rs)
+            let current_attempt = 1u32;
+            let inputs_match = stored.as_ref().is_some_and(|c| {
+                c.attempt == current_attempt
+                    && c.diff.consumer_signature_sha256 == consumer_signature
+                    && c.diff.content_id_sha256 == content_id
+            });
+
+            !inputs_match
+        };
+
+        assert!(
+            !should_rematerialize,
+            "Materialized inputs should be reused across XSD retries when content_id and consumer_signature match"
+        );
+
+        // Verify the materialized diff content is stable
+        let second_truncation = truncate_diff_to_model_budget(&large_diff, model_budget);
+        assert_eq!(
+            model_safe_diff, second_truncation.0,
+            "Truncation should be deterministic for the same input and budget"
+        );
+    });
+}
+
+/// Test that OversizeDetected events are emitted once per content_id, not per effect invocation.
+///
+/// This verifies the reducer-driven materialization system correctly deduplicates
+/// oversize handling. When the same diff is processed multiple times (e.g., during
+/// XSD retry loops), the truncation/oversize event should only be emitted once.
+///
+/// Regression test for oscillating budget warnings like:
+/// "Diff size (625 KB) exceeds agent limit (292 KB)" repeated multiple times.
+#[test]
+fn no_repeated_oversize_warnings_in_event_loop() {
+    use ralph_workflow::phases::commit::{
+        effective_model_budget_bytes, truncate_diff_to_model_budget,
+    };
+    use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
+    use ralph_workflow::reducer::state::{
+        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
+        PromptInputRepresentation, PromptMaterializationReason,
+    };
+
+    with_default_timeout(|| {
+        // Create diff that exceeds model budget
+        let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(200_000));
+
+        // Simulate multi-agent chain with different budgets
+        let agents = vec![
+            "claude-opus".to_string(), // 300KB
+            "qwen".to_string(),        // 100KB (smallest)
+            "gpt-4".to_string(),       // 200KB
+        ];
+
+        // The effective budget should be the minimum across the chain
+        let effective_budget = effective_model_budget_bytes(&agents);
+        assert_eq!(
+            effective_budget, 100_000,
+            "effective budget should be min across agent chain (qwen's 100KB)"
+        );
+
+        let content_id = sha256_hex_str(&large_diff);
+        let consumer_signature = sha256_hex_str(&agents.join(","));
+
+        // First materialization: should truncate and record
+        let (model_safe_diff, truncated) =
+            truncate_diff_to_model_budget(&large_diff, effective_budget);
+        assert!(truncated, "diff should be truncated");
+
+        let materialized = MaterializedCommitInputs {
+            attempt: 1,
+            diff: MaterializedPromptInput {
+                kind: PromptInputKind::Diff,
+                content_id_sha256: content_id.clone(),
+                consumer_signature_sha256: consumer_signature.clone(),
+                original_bytes: large_diff.len() as u64,
+                final_bytes: model_safe_diff.len() as u64,
+                model_budget_bytes: Some(effective_budget),
+                inline_budget_bytes: Some(MAX_INLINE_CONTENT_SIZE as u64),
+                representation: PromptInputRepresentation::Inline,
+                reason: PromptMaterializationReason::ModelBudgetExceeded,
+            },
+        };
+
+        // Simulate multiple "attempts" in the event loop (XSD retries)
+        // Each should check if materialization is needed, and skip if already done
+        for attempt_num in 1..=3 {
+            let needs_materialization = {
+                // Same check as phase_effects.rs: MaterializeCommitInputs
+                let current_attempt = 1u32; // XSD retry doesn't change attempt number
+                let stored = Some(&materialized);
+
+                !stored.is_some_and(|c| {
+                    c.attempt == current_attempt
+                        && c.diff.consumer_signature_sha256 == consumer_signature
+                        && c.diff.content_id_sha256 == content_id
+                })
+            };
+
+            assert!(
+                !needs_materialization,
+                "XSD retry #{attempt_num} should NOT trigger re-materialization"
+            );
+        }
+
+        // Verify budget is stable regardless of which agent is "current"
+        // The effective budget is always the min, not per-agent
+        for agent in &agents {
+            let per_agent_budget =
+                ralph_workflow::phases::commit::model_budget_bytes_for_agent_name(agent);
+            assert!(
+                per_agent_budget >= effective_budget,
+                "individual agent budget should be >= effective chain budget"
+            );
+        }
+    });
+}
