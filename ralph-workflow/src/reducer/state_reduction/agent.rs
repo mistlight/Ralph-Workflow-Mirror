@@ -9,6 +9,10 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
         // This makes prompt consumption reducer-driven (handlers must not mutate state).
         AgentEvent::InvocationStarted { .. } => PipelineState {
             agent_chain: state.agent_chain.clear_continuation_prompt(),
+            continuation: ContinuationState {
+                xsd_retry_session_reuse_pending: false,
+                ..state.continuation
+            },
             ..state
         },
         // Clear continuation prompt on success
@@ -18,6 +22,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 same_agent_retry_count: 0,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
+                xsd_retry_session_reuse_pending: false,
                 ..state.continuation
             },
             ..state
@@ -33,6 +38,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 continuation: ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
                     same_agent_retry_count: 0,
                     same_agent_retry_pending: false,
                     same_agent_retry_reason: None,
@@ -53,6 +59,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 continuation: ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
                     same_agent_retry_count: 0,
                     same_agent_retry_pending: false,
                     same_agent_retry_reason: None,
@@ -75,6 +82,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 continuation: ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
                     same_agent_retry_count: 0,
                     same_agent_retry_pending: false,
                     same_agent_retry_reason: None,
@@ -101,6 +109,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                     continuation: ContinuationState {
                         xsd_retry_count: 0,
                         xsd_retry_pending: false,
+                        xsd_retry_session_reuse_pending: false,
                         same_agent_retry_count: 0,
                         same_agent_retry_pending: false,
                         same_agent_retry_reason: None,
@@ -139,6 +148,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 continuation: ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
                     same_agent_retry_count: 0,
                     same_agent_retry_pending: false,
                     same_agent_retry_reason: None,
@@ -222,6 +232,7 @@ fn reduce_same_agent_retryable_failure(
             continuation: ContinuationState {
                 xsd_retry_count: 0,
                 xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
                 same_agent_retry_count: 0,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
@@ -244,6 +255,7 @@ fn reduce_same_agent_retryable_failure(
                 same_agent_retry_count: new_retry_count,
                 same_agent_retry_pending: true,
                 same_agent_retry_reason: Some(reason),
+                xsd_retry_session_reuse_pending: false,
                 ..state.continuation
             },
             ..state

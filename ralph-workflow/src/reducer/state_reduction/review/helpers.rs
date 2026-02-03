@@ -54,6 +54,7 @@ fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
             // The reducer owns retry accounting for determinism.
             ContinuationState {
                 xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
                 ..state.continuation
@@ -64,6 +65,7 @@ fn reduce_pass_started(state: PipelineState, pass: u32) -> PipelineState {
                 invalid_output_attempts: 0,
                 xsd_retry_count: 0,
                 xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
                 same_agent_retry_count: 0,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
@@ -114,6 +116,7 @@ fn reduce_fix_output_validation_failure(
                 invalid_output_attempts: 0,
                 xsd_retry_count: 0,
                 xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,
@@ -128,6 +131,7 @@ fn reduce_fix_output_validation_failure(
                 invalid_output_attempts: attempt + 1,
                 xsd_retry_count: new_xsd_count,
                 xsd_retry_pending: true,
+                xsd_retry_session_reuse_pending: false,
                 ..state.continuation
             },
             fix_result_xml_cleaned_pass: None,

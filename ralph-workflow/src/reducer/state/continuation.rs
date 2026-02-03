@@ -55,6 +55,14 @@ pub struct ContinuationState {
     /// Cleared when retry attempt starts or max retries exceeded.
     #[serde(default)]
     pub xsd_retry_pending: bool,
+    /// Whether the next agent invocation should reuse the last session id.
+    ///
+    /// XSD retry is derived via `xsd_retry_pending`, but `xsd_retry_pending` is cleared
+    /// as soon as the retry prompt is prepared to avoid re-deriving the prepare-prompt
+    /// effect. This flag preserves the "reuse session id" signal for the subsequent
+    /// invocation effect.
+    #[serde(default)]
+    pub xsd_retry_session_reuse_pending: bool,
     /// Count of same-agent retry attempts for transient invocation failures.
     ///
     /// This is intentionally separate from XSD retry, which is only for invalid XML outputs.
@@ -152,6 +160,7 @@ impl Default for ContinuationState {
             context_cleanup_pending: false,
             xsd_retry_count: 0,
             xsd_retry_pending: false,
+            xsd_retry_session_reuse_pending: false,
             same_agent_retry_count: 0,
             same_agent_retry_pending: false,
             same_agent_retry_reason: None,
@@ -255,6 +264,7 @@ impl ContinuationState {
             current_artifact: Some(artifact),
             xsd_retry_count: 0,
             xsd_retry_pending: false,
+            xsd_retry_session_reuse_pending: false,
             ..self.clone()
         }
     }
@@ -264,6 +274,7 @@ impl ContinuationState {
         Self {
             xsd_retry_pending: true,
             xsd_retry_count: self.xsd_retry_count + 1,
+            xsd_retry_session_reuse_pending: false,
             ..self.clone()
         }
     }
@@ -369,6 +380,7 @@ impl ContinuationState {
             // Reset XSD retry count for new continuation attempt
             xsd_retry_count: 0,
             xsd_retry_pending: false,
+            xsd_retry_session_reuse_pending: false,
             // Reset same-agent retry state for new continuation attempt
             same_agent_retry_count: 0,
             same_agent_retry_pending: false,
@@ -411,6 +423,7 @@ impl ContinuationState {
             // Reset XSD retry state for new continuation
             xsd_retry_count: 0,
             xsd_retry_pending: false,
+            xsd_retry_session_reuse_pending: false,
             // Reset invalid output attempts for new continuation
             invalid_output_attempts: 0,
             // Clear other pending flags

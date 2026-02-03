@@ -202,6 +202,84 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
 }
 
 #[test]
+fn test_xsd_retry_reuses_session_id_even_after_prompt_prepared_clears_pending() {
+    use crate::reducer::state_reduction::reduce;
+
+    let workspace =
+        MemoryWorkspace::new_test().with_file(".agent/tmp/planning_prompt.txt", "planning prompt");
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(
+        MockProcessExecutor::new()
+            .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+    );
+
+    let repo_root = PathBuf::from("/mock/repo");
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let session_id = "session-123".to_string();
+
+    // Simulate an XSD retry: XsdValidationFailed sets xsd_retry_pending=true, then the
+    // pipeline prepares an XSD retry prompt and (currently) clears xsd_retry_pending.
+    let mut state = PipelineState::initial(1, 0);
+    state.agent_chain = AgentChainState::initial()
+        .with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            crate::agents::AgentRole::Developer,
+        )
+        .with_session_id(Some(session_id.clone()));
+    state.continuation.xsd_retry_pending = true;
+
+    state = reduce(state, PipelineEvent::planning_prompt_prepared(0));
+    assert!(
+        !state.continuation.xsd_retry_pending,
+        "prompt preparation clears xsd_retry_pending before invocation"
+    );
+
+    let mut handler = MainEffectHandler::new(state);
+    let _ = handler
+        .invoke_planning_agent(&mut ctx, 0)
+        .expect("invoke_planning_agent should succeed");
+
+    let calls = executor.agent_calls();
+    assert_eq!(calls.len(), 1);
+    assert!(
+        calls[0].args.iter().any(|a| a == "--resume"),
+        "agent command should include session continuation flag for XSD retry"
+    );
+    assert!(
+        calls[0].args.iter().any(|a| a == &session_id),
+        "agent command should include session id value for XSD retry"
+    );
+}
+
+#[test]
 fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_depend_on_counter_magnitude(
 ) {
     let workspace =

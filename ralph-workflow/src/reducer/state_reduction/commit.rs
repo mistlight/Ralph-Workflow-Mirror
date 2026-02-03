@@ -40,6 +40,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_prompt_prepared: true,
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: state.continuation.xsd_retry_pending,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
                 ..state.continuation
@@ -50,6 +51,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_agent_invoked: true,
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
                 ..state.continuation
@@ -291,6 +293,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
                 continuation: crate::reducer::state::ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
                     same_agent_retry_count: 0,
                     same_agent_retry_pending: false,
                     same_agent_retry_reason: None,
@@ -312,6 +315,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
                 continuation: crate::reducer::state::ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
                     same_agent_retry_count: 0,
                     same_agent_retry_pending: false,
                     same_agent_retry_reason: None,
@@ -336,6 +340,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_count: new_xsd_count,
                 xsd_retry_pending: true,
+                xsd_retry_session_reuse_pending: false,
                 ..state.continuation
             },
             ..state

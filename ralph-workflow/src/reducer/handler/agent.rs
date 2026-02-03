@@ -116,9 +116,9 @@ impl MainEffectHandler {
             .map(std::string::String::as_str)
             .or(model.as_deref());
 
-        // Session ID reuse for XSD retry: when xsd_retry_pending is true and we have
-        // a session ID from a previous invocation, reuse it for same-session retry.
-        let session_id = if self.state.continuation.xsd_retry_pending {
+        // Session ID reuse for XSD retry: preserve a "reuse session id" signal across
+        // prompt preparation (which clears xsd_retry_pending to avoid effect loops).
+        let session_id = if self.state.continuation.xsd_retry_session_reuse_pending {
             self.state.agent_chain.last_session_id.as_deref()
         } else {
             None
