@@ -5,10 +5,12 @@ use crate::reducer::state::*;
 
 pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState {
     match event {
-        // Clear any saved continuation prompt when an invocation starts.
-        // This makes prompt consumption reducer-driven (handlers must not mutate state).
+        // Do NOT clear any saved continuation prompt on invocation start.
+        //
+        // Rationale: after a 429, we preserve prompt context so the next agent can continue the
+        // same work. If the first post-rate-limit invocation fails (e.g., timeout/internal), we
+        // must keep the continuation prompt available for retries until an invocation succeeds.
         AgentEvent::InvocationStarted { .. } => PipelineState {
-            agent_chain: state.agent_chain.clear_continuation_prompt(),
             continuation: ContinuationState {
                 xsd_retry_session_reuse_pending: false,
                 ..state.continuation
@@ -100,12 +102,25 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             match error_kind {
                 // Authentication and rate limit failures: immediate agent switch.
                 // These may arrive as InvocationFailed for legacy callers; prefer AuthFailed/RateLimited.
-                AgentErrorKind::Authentication | AgentErrorKind::RateLimit => PipelineState {
+                AgentErrorKind::Authentication => PipelineState {
                     agent_chain: state
                         .agent_chain
                         .switch_to_next_agent()
                         .clear_session_id()
                         .clear_continuation_prompt(),
+                    continuation: ContinuationState {
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
+                        xsd_retry_session_reuse_pending: false,
+                        same_agent_retry_count: 0,
+                        same_agent_retry_pending: false,
+                        same_agent_retry_reason: None,
+                        ..state.continuation
+                    },
+                    ..state
+                },
+                AgentErrorKind::RateLimit => PipelineState {
+                    agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
                     continuation: ContinuationState {
                         xsd_retry_count: 0,
                         xsd_retry_pending: false,
@@ -224,11 +239,7 @@ fn reduce_same_agent_retryable_failure(
     let new_retry_count = state.continuation.same_agent_retry_count + 1;
     if new_retry_count >= state.continuation.max_same_agent_retry_count {
         PipelineState {
-            agent_chain: state
-                .agent_chain
-                .switch_to_next_agent()
-                .clear_session_id()
-                .clear_continuation_prompt(),
+            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
             continuation: ContinuationState {
                 xsd_retry_count: 0,
                 xsd_retry_pending: false,
@@ -247,10 +258,7 @@ fn reduce_same_agent_retryable_failure(
             SameAgentRetryableFailure::OtherNonRetriable => SameAgentRetryReason::Other,
         };
         PipelineState {
-            agent_chain: state
-                .agent_chain
-                .clear_session_id()
-                .clear_continuation_prompt(),
+            agent_chain: state.agent_chain.clear_session_id(),
             continuation: ContinuationState {
                 same_agent_retry_count: new_retry_count,
                 same_agent_retry_pending: true,

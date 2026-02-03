@@ -79,15 +79,16 @@ fn test_agent_invocation_started_preserves_agent_chain_indices() {
         ),
     );
 
-    // InvocationStarted should not change indices or cycle tracking, but should
-    // clear any saved continuation prompt (prompt consumption is reducer-driven).
+    // InvocationStarted should not change indices or cycle tracking, and must not clear any
+    // saved continuation prompt. After a 429, the prompt must remain available for retries
+    // until an invocation succeeds.
     assert_eq!(new_state.agent_chain.current_agent_index, 1);
     assert_eq!(new_state.agent_chain.current_model_index, 1);
     assert_eq!(new_state.agent_chain.retry_cycle, 2);
-    assert!(new_state
-        .agent_chain
-        .rate_limit_continuation_prompt
-        .is_none());
+    assert_eq!(
+        new_state.agent_chain.rate_limit_continuation_prompt,
+        Some("saved prompt".to_string())
+    );
 }
 
 #[test]

@@ -33,8 +33,10 @@ impl MainEffectHandler {
         // When an agent hits a rate limit, the prompt is saved in
         // rate_limit_continuation_prompt. On the next invocation (with a new
         // agent), we use this saved prompt to continue the same work.
-        // The `InvocationSucceeded` event handler clears the saved prompt
-        // in the reducer, so we don't need to handle that here.
+        // The reducer clears the saved prompt only after an invocation succeeds
+        // (`InvocationSucceeded`) or when an auth failure forces a clean switch.
+        // This keeps continuation prompt handling reducer-driven (no state mutation here),
+        // while ensuring retries keep the same effective prompt context.
         //
         let effective_prompt = self
             .state

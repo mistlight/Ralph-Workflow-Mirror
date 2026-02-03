@@ -218,6 +218,97 @@ fn test_success_clears_rate_limit_continuation_prompt() {
 }
 
 #[test]
+fn test_rate_limit_continuation_prompt_is_preserved_until_success_even_across_retries() {
+    // Regression: after a 429 RateLimited event, the continuation prompt must remain available
+    // for retries until an invocation actually succeeds. Clearing it on InvocationStarted (or
+    // on retryable failures like Timeout/InternalError) breaks "continue same prompt after 429"
+    // when the first post-rate-limit invocation fails.
+    let base_state = create_test_state();
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        ),
+        continuation: ContinuationState::with_limits(2, 3, 2),
+        ..base_state
+    };
+
+    let after_rate_limit = reduce(
+        state,
+        PipelineEvent::agent_rate_limited(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            Some("saved prompt".to_string()),
+        ),
+    );
+    assert_eq!(
+        after_rate_limit.agent_chain.current_agent().unwrap(),
+        "agent2"
+    );
+    assert_eq!(
+        after_rate_limit.agent_chain.rate_limit_continuation_prompt,
+        Some("saved prompt".to_string())
+    );
+
+    let after_started = reduce(
+        after_rate_limit,
+        PipelineEvent::agent_invocation_started(AgentRole::Developer, "agent2".to_string(), None),
+    );
+    assert_eq!(
+        after_started.agent_chain.rate_limit_continuation_prompt,
+        Some("saved prompt".to_string()),
+        "InvocationStarted must not clear rate-limit continuation prompt"
+    );
+
+    let after_failure = reduce(
+        after_started,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent2".to_string(),
+            139,
+            AgentErrorKind::InternalError,
+            false,
+        ),
+    );
+    assert_eq!(after_failure.agent_chain.current_agent().unwrap(), "agent2");
+    assert!(
+        after_failure.continuation.same_agent_retry_pending,
+        "InternalError should schedule a same-agent retry"
+    );
+    assert_eq!(
+        after_failure.agent_chain.rate_limit_continuation_prompt,
+        Some("saved prompt".to_string()),
+        "Same-agent retry must preserve rate-limit continuation prompt"
+    );
+
+    let after_retry_started = reduce(
+        after_failure,
+        PipelineEvent::agent_invocation_started(AgentRole::Developer, "agent2".to_string(), None),
+    );
+    assert_eq!(
+        after_retry_started
+            .agent_chain
+            .rate_limit_continuation_prompt,
+        Some("saved prompt".to_string()),
+        "Retry InvocationStarted must preserve rate-limit continuation prompt"
+    );
+
+    let after_success = reduce(
+        after_retry_started,
+        PipelineEvent::agent_invocation_succeeded(AgentRole::Developer, "agent2".to_string()),
+    );
+    assert!(
+        after_success
+            .agent_chain
+            .rate_limit_continuation_prompt
+            .is_none(),
+        "InvocationSucceeded should clear the consumed rate-limit continuation prompt"
+    );
+}
+
+#[test]
 fn test_auth_fallback_clears_session_and_advances_agent() {
     let mut chain = AgentChainState::initial()
         .with_agents(
@@ -383,11 +474,10 @@ fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
 }
 
 #[test]
-fn test_timeout_clears_rate_limit_continuation_prompt_during_same_agent_retry_and_fallback() {
+fn test_timeout_preserves_rate_limit_continuation_prompt_during_same_agent_retry_and_fallback() {
     // Regression: if a prior 429 stored a continuation prompt, subsequent non-rate-limit failures
-    // (like timeouts) must NOT preserve that prompt context. It should be cleared immediately,
-    // even while retrying the same agent, and must not leak into the next agent after budget
-    // exhaustion.
+    // (like timeouts) must preserve that prompt context for retries and fallback so we keep
+    // "continue same prompt after 429" semantics across transient failures.
     let base_state = create_test_state();
     let mut chain = AgentChainState::initial().with_agents(
         vec!["agent1".to_string(), "agent2".to_string()],
@@ -407,30 +497,28 @@ fn test_timeout_clears_rate_limit_continuation_prompt_during_same_agent_retry_an
         state,
         PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
     );
-    assert!(
+    assert_eq!(
         after_first_timeout
             .agent_chain
-            .rate_limit_continuation_prompt
-            .is_none(),
-        "Timeout retry must clear rate-limit continuation prompt context"
+            .rate_limit_continuation_prompt,
+        Some("saved prompt".to_string()),
+        "Timeout retry must preserve rate-limit continuation prompt context"
     );
 
     let after_second_timeout = reduce(
         after_first_timeout,
         PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
     );
-    assert!(
-        after_second_timeout
-            .agent_chain
-            .rate_limit_continuation_prompt
-            .is_none(),
-        "Timeout fallback after budget exhaustion must not leak rate-limit continuation prompt to the next agent"
+    assert_eq!(
+        after_second_timeout.agent_chain.rate_limit_continuation_prompt,
+        Some("saved prompt".to_string()),
+        "Timeout fallback after budget exhaustion must preserve rate-limit continuation prompt for the next agent"
     );
 }
 
 #[test]
-fn test_internal_error_clears_rate_limit_continuation_prompt_during_same_agent_retry_and_fallback()
-{
+fn test_internal_error_preserves_rate_limit_continuation_prompt_during_same_agent_retry_and_fallback(
+) {
     // Same regression as above, but via the InvocationFailed { retriable: false, InternalError }
     // path which uses the same-agent retry mechanism.
     let base_state = create_test_state();
@@ -458,12 +546,12 @@ fn test_internal_error_clears_rate_limit_continuation_prompt_during_same_agent_r
             false,
         ),
     );
-    assert!(
+    assert_eq!(
         after_first_failure
             .agent_chain
-            .rate_limit_continuation_prompt
-            .is_none(),
-        "InternalError retry must clear rate-limit continuation prompt context"
+            .rate_limit_continuation_prompt,
+        Some("saved prompt".to_string()),
+        "InternalError retry must preserve rate-limit continuation prompt context"
     );
 
     let after_second_failure = reduce(
@@ -476,12 +564,10 @@ fn test_internal_error_clears_rate_limit_continuation_prompt_during_same_agent_r
             false,
         ),
     );
-    assert!(
-        after_second_failure
-            .agent_chain
-            .rate_limit_continuation_prompt
-            .is_none(),
-        "InternalError fallback after budget exhaustion must not leak rate-limit continuation prompt to the next agent"
+    assert_eq!(
+        after_second_failure.agent_chain.rate_limit_continuation_prompt,
+        Some("saved prompt".to_string()),
+        "InternalError fallback after budget exhaustion must preserve rate-limit continuation prompt for the next agent"
     );
 }
 
