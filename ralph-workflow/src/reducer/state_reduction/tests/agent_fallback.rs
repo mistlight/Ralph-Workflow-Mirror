@@ -218,6 +218,34 @@ fn test_success_clears_rate_limit_continuation_prompt() {
 }
 
 #[test]
+fn test_legacy_rate_limit_failure_clears_stale_rate_limit_continuation_prompt() {
+    // Regression: legacy callers may emit InvocationFailed{ error_kind: RateLimit } without
+    // prompt_context. In that case we must NOT carry forward any previously saved continuation
+    // prompt, otherwise the next invocation may run with stale prompt context.
+    let mut state = create_test_state();
+    state.agent_chain.rate_limit_continuation_prompt = Some("stale prompt".to_string());
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            429,
+            AgentErrorKind::RateLimit,
+            false,
+        ),
+    );
+
+    assert!(
+        new_state
+            .agent_chain
+            .rate_limit_continuation_prompt
+            .is_none(),
+        "Legacy RateLimit failures must clear any previously saved continuation prompt"
+    );
+}
+
+#[test]
 fn test_rate_limit_continuation_prompt_is_preserved_until_success_even_across_retries() {
     // Regression: after a 429 RateLimited event, the continuation prompt must remain available
     // for retries until an invocation actually succeeds. Clearing it on InvocationStarted (or

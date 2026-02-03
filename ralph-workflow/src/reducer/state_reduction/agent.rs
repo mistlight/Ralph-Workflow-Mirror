@@ -120,7 +120,13 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                     ..state
                 },
                 AgentErrorKind::RateLimit => PipelineState {
-                    agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+                    // Legacy callers may report rate limit as InvocationFailed without prompt context.
+                    // In that case, explicitly overwrite any saved continuation prompt to avoid
+                    // reusing stale prompt context on the next invocation.
+                    agent_chain: state
+                        .agent_chain
+                        .switch_to_next_agent_with_prompt(None)
+                        .clear_session_id(),
                     continuation: ContinuationState {
                         xsd_retry_count: 0,
                         xsd_retry_pending: false,
