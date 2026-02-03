@@ -718,7 +718,7 @@ fn test_timed_out_from_last_agent_increments_retry_cycle_when_budget_exhausted()
     let base_state = create_test_state();
     let state = PipelineState {
         continuation: crate::reducer::state::ContinuationState::with_limits(1, 3, 2)
-            .with_max_same_agent_retry(2), // 2 same-agent retries allowed (so 3rd timeout triggers fallback)
+            .with_max_same_agent_retry(2), // Fallback on the 2nd timeout when max=2
         agent_chain: base_state
             .agent_chain
             .with_agents(

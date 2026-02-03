@@ -48,7 +48,7 @@ impl MainEffectHandler {
             .state
             .agent_chain
             .rate_limit_continuation_prompt
-            .clone()
+            .as_deref()
         {
             None => prompt,
             Some(continuation_prompt) => {
@@ -57,7 +57,7 @@ impl MainEffectHandler {
                 {
                     prompt
                 } else {
-                    continuation_prompt
+                    continuation_prompt.to_string()
                 }
             }
         };
