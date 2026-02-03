@@ -24,24 +24,26 @@ impl MainEffectHandler {
         let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
         let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
 
-        let plan_abs = ctx.workspace.absolute(Path::new(".agent/PLAN.md"));
+        let plan_path = Path::new(".agent/PLAN.md");
         let (plan_representation, plan_reason) = if plan_content.len() as u64 > inline_budget_bytes
         {
             ctx.logger.warn(&format!(
                 "PLAN size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (plan_content.len() as u64) / 1024,
                 inline_budget_bytes / 1024,
-                plan_abs.display()
+                ctx.workspace.absolute(plan_path).display()
             ));
             (
-                PromptInputRepresentation::FileReference { path: plan_abs },
+                PromptInputRepresentation::FileReference {
+                    path: plan_path.to_path_buf(),
+                },
                 PromptMaterializationReason::InlineBudgetExceeded,
             )
         } else {
             (PromptInputRepresentation::Inline, PromptMaterializationReason::WithinBudgets)
         };
 
-        let diff_abs = ctx.workspace.absolute(Path::new(".agent/tmp/diff.txt"));
+        let diff_path = Path::new(".agent/tmp/diff.txt");
         let (diff_representation, diff_reason) = if diff_content.len() as u64 > inline_budget_bytes {
             let tmp_dir = Path::new(".agent/tmp");
             if !ctx.workspace.exists(tmp_dir) {
@@ -61,10 +63,12 @@ impl MainEffectHandler {
                 "DIFF size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (diff_content.len() as u64) / 1024,
                 inline_budget_bytes / 1024,
-                diff_abs.display()
+                ctx.workspace.absolute(diff_path).display()
             ));
             (
-                PromptInputRepresentation::FileReference { path: diff_abs },
+                PromptInputRepresentation::FileReference {
+                    path: diff_path.to_path_buf(),
+                },
                 PromptMaterializationReason::InlineBudgetExceeded,
             )
         } else {
@@ -297,7 +301,7 @@ impl MainEffectHandler {
                             }
                             PromptInputRepresentation::FileReference { path } => {
                                 PlanContentReference::ReadFromFile {
-                                    primary_path: path.clone(),
+                                    primary_path: ctx.workspace.absolute(path),
                                     fallback_path: Some(
                                         ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
                                     ),
@@ -320,7 +324,7 @@ impl MainEffectHandler {
                             }
                             PromptInputRepresentation::FileReference { path } => {
                                 DiffContentReference::ReadFromFile {
-                                    path: path.clone(),
+                                    path: ctx.workspace.absolute(path),
                                     start_commit: baseline_oid_for_prompts.clone(),
                                     description: format!(
                                         "Diff is {} bytes (exceeds {} limit)",

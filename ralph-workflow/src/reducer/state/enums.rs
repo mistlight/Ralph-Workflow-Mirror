@@ -247,9 +247,13 @@ pub enum PromptInputKind {
 pub enum PromptInputRepresentation {
     /// Input is embedded inline in the prompt template.
     Inline,
-    /// Input is referenced by absolute file path.
+    /// Input is referenced by a workspace-relative file path.
+    ///
+    /// Important: this path is serialized into checkpoints. Storing absolute paths
+    /// would leak local filesystem layout and can break resuming a run from a
+    /// different checkout location.
     FileReference {
-        /// Absolute path to the materialized artifact.
+        /// Workspace-relative path to the materialized artifact.
         path: PathBuf,
     },
 }

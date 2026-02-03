@@ -65,23 +65,21 @@ impl MainEffectHandler {
             PromptInputRepresentation::Inline
         } else {
             PromptInputRepresentation::FileReference {
-                path: ctx.workspace.absolute(model_safe_path),
+                path: model_safe_path.to_path_buf(),
             }
         };
 
-        let reason = match &representation {
-            // Align reason with representation for observability/UX. When we use a file reference,
-            // the inline budget is the immediate constraint even if we also truncated for the model.
-            PromptInputRepresentation::FileReference { .. } => {
-                PromptMaterializationReason::InlineBudgetExceeded
-            }
-            PromptInputRepresentation::Inline => {
-                if truncated_for_model_budget {
-                    PromptMaterializationReason::ModelBudgetExceeded
-                } else {
-                    PromptMaterializationReason::WithinBudgets
-                }
-            }
+        let reason = if truncated_for_model_budget {
+            // Preserve the fact that we truncated for the model budget even if we ultimately
+            // choose a file reference due to inline constraints.
+            PromptMaterializationReason::ModelBudgetExceeded
+        } else if matches!(
+            representation,
+            PromptInputRepresentation::FileReference { .. }
+        ) {
+            PromptMaterializationReason::InlineBudgetExceeded
+        } else {
+            PromptMaterializationReason::WithinBudgets
         };
 
         if truncated_for_model_budget {
@@ -196,7 +194,7 @@ impl MainEffectHandler {
             },
             PromptInputRepresentation::FileReference { path } => {
                 DiffContentReference::ReadFromFile {
-                    path: path.clone(),
+                    path: ctx.workspace.absolute(path),
                     start_commit: String::new(),
                     description: format!(
                         "Diff is {} bytes (exceeds {} limit)",

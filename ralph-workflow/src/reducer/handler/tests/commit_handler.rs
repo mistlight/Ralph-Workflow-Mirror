@@ -631,6 +631,7 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
 fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_referenced() {
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::{PromptInputRepresentation, PromptMaterializationReason};
+    use std::path::PathBuf;
 
     // Create diff that exceeds both model budget (claude: 300KB) and inline budget (~100KB).
     // Use many medium-sized lines so truncation still leaves a large payload.
@@ -704,10 +705,21 @@ fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_ref
             assert!(
                 matches!(
                     diff.reason,
-                    PromptMaterializationReason::InlineBudgetExceeded
+                    PromptMaterializationReason::ModelBudgetExceeded
                 ),
-                "reason should align with representation (file reference implies inline budget exceeded)"
+                "reason should reflect model truncation even when a file reference is used"
             );
+            if let PromptInputRepresentation::FileReference { path } = &diff.representation {
+                assert!(
+                    !path.is_absolute(),
+                    "file reference path should be workspace-relative (checkpoints must not store absolute paths)"
+                );
+                assert_eq!(
+                    path,
+                    &PathBuf::from(".agent/tmp/commit_diff.model_safe.txt"),
+                    "expected file reference to point at the model-safe diff artifact"
+                );
+            }
         }
         other => panic!("unexpected event: {other:?}"),
     }

@@ -46,6 +46,7 @@ impl MainEffectHandler {
         let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
         let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
 
+        let prompt_backup_path = Path::new(".agent/PROMPT.md.backup");
         let (prompt_representation, prompt_reason) = if prompt_md.len() as u64 > inline_budget_bytes
         {
             match crate::files::create_prompt_backup_with_workspace(ctx.workspace) {
@@ -64,11 +65,11 @@ impl MainEffectHandler {
                 "PROMPT size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (prompt_md.len() as u64) / 1024,
                 inline_budget_bytes / 1024,
-                ctx.workspace.prompt_backup().display()
+                ctx.workspace.absolute(prompt_backup_path).display()
             ));
             (
                 PromptInputRepresentation::FileReference {
-                    path: ctx.workspace.prompt_backup(),
+                    path: prompt_backup_path.to_path_buf(),
                 },
                 PromptMaterializationReason::InlineBudgetExceeded,
             )
@@ -79,16 +80,18 @@ impl MainEffectHandler {
             )
         };
 
-        let plan_abs = ctx.workspace.absolute(Path::new(".agent/PLAN.md"));
+        let plan_path = Path::new(".agent/PLAN.md");
         let (plan_representation, plan_reason) = if plan_md.len() as u64 > inline_budget_bytes {
             ctx.logger.warn(&format!(
                 "PLAN size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (plan_md.len() as u64) / 1024,
                 inline_budget_bytes / 1024,
-                plan_abs.display()
+                ctx.workspace.absolute(plan_path).display()
             ));
             (
-                PromptInputRepresentation::FileReference { path: plan_abs },
+                PromptInputRepresentation::FileReference {
+                    path: plan_path.to_path_buf(),
+                },
                 PromptMaterializationReason::InlineBudgetExceeded,
             )
         } else {
@@ -294,7 +297,7 @@ impl MainEffectHandler {
                             ),
                             PromptInputRepresentation::FileReference { path } => {
                                 PromptContentReference::file_path(
-                                    path.clone(),
+                                    ctx.workspace.absolute(path),
                                     "Original user requirements from PROMPT.md",
                                 )
                             }
@@ -305,7 +308,7 @@ impl MainEffectHandler {
                             ),
                             PromptInputRepresentation::FileReference { path } => {
                                 PlanContentReference::ReadFromFile {
-                                    primary_path: path.clone(),
+                                    primary_path: ctx.workspace.absolute(path),
                                     fallback_path: Some(
                                         ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
                                     ),
