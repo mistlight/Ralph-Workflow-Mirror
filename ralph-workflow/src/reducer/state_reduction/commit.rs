@@ -267,8 +267,11 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
     let new_xsd_count = state.continuation.xsd_retry_count + 1;
     let max_attempts = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS;
 
-    // Check if XSD retries are exhausted (global limit) or local attempts exhausted
-    if new_xsd_count >= state.continuation.max_xsd_retry_count || attempt >= max_attempts {
+    // Check if XSD retries are exhausted (configured limit) or global safety limit hit.
+    //
+    // NOTE: Commit XSD retries intentionally reuse the same commit attempt number so we
+    // can safely reuse attempt-scoped materialized inputs (diff, references, etc.).
+    if new_xsd_count >= state.continuation.max_xsd_retry_count || new_xsd_count >= max_attempts {
         // XSD retries exhausted - switch to next agent
         let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
 
@@ -320,7 +323,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
         // Set XSD retry pending - orchestration will trigger retry with same agent/session
         PipelineState {
             commit: CommitState::Generating {
-                attempt: attempt + 1,
+                attempt,
                 max_attempts,
             },
             commit_prompt_prepared: false,

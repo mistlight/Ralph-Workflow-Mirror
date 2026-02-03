@@ -125,11 +125,13 @@ fn test_commit_message_validation_failed_retries() {
         PipelineEvent::commit_message_validation_failed("Invalid format".to_string(), 1),
     );
 
-    // Should retry with incremented attempt
+    // Should retry with XSD retry pending, keeping attempt stable so attempt-scoped
+    // materialized inputs can be reused.
     assert!(matches!(
         new_state.commit,
-        CommitState::Generating { attempt: 2, .. }
+        CommitState::Generating { attempt: 1, .. }
     ));
+    assert!(new_state.continuation.xsd_retry_pending);
 }
 
 #[test]
@@ -137,6 +139,11 @@ fn test_commit_message_validation_failed_exhausts_attempts_with_more_agents() {
     // Setup: 3 commit agents available
     let base_state = create_test_state();
     let state = PipelineState {
+        continuation: ContinuationState {
+            xsd_retry_count: 0,
+            max_xsd_retry_count: 1,
+            ..ContinuationState::new()
+        },
         agent_chain: base_state.agent_chain.with_agents(
             vec![
                 "commit-agent-1".to_string(),
@@ -147,7 +154,7 @@ fn test_commit_message_validation_failed_exhausts_attempts_with_more_agents() {
             AgentRole::Commit,
         ),
         commit: CommitState::Generating {
-            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
+            attempt: 1,
             max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS,
         },
         ..base_state
@@ -155,18 +162,17 @@ fn test_commit_message_validation_failed_exhausts_attempts_with_more_agents() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::commit_message_validation_failed(
-            "Invalid format".to_string(),
-            MAX_VALIDATION_RETRY_ATTEMPTS,
-        ),
+        PipelineEvent::commit_message_validation_failed("Invalid format".to_string(), 1),
     );
 
-    // Should advance to next agent and reset to attempt 1
+    // With XSD retry budget exhausted, should advance to next agent and reset retry state.
     assert_eq!(new_state.agent_chain.current_agent_index, 1);
     assert!(matches!(
         new_state.commit,
         CommitState::Generating { attempt: 1, .. }
     ));
+    assert_eq!(new_state.continuation.xsd_retry_count, 0);
+    assert!(!new_state.continuation.xsd_retry_pending);
 }
 
 #[test]
@@ -193,6 +199,11 @@ fn test_commit_message_validation_failed_exhausts_all_agents() {
     // Setup: On last agent (index 2 of 3 agents)
     let base_state = create_test_state();
     let state = PipelineState {
+        continuation: ContinuationState {
+            xsd_retry_count: 0,
+            max_xsd_retry_count: 1,
+            ..ContinuationState::new()
+        },
         agent_chain: base_state
             .agent_chain
             .with_agents(
@@ -207,7 +218,7 @@ fn test_commit_message_validation_failed_exhausts_all_agents() {
             .switch_to_next_agent()
             .switch_to_next_agent(), // Move to last agent (index 2)
         commit: CommitState::Generating {
-            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
+            attempt: 1,
             max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS,
         },
         ..base_state
@@ -219,10 +230,7 @@ fn test_commit_message_validation_failed_exhausts_all_agents() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::commit_message_validation_failed(
-            "Invalid format".to_string(),
-            MAX_VALIDATION_RETRY_ATTEMPTS,
-        ),
+        PipelineEvent::commit_message_validation_failed("Invalid format".to_string(), 1),
     );
 
     // When we try to advance from last agent, switch_to_next_agent() wraps around:
@@ -240,13 +248,18 @@ fn test_commit_message_validation_failed_with_single_agent() {
     // Setup: Only 1 commit agent
     let base_state = create_test_state();
     let state = PipelineState {
+        continuation: ContinuationState {
+            xsd_retry_count: 0,
+            max_xsd_retry_count: 1,
+            ..ContinuationState::new()
+        },
         agent_chain: base_state.agent_chain.with_agents(
             vec!["commit-agent-1".to_string()],
             vec![vec![]],
             AgentRole::Commit,
         ),
         commit: CommitState::Generating {
-            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
+            attempt: 1,
             max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS,
         },
         ..base_state
@@ -254,10 +267,7 @@ fn test_commit_message_validation_failed_with_single_agent() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::commit_message_validation_failed(
-            "Invalid format".to_string(),
-            MAX_VALIDATION_RETRY_ATTEMPTS,
-        ),
+        PipelineEvent::commit_message_validation_failed("Invalid format".to_string(), 1),
     );
 
     // No more agents to fallback to - should give up
@@ -547,13 +557,18 @@ fn test_commit_agent_chain_fallback_works_with_reviewer_agents() {
     // all fallback behavior should still work correctly
     let base_state = create_test_state();
     let state = PipelineState {
+        continuation: ContinuationState {
+            xsd_retry_count: 0,
+            max_xsd_retry_count: 1,
+            ..ContinuationState::new()
+        },
         agent_chain: base_state.agent_chain.with_agents(
             vec!["reviewer1".to_string(), "reviewer2".to_string()],
             vec![vec![], vec![]],
             AgentRole::Commit, // Using Commit role with reviewer agents
         ),
         commit: CommitState::Generating {
-            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
+            attempt: 1,
             max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS,
         },
         ..base_state
@@ -566,10 +581,7 @@ fn test_commit_agent_chain_fallback_works_with_reviewer_agents() {
     // Exhaust first agent, should switch to second
     let new_state = reduce(
         state,
-        PipelineEvent::commit_message_validation_failed(
-            "Invalid format".to_string(),
-            MAX_VALIDATION_RETRY_ATTEMPTS,
-        ),
+        PipelineEvent::commit_message_validation_failed("Invalid format".to_string(), 1),
     );
 
     assert_eq!(new_state.agent_chain.current_agent_index, 1);
@@ -585,6 +597,11 @@ fn test_commit_agent_chain_empty_gives_up_immediately() {
     // the commit should transition to NotStarted
     let base_state = create_test_state();
     let state = PipelineState {
+        continuation: ContinuationState {
+            xsd_retry_count: 0,
+            max_xsd_retry_count: 1,
+            ..ContinuationState::new()
+        },
         agent_chain: base_state.agent_chain.with_agents(
             vec![], // Empty agent chain
             vec![],
@@ -601,10 +618,7 @@ fn test_commit_agent_chain_empty_gives_up_immediately() {
     // With empty chain, validation failure should give up
     let new_state = reduce(
         state,
-        PipelineEvent::commit_message_validation_failed(
-            "Invalid format".to_string(),
-            MAX_VALIDATION_RETRY_ATTEMPTS,
-        ),
+        PipelineEvent::commit_message_validation_failed("Invalid format".to_string(), 1),
     );
 
     // Should give up since no agents available

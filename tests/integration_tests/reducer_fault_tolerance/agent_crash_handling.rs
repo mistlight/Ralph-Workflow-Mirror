@@ -609,7 +609,7 @@ fn test_planning_xsd_retry_state_persistence() {
 #[test]
 fn test_commit_phase_uses_reviewer_chain_fallback() {
     use ralph_workflow::reducer::state::{
-        CommitState, PipelineState, MAX_VALIDATION_RETRY_ATTEMPTS,
+        CommitState, ContinuationState, PipelineState, MAX_VALIDATION_RETRY_ATTEMPTS,
     };
     use ralph_workflow::reducer::state_reduction::reduce;
 
@@ -617,23 +617,26 @@ fn test_commit_phase_uses_reviewer_chain_fallback() {
         // Set up state with reviewer agents in commit role (simulating fallback)
         let mut state = PipelineState::initial(1, 1);
         state.phase = PipelinePhase::CommitMessage;
+        // Force immediate exhaustion of XSD retry budget so we exercise agent fallback.
+        state.continuation = ContinuationState {
+            xsd_retry_count: 0,
+            max_xsd_retry_count: 1,
+            ..ContinuationState::new()
+        };
         state.agent_chain = state.agent_chain.with_agents(
             vec!["reviewer-claude".to_string(), "reviewer-codex".to_string()],
             vec![vec![], vec![]],
             AgentRole::Commit, // Commit role with reviewer agents
         );
         state.commit = CommitState::Generating {
-            attempt: MAX_VALIDATION_RETRY_ATTEMPTS,
+            attempt: 1,
             max_attempts: MAX_VALIDATION_RETRY_ATTEMPTS,
         };
 
         // Validation failure should still trigger proper fallback
         state = reduce(
             state,
-            PipelineEvent::commit_message_validation_failed(
-                "Invalid format".to_string(),
-                MAX_VALIDATION_RETRY_ATTEMPTS,
-            ),
+            PipelineEvent::commit_message_validation_failed("Invalid format".to_string(), 1),
         );
 
         // Should advance to next agent

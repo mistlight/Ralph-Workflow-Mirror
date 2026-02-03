@@ -166,13 +166,20 @@ impl MainEffectHandler {
             )));
         }
         let attempt = current_commit_attempt(&self.state.commit);
-        let inputs = self
+        let inputs = match self
             .state
             .prompt_inputs
             .commit
             .as_ref()
             .filter(|c| c.attempt == attempt)
-            .expect("commit inputs must be materialized before preparing prompt");
+        {
+            Some(inputs) => inputs,
+            None => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    format!("Commit inputs not materialized for attempt {attempt}"),
+                )));
+            }
+        };
 
         let model_safe_path = Path::new(".agent/tmp/commit_diff.model_safe.txt");
         let diff_for_prompt = match &inputs.diff.representation {

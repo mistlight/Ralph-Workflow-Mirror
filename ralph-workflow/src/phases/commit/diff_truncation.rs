@@ -102,8 +102,23 @@ fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
             "\n[Truncated: {} of {} files shown]\n",
             files_included, total_files
         );
-        if current_size + summary.len() <= max_size + 200 {
-            result.push_str(&summary);
+        if summary.len() <= max_size {
+            if result.len() + summary.len() <= max_size {
+                result.push_str(&summary);
+            } else {
+                let target_bytes = max_size.saturating_sub(summary.len());
+                if target_bytes < result.len() {
+                    let mut cut = 0usize;
+                    for (idx, _) in result.char_indices() {
+                        if idx > target_bytes {
+                            break;
+                        }
+                        cut = idx;
+                    }
+                    result.truncate(cut);
+                }
+                result.push_str(&summary);
+            }
         }
     }
 
@@ -157,4 +172,45 @@ fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod diff_truncation_tests {
+    use super::*;
+
+    #[test]
+    fn truncate_diff_to_model_budget_never_exceeds_max_size() {
+        let files_included = 1;
+        let total_files = 2;
+        let summary = format!(
+            "\n[Truncated: {} of {} files shown]\n",
+            files_included, total_files
+        );
+
+        let max_size = 1_000usize;
+
+        // Craft a diff where:
+        // - file 1 fits within max_size
+        // - file 2 does not fit, so a truncation summary is appended
+        // - file 1 content is sized so adding summary would exceed max_size
+        let file1_header = "diff --git a/src/a.rs b/src/a.rs";
+        let desired_file1_size = max_size - summary.len() + 1;
+        let filler_line_len = desired_file1_size.saturating_sub(file1_header.len() + 2);
+        let file1 = format!(
+            "{file1_header}\n+{}\n",
+            "x".repeat(filler_line_len.saturating_sub(1))
+        );
+
+        let file2 = "diff --git a/tests/b.rs b/tests/b.rs\n+small\n";
+        let diff = format!("{file1}{file2}");
+
+        let (truncated, was_truncated) = truncate_diff_to_model_budget(&diff, max_size as u64);
+        assert!(was_truncated, "expected truncation when diff exceeds max size");
+        assert!(
+            truncated.len() <= max_size,
+            "truncated diff must not exceed max_size (got {} > {})",
+            truncated.len(),
+            max_size
+        );
+    }
 }

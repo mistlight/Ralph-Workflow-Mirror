@@ -222,6 +222,38 @@ fn test_commit_message_validation_failed_sets_xsd_retry_pending() {
 }
 
 #[test]
+fn test_commit_message_validation_failed_does_not_advance_commit_attempt_on_xsd_retry() {
+    use crate::reducer::state::ContinuationState;
+
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        commit: CommitState::Generating {
+            attempt: 1,
+            max_attempts: 3,
+        },
+        continuation: ContinuationState::new(),
+        ..create_test_state()
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::commit_message_validation_failed("Invalid XML".to_string(), 1),
+    );
+
+    assert!(
+        new_state.continuation.xsd_retry_pending,
+        "XSD retry pending should be set"
+    );
+    match new_state.commit {
+        CommitState::Generating { attempt, .. } => assert_eq!(
+            attempt, 1,
+            "commit attempt should remain stable across XSD retries"
+        ),
+        other => panic!("expected CommitState::Generating, got: {other:?}"),
+    }
+}
+
+#[test]
 fn test_commit_xsd_retry_exhausted_switches_agent() {
     use crate::reducer::state::ContinuationState;
 

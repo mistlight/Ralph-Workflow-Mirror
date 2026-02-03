@@ -300,6 +300,87 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
 }
 
 #[test]
+fn test_prepare_commit_prompt_does_not_panic_when_materialized_attempt_mismatch() {
+    use crate::reducer::state::{
+        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
+        PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
+    };
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.commit = CommitState::Generating {
+        attempt: 2,
+        max_attempts: 2,
+    };
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["qwen".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+
+    // Materialized for attempt 1, but current attempt is 2 (mismatch).
+    handler.state.prompt_inputs = PromptInputsState {
+        commit: Some(MaterializedCommitInputs {
+            attempt: 1,
+            diff: MaterializedPromptInput {
+                kind: PromptInputKind::Diff,
+                content_id_sha256: "hash".to_string(),
+                consumer_signature_sha256: handler.state.agent_chain.consumer_signature_sha256(),
+                original_bytes: 1,
+                final_bytes: 1,
+                model_budget_bytes: Some(100_000),
+                inline_budget_bytes: Some(100_000),
+                representation: PromptInputRepresentation::Inline,
+                reason: PromptMaterializationReason::WithinBudgets,
+            },
+        }),
+        ..Default::default()
+    };
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        handler.prepare_commit_prompt(&mut ctx, PromptMode::XsdRetry)
+    }));
+    assert!(
+        result.is_ok(),
+        "prepare_commit_prompt should not panic when commit inputs are missing for the current attempt"
+    );
+}
+
+#[test]
 fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
     use crate::reducer::event::PromptInputEvent;
 
