@@ -165,6 +165,72 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_run_commit_attempt_logs_diff_truncated_when_model_safe_diff_contains_marker() {
+        let workspace = MemoryWorkspace::new_test().with_file(
+            xml_paths::COMMIT_MESSAGE_XML,
+            "<ralph-commit><ralph-subject>feat: x</ralph-subject></ralph-commit>",
+        );
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let template_context = TemplateContext::default();
+
+        let executor = Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+        );
+        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+
+        let repo_root = PathBuf::from("/mock/repo");
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "claude",
+            reviewer_agent: "claude",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: repo_root.as_path(),
+            workspace: &workspace,
+        };
+
+        let model_safe_diff =
+            "diff --git a/a b/a\n+change\n\n[Truncated: 1 of 2 files shown]\n";
+        let _ = run_commit_attempt(&mut ctx, 1, model_safe_diff, "claude")
+            .expect("run_commit_attempt should succeed");
+
+        let log_files = workspace.list_files_in_dir(".agent/logs/commit_generation");
+        let attempt_log_path = log_files
+            .iter()
+            .find(|p| {
+                let path = p.to_string_lossy();
+                path.ends_with(".log") && path.contains("attempt_") && path.contains("run_")
+            })
+            .expect("expected an attempt log file to be written")
+            .to_string_lossy()
+            .to_string();
+
+        let log_content = workspace
+            .get_file(&attempt_log_path)
+            .expect("attempt log should be readable");
+        assert!(
+            log_content.contains("Diff truncated: YES"),
+            "expected truncation marker in log, got:\n{log_content}"
+        );
+    }
+
     // Tests for effective_model_budget_bytes
     #[test]
     fn test_effective_budget_is_min_across_agents() {

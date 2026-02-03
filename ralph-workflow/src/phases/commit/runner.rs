@@ -81,9 +81,12 @@ pub fn run_commit_attempt(
         .unwrap_or_else(|_| CommitLogSession::noop());
     let mut attempt_log = session.new_attempt(commit_agent, "single");
     attempt_log.set_prompt_size(prompt.len());
-    // NOTE: Truncation info is now tracked at reducer state level (MaterializedPromptInput.reason).
-    // We pass false here since the diff has already been truncated by materialize_commit_inputs.
-    attempt_log.set_diff_info(model_safe_diff.len(), false);
+    // The diff passed here is already model-safe. However, for accurate debugging we still want
+    // to record whether truncation happened upstream. We infer truncation from the marker text
+    // emitted by `truncate_diff_to_model_budget`.
+    let diff_was_truncated =
+        model_safe_diff.contains("[Truncated:") || model_safe_diff.contains("[truncated...]");
+    attempt_log.set_diff_info(model_safe_diff.len(), diff_was_truncated);
 
     let agent_config = ctx
         .registry

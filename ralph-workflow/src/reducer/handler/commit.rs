@@ -255,6 +255,17 @@ impl MainEffectHandler {
                 }
             },
             PromptInputRepresentation::FileReference { path } => {
+                if !ctx.workspace.exists(path) {
+                    ctx.logger.warn(&format!(
+                        "Missing materialized commit diff reference at {}; invalidating commit inputs to rematerialize",
+                        ctx.workspace.absolute(path).display()
+                    ));
+                    // Recoverability: tmp artifacts may be cleaned between checkpoints.
+                    // The reducer state still has enough info to rerun materialization.
+                    return Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
+                        self.state.commit_diff_empty,
+                    )));
+                }
                 DiffContentReference::ReadFromFile {
                     path: ctx.workspace.absolute(path),
                     start_commit: String::new(),

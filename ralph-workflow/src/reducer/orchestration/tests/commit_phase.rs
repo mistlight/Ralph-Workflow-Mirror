@@ -42,6 +42,68 @@ fn test_determine_effect_commit_message_not_started() {
 }
 
 #[test]
+fn test_commit_phase_uses_xsd_retry_prompt_when_pending() {
+    // When XSD retry is pending, orchestration should select the XSD retry prompt mode
+    // instead of the normal prompt mode. This ensures we converge on valid XML quickly.
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        commit: CommitState::Generating {
+            attempt: 1,
+            max_attempts: 3,
+        },
+        commit_diff_prepared: true,
+        commit_diff_empty: false,
+        commit_prompt_prepared: false,
+        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
+        prompt_inputs: crate::reducer::state::PromptInputsState {
+            commit: Some(crate::reducer::state::MaterializedCommitInputs {
+                attempt: 1,
+                diff: crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Diff,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: PipelineState::initial(5, 2)
+                        .agent_chain
+                        .with_agents(
+                            vec!["commit-agent".to_string()],
+                            vec![vec![]],
+                            AgentRole::Commit,
+                        )
+                        .consumer_signature_sha256(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: Some(200_000),
+                    inline_budget_bytes: Some(100_000),
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                },
+            }),
+            ..Default::default()
+        },
+        continuation: crate::reducer::state::ContinuationState {
+            xsd_retry_pending: true,
+            ..crate::reducer::state::ContinuationState::default()
+        },
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            Effect::PrepareCommitPrompt {
+                prompt_mode: PromptMode::XsdRetry
+            }
+        ),
+        "Expected XSD retry prompt when xsd_retry_pending=true, got {:?}",
+        effect
+    );
+}
+
+#[test]
 fn test_determine_effect_commit_message_ignores_stale_validated_outcome() {
     // Stale outcome (attempt 1) should be ignored when current attempt is 2
     // Should proceed to prepare prompt instead of applying stale outcome

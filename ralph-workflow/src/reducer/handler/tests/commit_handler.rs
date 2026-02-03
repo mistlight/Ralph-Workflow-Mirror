@@ -1095,6 +1095,102 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
     );
 }
 
+#[test]
+fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_reference_missing() {
+    use crate::reducer::state::{
+        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
+        PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
+    };
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(
+            ".agent/tmp/commit_diff.txt",
+            "diff --git a/a b/a\n+change\n",
+        )
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.commit = CommitState::Generating {
+        attempt: 1,
+        max_attempts: 2,
+    };
+    handler.state.commit_diff_prepared = true;
+    handler.state.commit_diff_empty = false;
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["qwen".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+    let consumer_sig = handler.state.agent_chain.consumer_signature_sha256();
+    handler.state.prompt_inputs = PromptInputsState {
+        commit: Some(MaterializedCommitInputs {
+            attempt: 1,
+            diff: MaterializedPromptInput {
+                kind: PromptInputKind::Diff,
+                content_id_sha256: "hash".to_string(),
+                consumer_signature_sha256: consumer_sig,
+                original_bytes: 1,
+                final_bytes: 1,
+                model_budget_bytes: Some(100_000),
+                inline_budget_bytes: Some(1),
+                representation: PromptInputRepresentation::FileReference {
+                    path: std::path::PathBuf::from(".agent/tmp/commit_diff.model_safe.txt"),
+                },
+                reason: PromptMaterializationReason::InlineBudgetExceeded,
+            },
+        }),
+        ..Default::default()
+    };
+
+    // The file reference points at `.agent/tmp/commit_diff.model_safe.txt` but it doesn't exist.
+    // The handler should invalidate prompt_inputs.commit by emitting DiffPrepared, forcing
+    // rematerialization on the next orchestration loop.
+    let result = handler
+        .prepare_commit_prompt(&mut ctx, PromptMode::Normal)
+        .expect("prepare_commit_prompt should return an EffectResult");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared { empty: false })
+        ),
+        "Expected DiffPrepared event to invalidate materialized inputs when a diff file reference is missing, got {:?}",
+        result.event
+    );
+}
+
 /// Test that model budget is calculated as min across all agents in chain.
 ///
 /// When the agent chain contains [claude (300KB), qwen (100KB), default (200KB)],
