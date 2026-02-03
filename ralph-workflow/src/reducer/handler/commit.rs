@@ -103,23 +103,32 @@ impl MainEffectHandler {
             check_and_pre_truncate_diff(diff, &commit_agent, ctx.logger);
 
         let continuation_state = &self.state.continuation;
-        let (prompt_key, prompt, was_replayed) = match prompt_mode {
+        let (prompt_key, prompt, was_replayed, should_validate) = match prompt_mode {
             PromptMode::SameAgentRetry => {
-                // Same-agent retry for timeout/internal error: generate normal prompt with
-                // retry guidance prepended.
+                // Same-agent retry: prepend retry guidance to the last prepared prompt for this
+                // phase (preserves XSD retry context if present).
                 let retry_preamble =
                     super::retry_guidance::same_agent_retry_preamble(continuation_state);
-                let base_prompt = prompt_generate_commit_message_with_diff_with_context(
-                    ctx.template_context,
-                    &working_diff,
-                    ctx.workspace,
-                );
+                let (base_prompt, should_validate) = match ctx
+                    .workspace
+                    .read(Path::new(".agent/tmp/commit_prompt.txt"))
+                {
+                    Ok(previous_prompt) => (previous_prompt, false),
+                    Err(_) => (
+                        prompt_generate_commit_message_with_diff_with_context(
+                            ctx.template_context,
+                            &working_diff,
+                            ctx.workspace,
+                        ),
+                        true,
+                    ),
+                };
                 let prompt = format!("{retry_preamble}\n{base_prompt}");
                 let prompt_key = format!(
                     "commit_message_attempt_{attempt}_same_agent_retry_{}",
                     continuation_state.same_agent_retry_count
                 );
-                (prompt_key, prompt, false)
+                (prompt_key, prompt, false, should_validate)
             }
             PromptMode::XsdRetry => {
                 // XSD retry: use XML-only retry prompt and include the last XSD error.
@@ -135,7 +144,7 @@ impl MainEffectHandler {
                     &xsd_error,
                     ctx.workspace,
                 );
-                ("commit_xsd_retry".to_string(), prompt, false)
+                ("commit_xsd_retry".to_string(), prompt, false, true)
             }
             _ => {
                 // Normal (or Continuation rejected earlier)
@@ -148,22 +157,26 @@ impl MainEffectHandler {
                             ctx.workspace,
                         )
                     });
-                (prompt_key, prompt, was_replayed)
+                (prompt_key, prompt, was_replayed, true)
             }
         };
 
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-            &prompt,
-            &[diff],
-        ) {
-            return Ok(EffectResult::event(
-                PipelineEvent::agent_template_variables_invalid(
-                    AgentRole::Commit,
-                    "commit_message_xml".to_string(),
-                    Vec::new(),
-                    err.unresolved_placeholders,
-                ),
-            ));
+        if should_validate {
+            if let Err(err) =
+                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+                    &prompt,
+                    &[diff],
+                )
+            {
+                return Ok(EffectResult::event(
+                    PipelineEvent::agent_template_variables_invalid(
+                        AgentRole::Commit,
+                        "commit_message_xml".to_string(),
+                        Vec::new(),
+                        err.unresolved_placeholders,
+                    ),
+                ));
+            }
         }
 
         if !was_replayed {

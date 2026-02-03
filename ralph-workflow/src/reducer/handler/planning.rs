@@ -48,7 +48,7 @@ impl MainEffectHandler {
             ignore_sources.push(last_output.as_str());
         }
         let continuation_state = &self.state.continuation;
-        let (prompt, template_name, prompt_key, was_replayed) = match prompt_mode {
+        let (prompt, template_name, prompt_key, was_replayed, should_validate) = match prompt_mode {
             PromptMode::XsdRetry => {
                 (
                     prompt_planning_xsd_retry_with_context(
@@ -61,23 +61,35 @@ impl MainEffectHandler {
                     "planning_xsd_retry",
                     None,
                     false,
+                    true,
                 )
             }
             PromptMode::SameAgentRetry => {
-                // Same-agent retry for timeout/internal error: generate normal prompt with
-                // retry guidance prepended.
-                let retry_preamble = super::retry_guidance::same_agent_retry_preamble(continuation_state);
-                let base_prompt = prompt_planning_xml_with_context(
-                    ctx.template_context,
-                    Some(prompt_md_str),
-                    ctx.workspace,
-                );
+                // Same-agent retry: prepend retry guidance to the last prepared prompt for this
+                // phase (preserves XSD retry / continuation context if present).
+                let retry_preamble =
+                    super::retry_guidance::same_agent_retry_preamble(continuation_state);
+                let (base_prompt, should_validate) =
+                    match ctx.workspace.read(Path::new(PLANNING_PROMPT_PATH)) {
+                        Ok(previous_prompt) => (previous_prompt, false),
+                        Err(_) => (
+                            prompt_planning_xml_with_context(
+                        ctx.template_context,
+                        Some(prompt_md_str),
+                        ctx.workspace,
+                    ),
+                            true,
+                        ),
+                    };
                 let prompt = format!("{retry_preamble}\n{base_prompt}");
                 let prompt_key = format!(
                     "planning_{iteration}_same_agent_retry_{}",
                     continuation_state.same_agent_retry_count
                 );
-                (prompt, "planning_xml", Some(prompt_key), false)
+                // If we reused a previously prepared prompt, it was already validated at the time
+                // it was prepared. Re-validating can introduce false positives (e.g., XSD retry
+                // prompts include last output, which may contain literal placeholders).
+                (prompt, "planning_xml", Some(prompt_key), false, should_validate)
             }
             PromptMode::Normal => {
                 let prompt_key = format!("planning_{iteration}");
@@ -89,7 +101,7 @@ impl MainEffectHandler {
                             ctx.workspace,
                         )
                     });
-                (prompt, "planning_xml", Some(prompt_key), was_replayed)
+                (prompt, "planning_xml", Some(prompt_key), was_replayed, true)
             }
             PromptMode::Continuation => {
                 return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
@@ -97,18 +109,22 @@ impl MainEffectHandler {
                 )));
             }
         };
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-            &prompt,
-            &ignore_sources,
-        ) {
-            return Ok(EffectResult::event(
-                PipelineEvent::agent_template_variables_invalid(
-                    AgentRole::Developer,
-                    template_name.to_string(),
-                    Vec::new(),
-                    err.unresolved_placeholders,
-                ),
-            ));
+        if should_validate {
+            if let Err(err) =
+                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+                    &prompt,
+                    &ignore_sources,
+                )
+            {
+                return Ok(EffectResult::event(
+                    PipelineEvent::agent_template_variables_invalid(
+                        AgentRole::Developer,
+                        template_name.to_string(),
+                        Vec::new(),
+                        err.unresolved_placeholders,
+                    ),
+                ));
+            }
         }
 
         if let Some(prompt_key) = prompt_key {

@@ -47,7 +47,8 @@ impl MainEffectHandler {
         if is_xsd_retry {
             ignore_sources.push(last_output.as_str());
         }
-        let (prompt_key, fix_prompt, was_replayed, template_name) = match prompt_mode {
+        let (prompt_key, fix_prompt, was_replayed, template_name, should_validate) =
+            match prompt_mode {
             PromptMode::XsdRetry => {
                 let prompt_key = format!(
                     "fix_{pass}_xsd_retry_{}",
@@ -63,25 +64,35 @@ impl MainEffectHandler {
                             ctx.workspace,
                         )
                     });
-                (prompt_key, prompt, was_replayed, "fix_mode_xsd_retry")
+                (prompt_key, prompt, was_replayed, "fix_mode_xsd_retry", true)
             }
             PromptMode::SameAgentRetry => {
-                // Same-agent retry for timeout/internal error: generate normal prompt with
-                // retry guidance prepended.
-                let retry_preamble = crate::reducer::handler::retry_guidance::same_agent_retry_preamble(continuation_state);
-                let base_prompt = prompt_fix_xml_with_context(
-                    ctx.template_context,
-                    &prompt_content,
-                    &plan_content,
-                    &issues_content,
-                    &[],
-                );
+                // Same-agent retry: prepend retry guidance to the last prepared prompt for this
+                // phase (preserves XSD retry / continuation context if present).
+                let retry_preamble =
+                    crate::reducer::handler::retry_guidance::same_agent_retry_preamble(
+                        continuation_state,
+                    );
+                let (base_prompt, should_validate) =
+                    match ctx.workspace.read(Path::new(".agent/tmp/fix_prompt.txt")) {
+                        Ok(previous_prompt) => (previous_prompt, false),
+                        Err(_) => (
+                            prompt_fix_xml_with_context(
+                                ctx.template_context,
+                                &prompt_content,
+                                &plan_content,
+                                &issues_content,
+                                &[],
+                            ),
+                            true,
+                        ),
+                    };
                 let prompt = format!("{retry_preamble}\n{base_prompt}");
                 let prompt_key = format!(
                     "fix_{pass}_same_agent_retry_{}",
                     continuation_state.same_agent_retry_count
                 );
-                (prompt_key, prompt, false, "fix_mode_xml")
+                (prompt_key, prompt, false, "fix_mode_xml", should_validate)
             }
             PromptMode::Normal => {
                 let prompt_key = format!("fix_{pass}");
@@ -95,7 +106,7 @@ impl MainEffectHandler {
                             &[],
                         )
                     });
-                (prompt_key, prompt, was_replayed, "fix_mode_xml")
+                (prompt_key, prompt, was_replayed, "fix_mode_xml", true)
             }
             PromptMode::Continuation => {
                 return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
@@ -103,18 +114,22 @@ impl MainEffectHandler {
                 )));
             }
         };
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-            &fix_prompt,
-            &ignore_sources,
-        ) {
-            return Ok(EffectResult::event(
-                PipelineEvent::agent_template_variables_invalid(
-                    AgentRole::Reviewer,
-                    template_name.to_string(),
-                    Vec::new(),
-                    err.unresolved_placeholders,
-                ),
-            ));
+        if should_validate {
+            if let Err(err) =
+                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+                    &fix_prompt,
+                    &ignore_sources,
+                )
+            {
+                return Ok(EffectResult::event(
+                    PipelineEvent::agent_template_variables_invalid(
+                        AgentRole::Reviewer,
+                        template_name.to_string(),
+                        Vec::new(),
+                        err.unresolved_placeholders,
+                    ),
+                ));
+            }
         }
 
         if !was_replayed {

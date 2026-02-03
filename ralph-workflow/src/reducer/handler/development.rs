@@ -60,91 +60,114 @@ impl MainEffectHandler {
             vec![prompt_md.as_str(), plan_md.as_str()]
         };
 
-        let (dev_prompt, template_name, prompt_key, was_replayed) = match prompt_mode {
-            PromptMode::Continuation => {
-                let prompt_key = format!(
-                    "development_{}_continuation_{}",
-                    iteration, continuation_state.continuation_attempt
-                );
-                let (prompt, was_replayed) =
-                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        prompt_developer_iteration_continuation_xml(
-                            ctx.template_context,
-                            continuation_state,
-                        )
-                    });
-                (
-                    prompt,
-                    "developer_iteration_continuation_xml",
-                    Some(prompt_key),
-                    was_replayed,
-                )
-            }
-            PromptMode::XsdRetry => (
-                prompt_developer_iteration_xsd_retry_with_context(
-                    ctx.template_context,
-                    &prompt_md,
-                    &plan_md,
-                    &ctx.workspace
-                        .read(Path::new(DEVELOPMENT_XSD_ERROR_PATH))
-                        .unwrap_or_else(|_| {
-                            "XML output failed XSD validation. Provide valid XML output."
-                                .to_string()
-                        }),
-                    &last_output,
-                    ctx.workspace,
+        let (dev_prompt, template_name, prompt_key, was_replayed, should_validate) =
+            match prompt_mode {
+                PromptMode::Continuation => {
+                    let prompt_key = format!(
+                        "development_{}_continuation_{}",
+                        iteration, continuation_state.continuation_attempt
+                    );
+                    let (prompt, was_replayed) =
+                        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                            prompt_developer_iteration_continuation_xml(
+                                ctx.template_context,
+                                continuation_state,
+                            )
+                        });
+                    (
+                        prompt,
+                        "developer_iteration_continuation_xml",
+                        Some(prompt_key),
+                        was_replayed,
+                        true,
+                    )
+                }
+                PromptMode::XsdRetry => (
+                    prompt_developer_iteration_xsd_retry_with_context(
+                        ctx.template_context,
+                        &prompt_md,
+                        &plan_md,
+                        &ctx.workspace
+                            .read(Path::new(DEVELOPMENT_XSD_ERROR_PATH))
+                            .unwrap_or_else(|_| {
+                                "XML output failed XSD validation. Provide valid XML output."
+                                    .to_string()
+                            }),
+                        &last_output,
+                        ctx.workspace,
+                    ),
+                    "developer_iteration_xsd_retry",
+                    None,
+                    false,
+                    true,
                 ),
-                "developer_iteration_xsd_retry",
-                None,
-                false,
-            ),
-            PromptMode::SameAgentRetry => {
-                // Same-agent retry for timeout/internal error: generate normal prompt with
-                // retry guidance prepended.
-                let retry_preamble =
-                    super::retry_guidance::same_agent_retry_preamble(continuation_state);
-                let base_prompt = prompt_developer_iteration_xml_with_context(
-                    ctx.template_context,
-                    &prompt_md,
-                    &plan_md,
-                );
-                let prompt = format!("{retry_preamble}\n{base_prompt}");
-                let prompt_key = format!(
-                    "development_{}_same_agent_retry_{}",
-                    iteration, continuation_state.same_agent_retry_count
-                );
-                (prompt, "developer_iteration_xml", Some(prompt_key), false)
-            }
-            PromptMode::Normal => {
-                let prompt_key = format!("development_{}", iteration);
-                let (prompt, was_replayed) =
-                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        prompt_developer_iteration_xml_with_context(
-                            ctx.template_context,
-                            &prompt_md,
-                            &plan_md,
-                        )
-                    });
-                (
-                    prompt,
-                    "developer_iteration_xml",
-                    Some(prompt_key),
-                    was_replayed,
+                PromptMode::SameAgentRetry => {
+                    // Same-agent retry: prepend retry guidance to the last prepared prompt for this
+                    // phase (preserves XSD retry / continuation context if present).
+                    let retry_preamble =
+                        super::retry_guidance::same_agent_retry_preamble(continuation_state);
+                    let (base_prompt, should_validate) = match ctx
+                        .workspace
+                        .read(Path::new(".agent/tmp/development_prompt.txt"))
+                    {
+                        Ok(previous_prompt) => (previous_prompt, false),
+                        Err(_) => (
+                            prompt_developer_iteration_xml_with_context(
+                                ctx.template_context,
+                                &prompt_md,
+                                &plan_md,
+                            ),
+                            true,
+                        ),
+                    };
+                    let prompt = format!("{retry_preamble}\n{base_prompt}");
+                    let prompt_key = format!(
+                        "development_{}_same_agent_retry_{}",
+                        iteration, continuation_state.same_agent_retry_count
+                    );
+                    (
+                        prompt,
+                        "developer_iteration_xml",
+                        Some(prompt_key),
+                        false,
+                        should_validate,
+                    )
+                }
+                PromptMode::Normal => {
+                    let prompt_key = format!("development_{}", iteration);
+                    let (prompt, was_replayed) =
+                        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                            prompt_developer_iteration_xml_with_context(
+                                ctx.template_context,
+                                &prompt_md,
+                                &plan_md,
+                            )
+                        });
+                    (
+                        prompt,
+                        "developer_iteration_xml",
+                        Some(prompt_key),
+                        was_replayed,
+                        true,
+                    )
+                }
+            };
+        if should_validate {
+            if let Err(err) =
+                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+                    &dev_prompt,
+                    &ignore_sources,
                 )
+            {
+                return Ok(EffectResult::event(
+                    PipelineEvent::agent_template_variables_invalid(
+                        AgentRole::Developer,
+                        template_name.to_string(),
+                        Vec::new(),
+                        err.unresolved_placeholders,
+                    ),
+                ));
             }
-        };
-        if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
-            &dev_prompt,
-            &ignore_sources,
-        ) {
-            return Ok(EffectResult::event(
-                PipelineEvent::agent_template_variables_invalid(
-                    AgentRole::Developer,
-                    template_name.to_string(),
-                    Vec::new(),
-                    err.unresolved_placeholders,
-                ),
-            ));
         }
 
         if let Some(prompt_key) = prompt_key {
