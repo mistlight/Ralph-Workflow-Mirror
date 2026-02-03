@@ -11,7 +11,7 @@ use super::helpers::create_state_with_agent_chain_in_development;
 fn test_agent_sigsegv_caught_by_fault_tolerant_executor() {
     with_default_timeout(|| {
         let state = PipelineState {
-            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain_in_development()
         };
 
@@ -58,7 +58,7 @@ fn test_agent_sigsegv_caught_by_fault_tolerant_executor() {
 fn test_agent_panic_caught_by_fault_tolerant_executor() {
     with_default_timeout(|| {
         let state = PipelineState {
-            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain_in_development()
         };
 
@@ -253,7 +253,7 @@ fn test_retry_cycle_backoff_is_explicit_effect() {
 fn test_pipeline_continues_after_agent_sigsegv() {
     with_default_timeout(|| {
         let state = PipelineState {
-            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain_in_development()
         };
         let initial_agent_index = state.agent_chain.current_agent_index;

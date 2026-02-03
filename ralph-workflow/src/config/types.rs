@@ -252,6 +252,12 @@ pub struct Config {
     /// Higher values allow more attempts to fix XML formatting before agent fallback.
     /// Default: 10 (10 retries before falling back to next agent).
     pub max_xsd_retries: Option<u32>,
+    /// Maximum same-agent retry attempts for transient invocation failures (timeout/internal).
+    ///
+    /// After this many retries, the reducer falls back to the next agent.
+    ///
+    /// Default: 2.
+    pub max_same_agent_retries: Option<u32>,
 }
 
 impl Config {
@@ -310,6 +316,7 @@ impl Config {
             review_format_retries: 5,
             max_dev_continuations: Some(2),
             max_xsd_retries: Some(10),
+            max_same_agent_retries: Some(2),
         }
     }
 

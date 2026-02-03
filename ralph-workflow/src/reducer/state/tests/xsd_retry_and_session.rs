@@ -16,9 +16,9 @@
 
     #[test]
     fn test_continuation_state_with_limits() {
-        let state = ContinuationState::with_limits(5, 2);
+        let state = ContinuationState::with_limits(5, 2, 7);
         assert_eq!(state.max_xsd_retry_count, 5);
-        assert_eq!(state.max_same_agent_retry_count, 2);
+        assert_eq!(state.max_same_agent_retry_count, 7);
         assert_eq!(state.max_continue_count, 2);
         assert!(!state.is_continuation());
     }
@@ -33,7 +33,7 @@
 
     #[test]
     fn test_continuation_reset_preserves_limits() {
-        let state = ContinuationState::with_limits(5, 2)
+        let state = ContinuationState::with_limits(5, 2, 7)
             .trigger_xsd_retry()
             .trigger_xsd_retry()
             .trigger_same_agent_retry(SameAgentRetryReason::Timeout);
@@ -44,7 +44,7 @@
         assert_eq!(reset.xsd_retry_count, 0);
         assert_eq!(reset.same_agent_retry_count, 0);
         assert_eq!(reset.max_xsd_retry_count, 5);
-        assert_eq!(reset.max_same_agent_retry_count, 2);
+        assert_eq!(reset.max_same_agent_retry_count, 7);
         assert_eq!(reset.max_continue_count, 2);
     }
 
@@ -82,7 +82,7 @@
 
     #[test]
     fn test_xsd_retries_exhausted() {
-        let state = ContinuationState::with_limits(2, 3);
+        let state = ContinuationState::with_limits(2, 3, 2);
         assert!(!state.xsd_retries_exhausted());
 
         let state = state.trigger_xsd_retry();
@@ -131,7 +131,7 @@
 
     #[test]
     fn test_continuations_exhausted() {
-        let state = ContinuationState::with_limits(10, 2);
+        let state = ContinuationState::with_limits(10, 2, 2);
         assert!(!state.continuations_exhausted());
 
         let state =
@@ -151,7 +151,7 @@
     fn test_continuations_exhausted_semantics() {
         // Test the documented semantics: max_continue_count=3 means 3 total attempts
         // Attempts 0, 1, 2 are allowed; attempt 3+ triggers exhaustion
-        let state = ContinuationState::with_limits(10, 3);
+        let state = ContinuationState::with_limits(10, 3, 2);
         assert_eq!(state.continuation_attempt, 0);
         assert!(
             !state.continuations_exhausted(),
@@ -186,7 +186,7 @@
     #[test]
     fn test_xsd_retries_exhausted_with_zero_max() {
         // max_xsd_retry_count=0 means XSD retries are disabled (immediate agent fallback)
-        let state = ContinuationState::with_limits(10, 3).with_max_xsd_retry(0);
+        let state = ContinuationState::with_limits(10, 3, 2).with_max_xsd_retry(0);
         assert!(
             state.xsd_retries_exhausted(),
             "0 max retries should be immediately exhausted"

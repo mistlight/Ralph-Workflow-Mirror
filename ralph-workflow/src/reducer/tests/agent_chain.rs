@@ -530,7 +530,7 @@ fn test_timed_out_retries_same_agent_before_fallback() {
     // - Second timeout falls back to next agent
     let base_state = create_test_state();
     let state = PipelineState {
-        continuation: crate::reducer::state::ContinuationState::with_limits(2, 3),
+        continuation: crate::reducer::state::ContinuationState::with_limits(2, 3, 2),
         agent_chain: base_state.agent_chain.with_agents(
             vec!["agent-a".to_string(), "agent-b".to_string()],
             vec![
@@ -601,7 +601,7 @@ fn test_internal_error_retries_same_agent_before_fallback_without_xsd_retry() {
 
     let base_state = create_test_state();
     let state = PipelineState {
-        continuation: crate::reducer::state::ContinuationState::with_limits(2, 3),
+        continuation: crate::reducer::state::ContinuationState::with_limits(2, 3, 2),
         agent_chain: base_state.agent_chain.with_agents(
             vec!["agent-a".to_string(), "agent-b".to_string()],
             vec![vec![], vec![]],
@@ -689,7 +689,7 @@ fn test_timed_out_from_last_agent_increments_retry_cycle_when_budget_exhausted()
     // - Falling back from last agent => wrap to first agent and increment retry_cycle
     let base_state = create_test_state();
     let state = PipelineState {
-        continuation: crate::reducer::state::ContinuationState::with_limits(1, 3)
+        continuation: crate::reducer::state::ContinuationState::with_limits(1, 3, 2)
             .with_max_same_agent_retry(2), // 2 same-agent retries allowed (so 3rd timeout triggers fallback)
         agent_chain: base_state
             .agent_chain

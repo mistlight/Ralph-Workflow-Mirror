@@ -11,6 +11,8 @@ use crate::workspace::Workspace;
 use anyhow::Result;
 use std::path::Path;
 
+const DEVELOPMENT_XSD_ERROR_PATH: &str = ".agent/tmp/development_xsd_error.txt";
+
 impl MainEffectHandler {
     pub(super) fn prepare_development_context(
         &mut self,
@@ -44,7 +46,19 @@ impl MainEffectHandler {
             .workspace
             .read(Path::new(".agent/PLAN.md"))
             .unwrap_or_default();
-        let ignore_sources = [prompt_md.as_str(), plan_md.as_str()];
+        let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
+        let last_output = if is_xsd_retry {
+            ctx.workspace
+                .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let ignore_sources = if is_xsd_retry {
+            vec![prompt_md.as_str(), plan_md.as_str(), last_output.as_str()]
+        } else {
+            vec![prompt_md.as_str(), plan_md.as_str()]
+        };
 
         let (dev_prompt, template_name, prompt_key, was_replayed) = match prompt_mode {
             PromptMode::Continuation => {
@@ -71,8 +85,13 @@ impl MainEffectHandler {
                     ctx.template_context,
                     &prompt_md,
                     &plan_md,
-                    "XML output failed validation. Provide valid XML output.",
-                    "",
+                    &ctx.workspace
+                        .read(Path::new(DEVELOPMENT_XSD_ERROR_PATH))
+                        .unwrap_or_else(|_| {
+                            "XML output failed XSD validation. Provide valid XML output."
+                                .to_string()
+                        }),
+                    &last_output,
                     ctx.workspace,
                 ),
                 "developer_iteration_xsd_retry",
@@ -257,6 +276,9 @@ impl MainEffectHandler {
 
         match validate_development_result_xml(&xml) {
             Ok(elements) => {
+                let _ = ctx
+                    .workspace
+                    .remove_if_exists(Path::new(DEVELOPMENT_XSD_ERROR_PATH));
                 let status = if elements.is_completed() {
                     crate::reducer::state::DevelopmentStatus::Completed
                 } else if elements.is_partial() {
@@ -280,12 +302,18 @@ impl MainEffectHandler {
                     ),
                 ))
             }
-            Err(_) => Ok(EffectResult::event(
-                PipelineEvent::development_output_validation_failed(
-                    iteration,
-                    self.state.continuation.invalid_output_attempts,
-                ),
-            )),
+            Err(err) => {
+                let _ = ctx.workspace.write(
+                    Path::new(DEVELOPMENT_XSD_ERROR_PATH),
+                    &err.format_for_ai_retry(),
+                );
+                Ok(EffectResult::event(
+                    PipelineEvent::development_output_validation_failed(
+                        iteration,
+                        self.state.continuation.invalid_output_attempts,
+                    ),
+                ))
+            }
         }
     }
 

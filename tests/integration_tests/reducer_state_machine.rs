@@ -309,7 +309,7 @@ fn test_agent_chain_exhausted_triggers_retry_cycle() {
 fn test_sigsegv_causes_agent_fallback() {
     with_default_timeout(|| {
         let state = PipelineState {
-            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain()
         };
         let initial_agent_index = state.agent_chain.current_agent_index;
@@ -496,7 +496,7 @@ fn test_authentication_error_triggers_agent_fallback() {
 fn test_internal_error_triggers_agent_fallback() {
     with_default_timeout(|| {
         let state = PipelineState {
-            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain()
         };
         let initial_agent_index = state.agent_chain.current_agent_index;

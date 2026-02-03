@@ -107,6 +107,56 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
         );
 }
 
+#[test]
+fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::{Stats, Timer};
+    use crate::prompts::template_context::TemplateContext;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    let mut config = Config::default();
+    config.max_same_agent_retries = Some(5);
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+
+    let ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "test-developer",
+        reviewer_agent: "test-reviewer",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+    };
+
+    let state = super::create_initial_state_with_config(&ctx);
+    assert_eq!(state.continuation.max_same_agent_retry_count, 5);
+}
+
 /// TDD test: run_event_loop_with_handler should accept a generic EffectHandler
 /// allowing MockEffectHandler to be injected for testing.
 #[cfg(feature = "test-utils")]

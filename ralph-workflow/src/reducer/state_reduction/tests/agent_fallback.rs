@@ -395,7 +395,7 @@ fn test_timeout_retries_same_agent_until_retry_budget_exhausted() {
             vec![vec![], vec![]],
             AgentRole::Developer,
         ),
-        continuation: ContinuationState::with_limits(2, 3),
+        continuation: ContinuationState::with_limits(2, 3, 2),
         ..base_state
     };
 
@@ -474,7 +474,7 @@ fn test_internal_error_retries_same_agent_until_retry_budget_exhausted() {
             vec![vec![], vec![]],
             AgentRole::Developer,
         ),
-        continuation: ContinuationState::with_limits(2, 3),
+        continuation: ContinuationState::with_limits(2, 3, 2),
         ..base_state
     };
 

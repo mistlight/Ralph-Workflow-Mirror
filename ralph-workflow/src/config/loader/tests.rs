@@ -73,6 +73,7 @@ fn test_default_config() {
     assert!(config.behavior.interactive);
     assert!(config.isolation_mode);
     assert_eq!(config.verbosity, Verbosity::Verbose);
+    assert_eq!(config.max_same_agent_retries, Some(2));
 }
 
 #[test]
@@ -167,6 +168,34 @@ max_xsd_retries = 0
     assert!(
         !warnings.iter().any(|w| w.contains("max_xsd_retries")),
         "Should not warn about max_xsd_retries=0, got: {:?}",
+        warnings
+    );
+}
+
+#[test]
+#[serial]
+fn test_max_same_agent_retries_zero_is_valid() {
+    // max_same_agent_retries=0 is valid and means "disable same-agent retries"
+    let toml_str = r#"
+[general]
+verbosity = 4
+developer_iters = 8
+review_depth = "standard"
+max_same_agent_retries = 0
+"#;
+
+    let env = MemoryConfigEnvironment::new()
+        .with_unified_config_path("/test/config/ralph-workflow.toml")
+        .with_file("/test/config/ralph-workflow.toml", toml_str);
+
+    let (config, _unified, warnings) = load_config_from_path_with_env(None, &env);
+
+    assert_eq!(config.max_same_agent_retries, Some(0));
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w.contains("max_same_agent_retries")),
+        "Should not warn about max_same_agent_retries=0, got: {:?}",
         warnings
     );
 }

@@ -174,9 +174,14 @@ impl ContinuationState {
     }
 
     /// Create continuation state with custom limits (for config loading).
-    pub fn with_limits(max_xsd_retry_count: u32, max_continue_count: u32) -> Self {
+    pub fn with_limits(
+        max_xsd_retry_count: u32,
+        max_continue_count: u32,
+        max_same_agent_retry_count: u32,
+    ) -> Self {
         Self {
             max_xsd_retry_count,
+            max_same_agent_retry_count,
             max_continue_count,
             max_fix_continue_count: max_continue_count,
             ..Self::default()

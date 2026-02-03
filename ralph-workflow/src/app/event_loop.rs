@@ -29,6 +29,7 @@ fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
     let continuation = ContinuationState::with_limits(
         ctx.config.max_xsd_retries.unwrap_or(10),
         max_continue_count,
+        ctx.config.max_same_agent_retries.unwrap_or(2),
     );
     PipelineState::initial_with_continuation(
         ctx.config.developer_iters,

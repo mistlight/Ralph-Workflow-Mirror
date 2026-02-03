@@ -262,7 +262,7 @@ fn test_timeout_triggers_agent_fallback_not_model_fallback() {
         use ralph_workflow::reducer::state::ContinuationState;
 
         let state = PipelineState {
-            continuation: ContinuationState::with_limits(2, 3),
+            continuation: ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain_in_development()
         };
         let initial_agent_index = state.agent_chain.current_agent_index;
@@ -336,7 +336,7 @@ fn test_timeout_fallback_clears_session_id() {
             context_cleaned: false,
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
-            continuation: ContinuationState::with_limits(2, 3),
+            continuation: ContinuationState::with_limits(2, 3, 2),
             checkpoint_saved_count: 0,
             execution_history: Vec::new(),
             ..PipelineState::initial(5, 2)
@@ -365,7 +365,7 @@ fn test_timeout_followed_by_successful_retry_with_different_agent() {
         use ralph_workflow::reducer::state::ContinuationState;
 
         let mut state = PipelineState {
-            continuation: ContinuationState::with_limits(2, 3),
+            continuation: ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain_in_development()
         };
 
@@ -429,7 +429,7 @@ fn test_multiple_timeouts_cycle_through_agents() {
         use ralph_workflow::reducer::state::ContinuationState;
 
         let mut state = PipelineState {
-            continuation: ContinuationState::with_limits(2, 3),
+            continuation: ContinuationState::with_limits(2, 3, 2),
             ..create_state_with_agent_chain_in_development()
         };
 

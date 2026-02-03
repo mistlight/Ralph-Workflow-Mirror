@@ -219,6 +219,7 @@ impl PipelineState {
     /// let continuation = ContinuationState::with_limits(
     ///     config.general.max_xsd_retries,
     ///     config.general.max_dev_continuations,
+    ///     config.general.max_same_agent_retries,
     /// );
     /// let state = PipelineState::initial_with_continuation(dev_iters, reviews, continuation);
     /// ```

@@ -302,3 +302,85 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
         "prepare commit prompt should not emit commit_generation_started"
     );
 }
+
+#[test]
+fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_dir(".agent/tmp")
+        .with_file(
+            ".agent/tmp/commit_message.xml",
+            "<ralph-commit><ralph-subject>feat: bad</ralph-subject>",
+        )
+        .with_file(
+            ".agent/tmp/commit_xsd_error.txt",
+            "XSD validation failed: MISSING REQUIRED ELEMENT",
+        );
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+
+    let result = handler
+        .prepare_commit_prompt_with_diff_and_mode(
+            &mut ctx,
+            "diff --git a/a b/a\n+change\n",
+            crate::reducer::state::PromptMode::XsdRetry,
+        )
+        .expect("prepare_commit_prompt_with_diff_and_mode should succeed");
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Commit(crate::reducer::event::CommitEvent::PromptPrepared { attempt: 1 })
+    ));
+
+    let prompt = workspace
+        .read(std::path::Path::new(".agent/tmp/commit_prompt.txt"))
+        .expect("commit_prompt.txt should be written");
+    assert!(
+        prompt.contains("XSD VALIDATION FAILED - FIX XML ONLY"),
+        "Expected commit_xsd_retry prompt template, got: {prompt}"
+    );
+    assert!(
+        prompt.contains("MISSING REQUIRED ELEMENT"),
+        "Expected XSD error to be included in retry prompt, got: {prompt}"
+    );
+    assert!(
+        !prompt.contains("diff --git"),
+        "XSD retry prompt should not include diff content, got: {prompt}"
+    );
+}

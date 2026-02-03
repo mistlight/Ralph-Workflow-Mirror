@@ -6,7 +6,8 @@ use crate::files::llm_output_extraction::try_extract_xml_commit_with_trace;
 use crate::phases::commit::check_and_pre_truncate_diff;
 use crate::phases::PhaseContext;
 use crate::prompts::{
-    get_stored_or_generate_prompt, prompt_generate_commit_message_with_diff_with_context,
+    get_stored_or_generate_prompt, prompt_commit_xsd_retry_with_context,
+    prompt_generate_commit_message_with_diff_with_context,
 };
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::AgentEvent;
@@ -16,6 +17,8 @@ use crate::reducer::state::PromptMode;
 use crate::reducer::ui_event::{UIEvent, XmlOutputType};
 use anyhow::Result;
 use std::path::Path;
+
+const COMMIT_XSD_ERROR_PATH: &str = ".agent/tmp/commit_xsd_error.txt";
 
 fn current_commit_attempt(commit: &CommitState) -> u32 {
     match commit {
@@ -118,8 +121,24 @@ impl MainEffectHandler {
                 );
                 (prompt_key, prompt, false)
             }
+            PromptMode::XsdRetry => {
+                // XSD retry: use XML-only retry prompt and include the last XSD error.
+                // Do not use cached prompts here: the error context can change between retries.
+                let xsd_error = ctx
+                    .workspace
+                    .read(Path::new(COMMIT_XSD_ERROR_PATH))
+                    .unwrap_or_else(|_| {
+                        "XSD validation failed. Provide valid XML output.".to_string()
+                    });
+                let prompt = prompt_commit_xsd_retry_with_context(
+                    ctx.template_context,
+                    &xsd_error,
+                    ctx.workspace,
+                );
+                ("commit_xsd_retry".to_string(), prompt, false)
+            }
             _ => {
-                // Normal, XsdRetry (handled by XSD retry mechanism), or Continuation (rejected earlier)
+                // Normal (or Continuation rejected earlier)
                 let prompt_key = format!("commit_message_attempt_{attempt}");
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
@@ -252,6 +271,16 @@ impl MainEffectHandler {
         };
 
         let (message, detail) = try_extract_xml_commit_with_trace(&xml_content);
+        if message.is_none() {
+            // Persist XSD error context for the XSD retry prompt.
+            let _ = ctx
+                .workspace
+                .write(Path::new(COMMIT_XSD_ERROR_PATH), &detail);
+        } else {
+            let _ = ctx
+                .workspace
+                .remove_if_exists(Path::new(COMMIT_XSD_ERROR_PATH));
+        }
         let event = match message {
             Some(msg) => PipelineEvent::commit_xml_validated(msg, attempt),
             None => PipelineEvent::commit_xml_validation_failed(detail, attempt),

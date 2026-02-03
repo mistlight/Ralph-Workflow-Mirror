@@ -8,6 +8,9 @@ use crate::prompts::template_engine::Template;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
 
+const COMMIT_MESSAGE_XSD_SCHEMA: &str =
+    include_str!("../files/llm_output_extraction/commit_message.xsd");
+
 #[cfg(any(test, feature = "test-utils"))]
 use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
 #[cfg(any(test, feature = "test-utils"))]
@@ -262,6 +265,16 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
     diff: &str,
     workspace: &dyn Workspace,
 ) -> String {
+    // Ensure the commit XSD schema is available on disk for agents to reference.
+    // In production this is also written during app bootstrap, but tests and some
+    // entrypoints may call prompt generation directly.
+    let tmp_dir = std::path::Path::new(".agent/tmp");
+    let _ = workspace.create_dir_all(tmp_dir);
+    let _ = workspace.write(
+        &tmp_dir.join("commit_message.xsd"),
+        COMMIT_MESSAGE_XSD_SCHEMA,
+    );
+
     // Check if diff is empty or whitespace-only
     let diff_content = diff.trim();
     let has_changes = !diff_content.is_empty();
@@ -300,6 +313,51 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
              Output format: <ralph-commit><ralph-subject>type: description</ralph-subject></ralph-commit>"
         )
     })
+}
+
+/// Generate XSD validation retry prompt for commit message XML.
+///
+/// This prompt is used when a commit message XML output fails XSD validation.
+/// The agent should read the XSD schema and the previous output from
+/// `.agent/tmp/commit_message.xsd` and `.agent/tmp/commit_message.xml`.
+pub fn prompt_commit_xsd_retry_with_context(
+    context: &TemplateContext,
+    xsd_error: &str,
+    workspace: &dyn Workspace,
+) -> String {
+    // Ensure the schema file is present.
+    let tmp_dir = std::path::Path::new(".agent/tmp");
+    let _ = workspace.create_dir_all(tmp_dir);
+    let _ = workspace.write(
+        &tmp_dir.join("commit_message.xsd"),
+        COMMIT_MESSAGE_XSD_SCHEMA,
+    );
+
+    let partials = get_shared_partials();
+    let template_content = context
+        .registry()
+        .get_template("commit_xsd_retry")
+        .unwrap_or_else(|_| include_str!("templates/commit_xsd_retry.txt").to_string());
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "COMMIT_MESSAGE_XML_PATH",
+            workspace.absolute_str(".agent/tmp/commit_message.xml"),
+        ),
+        (
+            "COMMIT_MESSAGE_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
+        ),
+    ]);
+    Template::new(&template_content)
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
+            format!(
+                "Your commit message XML failed XSD validation.\n\nError: {xsd_error}\n\n\
+                 Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/commit_message.xml for your previous output.\n\
+                 Please resend a valid <ralph-commit> XML at .agent/tmp/commit_message.xml.\n"
+            )
+        })
 }
 
 #[cfg(test)]

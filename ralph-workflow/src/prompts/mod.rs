@@ -65,6 +65,7 @@ pub use prompt_dispatch::prompt_for_agent;
 pub use resume_note::{generate_resume_note, BriefDescription};
 
 // Re-export public items for API convenience
+pub use commit::prompt_commit_xsd_retry_with_context;
 #[cfg(any(test, feature = "test-utils"))]
 pub use commit::prompt_fix_with_context;
 pub use commit::prompt_generate_commit_message_with_diff_with_context;

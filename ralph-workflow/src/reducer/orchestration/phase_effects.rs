@@ -326,11 +326,11 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             }
             match state.commit {
                 CommitState::NotStarted | CommitState::Generating { .. } => {
+                    let current_attempt = match state.commit {
+                        CommitState::Generating { attempt, .. } => attempt,
+                        _ => 1,
+                    };
                     if let Some(outcome) = state.commit_validated_outcome.as_ref() {
-                        let current_attempt = match state.commit {
-                            CommitState::Generating { attempt, .. } => attempt,
-                            _ => 1,
-                        };
                         if outcome.attempt == current_attempt && state.commit_xml_extracted {
                             return Effect::ApplyCommitMessageOutcome;
                         }
@@ -348,7 +348,10 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                             prompt_mode: PromptMode::Normal,
                         };
                     }
-                    if !state.commit_xml_cleaned {
+                    // IMPORTANT: For commit XSD retries, the agent must be able to read the
+                    // previous invalid output at `.agent/tmp/commit_message.xml` before overwriting
+                    // it (see commit_xsd_retry prompt). Therefore, skip cleanup on retry attempts.
+                    if current_attempt == 1 && !state.commit_xml_cleaned {
                         return Effect::CleanupCommitXml;
                     }
                     if !state.commit_agent_invoked {

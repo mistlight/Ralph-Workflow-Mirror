@@ -157,6 +157,13 @@ pub struct GeneralConfig {
     /// Default: 10 retries before falling back to the next agent.
     #[serde(default = "default_max_xsd_retries")]
     pub max_xsd_retries: u32,
+    /// Maximum same-agent retry attempts for transient invocation failures (timeout/internal).
+    ///
+    /// After this many retries, the reducer falls back to the next agent.
+    ///
+    /// Default: 2.
+    #[serde(default = "default_max_same_agent_retries")]
+    pub max_same_agent_retries: u32,
 }
 
 /// Default maximum continuation attempts per development iteration.
@@ -172,6 +179,10 @@ fn default_max_dev_continuations() -> u32 {
 /// This allows 10 retries to fix XML formatting issues before switching agents.
 fn default_max_xsd_retries() -> u32 {
     10
+}
+
+fn default_max_same_agent_retries() -> u32 {
+    2
 }
 
 impl Default for GeneralConfig {
@@ -201,6 +212,7 @@ impl Default for GeneralConfig {
             git_user_email: None,
             max_dev_continuations: default_max_dev_continuations(),
             max_xsd_retries: default_max_xsd_retries(),
+            max_same_agent_retries: default_max_same_agent_retries(),
         }
     }
 }

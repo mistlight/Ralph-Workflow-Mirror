@@ -126,6 +126,9 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
     // max_xsd_retries of 0 is valid and means "disable XSD retries" (immediate agent fallback).
     // Any non-negative value is accepted; max_xsd_retries comes from a u32 so can't be negative.
     let max_xsd_retries = general.max_xsd_retries;
+    // max_same_agent_retries of 0 is valid and means "disable same-agent retries"
+    // (immediate fallback to next agent on timeout/internal error).
+    let max_same_agent_retries = general.max_same_agent_retries;
 
     let review_depth = ReviewDepth::from_str(&general.review_depth).unwrap_or_else(|| {
         warnings.push(format!(
@@ -175,6 +178,7 @@ fn config_from_unified(unified: &UnifiedConfig, warnings: &mut Vec<String>) -> C
         review_format_retries: 5,      // Default to 5 retries for format correction
         max_dev_continuations: Some(max_dev_continuations),
         max_xsd_retries: Some(max_xsd_retries),
+        max_same_agent_retries: Some(max_same_agent_retries),
     }
 }
 
@@ -219,6 +223,7 @@ fn default_config() -> Config {
         review_format_retries: 5,
         max_dev_continuations: Some(2), // Default to 2 (initial + 1 continuation)
         max_xsd_retries: Some(10),      // Default to 10 retries before agent fallback
+        max_same_agent_retries: Some(2), // Default to 2 retries before agent fallback
     }
 }
 
