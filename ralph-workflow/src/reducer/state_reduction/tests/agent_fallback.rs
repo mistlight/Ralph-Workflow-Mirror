@@ -383,6 +383,109 @@ fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
 }
 
 #[test]
+fn test_timeout_clears_rate_limit_continuation_prompt_during_same_agent_retry_and_fallback() {
+    // Regression: if a prior 429 stored a continuation prompt, subsequent non-rate-limit failures
+    // (like timeouts) must NOT preserve that prompt context. It should be cleared immediately,
+    // even while retrying the same agent, and must not leak into the next agent after budget
+    // exhaustion.
+    let base_state = create_test_state();
+    let mut chain = AgentChainState::initial().with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![vec![], vec![]],
+        AgentRole::Developer,
+    );
+    chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        agent_chain: chain,
+        continuation: ContinuationState::with_limits(2, 3, 2),
+        ..base_state
+    };
+
+    let after_first_timeout = reduce(
+        state,
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+    );
+    assert!(
+        after_first_timeout
+            .agent_chain
+            .rate_limit_continuation_prompt
+            .is_none(),
+        "Timeout retry must clear rate-limit continuation prompt context"
+    );
+
+    let after_second_timeout = reduce(
+        after_first_timeout,
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+    );
+    assert!(
+        after_second_timeout
+            .agent_chain
+            .rate_limit_continuation_prompt
+            .is_none(),
+        "Timeout fallback after budget exhaustion must not leak rate-limit continuation prompt to the next agent"
+    );
+}
+
+#[test]
+fn test_internal_error_clears_rate_limit_continuation_prompt_during_same_agent_retry_and_fallback()
+{
+    // Same regression as above, but via the InvocationFailed { retriable: false, InternalError }
+    // path which uses the same-agent retry mechanism.
+    let base_state = create_test_state();
+    let mut chain = AgentChainState::initial().with_agents(
+        vec!["agent1".to_string(), "agent2".to_string()],
+        vec![vec![], vec![]],
+        AgentRole::Developer,
+    );
+    chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        agent_chain: chain,
+        continuation: ContinuationState::with_limits(2, 3, 2),
+        ..base_state
+    };
+
+    let after_first_failure = reduce(
+        state,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            139,
+            AgentErrorKind::InternalError,
+            false,
+        ),
+    );
+    assert!(
+        after_first_failure
+            .agent_chain
+            .rate_limit_continuation_prompt
+            .is_none(),
+        "InternalError retry must clear rate-limit continuation prompt context"
+    );
+
+    let after_second_failure = reduce(
+        after_first_failure,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            139,
+            AgentErrorKind::InternalError,
+            false,
+        ),
+    );
+    assert!(
+        after_second_failure
+            .agent_chain
+            .rate_limit_continuation_prompt
+            .is_none(),
+        "InternalError fallback after budget exhaustion must not leak rate-limit continuation prompt to the next agent"
+    );
+}
+
+#[test]
 fn test_timeout_retries_same_agent_until_retry_budget_exhausted() {
     // Desired behavior: timeouts should retry the same agent first and only switch
     // agents after the retry budget is exhausted.

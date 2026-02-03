@@ -214,7 +214,11 @@ fn reduce_same_agent_retryable_failure(
     let new_retry_count = state.continuation.same_agent_retry_count + 1;
     if new_retry_count >= state.continuation.max_same_agent_retry_count {
         PipelineState {
-            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+            agent_chain: state
+                .agent_chain
+                .switch_to_next_agent()
+                .clear_session_id()
+                .clear_continuation_prompt(),
             continuation: ContinuationState {
                 xsd_retry_count: 0,
                 xsd_retry_pending: false,
@@ -232,7 +236,10 @@ fn reduce_same_agent_retryable_failure(
             SameAgentRetryableFailure::OtherNonRetriable => SameAgentRetryReason::Other,
         };
         PipelineState {
-            agent_chain: state.agent_chain.clear_session_id(),
+            agent_chain: state
+                .agent_chain
+                .clear_session_id()
+                .clear_continuation_prompt(),
             continuation: ContinuationState {
                 same_agent_retry_count: new_retry_count,
                 same_agent_retry_pending: true,
