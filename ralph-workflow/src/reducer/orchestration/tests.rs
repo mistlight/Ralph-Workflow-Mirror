@@ -33,3 +33,7 @@ mod commit_phase;
 // Complete pipeline flow tests
 #[path = "tests/pipeline_flow.rs"]
 mod pipeline_flow;
+
+// Retry safety tests (stale XML cleanup on agent failures)
+#[path = "tests/retry_cleans_xml.rs"]
+mod retry_cleans_xml;
