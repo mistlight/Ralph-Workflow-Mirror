@@ -315,6 +315,9 @@ pub(super) fn reduce_development_event(
                         invalid_output_attempts: 0,
                         xsd_retry_count: 0,
                         xsd_retry_pending: false,
+                        same_agent_retry_count: 0,
+                        same_agent_retry_pending: false,
+                        same_agent_retry_reason: None,
                         ..state.continuation
                     },
                     development_context_prepared_iteration: None,

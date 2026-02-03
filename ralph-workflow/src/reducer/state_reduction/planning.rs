@@ -139,6 +139,9 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
                         invalid_output_attempts: 0,
                         xsd_retry_count: 0,
                         xsd_retry_pending: false,
+                        same_agent_retry_count: 0,
+                        same_agent_retry_pending: false,
+                        same_agent_retry_reason: None,
                         ..state.continuation
                     },
                     ..state

@@ -351,13 +351,16 @@ fn test_agent_invocation_failed_non_retriable_retries_same_agent_until_budget_ex
     use crate::reducer::state::ContinuationState;
 
     let base_state = create_test_state();
+    let mut continuation = ContinuationState::with_limits(2, 3, 2);
+    continuation.xsd_retry_count = 7;
+    continuation.xsd_retry_pending = true;
     let state = PipelineState {
         agent_chain: base_state.agent_chain.with_agents(
             vec!["agent1".to_string(), "agent2".to_string()],
             vec![vec!["model1".to_string()], vec!["model2".to_string()]],
             AgentRole::Developer,
         ),
-        continuation: ContinuationState::with_limits(2, 3, 2),
+        continuation,
         ..base_state
     };
 
@@ -391,6 +394,14 @@ fn test_agent_invocation_failed_non_retriable_retries_same_agent_until_budget_ex
 
     assert_eq!(after_second_failure.agent_chain.current_agent_index, 1);
     assert_eq!(after_second_failure.agent_chain.current_model_index, 0);
+    assert_eq!(
+        after_second_failure.continuation.xsd_retry_count, 0,
+        "XSD retry budget must not carry across agents"
+    );
+    assert!(
+        !after_second_failure.continuation.xsd_retry_pending,
+        "XSD retry pending must be cleared when switching agents"
+    );
 }
 
 #[test]

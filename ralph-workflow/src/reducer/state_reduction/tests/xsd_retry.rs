@@ -41,6 +41,9 @@ fn test_development_output_validation_failed_exhausts_xsd_retries() {
         phase: PipelinePhase::Development,
         iteration: 1,
         continuation: ContinuationState {
+            same_agent_retry_count: 1,
+            same_agent_retry_pending: true,
+            same_agent_retry_reason: Some(crate::reducer::state::SameAgentRetryReason::Timeout),
             xsd_retry_count: 1,
             max_xsd_retry_count: 2,
             ..ContinuationState::new()
@@ -70,6 +73,18 @@ fn test_development_output_validation_failed_exhausts_xsd_retries() {
     assert_eq!(
         new_state.agent_chain.current_agent_index, 1,
         "Should have switched to next agent"
+    );
+    assert_eq!(
+        new_state.continuation.same_agent_retry_count, 0,
+        "Same-agent retry budget must not carry across agents"
+    );
+    assert!(
+        !new_state.continuation.same_agent_retry_pending,
+        "Same-agent retry pending must be cleared when switching agents"
+    );
+    assert!(
+        new_state.continuation.same_agent_retry_reason.is_none(),
+        "Same-agent retry reason must be cleared when switching agents"
     );
 }
 
@@ -232,6 +247,9 @@ fn test_commit_xsd_retry_exhausted_switches_agent() {
             max_attempts: 3,
         },
         continuation: ContinuationState {
+            same_agent_retry_count: 1,
+            same_agent_retry_pending: true,
+            same_agent_retry_reason: Some(crate::reducer::state::SameAgentRetryReason::Other),
             xsd_retry_count: 9,
             max_xsd_retry_count: 10,
             ..ContinuationState::new()
@@ -261,6 +279,18 @@ fn test_commit_xsd_retry_exhausted_switches_agent() {
     assert!(
         !new_state.continuation.xsd_retry_pending,
         "XSD retry pending should be cleared"
+    );
+    assert_eq!(
+        new_state.continuation.same_agent_retry_count, 0,
+        "Same-agent retry budget must not carry across agents"
+    );
+    assert!(
+        !new_state.continuation.same_agent_retry_pending,
+        "Same-agent retry pending must be cleared when switching agents"
+    );
+    assert!(
+        new_state.continuation.same_agent_retry_reason.is_none(),
+        "Same-agent retry reason must be cleared when switching agents"
     );
 }
 

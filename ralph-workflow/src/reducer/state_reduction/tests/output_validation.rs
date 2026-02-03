@@ -149,6 +149,11 @@ fn test_review_output_validation_failed_switches_agent_after_limit() {
 
     let mut state = PipelineState {
         continuation: ContinuationState {
+            same_agent_retry_count: 1,
+            same_agent_retry_pending: true,
+            same_agent_retry_reason: Some(
+                crate::reducer::state::SameAgentRetryReason::InternalError,
+            ),
             xsd_retry_count: 1,
             max_xsd_retry_count: 2,
             ..ContinuationState::new()
@@ -171,6 +176,18 @@ fn test_review_output_validation_failed_switches_agent_after_limit() {
     assert!(
         new_state.agent_chain.current_agent_index > 0,
         "Should switch to next agent after max invalid output attempts"
+    );
+    assert_eq!(
+        new_state.continuation.same_agent_retry_count, 0,
+        "Same-agent retry budget must not carry across agents"
+    );
+    assert!(
+        !new_state.continuation.same_agent_retry_pending,
+        "Same-agent retry pending must be cleared when switching agents"
+    );
+    assert!(
+        new_state.continuation.same_agent_retry_reason.is_none(),
+        "Same-agent retry reason must be cleared when switching agents"
     );
 }
 

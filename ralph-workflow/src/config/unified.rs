@@ -159,9 +159,10 @@ pub struct GeneralConfig {
     pub max_xsd_retries: u32,
     /// Maximum same-agent retry attempts for transient invocation failures (timeout/internal).
     ///
-    /// After this many retries, the reducer falls back to the next agent.
+    /// Semantics: this is a *failure budget* for the current agent. With a value of `2`:
+    /// 1st failure → retry the same agent; 2nd failure → fall back to the next agent.
     ///
-    /// Default: 2.
+    /// Default: 2 (one retry before falling back).
     #[serde(default = "default_max_same_agent_retries")]
     pub max_same_agent_retries: u32,
 }

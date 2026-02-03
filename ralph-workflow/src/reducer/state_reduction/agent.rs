@@ -199,6 +199,8 @@ fn reduce_same_agent_retryable_failure(
         PipelineState {
             agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
             continuation: ContinuationState {
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
                 same_agent_retry_count: 0,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
