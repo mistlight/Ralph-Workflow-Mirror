@@ -109,7 +109,9 @@ fn test_fix_continuation_budget_exhausted_transitions_to_commit() {
 }
 
 #[test]
-fn test_template_variables_invalid_switches_agent() {
+fn test_template_variables_invalid_retries_same_agent_until_budget_exhausted() {
+    use crate::reducer::state::ContinuationState;
+
     let state = PipelineState {
         phase: PipelinePhase::Development,
         agent_chain: AgentChainState::initial()
@@ -119,10 +121,11 @@ fn test_template_variables_invalid_switches_agent() {
                 AgentRole::Developer,
             )
             .with_session_id(Some("ses_abc123".to_string())),
+        continuation: ContinuationState::with_limits(2, 3, 2),
         ..PipelineState::initial(5, 2)
     };
 
-    let new_state = reduce(
+    let after_first_invalid = reduce(
         state,
         PipelineEvent::agent_template_variables_invalid(
             AgentRole::Developer,
@@ -132,15 +135,29 @@ fn test_template_variables_invalid_switches_agent() {
         ),
     );
 
-    // Should switch to next agent
     assert_eq!(
-        new_state.agent_chain.current_agent_index, 1,
-        "Should switch to next agent on template failure"
+        after_first_invalid.agent_chain.current_agent_index, 0,
+        "First TemplateVariablesInvalid should retry same agent, not immediately fall back"
     );
-    // Session ID should be cleared
     assert!(
-        new_state.agent_chain.last_session_id.is_none(),
-        "Session ID should be cleared when switching agents"
+        after_first_invalid.agent_chain.last_session_id.is_none(),
+        "Session ID should be cleared when retrying after a transient invocation failure"
+    );
+    assert!(after_first_invalid.continuation.same_agent_retry_pending);
+
+    let after_second_invalid = reduce(
+        after_first_invalid,
+        PipelineEvent::agent_template_variables_invalid(
+            AgentRole::Developer,
+            "dev_iteration".to_string(),
+            vec!["PLAN".to_string()],
+            vec!["{{XSD_ERROR}}".to_string()],
+        ),
+    );
+
+    assert_eq!(
+        after_second_invalid.agent_chain.current_agent_index, 1,
+        "After exhausting retry budget, TemplateVariablesInvalid should fall back to next agent"
     );
 }
 

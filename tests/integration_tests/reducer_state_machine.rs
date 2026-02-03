@@ -416,8 +416,8 @@ fn test_filesystem_error_triggers_agent_fallback() {
         let state = create_state_with_agent_chain();
         let initial_agent_index = state.agent_chain.current_agent_index;
 
-        // Simulate filesystem error (non-retriable) - should trigger agent fallback
-        let new_state = reduce(
+        // Simulate filesystem error (non-retriable) - should retry same agent first (except auth/429)
+        let after_first_failure = reduce(
             state,
             PipelineEvent::agent_invocation_failed(
                 AgentRole::Developer,
@@ -428,8 +428,25 @@ fn test_filesystem_error_triggers_agent_fallback() {
             ),
         );
 
-        // Should switch to next agent
-        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+        assert_eq!(
+            after_first_failure.agent_chain.current_agent_index, initial_agent_index,
+            "Non-auth, non-rate-limit failures should retry same agent first"
+        );
+        assert!(after_first_failure.continuation.same_agent_retry_pending);
+
+        let after_second_failure = reduce(
+            after_first_failure,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::FileSystem,
+                false,
+            ),
+        );
+
+        // After exhausting retry budget, should switch to next agent
+        assert!(after_second_failure.agent_chain.current_agent_index > initial_agent_index);
     });
 }
 

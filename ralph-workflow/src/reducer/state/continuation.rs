@@ -87,9 +87,12 @@ pub struct ContinuationState {
     /// agent chain advancement.
     #[serde(default = "default_max_xsd_retry_count")]
     pub max_xsd_retry_count: u32,
-    /// Maximum same-agent retry attempts for transient invocation failures (default 2).
+    /// Maximum same-agent retry attempts for invocation failures that should not
+    /// immediately trigger agent fallback (default 2).
     ///
-    /// After this many retries, the reducer falls back to the next agent.
+    /// This is a failure budget for the current agent. For example, with a value of 2:
+    /// - 1st failure → retry the same agent
+    /// - 2nd failure → fall back to the next agent
     #[serde(default = "default_max_same_agent_retry_count")]
     pub max_same_agent_retry_count: u32,
     /// Maximum continuation attempts (default 3).

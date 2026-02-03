@@ -43,6 +43,11 @@ pub enum SameAgentRetryReason {
     Timeout,
     /// The agent invocation failed with an internal/unknown error.
     InternalError,
+    /// The agent invocation failed with a non-auth, non-rate-limit, non-timeout error.
+    ///
+    /// This is a catch-all category used to ensure immediate agent fallback only happens
+    /// for rate limit (429) and authentication failures.
+    Other,
 }
 
 impl std::fmt::Display for ArtifactType {

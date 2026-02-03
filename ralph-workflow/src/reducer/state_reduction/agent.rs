@@ -79,17 +79,14 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             error_kind,
             ..
         } => match error_kind {
-            // Internal/unknown: retry same agent first; fall back after budget exhaustion.
-            AgentErrorKind::InternalError => {
-                reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::InternalError)
-            }
-            // Defensive: treat explicit Timeout similarly if it arrives here.
-            AgentErrorKind::Timeout => {
-                reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::Timeout)
-            }
-            // Other non-retriable errors: switch agent and clear session.
-            _ => PipelineState {
-                agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+            // Authentication and rate limit failures: immediate agent switch.
+            // These may arrive as InvocationFailed for legacy callers; prefer AuthFailed/RateLimited.
+            AgentErrorKind::Authentication | AgentErrorKind::RateLimit => PipelineState {
+                agent_chain: state
+                    .agent_chain
+                    .switch_to_next_agent()
+                    .clear_session_id()
+                    .clear_continuation_prompt(),
                 continuation: ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
@@ -100,10 +97,33 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 },
                 ..state
             },
+            // Internal/unknown: retry same agent first; fall back after budget exhaustion.
+            AgentErrorKind::InternalError => {
+                reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::InternalError)
+            }
+            // Defensive: treat explicit Timeout similarly if it arrives here.
+            AgentErrorKind::Timeout => {
+                reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::Timeout)
+            }
+            // Other non-retriable errors: retry same agent first; only fall back after budget.
+            _ => reduce_same_agent_retryable_failure(
+                state,
+                SameAgentRetryableFailure::OtherNonRetriable,
+            ),
         },
-        AgentEvent::FallbackTriggered { .. } => PipelineState {
-            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+        AgentEvent::FallbackTriggered {
+            from_agent: _,
+            to_agent,
+            ..
+        } => PipelineState {
+            agent_chain: state
+                .agent_chain
+                .switch_to_agent_named(&to_agent)
+                .clear_session_id()
+                .clear_continuation_prompt(),
             continuation: ContinuationState {
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
                 same_agent_retry_count: 0,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
@@ -153,18 +173,10 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             ..state
         },
 
-        // Template variables invalid: switch to next agent (different agent may have different templates)
-        // This is treated as a non-retriable error since the template system itself failed.
-        AgentEvent::TemplateVariablesInvalid { .. } => PipelineState {
-            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
-            continuation: ContinuationState {
-                same_agent_retry_count: 0,
-                same_agent_retry_pending: false,
-                same_agent_retry_reason: None,
-                ..state.continuation
-            },
-            ..state
-        },
+        // Template variables invalid: retry same agent first; only fall back after budget.
+        AgentEvent::TemplateVariablesInvalid { .. } => {
+            reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::OtherNonRetriable)
+        }
     }
 }
 
@@ -172,6 +184,7 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
 enum SameAgentRetryableFailure {
     Timeout,
     InternalError,
+    OtherNonRetriable,
 }
 
 fn reduce_same_agent_retryable_failure(
@@ -197,6 +210,7 @@ fn reduce_same_agent_retryable_failure(
         let reason = match failure {
             SameAgentRetryableFailure::Timeout => SameAgentRetryReason::Timeout,
             SameAgentRetryableFailure::InternalError => SameAgentRetryReason::InternalError,
+            SameAgentRetryableFailure::OtherNonRetriable => SameAgentRetryReason::Other,
         };
         PipelineState {
             agent_chain: state.agent_chain.clear_session_id(),

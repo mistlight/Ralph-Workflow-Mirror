@@ -574,12 +574,14 @@ fn test_effects_are_single_task() {
 fn test_agent_fallback_only_via_reducer_events() {
     use ralph_workflow::agents::AgentRole;
     use ralph_workflow::reducer::event::{AgentEvent, PipelineEvent, PipelinePhase};
+    use ralph_workflow::reducer::state::ContinuationState;
     use ralph_workflow::reducer::state::PipelineState;
     use ralph_workflow::reducer::state_reduction::reduce;
 
     with_default_timeout(|| {
         let mut state = PipelineState::initial(3, 1);
         state.phase = PipelinePhase::Development;
+        state.continuation = ContinuationState::with_limits(2, 3, 2);
         state.agent_chain = state.agent_chain.with_agents(
             vec![
                 "agent-a".to_string(),
@@ -612,9 +614,9 @@ fn test_agent_fallback_only_via_reducer_events() {
             "FallbackTriggered should switch to next agent"
         );
 
-        // InvocationFailed with retriable=false switches to next agent via reducer
-        // This is the correct behavior - the reducer handles fallback decisions
-        let state = reduce(
+        // InvocationFailed with retriable=false should retry the same agent first (except auth/429),
+        // and only switch agents after exhausting the same-agent retry budget.
+        let after_first_failure = reduce(
             state,
             PipelineEvent::Agent(AgentEvent::InvocationFailed {
                 role: AgentRole::Developer,
@@ -625,11 +627,28 @@ fn test_agent_fallback_only_via_reducer_events() {
             }),
         );
 
-        // Non-retriable InvocationFailed SHOULD switch to next agent via reducer
         assert_eq!(
-            state.agent_chain.current_agent(),
+            after_first_failure.agent_chain.current_agent(),
+            Some(&"agent-b".to_string()),
+            "InvocationFailed(retriable=false) should retry same agent first (except auth/429)"
+        );
+        assert!(after_first_failure.continuation.same_agent_retry_pending);
+
+        let after_second_failure = reduce(
+            after_first_failure,
+            PipelineEvent::Agent(AgentEvent::InvocationFailed {
+                role: AgentRole::Developer,
+                agent: "agent-b".to_string(),
+                exit_code: 1,
+                error_kind: ralph_workflow::reducer::event::AgentErrorKind::FileSystem,
+                retriable: false,
+            }),
+        );
+
+        assert_eq!(
+            after_second_failure.agent_chain.current_agent(),
             Some(&"agent-c".to_string()),
-            "InvocationFailed(retriable=false) should switch to next agent via reducer"
+            "After exhausting same-agent retry budget, InvocationFailed(retriable=false) should switch agents"
         );
 
         // InvocationFailed with retriable=true should NOT switch agents (tries next model)

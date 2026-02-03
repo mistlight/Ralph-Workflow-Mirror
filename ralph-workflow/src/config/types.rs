@@ -252,11 +252,20 @@ pub struct Config {
     /// Higher values allow more attempts to fix XML formatting before agent fallback.
     /// Default: 10 (10 retries before falling back to next agent).
     pub max_xsd_retries: Option<u32>,
-    /// Maximum same-agent retry attempts for transient invocation failures (timeout/internal).
+    /// Maximum same-agent retry attempts for invocation failures that should not
+    /// immediately trigger agent fallback (e.g., timeout/internal/unknown and other
+    /// non-auth, non-rate-limit failures).
     ///
-    /// After this many retries, the reducer falls back to the next agent.
+    /// # Semantics
     ///
-    /// Default: 2.
+    /// This value is a *failure budget* for the current agent: it counts consecutive
+    /// failures that are routed through the reducer's same-agent retry path.
+    ///
+    /// With `max_same_agent_retries = 2`:
+    /// - 1st failure → retry the same agent
+    /// - 2nd failure → fall back to the next agent
+    ///
+    /// Default: 2 (one retry before falling back).
     pub max_same_agent_retries: Option<u32>,
 }
 

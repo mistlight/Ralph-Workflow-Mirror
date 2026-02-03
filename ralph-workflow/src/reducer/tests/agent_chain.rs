@@ -347,7 +347,9 @@ fn test_agent_fallback_from_last_agent_wraps_and_increments_cycle() {
 }
 
 #[test]
-fn test_agent_invocation_failed_non_retriable_switches_agent() {
+fn test_agent_invocation_failed_non_retriable_retries_same_agent_until_budget_exhausted() {
+    use crate::reducer::state::ContinuationState;
+
     let base_state = create_test_state();
     let state = PipelineState {
         agent_chain: base_state.agent_chain.with_agents(
@@ -355,13 +357,14 @@ fn test_agent_invocation_failed_non_retriable_switches_agent() {
             vec![vec!["model1".to_string()], vec!["model2".to_string()]],
             AgentRole::Developer,
         ),
+        continuation: ContinuationState::with_limits(2, 3, 2),
         ..base_state
     };
 
     // Start on first agent
     assert_eq!(state.agent_chain.current_agent_index, 0);
 
-    let new_state = reduce(
+    let after_first_failure = reduce(
         state,
         PipelineEvent::agent_invocation_failed(
             AgentRole::Developer,
@@ -372,9 +375,22 @@ fn test_agent_invocation_failed_non_retriable_switches_agent() {
         ),
     );
 
-    // Non-retriable error should switch to next agent (0 -> 1)
-    assert_eq!(new_state.agent_chain.current_agent_index, 1);
-    assert_eq!(new_state.agent_chain.current_model_index, 0);
+    assert_eq!(after_first_failure.agent_chain.current_agent_index, 0);
+    assert!(after_first_failure.continuation.same_agent_retry_pending);
+
+    let after_second_failure = reduce(
+        after_first_failure,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::ParsingError,
+            false,
+        ),
+    );
+
+    assert_eq!(after_second_failure.agent_chain.current_agent_index, 1);
+    assert_eq!(after_second_failure.agent_chain.current_model_index, 0);
 }
 
 #[test]

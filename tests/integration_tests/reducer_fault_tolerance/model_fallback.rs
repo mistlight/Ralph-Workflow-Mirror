@@ -482,14 +482,15 @@ fn test_multiple_timeouts_cycle_through_agents() {
     });
 }
 
-/// Guard: non-retryable errors should advance the agent chain, even if the kind is typically retryable.
+/// Guard: non-retryable failures should not immediately switch agents (except auth/429),
+/// but should still be routed through the reducer's same-agent retry path.
 #[test]
 fn test_network_error_non_retryable_triggers_agent_fallback() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain_in_development();
         let initial_agent_index = state.agent_chain.current_agent_index;
 
-        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+        let after_first_failure = ralph_workflow::reducer::state_reduction::reduce(
             state,
             PipelineEvent::agent_invocation_failed(
                 AgentRole::Developer,
@@ -500,11 +501,28 @@ fn test_network_error_non_retryable_triggers_agent_fallback() {
             ),
         );
 
-        assert!(
-            new_state.agent_chain.current_agent_index > initial_agent_index,
-            "Non-retryable failures should fall back to the next agent"
+        assert_eq!(
+            after_first_failure.agent_chain.current_agent_index, initial_agent_index,
+            "Non-retryable failures should retry same agent first (except auth/429)"
         );
-        assert_eq!(new_state.agent_chain.current_model_index, 0);
-        assert_eq!(new_state.phase, PipelinePhase::Development);
+        assert!(after_first_failure.continuation.same_agent_retry_pending);
+        assert_eq!(after_first_failure.agent_chain.current_model_index, 0);
+        assert_eq!(after_first_failure.phase, PipelinePhase::Development);
+
+        let after_second_failure = ralph_workflow::reducer::state_reduction::reduce(
+            after_first_failure,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::Network,
+                false,
+            ),
+        );
+
+        assert!(
+            after_second_failure.agent_chain.current_agent_index > initial_agent_index,
+            "After exhausting same-agent retry budget, non-retryable failures should fall back"
+        );
     });
 }

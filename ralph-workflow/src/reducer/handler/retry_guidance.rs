@@ -9,6 +9,9 @@ pub(crate) fn same_agent_retry_preamble(continuation: &ContinuationState) -> Str
         Some(SameAgentRetryReason::InternalError) => {
             "Previous attempt failed with an internal/unknown error."
         }
+        Some(SameAgentRetryReason::Other) => {
+            "Previous attempt failed with a non-retriable error (non-auth, non-rate-limit)."
+        }
         None => "Retrying after a transient invocation failure.",
     };
 

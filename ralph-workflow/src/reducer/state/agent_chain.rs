@@ -169,6 +169,40 @@ impl AgentChainState {
         new
     }
 
+    /// Switch to a specific agent by name.
+    ///
+    /// If `to_agent` is unknown, falls back to `switch_to_next_agent()` to keep the
+    /// reducer deterministic.
+    pub fn switch_to_agent_named(&self, to_agent: &str) -> Self {
+        let Some(target_index) = self.agents.iter().position(|a| a == to_agent) else {
+            return self.switch_to_next_agent();
+        };
+
+        let mut new = self.clone();
+        if target_index == new.current_agent_index {
+            new.current_model_index = 0;
+            new.backoff_pending_ms = None;
+            return new;
+        }
+
+        new.current_agent_index = target_index;
+        new.current_model_index = 0;
+
+        if target_index <= self.current_agent_index {
+            // Treat switching to an earlier agent as starting a new retry cycle.
+            new.retry_cycle += 1;
+            if new.is_exhausted() {
+                new.backoff_pending_ms = None;
+            } else {
+                new.backoff_pending_ms = Some(new.calculate_backoff_delay_ms_for_retry_cycle());
+            }
+        } else {
+            new.backoff_pending_ms = None;
+        }
+
+        new
+    }
+
     /// Switch to next agent after rate limit, preserving prompt for continuation.
     ///
     /// This is used when an agent hits a 429 rate limit error. Instead of

@@ -534,3 +534,185 @@ fn test_internal_error_retries_same_agent_until_retry_budget_exhausted() {
         .same_agent_retry_reason
         .is_none());
 }
+
+#[test]
+fn test_non_auth_non_rate_limit_non_retriable_error_retries_same_agent_until_budget_exhausted() {
+    // Acceptance: immediate agent fallback happens only for rate limit (429) and auth failures.
+    // Other non-retriable errors should retry the same agent first, then fall back after budget.
+    let base_state = create_test_state();
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        ),
+        continuation: ContinuationState::with_limits(2, 3, 2),
+        ..base_state
+    };
+
+    let after_first_failure = reduce(
+        state,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::ParsingError,
+            false,
+        ),
+    );
+
+    assert_eq!(
+        after_first_failure
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent1"),
+        "First non-auth non-rate-limit non-retriable error should retry same agent"
+    );
+    assert_eq!(after_first_failure.continuation.xsd_retry_count, 0);
+    assert!(!after_first_failure.continuation.xsd_retry_pending);
+    assert_eq!(after_first_failure.continuation.same_agent_retry_count, 1);
+    assert!(after_first_failure.continuation.same_agent_retry_pending);
+
+    let after_second_failure = reduce(
+        after_first_failure,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            1,
+            AgentErrorKind::ParsingError,
+            false,
+        ),
+    );
+
+    assert_eq!(
+        after_second_failure
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent2"),
+        "After exhausting retry budget, non-retriable error should fall back to next agent"
+    );
+    assert_eq!(after_second_failure.continuation.xsd_retry_count, 0);
+    assert!(!after_second_failure.continuation.xsd_retry_pending);
+    assert_eq!(after_second_failure.continuation.same_agent_retry_count, 0);
+    assert!(!after_second_failure.continuation.same_agent_retry_pending);
+    assert!(after_second_failure
+        .continuation
+        .same_agent_retry_reason
+        .is_none());
+}
+
+#[test]
+fn test_template_variables_invalid_retries_same_agent_until_budget_exhausted() {
+    // Acceptance: template errors should not cause immediate agent fallback; retry same agent first.
+    let base_state = create_test_state();
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        ),
+        continuation: ContinuationState::with_limits(2, 3, 2),
+        ..base_state
+    };
+
+    let after_first_invalid = reduce(
+        state,
+        PipelineEvent::agent_template_variables_invalid(
+            AgentRole::Developer,
+            "template".to_string(),
+            vec!["MISSING".to_string()],
+            vec!["{{UNRESOLVED}}".to_string()],
+        ),
+    );
+
+    assert_eq!(
+        after_first_invalid
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent1"),
+        "First TemplateVariablesInvalid should retry same agent, not immediately fall back"
+    );
+    assert_eq!(after_first_invalid.continuation.same_agent_retry_count, 1);
+    assert!(after_first_invalid.continuation.same_agent_retry_pending);
+
+    let after_second_invalid = reduce(
+        after_first_invalid,
+        PipelineEvent::agent_template_variables_invalid(
+            AgentRole::Developer,
+            "template".to_string(),
+            vec!["MISSING".to_string()],
+            vec!["{{UNRESOLVED}}".to_string()],
+        ),
+    );
+
+    assert_eq!(
+        after_second_invalid
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent2"),
+        "After exhausting retry budget, TemplateVariablesInvalid should fall back to next agent"
+    );
+    assert_eq!(after_second_invalid.continuation.same_agent_retry_count, 0);
+    assert!(!after_second_invalid.continuation.same_agent_retry_pending);
+}
+
+#[test]
+fn test_fallback_triggered_respects_to_agent_and_resets_retry_state() {
+    let base_state = create_test_state();
+    let mut chain = AgentChainState::initial().with_agents(
+        vec![
+            "agent1".to_string(),
+            "agent2".to_string(),
+            "agent3".to_string(),
+        ],
+        vec![vec![], vec![], vec![]],
+        AgentRole::Developer,
+    );
+    chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+    chain.last_session_id = Some("session-xyz".to_string());
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        agent_chain: chain,
+        continuation: ContinuationState {
+            xsd_retry_count: 3,
+            xsd_retry_pending: true,
+            same_agent_retry_count: 1,
+            same_agent_retry_pending: true,
+            same_agent_retry_reason: Some(SameAgentRetryReason::Timeout),
+            ..ContinuationState::with_limits(2, 3, 2)
+        },
+        ..base_state
+    };
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::agent_fallback_triggered(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            "agent3".to_string(),
+        ),
+    );
+
+    assert_eq!(
+        new_state.agent_chain.current_agent().map(String::as_str),
+        Some("agent3"),
+        "FallbackTriggered should respect to_agent instead of blindly switching to the next agent"
+    );
+    assert!(new_state
+        .agent_chain
+        .rate_limit_continuation_prompt
+        .is_none());
+    assert!(new_state.agent_chain.last_session_id.is_none());
+    assert_eq!(new_state.continuation.xsd_retry_count, 0);
+    assert!(!new_state.continuation.xsd_retry_pending);
+    assert_eq!(new_state.continuation.same_agent_retry_count, 0);
+    assert!(!new_state.continuation.same_agent_retry_pending);
+    assert!(new_state.continuation.same_agent_retry_reason.is_none());
+}
