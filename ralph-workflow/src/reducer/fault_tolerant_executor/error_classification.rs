@@ -62,17 +62,36 @@ fn is_timeout_stderr(stderr_lower: &str) -> bool {
     // classifying generic network errors as timeouts unless the message says so.
     //
     // Examples observed across providers / runtimes:
-    // - "Connection timeout"
+    // - "Connection timeout" / "connection timed out"
     // - "timed out"
     // - "ETIMEDOUT"
     // - "deadline exceeded"
     // - "context deadline exceeded"
-    stderr_lower.contains("timeout")
-        || stderr_lower.contains("timed out")
-        || stderr_lower.contains("etimedout")
-        || stderr_lower.contains("deadline exceeded")
-        || stderr_lower.contains("context deadline exceeded")
-        || stderr_lower.contains("request timeout")
+    contains_timeout_phrase(stderr_lower)
+}
+
+fn contains_timeout_phrase(text_lower: &str) -> bool {
+    const TIMEOUT_PHRASES: [&str; 11] = [
+        "timed out",
+        "i/o timeout",
+        "io timeout",
+        "request timeout",
+        "connection timeout",
+        "connection timed out",
+        "timeout while",
+        "timeout waiting",
+        "timeout occurred",
+        "deadline exceeded",
+        "context deadline exceeded",
+    ];
+
+    if text_lower.contains("etimedout") {
+        return true;
+    }
+
+    TIMEOUT_PHRASES
+        .iter()
+        .any(|timeout_phrase| text_lower.contains(timeout_phrase))
 }
 
 fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {
@@ -157,7 +176,7 @@ pub fn classify_io_error(error: &io::Error) -> AgentErrorKind {
             // carries useful intent; keep message-based heuristics as a fallback.
             let error_msg = error.to_string().to_lowercase();
 
-            if error_msg.contains("timed out") || error_msg.contains("timeout") {
+            if contains_timeout_phrase(&error_msg) {
                 AgentErrorKind::Timeout
             } else if error_msg.contains("permission")
                 || error_msg.contains("access denied")
@@ -216,4 +235,18 @@ pub fn is_rate_limit_error(error_kind: &AgentErrorKind) -> bool {
 /// InvocationFailed so the reducer can apply deterministic policy.
 pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::Authentication)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_agent_error_does_not_treat_filename_timeout_rs_as_timeout() {
+        // Regression test: naive `contains("timeout")` matching can incorrectly classify
+        // compiler/file path diagnostics (e.g., `timeout.rs:1:1`) as a timeout error.
+        let error_kind = classify_agent_error(1, "timeout.rs:1:1: error: unexpected token");
+
+        assert_eq!(error_kind, AgentErrorKind::InternalError);
+    }
 }

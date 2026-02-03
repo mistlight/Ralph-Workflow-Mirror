@@ -249,15 +249,13 @@ fn test_rate_limit_continuation_prompt_cleared_on_success() {
 // TIMEOUT FALLBACK TESTS
 // ============================================================================
 
-/// Test that timeout errors trigger AGENT fallback, not model fallback.
+/// Test that timeout errors retry the same agent first, then fall back to the next agent.
 ///
-/// This is the key behavior change for the idle timeout bug fix: when an agent
-/// hits an idle timeout, we immediately switch to the next agent in the chain
-/// rather than trying the same agent with a different model. This is because
-/// timeout errors often indicate the agent is stuck or the task is too complex
-/// for it - retrying with a different model would likely hit the same timeout.
+/// Timeouts should not trigger model fallback. Instead, the reducer retries the same agent
+/// (without switching models) until the configured timeout retry budget is exhausted, and
+/// only then switches to the next agent in the chain.
 #[test]
-fn test_timeout_triggers_agent_fallback_not_model_fallback() {
+fn test_timeout_retries_same_agent_then_agent_fallback_not_model_fallback() {
     with_default_timeout(|| {
         use ralph_workflow::reducer::state::ContinuationState;
 
