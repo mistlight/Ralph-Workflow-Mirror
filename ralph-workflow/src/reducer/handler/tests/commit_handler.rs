@@ -283,8 +283,12 @@ fn test_prepare_commit_prompt_does_not_emit_generation_started() {
         crate::agents::AgentRole::Commit,
     );
     let result = handler
-        .prepare_commit_prompt_with_diff(&mut ctx, "diff --git a/a b/a\n+change\n")
-        .expect("prepare_commit_prompt_with_diff should succeed");
+        .prepare_commit_prompt_with_diff_and_mode(
+            &mut ctx,
+            "diff --git a/a b/a\n+change\n",
+            crate::reducer::state::PromptMode::Normal,
+        )
+        .expect("prepare_commit_prompt_with_diff_and_mode should succeed");
 
     assert!(matches!(
         result.event,

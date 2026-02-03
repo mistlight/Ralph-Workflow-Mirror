@@ -327,11 +327,14 @@ fn test_sigsegv_causes_agent_fallback() {
             ),
         );
 
+        // First internal error should retry same agent (not fall back yet)
         assert_eq!(
             after_first.agent_chain.current_agent_index,
             initial_agent_index
         );
-        assert!(after_first.continuation.xsd_retry_pending);
+        // Internal errors use same_agent_retry_pending, not xsd_retry_pending
+        // (XSD retry is only for invalid XML output, not execution failures)
+        assert!(after_first.continuation.same_agent_retry_pending);
 
         let after_second = reduce(
             after_first,
@@ -344,6 +347,7 @@ fn test_sigsegv_causes_agent_fallback() {
             ),
         );
 
+        // After exhausting same-agent retry budget, should fall back to next agent
         assert!(after_second.agent_chain.current_agent_index > initial_agent_index);
     });
 }
@@ -509,11 +513,14 @@ fn test_internal_error_triggers_agent_fallback() {
             ),
         );
 
+        // First internal error should retry same agent (not fall back yet)
         assert_eq!(
             after_first.agent_chain.current_agent_index,
             initial_agent_index
         );
-        assert!(after_first.continuation.xsd_retry_pending);
+        // Internal errors use same_agent_retry_pending, not xsd_retry_pending
+        // (XSD retry is only for invalid XML output, not execution failures)
+        assert!(after_first.continuation.same_agent_retry_pending);
 
         let after_second = reduce(
             after_first,
@@ -526,6 +533,7 @@ fn test_internal_error_triggers_agent_fallback() {
             ),
         );
 
+        // After exhausting same-agent retry budget, should fall back to next agent
         assert!(after_second.agent_chain.current_agent_index > initial_agent_index);
     });
 }

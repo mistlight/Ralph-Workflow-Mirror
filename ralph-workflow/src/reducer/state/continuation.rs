@@ -55,6 +55,20 @@ pub struct ContinuationState {
     /// Cleared when retry attempt starts or max retries exceeded.
     #[serde(default)]
     pub xsd_retry_pending: bool,
+    /// Count of same-agent retry attempts for transient invocation failures.
+    ///
+    /// This is intentionally separate from XSD retry, which is only for invalid XML outputs.
+    #[serde(default)]
+    pub same_agent_retry_count: u32,
+    /// Whether a same-agent retry is pending.
+    ///
+    /// Set to true by the reducer when a transient invocation failure occurs (timeout/internal).
+    /// Cleared when the retry attempt starts or when switching agents.
+    #[serde(default)]
+    pub same_agent_retry_pending: bool,
+    /// The reason for the pending same-agent retry, for prompt rendering.
+    #[serde(default)]
+    pub same_agent_retry_reason: Option<SameAgentRetryReason>,
     /// Whether a continuation is pending (output valid but work incomplete).
     ///
     /// Set to true when agent output indicates status is "partial" or "failed".
@@ -73,6 +87,11 @@ pub struct ContinuationState {
     /// agent chain advancement.
     #[serde(default = "default_max_xsd_retry_count")]
     pub max_xsd_retry_count: u32,
+    /// Maximum same-agent retry attempts for transient invocation failures (default 2).
+    ///
+    /// After this many retries, the reducer falls back to the next agent.
+    #[serde(default = "default_max_same_agent_retry_count")]
+    pub max_same_agent_retry_count: u32,
     /// Maximum continuation attempts (default 3).
     ///
     /// Loaded from unified config. After this many continuations, marks
@@ -109,6 +128,10 @@ const fn default_max_xsd_retry_count() -> u32 {
     10
 }
 
+const fn default_max_same_agent_retry_count() -> u32 {
+    2
+}
+
 const fn default_max_continue_count() -> u32 {
     3
 }
@@ -126,9 +149,13 @@ impl Default for ContinuationState {
             context_cleanup_pending: false,
             xsd_retry_count: 0,
             xsd_retry_pending: false,
+            same_agent_retry_count: 0,
+            same_agent_retry_pending: false,
+            same_agent_retry_reason: None,
             continue_pending: false,
             current_artifact: None,
             max_xsd_retry_count: default_max_xsd_retry_count(),
+            max_same_agent_retry_count: default_max_same_agent_retry_count(),
             max_continue_count: default_max_continue_count(),
             // Fix continuation fields
             fix_status: None,
@@ -161,6 +188,14 @@ impl ContinuationState {
     /// Use 0 to disable XSD retries (immediate agent fallback on validation failure).
     pub fn with_max_xsd_retry(mut self, max_xsd_retry_count: u32) -> Self {
         self.max_xsd_retry_count = max_xsd_retry_count;
+        self
+    }
+
+    /// Builder: set max same-agent retry count for transient invocation failures.
+    ///
+    /// Use 0 to disable same-agent retries (immediate agent fallback on timeout/internal error).
+    pub fn with_max_same_agent_retry(mut self, max_same_agent_retry_count: u32) -> Self {
+        self.max_same_agent_retry_count = max_same_agent_retry_count;
         self
     }
 
@@ -198,6 +233,7 @@ impl ContinuationState {
         // Preserve configured limits, reset everything else
         Self {
             max_xsd_retry_count: self.max_xsd_retry_count,
+            max_same_agent_retry_count: self.max_same_agent_retry_count,
             max_continue_count: self.max_continue_count,
             max_fix_continue_count: self.max_fix_continue_count,
             ..Self::default()
@@ -235,6 +271,30 @@ impl ContinuationState {
     /// Check if XSD retries are exhausted.
     pub fn xsd_retries_exhausted(&self) -> bool {
         self.xsd_retry_count >= self.max_xsd_retry_count
+    }
+
+    /// Mark a same-agent retry as pending for a transient invocation failure.
+    pub fn trigger_same_agent_retry(&self, reason: SameAgentRetryReason) -> Self {
+        Self {
+            same_agent_retry_pending: true,
+            same_agent_retry_count: self.same_agent_retry_count + 1,
+            same_agent_retry_reason: Some(reason),
+            ..self.clone()
+        }
+    }
+
+    /// Clear same-agent retry pending flag after starting retry.
+    pub fn clear_same_agent_retry_pending(&self) -> Self {
+        Self {
+            same_agent_retry_pending: false,
+            same_agent_retry_reason: None,
+            ..self.clone()
+        }
+    }
+
+    /// Check if same-agent retries are exhausted.
+    pub fn same_agent_retries_exhausted(&self) -> bool {
+        self.same_agent_retry_count >= self.max_same_agent_retry_count
     }
 
     /// Mark continuation as pending (output valid but work incomplete).
@@ -301,11 +361,16 @@ impl ContinuationState {
             // Reset XSD retry count for new continuation attempt
             xsd_retry_count: 0,
             xsd_retry_pending: false,
+            // Reset same-agent retry state for new continuation attempt
+            same_agent_retry_count: 0,
+            same_agent_retry_pending: false,
+            same_agent_retry_reason: None,
             // Set continue_pending to trigger continuation in orchestration
             continue_pending: true,
             // Preserve artifact type and limits
             current_artifact: self.current_artifact.clone(),
             max_xsd_retry_count: self.max_xsd_retry_count,
+            max_same_agent_retry_count: self.max_same_agent_retry_count,
             max_continue_count: self.max_continue_count,
             // Preserve fix continuation fields
             fix_status: self.fix_status.clone(),

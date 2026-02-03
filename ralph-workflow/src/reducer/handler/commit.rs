@@ -43,7 +43,7 @@ impl MainEffectHandler {
                 )));
             }
         };
-        self.prepare_commit_prompt_with_diff(ctx, &diff)
+        self.prepare_commit_prompt_with_diff_and_mode(ctx, &diff, prompt_mode)
     }
 
     pub(super) fn check_commit_diff(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
@@ -81,10 +81,11 @@ impl MainEffectHandler {
         )))
     }
 
-    pub(super) fn prepare_commit_prompt_with_diff(
+    pub(super) fn prepare_commit_prompt_with_diff_and_mode(
         &mut self,
         ctx: &mut PhaseContext<'_>,
         diff: &str,
+        prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
         let attempt = current_commit_attempt(&self.state.commit);
 
@@ -98,15 +99,39 @@ impl MainEffectHandler {
         let (working_diff, _diff_truncated) =
             check_and_pre_truncate_diff(diff, &commit_agent, ctx.logger);
 
-        let prompt_key = format!("commit_message_attempt_{attempt}");
-        let (prompt, was_replayed) =
-            get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                prompt_generate_commit_message_with_diff_with_context(
+        let continuation_state = &self.state.continuation;
+        let (prompt_key, prompt, was_replayed) = match prompt_mode {
+            PromptMode::SameAgentRetry => {
+                // Same-agent retry for timeout/internal error: generate normal prompt with
+                // retry guidance prepended.
+                let retry_preamble =
+                    super::retry_guidance::same_agent_retry_preamble(continuation_state);
+                let base_prompt = prompt_generate_commit_message_with_diff_with_context(
                     ctx.template_context,
                     &working_diff,
                     ctx.workspace,
-                )
-            });
+                );
+                let prompt = format!("{retry_preamble}\n{base_prompt}");
+                let prompt_key = format!(
+                    "commit_message_attempt_{attempt}_same_agent_retry_{}",
+                    continuation_state.same_agent_retry_count
+                );
+                (prompt_key, prompt, false)
+            }
+            _ => {
+                // Normal, XsdRetry (handled by XSD retry mechanism), or Continuation (rejected earlier)
+                let prompt_key = format!("commit_message_attempt_{attempt}");
+                let (prompt, was_replayed) =
+                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                        prompt_generate_commit_message_with_diff_with_context(
+                            ctx.template_context,
+                            &working_diff,
+                            ctx.workspace,
+                        )
+                    });
+                (prompt_key, prompt, was_replayed)
+            }
+        };
 
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
             &prompt,

@@ -56,6 +56,8 @@ pub(super) fn reduce_development_event(
             development_prompt_prepared_iteration: Some(iteration),
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state
@@ -68,6 +70,8 @@ pub(super) fn reduce_development_event(
             development_agent_invoked_iteration: Some(iteration),
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state

@@ -79,6 +79,23 @@ impl MainEffectHandler {
                 None,
                 false,
             ),
+            PromptMode::SameAgentRetry => {
+                // Same-agent retry for timeout/internal error: generate normal prompt with
+                // retry guidance prepended.
+                let retry_preamble =
+                    super::retry_guidance::same_agent_retry_preamble(continuation_state);
+                let base_prompt = prompt_developer_iteration_xml_with_context(
+                    ctx.template_context,
+                    &prompt_md,
+                    &plan_md,
+                );
+                let prompt = format!("{retry_preamble}\n{base_prompt}");
+                let prompt_key = format!(
+                    "development_{}_same_agent_retry_{}",
+                    iteration, continuation_state.same_agent_retry_count
+                );
+                (prompt, "developer_iteration_xml", Some(prompt_key), false)
+            }
             PromptMode::Normal => {
                 let prompt_key = format!("development_{}", iteration);
                 let (prompt, was_replayed) =

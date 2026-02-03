@@ -25,11 +25,14 @@ fn test_agent_sigsegv_caught_by_fault_tolerant_executor() {
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
 
+        // First internal error should retry same agent (not fall back yet)
         assert_eq!(
             new_state.agent_chain.current_agent().map(String::as_str),
             Some("agent1")
         );
-        assert!(new_state.continuation.xsd_retry_pending);
+        // Internal errors use same_agent_retry_pending, not xsd_retry_pending
+        // (XSD retry is only for invalid XML output, not execution failures)
+        assert!(new_state.continuation.same_agent_retry_pending);
         assert_eq!(new_state.phase, PipelinePhase::Development);
 
         // Second internal error exhausts budget => fall back to next agent
@@ -69,11 +72,14 @@ fn test_agent_panic_caught_by_fault_tolerant_executor() {
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
 
+        // First internal error should retry same agent (not fall back yet)
         assert_eq!(
             new_state.agent_chain.current_agent().map(String::as_str),
             Some("agent1")
         );
-        assert!(new_state.continuation.xsd_retry_pending);
+        // Internal errors use same_agent_retry_pending, not xsd_retry_pending
+        // (XSD retry is only for invalid XML output, not execution failures)
+        assert!(new_state.continuation.same_agent_retry_pending);
 
         // Second internal error exhausts budget => fall back to next agent
         let after_second = ralph_workflow::reducer::state_reduction::reduce(

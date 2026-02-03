@@ -18,6 +18,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             review_prompt_prepared_pass: Some(pass),
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state
@@ -32,6 +34,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             review_agent_invoked_pass: Some(pass),
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state
@@ -159,6 +163,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                 invalid_output_attempts: 0,
                 fix_continue_pending: false,
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             fix_prompt_prepared_pass: None,
@@ -174,6 +180,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             fix_prompt_prepared_pass: Some(pass),
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 // Clear fix_continue_pending to prevent infinite loop.
                 // Once the fix prompt is prepared, the fix continuation attempt has started,
                 // so we should not re-derive PrepareFixPrompt.
@@ -192,6 +200,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             fix_agent_invoked_pass: Some(pass),
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state

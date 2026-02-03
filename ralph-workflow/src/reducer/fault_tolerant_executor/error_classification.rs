@@ -19,11 +19,8 @@ pub fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
         _ => {
             let stderr_lower = stderr.to_lowercase();
 
-            if stderr_lower.contains("network")
-                || stderr_lower.contains("connection")
-                || stderr_lower.contains("timeout")
-            {
-                AgentErrorKind::Network
+            if is_timeout_stderr(&stderr_lower) {
+                AgentErrorKind::Timeout
             } else if stderr_lower.contains("unauthorized")
                 || stderr_lower.contains("authentication")
                 || stderr_lower.contains("401")
@@ -37,6 +34,8 @@ pub fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
                 AgentErrorKind::Authentication
             } else if is_rate_limit_stderr(&stderr_lower, stderr) {
                 AgentErrorKind::RateLimit
+            } else if stderr_lower.contains("network") || stderr_lower.contains("connection") {
+                AgentErrorKind::Network
             } else if stderr_lower.contains("model")
                 && (stderr_lower.contains("not found") || stderr_lower.contains("unavailable"))
             {
@@ -56,6 +55,24 @@ pub fn classify_agent_error(exit_code: i32, stderr: &str) -> AgentErrorKind {
             }
         }
     }
+}
+
+fn is_timeout_stderr(stderr_lower: &str) -> bool {
+    // Be conservative: prioritize patterns that strongly indicate a timeout, and avoid
+    // classifying generic network errors as timeouts unless the message says so.
+    //
+    // Examples observed across providers / runtimes:
+    // - "Connection timeout"
+    // - "timed out"
+    // - "ETIMEDOUT"
+    // - "deadline exceeded"
+    // - "context deadline exceeded"
+    stderr_lower.contains("timeout")
+        || stderr_lower.contains("timed out")
+        || stderr_lower.contains("etimedout")
+        || stderr_lower.contains("deadline exceeded")
+        || stderr_lower.contains("context deadline exceeded")
+        || stderr_lower.contains("request timeout")
 }
 
 fn is_rate_limit_stderr(stderr_lower: &str, stderr_raw: &str) -> bool {

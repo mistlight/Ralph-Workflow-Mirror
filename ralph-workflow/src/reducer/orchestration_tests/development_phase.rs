@@ -209,6 +209,41 @@ fn test_development_continuation_emits_prompt_mode_continuation() {
 }
 
 #[test]
+fn test_development_timeout_retry_does_not_use_xsd_retry_prompt_mode() {
+    // Timeouts should retry the same agent with timeout-aware guidance, not via XSD retry.
+    // This test asserts orchestration does not select PromptMode::XsdRetry after a timeout.
+    let mut state = PipelineState::initial(1, 0);
+    state.phase = PipelinePhase::Development;
+    state.iteration = 0;
+    state.total_iterations = 1;
+    state.development_context_prepared_iteration = Some(0);
+    state.continuation.xsd_retry_pending = false;
+    state.continuation.xsd_retry_count = 0;
+    state.agent_chain = state.agent_chain.with_agents(
+        vec!["agent-a".to_string(), "agent-b".to_string()],
+        vec![vec![], vec![]],
+        AgentRole::Developer,
+    );
+
+    state = reduce(
+        state,
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
+    );
+
+    let effect = determine_next_effect(&state);
+
+    if let Effect::PrepareDevelopmentPrompt { prompt_mode, .. } = effect {
+        assert_ne!(
+            prompt_mode,
+            PromptMode::XsdRetry,
+            "Timeout retry should not use XsdRetry prompt mode"
+        );
+    } else {
+        panic!("Expected PrepareDevelopmentPrompt after timeout, got {effect:?}");
+    }
+}
+
+#[test]
 fn test_development_with_agent_chain_exhaustion() {
     let mut chain = PipelineState::initial(5, 2)
         .agent_chain

@@ -35,6 +35,42 @@ fn derive_xsd_retry_effect(state: &PipelineState) -> Effect {
     }
 }
 
+/// Derive the effect for same-agent retry based on current phase.
+///
+/// Same-agent retry starts a new invocation with the same agent (no session reuse),
+/// but uses a different prompt mode to provide retry-specific guidance.
+fn derive_same_agent_retry_effect(state: &PipelineState) -> Effect {
+    match state.phase {
+        PipelinePhase::Planning => Effect::PreparePlanningPrompt {
+            iteration: state.iteration,
+            prompt_mode: PromptMode::SameAgentRetry,
+        },
+        PipelinePhase::Development => Effect::PrepareDevelopmentPrompt {
+            iteration: state.iteration,
+            prompt_mode: PromptMode::SameAgentRetry,
+        },
+        PipelinePhase::Review => {
+            if state.review_issues_found || state.continuation.fix_continue_pending {
+                Effect::PrepareFixPrompt {
+                    pass: state.reviewer_pass,
+                    prompt_mode: PromptMode::SameAgentRetry,
+                }
+            } else {
+                Effect::PrepareReviewPrompt {
+                    pass: state.reviewer_pass,
+                    prompt_mode: PromptMode::SameAgentRetry,
+                }
+            }
+        }
+        PipelinePhase::CommitMessage => Effect::PrepareCommitPrompt {
+            prompt_mode: PromptMode::SameAgentRetry,
+        },
+        _ => Effect::SaveCheckpoint {
+            trigger: CheckpointTrigger::PhaseTransition,
+        },
+    }
+}
+
 /// Derive the effect for continuation based on current phase.
 ///
 /// Continuation starts a new session (agent starts fresh but with context).
@@ -95,6 +131,7 @@ fn derive_continuation_effect(state: &PipelineState) -> Effect {
 /// # Priority Order for Effects
 ///
 /// 1. Continuation context cleanup (highest priority)
+/// 2. Same-agent retry pending (timeout/internal error, retry same agent)
 /// 2. XSD retry pending (validation failed, retry with same agent/session)
 /// 3. Continue pending (output valid but incomplete, new session)
 /// 4. Rebase in progress
@@ -112,6 +149,23 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
 
     if state.continuation.context_cleanup_pending {
         return Effect::CleanupContinuationContext;
+    }
+
+    // Same-agent retry: invocation failed (timeout/internal error), retry same agent with
+    // retry-specific prompt guidance.
+    if state.continuation.same_agent_retry_pending {
+        if state.continuation.same_agent_retries_exhausted() {
+            debug_assert!(
+                false,
+                "Unexpected state: same_agent_retry_pending=true but same_agent_retries_exhausted()=true. \
+                 The reducer should have cleared same_agent_retry_pending when retries exhausted. \
+                 same_agent_retry_count={}, max_same_agent_retry_count={}",
+                state.continuation.same_agent_retry_count,
+                state.continuation.max_same_agent_retry_count
+            );
+        } else {
+            return derive_same_agent_retry_effect(state);
+        }
     }
 
     // XSD retry: validation failed, retry with same agent/session if not exhausted.

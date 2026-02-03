@@ -525,7 +525,7 @@ fn test_agent_chain_initialized_contains_full_fallback_chain() {
 
 #[test]
 fn test_timed_out_retries_same_agent_before_fallback() {
-    // Setup: two agents, each with two models. Budget 2 means:
+    // Setup: two agents, each with two models. Same-agent retry budget 2 means:
     // - First timeout retries same agent
     // - Second timeout falls back to next agent
     let base_state = create_test_state();
@@ -551,6 +551,16 @@ fn test_timed_out_retries_same_agent_before_fallback() {
     let after_first_timeout = reduce(
         state,
         PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
+    );
+
+    // Timeout retries MUST NOT reuse XSD retry mechanism.
+    assert!(
+        !after_first_timeout.continuation.xsd_retry_pending,
+        "Timeout retry should not set xsd_retry_pending (XSD retry is only for invalid XML)"
+    );
+    assert_eq!(
+        after_first_timeout.continuation.xsd_retry_count, 0,
+        "Timeout retry should not increment xsd_retry_count (XSD retry is only for invalid XML)"
     );
 
     assert_eq!(
@@ -586,6 +596,50 @@ fn test_timed_out_retries_same_agent_before_fallback() {
 }
 
 #[test]
+fn test_internal_error_retries_same_agent_before_fallback_without_xsd_retry() {
+    use crate::reducer::event::AgentErrorKind;
+
+    let base_state = create_test_state();
+    let state = PipelineState {
+        continuation: crate::reducer::state::ContinuationState::with_limits(2, 3),
+        agent_chain: base_state.agent_chain.with_agents(
+            vec!["agent-a".to_string(), "agent-b".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        ),
+        ..base_state
+    };
+
+    let after_first_failure = reduce(
+        state,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent-a".to_string(),
+            1,
+            AgentErrorKind::InternalError,
+            false,
+        ),
+    );
+
+    assert_eq!(
+        after_first_failure
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent-a"),
+        "Internal error should retry same agent first"
+    );
+    assert!(
+        !after_first_failure.continuation.xsd_retry_pending,
+        "Internal error retry should not set xsd_retry_pending (XSD retry is only for invalid XML)"
+    );
+    assert_eq!(
+        after_first_failure.continuation.xsd_retry_count, 0,
+        "Internal error retry should not increment xsd_retry_count (XSD retry is only for invalid XML)"
+    );
+}
+
+#[test]
 fn test_timed_out_clears_session_id_even_when_retrying_same_agent() {
     let base_state = create_test_state();
     let state = PipelineState {
@@ -612,6 +666,11 @@ fn test_timed_out_clears_session_id_even_when_retrying_same_agent() {
         PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
     );
 
+    assert!(
+        !new_state.continuation.xsd_retry_pending,
+        "Timeout retry should not set xsd_retry_pending (XSD retry is only for invalid XML)"
+    );
+
     // Session ID should be cleared (new agent, new session)
     assert_eq!(
         new_state.agent_chain.last_session_id, None,
@@ -621,9 +680,17 @@ fn test_timed_out_clears_session_id_even_when_retrying_same_agent() {
 
 #[test]
 fn test_timed_out_from_last_agent_increments_retry_cycle_when_budget_exhausted() {
+    // This test verifies behavior when same-agent retry budget is exhausted and we're on the
+    // last agent in the chain.
+    //
+    // With the "retry same agent first" policy:
+    // - First timeout => retry same agent (same_agent_retry_count=1)
+    // - Second timeout => retry budget exhausted (count=2 >= max=2), fall back
+    // - Falling back from last agent => wrap to first agent and increment retry_cycle
     let base_state = create_test_state();
     let state = PipelineState {
-        continuation: crate::reducer::state::ContinuationState::with_limits(1, 3),
+        continuation: crate::reducer::state::ContinuationState::with_limits(1, 3)
+            .with_max_same_agent_retry(2), // 2 same-agent retries allowed (so 3rd timeout triggers fallback)
         agent_chain: base_state
             .agent_chain
             .with_agents(
@@ -641,23 +708,52 @@ fn test_timed_out_from_last_agent_increments_retry_cycle_when_budget_exhausted()
         Some("agent-b")
     );
     assert_eq!(state.agent_chain.retry_cycle, 0);
+    assert_eq!(state.continuation.same_agent_retry_count, 0);
 
-    // Apply timeout fallback from last agent
-    let new_state = reduce(
+    // First timeout: should retry same agent, not fall back yet
+    let after_first_timeout = reduce(
         state,
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-b".to_string()),
+    );
+
+    assert!(
+        !after_first_timeout.continuation.xsd_retry_pending,
+        "Timeout retry should not set xsd_retry_pending (XSD retry is only for invalid XML)"
+    );
+    assert_eq!(
+        after_first_timeout
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent-b"),
+        "First timeout should retry same agent, not fall back"
+    );
+    assert_eq!(after_first_timeout.continuation.same_agent_retry_count, 1);
+    assert!(after_first_timeout.continuation.same_agent_retry_pending);
+
+    // Second timeout: same-agent retry budget exhausted (count=2 >= max=2), fall back
+    // Since we're on the last agent, this should wrap to first agent and increment retry_cycle
+    let after_second_timeout = reduce(
+        after_first_timeout,
         PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-b".to_string()),
     );
 
     // Should wrap back to first agent and increment retry cycle
     assert_eq!(
-        new_state.agent_chain.current_agent().map(String::as_str),
+        after_second_timeout
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
         Some("agent-a"),
-        "Should wrap back to first agent after falling back"
+        "Should wrap back to first agent after exhausting retry budget on last agent"
     );
     assert_eq!(
-        new_state.agent_chain.retry_cycle, 1,
+        after_second_timeout.agent_chain.retry_cycle, 1,
         "Should increment retry cycle when wrapping"
     );
+    // Retry counters should be reset after agent switch
+    assert_eq!(after_second_timeout.continuation.same_agent_retry_count, 0);
+    assert!(!after_second_timeout.continuation.same_agent_retry_pending);
 }
 
 // ============================================================================

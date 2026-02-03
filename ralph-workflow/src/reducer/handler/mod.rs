@@ -19,6 +19,7 @@ mod context;
 mod development;
 mod planning;
 mod rebase;
+mod retry_guidance;
 mod review;
 
 #[cfg(test)]

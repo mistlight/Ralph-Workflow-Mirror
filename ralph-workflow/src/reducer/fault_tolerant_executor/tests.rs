@@ -175,8 +175,14 @@ fn test_classify_agent_error_sigterm() {
 }
 
 #[test]
-fn test_classify_agent_error_network() {
+fn test_classify_agent_error_timeout_from_stderr() {
     let error_kind = classify_agent_error(1, "Connection timeout");
+    assert_eq!(error_kind, AgentErrorKind::Timeout);
+}
+
+#[test]
+fn test_classify_agent_error_network_connection_reset() {
+    let error_kind = classify_agent_error(1, "Connection reset by peer");
     assert_eq!(error_kind, AgentErrorKind::Network);
 }
 
@@ -228,8 +234,8 @@ fn test_is_retriable_agent_error() {
     // Network, ModelUnavailable are retriable (model fallback)
     assert!(is_retriable_agent_error(&AgentErrorKind::Network));
     assert!(is_retriable_agent_error(&AgentErrorKind::ModelUnavailable));
-    // Timeout is NOT retriable - it triggers immediate agent fallback
-    // (retrying the same agent would likely hit the same timeout)
+    // Timeout is NOT retriable - it is handled via reducer policy
+    // (retry same agent first, then switch agents after budget exhaustion).
     assert!(!is_retriable_agent_error(&AgentErrorKind::Timeout));
     // RateLimit is NOT retriable - it triggers immediate agent fallback
     assert!(!is_retriable_agent_error(&AgentErrorKind::RateLimit));
@@ -449,7 +455,10 @@ fn test_classify_agent_error_403_from_json_error() {
 #[test]
 fn test_non_special_errors_maintain_retry_semantics() {
     // Network errors: retriable (model fallback, NOT agent fallback)
-    let network_error = classify_agent_error(1, "Connection timeout");
+    // Note: "Connection timeout" is now classified as Timeout (not Network) because timeout
+    // patterns are checked before connection/network patterns - see is_timeout_stderr().
+    // Use "Connection refused" or "Connection reset" for pure network errors.
+    let network_error = classify_agent_error(1, "Connection refused");
     assert_eq!(network_error, AgentErrorKind::Network);
     assert!(
         is_retriable_agent_error(&network_error),
@@ -464,8 +473,14 @@ fn test_non_special_errors_maintain_retry_semantics() {
         "Network should not trigger auth fallback"
     );
 
-    // Timeout errors: emitted as TimedOut (reducer decides retry vs fallback)
-    // Retrying the same agent would likely hit the same timeout
+    // Timeout errors via stderr (e.g., "Connection timeout" or "Request timeout")
+    // are now classified as Timeout so the reducer can apply retry-first-then-fallback.
+    let connection_timeout = classify_agent_error(1, "Connection timeout");
+    assert_eq!(connection_timeout, AgentErrorKind::Timeout);
+    assert!(!is_retriable_agent_error(&connection_timeout));
+    assert!(is_timeout_error(&connection_timeout));
+
+    // Timeout errors via exit code (SIGTERM): emitted as TimedOut
     let timeout_error = classify_agent_error(143, ""); // SIGTERM
     assert_eq!(timeout_error, AgentErrorKind::Timeout);
     assert!(!is_retriable_agent_error(&timeout_error));

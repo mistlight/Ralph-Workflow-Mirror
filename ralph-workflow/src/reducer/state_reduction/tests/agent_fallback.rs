@@ -82,8 +82,12 @@ fn test_reduce_all_agent_failure_scenarios() {
         "InternalError should retry same agent first, not immediately fall back"
     );
     assert!(
-        internal_error_state.continuation.xsd_retry_pending,
-        "InternalError retry should set xsd_retry_pending so prompt can be retry-aware"
+        internal_error_state.continuation.same_agent_retry_pending,
+        "InternalError retry should set same_agent_retry_pending so orchestration can select retry prompt mode"
+    );
+    assert_eq!(
+        internal_error_state.continuation.same_agent_retry_reason,
+        Some(SameAgentRetryReason::InternalError)
     );
 }
 
@@ -409,12 +413,24 @@ fn test_timeout_retries_same_agent_until_retry_budget_exhausted() {
         "First timeout should retry same agent, not immediately fall back"
     );
     assert_eq!(
-        after_first_timeout.continuation.xsd_retry_count, 1,
-        "Timeout should consume retry budget deterministically"
+        after_first_timeout.continuation.xsd_retry_count, 0,
+        "Timeout retry must not consume XSD retry budget (XSD retries are only for invalid XML)"
     );
     assert!(
-        after_first_timeout.continuation.xsd_retry_pending,
-        "Timeout retry should set xsd_retry_pending so prompt can be retry-aware"
+        !after_first_timeout.continuation.xsd_retry_pending,
+        "Timeout retry must not set xsd_retry_pending (XSD retries are only for invalid XML)"
+    );
+    assert_eq!(
+        after_first_timeout.continuation.same_agent_retry_count, 1,
+        "Timeout should consume same-agent retry budget deterministically"
+    );
+    assert!(
+        after_first_timeout.continuation.same_agent_retry_pending,
+        "Timeout retry should set same_agent_retry_pending so orchestration can select retry prompt mode"
+    );
+    assert_eq!(
+        after_first_timeout.continuation.same_agent_retry_reason,
+        Some(SameAgentRetryReason::Timeout)
     );
 
     let after_second_timeout = reduce(
@@ -438,6 +454,12 @@ fn test_timeout_retries_same_agent_until_retry_budget_exhausted() {
         !after_second_timeout.continuation.xsd_retry_pending,
         "Agent fallback should clear xsd_retry_pending"
     );
+    assert_eq!(after_second_timeout.continuation.same_agent_retry_count, 0);
+    assert!(!after_second_timeout.continuation.same_agent_retry_pending);
+    assert!(after_second_timeout
+        .continuation
+        .same_agent_retry_reason
+        .is_none());
 }
 
 #[test]
@@ -475,8 +497,14 @@ fn test_internal_error_retries_same_agent_until_retry_budget_exhausted() {
         Some("agent1"),
         "First internal error should retry same agent, not immediately fall back"
     );
-    assert_eq!(after_first_failure.continuation.xsd_retry_count, 1);
-    assert!(after_first_failure.continuation.xsd_retry_pending);
+    assert_eq!(after_first_failure.continuation.xsd_retry_count, 0);
+    assert!(!after_first_failure.continuation.xsd_retry_pending);
+    assert_eq!(after_first_failure.continuation.same_agent_retry_count, 1);
+    assert!(after_first_failure.continuation.same_agent_retry_pending);
+    assert_eq!(
+        after_first_failure.continuation.same_agent_retry_reason,
+        Some(SameAgentRetryReason::InternalError)
+    );
 
     let after_second_failure = reduce(
         after_first_failure,
@@ -499,4 +527,10 @@ fn test_internal_error_retries_same_agent_until_retry_budget_exhausted() {
     );
     assert_eq!(after_second_failure.continuation.xsd_retry_count, 0);
     assert!(!after_second_failure.continuation.xsd_retry_pending);
+    assert_eq!(after_second_failure.continuation.same_agent_retry_count, 0);
+    assert!(!after_second_failure.continuation.same_agent_retry_pending);
+    assert!(after_second_failure
+        .continuation
+        .same_agent_retry_reason
+        .is_none());
 }

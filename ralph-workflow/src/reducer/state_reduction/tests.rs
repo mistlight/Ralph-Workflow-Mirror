@@ -13,6 +13,7 @@ use crate::reducer::state::CommitState;
 use crate::reducer::state::ContinuationState;
 use crate::reducer::state::PipelineState;
 use crate::reducer::state::RebaseState;
+use crate::reducer::state::SameAgentRetryReason;
 
 fn create_test_state() -> PipelineState {
     PipelineState {

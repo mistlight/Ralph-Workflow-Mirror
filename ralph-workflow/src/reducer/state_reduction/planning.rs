@@ -39,6 +39,8 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
             planning_prompt_prepared_iteration: Some(iteration),
             continuation: ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state
@@ -51,6 +53,8 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
             planning_agent_invoked_iteration: Some(iteration),
             continuation: ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state

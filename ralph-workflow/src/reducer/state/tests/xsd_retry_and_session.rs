@@ -18,6 +18,7 @@
     fn test_continuation_state_with_limits() {
         let state = ContinuationState::with_limits(5, 2);
         assert_eq!(state.max_xsd_retry_count, 5);
+        assert_eq!(state.max_same_agent_retry_count, 2);
         assert_eq!(state.max_continue_count, 2);
         assert!(!state.is_continuation());
     }
@@ -26,6 +27,7 @@
     fn test_continuation_state_default_limits() {
         let state = ContinuationState::new();
         assert_eq!(state.max_xsd_retry_count, 10);
+        assert_eq!(state.max_same_agent_retry_count, 2);
         assert_eq!(state.max_continue_count, 3);
     }
 
@@ -33,12 +35,16 @@
     fn test_continuation_reset_preserves_limits() {
         let state = ContinuationState::with_limits(5, 2)
             .trigger_xsd_retry()
-            .trigger_xsd_retry();
+            .trigger_xsd_retry()
+            .trigger_same_agent_retry(SameAgentRetryReason::Timeout);
         assert_eq!(state.xsd_retry_count, 2);
+        assert_eq!(state.same_agent_retry_count, 1);
 
         let reset = state.reset();
         assert_eq!(reset.xsd_retry_count, 0);
+        assert_eq!(reset.same_agent_retry_count, 0);
         assert_eq!(reset.max_xsd_retry_count, 5);
+        assert_eq!(reset.max_same_agent_retry_count, 2);
         assert_eq!(reset.max_continue_count, 2);
     }
 
@@ -84,6 +90,29 @@
 
         let state = state.trigger_xsd_retry();
         assert!(state.xsd_retries_exhausted());
+    }
+
+    #[test]
+    fn test_same_agent_retry_trigger_and_clear_pending() {
+        let state = ContinuationState::new()
+            .trigger_same_agent_retry(SameAgentRetryReason::Timeout)
+            .clear_same_agent_retry_pending();
+
+        assert!(!state.same_agent_retry_pending);
+        assert_eq!(state.same_agent_retry_count, 1);
+        assert!(state.same_agent_retry_reason.is_none());
+    }
+
+    #[test]
+    fn test_same_agent_retries_exhausted() {
+        let state = ContinuationState::new().with_max_same_agent_retry(2);
+        assert!(!state.same_agent_retries_exhausted());
+
+        let state = state.trigger_same_agent_retry(SameAgentRetryReason::Timeout);
+        assert!(!state.same_agent_retries_exhausted());
+
+        let state = state.trigger_same_agent_retry(SameAgentRetryReason::InternalError);
+        assert!(state.same_agent_retries_exhausted());
     }
 
     #[test]
@@ -241,4 +270,3 @@
             "reset_for_role() should clear last_session_id"
         );
     }
-

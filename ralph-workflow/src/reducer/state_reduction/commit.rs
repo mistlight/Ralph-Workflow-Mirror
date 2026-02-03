@@ -40,6 +40,8 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_prompt_prepared: true,
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state
@@ -48,6 +50,8 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_agent_invoked: true,
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state

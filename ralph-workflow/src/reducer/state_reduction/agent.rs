@@ -14,6 +14,12 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
         // Clear continuation prompt on success
         AgentEvent::InvocationSucceeded { .. } => PipelineState {
             agent_chain: state.agent_chain.clear_continuation_prompt(),
+            continuation: ContinuationState {
+                same_agent_retry_count: 0,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
+                ..state.continuation
+            },
             ..state
         },
         // Rate limit (429): immediate agent switch, preserve prompt context.
@@ -25,6 +31,9 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             continuation: ContinuationState {
                 xsd_retry_count: 0,
                 xsd_retry_pending: false,
+                same_agent_retry_count: 0,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state
@@ -39,6 +48,9 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             continuation: ContinuationState {
                 xsd_retry_count: 0,
                 xsd_retry_pending: false,
+                same_agent_retry_count: 0,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state
@@ -55,6 +67,9 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             continuation: ContinuationState {
                 xsd_retry_count: 0,
                 xsd_retry_pending: false,
+                same_agent_retry_count: 0,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state
@@ -78,6 +93,9 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
                 continuation: ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
+                    same_agent_retry_count: 0,
+                    same_agent_retry_pending: false,
+                    same_agent_retry_reason: None,
                     ..state.continuation
                 },
                 ..state
@@ -85,6 +103,12 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
         },
         AgentEvent::FallbackTriggered { .. } => PipelineState {
             agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+            continuation: ContinuationState {
+                same_agent_retry_count: 0,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
+                ..state.continuation
+            },
             ..state
         },
         AgentEvent::ChainExhausted { .. } => PipelineState {
@@ -133,6 +157,12 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
         // This is treated as a non-retriable error since the template system itself failed.
         AgentEvent::TemplateVariablesInvalid { .. } => PipelineState {
             agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+            continuation: ContinuationState {
+                same_agent_retry_count: 0,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
+                ..state.continuation
+            },
             ..state
         },
     }
@@ -146,28 +176,34 @@ enum SameAgentRetryableFailure {
 
 fn reduce_same_agent_retryable_failure(
     state: PipelineState,
-    _failure: SameAgentRetryableFailure,
+    failure: SameAgentRetryableFailure,
 ) -> PipelineState {
     // Keep agent selection reducer-driven and deterministic:
     // - Retry same agent first for timeouts/internal errors.
     // - Fall back to next agent only after exhausting the configured budget.
-    let new_xsd_count = state.continuation.xsd_retry_count + 1;
-    if new_xsd_count >= state.continuation.max_xsd_retry_count {
+    let new_retry_count = state.continuation.same_agent_retry_count + 1;
+    if new_retry_count >= state.continuation.max_same_agent_retry_count {
         PipelineState {
             agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
             continuation: ContinuationState {
-                xsd_retry_count: 0,
-                xsd_retry_pending: false,
+                same_agent_retry_count: 0,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state
         }
     } else {
+        let reason = match failure {
+            SameAgentRetryableFailure::Timeout => SameAgentRetryReason::Timeout,
+            SameAgentRetryableFailure::InternalError => SameAgentRetryReason::InternalError,
+        };
         PipelineState {
             agent_chain: state.agent_chain.clear_session_id(),
             continuation: ContinuationState {
-                xsd_retry_count: new_xsd_count,
-                xsd_retry_pending: true,
+                same_agent_retry_count: new_retry_count,
+                same_agent_retry_pending: true,
+                same_agent_retry_reason: Some(reason),
                 ..state.continuation
             },
             ..state

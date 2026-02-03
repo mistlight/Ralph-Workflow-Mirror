@@ -29,6 +29,20 @@ pub enum PromptMode {
     XsdRetry,
     /// Continuation prompt rendering for partial/failed outputs.
     Continuation,
+    /// Same-agent retry prompt rendering for transient invocation failures.
+    ///
+    /// Used for timeouts and internal/unknown errors where we want to retry the
+    /// same agent first with additional guidance (reduce scope, chunk work, etc.).
+    SameAgentRetry,
+}
+
+/// Reason a same-agent retry is pending.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SameAgentRetryReason {
+    /// The agent invocation timed out.
+    Timeout,
+    /// The agent invocation failed with an internal/unknown error.
+    InternalError,
 }
 
 impl std::fmt::Display for ArtifactType {

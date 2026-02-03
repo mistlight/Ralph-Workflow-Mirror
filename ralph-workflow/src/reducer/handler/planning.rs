@@ -47,6 +47,7 @@ impl MainEffectHandler {
         if is_xsd_retry {
             ignore_sources.push(last_output.as_str());
         }
+        let continuation_state = &self.state.continuation;
         let (prompt, template_name, prompt_key, was_replayed) = match prompt_mode {
             PromptMode::XsdRetry => {
                 (
@@ -61,6 +62,22 @@ impl MainEffectHandler {
                     None,
                     false,
                 )
+            }
+            PromptMode::SameAgentRetry => {
+                // Same-agent retry for timeout/internal error: generate normal prompt with
+                // retry guidance prepended.
+                let retry_preamble = super::retry_guidance::same_agent_retry_preamble(continuation_state);
+                let base_prompt = prompt_planning_xml_with_context(
+                    ctx.template_context,
+                    Some(prompt_md_str),
+                    ctx.workspace,
+                );
+                let prompt = format!("{retry_preamble}\n{base_prompt}");
+                let prompt_key = format!(
+                    "planning_{iteration}_same_agent_retry_{}",
+                    continuation_state.same_agent_retry_count
+                );
+                (prompt, "planning_xml", Some(prompt_key), false)
             }
             PromptMode::Normal => {
                 let prompt_key = format!("planning_{iteration}");

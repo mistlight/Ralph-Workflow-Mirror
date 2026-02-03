@@ -65,6 +65,24 @@ impl MainEffectHandler {
                     });
                 (prompt_key, prompt, was_replayed, "fix_mode_xsd_retry")
             }
+            PromptMode::SameAgentRetry => {
+                // Same-agent retry for timeout/internal error: generate normal prompt with
+                // retry guidance prepended.
+                let retry_preamble = crate::reducer::handler::retry_guidance::same_agent_retry_preamble(continuation_state);
+                let base_prompt = prompt_fix_xml_with_context(
+                    ctx.template_context,
+                    &prompt_content,
+                    &plan_content,
+                    &issues_content,
+                    &[],
+                );
+                let prompt = format!("{retry_preamble}\n{base_prompt}");
+                let prompt_key = format!(
+                    "fix_{pass}_same_agent_retry_{}",
+                    continuation_state.same_agent_retry_count
+                );
+                (prompt_key, prompt, false, "fix_mode_xml")
+            }
             PromptMode::Normal => {
                 let prompt_key = format!("fix_{pass}");
                 let (prompt, was_replayed) =
