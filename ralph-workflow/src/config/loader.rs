@@ -223,7 +223,7 @@ fn default_config() -> Config {
         review_format_retries: 5,
         max_dev_continuations: Some(2), // Default to 2 (initial + 1 continuation)
         max_xsd_retries: Some(10),      // Default to 10 retries before agent fallback
-        max_same_agent_retries: Some(2), // Default to 2 retries before agent fallback
+        max_same_agent_retries: Some(2), // Default to 2 failures (initial + 1 retry) before agent fallback
     }
 }
 

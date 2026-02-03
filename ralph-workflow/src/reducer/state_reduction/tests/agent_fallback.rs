@@ -253,13 +253,13 @@ fn test_auth_fallback_clears_session_and_advances_agent() {
             .agent_chain
             .rate_limit_continuation_prompt
             .is_none(),
-        "AuthFallback must clear any existing continuation prompt"
+        "AuthFailed must clear any existing continuation prompt"
     );
 }
 
 #[test]
 fn test_rate_limit_fallback_clears_session_id() {
-    // RateLimitFallback preserves prompt context, but MUST NOT preserve session IDs
+    // RateLimited preserves prompt context, but MUST NOT preserve session IDs
     // across agents.
     let chain = AgentChainState::initial()
         .with_agents(
@@ -286,12 +286,12 @@ fn test_rate_limit_fallback_clears_session_id() {
 
     assert!(
         new_state.agent_chain.last_session_id.is_none(),
-        "RateLimitFallback must clear session IDs when switching agents"
+        "RateLimited must clear session IDs when switching agents"
     );
     assert_eq!(
         new_state.agent_chain.rate_limit_continuation_prompt,
         Some("preserved prompt".to_string()),
-        "RateLimitFallback should preserve prompt context"
+        "RateLimited should preserve prompt context"
     );
 }
 
@@ -316,20 +316,19 @@ fn test_auth_fallback_does_not_set_continuation_prompt() {
         PipelineEvent::agent_auth_failed(AgentRole::Developer, "agent1".to_string()),
     );
 
-    // Key assertion: AuthFallback does NOT set prompt context
-    // (unlike RateLimitFallback which preserves the prompt)
+    // Key assertion: AuthFailed does NOT set prompt context (unlike RateLimited).
     assert!(
         new_state
             .agent_chain
             .rate_limit_continuation_prompt
             .is_none(),
-        "AuthFallback should not set continuation prompt (only RateLimitFallback does)"
+        "AuthFailed should not set continuation prompt (only RateLimited does)"
     );
 }
 
 #[test]
 fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
-    // This test documents the key semantic difference between the two fallback types
+    // This test documents the key semantic difference between rate limit and auth failures.
     let base_chain = AgentChainState::initial().with_agents(
         vec![
             "agent1".to_string(),
@@ -340,7 +339,7 @@ fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
         AgentRole::Developer,
     );
 
-    // Test 1: RateLimitFallback preserves prompt
+    // Test 1: RateLimited preserves prompt
     let state1 = PipelineState {
         phase: PipelinePhase::Development,
         agent_chain: base_chain.clone(),
@@ -359,10 +358,10 @@ fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
     assert_eq!(
         after_rate_limit.agent_chain.rate_limit_continuation_prompt,
         Some("preserved prompt".to_string()),
-        "RateLimitFallback should preserve prompt context"
+        "RateLimited should preserve prompt context"
     );
 
-    // Test 2: AuthFallback does NOT set prompt (credentials issue, not exhaustion)
+    // Test 2: AuthFailed does NOT set prompt (credentials issue, not exhaustion)
     let state2 = PipelineState {
         phase: PipelinePhase::Development,
         agent_chain: base_chain,
@@ -379,7 +378,7 @@ fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
             .agent_chain
             .rate_limit_continuation_prompt
             .is_none(),
-        "AuthFallback should not set prompt context (credentials issue, not exhaustion)"
+        "AuthFailed should not set prompt context (credentials issue, not exhaustion)"
     );
 }
 

@@ -450,18 +450,18 @@ fn test_filesystem_error_triggers_agent_fallback() {
     });
 }
 
-/// Test that rate limit (429) triggers agent fallback via AgentRateLimitFallback event.
+/// Test that rate limit (429) triggers agent fallback via the fact event
+/// `PipelineEvent::agent_rate_limited`.
 ///
-/// Rate limit errors now trigger immediate agent fallback (not model fallback)
-/// to allow work to continue without waiting for rate limits to reset.
-/// This is handled via the dedicated AgentRateLimitFallback event which also
-/// preserves prompt context for continuation.
+/// Rate limit errors now trigger immediate agent fallback (not model fallback) to
+/// allow work to continue without waiting for rate limits to reset. The reducer
+/// preserves prompt context for continuation when switching agents.
 #[test]
 fn test_rate_limit_error_triggers_agent_fallback() {
     with_default_timeout(|| {
         let state = create_state_with_agent_chain();
 
-        // Simulate rate limit via AgentRateLimitFallback event - should trigger agent fallback
+        // Simulate a rate-limit fact event - should trigger agent fallback.
         let new_state = reduce(
             state,
             PipelineEvent::agent_rate_limited(
