@@ -29,17 +29,32 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let prompt_md = ctx
-            .workspace
-            .read(Path::new("PROMPT.md"))
-            .unwrap_or_default();
+        let prompt_md = match ctx.workspace.read(Path::new("PROMPT.md")) {
+            Ok(prompt_md) => prompt_md,
+            Err(err) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    format!("Failed to read required PROMPT.md: {err}"),
+                )));
+            }
+        };
         let content_id_sha256 = sha256_hex_str(&prompt_md);
         let original_bytes = prompt_md.len() as u64;
         let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
         let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
 
         let (representation, reason) = if original_bytes > inline_budget_bytes {
-            let _ = crate::files::create_prompt_backup_with_workspace(ctx.workspace);
+            match crate::files::create_prompt_backup_with_workspace(ctx.workspace) {
+                Ok(Some(warning)) => {
+                    ctx.logger
+                        .warn(&format!("PROMPT backup created with warning: {warning}"));
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                        format!("Failed to create PROMPT backup: {err}"),
+                    )));
+                }
+            }
             ctx.logger.warn(&format!(
                 "PROMPT size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 original_bytes / 1024,
@@ -106,49 +121,34 @@ impl MainEffectHandler {
             ctx.workspace.create_dir_all(tmp_dir)?;
         }
 
-        let prompt_md = ctx
-            .workspace
-            .read(Path::new("PROMPT.md"))
-            .unwrap_or_default();
-        let prompt_md_str = prompt_md.as_str();
-
-        let prompt_ref = self
-            .state
-            .prompt_inputs
-            .planning
-            .as_ref()
-            .filter(|p| p.iteration == iteration)
-            .map(|p| &p.prompt)
-            .map(|p| match &p.representation {
-                PromptInputRepresentation::Inline => {
-                    PromptContentReference::inline(prompt_md.clone())
-                }
-                PromptInputRepresentation::FileReference { path } => {
-                    PromptContentReference::file_path(
-                        path.clone(),
-                        "Original user requirements from PROMPT.md",
-                    )
-                }
-            });
-
         let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
         let last_output = if is_xsd_retry {
-            ctx.workspace
-                .read(Path::new(xml_paths::PLAN_XML))
-                .unwrap_or_default()
+            match ctx.workspace.read(Path::new(xml_paths::PLAN_XML)) {
+                Ok(output) => output,
+                Err(err) => {
+                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                        format!(
+                            "Failed to read last planning output at {}: {err}",
+                            xml_paths::PLAN_XML
+                        ),
+                    )));
+                }
+            }
         } else {
             String::new()
         };
-        let mut ignore_sources = vec![prompt_md_str];
+
+        let mut ignore_sources_owned: Vec<String> = Vec::new();
         if is_xsd_retry {
-            ignore_sources.push(last_output.as_str());
+            ignore_sources_owned.push(last_output.clone());
         }
+
         let (prompt, template_name, prompt_key, was_replayed) = match prompt_mode {
             PromptMode::XsdRetry => {
                 (
                     prompt_planning_xsd_retry_with_context(
                         ctx.template_context,
-                        prompt_md_str,
+                        "", // kept for API compatibility; template reads context files instead
                         "Previous XML output failed XSD validation. Please provide valid XML conforming to the schema.",
                         &last_output,
                         ctx.workspace,
@@ -159,13 +159,44 @@ impl MainEffectHandler {
                 )
             }
             PromptMode::Normal => {
+                let inputs = self
+                    .state
+                    .prompt_inputs
+                    .planning
+                    .as_ref()
+                    .filter(|p| p.iteration == iteration)
+                    .expect("planning inputs must be materialized before preparing prompt");
+
+                let prompt_ref = match &inputs.prompt.representation {
+                    PromptInputRepresentation::Inline => {
+                        let prompt_md = match ctx.workspace.read(Path::new("PROMPT.md")) {
+                            Ok(prompt_md) => prompt_md,
+                            Err(err) => {
+                                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                    format!("Failed to read required PROMPT.md: {err}"),
+                                )));
+                            }
+                        };
+                        ignore_sources_owned.push(prompt_md.clone());
+                        PromptContentReference::inline(prompt_md)
+                    }
+                    PromptInputRepresentation::FileReference { path } => {
+                        PromptContentReference::file_path(
+                            path.clone(),
+                            "Original user requirements from PROMPT.md",
+                        )
+                    }
+                };
+
                 let prompt_key = format!("planning_{iteration}");
+                let prompt_ref_for_template = prompt_ref.clone();
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        let prompt_ref = prompt_ref
-                            .as_ref()
-                            .expect("planning inputs must be materialized before preparing prompt");
-                        prompt_planning_xml_with_references(ctx.template_context, prompt_ref, ctx.workspace)
+                        prompt_planning_xml_with_references(
+                            ctx.template_context,
+                            &prompt_ref_for_template,
+                            ctx.workspace,
+                        )
                     });
                 (prompt, "planning_xml", Some(prompt_key), was_replayed)
             }
@@ -175,6 +206,8 @@ impl MainEffectHandler {
                 )));
             }
         };
+
+        let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
         if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
             &prompt,
             &ignore_sources,

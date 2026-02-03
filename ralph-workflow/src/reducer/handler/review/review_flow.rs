@@ -4,14 +4,22 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
-        let plan_content = ctx
-            .workspace
-            .read(Path::new(".agent/PLAN.md"))
-            .unwrap_or_default();
-        let diff_content = ctx
-            .workspace
-            .read(Path::new(".agent/DIFF.backup"))
-            .unwrap_or_default();
+        let plan_content = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
+            Ok(plan_content) => plan_content,
+            Err(err) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
+                    "Failed to read required .agent/PLAN.md: {err}",
+                ))));
+            }
+        };
+        let diff_content = match ctx.workspace.read(Path::new(".agent/DIFF.backup")) {
+            Ok(diff_content) => diff_content,
+            Err(err) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
+                    "Failed to read required .agent/DIFF.backup: {err}",
+                ))));
+            }
+        };
 
         let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
         let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
@@ -37,9 +45,18 @@ impl MainEffectHandler {
         let (diff_representation, diff_reason) = if diff_content.len() as u64 > inline_budget_bytes {
             let tmp_dir = Path::new(".agent/tmp");
             if !ctx.workspace.exists(tmp_dir) {
-                let _ = ctx.workspace.create_dir_all(tmp_dir);
+                if let Err(err) = ctx.workspace.create_dir_all(tmp_dir) {
+                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
+                        "Failed to create directory {}: {err}",
+                        tmp_dir.display()
+                    ))));
+                }
             }
-            let _ = ctx.workspace.write(Path::new(".agent/tmp/diff.txt"), &diff_content);
+            if let Err(err) = ctx.workspace.write(Path::new(".agent/tmp/diff.txt"), &diff_content) {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
+                    "Failed to write materialized diff to .agent/tmp/diff.txt: {err}",
+                ))));
+            }
             ctx.logger.warn(&format!(
                 "DIFF size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (diff_content.len() as u64) / 1024,
@@ -173,14 +190,12 @@ impl MainEffectHandler {
             ctx.workspace.create_dir_all(tmp_dir)?;
         }
 
-        let plan_content = ctx
-            .workspace
-            .read(Path::new(".agent/PLAN.md"))
-            .unwrap_or_default();
-        let diff_content = ctx
-            .workspace
-            .read(Path::new(".agent/DIFF.backup"))
-            .unwrap_or_default();
+        let materialized_inputs = self
+            .state
+            .prompt_inputs
+            .review
+            .as_ref()
+            .filter(|p| p.pass == pass);
 
         let baseline_oid_for_prompts = ctx
             .workspace
@@ -189,19 +204,63 @@ impl MainEffectHandler {
             .trim()
             .to_string();
 
-        let mut ignore_sources = vec![plan_content.as_str(), diff_content.as_str()];
+        let mut ignore_sources_owned: Vec<String> = Vec::new();
+        let (plan_inline, diff_inline) = if matches!(prompt_mode, PromptMode::Normal) {
+            let inputs =
+                materialized_inputs.expect("review inputs must be materialized before preparing prompt");
+            let plan_inline = match &inputs.plan.representation {
+                PromptInputRepresentation::Inline => {
+                    let plan = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
+                        Ok(plan) => plan,
+                        Err(err) => {
+                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                format!("Failed to read required .agent/PLAN.md: {err}"),
+                            )));
+                        }
+                    };
+                    ignore_sources_owned.push(plan.clone());
+                    Some(plan)
+                }
+                PromptInputRepresentation::FileReference { .. } => None,
+            };
+            let diff_inline = match &inputs.diff.representation {
+                PromptInputRepresentation::Inline => {
+                    let diff = match ctx.workspace.read(Path::new(".agent/DIFF.backup")) {
+                        Ok(diff) => diff,
+                        Err(err) => {
+                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                format!("Failed to read required .agent/DIFF.backup: {err}"),
+                            )));
+                        }
+                    };
+                    ignore_sources_owned.push(diff.clone());
+                    Some(diff)
+                }
+                PromptInputRepresentation::FileReference { .. } => None,
+            };
+            (plan_inline, diff_inline)
+        } else {
+            (None, None)
+        };
         let continuation_state = &self.state.continuation;
         let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
         let last_output = if is_xsd_retry {
-            ctx.workspace
-                .read(Path::new(xml_paths::ISSUES_XML))
-                .unwrap_or_default()
+            match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
+                Ok(output) => output,
+                Err(err) => {
+                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
+                        "Failed to read last review output at {}: {err}",
+                        xml_paths::ISSUES_XML
+                    ))));
+                }
+            }
         } else {
             String::new()
         };
         if is_xsd_retry {
-            ignore_sources.push(last_output.as_str());
+            ignore_sources_owned.push(last_output.clone());
         }
+        let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
         let (prompt_key, review_prompt_xml, was_replayed, template_name) = match prompt_mode {
             PromptMode::XsdRetry => {
                 let prompt_key = format!(
@@ -213,8 +272,8 @@ impl MainEffectHandler {
                         prompt_review_xsd_retry_with_context(
                             ctx.template_context,
                             "",
-                            &plan_content,
-                            &diff_content,
+                            "",
+                            "",
                             "XML output failed validation. Provide valid XML output.",
                             &last_output,
                             ctx.workspace,
@@ -223,20 +282,18 @@ impl MainEffectHandler {
                 (prompt_key, prompt, was_replayed, "review_xsd_retry")
             }
             PromptMode::Normal => {
+                let inputs =
+                    materialized_inputs.expect("review inputs must be materialized before preparing prompt");
                 let prompt_key = format!("review_{pass}");
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        let inputs = self
-                            .state
-                            .prompt_inputs
-                            .review
-                            .as_ref()
-                            .filter(|p| p.pass == pass)
-                            .expect("review inputs must be materialized before preparing prompt");
-
                         let plan_ref = match &inputs.plan.representation {
                             PromptInputRepresentation::Inline => {
-                                PlanContentReference::Inline(plan_content.clone())
+                                PlanContentReference::Inline(
+                                    plan_inline
+                                        .clone()
+                                        .expect("plan content must be loaded for inline"),
+                                )
                             }
                             PromptInputRepresentation::FileReference { path } => {
                                 PlanContentReference::ReadFromFile {
@@ -246,7 +303,7 @@ impl MainEffectHandler {
                                     ),
                                     description: format!(
                                         "Plan is {} bytes (exceeds {} limit)",
-                                        plan_content.len(),
+                                        inputs.plan.final_bytes,
                                         MAX_INLINE_CONTENT_SIZE
                                     ),
                                 }
@@ -255,7 +312,11 @@ impl MainEffectHandler {
 
                         let diff_ref = match &inputs.diff.representation {
                             PromptInputRepresentation::Inline => {
-                                DiffContentReference::Inline(diff_content.clone())
+                                DiffContentReference::Inline(
+                                    diff_inline
+                                        .clone()
+                                        .expect("diff content must be loaded for inline"),
+                                )
                             }
                             PromptInputRepresentation::FileReference { path } => {
                                 DiffContentReference::ReadFromFile {
@@ -263,7 +324,7 @@ impl MainEffectHandler {
                                     start_commit: baseline_oid_for_prompts.clone(),
                                     description: format!(
                                         "Diff is {} bytes (exceeds {} limit)",
-                                        diff_content.len(),
+                                        inputs.diff.final_bytes,
                                         MAX_INLINE_CONTENT_SIZE
                                     ),
                                 }

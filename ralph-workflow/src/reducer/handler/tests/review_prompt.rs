@@ -16,6 +16,112 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[test]
+fn test_materialize_review_inputs_aborts_when_plan_missing() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let result = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should return an EffectResult");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
+        ),
+        "Expected pipeline_aborted when .agent/PLAN.md is missing, got {:?}",
+        result.event
+    );
+}
+
+#[test]
+fn test_materialize_review_inputs_aborts_when_diff_missing() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let result = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should return an EffectResult");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
+        ),
+        "Expected pipeline_aborted when .agent/DIFF.backup is missing, got {:?}",
+        result.event
+    );
+}
+
+#[test]
 fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -448,6 +554,7 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_file(".agent/tmp/issues.xml", "<ralph-issues>bad</ralph-issues>")
         .with_dir(".agent/tmp");
 
     let colors = Colors { enabled: false };

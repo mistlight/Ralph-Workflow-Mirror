@@ -547,6 +547,92 @@ fn test_materialize_commit_inputs_records_correct_materialization_reason() {
 }
 
 #[test]
+fn test_materialize_commit_inputs_records_combined_reason_when_truncated_and_referenced() {
+    use crate::reducer::event::PromptInputEvent;
+    use crate::reducer::state::{PromptInputRepresentation, PromptMaterializationReason};
+
+    // Create diff that exceeds both model budget (claude: 300KB) and inline budget (~100KB).
+    // Use many medium-sized lines so truncation still leaves a large payload.
+    let mut large_diff = String::from("diff --git a/a b/a\n");
+    for _ in 0..6_000 {
+        large_diff.push('+');
+        large_diff.push_str(&"x".repeat(100));
+        large_diff.push('\n');
+    }
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/tmp/commit_diff.txt", &large_diff)
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.commit = CommitState::Generating {
+        attempt: 1,
+        max_attempts: 2,
+    };
+    // Use claude to get a large model budget while still exceeding inline budget.
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude-opus".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+
+    let result = handler
+        .materialize_commit_inputs(&mut ctx, 1)
+        .expect("materialize_commit_inputs should succeed");
+
+    match &result.event {
+        PipelineEvent::PromptInput(PromptInputEvent::CommitInputsMaterialized { diff, .. }) => {
+            assert!(
+                matches!(
+                    diff.representation,
+                    PromptInputRepresentation::FileReference { .. }
+                ),
+                "diff should be referenced by file when still above inline budget"
+            );
+            assert!(
+                matches!(
+                    diff.reason,
+                    PromptMaterializationReason::InlineBudgetExceeded
+                ),
+                "reason should align with representation (file reference implies inline budget exceeded)"
+            );
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+}
+
+#[test]
 fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptMaterializationReason;
@@ -729,6 +815,95 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
     assert!(
         !prompt_content.contains(&"x".repeat(1000)),
         "prompt should NOT contain original large diff content"
+    );
+}
+
+#[test]
+fn test_prepare_commit_prompt_aborts_when_model_safe_diff_missing() {
+    use crate::reducer::state::{
+        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
+        PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
+    };
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(
+            ".agent/tmp/commit_diff.txt",
+            "diff --git a/a b/a\n+change\n",
+        )
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.commit = CommitState::Generating {
+        attempt: 1,
+        max_attempts: 2,
+    };
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["qwen".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+    let consumer_sig = handler.state.agent_chain.consumer_signature_sha256();
+    handler.state.prompt_inputs = PromptInputsState {
+        commit: Some(MaterializedCommitInputs {
+            attempt: 1,
+            diff: MaterializedPromptInput {
+                kind: PromptInputKind::Diff,
+                content_id_sha256: "hash".to_string(),
+                consumer_signature_sha256: consumer_sig,
+                original_bytes: 1,
+                final_bytes: 1,
+                model_budget_bytes: Some(100_000),
+                inline_budget_bytes: Some(100_000),
+                representation: PromptInputRepresentation::Inline,
+                reason: PromptMaterializationReason::WithinBudgets,
+            },
+        }),
+        ..Default::default()
+    };
+
+    let result = handler
+        .prepare_commit_prompt(&mut ctx, PromptMode::Normal)
+        .expect("prepare_commit_prompt should return an EffectResult");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
+        ),
+        "Expected pipeline_aborted when commit_diff.model_safe.txt is missing, got {:?}",
+        result.event
     );
 }
 

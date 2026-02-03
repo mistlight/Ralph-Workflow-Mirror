@@ -69,12 +69,19 @@ impl MainEffectHandler {
             }
         };
 
-        let reason = if truncated_for_model_budget {
-            PromptMaterializationReason::ModelBudgetExceeded
-        } else if final_bytes > inline_budget_bytes {
-            PromptMaterializationReason::InlineBudgetExceeded
-        } else {
-            PromptMaterializationReason::WithinBudgets
+        let reason = match &representation {
+            // Align reason with representation for observability/UX. When we use a file reference,
+            // the inline budget is the immediate constraint even if we also truncated for the model.
+            PromptInputRepresentation::FileReference { .. } => {
+                PromptMaterializationReason::InlineBudgetExceeded
+            }
+            PromptInputRepresentation::Inline => {
+                if truncated_for_model_budget {
+                    PromptMaterializationReason::ModelBudgetExceeded
+                } else {
+                    PromptMaterializationReason::WithinBudgets
+                }
+            }
         };
 
         if truncated_for_model_budget {
@@ -169,9 +176,17 @@ impl MainEffectHandler {
 
         let model_safe_path = Path::new(".agent/tmp/commit_diff.model_safe.txt");
         let diff_for_prompt = match &inputs.diff.representation {
-            PromptInputRepresentation::Inline => {
-                ctx.workspace.read(model_safe_path).unwrap_or_default()
-            }
+            PromptInputRepresentation::Inline => match ctx.workspace.read(model_safe_path) {
+                Ok(diff) => diff,
+                Err(err) => {
+                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                        format!(
+                            "Failed to read materialized commit diff at {}: {err}",
+                            model_safe_path.display()
+                        ),
+                    )));
+                }
+            },
             PromptInputRepresentation::FileReference { path } => {
                 DiffContentReference::ReadFromFile {
                     path: path.clone(),

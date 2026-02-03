@@ -188,3 +188,109 @@ fn test_prepare_development_prompt_detects_unresolved_partial() {
     // Since the default templates are well-formed, we skip this test.
     // The validation logic is tested separately in template_validator.rs.
 }
+
+#[test]
+fn test_materialize_development_inputs_aborts_when_prompt_missing() {
+    let workspace = MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Plan\n");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let result = handler
+        .materialize_development_inputs(&mut ctx, 0)
+        .expect("materialize_development_inputs should return an EffectResult");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
+        ),
+        "Expected pipeline_aborted when PROMPT.md is missing, got {:?}",
+        result.event
+    );
+}
+
+#[test]
+fn test_materialize_development_inputs_aborts_when_plan_missing() {
+    let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "Prompt\n");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let result = handler
+        .materialize_development_inputs(&mut ctx, 0)
+        .expect("materialize_development_inputs should return an EffectResult");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
+        ),
+        "Expected pipeline_aborted when .agent/PLAN.md is missing, got {:?}",
+        result.event
+    );
+}

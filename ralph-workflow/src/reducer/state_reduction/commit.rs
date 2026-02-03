@@ -21,6 +21,12 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
         CommitEvent::DiffPrepared { empty } => PipelineState {
             commit_diff_prepared: true,
             commit_diff_empty: empty,
+            // If the diff is (re)prepared, any previously materialized commit inputs
+            // are potentially stale (the diff file was rewritten). Force rematerialization.
+            prompt_inputs: PromptInputsState {
+                commit: None,
+                ..state.prompt_inputs.clone()
+            },
             ..state
         },
         CommitEvent::DiffFailed { .. } => PipelineState {
