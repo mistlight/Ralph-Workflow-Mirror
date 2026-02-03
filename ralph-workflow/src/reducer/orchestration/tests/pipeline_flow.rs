@@ -48,6 +48,27 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
                     ),
                 );
             }
+            Effect::MaterializePlanningInputs { iteration } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::planning_inputs_materialized(
+                        iteration,
+                        crate::reducer::state::MaterializedPromptInput {
+                            kind: crate::reducer::state::PromptInputKind::Prompt,
+                            content_id_sha256: "id".to_string(),
+                            consumer_signature_sha256: "sig".to_string(),
+                            original_bytes: 1,
+                            final_bytes: 1,
+                            model_budget_bytes: None,
+                            inline_budget_bytes: None,
+                            representation:
+                                crate::reducer::state::PromptInputRepresentation::Inline,
+                            reason:
+                                crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                        },
+                    ),
+                );
+            }
             Effect::CleanupPlanningXml { iteration } => {
                 state = reduce(state, PipelineEvent::planning_xml_cleaned(iteration));
             }
@@ -88,6 +109,34 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
                     PipelineEvent::development_context_prepared(iteration),
                 );
             }
+            Effect::MaterializeDevelopmentInputs { iteration } => {
+                let prompt = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Prompt,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                let plan = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Plan,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                state = reduce(
+                    state,
+                    PipelineEvent::development_inputs_materialized(iteration, prompt, plan),
+                );
+            }
             Effect::CleanupDevelopmentXml { iteration } => {
                 state = reduce(state, PipelineEvent::development_xml_cleaned(iteration));
             }
@@ -125,6 +174,34 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
             Effect::PrepareReviewContext { pass } => {
                 review_passes_run.push(pass);
                 state = reduce(state, PipelineEvent::review_context_prepared(pass));
+            }
+            Effect::MaterializeReviewInputs { pass } => {
+                let plan = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Plan,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                let diff = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Diff,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                state = reduce(
+                    state,
+                    PipelineEvent::review_inputs_materialized(pass, plan, diff),
+                );
             }
             Effect::PrepareReviewPrompt { pass, .. } => {
                 state = reduce(state, PipelineEvent::review_prompt_prepared(pass));
@@ -205,6 +282,27 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
             }
             Effect::CheckCommitDiff => {
                 state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+            }
+            Effect::MaterializeCommitInputs { attempt } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_inputs_materialized(
+                        attempt,
+                        crate::reducer::state::MaterializedPromptInput {
+                            kind: crate::reducer::state::PromptInputKind::Diff,
+                            content_id_sha256: "id".to_string(),
+                            consumer_signature_sha256: "sig".to_string(),
+                            original_bytes: 1,
+                            final_bytes: 1,
+                            model_budget_bytes: None,
+                            inline_budget_bytes: None,
+                            representation:
+                                crate::reducer::state::PromptInputRepresentation::Inline,
+                            reason:
+                                crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                        },
+                    ),
+                );
             }
             Effect::PrepareCommitPrompt { .. } => {
                 state = reduce(state, PipelineEvent::commit_generation_started());
@@ -358,6 +456,27 @@ fn test_pipeline_flow_skip_planning_when_zero_iterations() {
             }
             Effect::CheckCommitDiff => {
                 state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+            }
+            Effect::MaterializeCommitInputs { attempt } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_inputs_materialized(
+                        attempt,
+                        crate::reducer::state::MaterializedPromptInput {
+                            kind: crate::reducer::state::PromptInputKind::Diff,
+                            content_id_sha256: "id".to_string(),
+                            consumer_signature_sha256: "sig".to_string(),
+                            original_bytes: 1,
+                            final_bytes: 1,
+                            model_budget_bytes: None,
+                            inline_budget_bytes: None,
+                            representation:
+                                crate::reducer::state::PromptInputRepresentation::Inline,
+                            reason:
+                                crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                        },
+                    ),
+                );
             }
             Effect::PrepareCommitPrompt { .. } => {
                 state = reduce(state, PipelineEvent::commit_generation_started());

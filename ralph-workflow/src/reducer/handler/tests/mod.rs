@@ -9,6 +9,7 @@ mod extract_missing;
 mod fix_outcome;
 mod invoke_prompt;
 mod planning_markdown;
+mod planning_prompt;
 mod review_prompt;
 mod review_validation;
 mod stale_xml_cleanup;

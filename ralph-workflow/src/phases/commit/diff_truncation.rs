@@ -1,14 +1,14 @@
 /// Maximum safe prompt size in bytes before pre-truncation.
-const MAX_SAFE_PROMPT_SIZE: usize = 200_000;
+const MAX_SAFE_PROMPT_SIZE: u64 = 200_000;
 
 /// Maximum prompt size for GLM-like agents (GLM, Zhipu, Qwen, DeepSeek).
-const GLM_MAX_PROMPT_SIZE: usize = 100_000;
+const GLM_MAX_PROMPT_SIZE: u64 = 100_000;
 
 /// Maximum prompt size for Claude-based agents.
-const CLAUDE_MAX_PROMPT_SIZE: usize = 300_000;
+const CLAUDE_MAX_PROMPT_SIZE: u64 = 300_000;
 
 /// Get the maximum safe prompt size for a specific agent.
-fn max_prompt_size_for_agent(commit_agent: &str) -> usize {
+pub(crate) fn model_budget_bytes_for_agent_name(commit_agent: &str) -> u64 {
     let agent_lower = commit_agent.to_lowercase();
 
     if agent_lower.contains("glm")
@@ -26,6 +26,19 @@ fn max_prompt_size_for_agent(commit_agent: &str) -> usize {
     } else {
         MAX_SAFE_PROMPT_SIZE
     }
+}
+
+pub(crate) fn effective_model_budget_bytes(agent_names: &[String]) -> u64 {
+    agent_names
+        .iter()
+        .map(|name| model_budget_bytes_for_agent_name(name))
+        .min()
+        .unwrap_or(MAX_SAFE_PROMPT_SIZE)
+}
+
+fn max_prompt_size_for_agent(commit_agent: &str) -> usize {
+    usize::try_from(model_budget_bytes_for_agent_name(commit_agent))
+        .unwrap_or(usize::try_from(MAX_SAFE_PROMPT_SIZE).unwrap_or(200_000))
 }
 
 /// Truncate diff if it's too large for agents with small context windows.
@@ -102,6 +115,15 @@ fn truncate_diff_if_large(diff: &str, max_size: usize) -> String {
     result
 }
 
+pub(crate) fn truncate_diff_to_model_budget(diff: &str, max_size_bytes: u64) -> (String, bool) {
+    let max_size = usize::try_from(max_size_bytes).unwrap_or(usize::MAX);
+    if diff.len() <= max_size {
+        (diff.to_string(), false)
+    } else {
+        (truncate_diff_if_large(diff, max_size), true)
+    }
+}
+
 #[derive(Default)]
 struct DiffFile {
     path: String,
@@ -149,12 +171,14 @@ pub(crate) fn check_and_pre_truncate_diff(
 ) -> (String, bool) {
     let max_size = max_prompt_size_for_agent(commit_agent);
     if diff.len() > max_size {
+        let truncated = truncate_diff_if_large(diff, max_size);
         logger.warn(&format!(
-            "Diff size ({} KB) exceeds agent limit ({} KB). Pre-truncating to avoid token errors.",
+            "Diff size ({} KB) exceeds agent limit ({} KB). Pre-truncating to {} KB to avoid token errors.",
             diff.len() / 1024,
-            max_size / 1024
+            max_size / 1024,
+            truncated.len() / 1024
         ));
-        (truncate_diff_if_large(diff, max_size), true)
+        (truncated, true)
     } else {
         logger.info(&format!(
             "Diff size ({} KB) is within safe limit ({} KB).",

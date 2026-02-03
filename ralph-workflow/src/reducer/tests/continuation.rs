@@ -61,8 +61,8 @@ fn test_context_prepared_clears_continue_pending_to_prevent_infinite_loop() {
     // The next effect should progress to PrepareDevelopmentPrompt, not back to PrepareDevelopmentContext
     let next_effect = determine_next_effect(&new_state);
     assert!(
-        matches!(next_effect, Effect::PrepareDevelopmentPrompt { .. }),
-        "Expected PrepareDevelopmentPrompt after ContextPrepared, got {:?}",
+        matches!(next_effect, Effect::MaterializeDevelopmentInputs { .. }),
+        "Expected MaterializeDevelopmentInputs after ContextPrepared, got {:?}",
         next_effect
     );
 }
@@ -257,6 +257,34 @@ fn test_continuation_does_not_cause_infinite_loop_in_event_loop_simulation() {
                 state,
                 PipelineEvent::development_context_prepared(iteration),
             ),
+            Effect::MaterializeDevelopmentInputs { iteration } => {
+                let prompt = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Prompt,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                let plan = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Plan,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                reduce(
+                    state,
+                    PipelineEvent::development_inputs_materialized(iteration, prompt, plan),
+                )
+            }
             Effect::PrepareDevelopmentPrompt { iteration, .. } => {
                 reduce(state, PipelineEvent::development_prompt_prepared(iteration))
             }

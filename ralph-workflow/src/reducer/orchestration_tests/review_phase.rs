@@ -122,6 +122,25 @@ fn test_review_triggers_fix_when_issues_found() {
     assert!(matches!(effect, Effect::CheckCommitDiff));
     state = reduce(state, PipelineEvent::commit_diff_prepared(false));
     let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::MaterializeCommitInputs { .. }));
+    state = reduce(
+        state,
+        PipelineEvent::commit_inputs_materialized(
+            1,
+            crate::reducer::state::MaterializedPromptInput {
+                kind: crate::reducer::state::PromptInputKind::Diff,
+                content_id_sha256: "id".to_string(),
+                consumer_signature_sha256: "sig".to_string(),
+                original_bytes: 1,
+                final_bytes: 1,
+                model_budget_bytes: None,
+                inline_budget_bytes: None,
+                representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+            },
+        ),
+    );
+    let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::PrepareCommitPrompt { .. }));
     state = reduce(state, PipelineEvent::commit_generation_started());
     state = reduce(state, PipelineEvent::commit_prompt_prepared(1));

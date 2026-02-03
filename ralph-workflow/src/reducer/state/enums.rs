@@ -232,3 +232,57 @@ impl CommitState {
         matches!(self, CommitState::Committed { .. } | CommitState::Skipped)
     }
 }
+
+/// Kind of prompt input that may require oversize handling.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PromptInputKind {
+    Prompt,
+    Plan,
+    Diff,
+    LastOutput,
+}
+
+/// How an input is represented to downstream prompt templates.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PromptInputRepresentation {
+    /// Input is embedded inline in the prompt template.
+    Inline,
+    /// Input is referenced by absolute file path.
+    FileReference {
+        /// Absolute path to the materialized artifact.
+        path: PathBuf,
+    },
+}
+
+/// Reason an input was materialized in a non-default way.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PromptMaterializationReason {
+    /// Input was within all configured budgets (no oversize handling required).
+    WithinBudgets,
+    /// Input exceeded the inline-embedding budget and must be referenced by file.
+    InlineBudgetExceeded,
+    /// Input exceeded the model-context budget and was truncated before use.
+    ModelBudgetExceeded,
+    /// Input was referenced even though it was within budgets (explicit policy).
+    PolicyForcedReference,
+}
+
+/// Canonical, reducer-visible record of prompt input materialization.
+///
+/// This records what the downstream prompt template will embed (inline vs file
+/// reference), along with stable identifiers so the reducer can dedupe repeated
+/// attempts in the event loop.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterializedPromptInput {
+    pub kind: PromptInputKind,
+    pub content_id_sha256: String,
+    pub consumer_signature_sha256: String,
+    pub original_bytes: u64,
+    pub final_bytes: u64,
+    #[serde(default)]
+    pub model_budget_bytes: Option<u64>,
+    #[serde(default)]
+    pub inline_budget_bytes: Option<u64>,
+    pub representation: PromptInputRepresentation,
+    pub reason: PromptMaterializationReason,
+}

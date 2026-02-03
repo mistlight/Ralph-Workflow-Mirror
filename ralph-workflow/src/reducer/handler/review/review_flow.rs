@@ -1,4 +1,123 @@
 impl MainEffectHandler {
+    pub(super) fn materialize_review_inputs(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        pass: u32,
+    ) -> Result<EffectResult> {
+        let plan_content = ctx
+            .workspace
+            .read(Path::new(".agent/PLAN.md"))
+            .unwrap_or_default();
+        let diff_content = ctx
+            .workspace
+            .read(Path::new(".agent/DIFF.backup"))
+            .unwrap_or_default();
+
+        let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
+        let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
+
+        let plan_abs = ctx.workspace.absolute(Path::new(".agent/PLAN.md"));
+        let (plan_representation, plan_reason) = if plan_content.len() as u64 > inline_budget_bytes
+        {
+            ctx.logger.warn(&format!(
+                "PLAN size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
+                (plan_content.len() as u64) / 1024,
+                inline_budget_bytes / 1024,
+                plan_abs.display()
+            ));
+            (
+                PromptInputRepresentation::FileReference { path: plan_abs },
+                PromptMaterializationReason::InlineBudgetExceeded,
+            )
+        } else {
+            (PromptInputRepresentation::Inline, PromptMaterializationReason::WithinBudgets)
+        };
+
+        let diff_abs = ctx.workspace.absolute(Path::new(".agent/tmp/diff.txt"));
+        let (diff_representation, diff_reason) = if diff_content.len() as u64 > inline_budget_bytes {
+            let tmp_dir = Path::new(".agent/tmp");
+            if !ctx.workspace.exists(tmp_dir) {
+                let _ = ctx.workspace.create_dir_all(tmp_dir);
+            }
+            let _ = ctx.workspace.write(Path::new(".agent/tmp/diff.txt"), &diff_content);
+            ctx.logger.warn(&format!(
+                "DIFF size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
+                (diff_content.len() as u64) / 1024,
+                inline_budget_bytes / 1024,
+                diff_abs.display()
+            ));
+            (
+                PromptInputRepresentation::FileReference { path: diff_abs },
+                PromptMaterializationReason::InlineBudgetExceeded,
+            )
+        } else {
+            (PromptInputRepresentation::Inline, PromptMaterializationReason::WithinBudgets)
+        };
+
+        let plan_input = MaterializedPromptInput {
+            kind: PromptInputKind::Plan,
+            content_id_sha256: sha256_hex_str(&plan_content),
+            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            original_bytes: plan_content.len() as u64,
+            final_bytes: plan_content.len() as u64,
+            model_budget_bytes: None,
+            inline_budget_bytes: Some(inline_budget_bytes),
+            representation: plan_representation,
+            reason: plan_reason,
+        };
+        let diff_input = MaterializedPromptInput {
+            kind: PromptInputKind::Diff,
+            content_id_sha256: sha256_hex_str(&diff_content),
+            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            original_bytes: diff_content.len() as u64,
+            final_bytes: diff_content.len() as u64,
+            model_budget_bytes: None,
+            inline_budget_bytes: Some(inline_budget_bytes),
+            representation: diff_representation,
+            reason: diff_reason,
+        };
+
+        let mut result =
+            EffectResult::event(PipelineEvent::review_inputs_materialized(pass, plan_input.clone(), diff_input.clone()));
+        if plan_input.original_bytes > inline_budget_bytes {
+            result = result.with_ui_event(UIEvent::AgentActivity {
+                agent: "pipeline".to_string(),
+                message: format!(
+                    "Oversize PLAN: {} KB > {} KB; using file reference",
+                    plan_input.original_bytes / 1024,
+                    inline_budget_bytes / 1024
+                ),
+            });
+            result = result.with_additional_event(PipelineEvent::prompt_input_oversize_detected(
+                crate::reducer::event::PipelinePhase::Review,
+                PromptInputKind::Plan,
+                plan_input.content_id_sha256.clone(),
+                plan_input.original_bytes,
+                inline_budget_bytes,
+                "inline-embedding".to_string(),
+            ));
+        }
+        if diff_input.original_bytes > inline_budget_bytes {
+            result = result.with_ui_event(UIEvent::AgentActivity {
+                agent: "pipeline".to_string(),
+                message: format!(
+                    "Oversize DIFF: {} KB > {} KB; using file reference",
+                    diff_input.original_bytes / 1024,
+                    inline_budget_bytes / 1024
+                ),
+            });
+            result = result.with_additional_event(PipelineEvent::prompt_input_oversize_detected(
+                crate::reducer::event::PipelinePhase::Review,
+                PromptInputKind::Diff,
+                diff_input.content_id_sha256.clone(),
+                diff_input.original_bytes,
+                inline_budget_bytes,
+                "inline-embedding".to_string(),
+            ));
+        }
+        Ok(result)
+    }
+
     pub(super) fn prepare_review_context(
         &mut self,
         ctx: &mut PhaseContext<'_>,
@@ -45,7 +164,7 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use crate::prompts::{
             get_stored_or_generate_prompt, prompt_review_xml_with_references,
-            prompt_review_xsd_retry_with_context, PromptContentBuilder,
+            prompt_review_xsd_retry_with_context,
         };
         use std::path::Path;
 
@@ -107,11 +226,55 @@ impl MainEffectHandler {
                 let prompt_key = format!("review_{pass}");
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        let refs = PromptContentBuilder::new(ctx.workspace)
-                            .with_plan(plan_content.clone())
-                            .with_diff(diff_content.clone(), &baseline_oid_for_prompts)
-                            .build();
+                        let inputs = self
+                            .state
+                            .prompt_inputs
+                            .review
+                            .as_ref()
+                            .filter(|p| p.pass == pass)
+                            .expect("review inputs must be materialized before preparing prompt");
 
+                        let plan_ref = match &inputs.plan.representation {
+                            PromptInputRepresentation::Inline => {
+                                PlanContentReference::Inline(plan_content.clone())
+                            }
+                            PromptInputRepresentation::FileReference { path } => {
+                                PlanContentReference::ReadFromFile {
+                                    primary_path: path.clone(),
+                                    fallback_path: Some(
+                                        ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
+                                    ),
+                                    description: format!(
+                                        "Plan is {} bytes (exceeds {} limit)",
+                                        plan_content.len(),
+                                        MAX_INLINE_CONTENT_SIZE
+                                    ),
+                                }
+                            }
+                        };
+
+                        let diff_ref = match &inputs.diff.representation {
+                            PromptInputRepresentation::Inline => {
+                                DiffContentReference::Inline(diff_content.clone())
+                            }
+                            PromptInputRepresentation::FileReference { path } => {
+                                DiffContentReference::ReadFromFile {
+                                    path: path.clone(),
+                                    start_commit: baseline_oid_for_prompts.clone(),
+                                    description: format!(
+                                        "Diff is {} bytes (exceeds {} limit)",
+                                        diff_content.len(),
+                                        MAX_INLINE_CONTENT_SIZE
+                                    ),
+                                }
+                            }
+                        };
+
+                        let refs = PromptContentReferences {
+                            prompt: None,
+                            plan: Some(plan_ref),
+                            diff: Some(diff_ref),
+                        };
                         prompt_review_xml_with_references(ctx.template_context, &refs)
                     });
                 (prompt_key, prompt, was_replayed, "review_xml")

@@ -38,13 +38,7 @@ fn test_determine_effect_commit_message_not_started() {
         ..create_test_state()
     };
     let effect = determine_next_effect(&state);
-    // Since diff is prepared but prompt is not, next step is to prepare prompt
-    assert!(matches!(
-        effect,
-        Effect::PrepareCommitPrompt {
-            prompt_mode: PromptMode::Normal
-        }
-    ));
+    assert!(matches!(effect, Effect::MaterializeCommitInputs { .. }));
 }
 
 #[test]
@@ -75,13 +69,7 @@ fn test_determine_effect_commit_message_ignores_stale_validated_outcome() {
     };
 
     let effect = determine_next_effect(&state);
-    // Stale outcome is ignored, so proceeds to prepare prompt
-    assert!(matches!(
-        effect,
-        Effect::PrepareCommitPrompt {
-            prompt_mode: PromptMode::Normal
-        }
-    ));
+    assert!(matches!(effect, Effect::MaterializeCommitInputs { .. }));
 }
 
 #[test]

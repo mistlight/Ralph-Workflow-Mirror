@@ -69,6 +69,24 @@ impl MockEffectHandler {
                 (PipelineEvent::planning_prompt_prepared(iteration), vec![])
             }
 
+            Effect::MaterializePlanningInputs { iteration } => (
+                PipelineEvent::planning_inputs_materialized(
+                    iteration,
+                    crate::reducer::state::MaterializedPromptInput {
+                        kind: crate::reducer::state::PromptInputKind::Prompt,
+                        content_id_sha256: "id".to_string(),
+                        consumer_signature_sha256: "sig".to_string(),
+                        original_bytes: 1,
+                        final_bytes: 1,
+                        model_budget_bytes: None,
+                        inline_budget_bytes: None,
+                        representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                        reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                    },
+                ),
+                vec![],
+            ),
+
             Effect::CleanupPlanningXml { iteration } => {
                 (PipelineEvent::planning_xml_cleaned(iteration), vec![])
             }
@@ -148,6 +166,35 @@ impl MockEffectHandler {
                 (PipelineEvent::development_context_prepared(iteration), vec![])
             }
 
+            Effect::MaterializeDevelopmentInputs { iteration } => {
+                let prompt = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Prompt,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                let plan = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Plan,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                (
+                    PipelineEvent::development_inputs_materialized(iteration, prompt, plan),
+                    vec![],
+                )
+            }
+
             Effect::PrepareDevelopmentPrompt {
                 iteration,
                 prompt_mode: _,
@@ -215,6 +262,35 @@ src/lib.rs</ralph-files-changed>
                         pass,
                         total: self.state.total_reviewer_passes,
                     }],
+                )
+            }
+
+            Effect::MaterializeReviewInputs { pass } => {
+                let plan = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Plan,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                let diff = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Diff,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                (
+                    PipelineEvent::review_inputs_materialized(pass, plan, diff),
+                    vec![],
                 )
             }
 
@@ -351,6 +427,24 @@ src/lib.rs</ralph-files-changed>
                 let empty = self.simulate_empty_diff;
                 (PipelineEvent::commit_diff_prepared(empty), vec![])
             }
+
+            Effect::MaterializeCommitInputs { attempt } => (
+                PipelineEvent::commit_inputs_materialized(
+                    attempt,
+                    crate::reducer::state::MaterializedPromptInput {
+                        kind: crate::reducer::state::PromptInputKind::Diff,
+                        content_id_sha256: "id".to_string(),
+                        consumer_signature_sha256: "sig".to_string(),
+                        original_bytes: 1,
+                        final_bytes: 1,
+                        model_budget_bytes: None,
+                        inline_budget_bytes: None,
+                        representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                        reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                    },
+                ),
+                vec![],
+            ),
 
             Effect::PrepareCommitPrompt { prompt_mode: _ } => {
                 let attempt = match self.state.commit {

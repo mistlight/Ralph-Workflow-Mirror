@@ -479,3 +479,38 @@ fn developer_iteration_prompt_uses_oversize_references() {
         );
     });
 }
+
+/// Rebuilding references with the same content should be deterministic.
+#[test]
+fn prompt_content_builder_is_deterministic_across_repeated_builds() {
+    with_default_timeout(|| {
+        let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
+
+        let large_diff = format!(
+            "diff --git a/a b/a\n+{}\n",
+            "x".repeat(MAX_INLINE_CONTENT_SIZE + 10)
+        );
+
+        let refs1 = PromptContentBuilder::new(&workspace)
+            .with_diff(large_diff.clone(), "abc123")
+            .build();
+        let first = refs1.diff_for_template();
+
+        let refs2 = PromptContentBuilder::new(&workspace)
+            .with_diff(large_diff.clone(), "abc123")
+            .build();
+        let second = refs2.diff_for_template();
+
+        assert_eq!(
+            first, second,
+            "diff reference rendering should be deterministic"
+        );
+        assert_eq!(
+            workspace
+                .get_file(".agent/tmp/diff.txt")
+                .expect("diff file should be written"),
+            large_diff,
+            "diff file contents should remain stable across repeated builds"
+        );
+    });
+}

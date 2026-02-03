@@ -2,16 +2,152 @@ use super::MainEffectHandler;
 use crate::agents::AgentRole;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::phases::PhaseContext;
+use crate::prompts::content_builder::PromptContentReferences;
+use crate::prompts::content_reference::{
+    PlanContentReference, PromptContentReference, MAX_INLINE_CONTENT_SIZE,
+};
 use crate::reducer::effect::ContinuationContextData;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
+use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::PromptMode;
+use crate::reducer::state::{
+    MaterializedPromptInput, PromptInputKind, PromptInputRepresentation,
+    PromptMaterializationReason,
+};
 use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use crate::workspace::Workspace;
 use anyhow::Result;
 use std::path::Path;
 
 impl MainEffectHandler {
+    pub(super) fn materialize_development_inputs(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        let prompt_md = ctx
+            .workspace
+            .read(Path::new("PROMPT.md"))
+            .unwrap_or_default();
+        let plan_md = ctx
+            .workspace
+            .read(Path::new(".agent/PLAN.md"))
+            .unwrap_or_default();
+
+        let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
+        let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
+
+        let (prompt_representation, prompt_reason) = if prompt_md.len() as u64 > inline_budget_bytes
+        {
+            let _ = crate::files::create_prompt_backup_with_workspace(ctx.workspace);
+            ctx.logger.warn(&format!(
+                "PROMPT size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
+                (prompt_md.len() as u64) / 1024,
+                inline_budget_bytes / 1024,
+                ctx.workspace.prompt_backup().display()
+            ));
+            (
+                PromptInputRepresentation::FileReference {
+                    path: ctx.workspace.prompt_backup(),
+                },
+                PromptMaterializationReason::InlineBudgetExceeded,
+            )
+        } else {
+            (
+                PromptInputRepresentation::Inline,
+                PromptMaterializationReason::WithinBudgets,
+            )
+        };
+
+        let plan_abs = ctx.workspace.absolute(Path::new(".agent/PLAN.md"));
+        let (plan_representation, plan_reason) = if plan_md.len() as u64 > inline_budget_bytes {
+            ctx.logger.warn(&format!(
+                "PLAN size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
+                (plan_md.len() as u64) / 1024,
+                inline_budget_bytes / 1024,
+                plan_abs.display()
+            ));
+            (
+                PromptInputRepresentation::FileReference { path: plan_abs },
+                PromptMaterializationReason::InlineBudgetExceeded,
+            )
+        } else {
+            (
+                PromptInputRepresentation::Inline,
+                PromptMaterializationReason::WithinBudgets,
+            )
+        };
+
+        let prompt_input = MaterializedPromptInput {
+            kind: PromptInputKind::Prompt,
+            content_id_sha256: sha256_hex_str(&prompt_md),
+            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            original_bytes: prompt_md.len() as u64,
+            final_bytes: prompt_md.len() as u64,
+            model_budget_bytes: None,
+            inline_budget_bytes: Some(inline_budget_bytes),
+            representation: prompt_representation,
+            reason: prompt_reason,
+        };
+        let plan_input = MaterializedPromptInput {
+            kind: PromptInputKind::Plan,
+            content_id_sha256: sha256_hex_str(&plan_md),
+            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            original_bytes: plan_md.len() as u64,
+            final_bytes: plan_md.len() as u64,
+            model_budget_bytes: None,
+            inline_budget_bytes: Some(inline_budget_bytes),
+            representation: plan_representation,
+            reason: plan_reason,
+        };
+
+        let mut result = EffectResult::event(PipelineEvent::development_inputs_materialized(
+            iteration,
+            prompt_input.clone(),
+            plan_input.clone(),
+        ));
+
+        if prompt_input.original_bytes > inline_budget_bytes {
+            result = result.with_ui_event(UIEvent::AgentActivity {
+                agent: "pipeline".to_string(),
+                message: format!(
+                    "Oversize PROMPT: {} KB > {} KB; using file reference",
+                    prompt_input.original_bytes / 1024,
+                    inline_budget_bytes / 1024
+                ),
+            });
+            result = result.with_additional_event(PipelineEvent::prompt_input_oversize_detected(
+                crate::reducer::event::PipelinePhase::Development,
+                PromptInputKind::Prompt,
+                prompt_input.content_id_sha256.clone(),
+                prompt_input.original_bytes,
+                inline_budget_bytes,
+                "inline-embedding".to_string(),
+            ));
+        }
+        if plan_input.original_bytes > inline_budget_bytes {
+            result = result.with_ui_event(UIEvent::AgentActivity {
+                agent: "pipeline".to_string(),
+                message: format!(
+                    "Oversize PLAN: {} KB > {} KB; using file reference",
+                    plan_input.original_bytes / 1024,
+                    inline_budget_bytes / 1024
+                ),
+            });
+            result = result.with_additional_event(PipelineEvent::prompt_input_oversize_detected(
+                crate::reducer::event::PipelinePhase::Development,
+                PromptInputKind::Plan,
+                plan_input.content_id_sha256.clone(),
+                plan_input.original_bytes,
+                inline_budget_bytes,
+                "inline-embedding".to_string(),
+            ));
+        }
+
+        Ok(result)
+    }
+
     pub(super) fn prepare_development_context(
         &mut self,
         ctx: &mut PhaseContext<'_>,
@@ -31,7 +167,7 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::prompts::{
             get_stored_or_generate_prompt, prompt_developer_iteration_continuation_xml,
-            prompt_developer_iteration_xml_with_context,
+            prompt_developer_iteration_xml_with_references,
             prompt_developer_iteration_xsd_retry_with_context,
         };
 
@@ -83,11 +219,50 @@ impl MainEffectHandler {
                 let prompt_key = format!("development_{}", iteration);
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        prompt_developer_iteration_xml_with_context(
-                            ctx.template_context,
-                            &prompt_md,
-                            &plan_md,
-                        )
+                        let inputs = self
+                            .state
+                            .prompt_inputs
+                            .development
+                            .as_ref()
+                            .filter(|p| p.iteration == iteration)
+                            .expect(
+                                "development inputs must be materialized before preparing prompt",
+                            );
+                        let prompt_ref = match &inputs.prompt.representation {
+                            PromptInputRepresentation::Inline => {
+                                PromptContentReference::inline(prompt_md.clone())
+                            }
+                            PromptInputRepresentation::FileReference { path } => {
+                                PromptContentReference::file_path(
+                                    path.clone(),
+                                    "Original user requirements from PROMPT.md",
+                                )
+                            }
+                        };
+                        let plan_ref = match &inputs.plan.representation {
+                            PromptInputRepresentation::Inline => {
+                                PlanContentReference::Inline(plan_md.clone())
+                            }
+                            PromptInputRepresentation::FileReference { path } => {
+                                PlanContentReference::ReadFromFile {
+                                    primary_path: path.clone(),
+                                    fallback_path: Some(
+                                        ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
+                                    ),
+                                    description: format!(
+                                        "Plan is {} bytes (exceeds {} limit)",
+                                        plan_md.len(),
+                                        MAX_INLINE_CONTENT_SIZE
+                                    ),
+                                }
+                            }
+                        };
+                        let refs = PromptContentReferences {
+                            prompt: Some(prompt_ref),
+                            plan: Some(plan_ref),
+                            diff: None,
+                        };
+                        prompt_developer_iteration_xml_with_references(ctx.template_context, &refs)
                     });
                 (
                     prompt,

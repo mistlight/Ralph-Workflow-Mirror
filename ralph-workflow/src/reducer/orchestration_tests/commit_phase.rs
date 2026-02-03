@@ -99,6 +99,23 @@ fn test_commit_does_not_apply_outcome_without_xml_extracted() {
             message: Some("msg".to_string()),
             reason: None,
         }),
+        prompt_inputs: crate::reducer::state::PromptInputsState {
+            commit: Some(crate::reducer::state::MaterializedCommitInputs {
+                attempt: 1,
+                diff: crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Diff,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                },
+            }),
+            ..Default::default()
+        },
         agent_chain: AgentChainState::initial().with_agents(
             vec!["commit-agent".to_string()],
             vec![vec![]],

@@ -34,6 +34,27 @@ fn test_development_runs_exactly_n_iterations() {
                     PipelineEvent::development_continuation_context_cleaned(),
                 );
             }
+            Effect::MaterializePlanningInputs { iteration } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::planning_inputs_materialized(
+                        iteration,
+                        crate::reducer::state::MaterializedPromptInput {
+                            kind: crate::reducer::state::PromptInputKind::Prompt,
+                            content_id_sha256: "id".to_string(),
+                            consumer_signature_sha256: "sig".to_string(),
+                            original_bytes: 1,
+                            final_bytes: 1,
+                            model_budget_bytes: None,
+                            inline_budget_bytes: None,
+                            representation:
+                                crate::reducer::state::PromptInputRepresentation::Inline,
+                            reason:
+                                crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                        },
+                    ),
+                );
+            }
             Effect::PreparePlanningPrompt { iteration, .. } => {
                 state = reduce(state, PipelineEvent::planning_prompt_prepared(iteration));
             }
@@ -74,6 +95,34 @@ fn test_development_runs_exactly_n_iterations() {
                     PipelineEvent::development_context_prepared(iteration),
                 );
             }
+            Effect::MaterializeDevelopmentInputs { iteration } => {
+                let prompt = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Prompt,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                let plan = crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Plan,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                };
+                state = reduce(
+                    state,
+                    PipelineEvent::development_inputs_materialized(iteration, prompt, plan),
+                );
+            }
             Effect::PrepareDevelopmentPrompt { iteration, .. } => {
                 state = reduce(state, PipelineEvent::development_prompt_prepared(iteration));
             }
@@ -107,6 +156,27 @@ fn test_development_runs_exactly_n_iterations() {
             }
             Effect::CheckCommitDiff => {
                 state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+            }
+            Effect::MaterializeCommitInputs { attempt } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_inputs_materialized(
+                        attempt,
+                        crate::reducer::state::MaterializedPromptInput {
+                            kind: crate::reducer::state::PromptInputKind::Diff,
+                            content_id_sha256: "id".to_string(),
+                            consumer_signature_sha256: "sig".to_string(),
+                            original_bytes: 1,
+                            final_bytes: 1,
+                            model_budget_bytes: None,
+                            inline_budget_bytes: None,
+                            representation:
+                                crate::reducer::state::PromptInputRepresentation::Inline,
+                            reason:
+                                crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                        },
+                    ),
+                );
             }
             Effect::PrepareCommitPrompt { .. } => {
                 state = reduce(state, PipelineEvent::commit_generation_started());
@@ -191,6 +261,31 @@ fn test_development_continuation_emits_prompt_mode_continuation() {
     state.development_context_prepared_iteration = Some(0);
     state.continuation.continuation_attempt = 1;
     state.continuation.continue_pending = false;
+    state.prompt_inputs.development = Some(crate::reducer::state::MaterializedDevelopmentInputs {
+        iteration: 0,
+        prompt: crate::reducer::state::MaterializedPromptInput {
+            kind: crate::reducer::state::PromptInputKind::Prompt,
+            content_id_sha256: "id".to_string(),
+            consumer_signature_sha256: "sig".to_string(),
+            original_bytes: 1,
+            final_bytes: 1,
+            model_budget_bytes: None,
+            inline_budget_bytes: None,
+            representation: crate::reducer::state::PromptInputRepresentation::Inline,
+            reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+        },
+        plan: crate::reducer::state::MaterializedPromptInput {
+            kind: crate::reducer::state::PromptInputKind::Plan,
+            content_id_sha256: "id".to_string(),
+            consumer_signature_sha256: "sig".to_string(),
+            original_bytes: 1,
+            final_bytes: 1,
+            model_budget_bytes: None,
+            inline_budget_bytes: None,
+            representation: crate::reducer::state::PromptInputRepresentation::Inline,
+            reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+        },
+    });
     state.agent_chain = state.agent_chain.with_agents(
         vec!["claude".to_string()],
         vec![vec![]],

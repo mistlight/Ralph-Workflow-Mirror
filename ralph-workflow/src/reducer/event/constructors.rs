@@ -4,6 +4,7 @@ use super::*;
 
 // Include constructor implementations split by category
 include!("constructors_lifecycle.rs");
+include!("constructors_prompt_input.rs");
 include!("constructors_development.rs");
 include!("constructors_review.rs");
 include!("constructors_agent.rs");

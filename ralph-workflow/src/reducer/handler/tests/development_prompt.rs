@@ -77,6 +77,13 @@ fn test_prepare_development_prompt_emits_template_invalid_event() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    let materialize = handler
+        .materialize_development_inputs(&mut ctx, 0)
+        .expect("materialize_development_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
     let result = handler
         .prepare_development_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_development_prompt should succeed");
@@ -147,6 +154,14 @@ fn test_prepare_development_prompt_normal_mode_ignores_continuation_state() {
         },
         ..PipelineState::initial(1, 1)
     });
+
+    let materialize = handler
+        .materialize_development_inputs(&mut ctx, 0)
+        .expect("materialize_development_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
 
     let result = handler
         .prepare_development_prompt(&mut ctx, 0, PromptMode::Normal)

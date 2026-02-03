@@ -24,6 +24,17 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 return Effect::CleanupContext;
             }
 
+            let planning_inputs_materialized_for_iteration = state
+                .prompt_inputs
+                .planning
+                .as_ref()
+                .is_some_and(|p| p.iteration == state.iteration);
+            if !planning_inputs_materialized_for_iteration {
+                return Effect::MaterializePlanningInputs {
+                    iteration: state.iteration,
+                };
+            }
+
             if state.planning_prompt_prepared_iteration != Some(state.iteration) {
                 return Effect::PreparePlanningPrompt {
                     iteration: state.iteration,
@@ -115,6 +126,17 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             if state.iteration < state.total_iterations {
                 if state.development_context_prepared_iteration != Some(state.iteration) {
                     return Effect::PrepareDevelopmentContext {
+                        iteration: state.iteration,
+                    };
+                }
+
+                let development_inputs_materialized_for_iteration = state
+                    .prompt_inputs
+                    .development
+                    .as_ref()
+                    .is_some_and(|p| p.iteration == state.iteration);
+                if !development_inputs_materialized_for_iteration {
+                    return Effect::MaterializeDevelopmentInputs {
                         iteration: state.iteration,
                     };
                 }
@@ -248,6 +270,17 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                     };
                 }
 
+                let review_inputs_materialized_for_pass = state
+                    .prompt_inputs
+                    .review
+                    .as_ref()
+                    .is_some_and(|p| p.pass == state.reviewer_pass);
+                if !review_inputs_materialized_for_pass {
+                    return Effect::MaterializeReviewInputs {
+                        pass: state.reviewer_pass,
+                    };
+                }
+
                 if state.review_prompt_prepared_pass != Some(state.reviewer_pass) {
                     return Effect::PrepareReviewPrompt {
                         pass: state.reviewer_pass,
@@ -341,6 +374,20 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                     if state.commit_diff_empty {
                         return Effect::SkipCommit {
                             reason: "No changes to commit (empty diff)".to_string(),
+                        };
+                    }
+                    let current_attempt = match state.commit {
+                        CommitState::Generating { attempt, .. } => attempt,
+                        _ => 1,
+                    };
+                    let commit_inputs_materialized_for_attempt = state
+                        .prompt_inputs
+                        .commit
+                        .as_ref()
+                        .is_some_and(|c| c.attempt == current_attempt);
+                    if !commit_inputs_materialized_for_attempt {
+                        return Effect::MaterializeCommitInputs {
+                            attempt: current_attempt,
                         };
                     }
                     if !state.commit_prompt_prepared {

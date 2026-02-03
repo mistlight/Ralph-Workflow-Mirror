@@ -20,7 +20,7 @@
 //! type-safe dispatch in the reducer.
 
 use crate::agents::AgentRole;
-use crate::reducer::state::DevelopmentStatus;
+use crate::reducer::state::{DevelopmentStatus, MaterializedPromptInput, PromptInputKind};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -141,6 +141,40 @@ pub enum PlanningEvent {
         iteration: u32,
         /// Current invalid output attempt number.
         attempt: u32,
+    },
+}
+
+/// Prompt input oversize detection and materialization events.
+///
+/// These events make reducer-visible any transformation that affects the
+/// agent-visible prompt content (inline vs file reference, truncation, etc.).
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum PromptInputEvent {
+    OversizeDetected {
+        phase: PipelinePhase,
+        kind: PromptInputKind,
+        content_id_sha256: String,
+        size_bytes: u64,
+        limit_bytes: u64,
+        policy: String,
+    },
+    PlanningInputsMaterialized {
+        iteration: u32,
+        prompt: MaterializedPromptInput,
+    },
+    DevelopmentInputsMaterialized {
+        iteration: u32,
+        prompt: MaterializedPromptInput,
+        plan: MaterializedPromptInput,
+    },
+    ReviewInputsMaterialized {
+        pass: u32,
+        plan: MaterializedPromptInput,
+        diff: MaterializedPromptInput,
+    },
+    CommitInputsMaterialized {
+        attempt: u32,
+        diff: MaterializedPromptInput,
     },
 }
 
@@ -406,6 +440,8 @@ pub enum PipelineEvent {
     Development(DevelopmentEvent),
     /// Review phase events.
     Review(ReviewEvent),
+    /// Prompt input materialization events.
+    PromptInput(PromptInputEvent),
     /// Agent invocation and chain events.
     Agent(AgentEvent),
     /// Rebase operation events.

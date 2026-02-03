@@ -30,7 +30,7 @@ fn test_determine_effect_planning_with_agents() {
         ..create_test_state()
     };
     let effect = determine_next_effect(&state);
-    assert!(matches!(effect, Effect::PreparePlanningPrompt { .. }));
+    assert!(matches!(effect, Effect::MaterializePlanningInputs { .. }));
 }
 
 #[test]
@@ -51,8 +51,8 @@ fn test_planning_phase_emits_single_task_effect() {
     let effect = determine_next_effect(&state);
 
     assert!(
-        matches!(effect, Effect::PreparePlanningPrompt { .. }),
-        "Planning should emit PreparePlanningPrompt, got {:?}",
+        matches!(effect, Effect::MaterializePlanningInputs { .. }),
+        "Planning should emit MaterializePlanningInputs, got {:?}",
         effect
     );
 }

@@ -56,6 +56,13 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
     let _ = handler
         .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_review_prompt should succeed");
@@ -117,6 +124,13 @@ fn test_prepare_review_prompt_uses_diff_baseline_for_oversize_diff() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
     let _ = handler
         .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_review_prompt should succeed");
@@ -175,6 +189,13 @@ fn test_prepare_review_prompt_allows_literal_placeholders_in_plan() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
     let result = handler
         .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
         .expect("prepare_review_prompt should succeed");
@@ -337,6 +358,14 @@ fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
         },
         ..PipelineState::initial(0, 1)
     });
+
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
 
     let result = handler
         .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)

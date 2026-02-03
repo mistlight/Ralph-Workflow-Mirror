@@ -30,13 +30,7 @@ fn test_planning_prepares_prompt_when_agents_ready() {
         ..create_test_state()
     };
     let effect = determine_next_effect(&state);
-    assert!(matches!(
-        effect,
-        Effect::PreparePlanningPrompt {
-            prompt_mode: PromptMode::Normal,
-            ..
-        }
-    ));
+    assert!(matches!(effect, Effect::MaterializePlanningInputs { .. }));
 }
 
 #[test]
@@ -86,14 +80,8 @@ fn test_planning_emits_prepare_prompt_effect() {
     let effect = determine_next_effect(&state);
 
     assert!(
-        matches!(
-            effect,
-            Effect::PreparePlanningPrompt {
-                prompt_mode: PromptMode::Normal,
-                ..
-            }
-        ),
-        "Planning should emit PreparePlanningPrompt, got {:?}",
+        matches!(effect, Effect::MaterializePlanningInputs { .. }),
+        "Planning should emit MaterializePlanningInputs, got {:?}",
         effect
     );
 }
