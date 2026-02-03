@@ -157,7 +157,10 @@ fn test_development_runs_exactly_n_iterations() {
                 state = reduce(state, PipelineEvent::development_outcome_applied(iteration));
             }
             Effect::CheckCommitDiff => {
-                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_diff_prepared(false, "id".to_string()),
+                );
             }
             Effect::MaterializeCommitInputs { attempt } => {
                 let sig = state.agent_chain.consumer_signature_sha256();

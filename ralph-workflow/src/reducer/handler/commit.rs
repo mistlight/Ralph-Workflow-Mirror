@@ -38,7 +38,10 @@ impl MainEffectHandler {
         let diff = match ctx.workspace.read(Path::new(".agent/tmp/commit_diff.txt")) {
             Ok(diff) => diff,
             Err(_) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                ctx.logger.warn(
+                        "Missing commit diff at .agent/tmp/commit_diff.txt; invalidating diff-prepared state to recompute",
+                    );
+                return Ok(EffectResult::event(PipelineEvent::commit_diff_invalidated(
                     "Missing commit diff at .agent/tmp/commit_diff.txt".to_string(),
                 )));
             }
@@ -248,9 +251,9 @@ impl MainEffectHandler {
                         model_safe_path.display()
                     ));
                     // Recoverability: tmp artifacts may be cleaned between checkpoints.
-                    // The reducer state still has enough info to rerun materialization.
-                    return Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
-                        self.state.commit_diff_empty,
+                    // Force rerunning CheckCommitDiff to recreate the diff and its materialization.
+                    return Ok(EffectResult::event(PipelineEvent::commit_diff_invalidated(
+                        "Missing/unreadable .agent/tmp/commit_diff.model_safe.txt".to_string(),
                     )));
                 }
             },
@@ -261,9 +264,9 @@ impl MainEffectHandler {
                         ctx.workspace.absolute(path).display()
                     ));
                     // Recoverability: tmp artifacts may be cleaned between checkpoints.
-                    // The reducer state still has enough info to rerun materialization.
-                    return Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
-                        self.state.commit_diff_empty,
+                    // Force rerunning CheckCommitDiff to recreate the diff and its materialization.
+                    return Ok(EffectResult::event(PipelineEvent::commit_diff_invalidated(
+                        "Missing materialized commit diff reference".to_string(),
                     )));
                 }
                 DiffContentReference::ReadFromFile {
@@ -312,6 +315,7 @@ impl MainEffectHandler {
 
         Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
             diff.trim().is_empty(),
+            sha256_hex_str(diff),
         )))
     }
 

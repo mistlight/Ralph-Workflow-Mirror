@@ -425,7 +425,10 @@ src/lib.rs</ralph-files-changed>
 
             Effect::CheckCommitDiff => {
                 let empty = self.simulate_empty_diff;
-                (PipelineEvent::commit_diff_prepared(empty), vec![])
+                (
+                    PipelineEvent::commit_diff_prepared(empty, "id".to_string()),
+                    vec![],
+                )
             }
 
             Effect::MaterializeCommitInputs { attempt } => (

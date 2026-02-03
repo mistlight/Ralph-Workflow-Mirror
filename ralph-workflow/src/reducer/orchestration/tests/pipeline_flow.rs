@@ -284,7 +284,10 @@ fn test_complete_pipeline_flow_with_planning_dev_review_commit() {
                 state = reduce(state, PipelineEvent::fix_attempt_completed(pass, true));
             }
             Effect::CheckCommitDiff => {
-                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_diff_prepared(false, "id".to_string()),
+                );
             }
             Effect::MaterializeCommitInputs { attempt } => {
                 let sig = state.agent_chain.consumer_signature_sha256();
@@ -459,7 +462,10 @@ fn test_pipeline_flow_skip_planning_when_zero_iterations() {
                 state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
             }
             Effect::CheckCommitDiff => {
-                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_diff_prepared(false, "id".to_string()),
+                );
             }
             Effect::MaterializeCommitInputs { attempt } => {
                 let sig = state.agent_chain.consumer_signature_sha256();

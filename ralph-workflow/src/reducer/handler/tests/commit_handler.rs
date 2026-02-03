@@ -140,6 +140,8 @@ fn test_extract_commit_xml_emits_missing_event_when_absent() {
 
 #[test]
 fn test_check_commit_diff_emits_prepared_event() {
+    use crate::reducer::prompt_inputs::sha256_hex_str;
+
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -186,8 +188,76 @@ fn test_check_commit_diff_emits_prepared_event() {
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared { empty: true })
+        PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared {
+            empty: true,
+            content_id_sha256,
+        }) if content_id_sha256 == sha256_hex_str("")
     ));
+}
+
+#[test]
+fn test_materialize_commit_inputs_invalidates_diff_when_commit_diff_missing() {
+    let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.commit = CommitState::Generating {
+        attempt: 1,
+        max_attempts: 2,
+    };
+    handler.state.commit_diff_prepared = true;
+    handler.state.commit_diff_empty = false;
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+
+    // `.agent/tmp/commit_diff.txt` is intentionally missing. The effect should not abort;
+    // it should invalidate diff-prepared state to force rerunning CheckCommitDiff.
+    let result = handler
+        .materialize_commit_inputs(&mut ctx, 1)
+        .expect("materialize_commit_inputs should return an EffectResult");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffInvalidated { .. })
+        ),
+        "Expected DiffInvalidated event when commit_diff.txt is missing, got {:?}",
+        result.event
+    );
 }
 
 #[test]
@@ -1088,9 +1158,9 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_di
     assert!(
         matches!(
             result.event,
-            PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared { empty: false })
+            PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffInvalidated { .. })
         ),
-        "Expected DiffPrepared event to invalidate materialized inputs when commit_diff.model_safe.txt is missing, got {:?}",
+        "Expected DiffInvalidated event to force diff recomputation when commit_diff.model_safe.txt is missing, got {:?}",
         result.event
     );
 }
@@ -1175,8 +1245,8 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_ref
     };
 
     // The file reference points at `.agent/tmp/commit_diff.model_safe.txt` but it doesn't exist.
-    // The handler should invalidate prompt_inputs.commit by emitting DiffPrepared, forcing
-    // rematerialization on the next orchestration loop.
+    // The handler should invalidate diff-prepared state by emitting DiffInvalidated, forcing
+    // CheckCommitDiff (and subsequent rematerialization) on the next orchestration loop.
     let result = handler
         .prepare_commit_prompt(&mut ctx, PromptMode::Normal)
         .expect("prepare_commit_prompt should return an EffectResult");
@@ -1184,9 +1254,9 @@ fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_diff_file_ref
     assert!(
         matches!(
             result.event,
-            PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared { empty: false })
+            PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffInvalidated { .. })
         ),
-        "Expected DiffPrepared event to invalidate materialized inputs when a diff file reference is missing, got {:?}",
+        "Expected DiffInvalidated event to force diff recomputation when a diff file reference is missing, got {:?}",
         result.event
     );
 }

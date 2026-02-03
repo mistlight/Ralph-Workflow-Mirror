@@ -471,6 +471,7 @@ fn test_commit_phase_effect_sequence() {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
             commit_diff_prepared: true,
+            commit_diff_content_id_sha256: Some("id".to_string()),
             agent_chain: commit_chain.clone(),
             ..PipelineState::initial(5, 2)
         };

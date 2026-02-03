@@ -18,9 +18,13 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_xml_archived: false,
             ..state
         },
-        CommitEvent::DiffPrepared { empty } => PipelineState {
+        CommitEvent::DiffPrepared {
+            empty,
+            content_id_sha256,
+        } => PipelineState {
             commit_diff_prepared: true,
             commit_diff_empty: empty,
+            commit_diff_content_id_sha256: Some(content_id_sha256),
             // If the diff is (re)prepared, any previously materialized commit inputs
             // are potentially stale (the diff file was rewritten). Force rematerialization.
             prompt_inputs: PromptInputsState {
@@ -33,6 +37,23 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             phase: crate::reducer::event::PipelinePhase::Interrupted,
             commit_diff_prepared: false,
             commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
+            ..state
+        },
+        CommitEvent::DiffInvalidated { .. } => PipelineState {
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_cleaned: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
+            prompt_inputs: PromptInputsState {
+                commit: None,
+                ..state.prompt_inputs.clone()
+            },
             ..state
         },
         CommitEvent::PromptPrepared { .. } => PipelineState {
@@ -148,6 +169,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_prompt_prepared: false,
             commit_diff_prepared: false,
             commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
             commit_agent_invoked: false,
             commit_xml_cleaned: false,
             commit_xml_extracted: false,

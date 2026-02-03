@@ -284,11 +284,24 @@ pub enum CommitEvent {
     DiffPrepared {
         /// True when the diff is empty.
         empty: bool,
+        /// Content identifier (sha256 hex) of the prepared diff content.
+        ///
+        /// This is used to guard against reusing stale materialized inputs when the
+        /// diff content changes across checkpoints or retries.
+        content_id_sha256: String,
     },
     /// Commit diff computation failed.
     DiffFailed {
         /// The error message for the diff failure.
         error: String,
+    },
+    /// Commit diff is no longer available and must be recomputed.
+    ///
+    /// This is used for recoverability when `.agent/tmp` artifacts are cleaned between
+    /// checkpoints or when required diff files go missing during resume.
+    DiffInvalidated {
+        /// Reason for invalidation.
+        reason: String,
     },
     /// Commit prompt prepared for a commit attempt.
     PromptPrepared {

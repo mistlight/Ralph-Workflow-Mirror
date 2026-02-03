@@ -142,11 +142,14 @@ struct DiffFile {
 }
 
 fn prioritize_file_path(path: &str) -> i32 {
-    if path.starts_with("src/") {
+    let normalized = path.replace('\\', "/");
+    let parts: Vec<&str> = normalized.split('/').filter(|p| !p.is_empty()).collect();
+
+    if parts.contains(&"src") {
         100
-    } else if path.starts_with("tests/") {
+    } else if parts.contains(&"tests") {
         50
-    } else if path.ends_with(".md") || path.ends_with(".txt") {
+    } else if normalized.ends_with(".md") || normalized.ends_with(".txt") {
         10
     } else {
         0
@@ -214,6 +217,15 @@ fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
 #[cfg(test)]
 mod diff_truncation_tests {
     use super::*;
+
+    #[test]
+    fn prioritize_file_path_handles_crate_prefixed_paths() {
+        // Real diffs in this repo often include crate-prefixed paths like `ralph-workflow/src/...`.
+        // These should still be treated as high-priority source changes.
+        assert_eq!(prioritize_file_path("ralph-workflow/src/lib.rs"), 100);
+        assert_eq!(prioritize_file_path("ralph-workflow/tests/integration.rs"), 50);
+        assert_eq!(prioritize_file_path("README.md"), 10);
+    }
 
     #[test]
     fn truncate_diff_to_model_budget_never_exceeds_max_size() {

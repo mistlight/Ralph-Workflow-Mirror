@@ -222,6 +222,13 @@ pub struct PipelineState {
     /// Tracks whether the computed commit diff was empty.
     #[serde(default)]
     pub commit_diff_empty: bool,
+    /// Content identifier (sha256 hex) of the prepared commit diff.
+    ///
+    /// This is recorded when the diff is prepared and is used by orchestration guards
+    /// to avoid reusing stale materialized prompt inputs across checkpoint resumes or
+    /// when tmp artifacts change.
+    #[serde(default)]
+    pub commit_diff_content_id_sha256: Option<String>,
     /// Tracks whether the commit agent was invoked for the current commit attempt.
     #[serde(default)]
     pub commit_agent_invoked: bool,
@@ -339,6 +346,7 @@ impl PipelineState {
             commit_prompt_prepared: false,
             commit_diff_prepared: false,
             commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
             commit_agent_invoked: false,
             commit_xml_cleaned: false,
             commit_xml_extracted: false,
@@ -412,6 +420,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             commit_prompt_prepared: false,
             commit_diff_prepared: false,
             commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
             commit_agent_invoked: false,
             commit_xml_cleaned: false,
             commit_xml_extracted: false,

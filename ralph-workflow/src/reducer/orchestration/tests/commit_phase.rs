@@ -30,6 +30,7 @@ fn test_determine_effect_commit_message_not_started() {
         phase: PipelinePhase::CommitMessage,
         commit: CommitState::NotStarted,
         commit_diff_prepared: true, // Diff already done
+        commit_diff_content_id_sha256: Some("id".to_string()),
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["commit-agent".to_string()],
             vec![vec![]],
@@ -53,6 +54,7 @@ fn test_commit_phase_uses_xsd_retry_prompt_when_pending() {
         },
         commit_diff_prepared: true,
         commit_diff_empty: false,
+        commit_diff_content_id_sha256: Some("id".to_string()),
         commit_prompt_prepared: false,
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["commit-agent".to_string()],
@@ -114,6 +116,7 @@ fn test_determine_effect_commit_message_ignores_stale_validated_outcome() {
             max_attempts: 5,
         },
         commit_diff_prepared: true, // Diff already done
+        commit_diff_content_id_sha256: Some("id".to_string()),
         commit_prompt_prepared: false,
         commit_agent_invoked: false,
         commit_xml_extracted: false,
@@ -170,6 +173,7 @@ fn test_determine_effect_commit_message_rematerializes_when_consumer_signature_c
         },
         commit_diff_prepared: true,
         commit_diff_empty: false,
+        commit_diff_content_id_sha256: Some("id".to_string()),
         commit_prompt_prepared: false,
         agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
             vec!["commit-agent".to_string(), "fallback-agent".to_string()],

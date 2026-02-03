@@ -393,11 +393,19 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                             reason: "No changes to commit (empty diff)".to_string(),
                         };
                     }
+                    // Backward compatibility / recoverability: older checkpoints may have
+                    // `commit_diff_prepared = true` but no recorded content id. Re-run diff
+                    // preparation once to establish `commit_diff_content_id_sha256`, which is
+                    // required to safely guard against stale materialized prompt inputs.
+                    if state.commit_diff_content_id_sha256.is_none() {
+                        return Effect::CheckCommitDiff;
+                    }
                     let current_attempt = match state.commit {
                         CommitState::Generating { attempt, .. } => attempt,
                         _ => 1,
                     };
                     let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
+                    let diff_content_id_sha256 = state.commit_diff_content_id_sha256.as_deref();
                     let commit_inputs_materialized_for_attempt = state
                         .prompt_inputs
                         .commit
@@ -405,6 +413,8 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                         .is_some_and(|c| {
                             c.attempt == current_attempt
                                 && c.diff.consumer_signature_sha256 == consumer_signature_sha256
+                                && diff_content_id_sha256
+                                    .is_some_and(|id| id == c.diff.content_id_sha256)
                         });
                     if !commit_inputs_materialized_for_attempt {
                         return Effect::MaterializeCommitInputs {

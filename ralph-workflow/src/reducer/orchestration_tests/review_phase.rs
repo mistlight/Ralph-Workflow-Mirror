@@ -120,7 +120,10 @@ fn test_review_triggers_fix_when_issues_found() {
     // Commit message chain
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::CheckCommitDiff));
-    state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+    state = reduce(
+        state,
+        PipelineEvent::commit_diff_prepared(false, "id".to_string()),
+    );
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::MaterializeCommitInputs { .. }));
     let sig = state.agent_chain.consumer_signature_sha256();

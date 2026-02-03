@@ -268,7 +268,10 @@ fn test_complete_pipeline_flow() {
                 state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
             }
             Effect::CheckCommitDiff => {
-                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_diff_prepared(false, "id".to_string()),
+                );
             }
             Effect::InvokeCommitAgent => {
                 state = reduce(state, PipelineEvent::commit_agent_invoked(1));
@@ -408,7 +411,10 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
                 state = reduce(state, PipelineEvent::commit_xml_cleaned(1));
             }
             Effect::CheckCommitDiff => {
-                state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+                state = reduce(
+                    state,
+                    PipelineEvent::commit_diff_prepared(false, "id".to_string()),
+                );
             }
             Effect::InvokeCommitAgent => {
                 state = reduce(state, PipelineEvent::commit_agent_invoked(1));

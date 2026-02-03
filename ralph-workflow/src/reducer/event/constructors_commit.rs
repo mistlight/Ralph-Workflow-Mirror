@@ -47,13 +47,20 @@ impl PipelineEvent {
     }
 
     /// Create a CommitDiffPrepared event.
-    pub fn commit_diff_prepared(empty: bool) -> Self {
-        Self::Commit(CommitEvent::DiffPrepared { empty })
+    pub fn commit_diff_prepared(empty: bool, content_id_sha256: String) -> Self {
+        Self::Commit(CommitEvent::DiffPrepared {
+            empty,
+            content_id_sha256,
+        })
     }
 
     /// Create a CommitDiffFailed event.
     pub fn commit_diff_failed(error: String) -> Self {
         Self::Commit(CommitEvent::DiffFailed { error })
+    }
+
+    pub fn commit_diff_invalidated(reason: String) -> Self {
+        Self::Commit(CommitEvent::DiffInvalidated { reason })
     }
 
     /// Create a CommitPromptPrepared event.
