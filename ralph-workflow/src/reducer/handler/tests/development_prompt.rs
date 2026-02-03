@@ -374,6 +374,90 @@ fn test_prepare_development_prompt_same_agent_retry_uses_previous_prepared_promp
 }
 
 #[test]
+fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes() {
+    let marker = "<<<PREVIOUS_DEVELOPMENT_PROMPT_MARKER>>>";
+    let workspace = MemoryWorkspace::new_test()
+        .with_file("PROMPT.md", "Prompt")
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_dir(".agent/tmp")
+        .with_file(".agent/tmp/development_prompt.txt", marker);
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            same_agent_retry_count: 1,
+            same_agent_retry_reason: Some(SameAgentRetryReason::Timeout),
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(1, 1)
+    });
+
+    handler
+        .prepare_development_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
+        .expect("prepare_development_prompt should succeed");
+
+    handler.state.continuation.same_agent_retry_count = 2;
+    handler
+        .prepare_development_prompt(&mut ctx, 0, PromptMode::SameAgentRetry)
+        .expect("prepare_development_prompt should succeed");
+
+    let prompt = workspace
+        .read(std::path::Path::new(".agent/tmp/development_prompt.txt"))
+        .expect("development prompt should be written");
+
+    assert!(
+        prompt.contains(marker),
+        "Same-agent retry should keep the base prompt content; got: {prompt}"
+    );
+    assert_eq!(
+        prompt.matches("## Retry Note").count(),
+        1,
+        "Expected exactly one retry note block, got: {prompt}"
+    );
+    assert!(
+        prompt.contains("## Retry Note (attempt 2)"),
+        "Expected retry note attempt 2 after second retry, got: {prompt}"
+    );
+    assert!(
+        !prompt.contains("## Retry Note (attempt 1)"),
+        "Expected previous retry note to be replaced, got: {prompt}"
+    );
+}
+
+#[test]
 fn test_materialize_development_inputs_aborts_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Plan\n");
 

@@ -345,7 +345,11 @@ impl MainEffectHandler {
                     );
                 let (base_prompt, should_validate) =
                     match ctx.workspace.read(Path::new(".agent/tmp/review_prompt.txt")) {
-                        Ok(previous_prompt) => (previous_prompt, false),
+                        Ok(previous_prompt) => (
+                            crate::reducer::handler::retry_guidance::strip_existing_same_agent_retry_preamble(&previous_prompt)
+                                .to_string(),
+                            false,
+                        ),
                         Err(_) => {
                             let inputs = match materialized_inputs {
                                 Some(inputs) => inputs,

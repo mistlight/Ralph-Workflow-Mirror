@@ -603,6 +603,103 @@ fn test_prepare_commit_prompt_same_agent_retry_uses_previous_prepared_prompt() {
 }
 
 #[test]
+fn test_prepare_commit_prompt_same_agent_retry_does_not_stack_retry_notes() {
+    let marker = "<<<PREVIOUS_COMMIT_PROMPT_MARKER>>>";
+    let workspace = MemoryWorkspace::new_test()
+        .with_dir(".agent/tmp")
+        .with_file(".agent/tmp/commit_prompt.txt", marker);
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            same_agent_retry_count: 1,
+            same_agent_retry_reason: Some(SameAgentRetryReason::Timeout),
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(1, 0)
+    });
+    handler.state.commit = CommitState::Generating {
+        attempt: 1,
+        max_attempts: 2,
+    };
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+
+    handler
+        .prepare_commit_prompt_with_diff_and_mode(
+            &mut ctx,
+            "diff --git a/a b/a\n+change\n",
+            PromptMode::SameAgentRetry,
+        )
+        .expect("prepare_commit_prompt_with_diff_and_mode should succeed");
+
+    handler.state.continuation.same_agent_retry_count = 2;
+    handler
+        .prepare_commit_prompt_with_diff_and_mode(
+            &mut ctx,
+            "diff --git a/a b/a\n+change\n",
+            PromptMode::SameAgentRetry,
+        )
+        .expect("prepare_commit_prompt_with_diff_and_mode should succeed");
+
+    let prompt = workspace
+        .read(std::path::Path::new(".agent/tmp/commit_prompt.txt"))
+        .expect("commit_prompt.txt should be written");
+
+    assert!(
+        prompt.contains(marker),
+        "Same-agent retry should keep the base prompt content; got: {prompt}"
+    );
+    assert_eq!(
+        prompt.matches("## Retry Note").count(),
+        1,
+        "Expected exactly one retry note block, got: {prompt}"
+    );
+    assert!(
+        prompt.contains("## Retry Note (attempt 2)"),
+        "Expected retry note attempt 2 after second retry, got: {prompt}"
+    );
+    assert!(
+        !prompt.contains("## Retry Note (attempt 1)"),
+        "Expected previous retry note to be replaced, got: {prompt}"
+    );
+}
+
+#[test]
 fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
     use crate::reducer::event::PromptInputEvent;
 

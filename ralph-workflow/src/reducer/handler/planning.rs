@@ -212,7 +212,13 @@ impl MainEffectHandler {
                     .workspace
                     .read(Path::new(PLANNING_PROMPT_PATH))
                 {
-                    Ok(previous_prompt) => (previous_prompt, false),
+                    Ok(previous_prompt) => (
+                        super::retry_guidance::strip_existing_same_agent_retry_preamble(
+                            &previous_prompt,
+                        )
+                        .to_string(),
+                        false,
+                    ),
                     Err(_) => {
                         let inputs = match self
                             .state

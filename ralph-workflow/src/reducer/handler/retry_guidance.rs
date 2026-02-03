@@ -1,5 +1,22 @@
 use crate::reducer::state::{ContinuationState, SameAgentRetryReason};
 
+const RETRY_NOTE_HEADER_PREFIX: &str = "## Retry Note (attempt ";
+const RETRY_NOTE_END_SENTINEL: &str =
+    "- Always produce valid XML output that matches the schema.\n";
+
+pub(crate) fn strip_existing_same_agent_retry_preamble(prompt: &str) -> &str {
+    if !prompt.starts_with(RETRY_NOTE_HEADER_PREFIX) {
+        return prompt;
+    }
+
+    let Some(idx) = prompt.find(RETRY_NOTE_END_SENTINEL) else {
+        return prompt;
+    };
+
+    let after_sentinel = &prompt[idx + RETRY_NOTE_END_SENTINEL.len()..];
+    after_sentinel.trim_start_matches('\n')
+}
+
 pub(crate) fn same_agent_retry_preamble(continuation: &ContinuationState) -> String {
     let attempt = continuation.same_agent_retry_count;
     let reason = continuation.same_agent_retry_reason.clone();
