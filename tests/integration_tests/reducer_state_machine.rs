@@ -308,11 +308,15 @@ fn test_agent_chain_exhausted_triggers_retry_cycle() {
 #[test]
 fn test_sigsegv_causes_agent_fallback() {
     with_default_timeout(|| {
-        let state = create_state_with_agent_chain();
+        let state = PipelineState {
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            ..create_state_with_agent_chain()
+        };
         let initial_agent_index = state.agent_chain.current_agent_index;
 
-        // Simulate SIGSEGV (exit code 139, non-retriable)
-        let new_state = reduce(
+        // Simulate SIGSEGV (exit code 139, internal error):
+        // retry same agent first, then fall back after budget exhaustion.
+        let after_first = reduce(
             state,
             PipelineEvent::agent_invocation_failed(
                 AgentRole::Developer,
@@ -323,8 +327,24 @@ fn test_sigsegv_causes_agent_fallback() {
             ),
         );
 
-        // Should switch to next agent, not crash pipeline
-        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+        assert_eq!(
+            after_first.agent_chain.current_agent_index,
+            initial_agent_index
+        );
+        assert!(after_first.continuation.xsd_retry_pending);
+
+        let after_second = reduce(
+            after_first,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                139,
+                AgentErrorKind::InternalError,
+                false,
+            ),
+        );
+
+        assert!(after_second.agent_chain.current_agent_index > initial_agent_index);
     });
 }
 
@@ -423,7 +443,7 @@ fn test_rate_limit_error_triggers_agent_fallback() {
         // Simulate rate limit via AgentRateLimitFallback event - should trigger agent fallback
         let new_state = reduce(
             state,
-            PipelineEvent::agent_rate_limit_fallback(
+            PipelineEvent::agent_rate_limited(
                 AgentRole::Developer,
                 "agent1".to_string(),
                 Some("continue work".to_string()),
@@ -471,11 +491,14 @@ fn test_authentication_error_triggers_agent_fallback() {
 #[test]
 fn test_internal_error_triggers_agent_fallback() {
     with_default_timeout(|| {
-        let state = create_state_with_agent_chain();
+        let state = PipelineState {
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            ..create_state_with_agent_chain()
+        };
         let initial_agent_index = state.agent_chain.current_agent_index;
 
-        // Simulate internal error (non-retriable) - should trigger agent fallback
-        let new_state = reduce(
+        // Simulate internal error: retry same agent first, then fall back after budget exhaustion.
+        let after_first = reduce(
             state,
             PipelineEvent::agent_invocation_failed(
                 AgentRole::Developer,
@@ -486,8 +509,24 @@ fn test_internal_error_triggers_agent_fallback() {
             ),
         );
 
-        // Should switch to next agent
-        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
+        assert_eq!(
+            after_first.agent_chain.current_agent_index,
+            initial_agent_index
+        );
+        assert!(after_first.continuation.xsd_retry_pending);
+
+        let after_second = reduce(
+            after_first,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::InternalError,
+                false,
+            ),
+        );
+
+        assert!(after_second.agent_chain.current_agent_index > initial_agent_index);
     });
 }
 

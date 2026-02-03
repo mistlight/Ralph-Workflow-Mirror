@@ -36,12 +36,11 @@ impl MainEffectHandler {
         // The `InvocationSucceeded` event handler clears the saved prompt
         // in the reducer, so we don't need to handle that here.
         //
-        // Note: We take() before current_model() to avoid borrow conflicts.
         let effective_prompt = self
             .state
             .agent_chain
             .rate_limit_continuation_prompt
-            .take()
+            .clone()
             .unwrap_or(prompt);
 
         let model_name = self.state.agent_chain.current_model();
@@ -139,6 +138,12 @@ impl MainEffectHandler {
             workspace: ctx.workspace,
         };
 
+        let started_event = PipelineEvent::agent_invocation_started(
+            role,
+            effective_agent.clone(),
+            model_name.cloned().or(model.clone()),
+        );
+
         // Execute agent with fault-tolerant wrapper
         let config = AgentExecutionConfig {
             role,
@@ -163,8 +168,9 @@ impl MainEffectHandler {
             message: format!("Completed {} task", role),
         };
 
-        // Build result with the main event
-        let mut result = EffectResult::with_ui(event, vec![ui_event]);
+        // Build result with started event first, then the execution result(s).
+        let mut result =
+            EffectResult::with_ui(started_event, vec![ui_event]).with_additional_event(event);
 
         // If session_id was extracted, emit SessionEstablished as a separate event.
         if let Some(sid) = session_id {

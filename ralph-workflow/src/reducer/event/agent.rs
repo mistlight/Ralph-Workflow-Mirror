@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 /// # State Transitions
 ///
 /// - `InvocationFailed(retriable=true)`: Advances to next model
-/// - `InvocationFailed(retriable=false)`: Switches to next agent
-/// - `RateLimitFallback`: Immediate agent switch with prompt preservation
+/// - `InvocationFailed(retriable=false)`: Typically switches to next agent (policy may vary by kind)
+/// - `RateLimited`: Typically immediate agent switch with prompt preservation
 /// - `ChainExhausted`: Starts new retry cycle
 /// - `InvocationSucceeded`: Clears continuation prompt
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -97,13 +97,11 @@ pub enum AgentEvent {
         /// Maximum backoff delay in milliseconds.
         max_backoff_ms: u64,
     },
-    /// Agent hit rate limit (429) - should fallback immediately.
+    /// Agent hit rate limit (429).
     ///
-    /// Unlike other retriable errors (Network, Timeout), rate limits indicate
-    /// the current provider is temporarily exhausted. Rather than waiting and
-    /// retrying the same agent, we immediately switch to the next agent in the
-    /// chain to continue work without delay.
-    RateLimitFallback {
+    /// Effects/executors emit this as a *fact* event. The reducer decides
+    /// whether/when to switch agents.
+    RateLimited {
         /// The role being fulfilled.
         role: AgentRole,
         /// The agent that hit the rate limit.
@@ -113,29 +111,23 @@ pub enum AgentEvent {
         prompt_context: Option<String>,
     },
 
-    /// Agent hit authentication failure (401/403) - should fallback immediately.
+    /// Agent hit authentication failure (401/403).
     ///
-    /// Unlike rate limits, auth failures indicate a credentials problem with
-    /// the current agent/provider. We switch to the next agent without
-    /// preserving prompt context since the issue is not transient exhaustion.
-    AuthFallback {
+    /// Effects/executors emit this as a *fact* event. The reducer decides
+    /// whether/when to switch agents.
+    AuthFailed {
         /// The role being fulfilled.
         role: AgentRole,
         /// The agent that failed authentication.
         agent: String,
     },
 
-    /// Agent hit idle timeout - should fallback to a different agent.
+    /// Agent hit an idle timeout.
     ///
-    /// Unlike other retriable errors (Network, ModelUnavailable), idle timeouts
-    /// indicate the agent may be stuck or the task is too complex for it.
-    /// Retrying the same agent would likely hit the same timeout, so we switch
-    /// to a different agent instead.
-    ///
-    /// Unlike `RateLimitFallback`, timeout fallback does not preserve prompt
-    /// context since the previous execution may have made partial progress
-    /// that is difficult to resume cleanly.
-    TimeoutFallback {
+    /// Effects/executors emit this as a *fact* event. The reducer decides
+    /// whether/when to switch agents. Unlike rate limits, timeouts do not
+    /// preserve prompt context.
+    TimedOut {
         /// The role being fulfilled.
         role: AgentRole,
         /// The agent that timed out.

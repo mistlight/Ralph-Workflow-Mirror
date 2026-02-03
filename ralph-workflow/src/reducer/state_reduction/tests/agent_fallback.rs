@@ -77,7 +77,14 @@ fn test_reduce_all_agent_failure_scenarios() {
             false,
         ),
     );
-    assert!(internal_error_state.agent_chain.current_agent_index > initial_agent_index);
+    assert_eq!(
+        internal_error_state.agent_chain.current_agent_index, initial_agent_index,
+        "InternalError should retry same agent first, not immediately fall back"
+    );
+    assert!(
+        internal_error_state.continuation.xsd_retry_pending,
+        "InternalError retry should set xsd_retry_pending so prompt can be retry-aware"
+    );
 }
 
 #[test]
@@ -149,7 +156,7 @@ fn test_rate_limit_fallback_switches_agent() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::agent_rate_limit_fallback(
+        PipelineEvent::agent_rate_limited(
             AgentRole::Developer,
             "agent1".to_string(),
             Some("test prompt".to_string()),
@@ -175,7 +182,7 @@ fn test_rate_limit_fallback_with_no_prompt_context() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::agent_rate_limit_fallback(AgentRole::Developer, "agent1".to_string(), None),
+        PipelineEvent::agent_rate_limited(AgentRole::Developer, "agent1".to_string(), None),
     );
 
     // Should still switch to next agent
@@ -225,7 +232,7 @@ fn test_auth_fallback_clears_session_and_advances_agent() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+        PipelineEvent::agent_auth_failed(AgentRole::Developer, "agent1".to_string()),
     );
 
     // Should advance to next agent
@@ -266,7 +273,7 @@ fn test_rate_limit_fallback_clears_session_id() {
 
     let new_state = reduce(
         state,
-        PipelineEvent::agent_rate_limit_fallback(
+        PipelineEvent::agent_rate_limited(
             AgentRole::Developer,
             "agent1".to_string(),
             Some("preserved prompt".to_string()),
@@ -302,7 +309,7 @@ fn test_auth_fallback_does_not_set_continuation_prompt() {
     // Auth fallback should NOT set a continuation prompt
     let new_state = reduce(
         state,
-        PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+        PipelineEvent::agent_auth_failed(AgentRole::Developer, "agent1".to_string()),
     );
 
     // Key assertion: AuthFallback does NOT set prompt context
@@ -338,7 +345,7 @@ fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
 
     let after_rate_limit = reduce(
         state1,
-        PipelineEvent::agent_rate_limit_fallback(
+        PipelineEvent::agent_rate_limited(
             AgentRole::Developer,
             "agent1".to_string(),
             Some("preserved prompt".to_string()),
@@ -360,7 +367,7 @@ fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
 
     let after_auth = reduce(
         state2,
-        PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+        PipelineEvent::agent_auth_failed(AgentRole::Developer, "agent1".to_string()),
     );
 
     assert!(
@@ -370,4 +377,126 @@ fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
             .is_none(),
         "AuthFallback should not set prompt context (credentials issue, not exhaustion)"
     );
+}
+
+#[test]
+fn test_timeout_retries_same_agent_until_retry_budget_exhausted() {
+    // Desired behavior: timeouts should retry the same agent first and only switch
+    // agents after the retry budget is exhausted.
+    let base_state = create_test_state();
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        ),
+        continuation: ContinuationState::with_limits(2, 3),
+        ..base_state
+    };
+
+    let after_first_timeout = reduce(
+        state,
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+    );
+
+    assert_eq!(
+        after_first_timeout
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent1"),
+        "First timeout should retry same agent, not immediately fall back"
+    );
+    assert_eq!(
+        after_first_timeout.continuation.xsd_retry_count, 1,
+        "Timeout should consume retry budget deterministically"
+    );
+    assert!(
+        after_first_timeout.continuation.xsd_retry_pending,
+        "Timeout retry should set xsd_retry_pending so prompt can be retry-aware"
+    );
+
+    let after_second_timeout = reduce(
+        after_first_timeout,
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+    );
+
+    assert_eq!(
+        after_second_timeout
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent2"),
+        "After exhausting retry budget, timeout should fall back to next agent"
+    );
+    assert_eq!(
+        after_second_timeout.continuation.xsd_retry_count, 0,
+        "Agent fallback should reset retry counters"
+    );
+    assert!(
+        !after_second_timeout.continuation.xsd_retry_pending,
+        "Agent fallback should clear xsd_retry_pending"
+    );
+}
+
+#[test]
+fn test_internal_error_retries_same_agent_until_retry_budget_exhausted() {
+    // Desired behavior: internal/unknown errors should retry same agent first,
+    // only falling back after the configured retry budget is exhausted.
+    let base_state = create_test_state();
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["agent1".to_string(), "agent2".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        ),
+        continuation: ContinuationState::with_limits(2, 3),
+        ..base_state
+    };
+
+    let after_first_failure = reduce(
+        state,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            139,
+            AgentErrorKind::InternalError,
+            false,
+        ),
+    );
+
+    assert_eq!(
+        after_first_failure
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent1"),
+        "First internal error should retry same agent, not immediately fall back"
+    );
+    assert_eq!(after_first_failure.continuation.xsd_retry_count, 1);
+    assert!(after_first_failure.continuation.xsd_retry_pending);
+
+    let after_second_failure = reduce(
+        after_first_failure,
+        PipelineEvent::agent_invocation_failed(
+            AgentRole::Developer,
+            "agent1".to_string(),
+            139,
+            AgentErrorKind::InternalError,
+            false,
+        ),
+    );
+
+    assert_eq!(
+        after_second_failure
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent2"),
+        "After exhausting retry budget, internal error should fall back to next agent"
+    );
+    assert_eq!(after_second_failure.continuation.xsd_retry_count, 0);
+    assert!(!after_second_failure.continuation.xsd_retry_pending);
 }

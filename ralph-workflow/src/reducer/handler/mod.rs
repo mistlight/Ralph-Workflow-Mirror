@@ -55,6 +55,8 @@ impl<'ctx> EffectHandler<'ctx> for MainEffectHandler {
     fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         let result = self.execute_effect(effect, ctx)?;
         self.event_log.push(result.event.clone());
+        self.event_log
+            .extend(result.additional_events.iter().cloned());
         Ok(result)
     }
 }

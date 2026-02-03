@@ -5,62 +5,83 @@ use crate::reducer::state::*;
 
 pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> PipelineState {
     match event {
-        AgentEvent::InvocationStarted { .. } => state,
+        // Clear any saved continuation prompt when an invocation starts.
+        // This makes prompt consumption reducer-driven (handlers must not mutate state).
+        AgentEvent::InvocationStarted { .. } => PipelineState {
+            agent_chain: state.agent_chain.clear_continuation_prompt(),
+            ..state
+        },
         // Clear continuation prompt on success
         AgentEvent::InvocationSucceeded { .. } => PipelineState {
             agent_chain: state.agent_chain.clear_continuation_prompt(),
             ..state
         },
-        // Rate limit (429): immediate agent fallback, preserve prompt context
-        // Unlike other retriable errors, rate limits indicate the provider is
-        // temporarily exhausted, so we switch to the next agent immediately
-        // to continue work without delay.
-        AgentEvent::RateLimitFallback { prompt_context, .. } => PipelineState {
+        // Rate limit (429): immediate agent switch, preserve prompt context.
+        AgentEvent::RateLimited { prompt_context, .. } => PipelineState {
             agent_chain: state
                 .agent_chain
                 .switch_to_next_agent_with_prompt(prompt_context)
                 .clear_session_id(),
+            continuation: ContinuationState {
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
-        // Auth failure (401/403): immediate agent fallback, clear session
-        // Unlike rate limits, auth failures indicate credential issues with
-        // the current agent, so we don't preserve prompt context - the next
-        // agent may have different (valid) credentials.
-        AgentEvent::AuthFallback { .. } => PipelineState {
+        // Auth failure (401/403): immediate agent switch, clear session and prompt context.
+        AgentEvent::AuthFailed { .. } => PipelineState {
             agent_chain: state
                 .agent_chain
                 .switch_to_next_agent()
                 .clear_session_id()
                 .clear_continuation_prompt(),
+            continuation: ContinuationState {
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
-        // Timeout (idle): immediate agent fallback, clear session
-        // Unlike rate limits, timeouts may indicate the agent is stuck or the
-        // task is too complex for it. Retrying the same agent would likely
-        // hit the same timeout, so switch to a different agent. We don't
-        // preserve prompt context since the previous execution may have made
-        // partial progress that is difficult to resume cleanly.
-        AgentEvent::TimeoutFallback { .. } => PipelineState {
-            agent_chain: state
-                .agent_chain
-                .switch_to_next_agent()
-                .clear_session_id()
-                .clear_continuation_prompt(),
-            ..state
-        },
+        // Timeout: retry same agent first; fall back only after retry budget exhaustion.
+        AgentEvent::TimedOut { .. } => {
+            reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::Timeout)
+        }
         // Other retriable errors (Network, ModelUnavailable): try next model
         AgentEvent::InvocationFailed {
             retriable: true, ..
         } => PipelineState {
             agent_chain: state.agent_chain.advance_to_next_model(),
+            continuation: ContinuationState {
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
             ..state
         },
-        // Non-retriable errors: switch agent and clear session
         AgentEvent::InvocationFailed {
-            retriable: false, ..
-        } => PipelineState {
-            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
-            ..state
+            retriable: false,
+            error_kind,
+            ..
+        } => match error_kind {
+            // Internal/unknown: retry same agent first; fall back after budget exhaustion.
+            AgentErrorKind::InternalError => {
+                reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::InternalError)
+            }
+            // Defensive: treat explicit Timeout similarly if it arrives here.
+            AgentErrorKind::Timeout => {
+                reduce_same_agent_retryable_failure(state, SameAgentRetryableFailure::Timeout)
+            }
+            // Other non-retriable errors: switch agent and clear session.
+            _ => PipelineState {
+                agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+                continuation: ContinuationState {
+                    xsd_retry_count: 0,
+                    xsd_retry_pending: false,
+                    ..state.continuation
+                },
+                ..state
+            },
         },
         AgentEvent::FallbackTriggered { .. } => PipelineState {
             agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
@@ -114,5 +135,42 @@ pub(super) fn reduce_agent_event(state: PipelineState, event: AgentEvent) -> Pip
             agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
             ..state
         },
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SameAgentRetryableFailure {
+    Timeout,
+    InternalError,
+}
+
+fn reduce_same_agent_retryable_failure(
+    state: PipelineState,
+    _failure: SameAgentRetryableFailure,
+) -> PipelineState {
+    // Keep agent selection reducer-driven and deterministic:
+    // - Retry same agent first for timeouts/internal errors.
+    // - Fall back to next agent only after exhausting the configured budget.
+    let new_xsd_count = state.continuation.xsd_retry_count + 1;
+    if new_xsd_count >= state.continuation.max_xsd_retry_count {
+        PipelineState {
+            agent_chain: state.agent_chain.switch_to_next_agent().clear_session_id(),
+            continuation: ContinuationState {
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
+                ..state.continuation
+            },
+            ..state
+        }
+    } else {
+        PipelineState {
+            agent_chain: state.agent_chain.clear_session_id(),
+            continuation: ContinuationState {
+                xsd_retry_count: new_xsd_count,
+                xsd_retry_pending: true,
+                ..state.continuation
+            },
+            ..state
+        }
     }
 }

@@ -166,10 +166,12 @@ impl MainEffectHandler {
             .expect("commit agent should be initialized via InitializeAgentChain effect");
 
         let mut result = self.invoke_agent(ctx, AgentRole::Commit, agent, None, prompt)?;
-        if matches!(
-            result.event,
-            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
-        ) {
+        if result.additional_events.iter().any(|e| {
+            matches!(
+                e,
+                PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+            )
+        }) {
             result = result.with_additional_event(PipelineEvent::commit_agent_invoked(attempt));
         }
         Ok(result)

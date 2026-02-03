@@ -130,10 +130,12 @@ impl MainEffectHandler {
             .unwrap_or_else(|| ctx.developer_agent.to_string());
 
         let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
-        if matches!(
-            result.event,
-            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
-        ) {
+        if result.additional_events.iter().any(|e| {
+            matches!(
+                e,
+                PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+            )
+        }) {
             result = result.with_additional_event(PipelineEvent::planning_agent_invoked(iteration));
         }
         Ok(result)

@@ -84,7 +84,7 @@ fn test_rate_limit_429_triggers_agent_fallback_not_model_fallback() {
         // Simulate 429 rate limit - should switch to next AGENT, not model
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_rate_limit_fallback(
+            PipelineEvent::agent_rate_limited(
                 AgentRole::Developer,
                 "agent1".to_string(),
                 Some("continue this work".to_string()),
@@ -125,7 +125,7 @@ fn test_auth_failure_triggers_agent_fallback_not_model_fallback() {
         // Simulate auth failure - should switch to next AGENT, not model
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_auth_failed(AgentRole::Developer, "agent1".to_string()),
         );
 
         // Should switch to next agent
@@ -259,36 +259,52 @@ fn test_rate_limit_continuation_prompt_cleared_on_success() {
 #[test]
 fn test_timeout_triggers_agent_fallback_not_model_fallback() {
     with_default_timeout(|| {
-        let state = create_state_with_agent_chain_in_development();
+        use ralph_workflow::reducer::state::ContinuationState;
+
+        let state = PipelineState {
+            continuation: ContinuationState::with_limits(2, 3),
+            ..create_state_with_agent_chain_in_development()
+        };
         let initial_agent_index = state.agent_chain.current_agent_index;
 
-        // Simulate idle timeout - should switch to next AGENT, not model
-        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+        // Simulate idle timeout - should retry same agent first
+        let after_first_timeout = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
         );
 
-        // Should switch to next agent
-        assert!(
-            new_state.agent_chain.current_agent_index > initial_agent_index,
-            "Timeout should trigger agent fallback, not model fallback"
+        assert_eq!(
+            after_first_timeout.agent_chain.current_agent_index, initial_agent_index,
+            "Timeout should retry same agent first (no immediate agent fallback)"
         );
-
-        // Model index should reset to 0 (new agent starts fresh)
-        assert_eq!(new_state.agent_chain.current_model_index, 0);
+        assert_eq!(
+            after_first_timeout.agent_chain.current_model_index, 0,
+            "Timeout retry should not advance model"
+        );
 
         // Prompt context should NOT be preserved (unlike rate limit)
         // because timeout may indicate partial progress that's hard to resume
         assert!(
-            new_state
+            after_first_timeout
                 .agent_chain
                 .rate_limit_continuation_prompt
                 .is_none(),
-            "Timeout fallback should NOT preserve prompt context"
+            "TimedOut should NOT preserve prompt context"
+        );
+
+        // Second timeout exhausts budget => fall back to next agent
+        let after_second_timeout = ralph_workflow::reducer::state_reduction::reduce(
+            after_first_timeout,
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        assert!(
+            after_second_timeout.agent_chain.current_agent_index > initial_agent_index,
+            "After retry budget exhaustion, timeout should fall back to next agent"
         );
 
         // Phase should remain Development
-        assert_eq!(new_state.phase, PipelinePhase::Development);
+        assert_eq!(after_second_timeout.phase, PipelinePhase::Development);
     });
 }
 
@@ -320,22 +336,22 @@ fn test_timeout_fallback_clears_session_id() {
             context_cleaned: false,
             rebase: RebaseState::NotStarted,
             commit: CommitState::NotStarted,
-            continuation: ContinuationState::new(),
+            continuation: ContinuationState::with_limits(2, 3),
             checkpoint_saved_count: 0,
             execution_history: Vec::new(),
             ..PipelineState::initial(5, 2)
         };
 
-        // Simulate timeout fallback
+        // Simulate timed out
         let new_state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
         );
 
         // Session ID should be cleared
         assert!(
             new_state.agent_chain.last_session_id.is_none(),
-            "Timeout fallback should clear session ID"
+            "TimedOut should clear session ID"
         );
     });
 }
@@ -346,7 +362,12 @@ fn test_timeout_fallback_clears_session_id() {
 #[test]
 fn test_timeout_followed_by_successful_retry_with_different_agent() {
     with_default_timeout(|| {
-        let mut state = create_state_with_agent_chain_in_development();
+        use ralph_workflow::reducer::state::ContinuationState;
+
+        let mut state = PipelineState {
+            continuation: ContinuationState::with_limits(2, 3),
+            ..create_state_with_agent_chain_in_development()
+        };
 
         // Verify starting agent
         assert_eq!(
@@ -354,16 +375,28 @@ fn test_timeout_followed_by_successful_retry_with_different_agent() {
             Some("agent1")
         );
 
-        // First agent times out
+        // First timeout retries same agent
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
         );
 
-        // Should have switched to second agent
         assert_eq!(
             state.agent_chain.current_agent().map(String::as_str),
-            Some("agent2")
+            Some("agent1"),
+            "First timeout should retry same agent"
+        );
+
+        // Second timeout exhausts budget => fall back to second agent
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+        );
+
+        assert_eq!(
+            state.agent_chain.current_agent().map(String::as_str),
+            Some("agent2"),
+            "Second timeout should fall back to next agent"
         );
 
         // Second agent succeeds
@@ -393,32 +426,49 @@ fn test_timeout_followed_by_successful_retry_with_different_agent() {
 #[test]
 fn test_multiple_timeouts_cycle_through_agents() {
     with_default_timeout(|| {
-        let mut state = create_state_with_agent_chain_in_development();
+        use ralph_workflow::reducer::state::ContinuationState;
 
-        // Agent 1 times out
+        let mut state = PipelineState {
+            continuation: ContinuationState::with_limits(2, 3),
+            ..create_state_with_agent_chain_in_development()
+        };
+
+        // Agent 1: two timeouts => switch to agent 2
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
+        );
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent1".to_string()),
         );
         assert_eq!(
             state.agent_chain.current_agent().map(String::as_str),
             Some("agent2")
         );
 
-        // Agent 2 times out
+        // Agent 2: two timeouts => switch to agent 3
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent2".to_string()),
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent2".to_string()),
+        );
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent2".to_string()),
         );
         assert_eq!(
             state.agent_chain.current_agent().map(String::as_str),
             Some("agent3")
         );
 
-        // Agent 3 times out - should wrap to agent1 and increment retry cycle
+        // Agent 3: two timeouts => wrap to agent1 and increment retry cycle
         state = ralph_workflow::reducer::state_reduction::reduce(
             state,
-            PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent3".to_string()),
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent3".to_string()),
+        );
+        state = ralph_workflow::reducer::state_reduction::reduce(
+            state,
+            PipelineEvent::agent_timed_out(AgentRole::Developer, "agent3".to_string()),
         );
         assert_eq!(
             state.agent_chain.current_agent().map(String::as_str),

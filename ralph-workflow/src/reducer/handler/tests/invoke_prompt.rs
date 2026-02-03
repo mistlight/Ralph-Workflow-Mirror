@@ -109,11 +109,25 @@ fn test_invoke_planning_agent_does_not_mark_invoked_on_failure() {
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Agent(AgentEvent::InvocationFailed { .. })
-            | PipelineEvent::Agent(AgentEvent::RateLimitFallback { .. })
+        PipelineEvent::Agent(AgentEvent::InvocationStarted { .. })
     ));
     assert!(
-        result.additional_events.is_empty(),
+        result.additional_events.iter().any(|e| {
+            matches!(
+                e,
+                PipelineEvent::Agent(AgentEvent::InvocationFailed { .. })
+                    | PipelineEvent::Agent(AgentEvent::RateLimited { .. })
+                    | PipelineEvent::Agent(AgentEvent::AuthFailed { .. })
+                    | PipelineEvent::Agent(AgentEvent::TimedOut { .. })
+            )
+        }),
+        "invoke_agent should emit a failure fact event after InvocationStarted"
+    );
+    assert!(
+        !result
+            .additional_events
+            .iter()
+            .any(|e| matches!(e, PipelineEvent::Lifecycle(_))),
         "planning agent invoked should not be emitted on failure"
     );
 }
@@ -170,8 +184,14 @@ fn test_invoke_planning_agent_uses_unique_logfile_path_with_attempt() {
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        PipelineEvent::Agent(AgentEvent::InvocationStarted { .. })
     ));
+    assert!(result.additional_events.iter().any(|e| {
+        matches!(
+            e,
+            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        )
+    }));
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
@@ -247,8 +267,14 @@ fn test_invoke_planning_agent_logfile_attempt_is_collision_free_and_does_not_dep
 
     assert!(matches!(
         effect_result.event,
-        PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        PipelineEvent::Agent(AgentEvent::InvocationStarted { .. })
     ));
+    assert!(effect_result.additional_events.iter().any(|e| {
+        matches!(
+            e,
+            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        )
+    }));
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
@@ -572,8 +598,14 @@ fn test_invoke_agent_uses_rate_limit_continuation_prompt() {
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        PipelineEvent::Agent(AgentEvent::InvocationStarted { .. })
     ));
+    assert!(result.additional_events.iter().any(|e| {
+        matches!(
+            e,
+            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        )
+    }));
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);
@@ -643,8 +675,14 @@ fn test_invoke_agent_uses_fresh_prompt_when_no_continuation_prompt() {
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        PipelineEvent::Agent(AgentEvent::InvocationStarted { .. })
     ));
+    assert!(result.additional_events.iter().any(|e| {
+        matches!(
+            e,
+            PipelineEvent::Agent(AgentEvent::InvocationSucceeded { .. })
+        )
+    }));
 
     let calls = executor.agent_calls();
     assert_eq!(calls.len(), 1);

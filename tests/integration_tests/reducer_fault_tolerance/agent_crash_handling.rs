@@ -10,7 +10,10 @@ use super::helpers::create_state_with_agent_chain_in_development;
 #[test]
 fn test_agent_sigsegv_caught_by_fault_tolerant_executor() {
     with_default_timeout(|| {
-        let state = create_state_with_agent_chain_in_development();
+        let state = PipelineState {
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            ..create_state_with_agent_chain_in_development()
+        };
 
         let event = PipelineEvent::agent_invocation_failed(
             AgentRole::Developer,
@@ -22,18 +25,39 @@ fn test_agent_sigsegv_caught_by_fault_tolerant_executor() {
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
 
+        assert_eq!(
+            new_state.agent_chain.current_agent().map(String::as_str),
+            Some("agent1")
+        );
+        assert!(new_state.continuation.xsd_retry_pending);
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+
+        // Second internal error exhausts budget => fall back to next agent
+        let after_second = ralph_workflow::reducer::state_reduction::reduce(
+            new_state,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                139,
+                AgentErrorKind::InternalError,
+                false,
+            ),
+        );
+
         assert!(matches!(
-            new_state.agent_chain.current_agent(),
+            after_second.agent_chain.current_agent(),
             Some(agent) if agent != "agent1"
         ));
-        assert_eq!(new_state.phase, PipelinePhase::Development);
     });
 }
 
 #[test]
 fn test_agent_panic_caught_by_fault_tolerant_executor() {
     with_default_timeout(|| {
-        let state = create_state_with_agent_chain_in_development();
+        let state = PipelineState {
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            ..create_state_with_agent_chain_in_development()
+        };
 
         let event = PipelineEvent::agent_invocation_failed(
             AgentRole::Developer,
@@ -45,8 +69,26 @@ fn test_agent_panic_caught_by_fault_tolerant_executor() {
 
         let new_state = ralph_workflow::reducer::state_reduction::reduce(state, event);
 
+        assert_eq!(
+            new_state.agent_chain.current_agent().map(String::as_str),
+            Some("agent1")
+        );
+        assert!(new_state.continuation.xsd_retry_pending);
+
+        // Second internal error exhausts budget => fall back to next agent
+        let after_second = ralph_workflow::reducer::state_reduction::reduce(
+            new_state,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                1,
+                AgentErrorKind::InternalError,
+                false,
+            ),
+        );
+
         assert!(matches!(
-            new_state.agent_chain.current_agent(),
+            after_second.agent_chain.current_agent(),
             Some(agent) if agent != "agent1"
         ));
     });
@@ -204,10 +246,13 @@ fn test_retry_cycle_backoff_is_explicit_effect() {
 #[test]
 fn test_pipeline_continues_after_agent_sigsegv() {
     with_default_timeout(|| {
-        let state = create_state_with_agent_chain_in_development();
+        let state = PipelineState {
+            continuation: ralph_workflow::reducer::state::ContinuationState::with_limits(2, 3),
+            ..create_state_with_agent_chain_in_development()
+        };
         let initial_agent_index = state.agent_chain.current_agent_index;
 
-        let new_state = ralph_workflow::reducer::state_reduction::reduce(
+        let after_first = ralph_workflow::reducer::state_reduction::reduce(
             state,
             PipelineEvent::agent_invocation_failed(
                 AgentRole::Developer,
@@ -218,8 +263,25 @@ fn test_pipeline_continues_after_agent_sigsegv() {
             ),
         );
 
-        assert!(new_state.agent_chain.current_agent_index > initial_agent_index);
-        assert_eq!(new_state.phase, PipelinePhase::Development);
+        assert_eq!(
+            after_first.agent_chain.current_agent_index,
+            initial_agent_index
+        );
+        assert_eq!(after_first.phase, PipelinePhase::Development);
+
+        let after_second = ralph_workflow::reducer::state_reduction::reduce(
+            after_first,
+            PipelineEvent::agent_invocation_failed(
+                AgentRole::Developer,
+                "agent1".to_string(),
+                139,
+                AgentErrorKind::InternalError,
+                false,
+            ),
+        );
+
+        assert!(after_second.agent_chain.current_agent_index > initial_agent_index);
+        assert_eq!(after_second.phase, PipelinePhase::Development);
     });
 }
 

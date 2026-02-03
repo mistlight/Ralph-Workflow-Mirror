@@ -311,7 +311,7 @@ fn test_rate_limit_fallback_preserves_prompt() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::agent_rate_limit_fallback(
+            PipelineEvent::agent_rate_limited(
                 AgentRole::Developer,
                 "agent1".to_string(),
                 Some("continue this work".to_string()),
@@ -352,7 +352,7 @@ fn test_auth_fallback_switches_agent_without_prompt() {
 
         let new_state = reduce(
             state,
-            PipelineEvent::agent_auth_fallback(AgentRole::Developer, "agent1".to_string()),
+            PipelineEvent::agent_auth_failed(AgentRole::Developer, "agent1".to_string()),
         );
 
         // Should switch to next agent

@@ -152,7 +152,7 @@ fn test_timeout_error_from_run_with_prompt_err_arm_triggers_timeout_fallback() {
 
     assert!(matches!(
         result.event,
-        PipelineEvent::Agent(AgentEvent::TimeoutFallback { .. })
+        PipelineEvent::Agent(AgentEvent::TimedOut { .. })
     ));
 }
 
@@ -366,7 +366,7 @@ fn test_classify_agent_error_rate_limit_anthropic_quota() {
 #[test]
 fn test_auth_error_triggers_auth_fallback_classification() {
     // All these patterns should result in Authentication error kind
-    // which triggers AuthFallback event via is_auth_error()
+    // which triggers AuthFailed event via is_auth_error()
     let auth_patterns = vec![
         "HTTP 401 Unauthorized",
         "HTTP 403 Forbidden",
@@ -396,7 +396,7 @@ fn test_auth_error_triggers_auth_fallback_classification() {
 #[test]
 fn test_rate_limit_error_triggers_rate_limit_fallback_classification() {
     // All these patterns should result in RateLimit error kind
-    // which triggers RateLimitFallback event via is_rate_limit_error()
+    // which triggers RateLimited event via is_rate_limit_error()
     let rate_limit_patterns = vec![
         "Rate limit exceeded",
         "Rate limit reached for requests",
@@ -464,7 +464,7 @@ fn test_non_special_errors_maintain_retry_semantics() {
         "Network should not trigger auth fallback"
     );
 
-    // Timeout errors: NOT retriable (triggers agent fallback via TimeoutFallback)
+    // Timeout errors: emitted as TimedOut (reducer decides retry vs fallback)
     // Retrying the same agent would likely hit the same timeout
     let timeout_error = classify_agent_error(143, ""); // SIGTERM
     assert_eq!(timeout_error, AgentErrorKind::Timeout);

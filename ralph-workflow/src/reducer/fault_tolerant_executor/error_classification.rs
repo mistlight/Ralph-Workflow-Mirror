@@ -160,19 +160,19 @@ pub fn classify_io_error(error: &io::Error) -> AgentErrorKind {
 /// Determine if agent error is retriable.
 ///
 /// Retriable errors should trigger model fallback (same agent, different model).
-/// Non-retriable errors should trigger agent fallback (different agent).
+/// Non-retriable errors are reported as facts; the reducer decides retry vs fallback.
 ///
-/// # Non-retriable errors that get special handling:
+/// # Non-retriable errors with dedicated fact events:
 ///
-/// - **RateLimit (429)**: Triggers immediate agent fallback via `AgentRateLimitFallback`.
-///   The current provider is temporarily exhausted, so switch to next agent immediately.
+/// - **RateLimit (429)**: Emitted as `AgentEvent::RateLimited` with prompt context.
+///   The reducer typically switches to the next agent immediately.
 ///
-/// - **Timeout**: Triggers immediate agent fallback via `AgentTimeoutFallback`.
-///   The agent may be stuck or the task is too complex for it. Retrying the same
-///   agent would likely hit the same timeout, so switch to a different agent.
+/// - **Timeout**: Emitted as `AgentEvent::TimedOut`.
+///   The reducer retries the same agent first and only falls back after exhausting
+///   the configured retry budget.
 ///
-/// - **Authentication**: Triggers immediate agent fallback via `AgentAuthFallback`.
-///   Credential issues with the current agent require switching to another.
+/// - **Authentication**: Emitted as `AgentEvent::AuthFailed`.
+///   The reducer typically switches to the next agent immediately.
 pub fn is_retriable_agent_error(error_kind: &AgentErrorKind) -> bool {
     matches!(
         error_kind,
@@ -181,27 +181,22 @@ pub fn is_retriable_agent_error(error_kind: &AgentErrorKind) -> bool {
 }
 
 /// Check if an error kind represents a timeout error.
-///
-/// Timeout errors get special handling - they trigger immediate agent
-/// fallback via `AgentTimeoutFallback` event. Unlike rate limits, timeout
-/// fallback does not preserve prompt context since the previous execution
-/// may have made partial progress that is difficult to resume cleanly.
 pub fn is_timeout_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::Timeout)
 }
 
 /// Check if an error kind represents a rate limit (429) error.
 ///
-/// Rate limit errors get special handling - they trigger immediate agent
-/// fallback via `AgentRateLimitFallback` event instead of model fallback.
+/// Rate limit errors are emitted as `AgentEvent::RateLimited` instead of a generic
+/// InvocationFailed so the reducer can apply deterministic policy.
 pub fn is_rate_limit_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::RateLimit)
 }
 
 /// Check if an error kind represents an authentication error.
 ///
-/// Auth errors get special handling - they trigger immediate agent
-/// fallback via `AgentAuthFallback` event instead of generic InvocationFailed.
+/// Auth errors are emitted as `AgentEvent::AuthFailed` instead of a generic
+/// InvocationFailed so the reducer can apply deterministic policy.
 pub fn is_auth_error(error_kind: &AgentErrorKind) -> bool {
     matches!(error_kind, AgentErrorKind::Authentication)
 }

@@ -620,7 +620,7 @@ fn test_agent_fallback_only_via_reducer_events() {
                 role: AgentRole::Developer,
                 agent: "agent-b".to_string(),
                 exit_code: 1,
-                error_kind: ralph_workflow::reducer::event::AgentErrorKind::InternalError,
+                error_kind: ralph_workflow::reducer::event::AgentErrorKind::FileSystem,
                 retriable: false,
             }),
         );

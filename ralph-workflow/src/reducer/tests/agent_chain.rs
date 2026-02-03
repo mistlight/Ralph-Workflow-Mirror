@@ -58,6 +58,7 @@ fn test_agent_invocation_started_preserves_agent_chain_indices() {
         AgentRole::Developer,
     );
     agent_chain.retry_cycle = 2;
+    agent_chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
 
     // Start from a non-zero position so the test actually verifies reset behavior.
     let state = PipelineState {
@@ -78,11 +79,15 @@ fn test_agent_invocation_started_preserves_agent_chain_indices() {
         ),
     );
 
-    // InvocationStarted is a no-op for agent-chain position; it should not change
-    // indices or cycle tracking.
+    // InvocationStarted should not change indices or cycle tracking, but should
+    // clear any saved continuation prompt (prompt consumption is reducer-driven).
     assert_eq!(new_state.agent_chain.current_agent_index, 1);
     assert_eq!(new_state.agent_chain.current_model_index, 1);
     assert_eq!(new_state.agent_chain.retry_cycle, 2);
+    assert!(new_state
+        .agent_chain
+        .rate_limit_continuation_prompt
+        .is_none());
 }
 
 #[test]
@@ -519,10 +524,13 @@ fn test_agent_chain_initialized_contains_full_fallback_chain() {
 // ============================================================================
 
 #[test]
-fn test_timeout_fallback_triggers_agent_switch_not_model_switch() {
-    // Setup: two agents, each with two models
+fn test_timed_out_retries_same_agent_before_fallback() {
+    // Setup: two agents, each with two models. Budget 2 means:
+    // - First timeout retries same agent
+    // - Second timeout falls back to next agent
     let base_state = create_test_state();
     let state = PipelineState {
+        continuation: crate::reducer::state::ContinuationState::with_limits(2, 3),
         agent_chain: base_state.agent_chain.with_agents(
             vec!["agent-a".to_string(), "agent-b".to_string()],
             vec![
@@ -534,34 +542,51 @@ fn test_timeout_fallback_triggers_agent_switch_not_model_switch() {
         ..base_state
     };
 
-    // Verify initial state
     assert_eq!(
         state.agent_chain.current_agent().map(String::as_str),
         Some("agent-a")
     );
     assert_eq!(state.agent_chain.current_model_index, 0);
 
-    // Apply timeout fallback event
-    let new_state = reduce(
+    let after_first_timeout = reduce(
         state,
-        PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent-a".to_string()),
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
     );
 
-    // Should switch to agent-b, not model-a2
-    // This is the key behavior change: timeout triggers agent fallback, not model fallback
     assert_eq!(
-        new_state.agent_chain.current_agent().map(String::as_str),
-        Some("agent-b"),
-        "Timeout should switch to next agent, not retry same agent with different model"
+        after_first_timeout
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent-a"),
+        "Timeout should retry same agent first"
     );
     assert_eq!(
-        new_state.agent_chain.current_model_index, 0,
+        after_first_timeout.agent_chain.current_model_index, 0,
+        "Timeout retry should not advance model"
+    );
+
+    let after_second_timeout = reduce(
+        after_first_timeout,
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
+    );
+
+    assert_eq!(
+        after_second_timeout
+            .agent_chain
+            .current_agent()
+            .map(String::as_str),
+        Some("agent-b"),
+        "After retry budget exhaustion, timeout should fall back to next agent"
+    );
+    assert_eq!(
+        after_second_timeout.agent_chain.current_model_index, 0,
         "Model index should reset to 0 when switching agents"
     );
 }
 
 #[test]
-fn test_timeout_fallback_clears_session_id() {
+fn test_timed_out_clears_session_id_even_when_retrying_same_agent() {
     let base_state = create_test_state();
     let state = PipelineState {
         agent_chain: base_state
@@ -584,52 +609,21 @@ fn test_timeout_fallback_clears_session_id() {
     // Apply timeout fallback
     let new_state = reduce(
         state,
-        PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent-a".to_string()),
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-a".to_string()),
     );
 
     // Session ID should be cleared (new agent, new session)
     assert_eq!(
         new_state.agent_chain.last_session_id, None,
-        "Timeout fallback should clear session ID"
+        "TimedOut should clear session ID"
     );
 }
 
 #[test]
-fn test_timeout_fallback_clears_continuation_prompt() {
-    let base_state = create_test_state();
-    let mut agent_chain = base_state.agent_chain.with_agents(
-        vec!["agent-a".to_string(), "agent-b".to_string()],
-        vec![vec![], vec![]],
-        AgentRole::Developer,
-    );
-    // Set the continuation prompt directly
-    agent_chain.rate_limit_continuation_prompt = Some("continue from here".to_string());
-
-    let state = PipelineState {
-        agent_chain,
-        ..base_state
-    };
-
-    // Verify continuation prompt is set
-    assert!(state.agent_chain.rate_limit_continuation_prompt.is_some());
-
-    // Apply timeout fallback
-    let new_state = reduce(
-        state,
-        PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent-a".to_string()),
-    );
-
-    // Continuation prompt should be cleared (unlike rate limit fallback which preserves it)
-    assert_eq!(
-        new_state.agent_chain.rate_limit_continuation_prompt, None,
-        "Timeout fallback should clear continuation prompt (unlike rate limit)"
-    );
-}
-
-#[test]
-fn test_timeout_fallback_from_last_agent_increments_retry_cycle() {
+fn test_timed_out_from_last_agent_increments_retry_cycle_when_budget_exhausted() {
     let base_state = create_test_state();
     let state = PipelineState {
+        continuation: crate::reducer::state::ContinuationState::with_limits(1, 3),
         agent_chain: base_state
             .agent_chain
             .with_agents(
@@ -651,14 +645,14 @@ fn test_timeout_fallback_from_last_agent_increments_retry_cycle() {
     // Apply timeout fallback from last agent
     let new_state = reduce(
         state,
-        PipelineEvent::agent_timeout_fallback(AgentRole::Developer, "agent-b".to_string()),
+        PipelineEvent::agent_timed_out(AgentRole::Developer, "agent-b".to_string()),
     );
 
     // Should wrap back to first agent and increment retry cycle
     assert_eq!(
         new_state.agent_chain.current_agent().map(String::as_str),
         Some("agent-a"),
-        "Should wrap back to first agent"
+        "Should wrap back to first agent after falling back"
     );
     assert_eq!(
         new_state.agent_chain.retry_cycle, 1,

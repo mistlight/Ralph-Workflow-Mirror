@@ -4,7 +4,7 @@
 //! - Catches all panics from subprocess execution
 //! - Catches all I/O errors and non-zero exit codes
 //! - Never returns errors - always emits PipelineEvents
-//! - Provides detailed error classification for retry vs fallback decisions
+//! - Provides detailed error classification for reducer-driven retry/fallback policy
 //! - Logs all failures but continues pipeline execution
 //!
 //! Key design principle: **Agent failures should NEVER crash the pipeline**.
@@ -169,10 +169,10 @@ fn try_agent_execution(
             let exit_code = result.exit_code;
             let error_kind = classify_agent_error(exit_code, &result.stderr);
 
-            // Special handling for rate limit: emit fallback event with prompt context
+            // Special handling for rate limit: emit fact event with prompt context
             if is_rate_limit_error(&error_kind) {
                 return Ok(AgentExecutionResult {
-                    event: PipelineEvent::agent_rate_limit_fallback(
+                    event: PipelineEvent::agent_rate_limited(
                         config.role,
                         config.agent_name.to_string(),
                         Some(config.prompt.to_string()),
@@ -181,10 +181,10 @@ fn try_agent_execution(
                 });
             }
 
-            // Special handling for auth failure: emit fallback event without prompt context
+            // Special handling for auth failure: emit fact event without prompt context
             if is_auth_error(&error_kind) {
                 return Ok(AgentExecutionResult {
-                    event: PipelineEvent::agent_auth_fallback(
+                    event: PipelineEvent::agent_auth_failed(
                         config.role,
                         config.agent_name.to_string(),
                     ),
@@ -192,12 +192,11 @@ fn try_agent_execution(
                 });
             }
 
-            // Special handling for timeout: emit fallback event to switch agents
-            // Unlike rate limits, timeout fallback does not preserve prompt context
-            // since the previous execution may have made partial progress.
+            // Special handling for timeout: emit fact event (reducer decides retry/fallback)
+            // Unlike rate limits, timeouts do not preserve prompt context.
             if is_timeout_error(&error_kind) {
                 return Ok(AgentExecutionResult {
-                    event: PipelineEvent::agent_timeout_fallback(
+                    event: PipelineEvent::agent_timed_out(
                         config.role,
                         config.agent_name.to_string(),
                     ),
@@ -225,11 +224,10 @@ fn try_agent_execution(
 
             // Mirror special-case handling from the non-zero exit path.
             // If `run_with_prompt` itself returns an error classified as Timeout,
-            // emit TimeoutFallback so the reducer clears any continuation prompt
-            // and switches agents (instead of emitting a generic InvocationFailed).
+            // emit TimedOut so the reducer can decide retry vs fallback deterministically.
             if is_timeout_error(&error_kind) {
                 return Ok(AgentExecutionResult {
-                    event: PipelineEvent::agent_timeout_fallback(
+                    event: PipelineEvent::agent_timed_out(
                         config.role,
                         config.agent_name.to_string(),
                     ),

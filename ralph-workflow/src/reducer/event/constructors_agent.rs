@@ -82,31 +82,27 @@ impl PipelineEvent {
         })
     }
 
-    /// Create an AgentRateLimitFallback event.
-    pub fn agent_rate_limit_fallback(
+    /// Create an AgentRateLimited event.
+    pub fn agent_rate_limited(
         role: AgentRole,
         agent: String,
         prompt_context: Option<String>,
     ) -> Self {
-        Self::Agent(AgentEvent::RateLimitFallback {
+        Self::Agent(AgentEvent::RateLimited {
             role,
             agent,
             prompt_context,
         })
     }
 
-    /// Create an AgentAuthFallback event.
-    pub fn agent_auth_fallback(role: AgentRole, agent: String) -> Self {
-        Self::Agent(AgentEvent::AuthFallback { role, agent })
+    /// Create an AgentAuthFailed event.
+    pub fn agent_auth_failed(role: AgentRole, agent: String) -> Self {
+        Self::Agent(AgentEvent::AuthFailed { role, agent })
     }
 
-    /// Create an AgentTimeoutFallback event.
-    ///
-    /// Used when an agent hits an idle timeout and should fallback to
-    /// a different agent. Unlike rate limit fallback, this does not
-    /// preserve prompt context.
-    pub fn agent_timeout_fallback(role: AgentRole, agent: String) -> Self {
-        Self::Agent(AgentEvent::TimeoutFallback { role, agent })
+    /// Create an AgentTimedOut event.
+    pub fn agent_timed_out(role: AgentRole, agent: String) -> Self {
+        Self::Agent(AgentEvent::TimedOut { role, agent })
     }
 
     /// Create an AgentSessionEstablished event.
