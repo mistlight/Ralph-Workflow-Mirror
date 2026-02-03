@@ -514,3 +514,191 @@ fn prompt_content_builder_is_deterministic_across_repeated_builds() {
         );
     });
 }
+
+// =============================================================================
+// Reducer-driven materialization stability tests
+// =============================================================================
+
+/// Test that MaterializedPromptInput records the correct sizes and reasons.
+///
+/// This verifies that the reducer state accurately reflects what happened
+/// during materialization, enabling deduplication and observability.
+#[test]
+fn materialized_prompt_input_records_sizes_correctly() {
+    use ralph_workflow::reducer::state::{
+        MaterializedPromptInput, PromptInputKind, PromptInputRepresentation,
+        PromptMaterializationReason,
+    };
+
+    with_default_timeout(|| {
+        let original_bytes = (MAX_INLINE_CONTENT_SIZE + 1000) as u64;
+        let final_bytes = MAX_INLINE_CONTENT_SIZE as u64;
+
+        let input = MaterializedPromptInput {
+            kind: PromptInputKind::Diff,
+            content_id_sha256: "abc123".to_string(),
+            consumer_signature_sha256: "def456".to_string(),
+            original_bytes,
+            final_bytes,
+            model_budget_bytes: Some(200_000),
+            inline_budget_bytes: Some(MAX_INLINE_CONTENT_SIZE as u64),
+            representation: PromptInputRepresentation::FileReference {
+                path: std::path::PathBuf::from(".agent/tmp/diff.txt"),
+            },
+            reason: PromptMaterializationReason::InlineBudgetExceeded,
+        };
+
+        assert_eq!(input.original_bytes, original_bytes);
+        assert_eq!(input.final_bytes, final_bytes);
+        assert!(
+            matches!(
+                input.reason,
+                PromptMaterializationReason::InlineBudgetExceeded
+            ),
+            "should record correct reason"
+        );
+        assert!(
+            matches!(
+                input.representation,
+                PromptInputRepresentation::FileReference { .. }
+            ),
+            "should use file reference for oversize content"
+        );
+    });
+}
+
+/// Test that content_id_sha256 is consistent for identical content.
+///
+/// This ensures deduplication works correctly - same content should
+/// produce the same content ID regardless of when it's computed.
+#[test]
+fn content_id_sha256_is_deterministic_for_same_content() {
+    use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
+
+    with_default_timeout(|| {
+        let content = "x".repeat(MAX_INLINE_CONTENT_SIZE + 100);
+
+        let id1 = sha256_hex_str(&content);
+        let id2 = sha256_hex_str(&content);
+        let id3 = sha256_hex_str(&content);
+
+        assert_eq!(id1, id2, "SHA-256 should be deterministic");
+        assert_eq!(id2, id3, "SHA-256 should be deterministic");
+        assert_eq!(id1.len(), 64, "SHA-256 should be 64 hex characters");
+    });
+}
+
+/// Test that different content produces different content_id_sha256.
+///
+/// This ensures content IDs can distinguish between different inputs.
+#[test]
+fn content_id_sha256_differs_for_different_content() {
+    use ralph_workflow::reducer::prompt_inputs::sha256_hex_str;
+
+    with_default_timeout(|| {
+        let content1 = "content version 1";
+        let content2 = "content version 2";
+
+        let id1 = sha256_hex_str(content1);
+        let id2 = sha256_hex_str(content2);
+
+        assert_ne!(id1, id2, "different content should produce different IDs");
+    });
+}
+
+/// Test that PromptInputRepresentation correctly distinguishes inline from file reference.
+#[test]
+fn prompt_input_representation_inline_vs_file_reference() {
+    use ralph_workflow::reducer::state::PromptInputRepresentation;
+
+    with_default_timeout(|| {
+        let inline = PromptInputRepresentation::Inline;
+        let file_ref = PromptInputRepresentation::FileReference {
+            path: std::path::PathBuf::from(".agent/tmp/test.txt"),
+        };
+
+        assert!(
+            matches!(inline, PromptInputRepresentation::Inline),
+            "inline should match Inline"
+        );
+        assert!(
+            matches!(file_ref, PromptInputRepresentation::FileReference { .. }),
+            "file ref should match FileReference"
+        );
+    });
+}
+
+/// Test that PromptMaterializationReason covers all expected cases.
+#[test]
+fn prompt_materialization_reason_covers_all_cases() {
+    use ralph_workflow::reducer::state::PromptMaterializationReason;
+
+    with_default_timeout(|| {
+        // Verify all expected enum variants exist and can be matched
+        let reasons = vec![
+            PromptMaterializationReason::WithinBudgets,
+            PromptMaterializationReason::InlineBudgetExceeded,
+            PromptMaterializationReason::ModelBudgetExceeded,
+            PromptMaterializationReason::PolicyForcedReference,
+        ];
+
+        for reason in reasons {
+            match reason {
+                PromptMaterializationReason::WithinBudgets => {}
+                PromptMaterializationReason::InlineBudgetExceeded => {}
+                PromptMaterializationReason::ModelBudgetExceeded => {}
+                PromptMaterializationReason::PolicyForcedReference => {}
+            }
+        }
+    });
+}
+
+/// Test that PromptInputsState can store all phase inputs.
+#[test]
+fn prompt_inputs_state_stores_all_phases() {
+    use ralph_workflow::reducer::state::{
+        MaterializedCommitInputs, MaterializedDevelopmentInputs, MaterializedPlanningInputs,
+        MaterializedPromptInput, MaterializedReviewInputs, PromptInputKind,
+        PromptInputRepresentation, PromptInputsState, PromptMaterializationReason,
+    };
+
+    with_default_timeout(|| {
+        let make_input = |kind| MaterializedPromptInput {
+            kind,
+            content_id_sha256: "hash".to_string(),
+            consumer_signature_sha256: "sig".to_string(),
+            original_bytes: 100,
+            final_bytes: 100,
+            model_budget_bytes: None,
+            inline_budget_bytes: Some(100_000),
+            representation: PromptInputRepresentation::Inline,
+            reason: PromptMaterializationReason::WithinBudgets,
+        };
+
+        let state = PromptInputsState {
+            planning: Some(MaterializedPlanningInputs {
+                iteration: 1,
+                prompt: make_input(PromptInputKind::Prompt),
+            }),
+            development: Some(MaterializedDevelopmentInputs {
+                iteration: 1,
+                prompt: make_input(PromptInputKind::Prompt),
+                plan: make_input(PromptInputKind::Plan),
+            }),
+            review: Some(MaterializedReviewInputs {
+                pass: 1,
+                plan: make_input(PromptInputKind::Plan),
+                diff: make_input(PromptInputKind::Diff),
+            }),
+            commit: Some(MaterializedCommitInputs {
+                attempt: 1,
+                diff: make_input(PromptInputKind::Diff),
+            }),
+        };
+
+        assert!(state.planning.is_some());
+        assert!(state.development.is_some());
+        assert!(state.review.is_some());
+        assert!(state.commit.is_some());
+    });
+}

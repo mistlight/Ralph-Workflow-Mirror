@@ -9,4 +9,5 @@ mod tests {
     include!("tests/continuation_state.rs");
     include!("tests/xsd_retry_and_session.rs");
     include!("tests/fix_status.rs");
+    include!("tests/consumer_signature.rs");
 }
