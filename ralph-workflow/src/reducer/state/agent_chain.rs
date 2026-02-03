@@ -131,12 +131,13 @@ impl AgentChainState {
     }
 
     pub fn advance_to_next_model(&self) -> Self {
+        let start_agent_index = self.current_agent_index;
         let new = self.clone();
 
         // When models are configured, we try each model for the current agent once.
         // If the models list is exhausted, advance to the next agent/retry cycle
         // instead of looping models indefinitely.
-        match new.models_per_agent.get(new.current_agent_index) {
+        let mut next = match new.models_per_agent.get(new.current_agent_index) {
             Some(models) if !models.is_empty() => {
                 if new.current_model_index + 1 < models.len() {
                     let mut advanced = new;
@@ -147,7 +148,13 @@ impl AgentChainState {
                 }
             }
             _ => new.switch_to_next_agent(),
+        };
+
+        if next.current_agent_index != start_agent_index {
+            next.last_session_id = None;
         }
+
+        next
     }
 
     pub fn switch_to_next_agent(&self) -> Self {

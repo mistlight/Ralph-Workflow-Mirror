@@ -187,9 +187,19 @@ pub(super) fn reduce_development_event(
                 // Output was not valid enough to proceed to commit; retry in Development.
                 let invalid_output_attempts = state.continuation.invalid_output_attempts + 1;
                 if invalid_output_attempts > crate::reducer::state::MAX_DEV_INVALID_OUTPUT_RERUNS {
-                    let new_agent_chain = state.agent_chain.switch_to_next_agent();
+                    let new_agent_chain = state
+                        .agent_chain
+                        .switch_to_next_agent()
+                        .clear_session_id()
+                        .clear_continuation_prompt();
                     let continuation = ContinuationState {
                         invalid_output_attempts: 0,
+                        xsd_retry_count: 0,
+                        xsd_retry_pending: false,
+                        xsd_retry_session_reuse_pending: false,
+                        same_agent_retry_count: 0,
+                        same_agent_retry_pending: false,
+                        same_agent_retry_reason: None,
                         ..state.continuation
                     };
 

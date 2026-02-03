@@ -53,7 +53,8 @@
                 vec!["b1".to_string()],
             ],
             AgentRole::Developer,
-        );
+        )
+        .with_session_id(Some("session-a".to_string()));
 
         let chain = chain.advance_to_next_model(); // a1 -> a2
         assert_eq!(chain.current_agent(), Some(&"agent-a".to_string()));
@@ -64,6 +65,28 @@
         assert_eq!(chain.current_agent(), Some(&"agent-b".to_string()));
         assert_eq!(chain.current_model_index, 0);
         assert_eq!(chain.current_model(), Some(&"b1".to_string()));
+        assert_eq!(
+            chain.last_session_id, None,
+            "Switching agents must clear the previous agent session id"
+        );
+    }
+
+    #[test]
+    fn test_agent_chain_advance_to_next_model_clears_session_when_models_missing() {
+        let chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent-a".to_string(), "agent-b".to_string()],
+                vec![vec![], vec![]],
+                AgentRole::Developer,
+            )
+            .with_session_id(Some("session-a".to_string()));
+
+        let next = chain.advance_to_next_model();
+        assert_eq!(next.current_agent(), Some(&"agent-b".to_string()));
+        assert_eq!(
+            next.last_session_id, None,
+            "Switching agents must clear the previous agent session id"
+        );
     }
 
     #[test]
@@ -237,4 +260,3 @@
         };
         assert!(state.is_complete(), "Complete phase should be complete");
     }
-
