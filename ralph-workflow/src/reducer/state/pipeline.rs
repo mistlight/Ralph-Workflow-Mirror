@@ -427,7 +427,7 @@ impl From<PipelineCheckpoint> for PipelineState {
                 .unwrap_or_default(),
             checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
-            prompt_inputs: PromptInputsState::default(),
+            prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
         }
     }
 }

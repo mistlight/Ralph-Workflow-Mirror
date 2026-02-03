@@ -54,7 +54,10 @@ impl MainEffectHandler {
                     ))));
                 }
             }
-            if let Err(err) = ctx.workspace.write(Path::new(".agent/tmp/diff.txt"), &diff_content) {
+            if let Err(err) =
+                ctx.workspace
+                    .write_atomic(Path::new(".agent/tmp/diff.txt"), &diff_content)
+            {
                 return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
                     "Failed to write materialized diff to .agent/tmp/diff.txt: {err}",
                 ))));
@@ -211,8 +214,15 @@ impl MainEffectHandler {
 
         let mut ignore_sources_owned: Vec<String> = Vec::new();
         let (plan_inline, diff_inline) = if matches!(prompt_mode, PromptMode::Normal) {
-            let inputs =
-                materialized_inputs.expect("review inputs must be materialized before preparing prompt");
+            let inputs = match materialized_inputs {
+                Some(inputs) => inputs,
+                None => {
+                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
+                        "Review inputs not materialized for pass {} (expected materialize_review_inputs before prepare_review_prompt)",
+                        pass
+                    ))));
+                }
+            };
             let plan_inline = match &inputs.plan.representation {
                 PromptInputRepresentation::Inline => {
                     let plan = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
@@ -327,54 +337,66 @@ impl MainEffectHandler {
                 (prompt_key, prompt, false, "review_xsd_retry")
             }
             PromptMode::Normal => {
-                let inputs =
-                    materialized_inputs.expect("review inputs must be materialized before preparing prompt");
+                let inputs = match materialized_inputs {
+                    Some(inputs) => inputs,
+                    None => {
+                        return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
+                            "Review inputs not materialized for pass {} (expected materialize_review_inputs before prepare_review_prompt)",
+                            pass
+                        ))));
+                    }
+                };
                 let prompt_key = format!("review_{pass}");
+                let plan_ref = match &inputs.plan.representation {
+                    PromptInputRepresentation::Inline => {
+                        let plan_inline = match plan_inline.clone() {
+                            Some(plan_inline) => plan_inline,
+                            None => {
+                                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                    "Missing in-memory .agent/PLAN.md content for inline review prompt (expected .agent/PLAN.md to be loaded)".to_string(),
+                                )));
+                            }
+                        };
+                        PlanContentReference::Inline(plan_inline)
+                    }
+                    PromptInputRepresentation::FileReference { path } => {
+                        PlanContentReference::ReadFromFile {
+                            primary_path: ctx.workspace.absolute(path),
+                            fallback_path: Some(ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml"))),
+                            description: format!(
+                                "Plan is {} bytes (exceeds {} limit)",
+                                inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
+                            ),
+                        }
+                    }
+                };
+                let diff_ref = match &inputs.diff.representation {
+                    PromptInputRepresentation::Inline => {
+                        let diff_inline = match diff_inline.clone() {
+                            Some(diff_inline) => diff_inline,
+                            None => {
+                                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                    "Missing in-memory .agent/DIFF.backup content for inline review prompt (expected .agent/DIFF.backup to be loaded)".to_string(),
+                                )));
+                            }
+                        };
+                        DiffContentReference::Inline(diff_inline)
+                    }
+                    PromptInputRepresentation::FileReference { path } => {
+                        DiffContentReference::ReadFromFile {
+                            path: ctx.workspace.absolute(path),
+                            start_commit: baseline_oid_for_prompts.clone(),
+                            description: format!(
+                                "Diff is {} bytes (exceeds {} limit)",
+                                inputs.diff.final_bytes, MAX_INLINE_CONTENT_SIZE
+                            ),
+                        }
+                    }
+                };
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        let plan_ref = match &inputs.plan.representation {
-                            PromptInputRepresentation::Inline => {
-                                PlanContentReference::Inline(
-                                    plan_inline
-                                        .clone()
-                                        .expect("plan content must be loaded for inline"),
-                                )
-                            }
-                            PromptInputRepresentation::FileReference { path } => {
-                                PlanContentReference::ReadFromFile {
-                                    primary_path: ctx.workspace.absolute(path),
-                                    fallback_path: Some(
-                                        ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
-                                    ),
-                                    description: format!(
-                                        "Plan is {} bytes (exceeds {} limit)",
-                                        inputs.plan.final_bytes,
-                                        MAX_INLINE_CONTENT_SIZE
-                                    ),
-                                }
-                            }
-                        };
-
-                        let diff_ref = match &inputs.diff.representation {
-                            PromptInputRepresentation::Inline => {
-                                DiffContentReference::Inline(
-                                    diff_inline
-                                        .clone()
-                                        .expect("diff content must be loaded for inline"),
-                                )
-                            }
-                            PromptInputRepresentation::FileReference { path } => {
-                                DiffContentReference::ReadFromFile {
-                                    path: ctx.workspace.absolute(path),
-                                    start_commit: baseline_oid_for_prompts.clone(),
-                                    description: format!(
-                                        "Diff is {} bytes (exceeds {} limit)",
-                                        inputs.diff.final_bytes,
-                                        MAX_INLINE_CONTENT_SIZE
-                                    ),
-                                }
-                            }
-                        };
+                        let plan_ref = plan_ref.clone();
+                        let diff_ref = diff_ref.clone();
 
                         let refs = PromptContentReferences {
                             prompt: None,

@@ -202,13 +202,23 @@ impl MainEffectHandler {
                 )
             }
             PromptMode::Normal => {
-                let inputs = self
+                let inputs = match self
                     .state
                     .prompt_inputs
                     .planning
                     .as_ref()
                     .filter(|p| p.iteration == iteration)
-                    .expect("planning inputs must be materialized before preparing prompt");
+                {
+                    Some(inputs) => inputs,
+                    None => {
+                        return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                            format!(
+                                "Planning inputs not materialized for iteration {} (expected materialize_planning_inputs before prepare_planning_prompt)",
+                                iteration
+                            ),
+                        )));
+                    }
+                };
 
                 let prompt_ref = match &inputs.prompt.representation {
                     PromptInputRepresentation::Inline => {

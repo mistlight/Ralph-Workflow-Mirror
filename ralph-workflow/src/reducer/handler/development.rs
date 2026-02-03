@@ -298,13 +298,23 @@ impl MainEffectHandler {
                 )
             }
             PromptMode::Normal => {
-                let inputs = self
+                let inputs = match self
                     .state
                     .prompt_inputs
                     .development
                     .as_ref()
                     .filter(|p| p.iteration == iteration)
-                    .expect("development inputs must be materialized before preparing prompt");
+                {
+                    Some(inputs) => inputs,
+                    None => {
+                        return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                            format!(
+                                "Development inputs not materialized for iteration {} (expected materialize_development_inputs before prepare_development_prompt)",
+                                iteration
+                            ),
+                        )));
+                    }
+                };
 
                 let prompt_md = match &inputs.prompt.representation {
                     PromptInputRepresentation::Inline => {
@@ -338,38 +348,54 @@ impl MainEffectHandler {
                 };
 
                 let prompt_key = format!("development_{}", iteration);
+                let prompt_ref = match &inputs.prompt.representation {
+                    PromptInputRepresentation::Inline => {
+                        let prompt_md = match prompt_md.clone() {
+                            Some(prompt_md) => prompt_md,
+                            None => {
+                                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                    "Missing in-memory PROMPT.md content for inline development prompt (expected PROMPT.md to be loaded)".to_string(),
+                                )));
+                            }
+                        };
+                        PromptContentReference::inline(prompt_md)
+                    }
+                    PromptInputRepresentation::FileReference { path } => {
+                        PromptContentReference::file_path(
+                            ctx.workspace.absolute(path),
+                            "Original user requirements from PROMPT.md",
+                        )
+                    }
+                };
+                let plan_ref = match &inputs.plan.representation {
+                    PromptInputRepresentation::Inline => {
+                        let plan_md = match plan_md.clone() {
+                            Some(plan_md) => plan_md,
+                            None => {
+                                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                    "Missing in-memory .agent/PLAN.md content for inline development prompt (expected .agent/PLAN.md to be loaded)".to_string(),
+                                )));
+                            }
+                        };
+                        PlanContentReference::Inline(plan_md)
+                    }
+                    PromptInputRepresentation::FileReference { path } => {
+                        PlanContentReference::ReadFromFile {
+                            primary_path: ctx.workspace.absolute(path),
+                            fallback_path: Some(
+                                ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
+                            ),
+                            description: format!(
+                                "Plan is {} bytes (exceeds {} limit)",
+                                inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
+                            ),
+                        }
+                    }
+                };
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        let prompt_ref = match &inputs.prompt.representation {
-                            PromptInputRepresentation::Inline => PromptContentReference::inline(
-                                prompt_md
-                                    .clone()
-                                    .expect("prompt_md must be loaded for inline"),
-                            ),
-                            PromptInputRepresentation::FileReference { path } => {
-                                PromptContentReference::file_path(
-                                    ctx.workspace.absolute(path),
-                                    "Original user requirements from PROMPT.md",
-                                )
-                            }
-                        };
-                        let plan_ref = match &inputs.plan.representation {
-                            PromptInputRepresentation::Inline => PlanContentReference::Inline(
-                                plan_md.clone().expect("plan_md must be loaded for inline"),
-                            ),
-                            PromptInputRepresentation::FileReference { path } => {
-                                PlanContentReference::ReadFromFile {
-                                    primary_path: ctx.workspace.absolute(path),
-                                    fallback_path: Some(
-                                        ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
-                                    ),
-                                    description: format!(
-                                        "Plan is {} bytes (exceeds {} limit)",
-                                        inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
-                                    ),
-                                }
-                            }
-                        };
+                        let prompt_ref = prompt_ref.clone();
+                        let plan_ref = plan_ref.clone();
                         let refs = PromptContentReferences {
                             prompt: Some(prompt_ref),
                             plan: Some(plan_ref),

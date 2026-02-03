@@ -218,6 +218,59 @@ fn test_prepare_planning_prompt_aborts_when_prompt_missing() {
 }
 
 #[test]
+fn test_prepare_planning_prompt_aborts_when_inputs_not_materialized() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file("PROMPT.md", "# Prompt\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    let result = handler
+        .prepare_planning_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect("prepare_planning_prompt should return an EffectResult");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
+        ),
+        "Expected pipeline_aborted when planning inputs are missing, got {:?}",
+        result.event
+    );
+}
+
+#[test]
 fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_output() {
     use crate::reducer::event::PromptInputEvent;
     use crate::reducer::state::PromptInputKind;

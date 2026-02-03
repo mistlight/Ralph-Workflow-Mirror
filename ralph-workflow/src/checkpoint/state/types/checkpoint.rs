@@ -84,6 +84,14 @@ pub struct PipelineCheckpoint {
     /// Environment snapshot for idempotent recovery
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env_snapshot: Option<EnvironmentSnapshot>,
+
+    /// Reducer-managed prompt input materialization state.
+    ///
+    /// This allows resumed pipelines to avoid re-materializing oversize inputs
+    /// (and re-emitting oversize warnings) when the underlying content and
+    /// consumer signature are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_inputs: Option<crate::reducer::state::PromptInputsState>,
 }
 
 impl PipelineCheckpoint {
@@ -127,6 +135,7 @@ impl PipelineCheckpoint {
             file_system_state: None,
             prompt_history: None,
             env_snapshot: None,
+            prompt_inputs: None,
         }
     }
 
