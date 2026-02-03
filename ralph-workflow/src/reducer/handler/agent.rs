@@ -35,15 +35,32 @@ impl MainEffectHandler {
         // agent), we use this saved prompt to continue the same work.
         // The reducer clears the saved prompt only after an invocation succeeds
         // (`InvocationSucceeded`) or when an auth failure forces a clean switch.
-        // This keeps continuation prompt handling reducer-driven (no state mutation here),
-        // while ensuring retries keep the same effective prompt context.
         //
-        let effective_prompt = self
+        // Important: Some follow-up attempts must override the continuation prompt.
+        // For example:
+        // - Same-agent retries prepend timeout/internal-error guidance
+        // - XSD retries rebuild the prompt with validation error context
+        //
+        // In those cases, ignoring the newly prepared prompt would silently drop the
+        // retry-specific guidance and can lead to repeated failures.
+        //
+        let effective_prompt = match self
             .state
             .agent_chain
             .rate_limit_continuation_prompt
             .clone()
-            .unwrap_or(prompt);
+        {
+            None => prompt,
+            Some(continuation_prompt) => {
+                if self.state.continuation.xsd_retry_session_reuse_pending
+                    || super::retry_guidance::is_same_agent_retry_prompt(&prompt)
+                {
+                    prompt
+                } else {
+                    continuation_prompt
+                }
+            }
+        };
 
         let model_name = self.state.agent_chain.current_model();
 

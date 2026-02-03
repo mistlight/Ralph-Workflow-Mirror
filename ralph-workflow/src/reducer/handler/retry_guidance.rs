@@ -4,6 +4,10 @@ const RETRY_NOTE_HEADER_PREFIX: &str = "## Retry Note (attempt ";
 const RETRY_NOTE_END_SENTINEL: &str =
     "- Always produce valid XML output that matches the schema.\n";
 
+pub(crate) fn is_same_agent_retry_prompt(prompt: &str) -> bool {
+    prompt.starts_with(RETRY_NOTE_HEADER_PREFIX)
+}
+
 pub(crate) fn strip_existing_same_agent_retry_preamble(prompt: &str) -> &str {
     if !prompt.starts_with(RETRY_NOTE_HEADER_PREFIX) {
         return prompt;
