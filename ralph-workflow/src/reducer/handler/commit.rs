@@ -243,11 +243,14 @@ impl MainEffectHandler {
             PromptInputRepresentation::Inline => match ctx.workspace.read(model_safe_path) {
                 Ok(diff) => diff,
                 Err(err) => {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                        format!(
-                            "Failed to read materialized commit diff at {}: {err}",
-                            model_safe_path.display()
-                        ),
+                    ctx.logger.warn(&format!(
+                        "Missing/unreadable materialized commit diff at {} ({err}); invalidating commit inputs to rematerialize",
+                        model_safe_path.display()
+                    ));
+                    // Recoverability: tmp artifacts may be cleaned between checkpoints.
+                    // The reducer state still has enough info to rerun materialization.
+                    return Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
+                        self.state.commit_diff_empty,
                     )));
                 }
             },

@@ -1005,7 +1005,7 @@ fn test_prepare_commit_prompt_uses_materialized_diff() {
 }
 
 #[test]
-fn test_prepare_commit_prompt_aborts_when_model_safe_diff_missing() {
+fn test_prepare_commit_prompt_invalidates_materialized_inputs_when_model_safe_diff_missing() {
     use crate::reducer::state::{
         MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
         PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
@@ -1055,6 +1055,8 @@ fn test_prepare_commit_prompt_aborts_when_model_safe_diff_missing() {
         attempt: 1,
         max_attempts: 2,
     };
+    handler.state.commit_diff_prepared = true;
+    handler.state.commit_diff_empty = false;
     handler.state.agent_chain = AgentChainState::initial().with_agents(
         vec!["qwen".to_string()],
         vec![vec![]],
@@ -1086,9 +1088,9 @@ fn test_prepare_commit_prompt_aborts_when_model_safe_diff_missing() {
     assert!(
         matches!(
             result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
+            PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared { empty: false })
         ),
-        "Expected pipeline_aborted when commit_diff.model_safe.txt is missing, got {:?}",
+        "Expected DiffPrepared event to invalidate materialized inputs when commit_diff.model_safe.txt is missing, got {:?}",
         result.event
     );
 }
