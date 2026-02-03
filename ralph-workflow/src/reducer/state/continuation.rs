@@ -63,6 +63,11 @@ pub struct ContinuationState {
     /// invocation effect.
     #[serde(default)]
     pub xsd_retry_session_reuse_pending: bool,
+    /// Last validation error message for XSD retry prompts.
+    ///
+    /// This is set when validation fails and cleared when the retry attempt starts.
+    #[serde(default)]
+    pub last_xsd_error: Option<String>,
     /// Count of same-agent retry attempts for transient invocation failures.
     ///
     /// This is intentionally separate from XSD retry, which is only for invalid XML outputs.
@@ -161,6 +166,7 @@ impl Default for ContinuationState {
             xsd_retry_count: 0,
             xsd_retry_pending: false,
             xsd_retry_session_reuse_pending: false,
+            last_xsd_error: None,
             same_agent_retry_count: 0,
             same_agent_retry_pending: false,
             same_agent_retry_reason: None,
@@ -265,6 +271,7 @@ impl ContinuationState {
             xsd_retry_count: 0,
             xsd_retry_pending: false,
             xsd_retry_session_reuse_pending: false,
+            last_xsd_error: None,
             ..self.clone()
         }
     }
@@ -283,6 +290,7 @@ impl ContinuationState {
     pub fn clear_xsd_retry_pending(&self) -> Self {
         Self {
             xsd_retry_pending: false,
+            last_xsd_error: None,
             ..self.clone()
         }
     }
@@ -381,6 +389,7 @@ impl ContinuationState {
             xsd_retry_count: 0,
             xsd_retry_pending: false,
             xsd_retry_session_reuse_pending: false,
+            last_xsd_error: None,
             // Reset same-agent retry state for new continuation attempt
             same_agent_retry_count: 0,
             same_agent_retry_pending: false,
@@ -424,6 +433,7 @@ impl ContinuationState {
             xsd_retry_count: 0,
             xsd_retry_pending: false,
             xsd_retry_session_reuse_pending: false,
+            last_xsd_error: None,
             // Reset invalid output attempts for new continuation
             invalid_output_attempts: 0,
             // Clear other pending flags

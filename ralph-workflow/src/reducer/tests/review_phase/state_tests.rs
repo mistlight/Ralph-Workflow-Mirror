@@ -460,6 +460,47 @@ fn test_event_loop_state_consistency_for_review_agent() {
     // Simulate context prepared
     state = reduce(state, PipelineEvent::review_context_prepared(0));
 
+    // Next: MaterializeReviewInputs
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(
+            effect,
+            crate::reducer::effect::Effect::MaterializeReviewInputs { pass: 0 }
+        ),
+        "Expected MaterializeReviewInputs, got {:?}",
+        effect
+    );
+
+    let sig = state.agent_chain.consumer_signature_sha256();
+    state = reduce(
+        state,
+        PipelineEvent::review_inputs_materialized(
+            0,
+            crate::reducer::state::MaterializedPromptInput {
+                kind: crate::reducer::state::PromptInputKind::Plan,
+                content_id_sha256: "id".to_string(),
+                consumer_signature_sha256: sig.clone(),
+                original_bytes: 1,
+                final_bytes: 1,
+                model_budget_bytes: None,
+                inline_budget_bytes: None,
+                representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+            },
+            crate::reducer::state::MaterializedPromptInput {
+                kind: crate::reducer::state::PromptInputKind::Diff,
+                content_id_sha256: "id".to_string(),
+                consumer_signature_sha256: sig,
+                original_bytes: 1,
+                final_bytes: 1,
+                model_budget_bytes: None,
+                inline_budget_bytes: None,
+                representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+            },
+        ),
+    );
+
     // Next: PrepareReviewPrompt
     let effect = determine_next_effect(&state);
     assert!(
@@ -667,6 +708,35 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
 
     // Simulate context + prompt prepared, then cleanup before invoking agent
     state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
+    state = reduce(
+        state,
+        PipelineEvent::review_inputs_materialized(
+            0,
+            crate::reducer::state::MaterializedPromptInput {
+                kind: crate::reducer::state::PromptInputKind::Plan,
+                content_id_sha256: "id".to_string(),
+                consumer_signature_sha256: sig.clone(),
+                original_bytes: 1,
+                final_bytes: 1,
+                model_budget_bytes: None,
+                inline_budget_bytes: None,
+                representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+            },
+            crate::reducer::state::MaterializedPromptInput {
+                kind: crate::reducer::state::PromptInputKind::Diff,
+                content_id_sha256: "id".to_string(),
+                consumer_signature_sha256: sig,
+                original_bytes: 1,
+                final_bytes: 1,
+                model_budget_bytes: None,
+                inline_budget_bytes: None,
+                representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+            },
+        ),
+    );
     state = reduce(state, PipelineEvent::review_prompt_prepared(0));
     let effect = determine_next_effect(&state);
     assert!(

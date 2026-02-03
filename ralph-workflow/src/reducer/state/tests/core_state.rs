@@ -203,6 +203,58 @@
     }
 
     #[test]
+    fn test_pipeline_state_from_checkpoint_preserves_prompt_inputs_when_present() {
+        let checkpoint = make_checkpoint_for_state(
+            CheckpointPhase::Development,
+            CheckpointRebaseState::NotStarted,
+        );
+
+        let mut checkpoint_value =
+            serde_json::to_value(checkpoint).expect("checkpoint should serialize to JSON");
+
+        let prompt_inputs = serde_json::json!({
+            "planning": {
+                "iteration": 0,
+                "prompt": {
+                    "kind": "Prompt",
+                    "content_id_sha256": "content-id",
+                    "consumer_signature_sha256": "consumer-sig",
+                    "original_bytes": 1,
+                    "final_bytes": 1,
+                    "model_budget_bytes": null,
+                    "inline_budget_bytes": 123,
+                    "representation": "Inline",
+                    "reason": "WithinBudgets"
+                }
+            },
+            "development": null,
+            "review": null,
+            "commit": null,
+            "xsd_retry_last_output": null
+        });
+
+        checkpoint_value["prompt_inputs"] = prompt_inputs;
+
+        let checkpoint_with_inputs: PipelineCheckpoint =
+            serde_json::from_value(checkpoint_value).expect("checkpoint JSON should deserialize");
+
+        let state: PipelineState = checkpoint_with_inputs.into();
+        assert!(
+            state.prompt_inputs.planning.is_some(),
+            "expected prompt_inputs.planning to be restored from checkpoint"
+        );
+        assert_eq!(
+            state.prompt_inputs
+                .planning
+                .as_ref()
+                .expect("planning inputs should exist")
+                .prompt
+                .content_id_sha256,
+            "content-id"
+        );
+    }
+
+    #[test]
     fn test_pipeline_state_from_checkpoint_rebase_conflicts() {
         let checkpoint = make_checkpoint_for_state(
             CheckpointPhase::PreRebaseConflict,

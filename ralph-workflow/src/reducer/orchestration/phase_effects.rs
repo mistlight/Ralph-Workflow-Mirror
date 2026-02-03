@@ -19,12 +19,27 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
+            let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
+
             // Clean up BEFORE planning to remove old PLAN.md from previous iteration
             if !state.context_cleaned {
                 return Effect::CleanupContext;
             }
 
             if state.planning_prompt_prepared_iteration != Some(state.iteration) {
+                let planning_inputs_materialized_for_iteration = state
+                    .prompt_inputs
+                    .planning
+                    .as_ref()
+                    .is_some_and(|p| {
+                        p.iteration == state.iteration
+                            && p.prompt.consumer_signature_sha256 == consumer_signature_sha256
+                    });
+                if !planning_inputs_materialized_for_iteration {
+                    return Effect::MaterializePlanningInputs {
+                        iteration: state.iteration,
+                    };
+                }
                 return Effect::PreparePlanningPrompt {
                     iteration: state.iteration,
                     prompt_mode: PromptMode::Normal,
@@ -112,6 +127,8 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
+            let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
+
             if state.iteration < state.total_iterations {
                 if state.development_context_prepared_iteration != Some(state.iteration) {
                     return Effect::PrepareDevelopmentContext {
@@ -120,6 +137,21 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 }
 
                 if state.development_prompt_prepared_iteration != Some(state.iteration) {
+                    let development_inputs_materialized_for_iteration = state
+                        .prompt_inputs
+                        .development
+                        .as_ref()
+                        .is_some_and(|p| {
+                            p.iteration == state.iteration
+                                && p.prompt.consumer_signature_sha256 == consumer_signature_sha256
+                                && p.plan.consumer_signature_sha256 == consumer_signature_sha256
+                        });
+                    if !development_inputs_materialized_for_iteration {
+                        return Effect::MaterializeDevelopmentInputs {
+                            iteration: state.iteration,
+                        };
+                    }
+
                     let prompt_mode = if state.continuation.is_continuation() {
                         PromptMode::Continuation
                     } else {
@@ -240,6 +272,8 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
+            let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
+
             // Otherwise, run next review pass or complete phase
             if state.reviewer_pass < state.total_reviewer_passes {
                 if state.review_context_prepared_pass != Some(state.reviewer_pass) {
@@ -249,6 +283,20 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 }
 
                 if state.review_prompt_prepared_pass != Some(state.reviewer_pass) {
+                    let review_inputs_materialized_for_pass = state
+                        .prompt_inputs
+                        .review
+                        .as_ref()
+                        .is_some_and(|p| {
+                            p.pass == state.reviewer_pass
+                                && p.plan.consumer_signature_sha256 == consumer_signature_sha256
+                                && p.diff.consumer_signature_sha256 == consumer_signature_sha256
+                        });
+                    if !review_inputs_materialized_for_pass {
+                        return Effect::MaterializeReviewInputs {
+                            pass: state.reviewer_pass,
+                        };
+                    }
                     return Effect::PrepareReviewPrompt {
                         pass: state.reviewer_pass,
                         prompt_mode: PromptMode::Normal,
@@ -335,6 +383,26 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                             return Effect::ApplyCommitMessageOutcome;
                         }
                     }
+
+                    // Once the prompt is prepared, retry flows should not require rematerializing
+                    // inputs (or re-checking the diff) before re-cleaning XML and reinvoking.
+                    // The prompt file on disk is the source of truth for invocation.
+                    if state.commit_prompt_prepared {
+                        // IMPORTANT: For commit XSD retries, the agent must be able to read the
+                        // previous invalid output at `.agent/tmp/commit_message.xml` before overwriting
+                        // it (see commit_xsd_retry prompt). Therefore, skip cleanup on retry attempts.
+                        if current_attempt == 1 && !state.commit_xml_cleaned {
+                            return Effect::CleanupCommitXml;
+                        }
+                        if !state.commit_agent_invoked {
+                            return Effect::InvokeCommitAgent;
+                        }
+                        if !state.commit_xml_extracted {
+                            return Effect::ExtractCommitXml;
+                        }
+                        return Effect::ValidateCommitXml;
+                    }
+
                     if !state.commit_diff_prepared {
                         return Effect::CheckCommitDiff;
                     }
@@ -343,23 +411,41 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                             reason: "No changes to commit (empty diff)".to_string(),
                         };
                     }
+                    // Backward compatibility / recoverability: older checkpoints may have
+                    // `commit_diff_prepared = true` but no recorded content id. Re-run diff
+                    // preparation once to establish `commit_diff_content_id_sha256`, which is
+                    // required to safely guard against stale materialized prompt inputs.
+                    if state.commit_diff_content_id_sha256.is_none() {
+                        return Effect::CheckCommitDiff;
+                    }
+                    let current_attempt = match state.commit {
+                        CommitState::Generating { attempt, .. } => attempt,
+                        _ => 1,
+                    };
+                    let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
+                    let diff_content_id_sha256 = state.commit_diff_content_id_sha256.as_deref();
                     if !state.commit_prompt_prepared {
+                        let commit_inputs_materialized_for_attempt = state
+                            .prompt_inputs
+                            .commit
+                            .as_ref()
+                            .is_some_and(|c| {
+                                c.attempt == current_attempt
+                                    && c.diff.consumer_signature_sha256
+                                        == consumer_signature_sha256
+                                    && diff_content_id_sha256
+                                        .is_some_and(|id| id == c.diff.content_id_sha256)
+                            });
+                        if !commit_inputs_materialized_for_attempt {
+                            return Effect::MaterializeCommitInputs {
+                                attempt: current_attempt,
+                            };
+                        }
                         return Effect::PrepareCommitPrompt {
                             prompt_mode: PromptMode::Normal,
                         };
                     }
-                    // IMPORTANT: For commit XSD retries, the agent must be able to read the
-                    // previous invalid output at `.agent/tmp/commit_message.xml` before overwriting
-                    // it (see commit_xsd_retry prompt). Therefore, skip cleanup on retry attempts.
-                    if current_attempt == 1 && !state.commit_xml_cleaned {
-                        return Effect::CleanupCommitXml;
-                    }
-                    if !state.commit_agent_invoked {
-                        return Effect::InvokeCommitAgent;
-                    }
-                    if !state.commit_xml_extracted {
-                        return Effect::ExtractCommitXml;
-                    }
+                    // Prompt-prepared flow is handled above.
                     Effect::ValidateCommitXml
                 }
                 CommitState::Generated { ref message } => {

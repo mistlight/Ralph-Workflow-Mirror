@@ -5,6 +5,23 @@
 
 use super::*;
 
+fn dummy_input(
+    kind: crate::reducer::state::PromptInputKind,
+    consumer_signature_sha256: String,
+) -> crate::reducer::state::MaterializedPromptInput {
+    crate::reducer::state::MaterializedPromptInput {
+        kind,
+        content_id_sha256: "id".to_string(),
+        consumer_signature_sha256,
+        original_bytes: 1,
+        final_bytes: 1,
+        model_budget_bytes: None,
+        inline_budget_bytes: None,
+        representation: crate::reducer::state::PromptInputRepresentation::Inline,
+        reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+    }
+}
+
 #[test]
 fn test_review_phase_emits_initialize_chain_then_prepare_review_context() {
     let mut state = PipelineState::initial(1, 1);
@@ -77,6 +94,15 @@ fn test_review_phase_emits_cleanup_review_issues_xml_after_prompt_prepared() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
+    let state = reduce(
+        state,
+        PipelineEvent::review_inputs_materialized(
+            0,
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
+        ),
+    );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
 
     let effect = determine_next_effect(&state);
@@ -100,6 +126,15 @@ fn test_review_phase_emits_extract_review_issues_xml_after_agent_invoked() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
+    let state = reduce(
+        state,
+        PipelineEvent::review_inputs_materialized(
+            0,
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
+        ),
+    );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
     let state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
     let state = reduce(state, PipelineEvent::review_agent_invoked(0));
@@ -125,6 +160,15 @@ fn test_review_phase_emits_validate_review_issues_xml_after_extracted() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
+    let state = reduce(
+        state,
+        PipelineEvent::review_inputs_materialized(
+            0,
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
+        ),
+    );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
     let state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
     let state = reduce(state, PipelineEvent::review_agent_invoked(0));
@@ -154,6 +198,15 @@ fn test_review_phase_emits_write_issues_markdown_after_validated() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
+    let state = reduce(
+        state,
+        PipelineEvent::review_inputs_materialized(
+            0,
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
+        ),
+    );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
     let state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
     let state = reduce(state, PipelineEvent::review_agent_invoked(0));
@@ -190,6 +243,15 @@ fn test_review_phase_emits_extract_issue_snippets_after_markdown_written() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
+    let state = reduce(
+        state,
+        PipelineEvent::review_inputs_materialized(
+            0,
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
+        ),
+    );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
     let state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
     let state = reduce(state, PipelineEvent::review_agent_invoked(0));
@@ -230,6 +292,15 @@ fn test_review_phase_emits_archive_issues_xml_after_snippets_extracted() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
+    let state = reduce(
+        state,
+        PipelineEvent::review_inputs_materialized(
+            0,
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
+        ),
+    );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
     let state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
     let state = reduce(state, PipelineEvent::review_agent_invoked(0));
@@ -268,6 +339,15 @@ fn test_review_phase_emits_apply_review_outcome_after_issues_xml_archived() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
+    let state = reduce(
+        state,
+        PipelineEvent::review_inputs_materialized(
+            0,
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
+        ),
+    );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
     let state = reduce(state, PipelineEvent::review_issues_xml_cleaned(0));
     let state = reduce(state, PipelineEvent::review_agent_invoked(0));
@@ -287,14 +367,17 @@ fn test_review_phase_emits_apply_review_outcome_after_issues_xml_archived() {
     let state = reduce(state, PipelineEvent::review_issues_xml_archived(0));
 
     let effect = determine_next_effect(&state);
-    assert!(matches!(
-        effect,
-        Effect::ApplyReviewOutcome {
-            pass: 0,
-            issues_found: false,
-            clean_no_issues: true
-        }
-    ));
+    assert!(
+        matches!(
+            effect,
+            Effect::ApplyReviewOutcome {
+                pass: 0,
+                issues_found: false,
+                clean_no_issues: true
+            }
+        ),
+        "unexpected effect: {effect:?}"
+    );
 }
 
 #[test]
@@ -318,6 +401,6 @@ fn test_review_phase_emits_prepare_review_prompt_after_context_prepared() {
     let effect = determine_next_effect(&state);
     assert!(matches!(
         effect,
-        Effect::PrepareReviewPrompt { pass: 0, .. }
+        Effect::MaterializeReviewInputs { pass: 0 }
     ));
 }

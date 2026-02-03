@@ -11,6 +11,15 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
 
         ReviewEvent::ContextPrepared { pass } => PipelineState {
             review_context_prepared_pass: Some(pass),
+            // Preparing review context rewrites the diff backup and baseline.
+            // Invalidate any materialized inputs for this pass so we don't reuse
+            // stale PLAN/DIFF materializations.
+            prompt_inputs: PromptInputsState {
+                review: None,
+                ..state.prompt_inputs.clone()
+            },
+            // Also force prompt re-preparation for this pass if it had already been prepared.
+            review_prompt_prepared_pass: None,
             ..state
         },
 

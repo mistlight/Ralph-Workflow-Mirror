@@ -18,15 +18,42 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_xml_archived: false,
             ..state
         },
-        CommitEvent::DiffPrepared { empty } => PipelineState {
+        CommitEvent::DiffPrepared {
+            empty,
+            content_id_sha256,
+        } => PipelineState {
             commit_diff_prepared: true,
             commit_diff_empty: empty,
+            commit_diff_content_id_sha256: Some(content_id_sha256),
+            // If the diff is (re)prepared, any previously materialized commit inputs
+            // are potentially stale (the diff file was rewritten). Force rematerialization.
+            prompt_inputs: PromptInputsState {
+                commit: None,
+                ..state.prompt_inputs.clone()
+            },
             ..state
         },
         CommitEvent::DiffFailed { .. } => PipelineState {
             phase: crate::reducer::event::PipelinePhase::Interrupted,
             commit_diff_prepared: false,
             commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
+            ..state
+        },
+        CommitEvent::DiffInvalidated { .. } => PipelineState {
+            commit_diff_prepared: false,
+            commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
+            commit_prompt_prepared: false,
+            commit_agent_invoked: false,
+            commit_xml_cleaned: false,
+            commit_xml_extracted: false,
+            commit_validated_outcome: None,
+            commit_xml_archived: false,
+            prompt_inputs: PromptInputsState {
+                commit: None,
+                ..state.prompt_inputs.clone()
+            },
             ..state
         },
         CommitEvent::PromptPrepared { .. } => PipelineState {
@@ -54,6 +81,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
                 xsd_retry_session_reuse_pending: false,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
+                last_xsd_error: None,
                 ..state.continuation
             },
             ..state
@@ -146,6 +174,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_prompt_prepared: false,
             commit_diff_prepared: false,
             commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
             commit_agent_invoked: false,
             commit_xml_cleaned: false,
             commit_xml_extracted: false,
@@ -200,8 +229,8 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
                 ..state
             }
         }
-        CommitEvent::MessageValidationFailed { attempt, .. } => {
-            reduce_commit_validation_failed(state, attempt)
+        CommitEvent::MessageValidationFailed { attempt, reason } => {
+            reduce_commit_validation_failed(state, attempt, reason)
         }
     }
 }
@@ -263,12 +292,19 @@ fn compute_post_commit_transition(
 ///
 /// This now integrates with the XSD retry tracking in ContinuationState
 /// for uniformity with other phases.
-fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> PipelineState {
+fn reduce_commit_validation_failed(
+    state: PipelineState,
+    attempt: u32,
+    reason: String,
+) -> PipelineState {
     let new_xsd_count = state.continuation.xsd_retry_count + 1;
     let max_attempts = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS;
 
-    // Check if XSD retries are exhausted (global limit) or local attempts exhausted
-    if new_xsd_count >= state.continuation.max_xsd_retry_count || attempt >= max_attempts {
+    // Check if XSD retries are exhausted (configured limit) or global safety limit hit.
+    //
+    // NOTE: Commit XSD retries intentionally reuse the same commit attempt number so we
+    // can safely reuse attempt-scoped materialized inputs (diff, references, etc.).
+    if new_xsd_count >= state.continuation.max_xsd_retry_count || new_xsd_count >= max_attempts {
         // XSD retries exhausted - switch to next agent
         let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
 
@@ -297,6 +333,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
                     same_agent_retry_count: 0,
                     same_agent_retry_pending: false,
                     same_agent_retry_reason: None,
+                    last_xsd_error: None,
                     ..state.continuation
                 },
                 ..state
@@ -319,6 +356,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
                     same_agent_retry_count: 0,
                     same_agent_retry_pending: false,
                     same_agent_retry_reason: None,
+                    last_xsd_error: None,
                     ..state.continuation
                 },
                 ..state
@@ -328,7 +366,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
         // Set XSD retry pending - orchestration will trigger retry with same agent/session
         PipelineState {
             commit: CommitState::Generating {
-                attempt: attempt + 1,
+                attempt,
                 max_attempts,
             },
             commit_prompt_prepared: false,
@@ -341,6 +379,9 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
                 xsd_retry_count: new_xsd_count,
                 xsd_retry_pending: true,
                 xsd_retry_session_reuse_pending: false,
+                last_xsd_error: Some(reason),
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
                 ..state.continuation
             },
             ..state

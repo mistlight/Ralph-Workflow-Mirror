@@ -150,16 +150,16 @@ pub fn prompt_planning_xml_with_references(
 }
 
 /// Generate XSD validation retry prompt for planning with error feedback.
-pub fn prompt_planning_xsd_retry_with_context(
+///
+/// This variant assumes `.agent/tmp/last_output.xml` is already materialized.
+pub fn prompt_planning_xsd_retry_with_context_files(
     context: &TemplateContext,
-    _prompt_content: &str,
     xsd_error: &str,
-    last_output: &str,
     workspace: &dyn Workspace,
 ) -> String {
     let partials = get_shared_partials();
-    // Write context files to .agent/tmp/ for the agent to read
-    write_planning_xsd_retry_files(workspace, last_output);
+    // Ensure schema file exists; last_output.xml is expected to already be present.
+    write_planning_xsd_retry_schema_files(workspace);
 
     let template_content = context
         .registry()
@@ -192,3 +192,15 @@ pub fn prompt_planning_xsd_retry_with_context(
         })
 }
 
+/// Generate XSD validation retry prompt for planning with error feedback.
+pub fn prompt_planning_xsd_retry_with_context(
+    context: &TemplateContext,
+    _prompt_content: &str,
+    xsd_error: &str,
+    last_output: &str,
+    workspace: &dyn Workspace,
+) -> String {
+    // Write context files to .agent/tmp/ for the agent to read
+    write_planning_xsd_retry_files(workspace, last_output);
+    prompt_planning_xsd_retry_with_context_files(context, xsd_error, workspace)
+}

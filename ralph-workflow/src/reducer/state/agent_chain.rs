@@ -2,6 +2,8 @@
 //
 // Contains AgentChainState and backoff computation helpers.
 
+use sha2::{Digest, Sha256};
+
 /// Agent fallback chain state (explicit, not loop indices).
 ///
 /// Tracks position in the multi-level fallback chain:
@@ -110,6 +112,41 @@ impl AgentChainState {
 
     pub fn current_agent(&self) -> Option<&String> {
         self.agents.get(self.current_agent_index)
+    }
+
+    /// Stable signature of the current consumer set (agents + configured models + role).
+    ///
+    /// This is used to dedupe oversize materialization decisions across reducer retries.
+    /// The signature is stable under:
+    /// - switching the current agent/model index
+    /// - retry cycles
+    ///
+    /// It changes only when the configured consumer set changes.
+    pub fn consumer_signature_sha256(&self) -> String {
+        let mut pairs: Vec<String> = self
+            .agents
+            .iter()
+            .enumerate()
+            .map(|(idx, agent)| {
+                let models = self
+                    .models_per_agent
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_default()
+                    .join(",");
+                format!("{agent}|{models}")
+            })
+            .collect();
+        pairs.sort();
+
+        let mut hasher = Sha256::new();
+        hasher.update(format!("{:?}\n", self.current_role).as_bytes());
+        for pair in pairs {
+            hasher.update(pair.as_bytes());
+            hasher.update(b"\n");
+        }
+        let digest = hasher.finalize();
+        digest.iter().map(|b| format!("{b:02x}")).collect()
     }
 
     /// Get the currently selected model for the current agent.

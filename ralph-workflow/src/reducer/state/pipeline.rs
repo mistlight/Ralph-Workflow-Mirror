@@ -44,6 +44,56 @@ pub struct CommitValidatedOutcome {
     pub reason: Option<String>,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct PromptInputsState {
+    #[serde(default)]
+    pub planning: Option<MaterializedPlanningInputs>,
+    #[serde(default)]
+    pub development: Option<MaterializedDevelopmentInputs>,
+    #[serde(default)]
+    pub review: Option<MaterializedReviewInputs>,
+    #[serde(default)]
+    pub commit: Option<MaterializedCommitInputs>,
+    /// Materialized last invalid XML output for XSD retry prompts.
+    ///
+    /// This is used to dedupe retries and keep oversize handling reducer-visible.
+    #[serde(default)]
+    pub xsd_retry_last_output: Option<MaterializedXsdRetryLastOutput>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedPlanningInputs {
+    pub iteration: u32,
+    pub prompt: MaterializedPromptInput,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedDevelopmentInputs {
+    pub iteration: u32,
+    pub prompt: MaterializedPromptInput,
+    pub plan: MaterializedPromptInput,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedReviewInputs {
+    pub pass: u32,
+    pub plan: MaterializedPromptInput,
+    pub diff: MaterializedPromptInput,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedCommitInputs {
+    pub attempt: u32,
+    pub diff: MaterializedPromptInput,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedXsdRetryLastOutput {
+    pub phase: PipelinePhase,
+    pub scope_id: u32,
+    pub last_output: MaterializedPromptInput,
+}
+
 /// Immutable pipeline state - the single source of truth for pipeline progress.
 ///
 /// This struct captures complete execution context and doubles as the checkpoint
@@ -172,6 +222,13 @@ pub struct PipelineState {
     /// Tracks whether the computed commit diff was empty.
     #[serde(default)]
     pub commit_diff_empty: bool,
+    /// Content identifier (sha256 hex) of the prepared commit diff.
+    ///
+    /// This is recorded when the diff is prepared and is used by orchestration guards
+    /// to avoid reusing stale materialized prompt inputs across checkpoint resumes or
+    /// when tmp artifacts change.
+    #[serde(default)]
+    pub commit_diff_content_id_sha256: Option<String>,
     /// Tracks whether the commit agent was invoked for the current commit attempt.
     #[serde(default)]
     pub commit_agent_invoked: bool,
@@ -204,6 +261,15 @@ pub struct PipelineState {
     /// to enable continuation-aware prompting.
     #[serde(default)]
     pub continuation: ContinuationState,
+
+    /// Canonical, reducer-visible prompt inputs after oversize materialization.
+    ///
+    /// This is the single source of truth for any inline-vs-reference and
+    /// model-budget truncation decisions. Effects must not silently re-truncate
+    /// or re-reference content on retries; instead, they should consume these
+    /// materialized inputs (or materialize them exactly once per content id).
+    #[serde(default)]
+    pub prompt_inputs: PromptInputsState,
 }
 
 impl PipelineState {
@@ -284,6 +350,7 @@ impl PipelineState {
             commit_prompt_prepared: false,
             commit_diff_prepared: false,
             commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
             commit_agent_invoked: false,
             commit_xml_cleaned: false,
             commit_xml_extracted: false,
@@ -296,6 +363,7 @@ impl PipelineState {
             execution_history: Vec::new(),
             checkpoint_saved_count: 0,
             continuation,
+            prompt_inputs: PromptInputsState::default(),
         }
     }
 
@@ -356,6 +424,7 @@ impl From<PipelineCheckpoint> for PipelineState {
             commit_prompt_prepared: false,
             commit_diff_prepared: false,
             commit_diff_empty: false,
+            commit_diff_content_id_sha256: None,
             commit_agent_invoked: false,
             commit_xml_cleaned: false,
             commit_xml_extracted: false,
@@ -371,6 +440,7 @@ impl From<PipelineCheckpoint> for PipelineState {
                 .unwrap_or_default(),
             checkpoint_saved_count: 0,
             continuation: ContinuationState::new(),
+            prompt_inputs: checkpoint.prompt_inputs.unwrap_or_default(),
         }
     }
 }

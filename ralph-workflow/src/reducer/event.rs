@@ -20,7 +20,7 @@
 //! type-safe dispatch in the reducer.
 
 use crate::agents::AgentRole;
-use crate::reducer::state::DevelopmentStatus;
+use crate::reducer::state::{DevelopmentStatus, MaterializedPromptInput, PromptInputKind};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -144,6 +144,48 @@ pub enum PlanningEvent {
     },
 }
 
+/// Prompt input oversize detection and materialization events.
+///
+/// These events make reducer-visible any transformation that affects the
+/// agent-visible prompt content (inline vs file reference, truncation, etc.).
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum PromptInputEvent {
+    OversizeDetected {
+        phase: PipelinePhase,
+        kind: PromptInputKind,
+        content_id_sha256: String,
+        size_bytes: u64,
+        limit_bytes: u64,
+        policy: String,
+    },
+    PlanningInputsMaterialized {
+        iteration: u32,
+        prompt: MaterializedPromptInput,
+    },
+    DevelopmentInputsMaterialized {
+        iteration: u32,
+        prompt: MaterializedPromptInput,
+        plan: MaterializedPromptInput,
+    },
+    ReviewInputsMaterialized {
+        pass: u32,
+        plan: MaterializedPromptInput,
+        diff: MaterializedPromptInput,
+    },
+    CommitInputsMaterialized {
+        attempt: u32,
+        diff: MaterializedPromptInput,
+    },
+    XsdRetryLastOutputMaterialized {
+        /// Phase that produced the invalid output being retried.
+        phase: PipelinePhase,
+        /// Scope id within the phase (iteration/pass/attempt).
+        scope_id: u32,
+        /// Materialized representation of the last invalid output.
+        last_output: MaterializedPromptInput,
+    },
+}
+
 #[path = "event/development.rs"]
 mod development;
 pub use development::DevelopmentEvent;
@@ -242,11 +284,24 @@ pub enum CommitEvent {
     DiffPrepared {
         /// True when the diff is empty.
         empty: bool,
+        /// Content identifier (sha256 hex) of the prepared diff content.
+        ///
+        /// This is used to guard against reusing stale materialized inputs when the
+        /// diff content changes across checkpoints or retries.
+        content_id_sha256: String,
     },
     /// Commit diff computation failed.
     DiffFailed {
         /// The error message for the diff failure.
         error: String,
+    },
+    /// Commit diff is no longer available and must be recomputed.
+    ///
+    /// This is used for recoverability when `.agent/tmp` artifacts are cleaned between
+    /// checkpoints or when required diff files go missing during resume.
+    DiffInvalidated {
+        /// Reason for invalidation.
+        reason: String,
     },
     /// Commit prompt prepared for a commit attempt.
     PromptPrepared {
@@ -406,6 +461,8 @@ pub enum PipelineEvent {
     Development(DevelopmentEvent),
     /// Review phase events.
     Review(ReviewEvent),
+    /// Prompt input materialization events.
+    PromptInput(PromptInputEvent),
     /// Agent invocation and chain events.
     Agent(AgentEvent),
     /// Rebase operation events.

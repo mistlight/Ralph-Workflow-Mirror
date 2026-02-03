@@ -50,6 +50,7 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         PipelineEvent::Planning(e) => planning::reduce_planning_event(state, e),
         PipelineEvent::Development(e) => development::reduce_development_event(state, e),
         PipelineEvent::Review(e) => review::reduce_review_event(state, e),
+        PipelineEvent::PromptInput(e) => prompt_input::reduce_prompt_input_event(state, e),
         PipelineEvent::Agent(e) => agent::reduce_agent_event(state, e),
         PipelineEvent::Rebase(e) => rebase::reduce_rebase_event(state, e),
         PipelineEvent::Commit(e) => commit::reduce_commit_event(state, e),
@@ -91,6 +92,8 @@ mod development;
 mod lifecycle;
 #[path = "state_reduction/planning.rs"]
 mod planning;
+#[path = "state_reduction/prompt_input.rs"]
+mod prompt_input;
 #[path = "state_reduction/rebase.rs"]
 mod rebase;
 #[path = "state_reduction/review.rs"]

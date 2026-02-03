@@ -31,7 +31,8 @@ mod tests {
             matches!(
                 result.event,
                 PipelineEvent::Commit(crate::reducer::event::CommitEvent::DiffPrepared {
-                    empty: true
+                    empty: true,
+                    ..
                 })
             ),
             "Should return CommitDiffPrepared when empty diff is simulated, got: {:?}",

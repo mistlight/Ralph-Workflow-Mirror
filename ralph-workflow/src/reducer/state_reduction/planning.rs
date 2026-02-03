@@ -79,6 +79,13 @@ pub(super) fn reduce_planning_event(state: PipelineState, event: PlanningEvent) 
         },
         PlanningEvent::PlanMarkdownWritten { iteration } => PipelineState {
             planning_markdown_written_iteration: Some(iteration),
+            // Writing PLAN.md updates the canonical plan content. Invalidate any
+            // downstream materialized inputs that might have captured an older plan.
+            prompt_inputs: PromptInputsState {
+                development: None,
+                review: None,
+                ..state.prompt_inputs.clone()
+            },
             ..state
         },
         PlanningEvent::PlanXmlArchived { iteration } => PipelineState {

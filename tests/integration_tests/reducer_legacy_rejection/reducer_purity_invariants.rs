@@ -138,8 +138,8 @@ fn test_effects_determined_from_state_only() {
         state.context_cleaned = true;
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::PreparePlanningPrompt { .. }),
-            "Should prepare planning prompt when state is ready: {:?}",
+            matches!(effect, Effect::MaterializePlanningInputs { .. }),
+            "Should materialize planning inputs when state is ready: {:?}",
             effect
         );
 
@@ -326,6 +326,7 @@ fn test_effects_are_single_task() {
             AgentInvocation,
             InitializeAgentChain,
             PreparePlanningPrompt,
+            MaterializePlanningInputs,
             InvokePlanningAgent,
             ExtractPlanningXml,
             ValidatePlanningXml,
@@ -333,6 +334,7 @@ fn test_effects_are_single_task() {
             ArchivePlanningXml,
             ApplyPlanningOutcome,
             PrepareDevelopmentContext,
+            MaterializeDevelopmentInputs,
             PrepareDevelopmentPrompt,
             InvokeDevelopmentAgent,
             ExtractDevelopmentXml,
@@ -340,6 +342,7 @@ fn test_effects_are_single_task() {
             ApplyDevelopmentOutcome,
             ArchiveDevelopmentXml,
             PrepareReviewContext,
+            MaterializeReviewInputs,
             PrepareReviewPrompt,
             InvokeReviewAgent,
             ExtractReviewIssuesXml,
@@ -357,6 +360,7 @@ fn test_effects_are_single_task() {
             RunRebase,
             ResolveRebaseConflicts,
             CheckCommitDiff,
+            MaterializeCommitInputs,
             PrepareCommitPrompt,
             InvokeCommitAgent,
             ExtractCommitXml,
@@ -386,6 +390,7 @@ fn test_effects_are_single_task() {
                 Effect::AgentInvocation { .. } => EffectTask::AgentInvocation,
                 Effect::InitializeAgentChain { .. } => EffectTask::InitializeAgentChain,
                 Effect::PreparePlanningPrompt { .. } => EffectTask::PreparePlanningPrompt,
+                Effect::MaterializePlanningInputs { .. } => EffectTask::MaterializePlanningInputs,
                 Effect::InvokePlanningAgent { .. } => EffectTask::InvokePlanningAgent,
                 Effect::ExtractPlanningXml { .. } => EffectTask::ExtractPlanningXml,
                 Effect::ValidatePlanningXml { .. } => EffectTask::ValidatePlanningXml,
@@ -393,6 +398,9 @@ fn test_effects_are_single_task() {
                 Effect::ArchivePlanningXml { .. } => EffectTask::ArchivePlanningXml,
                 Effect::ApplyPlanningOutcome { .. } => EffectTask::ApplyPlanningOutcome,
                 Effect::PrepareDevelopmentContext { .. } => EffectTask::PrepareDevelopmentContext,
+                Effect::MaterializeDevelopmentInputs { .. } => {
+                    EffectTask::MaterializeDevelopmentInputs
+                }
                 Effect::PrepareDevelopmentPrompt { .. } => EffectTask::PrepareDevelopmentPrompt,
                 Effect::InvokeDevelopmentAgent { .. } => EffectTask::InvokeDevelopmentAgent,
                 Effect::ExtractDevelopmentXml { .. } => EffectTask::ExtractDevelopmentXml,
@@ -400,6 +408,7 @@ fn test_effects_are_single_task() {
                 Effect::ApplyDevelopmentOutcome { .. } => EffectTask::ApplyDevelopmentOutcome,
                 Effect::ArchiveDevelopmentXml { .. } => EffectTask::ArchiveDevelopmentXml,
                 Effect::PrepareReviewContext { .. } => EffectTask::PrepareReviewContext,
+                Effect::MaterializeReviewInputs { .. } => EffectTask::MaterializeReviewInputs,
                 Effect::PrepareReviewPrompt { .. } => EffectTask::PrepareReviewPrompt,
                 Effect::InvokeReviewAgent { .. } => EffectTask::InvokeReviewAgent,
                 Effect::ExtractReviewIssuesXml { .. } => EffectTask::ExtractReviewIssuesXml,
@@ -417,6 +426,7 @@ fn test_effects_are_single_task() {
                 Effect::RunRebase { .. } => EffectTask::RunRebase,
                 Effect::ResolveRebaseConflicts { .. } => EffectTask::ResolveRebaseConflicts,
                 Effect::CheckCommitDiff => EffectTask::CheckCommitDiff,
+                Effect::MaterializeCommitInputs { .. } => EffectTask::MaterializeCommitInputs,
                 Effect::PrepareCommitPrompt { .. } => EffectTask::PrepareCommitPrompt,
                 Effect::InvokeCommitAgent => EffectTask::InvokeCommitAgent,
                 Effect::ExtractCommitXml => EffectTask::ExtractCommitXml,
@@ -457,6 +467,7 @@ fn test_effects_are_single_task() {
                 iteration: 0,
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
+            Effect::MaterializePlanningInputs { iteration: 0 },
             Effect::InvokePlanningAgent { iteration: 0 },
             Effect::ExtractPlanningXml { iteration: 0 },
             Effect::ValidatePlanningXml { iteration: 0 },
@@ -467,6 +478,7 @@ fn test_effects_are_single_task() {
                 valid: true,
             },
             Effect::PrepareDevelopmentContext { iteration: 0 },
+            Effect::MaterializeDevelopmentInputs { iteration: 0 },
             Effect::PrepareDevelopmentPrompt {
                 iteration: 0,
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
@@ -477,6 +489,7 @@ fn test_effects_are_single_task() {
             Effect::ApplyDevelopmentOutcome { iteration: 0 },
             Effect::ArchiveDevelopmentXml { iteration: 0 },
             Effect::PrepareReviewContext { pass: 0 },
+            Effect::MaterializeReviewInputs { pass: 0 },
             Effect::PrepareReviewPrompt {
                 pass: 0,
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
@@ -511,6 +524,7 @@ fn test_effects_are_single_task() {
                 strategy: ConflictStrategy::Abort,
             },
             Effect::CheckCommitDiff,
+            Effect::MaterializeCommitInputs { attempt: 1 },
             Effect::PrepareCommitPrompt {
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
@@ -559,8 +573,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            53,
-            "Expected 53 Effect variants; update this test if variants were added or removed"
+            57,
+            "Expected 57 Effect variants; update this test if variants were added or removed"
         );
     });
 }

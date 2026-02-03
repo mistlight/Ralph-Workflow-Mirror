@@ -2,10 +2,19 @@ use super::MainEffectHandler;
 use crate::agents::AgentRole;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::phases::PhaseContext;
+use crate::prompts::content_builder::PromptContentReferences;
+use crate::prompts::content_reference::{
+    PlanContentReference, PromptContentReference, MAX_INLINE_CONTENT_SIZE,
+};
 use crate::reducer::effect::ContinuationContextData;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
+use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::PromptMode;
+use crate::reducer::state::{
+    MaterializedPromptInput, PromptInputKind, PromptInputRepresentation,
+    PromptMaterializationReason,
+};
 use crate::reducer::ui_event::{UIEvent, XmlOutputContext, XmlOutputType};
 use crate::workspace::Workspace;
 use anyhow::Result;
@@ -14,6 +23,155 @@ use std::path::Path;
 const DEVELOPMENT_XSD_ERROR_PATH: &str = ".agent/tmp/development_xsd_error.txt";
 
 impl MainEffectHandler {
+    pub(super) fn materialize_development_inputs(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        iteration: u32,
+    ) -> Result<EffectResult> {
+        let prompt_md = match ctx.workspace.read(Path::new("PROMPT.md")) {
+            Ok(prompt_md) => prompt_md,
+            Err(err) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    format!("Failed to read required PROMPT.md: {err}"),
+                )));
+            }
+        };
+        let plan_md = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
+            Ok(plan_md) => plan_md,
+            Err(err) => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    format!("Failed to read required .agent/PLAN.md: {err}"),
+                )));
+            }
+        };
+
+        let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
+        let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
+
+        let prompt_backup_path = Path::new(".agent/PROMPT.md.backup");
+        let (prompt_representation, prompt_reason) = if prompt_md.len() as u64 > inline_budget_bytes
+        {
+            match crate::files::create_prompt_backup_with_workspace(ctx.workspace) {
+                Ok(Some(warning)) => {
+                    ctx.logger
+                        .warn(&format!("PROMPT backup created with warning: {warning}"));
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                        format!("Failed to create PROMPT backup: {err}"),
+                    )));
+                }
+            }
+            ctx.logger.warn(&format!(
+                "PROMPT size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
+                (prompt_md.len() as u64) / 1024,
+                inline_budget_bytes / 1024,
+                ctx.workspace.absolute(prompt_backup_path).display()
+            ));
+            (
+                PromptInputRepresentation::FileReference {
+                    path: prompt_backup_path.to_path_buf(),
+                },
+                PromptMaterializationReason::InlineBudgetExceeded,
+            )
+        } else {
+            (
+                PromptInputRepresentation::Inline,
+                PromptMaterializationReason::WithinBudgets,
+            )
+        };
+
+        let plan_path = Path::new(".agent/PLAN.md");
+        let (plan_representation, plan_reason) = if plan_md.len() as u64 > inline_budget_bytes {
+            ctx.logger.warn(&format!(
+                "PLAN size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
+                (plan_md.len() as u64) / 1024,
+                inline_budget_bytes / 1024,
+                ctx.workspace.absolute(plan_path).display()
+            ));
+            (
+                PromptInputRepresentation::FileReference {
+                    path: plan_path.to_path_buf(),
+                },
+                PromptMaterializationReason::InlineBudgetExceeded,
+            )
+        } else {
+            (
+                PromptInputRepresentation::Inline,
+                PromptMaterializationReason::WithinBudgets,
+            )
+        };
+
+        let prompt_input = MaterializedPromptInput {
+            kind: PromptInputKind::Prompt,
+            content_id_sha256: sha256_hex_str(&prompt_md),
+            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            original_bytes: prompt_md.len() as u64,
+            final_bytes: prompt_md.len() as u64,
+            model_budget_bytes: None,
+            inline_budget_bytes: Some(inline_budget_bytes),
+            representation: prompt_representation,
+            reason: prompt_reason,
+        };
+        let plan_input = MaterializedPromptInput {
+            kind: PromptInputKind::Plan,
+            content_id_sha256: sha256_hex_str(&plan_md),
+            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            original_bytes: plan_md.len() as u64,
+            final_bytes: plan_md.len() as u64,
+            model_budget_bytes: None,
+            inline_budget_bytes: Some(inline_budget_bytes),
+            representation: plan_representation,
+            reason: plan_reason,
+        };
+
+        let mut result = EffectResult::event(PipelineEvent::development_inputs_materialized(
+            iteration,
+            prompt_input.clone(),
+            plan_input.clone(),
+        ));
+
+        if prompt_input.original_bytes > inline_budget_bytes {
+            result = result.with_ui_event(UIEvent::AgentActivity {
+                agent: "pipeline".to_string(),
+                message: format!(
+                    "Oversize PROMPT: {} KB > {} KB; using file reference",
+                    prompt_input.original_bytes / 1024,
+                    inline_budget_bytes / 1024
+                ),
+            });
+            result = result.with_additional_event(PipelineEvent::prompt_input_oversize_detected(
+                crate::reducer::event::PipelinePhase::Development,
+                PromptInputKind::Prompt,
+                prompt_input.content_id_sha256.clone(),
+                prompt_input.original_bytes,
+                inline_budget_bytes,
+                "inline-embedding".to_string(),
+            ));
+        }
+        if plan_input.original_bytes > inline_budget_bytes {
+            result = result.with_ui_event(UIEvent::AgentActivity {
+                agent: "pipeline".to_string(),
+                message: format!(
+                    "Oversize PLAN: {} KB > {} KB; using file reference",
+                    plan_input.original_bytes / 1024,
+                    inline_budget_bytes / 1024
+                ),
+            });
+            result = result.with_additional_event(PipelineEvent::prompt_input_oversize_detected(
+                crate::reducer::event::PipelinePhase::Development,
+                PromptInputKind::Plan,
+                plan_input.content_id_sha256.clone(),
+                plan_input.original_bytes,
+                inline_budget_bytes,
+                "inline-embedding".to_string(),
+            ));
+        }
+
+        Ok(result)
+    }
+
     pub(super) fn prepare_development_context(
         &mut self,
         ctx: &mut PhaseContext<'_>,
@@ -33,32 +191,13 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::prompts::{
             get_stored_or_generate_prompt, prompt_developer_iteration_continuation_xml,
-            prompt_developer_iteration_xml_with_context,
-            prompt_developer_iteration_xsd_retry_with_context,
+            prompt_developer_iteration_xml_with_references,
+            prompt_developer_iteration_xsd_retry_with_context_files,
         };
 
         let continuation_state = &self.state.continuation;
-        let prompt_md = ctx
-            .workspace
-            .read(Path::new("PROMPT.md"))
-            .unwrap_or_default();
-        let plan_md = ctx
-            .workspace
-            .read(Path::new(".agent/PLAN.md"))
-            .unwrap_or_default();
-        let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
-        let last_output = if is_xsd_retry {
-            ctx.workspace
-                .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
-        let ignore_sources = if is_xsd_retry {
-            vec![prompt_md.as_str(), plan_md.as_str(), last_output.as_str()]
-        } else {
-            vec![prompt_md.as_str(), plan_md.as_str()]
-        };
+        let mut ignore_sources_owned: Vec<String> = Vec::new();
+        let mut additional_events: Vec<PipelineEvent> = Vec::new();
 
         let (dev_prompt, template_name, prompt_key, was_replayed, should_validate) =
             match prompt_mode {
@@ -82,25 +221,89 @@ impl MainEffectHandler {
                         true,
                     )
                 }
-                PromptMode::XsdRetry => (
-                    prompt_developer_iteration_xsd_retry_with_context(
-                        ctx.template_context,
-                        &prompt_md,
-                        &plan_md,
-                        &ctx.workspace
-                            .read(Path::new(DEVELOPMENT_XSD_ERROR_PATH))
-                            .unwrap_or_else(|_| {
-                                "XML output failed XSD validation. Provide valid XML output."
-                                    .to_string()
-                            }),
-                        &last_output,
-                        ctx.workspace,
-                    ),
-                    "developer_iteration_xsd_retry",
-                    None,
-                    false,
-                    true,
-                ),
+                PromptMode::XsdRetry => {
+                    let last_output = match ctx
+                        .workspace
+                        .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
+                    {
+                        Ok(output) => output,
+                        Err(err) => {
+                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                format!(
+                                    "Failed to read last development output at {}: {err}",
+                                    xml_paths::DEVELOPMENT_RESULT_XML
+                                ),
+                            )));
+                        }
+                    };
+                    let content_id_sha256 = sha256_hex_str(&last_output);
+                    let consumer_signature_sha256 =
+                        self.state.agent_chain.consumer_signature_sha256();
+                    let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
+                    let last_output_bytes = last_output.len() as u64;
+
+                    let already_materialized = self
+                        .state
+                        .prompt_inputs
+                        .xsd_retry_last_output
+                        .as_ref()
+                        .is_some_and(|m| {
+                            m.phase == crate::reducer::event::PipelinePhase::Development
+                                && m.scope_id == iteration
+                                && m.last_output.content_id_sha256 == content_id_sha256
+                                && m.last_output.consumer_signature_sha256
+                                    == consumer_signature_sha256
+                        });
+
+                    if !already_materialized {
+                        let tmp_dir = Path::new(".agent/tmp");
+                        if !ctx.workspace.exists(tmp_dir) {
+                            ctx.workspace.create_dir_all(tmp_dir)?;
+                        }
+                        let last_output_path = Path::new(".agent/tmp/last_output.xml");
+                        ctx.workspace.write_atomic(last_output_path, &last_output)?;
+
+                        let input = MaterializedPromptInput {
+                            kind: PromptInputKind::LastOutput,
+                            content_id_sha256: content_id_sha256.clone(),
+                            consumer_signature_sha256,
+                            original_bytes: last_output_bytes,
+                            final_bytes: last_output_bytes,
+                            model_budget_bytes: None,
+                            inline_budget_bytes: Some(inline_budget_bytes),
+                            representation: PromptInputRepresentation::FileReference {
+                                path: last_output_path.to_path_buf(),
+                            },
+                            reason: PromptMaterializationReason::PolicyForcedReference,
+                        };
+                        additional_events.push(PipelineEvent::xsd_retry_last_output_materialized(
+                            crate::reducer::event::PipelinePhase::Development,
+                            iteration,
+                            input,
+                        ));
+                        if last_output_bytes > inline_budget_bytes {
+                            additional_events.push(PipelineEvent::prompt_input_oversize_detected(
+                                crate::reducer::event::PipelinePhase::Development,
+                                PromptInputKind::LastOutput,
+                                content_id_sha256,
+                                last_output_bytes,
+                                inline_budget_bytes,
+                                "xsd-retry-context".to_string(),
+                            ));
+                        }
+                    }
+                    (
+                        prompt_developer_iteration_xsd_retry_with_context_files(
+                            ctx.template_context,
+                            "XML output failed validation. Provide valid XML output.",
+                            ctx.workspace,
+                        ),
+                        "developer_iteration_xsd_retry",
+                        None,
+                        false,
+                        true,
+                    )
+                }
                 PromptMode::SameAgentRetry => {
                     // Same-agent retry: prepend retry guidance to the last prepared prompt for this
                     // phase (preserves XSD retry / continuation context if present).
@@ -111,14 +314,93 @@ impl MainEffectHandler {
                         .read(Path::new(".agent/tmp/development_prompt.txt"))
                     {
                         Ok(previous_prompt) => (previous_prompt, false),
-                        Err(_) => (
-                            prompt_developer_iteration_xml_with_context(
-                                ctx.template_context,
-                                &prompt_md,
-                                &plan_md,
-                            ),
-                            true,
-                        ),
+                        Err(_) => {
+                            let inputs = match self
+                                .state
+                                .prompt_inputs
+                                .development
+                                .as_ref()
+                                .filter(|p| p.iteration == iteration)
+                            {
+                                Some(inputs) => inputs,
+                                None => {
+                                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                        format!(
+                                            "Development inputs not materialized for iteration {} (expected materialize_development_inputs before prepare_development_prompt)",
+                                            iteration
+                                        ),
+                                    )));
+                                }
+                            };
+
+                            let prompt_ref = match &inputs.prompt.representation {
+                                PromptInputRepresentation::Inline => {
+                                    let prompt_md = match ctx.workspace.read(Path::new("PROMPT.md"))
+                                    {
+                                        Ok(prompt_md) => prompt_md,
+                                        Err(err) => {
+                                            return Ok(EffectResult::event(
+                                                PipelineEvent::pipeline_aborted(format!(
+                                                    "Failed to read required PROMPT.md: {err}"
+                                                )),
+                                            ));
+                                        }
+                                    };
+                                    ignore_sources_owned.push(prompt_md.clone());
+                                    PromptContentReference::inline(prompt_md)
+                                }
+                                PromptInputRepresentation::FileReference { path } => {
+                                    PromptContentReference::file_path(
+                                        ctx.workspace.absolute(path),
+                                        "Original user requirements from PROMPT.md",
+                                    )
+                                }
+                            };
+
+                            let plan_ref = match &inputs.plan.representation {
+                                PromptInputRepresentation::Inline => {
+                                    let plan_md =
+                                        match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
+                                            Ok(plan_md) => plan_md,
+                                            Err(err) => {
+                                                return Ok(EffectResult::event(
+                                                    PipelineEvent::pipeline_aborted(format!(
+                                                    "Failed to read required .agent/PLAN.md: {err}"
+                                                )),
+                                                ));
+                                            }
+                                        };
+                                    ignore_sources_owned.push(plan_md.clone());
+                                    PlanContentReference::Inline(plan_md)
+                                }
+                                PromptInputRepresentation::FileReference { path } => {
+                                    PlanContentReference::ReadFromFile {
+                                        primary_path: ctx.workspace.absolute(path),
+                                        fallback_path: Some(
+                                            ctx.workspace
+                                                .absolute(Path::new(".agent/tmp/plan.xml")),
+                                        ),
+                                        description: format!(
+                                            "Plan is {} bytes (exceeds {} limit)",
+                                            inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
+                                        ),
+                                    }
+                                }
+                            };
+
+                            let refs = PromptContentReferences {
+                                prompt: Some(prompt_ref),
+                                plan: Some(plan_ref),
+                                diff: None,
+                            };
+                            (
+                                prompt_developer_iteration_xml_with_references(
+                                    ctx.template_context,
+                                    &refs,
+                                ),
+                                true,
+                            )
+                        }
                     };
                     let prompt = format!("{retry_preamble}\n{base_prompt}");
                     let prompt_key = format!(
@@ -134,13 +416,116 @@ impl MainEffectHandler {
                     )
                 }
                 PromptMode::Normal => {
+                    let inputs = match self
+                        .state
+                        .prompt_inputs
+                        .development
+                        .as_ref()
+                        .filter(|p| p.iteration == iteration)
+                    {
+                        Some(inputs) => inputs,
+                        None => {
+                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                            format!(
+                                "Development inputs not materialized for iteration {} (expected materialize_development_inputs before prepare_development_prompt)",
+                                iteration
+                            ),
+                        )));
+                        }
+                    };
+
+                    let prompt_md = match &inputs.prompt.representation {
+                        PromptInputRepresentation::Inline => {
+                            let prompt_md = match ctx.workspace.read(Path::new("PROMPT.md")) {
+                                Ok(prompt_md) => prompt_md,
+                                Err(err) => {
+                                    return Ok(EffectResult::event(
+                                        PipelineEvent::pipeline_aborted(format!(
+                                            "Failed to read required PROMPT.md: {err}"
+                                        )),
+                                    ));
+                                }
+                            };
+                            ignore_sources_owned.push(prompt_md.clone());
+                            Some(prompt_md)
+                        }
+                        PromptInputRepresentation::FileReference { .. } => None,
+                    };
+                    let plan_md = match &inputs.plan.representation {
+                        PromptInputRepresentation::Inline => {
+                            let plan_md = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
+                                Ok(plan_md) => plan_md,
+                                Err(err) => {
+                                    return Ok(EffectResult::event(
+                                        PipelineEvent::pipeline_aborted(format!(
+                                            "Failed to read required .agent/PLAN.md: {err}"
+                                        )),
+                                    ));
+                                }
+                            };
+                            ignore_sources_owned.push(plan_md.clone());
+                            Some(plan_md)
+                        }
+                        PromptInputRepresentation::FileReference { .. } => None,
+                    };
+
                     let prompt_key = format!("development_{}", iteration);
+                    let prompt_ref = match &inputs.prompt.representation {
+                        PromptInputRepresentation::Inline => {
+                            let prompt_md = match prompt_md.clone() {
+                                Some(prompt_md) => prompt_md,
+                                None => {
+                                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                    "Missing in-memory PROMPT.md content for inline development prompt (expected PROMPT.md to be loaded)".to_string(),
+                                )));
+                                }
+                            };
+                            PromptContentReference::inline(prompt_md)
+                        }
+                        PromptInputRepresentation::FileReference { path } => {
+                            PromptContentReference::file_path(
+                                ctx.workspace.absolute(path),
+                                "Original user requirements from PROMPT.md",
+                            )
+                        }
+                    };
+                    let plan_ref = match &inputs.plan.representation {
+                        PromptInputRepresentation::Inline => {
+                            let plan_md = match plan_md.clone() {
+                                Some(plan_md) => plan_md,
+                                None => {
+                                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                                    "Missing in-memory .agent/PLAN.md content for inline development prompt (expected .agent/PLAN.md to be loaded)".to_string(),
+                                )));
+                                }
+                            };
+                            PlanContentReference::Inline(plan_md)
+                        }
+                        PromptInputRepresentation::FileReference { path } => {
+                            PlanContentReference::ReadFromFile {
+                                primary_path: ctx.workspace.absolute(path),
+                                fallback_path: Some(
+                                    ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
+                                ),
+                                description: format!(
+                                    "Plan is {} bytes (exceeds {} limit)",
+                                    inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
+                                ),
+                            }
+                        }
+                    };
                     let (prompt, was_replayed) =
                         get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                            prompt_developer_iteration_xml_with_context(
+                            let prompt_ref = prompt_ref.clone();
+                            let plan_ref = plan_ref.clone();
+                            let refs = PromptContentReferences {
+                                prompt: Some(prompt_ref),
+                                plan: Some(plan_ref),
+                                diff: None,
+                            };
+                            prompt_developer_iteration_xml_with_references(
                                 ctx.template_context,
-                                &prompt_md,
-                                &plan_md,
+                                &refs,
                             )
                         });
                     (
@@ -152,6 +537,7 @@ impl MainEffectHandler {
                     )
                 }
             };
+        let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
         if should_validate {
             if let Err(err) =
                 crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
@@ -184,9 +570,11 @@ impl MainEffectHandler {
         ctx.workspace
             .write(Path::new(".agent/tmp/development_prompt.txt"), &dev_prompt)?;
 
-        Ok(EffectResult::event(
-            PipelineEvent::development_prompt_prepared(iteration),
-        ))
+        let mut result = EffectResult::event(PipelineEvent::development_prompt_prepared(iteration));
+        for ev in additional_events {
+            result = result.with_additional_event(ev);
+        }
+        Ok(result)
     }
 
     pub(super) fn invoke_development_agent(

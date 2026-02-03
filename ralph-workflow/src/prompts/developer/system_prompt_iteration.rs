@@ -212,9 +212,22 @@ pub fn prompt_developer_iteration_xsd_retry_with_context(
     last_output: &str,
     workspace: &dyn Workspace,
 ) -> String {
-    let partials = get_shared_partials();
     // Write context files to .agent/tmp/ for the agent to read
     write_dev_iteration_xsd_retry_files(workspace, last_output);
+    prompt_developer_iteration_xsd_retry_with_context_files(context, xsd_error, workspace)
+}
+
+/// Generate XSD validation retry prompt for developer iteration with error feedback.
+///
+/// This variant assumes `.agent/tmp/last_output.xml` is already materialized.
+pub fn prompt_developer_iteration_xsd_retry_with_context_files(
+    context: &TemplateContext,
+    xsd_error: &str,
+    workspace: &dyn Workspace,
+) -> String {
+    let partials = get_shared_partials();
+    // Ensure schema file exists; last_output.xml is expected to already be present.
+    write_dev_iteration_xsd_retry_schema_files(workspace);
 
     let template_content = context
         .registry()
@@ -338,4 +351,3 @@ pub fn prompt_developer_iteration_continuation_xml(
             )
         })
 }
-

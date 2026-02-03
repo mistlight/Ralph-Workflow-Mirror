@@ -14,6 +14,7 @@ use crate::checkpoint::RunContext;
 use crate::config::{Config, ReviewDepth};
 use crate::executor::ProcessExecutor;
 use crate::logger::Logger;
+use crate::reducer::state::PromptInputsState;
 use crate::workspace::Workspace;
 use std::sync::Arc;
 
@@ -51,6 +52,7 @@ pub struct CheckpointBuilder {
     // Hardened resume fields
     execution_history: Option<ExecutionHistory>,
     prompt_history: Option<std::collections::HashMap<String, String>>,
+    prompt_inputs: Option<PromptInputsState>,
     // Process executor for external process execution
     executor: Option<Arc<dyn ProcessExecutor>>,
 }
@@ -82,6 +84,7 @@ impl CheckpointBuilder {
             run_context: None,
             execution_history: None,
             prompt_history: None,
+            prompt_inputs: None,
             executor: None,
         }
     }
@@ -273,6 +276,21 @@ impl CheckpointBuilder {
         self
     }
 
+    /// Attach reducer-managed prompt input materialization state.
+    ///
+    /// This is used by reducer-driven checkpointing so resumes can avoid repeating
+    /// oversize handling that was already materialized for a given content id and
+    /// consumer signature.
+    pub fn with_prompt_inputs(mut self, prompt_inputs: PromptInputsState) -> Self {
+        let is_empty = prompt_inputs.planning.is_none()
+            && prompt_inputs.development.is_none()
+            && prompt_inputs.review.is_none()
+            && prompt_inputs.commit.is_none()
+            && prompt_inputs.xsd_retry_last_output.is_none();
+        self.prompt_inputs = if is_empty { None } else { Some(prompt_inputs) };
+        self
+    }
+
     /// Build the checkpoint without workspace.
     ///
     /// Returns None if required fields (phase, agent configs) are missing.
@@ -366,6 +384,9 @@ impl CheckpointBuilder {
 
         // Populate prompt history
         checkpoint.prompt_history = self.prompt_history;
+
+        // Populate reducer prompt input materialization state
+        checkpoint.prompt_inputs = self.prompt_inputs;
 
         // Capture and populate file system state
         // Use workspace-based capture when workspace is available (pipeline code),

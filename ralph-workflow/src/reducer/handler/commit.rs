@@ -3,8 +3,9 @@ use crate::agents::AgentRole;
 use crate::files::llm_output_extraction::archive_xml_file_with_workspace;
 use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
 use crate::files::llm_output_extraction::try_extract_xml_commit_with_trace;
-use crate::phases::commit::check_and_pre_truncate_diff;
+use crate::phases::commit::{effective_model_budget_bytes, truncate_diff_to_model_budget};
 use crate::phases::PhaseContext;
+use crate::prompts::content_reference::{DiffContentReference, MAX_INLINE_CONTENT_SIZE};
 use crate::prompts::{
     get_stored_or_generate_prompt, prompt_commit_xsd_retry_with_context,
     prompt_generate_commit_message_with_diff_with_context,
@@ -12,8 +13,11 @@ use crate::prompts::{
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::AgentEvent;
 use crate::reducer::event::PipelineEvent;
-use crate::reducer::state::CommitState;
-use crate::reducer::state::PromptMode;
+use crate::reducer::prompt_inputs::sha256_hex_str;
+use crate::reducer::state::{
+    CommitState, MaterializedPromptInput, PromptInputKind, PromptInputRepresentation,
+    PromptMaterializationReason, PromptMode,
+};
 use crate::reducer::ui_event::{UIEvent, XmlOutputType};
 use anyhow::Result;
 use std::path::Path;
@@ -28,6 +32,133 @@ fn current_commit_attempt(commit: &CommitState) -> u32 {
 }
 
 impl MainEffectHandler {
+    pub(super) fn materialize_commit_inputs(
+        &mut self,
+        ctx: &mut PhaseContext<'_>,
+        attempt: u32,
+    ) -> Result<EffectResult> {
+        let diff = match ctx.workspace.read(Path::new(".agent/tmp/commit_diff.txt")) {
+            Ok(diff) => diff,
+            Err(_) => {
+                ctx.logger.warn(
+                        "Missing commit diff at .agent/tmp/commit_diff.txt; invalidating diff-prepared state to recompute",
+                    );
+                return Ok(EffectResult::event(PipelineEvent::commit_diff_invalidated(
+                    "Missing commit diff at .agent/tmp/commit_diff.txt".to_string(),
+                )));
+            }
+        };
+
+        let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
+        let content_id_sha256 = sha256_hex_str(&diff);
+        let original_bytes = diff.len() as u64;
+
+        let model_budget_bytes = effective_model_budget_bytes(&self.state.agent_chain.agents);
+        let (model_safe_diff, truncated_for_model_budget) =
+            truncate_diff_to_model_budget(&diff, model_budget_bytes);
+        let final_bytes = model_safe_diff.len() as u64;
+
+        let tmp_dir = Path::new(".agent/tmp");
+        if !ctx.workspace.exists(tmp_dir) {
+            ctx.workspace.create_dir_all(tmp_dir)?;
+        }
+        let model_safe_path = Path::new(".agent/tmp/commit_diff.model_safe.txt");
+        ctx.workspace
+            .write_atomic(model_safe_path, &model_safe_diff)?;
+
+        let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
+        let representation = if final_bytes <= inline_budget_bytes {
+            PromptInputRepresentation::Inline
+        } else {
+            PromptInputRepresentation::FileReference {
+                path: model_safe_path.to_path_buf(),
+            }
+        };
+
+        let reason = if truncated_for_model_budget {
+            // Preserve the fact that we truncated for the model budget even if we ultimately
+            // choose a file reference due to inline constraints.
+            PromptMaterializationReason::ModelBudgetExceeded
+        } else if matches!(
+            representation,
+            PromptInputRepresentation::FileReference { .. }
+        ) {
+            PromptMaterializationReason::InlineBudgetExceeded
+        } else {
+            PromptMaterializationReason::WithinBudgets
+        };
+
+        if truncated_for_model_budget {
+            ctx.logger.warn(&format!(
+                "Diff size ({} KB) exceeds model budget ({} KB). Truncated to {} KB at: {}",
+                original_bytes / 1024,
+                model_budget_bytes / 1024,
+                final_bytes / 1024,
+                ctx.workspace.absolute(model_safe_path).display()
+            ));
+        } else if final_bytes > inline_budget_bytes {
+            ctx.logger.warn(&format!(
+                "Diff size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
+                final_bytes / 1024,
+                inline_budget_bytes / 1024,
+                ctx.workspace.absolute(model_safe_path).display()
+            ));
+        }
+
+        let input = MaterializedPromptInput {
+            kind: PromptInputKind::Diff,
+            content_id_sha256: content_id_sha256.clone(),
+            consumer_signature_sha256: consumer_signature_sha256.clone(),
+            original_bytes,
+            final_bytes,
+            model_budget_bytes: Some(model_budget_bytes),
+            inline_budget_bytes: Some(inline_budget_bytes),
+            representation,
+            reason,
+        };
+
+        let mut result =
+            EffectResult::event(PipelineEvent::commit_inputs_materialized(attempt, input));
+        if truncated_for_model_budget {
+            result = result.with_ui_event(UIEvent::AgentActivity {
+                agent: "pipeline".to_string(),
+                message: format!(
+                    "Truncated DIFF for model budget: {} KB -> {} KB (budget {} KB)",
+                    original_bytes / 1024,
+                    final_bytes / 1024,
+                    model_budget_bytes / 1024
+                ),
+            });
+            result = result.with_additional_event(PipelineEvent::prompt_input_oversize_detected(
+                crate::reducer::event::PipelinePhase::CommitMessage,
+                PromptInputKind::Diff,
+                content_id_sha256.clone(),
+                original_bytes,
+                model_budget_bytes,
+                "model-context".to_string(),
+            ));
+        }
+        if final_bytes > inline_budget_bytes {
+            result = result.with_ui_event(UIEvent::AgentActivity {
+                agent: "pipeline".to_string(),
+                message: format!(
+                    "Oversize DIFF: {} KB > {} KB; using file reference",
+                    final_bytes / 1024,
+                    inline_budget_bytes / 1024
+                ),
+            });
+            result = result.with_additional_event(PipelineEvent::prompt_input_oversize_detected(
+                crate::reducer::event::PipelinePhase::CommitMessage,
+                PromptInputKind::Diff,
+                content_id_sha256,
+                final_bytes,
+                inline_budget_bytes,
+                "inline-embedding".to_string(),
+            ));
+        }
+        Ok(result)
+    }
+
     pub(super) fn prepare_commit_prompt(
         &mut self,
         ctx: &mut PhaseContext<'_>,
@@ -38,15 +169,120 @@ impl MainEffectHandler {
                 "Commit message generation does not support continuation prompts".to_string(),
             )));
         }
-        let diff = match ctx.workspace.read(Path::new(".agent/tmp/commit_diff.txt")) {
-            Ok(diff) => diff,
-            Err(_) => {
+        let attempt = current_commit_attempt(&self.state.commit);
+
+        if matches!(prompt_mode, PromptMode::XsdRetry) {
+            let xsd_error = self
+                .state
+                .continuation
+                .last_xsd_error
+                .clone()
+                .unwrap_or_else(|| {
+                    "XML output failed validation. Provide valid XML output.".to_string()
+                });
+
+            let prompt_key = format!(
+                "commit_message_attempt_{attempt}_xsd_retry_{}",
+                self.state.continuation.xsd_retry_count
+            );
+            let (prompt, was_replayed) =
+                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                    prompt_commit_xsd_retry_with_context(
+                        ctx.template_context,
+                        &xsd_error,
+                        ctx.workspace,
+                    )
+                });
+
+            if let Err(err) =
+                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+                    &prompt,
+                    &[],
+                )
+            {
+                return Ok(EffectResult::event(
+                    PipelineEvent::agent_template_variables_invalid(
+                        AgentRole::Commit,
+                        "commit_xsd_retry".to_string(),
+                        Vec::new(),
+                        err.unresolved_placeholders,
+                    ),
+                ));
+            }
+
+            if !was_replayed {
+                ctx.capture_prompt(&prompt_key, &prompt);
+            }
+
+            let tmp_dir = Path::new(".agent/tmp");
+            if !ctx.workspace.exists(tmp_dir) {
+                ctx.workspace.create_dir_all(tmp_dir)?;
+            }
+            ctx.workspace
+                .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)?;
+
+            return Ok(
+                EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
+                    self.phase_transition_ui(crate::reducer::event::PipelinePhase::CommitMessage),
+                ),
+            );
+        }
+
+        let inputs = match self
+            .state
+            .prompt_inputs
+            .commit
+            .as_ref()
+            .filter(|c| c.attempt == attempt)
+        {
+            Some(inputs) => inputs,
+            None => {
                 return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing commit diff at .agent/tmp/commit_diff.txt".to_string(),
+                    format!("Commit inputs not materialized for attempt {attempt}"),
                 )));
             }
         };
-        self.prepare_commit_prompt_with_diff_and_mode(ctx, &diff, prompt_mode)
+
+        let model_safe_path = Path::new(".agent/tmp/commit_diff.model_safe.txt");
+        let diff_for_prompt = match &inputs.diff.representation {
+            PromptInputRepresentation::Inline => match ctx.workspace.read(model_safe_path) {
+                Ok(diff) => diff,
+                Err(err) => {
+                    ctx.logger.warn(&format!(
+                        "Missing/unreadable materialized commit diff at {} ({err}); invalidating commit inputs to rematerialize",
+                        model_safe_path.display()
+                    ));
+                    // Recoverability: tmp artifacts may be cleaned between checkpoints.
+                    // Force rerunning CheckCommitDiff to recreate the diff and its materialization.
+                    return Ok(EffectResult::event(PipelineEvent::commit_diff_invalidated(
+                        "Missing/unreadable .agent/tmp/commit_diff.model_safe.txt".to_string(),
+                    )));
+                }
+            },
+            PromptInputRepresentation::FileReference { path } => {
+                if !ctx.workspace.exists(path) {
+                    ctx.logger.warn(&format!(
+                        "Missing materialized commit diff reference at {}; invalidating commit inputs to rematerialize",
+                        ctx.workspace.absolute(path).display()
+                    ));
+                    // Recoverability: tmp artifacts may be cleaned between checkpoints.
+                    // Force rerunning CheckCommitDiff to recreate the diff and its materialization.
+                    return Ok(EffectResult::event(PipelineEvent::commit_diff_invalidated(
+                        "Missing materialized commit diff reference".to_string(),
+                    )));
+                }
+                DiffContentReference::ReadFromFile {
+                    path: ctx.workspace.absolute(path),
+                    start_commit: String::new(),
+                    description: format!(
+                        "Diff is {} bytes (exceeds {} limit)",
+                        inputs.diff.final_bytes, MAX_INLINE_CONTENT_SIZE
+                    ),
+                }
+                .render_for_template()
+            }
+        };
+        self.prepare_commit_prompt_with_diff_and_mode(ctx, &diff_for_prompt, prompt_mode)
     }
 
     pub(super) fn check_commit_diff(&mut self, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
@@ -81,26 +317,17 @@ impl MainEffectHandler {
 
         Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
             diff.trim().is_empty(),
+            sha256_hex_str(diff),
         )))
     }
 
     pub(super) fn prepare_commit_prompt_with_diff_and_mode(
         &mut self,
         ctx: &mut PhaseContext<'_>,
-        diff: &str,
+        diff_for_prompt: &str,
         prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
         let attempt = current_commit_attempt(&self.state.commit);
-
-        let commit_agent = self
-            .state
-            .agent_chain
-            .current_agent()
-            .cloned()
-            .expect("commit agent should be initialized via InitializeAgentChain effect");
-
-        let (working_diff, _diff_truncated) =
-            check_and_pre_truncate_diff(diff, &commit_agent, ctx.logger);
 
         let continuation_state = &self.state.continuation;
         let (prompt_key, prompt, was_replayed, should_validate) = match prompt_mode {
@@ -117,7 +344,7 @@ impl MainEffectHandler {
                     Err(_) => (
                         prompt_generate_commit_message_with_diff_with_context(
                             ctx.template_context,
-                            &working_diff,
+                            diff_for_prompt,
                             ctx.workspace,
                         ),
                         true,
@@ -131,12 +358,10 @@ impl MainEffectHandler {
                 (prompt_key, prompt, false, should_validate)
             }
             PromptMode::XsdRetry => {
-                // XSD retry: use XML-only retry prompt and include the last XSD error.
-                // Do not use cached prompts here: the error context can change between retries.
-                let xsd_error = ctx
-                    .workspace
-                    .read(Path::new(COMMIT_XSD_ERROR_PATH))
-                    .unwrap_or_else(|_| {
+                let xsd_error = continuation_state
+                    .last_xsd_error
+                    .clone()
+                    .unwrap_or_else(|| {
                         "XSD validation failed. Provide valid XML output.".to_string()
                     });
                 let prompt = prompt_commit_xsd_retry_with_context(
@@ -144,20 +369,28 @@ impl MainEffectHandler {
                     &xsd_error,
                     ctx.workspace,
                 );
-                ("commit_xsd_retry".to_string(), prompt, false, true)
+                let prompt_key = format!(
+                    "commit_message_attempt_{attempt}_xsd_retry_{}",
+                    continuation_state.xsd_retry_count
+                );
+                (prompt_key, prompt, false, true)
             }
-            _ => {
-                // Normal (or Continuation rejected earlier)
+            PromptMode::Normal => {
                 let prompt_key = format!("commit_message_attempt_{attempt}");
                 let (prompt, was_replayed) =
                     get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
                         prompt_generate_commit_message_with_diff_with_context(
                             ctx.template_context,
-                            &working_diff,
+                            diff_for_prompt,
                             ctx.workspace,
                         )
                     });
                 (prompt_key, prompt, was_replayed, true)
+            }
+            PromptMode::Continuation => {
+                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                    "Commit message generation does not support continuation prompts".to_string(),
+                )));
             }
         };
 
@@ -165,7 +398,7 @@ impl MainEffectHandler {
             if let Err(err) =
                 crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
                     &prompt,
-                    &[diff],
+                    &[diff_for_prompt],
                 )
             {
                 return Ok(EffectResult::event(

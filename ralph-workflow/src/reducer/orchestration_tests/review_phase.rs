@@ -120,7 +120,30 @@ fn test_review_triggers_fix_when_issues_found() {
     // Commit message chain
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::CheckCommitDiff));
-    state = reduce(state, PipelineEvent::commit_diff_prepared(false));
+    state = reduce(
+        state,
+        PipelineEvent::commit_diff_prepared(false, "id".to_string()),
+    );
+    let effect = determine_next_effect(&state);
+    assert!(matches!(effect, Effect::MaterializeCommitInputs { .. }));
+    let sig = state.agent_chain.consumer_signature_sha256();
+    state = reduce(
+        state,
+        PipelineEvent::commit_inputs_materialized(
+            1,
+            crate::reducer::state::MaterializedPromptInput {
+                kind: crate::reducer::state::PromptInputKind::Diff,
+                content_id_sha256: "id".to_string(),
+                consumer_signature_sha256: sig,
+                original_bytes: 1,
+                final_bytes: 1,
+                model_budget_bytes: None,
+                inline_budget_bytes: None,
+                representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+            },
+        ),
+    );
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::PrepareCommitPrompt { .. }));
     state = reduce(state, PipelineEvent::commit_generation_started());
@@ -205,6 +228,74 @@ fn test_review_skips_fix_when_no_issues() {
     assert!(
         matches!(effect, Effect::PrepareReviewContext { pass: 1 }),
         "Expected PrepareReviewContext pass 1, got {:?}",
+        effect
+    );
+}
+
+#[test]
+fn test_review_context_prepared_invalidates_materialized_review_inputs() {
+    // Regression test: if review context is prepared again (diff backup rewritten),
+    // previously materialized review inputs must be invalidated to avoid reusing
+    // stale PLAN/DIFF materialization for the same pass.
+    use crate::reducer::state::AgentChainState;
+
+    let mut state = PipelineState {
+        phase: PipelinePhase::Review,
+        reviewer_pass: 0,
+        total_reviewer_passes: 1,
+        review_context_prepared_pass: Some(0),
+        prompt_inputs: crate::reducer::state::PromptInputsState {
+            review: Some(crate::reducer::state::MaterializedReviewInputs {
+                pass: 0,
+                plan: crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Plan,
+                    content_id_sha256: "plan".to_string(),
+                    consumer_signature_sha256: String::new(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                },
+                diff: crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Diff,
+                    content_id_sha256: "old-diff".to_string(),
+                    consumer_signature_sha256: String::new(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: None,
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                },
+            }),
+            ..Default::default()
+        },
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["reviewer".to_string()],
+            vec![vec![]],
+            AgentRole::Reviewer,
+        ),
+        ..create_test_state()
+    };
+
+    // Make consumer signatures match so inputs would otherwise be considered valid.
+    let sig = state.agent_chain.consumer_signature_sha256();
+    {
+        let inputs = state.prompt_inputs.review.as_mut().unwrap();
+        inputs.plan.consumer_signature_sha256 = sig.clone();
+        inputs.diff.consumer_signature_sha256 = sig;
+    }
+
+    // Re-prepare context for the same pass.
+    state = reduce(state, PipelineEvent::review_context_prepared(0));
+
+    // Next effect should rematerialize inputs.
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(effect, Effect::MaterializeReviewInputs { pass: 0 }),
+        "Expected MaterializeReviewInputs after context prepared, got {:?}",
         effect
     );
 }

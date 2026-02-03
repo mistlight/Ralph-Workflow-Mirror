@@ -47,6 +47,15 @@ pub enum Effect {
         prompt_mode: PromptMode,
     },
 
+    /// Materialize planning inputs (single-task).
+    ///
+    /// This effect must perform any oversize handling for planning prompt inputs
+    /// (inline vs file references) and emit explicit reducer events recording the
+    /// final representation. It must not render/write the planning prompt.
+    MaterializePlanningInputs {
+        iteration: u32,
+    },
+
     /// Clean up stale planning XML before invoking the planning agent (single-task).
     CleanupPlanningXml {
         iteration: u32,
@@ -107,6 +116,15 @@ pub enum Effect {
         iteration: u32,
     },
 
+    /// Materialize development inputs (single-task).
+    ///
+    /// This effect must perform any oversize handling for development prompt inputs
+    /// (inline vs file references) and emit explicit reducer events recording the
+    /// final representation. It must not render/write the development prompt.
+    MaterializeDevelopmentInputs {
+        iteration: u32,
+    },
+
     /// Prepare the development prompt for an iteration (single-task).
     ///
     /// This effect must only render/write the prompt that will be used for
@@ -164,6 +182,15 @@ pub enum Effect {
     /// This effect must only write the review inputs (prompt backups, diffs, etc.)
     /// needed for a subsequent `AgentInvocation` and must not invoke agents.
     PrepareReviewContext {
+        pass: u32,
+    },
+
+    /// Materialize review inputs (single-task).
+    ///
+    /// This effect must perform any oversize handling for review prompt inputs
+    /// (inline vs file references) and emit explicit reducer events recording the
+    /// final representation. It must not render/write the review prompt.
+    MaterializeReviewInputs {
         pass: u32,
     },
 
@@ -311,6 +338,16 @@ pub enum Effect {
     /// validate outputs.
     PrepareCommitPrompt {
         prompt_mode: PromptMode,
+    },
+
+    /// Materialize commit inputs (single-task).
+    ///
+    /// This effect must perform any model-budget truncation and inline-vs-reference
+    /// handling for commit prompt inputs (notably the diff), and emit explicit
+    /// reducer events recording the final representation. It must not render/write
+    /// the commit prompt.
+    MaterializeCommitInputs {
+        attempt: u32,
     },
 
     /// Invoke the commit agent (single-task).

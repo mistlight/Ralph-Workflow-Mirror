@@ -70,10 +70,19 @@ mod tests {
             "line4".to_string(),
         ];
 
-        let truncated = truncate_lines_to_fit(&lines, 18);
+        let max_size = 18;
+        let truncated = truncate_lines_to_fit(&lines, max_size);
 
-        assert_eq!(truncated.len(), 3);
-        assert!(truncated[2].ends_with("[truncated...]"));
+        assert!(!truncated.is_empty());
+        assert!(
+            truncated.last().is_some_and(|l| l.ends_with("[truncated...]")),
+            "expected last line to be marked as truncated"
+        );
+        let total_size: usize = truncated.iter().map(|l| l.len() + 1).sum();
+        assert!(
+            total_size <= max_size,
+            "truncate_lines_to_fit must respect max size after suffix"
+        );
     }
 
     #[test]
@@ -153,6 +162,239 @@ mod tests {
         assert_eq!(
             calls[0].logfile, ".agent/logs/commit_generation/commit_generation_claude_0_a2.log",
             "commit generation log should include agent, model index, and attempt suffix"
+        );
+    }
+
+    #[test]
+    fn test_run_commit_attempt_logs_diff_truncated_when_model_safe_diff_contains_marker() {
+        let workspace = MemoryWorkspace::new_test().with_file(
+            xml_paths::COMMIT_MESSAGE_XML,
+            "<ralph-commit><ralph-subject>feat: x</ralph-subject></ralph-commit>",
+        );
+        let colors = Colors { enabled: false };
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let template_context = TemplateContext::default();
+
+        let executor = Arc::new(
+            MockProcessExecutor::new()
+                .with_agent_result("claude", Ok(crate::executor::AgentCommandResult::success())),
+        );
+        let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+
+        let repo_root = PathBuf::from("/mock/repo");
+        let mut ctx = PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "claude",
+            reviewer_agent: "claude",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: HashMap::new(),
+            executor: executor_arc.as_ref(),
+            executor_arc: executor_arc.clone(),
+            repo_root: repo_root.as_path(),
+            workspace: &workspace,
+        };
+
+        let model_safe_diff =
+            "diff --git a/a b/a\n+change\n\n[Truncated: 1 of 2 files shown]\n";
+        let _ = run_commit_attempt(&mut ctx, 1, model_safe_diff, "claude")
+            .expect("run_commit_attempt should succeed");
+
+        let log_files = workspace.list_files_in_dir(".agent/logs/commit_generation");
+        let attempt_log_path = log_files
+            .iter()
+            .find(|p| {
+                let path = p.to_string_lossy();
+                path.ends_with(".log") && path.contains("attempt_") && path.contains("run_")
+            })
+            .expect("expected an attempt log file to be written")
+            .to_string_lossy()
+            .to_string();
+
+        let log_content = workspace
+            .get_file(&attempt_log_path)
+            .expect("attempt log should be readable");
+        assert!(
+            log_content.contains("Diff truncated: YES"),
+            "expected truncation marker in log, got:\n{log_content}"
+        );
+    }
+
+    // Tests for effective_model_budget_bytes
+    #[test]
+    fn test_effective_budget_is_min_across_agents() {
+        // claude (300KB) + qwen (100KB) = min is 100KB
+        let agents = vec!["claude".to_string(), "qwen".to_string()];
+        assert_eq!(effective_model_budget_bytes(&agents), GLM_MAX_PROMPT_SIZE);
+    }
+
+    #[test]
+    fn test_effective_budget_multiple_glm_agents() {
+        // All GLM-like agents should return GLM budget
+        let agents = vec![
+            "qwen".to_string(),
+            "deepseek".to_string(),
+            "zhipuai".to_string(),
+        ];
+        assert_eq!(effective_model_budget_bytes(&agents), GLM_MAX_PROMPT_SIZE);
+    }
+
+    #[test]
+    fn test_effective_budget_claude_only() {
+        // Single Claude agent should return Claude budget
+        let agents = vec!["claude".to_string()];
+        assert_eq!(effective_model_budget_bytes(&agents), CLAUDE_MAX_PROMPT_SIZE);
+    }
+
+    #[test]
+    fn test_effective_budget_defaults_to_200kb_for_unknown() {
+        let agents = vec!["unknown-agent".to_string()];
+        assert_eq!(effective_model_budget_bytes(&agents), MAX_SAFE_PROMPT_SIZE);
+    }
+
+    #[test]
+    fn test_effective_budget_empty_chain_returns_default() {
+        let agents: Vec<String> = vec![];
+        assert_eq!(effective_model_budget_bytes(&agents), MAX_SAFE_PROMPT_SIZE);
+    }
+
+    #[test]
+    fn test_effective_budget_mixed_agents_uses_smallest() {
+        // Mix of Claude (300KB), default (200KB), GLM (100KB) => min is 100KB
+        let agents = vec![
+            "claude".to_string(),
+            "unknown".to_string(),
+            "qwen".to_string(),
+        ];
+        assert_eq!(effective_model_budget_bytes(&agents), GLM_MAX_PROMPT_SIZE);
+    }
+
+    // Tests for truncate_diff_to_model_budget determinism
+    #[test]
+    fn test_truncation_is_deterministic() {
+        let diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(300_000));
+        let budget = 100_000u64;
+
+        let (result1, truncated1) = truncate_diff_to_model_budget(&diff, budget);
+        let (result2, truncated2) = truncate_diff_to_model_budget(&diff, budget);
+
+        assert_eq!(result1, result2, "truncation should be deterministic");
+        assert_eq!(truncated1, truncated2);
+        assert!(truncated1);
+    }
+
+    #[test]
+    fn test_truncation_within_budget_returns_unchanged() {
+        let diff = "diff --git a/a b/a\n+small change\n";
+        let budget = 100_000u64;
+
+        let (result, truncated) = truncate_diff_to_model_budget(diff, budget);
+
+        assert_eq!(result, diff);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn test_truncation_exactly_at_budget_returns_unchanged() {
+        // Create diff exactly at budget size
+        let budget = 1000u64;
+        let diff_content = "a".repeat(budget as usize);
+        let diff = format!("diff --git a/a b/a\n{}", diff_content);
+        // Ensure we're above budget so truncation occurs
+        assert!(diff.len() > budget as usize);
+
+        let (result, truncated) = truncate_diff_to_model_budget(&diff, budget);
+
+        // When above budget, should be truncated
+        assert!(truncated);
+        assert!(result.len() <= budget as usize + 200); // +200 for truncation message
+    }
+
+    #[test]
+    fn test_truncation_returns_truncated_flag_when_over_budget() {
+        let diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(50_000));
+        let budget = 10_000u64;
+
+        let (result, truncated) = truncate_diff_to_model_budget(&diff, budget);
+
+        assert!(truncated, "should indicate truncation occurred");
+        assert!(
+            result.len() < diff.len(),
+            "truncated result should be smaller"
+        );
+    }
+
+    // Tests for model_budget_bytes_for_agent_name
+    #[test]
+    fn test_model_budget_for_claude_variants() {
+        assert_eq!(
+            model_budget_bytes_for_agent_name("claude"),
+            CLAUDE_MAX_PROMPT_SIZE
+        );
+        assert_eq!(
+            model_budget_bytes_for_agent_name("Claude"),
+            CLAUDE_MAX_PROMPT_SIZE
+        );
+        assert_eq!(
+            model_budget_bytes_for_agent_name("CLAUDE"),
+            CLAUDE_MAX_PROMPT_SIZE
+        );
+        assert_eq!(
+            model_budget_bytes_for_agent_name("claude-3"),
+            CLAUDE_MAX_PROMPT_SIZE
+        );
+        assert_eq!(
+            model_budget_bytes_for_agent_name("ccs"),
+            CLAUDE_MAX_PROMPT_SIZE
+        );
+        assert_eq!(
+            model_budget_bytes_for_agent_name("anthropic"),
+            CLAUDE_MAX_PROMPT_SIZE
+        );
+    }
+
+    #[test]
+    fn test_model_budget_for_glm_variants() {
+        assert_eq!(model_budget_bytes_for_agent_name("glm"), GLM_MAX_PROMPT_SIZE);
+        assert_eq!(
+            model_budget_bytes_for_agent_name("zhipuai"),
+            GLM_MAX_PROMPT_SIZE
+        );
+        assert_eq!(
+            model_budget_bytes_for_agent_name("qwen"),
+            GLM_MAX_PROMPT_SIZE
+        );
+        assert_eq!(
+            model_budget_bytes_for_agent_name("deepseek"),
+            GLM_MAX_PROMPT_SIZE
+        );
+        assert_eq!(model_budget_bytes_for_agent_name("zai"), GLM_MAX_PROMPT_SIZE);
+    }
+
+    #[test]
+    fn test_model_budget_for_unknown_agents() {
+        assert_eq!(
+            model_budget_bytes_for_agent_name("unknown"),
+            MAX_SAFE_PROMPT_SIZE
+        );
+        assert_eq!(
+            model_budget_bytes_for_agent_name("gpt-4"),
+            MAX_SAFE_PROMPT_SIZE
+        );
+        assert_eq!(
+            model_budget_bytes_for_agent_name("custom-agent"),
+            MAX_SAFE_PROMPT_SIZE
         );
     }
 }

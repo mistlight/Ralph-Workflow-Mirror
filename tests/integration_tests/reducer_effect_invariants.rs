@@ -146,8 +146,8 @@ fn test_planning_phase_emits_prepare_prompt() {
         let effect = determine_next_effect(&state);
 
         assert!(
-            matches!(effect, Effect::PreparePlanningPrompt { .. }),
-            "Planning should emit PreparePlanningPrompt, got {:?}",
+            matches!(effect, Effect::MaterializePlanningInputs { .. }),
+            "Planning should emit MaterializePlanningInputs first, got {:?}",
             effect
         );
     });
@@ -471,13 +471,14 @@ fn test_commit_phase_effect_sequence() {
             phase: PipelinePhase::CommitMessage,
             commit: CommitState::NotStarted,
             commit_diff_prepared: true,
+            commit_diff_content_id_sha256: Some("id".to_string()),
             agent_chain: commit_chain.clone(),
             ..PipelineState::initial(5, 2)
         };
         let effect = determine_next_effect(&state_not_started_diff_prepared);
         assert!(
-            matches!(effect, Effect::PrepareCommitPrompt { .. }),
-            "NotStarted with diff prepared should emit PrepareCommitPrompt, got {:?}",
+            matches!(effect, Effect::MaterializeCommitInputs { .. }),
+            "NotStarted with diff prepared should emit MaterializeCommitInputs, got {:?}",
             effect
         );
 
@@ -547,8 +548,8 @@ fn test_context_cleaned_before_planning() {
         };
         let effect = determine_next_effect(&state_cleaned);
         assert!(
-            matches!(effect, Effect::PreparePlanningPrompt { .. }),
-            "Should prepare planning prompt after cleanup, got {:?}",
+            matches!(effect, Effect::MaterializePlanningInputs { .. }),
+            "Should materialize planning inputs after cleanup, got {:?}",
             effect
         );
     });
@@ -580,7 +581,7 @@ fn test_phases_emit_expected_effects_when_initialized() {
         };
         assert!(matches!(
             determine_next_effect(&state),
-            Effect::PreparePlanningPrompt { .. }
+            Effect::MaterializePlanningInputs { .. }
         ));
 
         // Development -> PrepareDevelopmentContext

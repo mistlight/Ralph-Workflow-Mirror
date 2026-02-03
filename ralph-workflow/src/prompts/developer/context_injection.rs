@@ -27,22 +27,25 @@ fn write_planning_xsd_schema_file(workspace: &dyn Workspace) {
     let _ = workspace.write(&tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA);
 }
 
+fn write_planning_xsd_retry_schema_files(workspace: &dyn Workspace) {
+    let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
+    if workspace.create_dir_all(tmp_dir).is_err() {
+        return;
+    }
+    let _ = workspace.write(&tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA);
+}
+
 /// Write XSD retry context files to `.agent/tmp/` directory.
 ///
 /// This writes the XSD schema and last output to files so they don't bloat the prompt.
 /// The agent MUST read these files to understand what went wrong and fix it.
 fn write_planning_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
-    let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
-    if workspace.create_dir_all(tmp_dir).is_err() {
-        return;
-    }
-
-    let _ = workspace.write(&tmp_dir.join("plan.xsd"), PLAN_XSD_SCHEMA);
-    let _ = workspace.write(&tmp_dir.join("last_output.xml"), last_output);
+    write_planning_xsd_retry_schema_files(workspace);
+    let _ = workspace.write(&Path::new(XSD_RETRY_TMP_DIR).join("last_output.xml"), last_output);
 }
 
 /// Write XSD retry context files for development iteration to `.agent/tmp/` directory.
-fn write_dev_iteration_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+fn write_dev_iteration_xsd_retry_schema_files(workspace: &dyn Workspace) {
     let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
     if workspace.create_dir_all(tmp_dir).is_err() {
         return;
@@ -52,5 +55,13 @@ fn write_dev_iteration_xsd_retry_files(workspace: &dyn Workspace, last_output: &
         &tmp_dir.join("development_result.xsd"),
         DEVELOPMENT_RESULT_XSD_SCHEMA,
     );
-    let _ = workspace.write(&tmp_dir.join("last_output.xml"), last_output);
+}
+
+/// Write XSD retry context files for development iteration to `.agent/tmp/` directory.
+fn write_dev_iteration_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+    write_dev_iteration_xsd_retry_schema_files(workspace);
+    let _ = workspace.write(
+        &Path::new(XSD_RETRY_TMP_DIR).join("last_output.xml"),
+        last_output,
+    );
 }

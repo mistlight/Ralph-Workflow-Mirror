@@ -97,6 +97,10 @@ impl MainEffectHandler {
                 prompt_mode,
             } => self.prepare_planning_prompt(ctx, iteration, prompt_mode),
 
+            Effect::MaterializePlanningInputs { iteration } => {
+                self.materialize_planning_inputs(ctx, iteration)
+            }
+
             Effect::CleanupPlanningXml { iteration } => self.cleanup_planning_xml(ctx, iteration),
 
             Effect::InvokePlanningAgent { iteration } => self.invoke_planning_agent(ctx, iteration),
@@ -117,6 +121,10 @@ impl MainEffectHandler {
 
             Effect::PrepareDevelopmentContext { iteration } => {
                 self.prepare_development_context(ctx, iteration)
+            }
+
+            Effect::MaterializeDevelopmentInputs { iteration } => {
+                self.materialize_development_inputs(ctx, iteration)
             }
 
             Effect::PrepareDevelopmentPrompt {
@@ -149,6 +157,8 @@ impl MainEffectHandler {
             }
 
             Effect::PrepareReviewContext { pass } => self.prepare_review_context(ctx, pass),
+
+            Effect::MaterializeReviewInputs { pass } => self.materialize_review_inputs(ctx, pass),
 
             Effect::PrepareReviewPrompt { pass, prompt_mode } => {
                 self.prepare_review_prompt(ctx, pass, prompt_mode)
@@ -206,6 +216,10 @@ impl MainEffectHandler {
             }
 
             Effect::CheckCommitDiff => self.check_commit_diff(ctx),
+
+            Effect::MaterializeCommitInputs { attempt } => {
+                self.materialize_commit_inputs(ctx, attempt)
+            }
 
             Effect::InvokeCommitAgent => self.invoke_commit_agent(ctx),
 

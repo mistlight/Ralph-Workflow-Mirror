@@ -318,8 +318,10 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
 /// Generate XSD validation retry prompt for commit message XML.
 ///
 /// This prompt is used when a commit message XML output fails XSD validation.
+///
 /// The agent should read the XSD schema and the previous output from
-/// `.agent/tmp/commit_message.xsd` and `.agent/tmp/commit_message.xml`.
+/// `.agent/tmp/commit_message.xsd` and `.agent/tmp/commit_message.xml`, then rewrite the XML
+/// to conform to the schema.
 pub fn prompt_commit_xsd_retry_with_context(
     context: &TemplateContext,
     xsd_error: &str,
@@ -353,9 +355,9 @@ pub fn prompt_commit_xsd_retry_with_context(
         .render_with_partials(&variables, &partials)
         .unwrap_or_else(|_| {
             format!(
-                "Your commit message XML failed XSD validation.\n\nError: {xsd_error}\n\n\
+                "XSD VALIDATION FAILED - FIX XML ONLY\n\nError: {xsd_error}\n\n\
                  Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/commit_message.xml for your previous output.\n\
-                 Please resend a valid <ralph-commit> XML at .agent/tmp/commit_message.xml.\n"
+                 Rewrite .agent/tmp/commit_message.xml with valid XML.\n"
             )
         })
 }
