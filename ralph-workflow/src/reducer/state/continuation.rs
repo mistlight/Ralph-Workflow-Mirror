@@ -55,6 +55,11 @@ pub struct ContinuationState {
     /// Cleared when retry attempt starts or max retries exceeded.
     #[serde(default)]
     pub xsd_retry_pending: bool,
+    /// Last validation error message for XSD retry prompts.
+    ///
+    /// This is set when validation fails and cleared when the retry attempt starts.
+    #[serde(default)]
+    pub last_xsd_error: Option<String>,
     /// Whether a continuation is pending (output valid but work incomplete).
     ///
     /// Set to true when agent output indicates status is "partial" or "failed".
@@ -126,6 +131,7 @@ impl Default for ContinuationState {
             context_cleanup_pending: false,
             xsd_retry_count: 0,
             xsd_retry_pending: false,
+            last_xsd_error: None,
             continue_pending: false,
             current_artifact: None,
             max_xsd_retry_count: default_max_xsd_retry_count(),
@@ -211,6 +217,7 @@ impl ContinuationState {
             current_artifact: Some(artifact),
             xsd_retry_count: 0,
             xsd_retry_pending: false,
+            last_xsd_error: None,
             ..self.clone()
         }
     }
@@ -228,6 +235,7 @@ impl ContinuationState {
     pub fn clear_xsd_retry_pending(&self) -> Self {
         Self {
             xsd_retry_pending: false,
+            last_xsd_error: None,
             ..self.clone()
         }
     }
@@ -301,6 +309,7 @@ impl ContinuationState {
             // Reset XSD retry count for new continuation attempt
             xsd_retry_count: 0,
             xsd_retry_pending: false,
+            last_xsd_error: None,
             // Set continue_pending to trigger continuation in orchestration
             continue_pending: true,
             // Preserve artifact type and limits

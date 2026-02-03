@@ -358,11 +358,18 @@ fn test_prepare_fix_prompt_allows_literal_placeholders_in_issues() {
 
 #[test]
 fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
+    use crate::reducer::event::PromptInputEvent;
+    use crate::reducer::state::PromptInputKind;
+
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
-        .with_file(".agent/tmp/issues.xml", "<ralph-issues>bad</ralph-issues>");
+        .with_file(
+            ".agent/tmp/issues.xml",
+            &"x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10),
+        )
+        .with_dir(".agent/tmp");
 
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -404,13 +411,98 @@ fn test_prepare_review_prompt_uses_xsd_retry_prompt_key() {
         ..PipelineState::initial(0, 1)
     });
 
-    handler
+    let result = handler
         .prepare_review_prompt(&mut ctx, 0, PromptMode::XsdRetry)
         .expect("prepare_review_prompt should succeed");
 
     assert!(
         ctx.prompt_history.contains_key("review_0_xsd_retry_1"),
         "expected retry prompt to be captured with retry key"
+    );
+
+    assert!(
+        result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::OversizeDetected {
+                kind: PromptInputKind::LastOutput,
+                ..
+            })
+        )),
+        "Expected OversizeDetected event for PromptInputKind::LastOutput during review XSD retry"
+    );
+}
+
+#[test]
+fn test_review_xsd_retry_oversize_detected_is_deduped_across_retries() {
+    use crate::reducer::event::PromptInputEvent;
+    use crate::reducer::state::PromptInputKind;
+
+    let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_file(".agent/tmp/issues.xml", &large_last_output)
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            invalid_output_attempts: 1,
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(0, 1)
+    });
+
+    let first = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect("prepare_review_prompt should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), first.event);
+    for ev in first.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
+    let second = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect("prepare_review_prompt should succeed");
+
+    assert!(
+        !second.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::OversizeDetected { kind: PromptInputKind::LastOutput, .. })
+        )),
+        "Expected OversizeDetected for LastOutput to be emitted only once for identical review XSD retry context"
     );
 }
 
@@ -607,11 +699,17 @@ fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
         .prepare_review_prompt(&mut ctx, 0, PromptMode::XsdRetry)
         .expect("prepare_review_prompt should succeed");
 
-    assert!(matches!(
-        result.event,
-        PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { template_name, .. })
-            if template_name == "review_xsd_retry"
-    ));
+    assert!(
+        matches!(result.event, PipelineEvent::Review(_)),
+        "expected retry prompt to be prepared even if prompt_history contains stale placeholders"
+    );
+    let prompt = workspace
+        .read(Path::new(".agent/tmp/review_prompt.txt"))
+        .expect("review prompt file should be written");
+    assert!(
+        prompt.contains("XSD VALIDATION FAILED - FIX XML ONLY"),
+        "expected review XSD retry template to be used"
+    );
 }
 
 #[test]

@@ -216,3 +216,138 @@ fn test_prepare_planning_prompt_aborts_when_prompt_missing() {
         result.event
     );
 }
+
+#[test]
+fn test_prepare_planning_prompt_xsd_retry_emits_oversize_detected_for_last_output() {
+    use crate::reducer::event::PromptInputEvent;
+    use crate::reducer::state::PromptInputKind;
+
+    let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/tmp/plan.xml", &large_last_output)
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["dev-agent".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Developer,
+    );
+
+    let result = handler
+        .prepare_planning_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect("prepare_planning_prompt should succeed");
+
+    assert!(
+        result.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::OversizeDetected {
+                kind: PromptInputKind::LastOutput,
+                ..
+            })
+        )),
+        "Expected OversizeDetected event for PromptInputKind::LastOutput during planning XSD retry"
+    );
+}
+
+#[test]
+fn test_planning_xsd_retry_oversize_detected_is_deduped_across_retries() {
+    use crate::reducer::event::PromptInputEvent;
+    use crate::reducer::state::PromptInputKind;
+
+    let large_last_output = "x".repeat(crate::prompts::MAX_INLINE_CONTENT_SIZE + 10);
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/tmp/plan.xml", &large_last_output)
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["dev-agent".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Developer,
+    );
+
+    let first = handler
+        .prepare_planning_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect("prepare_planning_prompt should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), first.event);
+    for ev in first.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
+    let second = handler
+        .prepare_planning_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect("prepare_planning_prompt should succeed");
+
+    assert!(
+        !second.additional_events.iter().any(|ev| matches!(
+            ev,
+            PipelineEvent::PromptInput(PromptInputEvent::OversizeDetected { kind: PromptInputKind::LastOutput, .. })
+        )),
+        "Expected OversizeDetected for LastOutput to be emitted only once for identical planning XSD retry context"
+    );
+}

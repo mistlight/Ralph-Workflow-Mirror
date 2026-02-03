@@ -7,7 +7,8 @@ use crate::phases::commit::{effective_model_budget_bytes, truncate_diff_to_model
 use crate::phases::PhaseContext;
 use crate::prompts::content_reference::{DiffContentReference, MAX_INLINE_CONTENT_SIZE};
 use crate::prompts::{
-    get_stored_or_generate_prompt, prompt_generate_commit_message_with_diff_with_context,
+    get_stored_or_generate_prompt, prompt_commit_xsd_retry_with_context,
+    prompt_generate_commit_message_with_diff_with_context,
 };
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::AgentEvent;
@@ -164,6 +165,64 @@ impl MainEffectHandler {
             )));
         }
         let attempt = current_commit_attempt(&self.state.commit);
+
+        if matches!(prompt_mode, PromptMode::XsdRetry) {
+            let xsd_error = self
+                .state
+                .continuation
+                .last_xsd_error
+                .clone()
+                .unwrap_or_else(|| {
+                    "XML output failed validation. Provide valid XML output.".to_string()
+                });
+
+            let prompt_key = format!(
+                "commit_message_attempt_{attempt}_xsd_retry_{}",
+                self.state.continuation.xsd_retry_count
+            );
+            let (prompt, was_replayed) =
+                get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                    prompt_commit_xsd_retry_with_context(
+                        ctx.template_context,
+                        &xsd_error,
+                        ctx.workspace,
+                    )
+                });
+
+            if let Err(err) =
+                crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
+                    &prompt,
+                    &[],
+                )
+            {
+                return Ok(EffectResult::event(
+                    PipelineEvent::agent_template_variables_invalid(
+                        AgentRole::Commit,
+                        "commit_xsd_retry".to_string(),
+                        Vec::new(),
+                        err.unresolved_placeholders,
+                    ),
+                ));
+            }
+
+            if !was_replayed {
+                ctx.capture_prompt(&prompt_key, &prompt);
+            }
+
+            let tmp_dir = Path::new(".agent/tmp");
+            if !ctx.workspace.exists(tmp_dir) {
+                ctx.workspace.create_dir_all(tmp_dir)?;
+            }
+            ctx.workspace
+                .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)?;
+
+            return Ok(
+                EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
+                    self.phase_transition_ui(crate::reducer::event::PipelinePhase::CommitMessage),
+                ),
+            );
+        }
+
         let inputs = match self
             .state
             .prompt_inputs

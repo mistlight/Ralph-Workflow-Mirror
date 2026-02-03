@@ -7,7 +7,7 @@ use crate::phases::PhaseContext;
 use crate::prompts::content_reference::{PromptContentReference, MAX_INLINE_CONTENT_SIZE};
 use crate::prompts::{
     get_stored_or_generate_prompt, prompt_planning_xml_with_references,
-    prompt_planning_xsd_retry_with_context,
+    prompt_planning_xsd_retry_with_context_files,
 };
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{AgentEvent, PipelineEvent, PipelinePhase};
@@ -117,41 +117,83 @@ impl MainEffectHandler {
         iteration: u32,
         prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
+        let mut additional_events: Vec<PipelineEvent> = Vec::new();
         let tmp_dir = Path::new(".agent/tmp");
         if !ctx.workspace.exists(tmp_dir) {
             ctx.workspace.create_dir_all(tmp_dir)?;
         }
 
-        let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
-        let last_output = if is_xsd_retry {
-            match ctx.workspace.read(Path::new(xml_paths::PLAN_XML)) {
-                Ok(output) => output,
-                Err(err) => {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                        format!(
-                            "Failed to read last planning output at {}: {err}",
-                            xml_paths::PLAN_XML
-                        ),
-                    )));
-                }
-            }
-        } else {
-            String::new()
-        };
-
         let mut ignore_sources_owned: Vec<String> = Vec::new();
-        if is_xsd_retry {
-            ignore_sources_owned.push(last_output.clone());
-        }
 
         let (prompt, template_name, prompt_key, was_replayed) = match prompt_mode {
             PromptMode::XsdRetry => {
+                // Materialize last invalid output to a stable path so the retry prompt can
+                // reference it without inlining content into the prompt itself.
+                let last_output = match ctx.workspace.read(Path::new(xml_paths::PLAN_XML)) {
+                    Ok(output) => output,
+                    Err(err) => {
+                        return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
+                            format!(
+                                "Failed to read last planning output at {}: {err}",
+                                xml_paths::PLAN_XML
+                            ),
+                        )));
+                    }
+                };
+                let content_id_sha256 = sha256_hex_str(&last_output);
+                let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
+                let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
+                let last_output_bytes = last_output.len() as u64;
+
+                let already_materialized = self
+                    .state
+                    .prompt_inputs
+                    .xsd_retry_last_output
+                    .as_ref()
+                    .is_some_and(|m| {
+                        m.phase == PipelinePhase::Planning
+                            && m.scope_id == iteration
+                            && m.last_output.content_id_sha256 == content_id_sha256
+                            && m.last_output.consumer_signature_sha256 == consumer_signature_sha256
+                    });
+
+                if !already_materialized {
+                    let last_output_path = Path::new(".agent/tmp/last_output.xml");
+                    ctx.workspace.write_atomic(last_output_path, &last_output)?;
+
+                    let input = MaterializedPromptInput {
+                        kind: PromptInputKind::LastOutput,
+                        content_id_sha256: content_id_sha256.clone(),
+                        consumer_signature_sha256,
+                        original_bytes: last_output_bytes,
+                        final_bytes: last_output_bytes,
+                        model_budget_bytes: None,
+                        inline_budget_bytes: Some(inline_budget_bytes),
+                        representation: PromptInputRepresentation::FileReference {
+                            path: last_output_path.to_path_buf(),
+                        },
+                        reason: PromptMaterializationReason::PolicyForcedReference,
+                    };
+                    additional_events.push(PipelineEvent::xsd_retry_last_output_materialized(
+                        PipelinePhase::Planning,
+                        iteration,
+                        input,
+                    ));
+                    if last_output_bytes > inline_budget_bytes {
+                        additional_events.push(PipelineEvent::prompt_input_oversize_detected(
+                            PipelinePhase::Planning,
+                            PromptInputKind::LastOutput,
+                            content_id_sha256,
+                            last_output_bytes,
+                            inline_budget_bytes,
+                            "xsd-retry-context".to_string(),
+                        ));
+                    }
+                }
                 (
-                    prompt_planning_xsd_retry_with_context(
+                    prompt_planning_xsd_retry_with_context_files(
                         ctx.template_context,
-                        "", // kept for API compatibility; template reads context files instead
                         "Previous XML output failed XSD validation. Please provide valid XML conforming to the schema.",
-                        &last_output,
                         ctx.workspace,
                     ),
                     "planning_xsd_retry",
@@ -232,9 +274,11 @@ impl MainEffectHandler {
         ctx.workspace
             .write(Path::new(PLANNING_PROMPT_PATH), &prompt)?;
 
-        Ok(EffectResult::event(
-            PipelineEvent::planning_prompt_prepared(iteration),
-        ))
+        let mut result = EffectResult::event(PipelineEvent::planning_prompt_prepared(iteration));
+        for ev in additional_events {
+            result = result.with_additional_event(ev);
+        }
+        Ok(result)
     }
 
     pub(super) fn invoke_planning_agent(

@@ -167,8 +167,45 @@ fn truncate_lines_to_fit(lines: &[String], max_size: usize) -> Vec<String> {
         }
     }
 
-    if let Some(last) = result.last_mut() {
-        last.push_str(" [truncated...]");
+    let suffix = " [truncated...]";
+    let suffix_len = suffix.len();
+
+    fn truncate_to_utf8_boundary(s: &mut String, max_bytes: usize) {
+        if s.len() <= max_bytes {
+            return;
+        }
+        let mut cut = 0usize;
+        for (idx, _) in s.char_indices() {
+            if idx > max_bytes {
+                break;
+            }
+            cut = idx;
+        }
+        s.truncate(cut);
+    }
+
+    if !result.is_empty() {
+        // current_size tracks line lengths + '\n' for each included line.
+        // Appending the suffix increases size; ensure we stay within max_size
+        // by trimming from the last included line if needed.
+        let mut total_size = current_size;
+        while !result.is_empty() && total_size + suffix_len > max_size {
+            let last_len = result.last().expect("checked non-empty").len();
+            let excess = total_size + suffix_len - max_size;
+            if excess < last_len {
+                let new_len = last_len - excess;
+                let last = result.last_mut().expect("checked non-empty");
+                truncate_to_utf8_boundary(last, new_len);
+                break;
+            }
+            // Can't trim enough from last line; drop it and retry.
+            let dropped = result.pop().expect("checked non-empty");
+            total_size = total_size.saturating_sub(dropped.len() + 1);
+        }
+
+        if let Some(last) = result.last_mut() {
+            last.push_str(suffix);
+        }
     }
 
     result
@@ -211,6 +248,23 @@ mod diff_truncation_tests {
             "truncated diff must not exceed max_size (got {} > {})",
             truncated.len(),
             max_size
+        );
+    }
+
+    #[test]
+    fn truncate_lines_to_fit_reserves_space_for_truncation_suffix() {
+        // Regression test: truncate_lines_to_fit() used to append " [truncated...]" after
+        // selecting lines that fit max_size, which could push the final output over the
+        // intended max_size budget.
+        let max_size = 20usize;
+        let lines = vec!["x".repeat(max_size - 1)];
+
+        let truncated = truncate_lines_to_fit(&lines, max_size);
+
+        let total_size: usize = truncated.iter().map(|l| l.len() + 1).sum();
+        assert!(
+            total_size <= max_size,
+            "truncate_lines_to_fit must not exceed max_size after adding suffix (got {total_size} > {max_size})"
         );
     }
 }

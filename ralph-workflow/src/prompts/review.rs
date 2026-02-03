@@ -20,22 +20,32 @@ const FIX_RESULT_XSD_SCHEMA: &str = include_str!("../files/llm_output_extraction
 const XSD_RETRY_TMP_DIR: &str = ".agent/tmp";
 
 /// Write XSD retry context files for review to `.agent/tmp/` directory.
-fn write_review_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+fn write_review_xsd_retry_schema_files(workspace: &dyn Workspace) {
     let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
     if workspace.create_dir_all(tmp_dir).is_err() {
         return;
     }
     let _ = workspace.write(&tmp_dir.join("issues.xsd"), ISSUES_XSD_SCHEMA);
+}
+
+fn write_review_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+    write_review_xsd_retry_schema_files(workspace);
+    let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
     let _ = workspace.write(&tmp_dir.join("last_output.xml"), last_output);
 }
 
 /// Write XSD retry context files for fix result to `.agent/tmp/` directory.
-fn write_fix_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+fn write_fix_xsd_retry_schema_files(workspace: &dyn Workspace) {
     let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
     if workspace.create_dir_all(tmp_dir).is_err() {
         return;
     }
     let _ = workspace.write(&tmp_dir.join("fix_result.xsd"), FIX_RESULT_XSD_SCHEMA);
+}
+
+fn write_fix_xsd_retry_files(workspace: &dyn Workspace, last_output: &str) {
+    write_fix_xsd_retry_schema_files(workspace);
+    let tmp_dir = Path::new(XSD_RETRY_TMP_DIR);
     let _ = workspace.write(&tmp_dir.join("last_output.xml"), last_output);
 }
 
@@ -155,9 +165,22 @@ pub fn prompt_review_xsd_retry_with_context(
     last_output: &str,
     workspace: &dyn Workspace,
 ) -> String {
-    let partials = get_shared_partials();
     // Write context files to .agent/tmp/ for the agent to read
     write_review_xsd_retry_files(workspace, last_output);
+    prompt_review_xsd_retry_with_context_files(context, xsd_error, workspace)
+}
+
+/// Generate XSD validation retry prompt for review with error feedback.
+///
+/// This variant assumes `.agent/tmp/last_output.xml` is already materialized.
+pub fn prompt_review_xsd_retry_with_context_files(
+    context: &TemplateContext,
+    xsd_error: &str,
+    workspace: &dyn Workspace,
+) -> String {
+    let partials = get_shared_partials();
+    // Ensure schema file exists; last_output.xml is expected to already be present.
+    write_review_xsd_retry_schema_files(workspace);
 
     let template_content = context
         .registry()
@@ -283,9 +306,22 @@ pub fn prompt_fix_xsd_retry_with_context(
     last_output: &str,
     workspace: &dyn Workspace,
 ) -> String {
-    let partials = get_shared_partials();
     // Write context files to .agent/tmp/ for the agent to read
     write_fix_xsd_retry_files(workspace, last_output);
+    prompt_fix_xsd_retry_with_context_files(context, xsd_error, workspace)
+}
+
+/// Generate XSD validation retry prompt for fix with error feedback.
+///
+/// This variant assumes `.agent/tmp/last_output.xml` is already materialized.
+pub fn prompt_fix_xsd_retry_with_context_files(
+    context: &TemplateContext,
+    xsd_error: &str,
+    workspace: &dyn Workspace,
+) -> String {
+    let partials = get_shared_partials();
+    // Ensure schema file exists; last_output.xml is expected to already be present.
+    write_fix_xsd_retry_schema_files(workspace);
 
     let template_content = context
         .registry()

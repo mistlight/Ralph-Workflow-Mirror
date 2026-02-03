@@ -9,7 +9,10 @@ use crate::pipeline::{Stats, Timer};
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::handler::MainEffectHandler;
-use crate::reducer::state::{AgentChainState, CommitState, PipelineState};
+use crate::reducer::state::{
+    AgentChainState, CommitState, MaterializedCommitInputs, MaterializedPromptInput, PipelineState,
+    PromptInputKind, PromptInputRepresentation, PromptMaterializationReason, PromptMode,
+};
 use crate::workspace::{MemoryWorkspace, Workspace};
 use std::collections::HashMap;
 use std::path::Path;
@@ -463,6 +466,96 @@ fn test_materialize_commit_inputs_uses_min_model_budget_across_agent_chain() {
     assert!(
         materialized.final_bytes <= 100_000,
         "model-safe diff should not exceed the effective model budget"
+    );
+}
+
+#[test]
+fn test_prepare_commit_prompt_xsd_retry_uses_commit_xsd_retry_template() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(
+            ".agent/tmp/commit_diff.txt",
+            "diff --git a/a b/a\n+change\n",
+        )
+        .with_file(
+            ".agent/tmp/commit_diff.model_safe.txt",
+            "diff --git a/a b/a\n+change\n",
+        )
+        .with_file(
+            ".agent/tmp/commit_message.xml",
+            "<ralph-commit>bad</ralph-commit>",
+        )
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.commit = CommitState::Generating {
+        attempt: 1,
+        max_attempts: 2,
+    };
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+
+    // Seed materialized commit inputs so prompt prep can proceed.
+    handler.state.prompt_inputs.commit = Some(MaterializedCommitInputs {
+        attempt: 1,
+        diff: MaterializedPromptInput {
+            kind: PromptInputKind::Diff,
+            content_id_sha256: "hash".to_string(),
+            consumer_signature_sha256: handler.state.agent_chain.consumer_signature_sha256(),
+            original_bytes: 1,
+            final_bytes: 1,
+            model_budget_bytes: Some(200_000),
+            inline_budget_bytes: Some(crate::prompts::MAX_INLINE_CONTENT_SIZE as u64),
+            representation: PromptInputRepresentation::Inline,
+            reason: PromptMaterializationReason::WithinBudgets,
+        },
+    });
+
+    handler
+        .prepare_commit_prompt(&mut ctx, PromptMode::XsdRetry)
+        .expect("prepare_commit_prompt should succeed");
+
+    let prompt = workspace
+        .read(std::path::Path::new(".agent/tmp/commit_prompt.txt"))
+        .expect("commit prompt should be written");
+
+    assert!(
+        prompt.contains("XSD VALIDATION FAILED - FIX XML ONLY"),
+        "Expected commit XSD retry prompt template, got: {prompt}"
     );
 }
 

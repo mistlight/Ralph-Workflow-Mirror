@@ -176,6 +176,14 @@ pub enum PromptInputEvent {
         attempt: u32,
         diff: MaterializedPromptInput,
     },
+    XsdRetryLastOutputMaterialized {
+        /// Phase that produced the invalid output being retried.
+        phase: PipelinePhase,
+        /// Scope id within the phase (iteration/pass/attempt).
+        scope_id: u32,
+        /// Materialized representation of the last invalid output.
+        last_output: MaterializedPromptInput,
+    },
 }
 
 #[path = "event/development.rs"]

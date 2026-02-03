@@ -190,11 +190,12 @@ impl MainEffectHandler {
         use crate::prompts::{
             get_stored_or_generate_prompt, prompt_developer_iteration_continuation_xml,
             prompt_developer_iteration_xml_with_references,
-            prompt_developer_iteration_xsd_retry_with_context,
+            prompt_developer_iteration_xsd_retry_with_context_files,
         };
 
         let continuation_state = &self.state.continuation;
         let mut ignore_sources_owned: Vec<String> = Vec::new();
+        let mut additional_events: Vec<PipelineEvent> = Vec::new();
 
         let (dev_prompt, template_name, prompt_key, was_replayed) = match prompt_mode {
             PromptMode::Continuation => {
@@ -231,14 +232,64 @@ impl MainEffectHandler {
                         )));
                     }
                 };
-                ignore_sources_owned.push(last_output.clone());
+                let content_id_sha256 = sha256_hex_str(&last_output);
+                let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
+                let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
+                let last_output_bytes = last_output.len() as u64;
+
+                let already_materialized = self
+                    .state
+                    .prompt_inputs
+                    .xsd_retry_last_output
+                    .as_ref()
+                    .is_some_and(|m| {
+                        m.phase == crate::reducer::event::PipelinePhase::Development
+                            && m.scope_id == iteration
+                            && m.last_output.content_id_sha256 == content_id_sha256
+                            && m.last_output.consumer_signature_sha256 == consumer_signature_sha256
+                    });
+
+                if !already_materialized {
+                    let tmp_dir = Path::new(".agent/tmp");
+                    if !ctx.workspace.exists(tmp_dir) {
+                        ctx.workspace.create_dir_all(tmp_dir)?;
+                    }
+                    let last_output_path = Path::new(".agent/tmp/last_output.xml");
+                    ctx.workspace.write_atomic(last_output_path, &last_output)?;
+
+                    let input = MaterializedPromptInput {
+                        kind: PromptInputKind::LastOutput,
+                        content_id_sha256: content_id_sha256.clone(),
+                        consumer_signature_sha256,
+                        original_bytes: last_output_bytes,
+                        final_bytes: last_output_bytes,
+                        model_budget_bytes: None,
+                        inline_budget_bytes: Some(inline_budget_bytes),
+                        representation: PromptInputRepresentation::FileReference {
+                            path: last_output_path.to_path_buf(),
+                        },
+                        reason: PromptMaterializationReason::PolicyForcedReference,
+                    };
+                    additional_events.push(PipelineEvent::xsd_retry_last_output_materialized(
+                        crate::reducer::event::PipelinePhase::Development,
+                        iteration,
+                        input,
+                    ));
+                    if last_output_bytes > inline_budget_bytes {
+                        additional_events.push(PipelineEvent::prompt_input_oversize_detected(
+                            crate::reducer::event::PipelinePhase::Development,
+                            PromptInputKind::LastOutput,
+                            content_id_sha256,
+                            last_output_bytes,
+                            inline_budget_bytes,
+                            "xsd-retry-context".to_string(),
+                        ));
+                    }
+                }
                 (
-                    prompt_developer_iteration_xsd_retry_with_context(
+                    prompt_developer_iteration_xsd_retry_with_context_files(
                         ctx.template_context,
-                        "", // kept for API compatibility; template reads context files instead
-                        "",
                         "XML output failed validation. Provide valid XML output.",
-                        &last_output,
                         ctx.workspace,
                     ),
                     "developer_iteration_xsd_retry",
@@ -363,9 +414,11 @@ impl MainEffectHandler {
         ctx.workspace
             .write(Path::new(".agent/tmp/development_prompt.txt"), &dev_prompt)?;
 
-        Ok(EffectResult::event(
-            PipelineEvent::development_prompt_prepared(iteration),
-        ))
+        let mut result = EffectResult::event(PipelineEvent::development_prompt_prepared(iteration));
+        for ev in additional_events {
+            result = result.with_additional_event(ev);
+        }
+        Ok(result)
     }
 
     pub(super) fn invoke_development_agent(

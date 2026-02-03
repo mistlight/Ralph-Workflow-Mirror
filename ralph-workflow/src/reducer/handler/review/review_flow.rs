@@ -185,7 +185,7 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use crate::prompts::{
             get_stored_or_generate_prompt, prompt_review_xml_with_references,
-            prompt_review_xsd_retry_with_context,
+            prompt_review_xsd_retry_with_context_files,
         };
         use std::path::Path;
 
@@ -193,6 +193,7 @@ impl MainEffectHandler {
         if !ctx.workspace.exists(tmp_dir) {
             ctx.workspace.create_dir_all(tmp_dir)?;
         }
+        let mut additional_events: Vec<PipelineEvent> = Vec::new();
 
         let materialized_inputs = self
             .state
@@ -248,8 +249,8 @@ impl MainEffectHandler {
         };
         let continuation_state = &self.state.continuation;
         let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
-        let last_output = if is_xsd_retry {
-            match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
+        if is_xsd_retry {
+            let last_output = match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
                 Ok(output) => output,
                 Err(err) => {
                     return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
@@ -257,12 +258,58 @@ impl MainEffectHandler {
                         xml_paths::ISSUES_XML
                     ))));
                 }
+            };
+
+            let content_id_sha256 = sha256_hex_str(&last_output);
+            let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
+            let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
+            let last_output_bytes = last_output.len() as u64;
+
+            let already_materialized = self
+                .state
+                .prompt_inputs
+                .xsd_retry_last_output
+                .as_ref()
+                .is_some_and(|m| {
+                    m.phase == crate::reducer::event::PipelinePhase::Review
+                        && m.scope_id == pass
+                        && m.last_output.content_id_sha256 == content_id_sha256
+                        && m.last_output.consumer_signature_sha256 == consumer_signature_sha256
+                });
+
+            if !already_materialized {
+                let last_output_path = Path::new(".agent/tmp/last_output.xml");
+                ctx.workspace.write_atomic(last_output_path, &last_output)?;
+
+                let input = MaterializedPromptInput {
+                    kind: PromptInputKind::LastOutput,
+                    content_id_sha256: content_id_sha256.clone(),
+                    consumer_signature_sha256,
+                    original_bytes: last_output_bytes,
+                    final_bytes: last_output_bytes,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: Some(inline_budget_bytes),
+                    representation: PromptInputRepresentation::FileReference {
+                        path: last_output_path.to_path_buf(),
+                    },
+                    reason: PromptMaterializationReason::PolicyForcedReference,
+                };
+                additional_events.push(PipelineEvent::xsd_retry_last_output_materialized(
+                    crate::reducer::event::PipelinePhase::Review,
+                    pass,
+                    input,
+                ));
+                if last_output_bytes > inline_budget_bytes {
+                    additional_events.push(PipelineEvent::prompt_input_oversize_detected(
+                        crate::reducer::event::PipelinePhase::Review,
+                        PromptInputKind::LastOutput,
+                        content_id_sha256,
+                        last_output_bytes,
+                        inline_budget_bytes,
+                        "xsd-retry-context".to_string(),
+                    ));
+                }
             }
-        } else {
-            String::new()
-        };
-        if is_xsd_retry {
-            ignore_sources_owned.push(last_output.clone());
         }
         let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
         let (prompt_key, review_prompt_xml, was_replayed, template_name) = match prompt_mode {
@@ -271,19 +318,13 @@ impl MainEffectHandler {
                     "review_{pass}_xsd_retry_{}",
                     continuation_state.invalid_output_attempts
                 );
-                let (prompt, was_replayed) =
-                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        prompt_review_xsd_retry_with_context(
-                            ctx.template_context,
-                            "",
-                            "",
-                            "",
-                            "XML output failed validation. Provide valid XML output.",
-                            &last_output,
-                            ctx.workspace,
-                        )
-                    });
-                (prompt_key, prompt, was_replayed, "review_xsd_retry")
+                let prompt = prompt_review_xsd_retry_with_context_files(
+                    ctx.template_context,
+                    "XML output failed validation. Provide valid XML output.",
+                    ctx.workspace,
+                );
+                // XSD retry prompts must not replay potentially stale prompt history content.
+                (prompt_key, prompt, false, "review_xsd_retry")
             }
             PromptMode::Normal => {
                 let inputs =
@@ -373,9 +414,11 @@ impl MainEffectHandler {
             &review_prompt_xml,
         )?;
 
-        Ok(EffectResult::event(PipelineEvent::review_prompt_prepared(
-            pass,
-        )))
+        let mut result = EffectResult::event(PipelineEvent::review_prompt_prepared(pass));
+        for ev in additional_events {
+            result = result.with_additional_event(ev);
+        }
+        Ok(result)
     }
 
     pub(super) fn invoke_review_agent(

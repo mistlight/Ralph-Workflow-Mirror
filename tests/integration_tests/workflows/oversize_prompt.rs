@@ -694,6 +694,7 @@ fn prompt_inputs_state_stores_all_phases() {
                 attempt: 1,
                 diff: make_input(PromptInputKind::Diff),
             }),
+            xsd_retry_last_output: None,
         };
 
         assert!(state.planning.is_some());

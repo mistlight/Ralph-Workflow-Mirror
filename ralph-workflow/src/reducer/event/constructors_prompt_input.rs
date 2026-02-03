@@ -47,4 +47,16 @@ impl PipelineEvent {
     pub fn commit_inputs_materialized(attempt: u32, diff: MaterializedPromptInput) -> Self {
         PipelineEvent::PromptInput(PromptInputEvent::CommitInputsMaterialized { attempt, diff })
     }
+
+    pub fn xsd_retry_last_output_materialized(
+        phase: PipelinePhase,
+        scope_id: u32,
+        last_output: MaterializedPromptInput,
+    ) -> Self {
+        PipelineEvent::PromptInput(PromptInputEvent::XsdRetryLastOutputMaterialized {
+            phase,
+            scope_id,
+            last_output,
+        })
+    }
 }

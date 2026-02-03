@@ -1,7 +1,7 @@
 use crate::reducer::event::PromptInputEvent;
 use crate::reducer::state::{
     MaterializedCommitInputs, MaterializedDevelopmentInputs, MaterializedPlanningInputs,
-    MaterializedReviewInputs, PipelineState,
+    MaterializedReviewInputs, MaterializedXsdRetryLastOutput, PipelineState,
 };
 
 pub fn reduce_prompt_input_event(state: PipelineState, event: PromptInputEvent) -> PipelineState {
@@ -39,6 +39,21 @@ pub fn reduce_prompt_input_event(state: PipelineState, event: PromptInputEvent) 
         PromptInputEvent::CommitInputsMaterialized { attempt, diff } => PipelineState {
             prompt_inputs: crate::reducer::state::PromptInputsState {
                 commit: Some(MaterializedCommitInputs { attempt, diff }),
+                ..state.prompt_inputs
+            },
+            ..state
+        },
+        PromptInputEvent::XsdRetryLastOutputMaterialized {
+            phase,
+            scope_id,
+            last_output,
+        } => PipelineState {
+            prompt_inputs: crate::reducer::state::PromptInputsState {
+                xsd_retry_last_output: Some(MaterializedXsdRetryLastOutput {
+                    phase,
+                    scope_id,
+                    last_output,
+                }),
                 ..state.prompt_inputs
             },
             ..state

@@ -46,6 +46,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_prompt_prepared: true,
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                last_xsd_error: None,
                 ..state.continuation
             },
             ..state
@@ -54,6 +55,7 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
             commit_agent_invoked: true,
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_pending: false,
+                last_xsd_error: None,
                 ..state.continuation
             },
             ..state
@@ -200,8 +202,8 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
                 ..state
             }
         }
-        CommitEvent::MessageValidationFailed { attempt, .. } => {
-            reduce_commit_validation_failed(state, attempt)
+        CommitEvent::MessageValidationFailed { attempt, reason } => {
+            reduce_commit_validation_failed(state, attempt, reason)
         }
     }
 }
@@ -263,7 +265,11 @@ fn compute_post_commit_transition(
 ///
 /// This now integrates with the XSD retry tracking in ContinuationState
 /// for uniformity with other phases.
-fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> PipelineState {
+fn reduce_commit_validation_failed(
+    state: PipelineState,
+    attempt: u32,
+    reason: String,
+) -> PipelineState {
     let new_xsd_count = state.continuation.xsd_retry_count + 1;
     let max_attempts = crate::reducer::state::MAX_VALIDATION_RETRY_ATTEMPTS;
 
@@ -296,6 +302,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
                 continuation: crate::reducer::state::ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
+                    last_xsd_error: None,
                     ..state.continuation
                 },
                 ..state
@@ -314,6 +321,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
                 continuation: crate::reducer::state::ContinuationState {
                     xsd_retry_count: 0,
                     xsd_retry_pending: false,
+                    last_xsd_error: None,
                     ..state.continuation
                 },
                 ..state
@@ -335,6 +343,7 @@ fn reduce_commit_validation_failed(state: PipelineState, attempt: u32) -> Pipeli
             continuation: crate::reducer::state::ContinuationState {
                 xsd_retry_count: new_xsd_count,
                 xsd_retry_pending: true,
+                last_xsd_error: Some(reason),
                 ..state.continuation
             },
             ..state

@@ -54,6 +54,11 @@ pub struct PromptInputsState {
     pub review: Option<MaterializedReviewInputs>,
     #[serde(default)]
     pub commit: Option<MaterializedCommitInputs>,
+    /// Materialized last invalid XML output for XSD retry prompts.
+    ///
+    /// This is used to dedupe retries and keep oversize handling reducer-visible.
+    #[serde(default)]
+    pub xsd_retry_last_output: Option<MaterializedXsdRetryLastOutput>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -80,6 +85,13 @@ pub struct MaterializedReviewInputs {
 pub struct MaterializedCommitInputs {
     pub attempt: u32,
     pub diff: MaterializedPromptInput,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct MaterializedXsdRetryLastOutput {
+    pub phase: PipelinePhase,
+    pub scope_id: u32,
+    pub last_output: MaterializedPromptInput,
 }
 
 /// Immutable pipeline state - the single source of truth for pipeline progress.

@@ -302,5 +302,43 @@ pub fn prompt_generate_commit_message_with_diff_with_context(
     })
 }
 
+/// Generate XSD validation retry prompt for commit message XML.
+///
+/// This prompt is used when the commit agent wrote invalid XML to
+/// `.agent/tmp/commit_message.xml` and we need an in-session retry to fix the XML
+/// structure only.
+pub fn prompt_commit_xsd_retry_with_context(
+    context: &TemplateContext,
+    xsd_error: &str,
+    workspace: &dyn Workspace,
+) -> String {
+    let partials = get_shared_partials();
+    let template_content = context
+        .registry()
+        .get_template("commit_xsd_retry")
+        .unwrap_or_else(|_| include_str!("templates/commit_xsd_retry.txt").to_string());
+    let variables = HashMap::from([
+        ("XSD_ERROR", xsd_error.to_string()),
+        (
+            "COMMIT_MESSAGE_XML_PATH",
+            workspace.absolute_str(".agent/tmp/commit_message.xml"),
+        ),
+        (
+            "COMMIT_MESSAGE_XSD_PATH",
+            workspace.absolute_str(".agent/tmp/commit_message.xsd"),
+        ),
+    ]);
+
+    Template::new(&template_content)
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
+            format!(
+                "XSD VALIDATION FAILED - FIX XML ONLY\n\nError: {xsd_error}\n\n\
+                 Read .agent/tmp/commit_message.xsd for the schema and .agent/tmp/commit_message.xml for your previous output.\n\
+                 Rewrite .agent/tmp/commit_message.xml with valid XML.\n"
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests;

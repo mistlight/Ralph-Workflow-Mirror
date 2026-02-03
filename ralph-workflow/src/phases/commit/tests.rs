@@ -70,10 +70,19 @@ mod tests {
             "line4".to_string(),
         ];
 
-        let truncated = truncate_lines_to_fit(&lines, 18);
+        let max_size = 18;
+        let truncated = truncate_lines_to_fit(&lines, max_size);
 
-        assert_eq!(truncated.len(), 3);
-        assert!(truncated[2].ends_with("[truncated...]"));
+        assert!(!truncated.is_empty());
+        assert!(
+            truncated.last().is_some_and(|l| l.ends_with("[truncated...]")),
+            "expected last line to be marked as truncated"
+        );
+        let total_size: usize = truncated.iter().map(|l| l.len() + 1).sum();
+        assert!(
+            total_size <= max_size,
+            "truncate_lines_to_fit must respect max size after suffix"
+        );
     }
 
     #[test]

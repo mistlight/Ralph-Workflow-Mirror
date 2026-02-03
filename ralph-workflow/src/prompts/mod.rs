@@ -65,6 +65,7 @@ pub use prompt_dispatch::prompt_for_agent;
 pub use resume_note::{generate_resume_note, BriefDescription};
 
 // Re-export public items for API convenience
+pub use commit::prompt_commit_xsd_retry_with_context;
 #[cfg(any(test, feature = "test-utils"))]
 pub use commit::prompt_fix_with_context;
 pub use commit::prompt_generate_commit_message_with_diff_with_context;
@@ -72,8 +73,10 @@ pub use commit::prompt_generate_commit_message_with_diff_with_context;
 pub use developer::{
     prompt_developer_iteration_continuation_xml, prompt_developer_iteration_xml_with_context,
     prompt_developer_iteration_xml_with_references,
-    prompt_developer_iteration_xsd_retry_with_context, prompt_planning_xml_with_context,
+    prompt_developer_iteration_xsd_retry_with_context,
+    prompt_developer_iteration_xsd_retry_with_context_files, prompt_planning_xml_with_context,
     prompt_planning_xml_with_references, prompt_planning_xsd_retry_with_context,
+    prompt_planning_xsd_retry_with_context_files,
 };
 #[cfg(any(test, feature = "test-utils"))]
 pub use developer::{prompt_developer_iteration_with_context, prompt_plan_with_context};
@@ -82,8 +85,10 @@ pub use rebase::{
     FileConflict,
 };
 pub use review::{
-    prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context, prompt_review_xml_with_context,
+    prompt_fix_xml_with_context, prompt_fix_xsd_retry_with_context,
+    prompt_fix_xsd_retry_with_context_files, prompt_review_xml_with_context,
     prompt_review_xml_with_references, prompt_review_xsd_retry_with_context,
+    prompt_review_xsd_retry_with_context_files,
 };
 
 #[cfg(any(test, feature = "test-utils"))]
