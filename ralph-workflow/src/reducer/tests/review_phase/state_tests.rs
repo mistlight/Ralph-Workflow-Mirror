@@ -471,6 +471,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
         effect
     );
 
+    let sig = state.agent_chain.consumer_signature_sha256();
     state = reduce(
         state,
         PipelineEvent::review_inputs_materialized(
@@ -478,7 +479,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
             crate::reducer::state::MaterializedPromptInput {
                 kind: crate::reducer::state::PromptInputKind::Plan,
                 content_id_sha256: "id".to_string(),
-                consumer_signature_sha256: "sig".to_string(),
+                consumer_signature_sha256: sig.clone(),
                 original_bytes: 1,
                 final_bytes: 1,
                 model_budget_bytes: None,
@@ -489,7 +490,7 @@ fn test_event_loop_state_consistency_for_review_agent() {
             crate::reducer::state::MaterializedPromptInput {
                 kind: crate::reducer::state::PromptInputKind::Diff,
                 content_id_sha256: "id".to_string(),
-                consumer_signature_sha256: "sig".to_string(),
+                consumer_signature_sha256: sig,
                 original_bytes: 1,
                 final_bytes: 1,
                 model_budget_bytes: None,
@@ -707,6 +708,7 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
 
     // Simulate context + prompt prepared, then cleanup before invoking agent
     state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
     state = reduce(
         state,
         PipelineEvent::review_inputs_materialized(
@@ -714,7 +716,7 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
             crate::reducer::state::MaterializedPromptInput {
                 kind: crate::reducer::state::PromptInputKind::Plan,
                 content_id_sha256: "id".to_string(),
-                consumer_signature_sha256: "sig".to_string(),
+                consumer_signature_sha256: sig.clone(),
                 original_bytes: 1,
                 final_bytes: 1,
                 model_budget_bytes: None,
@@ -725,7 +727,7 @@ fn test_complete_flow_dev_commit_review_uses_correct_reviewer_agent() {
             crate::reducer::state::MaterializedPromptInput {
                 kind: crate::reducer::state::PromptInputKind::Diff,
                 content_id_sha256: "id".to_string(),
-                consumer_signature_sha256: "sig".to_string(),
+                consumer_signature_sha256: sig,
                 original_bytes: 1,
                 final_bytes: 1,
                 model_budget_bytes: None,

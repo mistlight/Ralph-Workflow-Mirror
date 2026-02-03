@@ -19,6 +19,8 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
+            let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
+
             // Clean up BEFORE planning to remove old PLAN.md from previous iteration
             if !state.context_cleaned {
                 return Effect::CleanupContext;
@@ -28,7 +30,10 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 .prompt_inputs
                 .planning
                 .as_ref()
-                .is_some_and(|p| p.iteration == state.iteration);
+                .is_some_and(|p| {
+                    p.iteration == state.iteration
+                        && p.prompt.consumer_signature_sha256 == consumer_signature_sha256
+                });
             if !planning_inputs_materialized_for_iteration {
                 return Effect::MaterializePlanningInputs {
                     iteration: state.iteration,
@@ -123,6 +128,8 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
+            let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
+
             if state.iteration < state.total_iterations {
                 if state.development_context_prepared_iteration != Some(state.iteration) {
                     return Effect::PrepareDevelopmentContext {
@@ -134,7 +141,11 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                     .prompt_inputs
                     .development
                     .as_ref()
-                    .is_some_and(|p| p.iteration == state.iteration);
+                    .is_some_and(|p| {
+                        p.iteration == state.iteration
+                            && p.prompt.consumer_signature_sha256 == consumer_signature_sha256
+                            && p.plan.consumer_signature_sha256 == consumer_signature_sha256
+                    });
                 if !development_inputs_materialized_for_iteration {
                     return Effect::MaterializeDevelopmentInputs {
                         iteration: state.iteration,
@@ -262,6 +273,8 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
+            let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
+
             // Otherwise, run next review pass or complete phase
             if state.reviewer_pass < state.total_reviewer_passes {
                 if state.review_context_prepared_pass != Some(state.reviewer_pass) {
@@ -274,7 +287,11 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                     .prompt_inputs
                     .review
                     .as_ref()
-                    .is_some_and(|p| p.pass == state.reviewer_pass);
+                    .is_some_and(|p| {
+                        p.pass == state.reviewer_pass
+                            && p.plan.consumer_signature_sha256 == consumer_signature_sha256
+                            && p.diff.consumer_signature_sha256 == consumer_signature_sha256
+                    });
                 if !review_inputs_materialized_for_pass {
                     return Effect::MaterializeReviewInputs {
                         pass: state.reviewer_pass,
@@ -380,11 +397,15 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                         CommitState::Generating { attempt, .. } => attempt,
                         _ => 1,
                     };
+                    let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
                     let commit_inputs_materialized_for_attempt = state
                         .prompt_inputs
                         .commit
                         .as_ref()
-                        .is_some_and(|c| c.attempt == current_attempt);
+                        .is_some_and(|c| {
+                            c.attempt == current_attempt
+                                && c.diff.consumer_signature_sha256 == consumer_signature_sha256
+                        });
                     if !commit_inputs_materialized_for_attempt {
                         return Effect::MaterializeCommitInputs {
                             attempt: current_attempt,

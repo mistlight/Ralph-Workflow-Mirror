@@ -34,6 +34,64 @@ fn test_determine_effect_planning_with_agents() {
 }
 
 #[test]
+fn test_determine_effect_planning_rematerializes_when_consumer_signature_changes() {
+    let mut state = PipelineState {
+        phase: PipelinePhase::Planning,
+        context_cleaned: true,
+        iteration: 2,
+        agent_chain: PipelineState::initial(5, 2).agent_chain.with_agents(
+            vec!["claude".to_string(), "fallback".to_string()],
+            vec![vec!["m1".to_string()], vec!["m2".to_string()]],
+            AgentRole::Developer,
+        ),
+        prompt_inputs: crate::reducer::state::PromptInputsState {
+            planning: Some(crate::reducer::state::MaterializedPlanningInputs {
+                iteration: 2,
+                prompt: crate::reducer::state::MaterializedPromptInput {
+                    kind: crate::reducer::state::PromptInputKind::Prompt,
+                    content_id_sha256: "id".to_string(),
+                    consumer_signature_sha256: "stale_sig".to_string(),
+                    original_bytes: 1,
+                    final_bytes: 1,
+                    model_budget_bytes: None,
+                    inline_budget_bytes: Some(100_000),
+                    representation: crate::reducer::state::PromptInputRepresentation::Inline,
+                    reason: crate::reducer::state::PromptMaterializationReason::WithinBudgets,
+                },
+            }),
+            ..Default::default()
+        },
+        ..create_test_state()
+    };
+
+    let expected_sig = state.agent_chain.consumer_signature_sha256();
+    assert_ne!(expected_sig, "stale_sig");
+
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(effect, Effect::MaterializePlanningInputs { iteration: 2 }),
+        "Expected re-materialization when consumer signature changes, got {:?}",
+        effect
+    );
+
+    // When signatures match, only changing current agent index should not trigger rematerialization.
+    state
+        .prompt_inputs
+        .planning
+        .as_mut()
+        .unwrap()
+        .prompt
+        .consumer_signature_sha256 = expected_sig;
+    state.agent_chain.current_agent_index = 1;
+    let effect = determine_next_effect(&state);
+    assert!(
+        !matches!(effect, Effect::MaterializePlanningInputs { .. }),
+        "Expected no re-materialization when only current agent index changes, got {:?}",
+        effect
+    );
+}
+
+#[test]
 fn test_planning_phase_emits_single_task_effect() {
     let state = PipelineState {
         phase: PipelinePhase::Planning,

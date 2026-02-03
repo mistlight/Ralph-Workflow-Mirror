@@ -49,6 +49,7 @@ fn test_complete_pipeline_flow() {
                 );
             }
             Effect::MaterializePlanningInputs { iteration } => {
+                let sig = state.agent_chain.consumer_signature_sha256();
                 state = reduce(
                     state,
                     PipelineEvent::planning_inputs_materialized(
@@ -56,7 +57,7 @@ fn test_complete_pipeline_flow() {
                         crate::reducer::state::MaterializedPromptInput {
                             kind: crate::reducer::state::PromptInputKind::Prompt,
                             content_id_sha256: "id".to_string(),
-                            consumer_signature_sha256: "sig".to_string(),
+                            consumer_signature_sha256: sig,
                             original_bytes: 1,
                             final_bytes: 1,
                             model_budget_bytes: None,
@@ -110,10 +111,11 @@ fn test_complete_pipeline_flow() {
                 );
             }
             Effect::MaterializeDevelopmentInputs { iteration } => {
+                let sig = state.agent_chain.consumer_signature_sha256();
                 let prompt = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Prompt,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: sig.clone(),
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -124,7 +126,7 @@ fn test_complete_pipeline_flow() {
                 let plan = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Plan,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: sig,
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -192,10 +194,11 @@ fn test_complete_pipeline_flow() {
                 state = reduce(state, PipelineEvent::review_completed(pass, true));
             }
             Effect::MaterializeReviewInputs { pass } => {
+                let sig = state.agent_chain.consumer_signature_sha256();
                 let plan = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Plan,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: sig.clone(),
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -206,7 +209,7 @@ fn test_complete_pipeline_flow() {
                 let diff = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Diff,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: sig,
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -236,6 +239,7 @@ fn test_complete_pipeline_flow() {
                 state = reduce(state, PipelineEvent::fix_outcome_applied(pass));
             }
             Effect::MaterializeCommitInputs { attempt } => {
+                let sig = state.agent_chain.consumer_signature_sha256();
                 state = reduce(
                     state,
                     PipelineEvent::commit_inputs_materialized(
@@ -243,7 +247,7 @@ fn test_complete_pipeline_flow() {
                         crate::reducer::state::MaterializedPromptInput {
                             kind: crate::reducer::state::PromptInputKind::Diff,
                             content_id_sha256: "id".to_string(),
-                            consumer_signature_sha256: "sig".to_string(),
+                            consumer_signature_sha256: sig,
                             original_bytes: 1,
                             final_bytes: 1,
                             model_budget_bytes: None,
@@ -375,6 +379,7 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
                 state = reduce(state, PipelineEvent::review_pass_completed_clean(pass));
             }
             Effect::MaterializeCommitInputs { attempt } => {
+                let sig = state.agent_chain.consumer_signature_sha256();
                 state = reduce(
                     state,
                     PipelineEvent::commit_inputs_materialized(
@@ -382,7 +387,7 @@ fn test_pipeline_skips_planning_dev_when_zero_iterations() {
                         crate::reducer::state::MaterializedPromptInput {
                             kind: crate::reducer::state::PromptInputKind::Diff,
                             content_id_sha256: "id".to_string(),
-                            consumer_signature_sha256: "sig".to_string(),
+                            consumer_signature_sha256: sig,
                             original_bytes: 1,
                             final_bytes: 1,
                             model_budget_bytes: None,

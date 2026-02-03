@@ -7,11 +7,12 @@ use super::*;
 
 fn dummy_input(
     kind: crate::reducer::state::PromptInputKind,
+    consumer_signature_sha256: String,
 ) -> crate::reducer::state::MaterializedPromptInput {
     crate::reducer::state::MaterializedPromptInput {
         kind,
         content_id_sha256: "id".to_string(),
-        consumer_signature_sha256: "sig".to_string(),
+        consumer_signature_sha256,
         original_bytes: 1,
         final_bytes: 1,
         model_budget_bytes: None,
@@ -93,12 +94,13 @@ fn test_review_phase_emits_cleanup_review_issues_xml_after_prompt_prepared() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
     let state = reduce(
         state,
         PipelineEvent::review_inputs_materialized(
             0,
-            dummy_input(crate::reducer::state::PromptInputKind::Plan),
-            dummy_input(crate::reducer::state::PromptInputKind::Diff),
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
         ),
     );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
@@ -124,12 +126,13 @@ fn test_review_phase_emits_extract_review_issues_xml_after_agent_invoked() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
     let state = reduce(
         state,
         PipelineEvent::review_inputs_materialized(
             0,
-            dummy_input(crate::reducer::state::PromptInputKind::Plan),
-            dummy_input(crate::reducer::state::PromptInputKind::Diff),
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
         ),
     );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
@@ -157,12 +160,13 @@ fn test_review_phase_emits_validate_review_issues_xml_after_extracted() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
     let state = reduce(
         state,
         PipelineEvent::review_inputs_materialized(
             0,
-            dummy_input(crate::reducer::state::PromptInputKind::Plan),
-            dummy_input(crate::reducer::state::PromptInputKind::Diff),
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
         ),
     );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
@@ -194,12 +198,13 @@ fn test_review_phase_emits_write_issues_markdown_after_validated() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
     let state = reduce(
         state,
         PipelineEvent::review_inputs_materialized(
             0,
-            dummy_input(crate::reducer::state::PromptInputKind::Plan),
-            dummy_input(crate::reducer::state::PromptInputKind::Diff),
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
         ),
     );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
@@ -238,12 +243,13 @@ fn test_review_phase_emits_extract_issue_snippets_after_markdown_written() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
     let state = reduce(
         state,
         PipelineEvent::review_inputs_materialized(
             0,
-            dummy_input(crate::reducer::state::PromptInputKind::Plan),
-            dummy_input(crate::reducer::state::PromptInputKind::Diff),
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
         ),
     );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
@@ -286,12 +292,13 @@ fn test_review_phase_emits_archive_issues_xml_after_snippets_extracted() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
     let state = reduce(
         state,
         PipelineEvent::review_inputs_materialized(
             0,
-            dummy_input(crate::reducer::state::PromptInputKind::Plan),
-            dummy_input(crate::reducer::state::PromptInputKind::Diff),
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
         ),
     );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));
@@ -332,12 +339,13 @@ fn test_review_phase_emits_apply_review_outcome_after_issues_xml_archived() {
         ),
     );
     let state = reduce(state, PipelineEvent::review_context_prepared(0));
+    let sig = state.agent_chain.consumer_signature_sha256();
     let state = reduce(
         state,
         PipelineEvent::review_inputs_materialized(
             0,
-            dummy_input(crate::reducer::state::PromptInputKind::Plan),
-            dummy_input(crate::reducer::state::PromptInputKind::Diff),
+            dummy_input(crate::reducer::state::PromptInputKind::Plan, sig.clone()),
+            dummy_input(crate::reducer::state::PromptInputKind::Diff, sig),
         ),
     );
     let state = reduce(state, PipelineEvent::review_prompt_prepared(0));

@@ -75,7 +75,7 @@ impl MockEffectHandler {
                     crate::reducer::state::MaterializedPromptInput {
                         kind: crate::reducer::state::PromptInputKind::Prompt,
                         content_id_sha256: "id".to_string(),
-                        consumer_signature_sha256: "sig".to_string(),
+                        consumer_signature_sha256: self.state.agent_chain.consumer_signature_sha256(),
                         original_bytes: 1,
                         final_bytes: 1,
                         model_budget_bytes: None,
@@ -170,7 +170,7 @@ impl MockEffectHandler {
                 let prompt = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Prompt,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: self.state.agent_chain.consumer_signature_sha256(),
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -181,7 +181,7 @@ impl MockEffectHandler {
                 let plan = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Plan,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: self.state.agent_chain.consumer_signature_sha256(),
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -269,7 +269,7 @@ src/lib.rs</ralph-files-changed>
                 let plan = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Plan,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: self.state.agent_chain.consumer_signature_sha256(),
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -280,7 +280,7 @@ src/lib.rs</ralph-files-changed>
                 let diff = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Diff,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: self.state.agent_chain.consumer_signature_sha256(),
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -434,7 +434,7 @@ src/lib.rs</ralph-files-changed>
                     crate::reducer::state::MaterializedPromptInput {
                         kind: crate::reducer::state::PromptInputKind::Diff,
                         content_id_sha256: "id".to_string(),
-                        consumer_signature_sha256: "sig".to_string(),
+                        consumer_signature_sha256: self.state.agent_chain.consumer_signature_sha256(),
                         original_bytes: 1,
                         final_bytes: 1,
                         model_budget_bytes: None,

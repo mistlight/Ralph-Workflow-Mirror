@@ -258,10 +258,11 @@ fn test_continuation_does_not_cause_infinite_loop_in_event_loop_simulation() {
                 PipelineEvent::development_context_prepared(iteration),
             ),
             Effect::MaterializeDevelopmentInputs { iteration } => {
+                let sig = state.agent_chain.consumer_signature_sha256();
                 let prompt = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Prompt,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: sig.clone(),
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -272,7 +273,7 @@ fn test_continuation_does_not_cause_infinite_loop_in_event_loop_simulation() {
                 let plan = crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Plan,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: sig,
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,

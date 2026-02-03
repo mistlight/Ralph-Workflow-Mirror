@@ -123,6 +123,7 @@ fn test_review_triggers_fix_when_issues_found() {
     state = reduce(state, PipelineEvent::commit_diff_prepared(false));
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::MaterializeCommitInputs { .. }));
+    let sig = state.agent_chain.consumer_signature_sha256();
     state = reduce(
         state,
         PipelineEvent::commit_inputs_materialized(
@@ -130,7 +131,7 @@ fn test_review_triggers_fix_when_issues_found() {
             crate::reducer::state::MaterializedPromptInput {
                 kind: crate::reducer::state::PromptInputKind::Diff,
                 content_id_sha256: "id".to_string(),
-                consumer_signature_sha256: "sig".to_string(),
+                consumer_signature_sha256: sig,
                 original_bytes: 1,
                 final_bytes: 1,
                 model_budget_bytes: None,

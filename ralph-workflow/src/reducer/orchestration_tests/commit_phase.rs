@@ -82,7 +82,7 @@ fn test_commit_skips_when_diff_empty() {
 #[test]
 fn test_commit_does_not_apply_outcome_without_xml_extracted() {
     use crate::reducer::state::{AgentChainState, CommitValidatedOutcome};
-    let state = PipelineState {
+    let mut state = PipelineState {
         phase: PipelinePhase::CommitMessage,
         commit: crate::reducer::state::CommitState::Generating {
             attempt: 1,
@@ -105,7 +105,7 @@ fn test_commit_does_not_apply_outcome_without_xml_extracted() {
                 diff: crate::reducer::state::MaterializedPromptInput {
                     kind: crate::reducer::state::PromptInputKind::Diff,
                     content_id_sha256: "id".to_string(),
-                    consumer_signature_sha256: "sig".to_string(),
+                    consumer_signature_sha256: String::new(),
                     original_bytes: 1,
                     final_bytes: 1,
                     model_budget_bytes: None,
@@ -123,6 +123,15 @@ fn test_commit_does_not_apply_outcome_without_xml_extracted() {
         ),
         ..create_test_state()
     };
+
+    let sig = state.agent_chain.consumer_signature_sha256();
+    state
+        .prompt_inputs
+        .commit
+        .as_mut()
+        .unwrap()
+        .diff
+        .consumer_signature_sha256 = sig;
 
     let effect = determine_next_effect(&state);
     assert!(matches!(effect, Effect::ExtractCommitXml));
