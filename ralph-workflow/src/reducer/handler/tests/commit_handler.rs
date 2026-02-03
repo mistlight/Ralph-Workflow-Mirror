@@ -618,3 +618,190 @@ fn test_materialize_commit_inputs_within_budget_records_correct_reason() {
         other => panic!("unexpected event: {other:?}"),
     }
 }
+
+// =============================================================================
+// Idempotence and stability tests
+// =============================================================================
+
+/// Test that prepare_commit_prompt reads from materialized model-safe diff file.
+///
+/// Once commit inputs are materialized, the prepare_commit_prompt effect should
+/// read from .agent/tmp/commit_diff.model_safe.txt, ensuring the prompt uses
+/// the already-truncated content instead of re-truncating.
+#[test]
+fn test_prepare_commit_prompt_uses_materialized_diff() {
+    use crate::reducer::state::{
+        MaterializedCommitInputs, MaterializedPromptInput, PromptInputKind,
+        PromptInputRepresentation, PromptInputsState, PromptMaterializationReason, PromptMode,
+    };
+
+    // Original large diff (will be truncated)
+    let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(150_000));
+    // Simulated truncated diff from materialization
+    let model_safe_diff = "diff --git a/a b/a\n+truncated_content [truncated...]\n";
+
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/tmp/commit_diff.txt", &large_diff)
+        .with_file(".agent/tmp/commit_diff.model_safe.txt", model_safe_diff)
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.commit = CommitState::Generating {
+        attempt: 1,
+        max_attempts: 2,
+    };
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["qwen".to_string()], // qwen has 100KB budget
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+    // Set up pre-materialized inputs
+    let consumer_sig = handler.state.agent_chain.consumer_signature_sha256();
+    handler.state.prompt_inputs = PromptInputsState {
+        commit: Some(MaterializedCommitInputs {
+            attempt: 1,
+            diff: MaterializedPromptInput {
+                kind: PromptInputKind::Diff,
+                content_id_sha256: "hash".to_string(),
+                consumer_signature_sha256: consumer_sig,
+                original_bytes: large_diff.len() as u64,
+                final_bytes: model_safe_diff.len() as u64,
+                model_budget_bytes: Some(100_000),
+                inline_budget_bytes: Some(100_000),
+                representation: PromptInputRepresentation::Inline,
+                reason: PromptMaterializationReason::ModelBudgetExceeded,
+            },
+        }),
+        ..Default::default()
+    };
+
+    let result = handler
+        .prepare_commit_prompt(&mut ctx, PromptMode::Normal)
+        .expect("prepare_commit_prompt should succeed");
+
+    // Should succeed with a prompt containing the truncated diff, not the original
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Commit(crate::reducer::event::CommitEvent::PromptPrepared { .. })
+        ),
+        "expected PromptPrepared event"
+    );
+
+    // The generated prompt file should contain the truncated diff content
+    let prompt_content = workspace.get_file(".agent/tmp/commit_prompt.txt").unwrap();
+    assert!(
+        prompt_content.contains("truncated_content"),
+        "prompt should contain materialized (truncated) diff content"
+    );
+    assert!(
+        !prompt_content.contains(&"x".repeat(1000)),
+        "prompt should NOT contain original large diff content"
+    );
+}
+
+/// Test that model budget is calculated as min across all agents in chain.
+///
+/// When the agent chain contains [claude (300KB), qwen (100KB), default (200KB)],
+/// the effective budget should be 100KB (the minimum).
+#[test]
+fn test_effective_model_budget_uses_min_across_agent_chain() {
+    use crate::phases::commit::effective_model_budget_bytes;
+
+    // claude (300KB) + qwen (100KB) + default (200KB) = min is 100KB
+    let agents = vec![
+        "claude-opus".to_string(),
+        "qwen-turbo".to_string(),
+        "gpt-4".to_string(),
+    ];
+    let budget = effective_model_budget_bytes(&agents);
+
+    // qwen has the smallest budget at 100KB (GLM_MAX_PROMPT_SIZE)
+    assert_eq!(
+        budget, 100_000,
+        "budget should be min across agent chain (qwen's 100KB)"
+    );
+}
+
+/// Test that consumer_signature_sha256 changes when agent chain configuration changes.
+///
+/// This ensures that when the agent chain is modified (agents added/removed),
+/// the materialized inputs will be invalidated and re-materialized with
+/// the new budget.
+#[test]
+fn test_consumer_signature_changes_with_agent_chain() {
+    let chain1 = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+    let chain2 = AgentChainState::initial().with_agents(
+        vec!["claude".to_string(), "qwen".to_string()],
+        vec![vec![], vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+
+    let sig1 = chain1.consumer_signature_sha256();
+    let sig2 = chain2.consumer_signature_sha256();
+
+    assert_ne!(
+        sig1, sig2,
+        "consumer signature should change when agent chain changes"
+    );
+}
+
+/// Test that consumer_signature_sha256 is stable when only current_agent_index changes.
+///
+/// During XSD retry or fallback attempts, the current_agent_index changes but
+/// the overall chain configuration stays the same. The signature should be
+/// stable so we don't unnecessarily re-materialize.
+#[test]
+fn test_consumer_signature_stable_during_fallback() {
+    let chain1 = AgentChainState::initial().with_agents(
+        vec!["claude".to_string(), "qwen".to_string()],
+        vec![vec![], vec![]],
+        crate::agents::AgentRole::Commit,
+    );
+    let mut chain2 = chain1.clone();
+    chain2.current_agent_index = 1; // Fallback to second agent
+
+    let sig1 = chain1.consumer_signature_sha256();
+    let sig2 = chain2.consumer_signature_sha256();
+
+    assert_eq!(
+        sig1, sig2,
+        "consumer signature should be stable when only current_agent_index changes"
+    );
+}

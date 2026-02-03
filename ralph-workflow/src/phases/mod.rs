@@ -83,5 +83,7 @@ pub mod development;
 pub mod integrity;
 pub mod review;
 
-pub use commit::generate_commit_message;
+pub use commit::{
+    effective_model_budget_bytes, generate_commit_message, truncate_diff_to_model_budget,
+};
 pub use context::{get_primary_commit_agent, PhaseContext};

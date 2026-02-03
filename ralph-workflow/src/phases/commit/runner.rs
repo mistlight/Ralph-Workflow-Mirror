@@ -24,20 +24,26 @@ pub struct CommitAttemptResult {
 /// This does **not** perform in-session XSD retries. If validation fails, the
 /// caller should emit a MessageValidationFailed event and let the reducer decide
 /// retry/fallback behavior.
+///
+/// **IMPORTANT:** The `model_safe_diff` parameter must be pre-truncated to the
+/// effective model budget. Use the reducer's `MaterializeCommitInputs` effect
+/// to truncate the diff before calling this function. The reducer writes the
+/// model-safe diff to `.agent/tmp/commit_diff.model_safe.txt`.
 pub fn run_commit_attempt(
     ctx: &mut PhaseContext<'_>,
     attempt: u32,
-    diff: &str,
+    model_safe_diff: &str,
     commit_agent: &str,
 ) -> anyhow::Result<CommitAttemptResult> {
-    let (working_diff, diff_truncated) =
-        check_and_pre_truncate_diff(diff, commit_agent, ctx.logger);
+    // NOTE: Truncation is now handled by materialize_commit_inputs in the reducer.
+    // The diff passed here is already truncated to the effective model budget.
+    // See: reducer/handler/commit.rs::materialize_commit_inputs
 
     let prompt_key = format!("commit_message_attempt_{attempt}");
     let (prompt, was_replayed) = build_commit_prompt(
         &prompt_key,
         ctx.template_context,
-        &working_diff,
+        model_safe_diff,
         ctx.workspace,
         &ctx.prompt_history,
     );
@@ -46,7 +52,7 @@ pub fn run_commit_attempt(
     // This must happen before any agent invocation.
     if let Err(err) = crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
         &prompt,
-        &[working_diff.as_str()],
+        &[model_safe_diff],
     ) {
         return Err(crate::prompts::TemplateVariablesInvalidError {
             template_name: "commit_message_xml".to_string(),
@@ -75,7 +81,9 @@ pub fn run_commit_attempt(
         .unwrap_or_else(|_| CommitLogSession::noop());
     let mut attempt_log = session.new_attempt(commit_agent, "single");
     attempt_log.set_prompt_size(prompt.len());
-    attempt_log.set_diff_info(working_diff.len(), diff_truncated);
+    // NOTE: Truncation info is now tracked at reducer state level (MaterializedPromptInput.reason).
+    // We pass false here since the diff has already been truncated by materialize_commit_inputs.
+    attempt_log.set_diff_info(model_safe_diff.len(), false);
 
     let agent_config = ctx
         .registry
@@ -180,6 +188,13 @@ pub fn run_commit_attempt(
 /// Generate a commit message using a single agent attempt.
 ///
 /// Returns an error if XML validation fails or the agent output is missing.
+///
+/// **NOTE:** This function is used by CLI plumbing commands (`--generate-commit-msg`)
+/// that run outside the reducer. It handles truncation internally using
+/// `truncate_diff_to_model_budget` with the agent-specific budget.
+///
+/// For reducer-driven commit generation, the reducer handles truncation via
+/// `MaterializeCommitInputs` which writes to `.agent/tmp/commit_diff.model_safe.txt`.
 pub fn generate_commit_message(
     diff: &str,
     registry: &AgentRegistry,
@@ -189,14 +204,24 @@ pub fn generate_commit_message(
     workspace: &dyn Workspace,
     prompt_history: &HashMap<String, String>,
 ) -> anyhow::Result<CommitMessageResult> {
-    let (working_diff, _diff_truncated) =
-        check_and_pre_truncate_diff(diff, commit_agent, runtime.logger);
+    // For CLI plumbing, we truncate to the single agent's budget.
+    // This is different from the reducer path which uses min budget across the chain.
+    let model_budget = model_budget_bytes_for_agent_name(commit_agent);
+    let (model_safe_diff, truncated) = truncate_diff_to_model_budget(diff, model_budget);
+    if truncated {
+        runtime.logger.warn(&format!(
+            "Diff size ({} KB) exceeds agent limit ({} KB). Truncated to {} KB.",
+            diff.len() / 1024,
+            model_budget / 1024,
+            model_safe_diff.len() / 1024
+        ));
+    }
 
     let prompt_key = "commit_message_attempt_1";
     let (prompt, was_replayed) = build_commit_prompt(
         prompt_key,
         template_context,
-        &working_diff,
+        &model_safe_diff,
         workspace,
         prompt_history,
     );

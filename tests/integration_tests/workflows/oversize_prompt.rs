@@ -702,3 +702,137 @@ fn prompt_inputs_state_stores_all_phases() {
         assert!(state.commit.is_some());
     });
 }
+
+// =============================================================================
+// Reducer-driven materialization stability tests (regression tests for bug fix)
+// =============================================================================
+
+/// Test that commit diff model budget uses minimum across agent chain.
+///
+/// This regression test verifies the fix for the oscillating budget bug where
+/// truncation repeated with different limits as the current agent changed.
+/// The effective budget should be the minimum across ALL agents in the chain.
+#[test]
+fn commit_model_budget_is_min_across_agent_chain() {
+    use ralph_workflow::phases::commit::effective_model_budget_bytes;
+
+    with_default_timeout(|| {
+        // Mixed chain: claude (300KB), qwen (100KB), default (200KB)
+        let agents = vec![
+            "claude-opus".to_string(),
+            "qwen-turbo".to_string(),
+            "gpt-4".to_string(),
+        ];
+
+        let budget = effective_model_budget_bytes(&agents);
+
+        // Should be qwen's 100KB (the minimum)
+        assert_eq!(
+            budget, 100_000,
+            "budget should be min across chain (qwen's 100KB), not oscillate per-agent"
+        );
+    });
+}
+
+/// Test that commit inputs materialization is stable when only current_agent_index changes.
+///
+/// This regression test verifies that changing which agent is current (during
+/// fallback or retry) does NOT change the consumer_signature, so materialized
+/// inputs are reused instead of re-truncated.
+#[test]
+fn commit_inputs_reused_during_agent_fallback() {
+    use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::state::AgentChainState;
+
+    with_default_timeout(|| {
+        // Create chain with multiple agents
+        let chain1 = AgentChainState::initial().with_agents(
+            vec!["claude".to_string(), "qwen".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Commit,
+        );
+
+        // Simulate fallback: same chain but different current agent
+        let mut chain2 = chain1.clone();
+        chain2.current_agent_index = 1;
+
+        let sig1 = chain1.consumer_signature_sha256();
+        let sig2 = chain2.consumer_signature_sha256();
+
+        assert_eq!(
+            sig1, sig2,
+            "consumer signature should be stable when only current_agent_index changes, \
+             ensuring materialized inputs are reused during fallback"
+        );
+    });
+}
+
+/// Test that commit inputs are re-materialized when agent chain configuration changes.
+///
+/// If the set of agents or their models change, the consumer_signature should
+/// change, triggering re-materialization with the new effective budget.
+#[test]
+fn commit_inputs_rematerialized_when_agent_chain_changes() {
+    use ralph_workflow::agents::AgentRole;
+    use ralph_workflow::reducer::state::AgentChainState;
+
+    with_default_timeout(|| {
+        // Original chain with just claude (300KB budget)
+        let chain1 = AgentChainState::initial().with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        );
+
+        // Modified chain with qwen added (now 100KB budget)
+        let chain2 = AgentChainState::initial().with_agents(
+            vec!["claude".to_string(), "qwen".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Commit,
+        );
+
+        let sig1 = chain1.consumer_signature_sha256();
+        let sig2 = chain2.consumer_signature_sha256();
+
+        assert_ne!(
+            sig1, sig2,
+            "consumer signature should change when agent chain configuration changes, \
+             triggering re-materialization with new effective budget"
+        );
+    });
+}
+
+/// Test that truncate_diff_to_model_budget is deterministic.
+///
+/// Given the same diff and budget, truncation should always produce the
+/// same result, ensuring stable behavior across retries.
+#[test]
+fn truncation_is_deterministic_across_calls() {
+    use ralph_workflow::phases::commit::truncate_diff_to_model_budget;
+
+    with_default_timeout(|| {
+        let large_diff = format!("diff --git a/a b/a\n+{}\n", "x".repeat(300_000));
+        let budget = 100_000u64;
+
+        let (result1, truncated1) = truncate_diff_to_model_budget(&large_diff, budget);
+        let (result2, truncated2) = truncate_diff_to_model_budget(&large_diff, budget);
+        let (result3, truncated3) = truncate_diff_to_model_budget(&large_diff, budget);
+
+        assert_eq!(
+            result1, result2,
+            "truncation result should be deterministic"
+        );
+        assert_eq!(
+            result2, result3,
+            "truncation result should be deterministic"
+        );
+        assert_eq!(
+            truncated1, truncated2,
+            "truncation flag should be deterministic"
+        );
+        assert_eq!(
+            truncated2, truncated3,
+            "truncation flag should be deterministic"
+        );
+    });
+}

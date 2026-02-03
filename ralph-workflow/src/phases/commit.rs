@@ -12,7 +12,6 @@ use crate::files::llm_output_extraction::{
     archive_xml_file_with_workspace, try_extract_from_file_with_workspace,
     try_extract_xml_commit_with_trace, xml_paths, CommitExtractionResult,
 };
-use crate::logger::Logger;
 use crate::pipeline::{run_with_prompt, PipelineRuntime, PromptCommand};
 use crate::prompts::{
     get_stored_or_generate_prompt, prompt_generate_commit_message_with_diff_with_context,
