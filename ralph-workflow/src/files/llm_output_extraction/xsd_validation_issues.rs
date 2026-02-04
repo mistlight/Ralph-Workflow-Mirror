@@ -29,6 +29,12 @@ const EXAMPLE_NO_ISSUES_XML: &str = r#"<ralph-issues>
 /// `<ralph-no-issues-found>` entry.
 pub fn validate_issues_xml(xml_content: &str) -> Result<IssuesElements, XsdValidationError> {
     let content = xml_content.trim();
+
+    // Check for illegal XML characters BEFORE parsing
+    // This provides clear error messages instead of cryptic parse errors
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+    check_for_illegal_xml_characters(content)?;
+
     let mut reader = create_reader(content);
     let mut buf = Vec::new();
 

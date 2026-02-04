@@ -14,7 +14,13 @@
 /// * `Ok(PlanElements)` if the XML is valid and contains all required elements
 /// * `Err(XsdValidationError)` if the XML is invalid or doesn't conform to the schema
 pub fn validate_plan_xml(xml_content: &str) -> Result<PlanElements, XsdValidationError> {
-    let mut reader = Reader::from_str(xml_content);
+    let content = xml_content.trim();
+
+    // Check for illegal XML characters BEFORE parsing
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+    check_for_illegal_xml_characters(content)?;
+
+    let mut reader = Reader::from_str(content);
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();

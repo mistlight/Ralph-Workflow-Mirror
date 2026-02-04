@@ -511,3 +511,106 @@ fn test_review_xml_whitespace_only_no_issues_found_is_filtered() {
         );
     });
 }
+
+// =============================================================================
+// ILLEGAL CHARACTER REGRESSION TESTS
+// These test the fix for the bug where NUL bytes in XML caused silent failures
+// =============================================================================
+
+/// Test that NUL byte in review XML is rejected with actionable error.
+///
+/// This is a regression test for the reported bug where a reviewer output
+/// containing a NUL byte (e.g., from `.replace("git diff", "git\0A0diff")`)
+/// would cause validation to fail silently, triggering AgentChainExhausted.
+///
+/// The validation should now detect the NUL byte before parsing and provide
+/// a clear, actionable error message that guides the agent to fix it.
+#[test]
+fn test_review_xml_rejects_nul_byte_with_actionable_error() {
+    with_default_timeout(|| {
+        // Setup: Create XML with NUL byte (the exact bug from the report)
+        // This simulates the pattern: .replace("git diff", "git\0A0diff")
+        let xml_with_nul =
+            "<ralph-issues><ralph-issue>Check git\u{0000}diff usage</ralph-issue></ralph-issues>";
+
+        // Execute: Try to validate the XML
+        let result = ralph_workflow::validate_issues_xml(xml_with_nul);
+
+        // Assert: Verify validation fails
+        assert!(result.is_err(), "NUL byte should be rejected");
+
+        let error = result.unwrap_err();
+
+        // Verify error is specific about NUL byte
+        assert!(
+            error.found.contains("NUL") || error.found.contains("0x00"),
+            "Error should identify NUL byte, got: {}",
+            error.found
+        );
+
+        // Verify error includes position information
+        assert!(
+            error.found.contains("position"),
+            "Error should include position, got: {}",
+            error.found
+        );
+
+        // Verify error provides actionable guidance
+        let formatted = error.format_for_ai_retry();
+        assert!(
+            formatted.contains("NUL") || formatted.contains("0x00"),
+            "Formatted error should mention NUL"
+        );
+        assert!(
+            formatted.contains("How to fix") || formatted.contains("fix:"),
+            "Formatted error should provide fix guidance"
+        );
+        // Should suggest common fix (NBSP typo)
+        assert!(
+            formatted.contains("\\u00A0") || formatted.contains("non-breaking space"),
+            "Should suggest NBSP as common cause"
+        );
+    });
+}
+
+/// Test that other illegal control characters are also rejected.
+///
+/// This ensures the fix is comprehensive, not just for NUL bytes.
+#[test]
+fn test_review_xml_rejects_other_control_characters() {
+    with_default_timeout(|| {
+        // Test vertical tab (0x0B) - another illegal control character
+        let xml_with_vt =
+            "<ralph-issues><ralph-issue>Text with\u{000B}vertical tab</ralph-issue></ralph-issues>";
+        let result = ralph_workflow::validate_issues_xml(xml_with_vt);
+        assert!(result.is_err(), "Vertical tab should be rejected");
+
+        let error = result.unwrap_err();
+        assert!(
+            error.found.contains("0x0B") || error.found.contains("control character"),
+            "Error should identify illegal character, got: {}",
+            error.found
+        );
+    });
+}
+
+/// Test that valid content with allowed control characters still passes.
+///
+/// This verifies we don't break valid XML that uses tab/newline/CR.
+#[test]
+fn test_review_xml_allows_valid_control_characters() {
+    with_default_timeout(|| {
+        // Setup: Create XML with tab, newline, carriage return (all allowed)
+        let xml =
+            "<ralph-issues><ralph-issue>Line 1\nLine 2\tTabbed\rCR</ralph-issue></ralph-issues>";
+
+        // Execute: Validate the XML
+        let result = ralph_workflow::validate_issues_xml(xml);
+
+        // Assert: Verify validation passes
+        assert!(
+            result.is_ok(),
+            "Valid control characters (tab/LF/CR) should be allowed"
+        );
+    });
+}
