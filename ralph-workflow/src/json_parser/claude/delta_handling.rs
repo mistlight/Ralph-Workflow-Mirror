@@ -3,6 +3,37 @@
 // Contains methods for handling streaming delta events.
 
 impl ClaudeParser {
+    fn finalize_in_place_full_mode(
+        &self,
+        session: &mut std::cell::RefMut<'_, StreamingSession>,
+    ) -> String {
+        let terminal_mode = *self.terminal_mode.borrow();
+        if terminal_mode != TerminalMode::Full {
+            return String::new();
+        }
+
+        // Prefer thinking finalization when active (it owns the cursor-up state).
+        if self.thinking_active_index.borrow().is_some() {
+            return self.finalize_thinking_full_mode(session);
+        }
+
+        // Otherwise, finalize an active text streaming line.
+        if *self.text_line_active.borrow() {
+            *self.text_line_active.borrow_mut() = false;
+            *self.cursor_up_active.borrow_mut() = false;
+            return TextDeltaRenderer::render_completion(terminal_mode);
+        }
+
+        // Defensive fallback: if the last output used the cursor-up in-place pattern,
+        // finalize even if higher-level flags were reset by protocol violations.
+        if *self.cursor_up_active.borrow() {
+            *self.cursor_up_active.borrow_mut() = false;
+            return TextDeltaRenderer::render_completion(terminal_mode);
+        }
+
+        String::new()
+    }
+
     fn finalize_thinking_full_mode(
         &self,
         session: &mut std::cell::RefMut<'_, StreamingSession>,
@@ -13,6 +44,7 @@ impl ClaudeParser {
                 let Some(_index) = self.thinking_active_index.borrow_mut().take() else {
                     return String::new();
                 };
+                *self.cursor_up_active.borrow_mut() = false;
                 let _ = session;
                 // Finalize the multi-line in-place update pattern for thinking.
                 // This leaves the final thinking line visible and moves the cursor to the next line.
@@ -89,6 +121,11 @@ impl ClaudeParser {
                 // Use TextDeltaRenderer for consistent rendering
                 let terminal_mode = *self.terminal_mode.borrow();
 
+                if terminal_mode == TerminalMode::Full {
+                    *self.text_line_active.borrow_mut() = true;
+                    *self.cursor_up_active.borrow_mut() = true;
+                }
+
                 // Use prefix trie to detect if new content extends previously rendered content
                 // If yes, we do an in-place update (carriage return + new content)
                 let has_prefix = session.has_rendered_prefix(ContentType::Text, &index_str);
@@ -141,7 +178,7 @@ impl ClaudeParser {
                         let accumulated = session
                             .get_accumulated(ContentType::Thinking, &index_str)
                             .unwrap_or("");
-                        if show_prefix {
+                        let out = if show_prefix {
                             crate::json_parser::delta_display::ThinkingDeltaRenderer::render_first_delta(
                                 accumulated,
                                 prefix,
@@ -155,7 +192,10 @@ impl ClaudeParser {
                                 *c,
                                 terminal_mode,
                             )
-                        }
+                        };
+
+                        *self.cursor_up_active.borrow_mut() = true;
+                        out
                     }
                     TerminalMode::Basic | TerminalMode::None => String::new(),
                 }
@@ -163,7 +203,7 @@ impl ClaudeParser {
             ContentBlockDelta::ToolUseDelta {
                 tool_use: Some(tool_delta),
             } => {
-                let thinking_finalize = self.finalize_thinking_full_mode(session);
+                let thinking_finalize = self.finalize_in_place_full_mode(session);
                 *self.suppress_thinking_for_message.borrow_mut() = true;
                 // Track tool name for GLM/CCS deduplication (if available in delta)
                 if let Some(serde_json::Value::String(name)) = tool_delta.get("name") {
@@ -247,6 +287,11 @@ impl ClaudeParser {
         // Use TextDeltaRenderer for consistent rendering across all parsers
         let terminal_mode = *self.terminal_mode.borrow();
 
+        if terminal_mode == TerminalMode::Full {
+            *self.text_line_active.borrow_mut() = true;
+            *self.cursor_up_active.borrow_mut() = true;
+        }
+
         // Use prefix trie to detect if new content extends previously rendered content
         // If yes, we do an in-place update (carriage return + new content)
         let has_prefix = session.has_rendered_prefix(ContentType::Text, default_index_str);
@@ -311,9 +356,20 @@ impl ClaudeParser {
         let metrics = session.get_streaming_quality_metrics();
         let was_in_block = session.on_message_stop();
 
-        if was_in_block {
-            // Use TextDeltaRenderer for completion - adds final newline
-            let terminal_mode = *self.terminal_mode.borrow();
+        // In Full mode, a streamed text line can leave the cursor positioned on the line
+        // (via a trailing "\n\x1b[1A"). Normally `was_in_block` implies we should emit a
+        // completion sequence, but some real-world logs can violate block lifecycle ordering.
+        // If we have an active text streaming line, still emit a completion sequence.
+        let needs_text_completion = terminal_mode == TerminalMode::Full
+            && (*self.text_line_active.borrow() || *self.cursor_up_active.borrow());
+        let should_emit_completion = was_in_block || needs_text_completion;
+
+        if should_emit_completion {
+            if terminal_mode == TerminalMode::Full {
+                *self.text_line_active.borrow_mut() = false;
+                *self.cursor_up_active.borrow_mut() = false;
+            }
+
             let completion = format!(
                 "{}{}",
                 c.reset(),

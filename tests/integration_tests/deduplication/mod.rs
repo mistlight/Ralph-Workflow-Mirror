@@ -652,6 +652,66 @@ fn test_alternating_pattern_preserved() {
     });
 }
 
+/// Parse a real captured log and ensure visible output is not corrupted.
+///
+/// This is a regression test for thinking-delta rendering bugs where late thinking
+/// overwrote streamed text output, producing repeated "[ccs/...] Thinking:" lines.
+#[test]
+fn test_example_log_renders_without_thinking_corruption() {
+    with_default_timeout(|| {
+        let log = include_str!("../artifacts/example_log.log");
+
+        let (parser, vterm) = create_parser_with_vterm();
+        let workspace = MemoryWorkspace::new_test();
+
+        let cursor = Cursor::new(log);
+        let reader = BufReader::new(cursor);
+        parser
+            .parse_stream(reader, &workspace)
+            .expect("parse_stream should succeed");
+
+        let vterm_ref = vterm.borrow();
+        let visible = vterm_ref.get_visible_output();
+
+        // Sanity: the log contained expected streamed assistant text.
+        let history = vterm_ref.get_write_history();
+        assert!(
+            history
+                .iter()
+                .any(|s| s.contains("Need read complete file contents")),
+            "Expected streamed assistant text missing from write history. Visible output: {}",
+            visible
+        );
+        assert!(
+            history
+                .iter()
+                .any(|s| s.contains("Not allowed to explore beyond direct imports")),
+            "Expected streamed assistant text missing from write history. Visible output: {}",
+            visible
+        );
+
+        // Regression: ensure system status output doesn't leave remnants from the streamed line.
+        assert!(
+            !visible.contains("statusead"),
+            "System output corrupted the streamed line. Output: {}",
+            visible
+        );
+
+        // Regression: ensure thinking prefix never appears on the same line as critical text.
+        for line in visible.lines() {
+            if line.contains("Need read complete file contents") {
+                assert!(
+                    !line.contains("Thinking:"),
+                    "Thinking corrupted text line. Line: {line:?}\nOutput: {visible}"
+                );
+            }
+        }
+
+        // Note: This real log includes repeated system/user lines (e.g., `status`, `compact_boundary`).
+        // We only assert that streamed content is present and that status output doesn't corrupt it.
+    });
+}
+
 // =============================================================================
 // Multi-Block Tests
 // =============================================================================

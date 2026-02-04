@@ -98,6 +98,14 @@ impl IncrementalNdjsonParser {
     /// If the depth exceeds `MAX_JSON_DEPTH`, the parser will reset to a safe
     /// state and skip the current JSON to prevent integer overflow from malicious input.
     fn process_byte(&mut self, byte: u8, complete_jsons: &mut Vec<String>) {
+        // Ignore any non-JSON preamble before the first opening brace.
+        //
+        // Some real-world streams start with log lines or other text before the first JSON
+        // object. We only start buffering once we see the first `{`.
+        if !self.started && byte != b'{' {
+            return;
+        }
+
         // Handle escape sequences
         if self.escape_next {
             self.buffer.push(byte);
@@ -318,6 +326,14 @@ mod tests {
         let mut parser = IncrementalNdjsonParser::new();
         let events = parser.feed(b"   \n  \n");
         assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn test_incremental_parser_ignores_preamble_before_json() {
+        let mut parser = IncrementalNdjsonParser::new();
+        let input = b"[i] Joined existing CLIProxy\n{\"type\":\"delta\"}\n";
+        let events = parser.feed(input);
+        assert_eq!(events, vec!["{\"type\":\"delta\"}".to_string()]);
     }
 
     #[test]

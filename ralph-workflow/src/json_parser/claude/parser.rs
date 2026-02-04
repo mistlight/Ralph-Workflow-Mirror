@@ -39,6 +39,23 @@ pub struct ClaudeParser {
     /// both use in-place terminal updates, allowing late thinking can overwrite
     /// previously-rendered text.
     suppress_thinking_for_message: RefCell<bool>,
+
+    /// Tracks whether a text delta line is currently being streamed using the
+    /// in-place cursor-up update pattern (`TerminalMode::Full`).
+    ///
+    /// When true, any non-stream output (system/user/assistant/result or raw text)
+    /// must first finalize the cursor state (cursor down + newline) to avoid
+    /// overwriting the streamed text line (e.g., "statusead ..." corruption).
+    text_line_active: RefCell<bool>,
+
+    /// Tracks whether the last emitted output left the cursor positioned on the
+    /// previous line via the in-place streaming pattern ("\n\x1b[1A").
+    ///
+    /// This is a defensive fallback for real-world streams where lifecycle events
+    /// can reset higher-level flags. When true, any newline-based output must
+    /// first emit a completion sequence ("\x1b[1B\n") to avoid overwriting the
+    /// visible streamed line.
+    cursor_up_active: RefCell<bool>,
 }
 
 impl ClaudeParser {
@@ -96,6 +113,8 @@ impl ClaudeParser {
             printer,
             thinking_active_index: RefCell::new(None),
             suppress_thinking_for_message: RefCell::new(false),
+            text_line_active: RefCell::new(false),
+            cursor_up_active: RefCell::new(false),
         }
     }
 
@@ -224,9 +243,39 @@ impl ClaudeParser {
             // Pass through as-is if it looks like real output (not empty)
             let trimmed = line.trim();
             if !trimmed.is_empty() && !trimmed.starts_with('{') {
-                return Some(format!("{trimmed}\n"));
+                // In full TTY mode, thinking deltas keep the cursor on the thinking line for
+                // in-place updates. Any other output must first finalize that cursor state.
+                let mut session = self.streaming_session.borrow_mut();
+                let finalize = self.finalize_in_place_full_mode(&mut session);
+                let out = format!("{finalize}{trimmed}\n");
+                if *self.terminal_mode.borrow() == TerminalMode::Full {
+                    // Only mutate cursor state based on explicit cursor controls.
+                    // Normal output may include newlines, but does not reliably indicate whether
+                    // we are still in the in-place streaming cursor-up position.
+                    let mut cursor_up_active = self.cursor_up_active.borrow_mut();
+                    if out.contains("\x1b[1B\n") {
+                        *cursor_up_active = false;
+                    }
+                    if out.contains("\x1b[1A") {
+                        *cursor_up_active = true;
+                    }
+                }
+                return Some(out);
             }
             return None;
+        };
+
+        // When a thinking line is being streamed in full TTY mode, the renderer leaves the cursor
+        // on the thinking line (via a trailing "\n\x1b[1A") so subsequent thinking deltas can
+        // update it in place.
+        //
+        // Any non-stream event (system/user/assistant/result) must first finalize the thinking
+        // line, otherwise it will overwrite/corrupt the visible output.
+        let finalize = if matches!(&event, ClaudeEvent::StreamEvent { .. }) {
+            String::new()
+        } else {
+            let mut session = self.streaming_session.borrow_mut();
+            self.finalize_in_place_full_mode(&mut session)
         };
         let c = &self.colors;
         let prefix = &self.display_name;
@@ -266,9 +315,27 @@ impl ClaudeParser {
             }
         };
 
+        let output = if output.is_empty() {
+            output
+        } else {
+            format!("{finalize}{output}")
+        };
+
         if output.is_empty() {
             None
         } else {
+            if *self.terminal_mode.borrow() == TerminalMode::Full {
+                // Keep a simple, output-driven model of cursor state.
+                // Any streaming delta rendered in Full mode ends with "\n\x1b[1A".
+                // This is more robust than relying solely on protocol lifecycle events.
+                let mut cursor_up_active = self.cursor_up_active.borrow_mut();
+                if output.contains("\x1b[1B\n") {
+                    *cursor_up_active = false;
+                }
+                if output.contains("\x1b[1A") {
+                    *cursor_up_active = true;
+                }
+            }
             Some(output)
         }
     }
@@ -292,9 +359,19 @@ impl ClaudeParser {
                 message,
                 message_id,
             } => {
+                // Protocol violations happen in real streams: a new MessageStart can arrive
+                // while a previous in-place streamed line (text/thinking) still has the cursor
+                // positioned on it (via a trailing "\n\x1b[1A").
+                //
+                // Finalize any in-place cursor state before resetting message/session state,
+                // otherwise subsequent output can overwrite the visible streamed line.
+                let in_place_finalize = self.finalize_in_place_full_mode(&mut session);
+
                 // Reset any pending thinking line from a previous message.
                 *self.thinking_active_index.borrow_mut() = None;
                 *self.suppress_thinking_for_message.borrow_mut() = false;
+                *self.text_line_active.borrow_mut() = false;
+                *self.cursor_up_active.borrow_mut() = false;
 
                 // Extract message_id from either the top-level field or nested message.id
                 // The Claude API typically puts the ID in message.id, not at the top level
@@ -303,7 +380,7 @@ impl ClaudeParser {
                 // Set message ID for tracking and clear session state on new message
                 session.set_current_message_id(effective_message_id);
                 session.on_message_start();
-                String::new()
+                in_place_finalize
             }
             StreamInnerEvent::ContentBlockStart {
                 index: Some(index),

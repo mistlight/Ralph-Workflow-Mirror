@@ -386,3 +386,188 @@ fn test_thinking_deltas_after_text_do_not_corrupt_visible_output_in_full_mode() 
         "Thinking should not corrupt text output once text has started. Got: {visible:?}"
     );
 }
+
+#[test]
+fn test_thinking_finalize_before_system_event_prevents_corruption_in_full_mode() {
+    use crate::json_parser::printer::{SharedPrinter, VirtualTerminal};
+    use crate::json_parser::terminal::TerminalMode;
+    use std::cell::RefCell;
+    use std::io::Write;
+    use std::rc::Rc;
+
+    let vterm = Rc::new(RefCell::new(VirtualTerminal::new()));
+    let printer: SharedPrinter = vterm.clone();
+    let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer)
+        .with_terminal_mode(TerminalMode::Full)
+        .with_display_name("ccs/codex");
+
+    // Start message and emit a thinking delta. In full TTY mode this leaves the cursor on the
+    // thinking line (via "\n\x1b[1A") for in-place updates.
+    let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_sys_1","type":"message","role":"assistant"}}}"#;
+    assert!(parser.parse_event(start).is_none());
+
+    let think = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"git"}}}"#;
+    let out1 = parser
+        .parse_event(think)
+        .expect("thinking delta should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out1}").unwrap();
+        t.flush().unwrap();
+    }
+
+    // Now emit a non-stream system event while thinking is active.
+    // This should NOT overwrite the thinking line.
+    let system_status =
+        r#"{"type":"system","subtype":"status","status":"compacting","session_id":"sid"}"#;
+    let out2 = parser
+        .parse_event(system_status)
+        .expect("system status should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out2}").unwrap();
+        t.flush().unwrap();
+    }
+
+    // Finally, start streaming text. If the system event corrupted the thinking line, this text
+    // often gets mangled or disappears in the visible output.
+    let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Need read"}}}"#;
+    let out3 = parser.parse_event(text).expect("text delta should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out3}").unwrap();
+        t.flush().unwrap();
+    }
+
+    let visible = vterm.borrow().get_visible_output();
+    assert!(
+        visible.contains("Thinking:"),
+        "Thinking line should remain visible. Got: {visible:?}"
+    );
+    assert!(
+        visible.contains("status"),
+        "System status line should render. Got: {visible:?}"
+    );
+    assert!(
+        visible.contains("Need read"),
+        "Text should not be corrupted by system output while thinking active. Got: {visible:?}"
+    );
+    assert!(
+        !visible.contains("statusead"),
+        "Corruption marker should not appear. Got: {visible:?}"
+    );
+}
+
+#[test]
+fn test_text_finalize_before_system_event_prevents_corruption_in_full_mode() {
+    use crate::json_parser::printer::{SharedPrinter, VirtualTerminal};
+    use crate::json_parser::terminal::TerminalMode;
+    use std::cell::RefCell;
+    use std::io::Write;
+    use std::rc::Rc;
+
+    let vterm = Rc::new(RefCell::new(VirtualTerminal::new()));
+    let printer: SharedPrinter = vterm.clone();
+    let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer)
+        .with_terminal_mode(TerminalMode::Full)
+        .with_display_name("ccs/codex");
+
+    let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_sys_text_1","type":"message","role":"assistant"}}}"#;
+    assert!(parser.parse_event(start).is_none());
+
+    // Stream a longer text line; in full mode this uses the in-place cursor-up update pattern.
+    // If we emit a shorter non-stream line next (like "status"), it can overwrite only the first
+    // few characters and leave the old tail visible (e.g., "statusead...").
+    let text1 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Need read complete file contents"}}}"#;
+    let out1 = parser.parse_event(text1).expect("text delta should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out1}").unwrap();
+        t.flush().unwrap();
+    }
+
+    // System output while text streaming is active must not overwrite the streamed line.
+    let system_status =
+        r#"{"type":"system","subtype":"status","status":"compacting","session_id":"sid"}"#;
+    let out2 = parser
+        .parse_event(system_status)
+        .expect("system status should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out2}").unwrap();
+        t.flush().unwrap();
+    }
+
+    let visible = vterm.borrow().get_visible_output();
+    assert!(
+        visible.contains("Need read complete file contents"),
+        "Text should remain intact across system output. Got: {visible:?}"
+    );
+    assert!(
+        visible.contains("status"),
+        "System status should render. Got: {visible:?}"
+    );
+    assert!(
+        !visible.contains("statusead"),
+        "Status should not overwrite the streamed text line. Got: {visible:?}"
+    );
+}
+
+#[test]
+fn test_message_start_finalizes_in_place_text_to_avoid_corruption() {
+    use crate::json_parser::printer::{SharedPrinter, VirtualTerminal};
+    use crate::json_parser::terminal::TerminalMode;
+    use std::cell::RefCell;
+    use std::io::Write;
+    use std::rc::Rc;
+
+    let vterm = Rc::new(RefCell::new(VirtualTerminal::new()));
+    let printer: SharedPrinter = vterm.clone();
+    let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer)
+        .with_terminal_mode(TerminalMode::Full)
+        .with_display_name("ccs/codex");
+
+    // Message 1: stream a long text delta (leaves cursor on line via "\n\x1b[1A").
+    let start1 = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_ms_1","type":"message","role":"assistant"}}}"#;
+    assert!(parser.parse_event(start1).is_none());
+
+    let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Need read complete file contents"}}}"#;
+    let out1 = parser.parse_event(text).expect("text delta should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out1}").unwrap();
+        t.flush().unwrap();
+    }
+
+    // Message 2 starts without a prior MessageStop (real-world protocol violations).
+    // The parser should finalize any in-place cursor state before resetting message state.
+    let start2 = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_ms_2","type":"message","role":"assistant"}}}"#;
+    let out2 = parser.parse_event(start2).unwrap_or_default();
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out2}").unwrap();
+        t.flush().unwrap();
+    }
+
+    // A subsequent system event must not overwrite the streamed line.
+    let system_status =
+        r#"{"type":"system","subtype":"status","status":"compacting","session_id":"sid"}"#;
+    let out3 = parser
+        .parse_event(system_status)
+        .expect("system status should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out3}").unwrap();
+        t.flush().unwrap();
+    }
+
+    let visible = vterm.borrow().get_visible_output();
+    assert!(
+        visible.contains("Need read complete file contents"),
+        "Text should remain intact across MessageStart boundary. Got: {visible:?}"
+    );
+    assert!(
+        !visible.contains("statusead"),
+        "System output should not overwrite streamed text. Got: {visible:?}"
+    );
+}

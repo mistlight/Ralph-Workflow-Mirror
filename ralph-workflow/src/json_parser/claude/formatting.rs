@@ -40,15 +40,33 @@ impl ClaudeParser {
             }
             out
         } else {
-            format!(
-                "{}[{}]{} {}{}{}\n",
-                c.dim(),
-                prefix,
-                c.reset(),
-                c.cyan(),
-                subtype.map_or("system", |s| s.as_str()),
-                c.reset()
-            )
+            let subtype_str = subtype.map_or("system", |s| s.as_str());
+
+            // In full TTY mode, streaming output uses an in-place update pattern which can leave
+            // the cursor positioned on an active line. System events (like `status`) can arrive
+            // at any time; clearing the line defensively avoids leaving remnants (e.g. "statusead").
+            if *self.terminal_mode.borrow() == TerminalMode::Full {
+                use crate::json_parser::delta_display::CLEAR_LINE;
+                format!(
+                    "{CLEAR_LINE}\r{}[{}]{} {}{}{}\n",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.cyan(),
+                    subtype_str,
+                    c.reset()
+                )
+            } else {
+                format!(
+                    "{}[{}]{} {}{}{}\n",
+                    c.dim(),
+                    prefix,
+                    c.reset(),
+                    c.cyan(),
+                    subtype_str,
+                    c.reset()
+                )
+            }
         }
     }
 
