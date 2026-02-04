@@ -389,13 +389,22 @@ impl MainEffectHandler {
         let continuation_state = &self.state.continuation;
         let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
         if is_xsd_retry {
-            let last_output = ctx
-                .workspace
-                .read(Path::new(xml_paths::ISSUES_XML))
-                .map_err(|err| ErrorEvent::WorkspaceReadFailed {
-                    path: xml_paths::ISSUES_XML.to_string(),
-                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-                })?;
+            let last_output = match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
+                Ok(output) => output,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    ctx.logger.warn(
+                        "Missing .agent/tmp/issues.xml; using empty output for review XSD retry",
+                    );
+                    String::new()
+                }
+                Err(err) => {
+                    return Err(ErrorEvent::WorkspaceReadFailed {
+                        path: xml_paths::ISSUES_XML.to_string(),
+                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                    }
+                    .into());
+                }
+            };
 
             let content_id_sha256 = sha256_hex_str(&last_output);
             let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
