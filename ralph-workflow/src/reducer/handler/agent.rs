@@ -45,22 +45,15 @@ impl MainEffectHandler {
         // In those cases, ignoring the newly prepared prompt would silently drop the
         // retry-specific guidance and can lead to repeated failures.
         //
-        let effective_prompt = match self
-            .state
-            .agent_chain
-            .rate_limit_continuation_prompt
-            .as_deref()
-        {
-            None => prompt,
-            Some(continuation_prompt) => {
-                if self.state.continuation.xsd_retry_session_reuse_pending
-                    || super::retry_guidance::is_same_agent_retry_prompt(&prompt)
-                {
-                    prompt
-                } else {
-                    continuation_prompt.to_string()
-                }
+        let effective_prompt = match &self.state.agent_chain.rate_limit_continuation_prompt {
+            Some(saved)
+                if saved.role == role
+                    && !self.state.continuation.xsd_retry_session_reuse_pending
+                    && !super::retry_guidance::is_same_agent_retry_prompt(&prompt) =>
+            {
+                saved.prompt.clone()
             }
+            _ => prompt,
         };
 
         let model_name = self.state.agent_chain.current_model();
@@ -87,7 +80,11 @@ impl MainEffectHandler {
         let phase_prefix = match self.state.phase {
             PipelinePhase::Planning => format!(".agent/logs/planning_{}", self.state.iteration + 1),
             PipelinePhase::Development => {
-                format!(".agent/logs/developer_{}", self.state.iteration + 1)
+                if role == AgentRole::Analysis {
+                    format!(".agent/logs/analysis_{}", self.state.iteration + 1)
+                } else {
+                    format!(".agent/logs/developer_{}", self.state.iteration + 1)
+                }
             }
             PipelinePhase::Review => {
                 format!(".agent/logs/reviewer_{}", self.state.reviewer_pass + 1)

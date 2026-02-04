@@ -103,7 +103,12 @@ fn test_rate_limit_429_triggers_agent_fallback_not_model_fallback() {
         // Prompt context should be preserved for continuation
         assert_eq!(
             new_state.agent_chain.rate_limit_continuation_prompt,
-            Some("continue this work".to_string())
+            Some(
+                ralph_workflow::reducer::state::RateLimitContinuationPrompt {
+                    role: AgentRole::Developer,
+                    prompt: "continue this work".to_string(),
+                }
+            )
         );
 
         // Phase should remain Development
@@ -203,7 +208,12 @@ fn test_rate_limit_continuation_prompt_cleared_on_success() {
             vec![vec!["model1".to_string()], vec!["model1".to_string()]],
             AgentRole::Developer,
         );
-        agent_chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+        agent_chain.rate_limit_continuation_prompt = Some(
+            ralph_workflow::reducer::state::RateLimitContinuationPrompt {
+                role: AgentRole::Developer,
+                prompt: "saved prompt".to_string(),
+            },
+        );
         agent_chain.current_agent_index = 1; // On agent2 after rate limit fallback
 
         let state = PipelineState {

@@ -28,6 +28,7 @@
 //! - `resume_note` - Resume context note generation
 //! - `prompt_dispatch` - Dispatch functions for prompt routing
 
+pub mod analysis;
 mod commit;
 pub mod content_builder;
 pub mod content_reference;

@@ -20,6 +20,8 @@ pub enum AgentRole {
     Reviewer,
     /// Commit agent: generates commit messages from diffs.
     Commit,
+    /// Analysis agent: independently verifies progress (diff vs plan).
+    Analysis,
 }
 
 impl std::fmt::Display for AgentRole {
@@ -28,6 +30,7 @@ impl std::fmt::Display for AgentRole {
             Self::Developer => write!(f, "developer"),
             Self::Reviewer => write!(f, "reviewer"),
             Self::Commit => write!(f, "commit"),
+            Self::Analysis => write!(f, "analysis"),
         }
     }
 }
@@ -73,6 +76,11 @@ pub struct FallbackConfig {
     /// Ordered list of agents for commit role (first = preferred, rest = fallbacks).
     #[serde(default)]
     pub commit: Vec<String>,
+    /// Ordered list of agents for analysis role (first = preferred, rest = fallbacks).
+    ///
+    /// If empty, analysis falls back to the developer chain.
+    #[serde(default)]
+    pub analysis: Vec<String>,
     /// Provider-level fallback: maps agent name to list of model flags to try.
     /// Example: `opencode = ["-m opencode/glm-4.7-free", "-m opencode/claude-sonnet-4"]`
     #[serde(default)]
@@ -182,6 +190,7 @@ impl Default for FallbackConfig {
             developer: Vec::new(),
             reviewer: Vec::new(),
             commit: Vec::new(),
+            analysis: Vec::new(),
             provider_fallback: HashMap::new(),
             max_retries: default_max_retries(),
             retry_delay_ms: default_retry_delay_ms(),
@@ -261,6 +270,18 @@ impl FallbackConfig {
             AgentRole::Developer => &self.developer,
             AgentRole::Reviewer => &self.reviewer,
             AgentRole::Commit => self.get_effective_commit_fallbacks(),
+            AgentRole::Analysis => self.get_effective_analysis_fallbacks(),
+        }
+    }
+
+    /// Get effective fallback agents for analysis role.
+    ///
+    /// Falls back to developer chain if analysis chain is empty.
+    fn get_effective_analysis_fallbacks(&self) -> &[String] {
+        if self.analysis.is_empty() {
+            &self.developer
+        } else {
+            &self.analysis
         }
     }
 
@@ -309,6 +330,7 @@ mod tests {
         assert_eq!(format!("{}", AgentRole::Developer), "developer");
         assert_eq!(format!("{}", AgentRole::Reviewer), "reviewer");
         assert_eq!(format!("{}", AgentRole::Commit), "commit");
+        assert_eq!(format!("{}", AgentRole::Analysis), "analysis");
     }
 
     #[test]
@@ -317,6 +339,7 @@ mod tests {
         assert!(config.developer.is_empty());
         assert!(config.reviewer.is_empty());
         assert!(config.commit.is_empty());
+        assert!(config.analysis.is_empty());
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.retry_delay_ms, 1000);
         // Use approximate comparison for floating point
@@ -356,6 +379,12 @@ mod tests {
             &["claude", "codex"]
         );
         assert_eq!(config.get_fallbacks(AgentRole::Reviewer), &["codex"]);
+
+        // Analysis defaults to developer chain when not configured.
+        assert_eq!(
+            config.get_fallbacks(AgentRole::Analysis),
+            &["claude", "codex"]
+        );
     }
 
     #[test]
@@ -367,6 +396,7 @@ mod tests {
         };
 
         assert!(config.has_fallbacks(AgentRole::Developer));
+        assert!(config.has_fallbacks(AgentRole::Analysis));
         assert!(!config.has_fallbacks(AgentRole::Reviewer));
     }
 

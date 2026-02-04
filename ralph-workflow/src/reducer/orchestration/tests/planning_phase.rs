@@ -34,6 +34,30 @@ fn test_determine_effect_planning_with_agents() {
 }
 
 #[test]
+fn test_determine_effect_planning_role_mismatch_reinitializes_chain() {
+    // Regression: Planning must use the Developer chain, even if we enter Planning
+    // with a previously-initialized non-developer chain from a prior phase.
+    let state = PipelineState {
+        phase: PipelinePhase::Planning,
+        context_cleaned: true,
+        agent_chain: AgentChainState::initial().with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::InitializeAgentChain {
+            role: AgentRole::Developer
+        }
+    ));
+}
+
+#[test]
 fn test_determine_effect_planning_rematerializes_when_consumer_signature_changes() {
     let mut state = PipelineState {
         phase: PipelinePhase::Planning,

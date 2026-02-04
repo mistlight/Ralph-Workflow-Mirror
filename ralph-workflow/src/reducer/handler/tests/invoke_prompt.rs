@@ -414,8 +414,12 @@ fn test_invoke_agent_prefers_same_agent_retry_prompt_over_rate_limit_continuatio
         vec![vec![]],
         crate::agents::AgentRole::Developer,
     );
+    let saved_prompt = "CONTINUATION PROMPT (stale)".to_string();
     handler.state.agent_chain.rate_limit_continuation_prompt =
-        Some("CONTINUATION PROMPT (stale)".to_string());
+        Some(crate::reducer::state::RateLimitContinuationPrompt {
+            role: crate::agents::AgentRole::Developer,
+            prompt: saved_prompt.clone(),
+        });
     handler.state.continuation.same_agent_retry_count = 1;
     handler.state.continuation.same_agent_retry_reason =
         Some(crate::reducer::state::SameAgentRetryReason::Timeout);
@@ -500,7 +504,10 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
         crate::agents::AgentRole::Developer,
     );
     handler.state.agent_chain.rate_limit_continuation_prompt =
-        Some("CONTINUATION PROMPT (stale)".to_string());
+        Some(crate::reducer::state::RateLimitContinuationPrompt {
+            role: crate::agents::AgentRole::Developer,
+            prompt: "CONTINUATION PROMPT (stale)".to_string(),
+        });
     handler.state.continuation.xsd_retry_session_reuse_pending = true;
 
     let xsd_retry_prompt = "XSD RETRY PROMPT MARKER".to_string();
@@ -519,6 +526,78 @@ fn test_invoke_agent_prefers_xsd_retry_prompt_over_rate_limit_continuation_promp
     assert_eq!(
         calls[0].prompt, xsd_retry_prompt,
         "effective prompt should use the XSD retry prompt, not stale continuation prompt"
+    );
+}
+
+#[test]
+fn test_invoke_analysis_agent_does_not_use_rate_limit_continuation_prompt() {
+    use crate::agents::AgentRole;
+    use crate::executor::AgentCommandResult;
+
+    let workspace =
+        MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Plan\n\n- Do the thing\n");
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(
+        MockProcessExecutor::new().with_agent_result("claude", Ok(AgentCommandResult::success())),
+    );
+
+    let repo_root = PathBuf::from("/mock/repo");
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
+    handler.state.phase = crate::reducer::event::PipelinePhase::Development;
+    handler.state.iteration = 0;
+    handler.state.agent_chain = AgentChainState::initial().with_agents(
+        vec!["claude".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
+    let saved_prompt = "CONTINUATION PROMPT (stale)".to_string();
+    handler.state.agent_chain.rate_limit_continuation_prompt =
+        Some(crate::reducer::state::RateLimitContinuationPrompt {
+            role: crate::agents::AgentRole::Developer,
+            prompt: saved_prompt.clone(),
+        });
+
+    let _ = handler
+        .invoke_analysis_agent(&mut ctx, 0)
+        .expect("invoke_analysis_agent should succeed");
+
+    let calls = executor.agent_calls();
+    assert_eq!(calls.len(), 1);
+    assert!(
+        calls[0].prompt.contains("independent code analysis agent"),
+        "analysis invocation should use analysis prompt, not a stale continuation prompt"
+    );
+    assert_ne!(
+        calls[0].prompt, saved_prompt,
+        "analysis invocation must not be overridden by a role-mismatched continuation prompt"
     );
 }
 
@@ -1268,7 +1347,10 @@ fn test_invoke_agent_uses_rate_limit_continuation_prompt() {
     );
     // Simulate that a previous agent hit rate limit and saved the prompt
     handler.state.agent_chain.rate_limit_continuation_prompt =
-        Some("saved prompt from rate limit".to_string());
+        Some(crate::reducer::state::RateLimitContinuationPrompt {
+            role: crate::agents::AgentRole::Developer,
+            prompt: "saved prompt from rate limit".to_string(),
+        });
 
     let result = handler
         .invoke_planning_agent(&mut ctx, 0)

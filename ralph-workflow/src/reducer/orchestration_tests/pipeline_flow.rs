@@ -20,7 +20,10 @@ fn test_complete_pipeline_flow() {
     let mut iterations_run = Vec::new();
     let mut review_passes_run = Vec::new();
 
-    let max_steps = 80;
+    // This test simulates the reducer-driven pipeline loop. The exact number of effects
+    // can change as we add role-specific chain initialization (Developer/Analysis/Commit),
+    // so keep a generous step budget.
+    let max_steps = 160;
     for step in 0..max_steps {
         phase_sequence.push(state.phase);
         let effect = determine_next_effect(&state);
@@ -147,6 +150,14 @@ fn test_complete_pipeline_flow() {
             }
             Effect::InvokeDevelopmentAgent { iteration } => {
                 state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
+            }
+            Effect::InvokeAnalysisAgent { iteration } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked {
+                        iteration,
+                    }),
+                );
             }
             Effect::ExtractDevelopmentXml { iteration } => {
                 state = reduce(state, PipelineEvent::development_xml_extracted(iteration));

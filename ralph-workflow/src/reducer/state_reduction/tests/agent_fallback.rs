@@ -4,6 +4,7 @@
 // auth fallback, and agent chain exhaustion.
 
 use super::*;
+use crate::reducer::state::RateLimitContinuationPrompt;
 
 #[test]
 fn test_reduce_agent_fallback_to_next_model() {
@@ -175,7 +176,10 @@ fn test_rate_limit_fallback_switches_agent() {
     // Should preserve prompt
     assert_eq!(
         new_state.agent_chain.rate_limit_continuation_prompt,
-        Some("test prompt".to_string())
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "test prompt".to_string(),
+        })
     );
 }
 
@@ -201,7 +205,10 @@ fn test_rate_limit_fallback_with_no_prompt_context() {
 #[test]
 fn test_success_clears_rate_limit_continuation_prompt() {
     let mut state = create_test_state();
-    state.agent_chain.rate_limit_continuation_prompt = Some("old prompt".to_string());
+    state.agent_chain.rate_limit_continuation_prompt = Some(RateLimitContinuationPrompt {
+        role: AgentRole::Developer,
+        prompt: "old prompt".to_string(),
+    });
 
     let new_state = reduce(
         state,
@@ -223,7 +230,10 @@ fn test_legacy_rate_limit_failure_clears_stale_rate_limit_continuation_prompt() 
     // prompt_context. In that case we must NOT carry forward any previously saved continuation
     // prompt, otherwise the next invocation may run with stale prompt context.
     let mut state = create_test_state();
-    state.agent_chain.rate_limit_continuation_prompt = Some("stale prompt".to_string());
+    state.agent_chain.rate_limit_continuation_prompt = Some(RateLimitContinuationPrompt {
+        role: AgentRole::Developer,
+        prompt: "stale prompt".to_string(),
+    });
 
     let new_state = reduce(
         state,
@@ -277,7 +287,10 @@ fn test_rate_limit_continuation_prompt_is_preserved_until_success_even_across_re
     );
     assert_eq!(
         after_rate_limit.agent_chain.rate_limit_continuation_prompt,
-        Some("saved prompt".to_string())
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        })
     );
 
     let after_started = reduce(
@@ -286,7 +299,10 @@ fn test_rate_limit_continuation_prompt_is_preserved_until_success_even_across_re
     );
     assert_eq!(
         after_started.agent_chain.rate_limit_continuation_prompt,
-        Some("saved prompt".to_string()),
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        }),
         "InvocationStarted must not clear rate-limit continuation prompt"
     );
 
@@ -307,7 +323,10 @@ fn test_rate_limit_continuation_prompt_is_preserved_until_success_even_across_re
     );
     assert_eq!(
         after_failure.agent_chain.rate_limit_continuation_prompt,
-        Some("saved prompt".to_string()),
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        }),
         "Same-agent retry must preserve rate-limit continuation prompt"
     );
 
@@ -319,7 +338,10 @@ fn test_rate_limit_continuation_prompt_is_preserved_until_success_even_across_re
         after_retry_started
             .agent_chain
             .rate_limit_continuation_prompt,
-        Some("saved prompt".to_string()),
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        }),
         "Retry InvocationStarted must preserve rate-limit continuation prompt"
     );
 
@@ -345,7 +367,10 @@ fn test_auth_fallback_clears_session_and_advances_agent() {
             AgentRole::Developer,
         )
         .with_session_id(Some("session-123".to_string()));
-    chain.rate_limit_continuation_prompt = Some("some saved prompt".to_string());
+    chain.rate_limit_continuation_prompt = Some(RateLimitContinuationPrompt {
+        role: AgentRole::Developer,
+        prompt: "some saved prompt".to_string(),
+    });
 
     let state = PipelineState {
         phase: PipelinePhase::Development,
@@ -409,7 +434,10 @@ fn test_rate_limit_fallback_clears_session_id() {
     );
     assert_eq!(
         new_state.agent_chain.rate_limit_continuation_prompt,
-        Some("preserved prompt".to_string()),
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "preserved prompt".to_string(),
+        }),
         "RateLimited should preserve prompt context"
     );
 }
@@ -476,7 +504,10 @@ fn test_rate_limit_vs_auth_fallback_prompt_semantics() {
 
     assert_eq!(
         after_rate_limit.agent_chain.rate_limit_continuation_prompt,
-        Some("preserved prompt".to_string()),
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "preserved prompt".to_string(),
+        }),
         "RateLimited should preserve prompt context"
     );
 
@@ -512,7 +543,10 @@ fn test_timeout_preserves_rate_limit_continuation_prompt_during_same_agent_retry
         vec![vec![], vec![]],
         AgentRole::Developer,
     );
-    chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+    chain.rate_limit_continuation_prompt = Some(RateLimitContinuationPrompt {
+        role: AgentRole::Developer,
+        prompt: "saved prompt".to_string(),
+    });
 
     let state = PipelineState {
         phase: PipelinePhase::Development,
@@ -529,7 +563,10 @@ fn test_timeout_preserves_rate_limit_continuation_prompt_during_same_agent_retry
         after_first_timeout
             .agent_chain
             .rate_limit_continuation_prompt,
-        Some("saved prompt".to_string()),
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        }),
         "Timeout retry must preserve rate-limit continuation prompt context"
     );
 
@@ -539,7 +576,10 @@ fn test_timeout_preserves_rate_limit_continuation_prompt_during_same_agent_retry
     );
     assert_eq!(
         after_second_timeout.agent_chain.rate_limit_continuation_prompt,
-        Some("saved prompt".to_string()),
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        }),
         "Timeout fallback after budget exhaustion must preserve rate-limit continuation prompt for the next agent"
     );
 }
@@ -555,7 +595,10 @@ fn test_internal_error_preserves_rate_limit_continuation_prompt_during_same_agen
         vec![vec![], vec![]],
         AgentRole::Developer,
     );
-    chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+    chain.rate_limit_continuation_prompt = Some(RateLimitContinuationPrompt {
+        role: AgentRole::Developer,
+        prompt: "saved prompt".to_string(),
+    });
 
     let state = PipelineState {
         phase: PipelinePhase::Development,
@@ -578,7 +621,10 @@ fn test_internal_error_preserves_rate_limit_continuation_prompt_during_same_agen
         after_first_failure
             .agent_chain
             .rate_limit_continuation_prompt,
-        Some("saved prompt".to_string()),
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        }),
         "InternalError retry must preserve rate-limit continuation prompt context"
     );
 
@@ -594,7 +640,10 @@ fn test_internal_error_preserves_rate_limit_continuation_prompt_during_same_agen
     );
     assert_eq!(
         after_second_failure.agent_chain.rate_limit_continuation_prompt,
-        Some("saved prompt".to_string()),
+        Some(RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt: "saved prompt".to_string(),
+        }),
         "InternalError fallback after budget exhaustion must preserve rate-limit continuation prompt for the next agent"
     );
 }
@@ -890,7 +939,10 @@ fn test_fallback_triggered_respects_to_agent_and_resets_retry_state() {
         vec![vec![], vec![], vec![]],
         AgentRole::Developer,
     );
-    chain.rate_limit_continuation_prompt = Some("saved prompt".to_string());
+    chain.rate_limit_continuation_prompt = Some(RateLimitContinuationPrompt {
+        role: AgentRole::Developer,
+        prompt: "saved prompt".to_string(),
+    });
     chain.last_session_id = Some("session-xyz".to_string());
 
     let state = PipelineState {

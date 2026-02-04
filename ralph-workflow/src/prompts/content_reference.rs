@@ -97,13 +97,14 @@ impl PromptContentReference {
 
 /// Specialized reference for DIFF content.
 ///
-/// When DIFF is too large, instructs the agent to use `git diff` command
-/// instead of embedding the diff content.
+/// When DIFF is too large, the pipeline prefers writing the full diff to a file so
+/// agents can read it without invoking git. Some prompts (e.g., review) may include
+/// git-based fallback instructions as a last resort.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiffContentReference {
     /// DIFF is small enough to embed inline.
     Inline(String),
-    /// DIFF is too large; agent should read from a file (with git diff fallback).
+    /// DIFF is too large; agent should read from a file (with optional git fallback).
     ReadFromFile {
         /// Workspace-relative path to the diff file containing the content.
         path: PathBuf,
@@ -115,10 +116,10 @@ pub enum DiffContentReference {
 }
 
 impl DiffContentReference {
-    /// Create a diff reference, choosing inline vs git command based on size.
+    /// Create a diff reference, choosing inline vs file reference based on size.
     ///
     /// If `diff_content.len() <= MAX_INLINE_CONTENT_SIZE`, the diff is stored inline.
-    /// Otherwise, instructions to read from a file are provided (with git diff fallback).
+    /// Otherwise, instructions to read from a file are provided.
     ///
     /// # Arguments
     ///
@@ -143,7 +144,8 @@ impl DiffContentReference {
     /// Get the content for template rendering.
     ///
     /// For inline: returns the diff content directly.
-    /// For git diff: returns instructions to run the git command.
+    /// For file reference: returns instructions to read from the provided path,
+    /// plus optional git fallback commands.
     pub fn render_for_template(&self) -> String {
         match self {
             Self::Inline(content) => content.clone(),
@@ -152,13 +154,6 @@ impl DiffContentReference {
                 start_commit,
                 description,
             } => {
-                // NOTE: The pipeline prefers writing the full diff to `path` so agents don't
-                // need git. The git commands below are a *last resort* fallback.
-                //
-                // We want the diff from `start_commit` to the current state on disk,
-                // including staged + unstaged changes (and untracked, if any).
-                // There is no single git command that covers all of that in every case,
-                // so we provide the minimal set.
                 if start_commit.is_empty() {
                     format!(
                         "[DIFF too large to embed - Read from file]\n\
@@ -379,25 +374,25 @@ mod tests {
     }
 
     #[test]
-    fn test_large_diff_reads_from_file_with_git_fallback() {
+    fn test_large_diff_reads_from_file() {
         let diff = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
         let reference =
             DiffContentReference::from_diff(diff, "abc123", Path::new("/backup/diff.txt"));
         assert!(!reference.is_inline());
         let rendered = reference.render_for_template();
         assert!(rendered.contains("/backup/diff.txt"));
-        assert!(rendered.contains("git diff abc123"));
-        assert!(rendered.contains("git diff --cached abc123"));
+        assert!(rendered.contains("git diff"));
     }
 
     #[test]
-    fn test_diff_with_empty_start_commit() {
+    fn test_diff_with_empty_start_commit_includes_git_fallback() {
         let reference = DiffContentReference::from_diff(
             "x".repeat(MAX_INLINE_CONTENT_SIZE + 1),
             "",
             Path::new("/backup/diff.txt"),
         );
         let rendered = reference.render_for_template();
+        assert!(rendered.contains("/backup/diff.txt"));
         assert!(rendered.contains("Unstaged changes: git diff"));
         assert!(rendered.contains("Staged changes:   git diff --cached"));
     }

@@ -34,6 +34,30 @@ fn test_planning_prepares_prompt_when_agents_ready() {
 }
 
 #[test]
+fn test_planning_role_mismatch_initializes_developer_chain() {
+    // Regression: entering Planning with a non-developer chain must still initialize
+    // the developer chain so FallbackConfig.developer is honored.
+    let state = PipelineState {
+        phase: PipelinePhase::Planning,
+        context_cleaned: true,
+        agent_chain: crate::reducer::state::AgentChainState::initial().with_agents(
+            vec!["commit-agent".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        ),
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::InitializeAgentChain {
+            role: AgentRole::Developer
+        }
+    ));
+}
+
+#[test]
 fn test_planning_prompt_uses_xsd_retry_mode_when_pending() {
     let state = PipelineState {
         phase: PipelinePhase::Planning,
