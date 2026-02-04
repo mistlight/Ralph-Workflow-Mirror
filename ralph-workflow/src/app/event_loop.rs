@@ -252,6 +252,10 @@ where
         // This handles the case where the initial state is already complete
         // (e.g., resuming from an Interrupted checkpoint).
         if state.is_complete() {
+            ctx.logger.info(&format!(
+                "Event loop: state already complete (phase: {:?}, checkpoint_saved_count: {})",
+                state.phase, state.checkpoint_saved_count
+            ));
             break;
         }
 
@@ -289,6 +293,10 @@ where
                         ctx.logger
                             .error("Event loop encountered unrecoverable handler error");
                     }
+                    ctx.logger.error(&format!(
+                        "Event loop exiting: reason=unrecoverable_error, phase={:?}, checkpoint_saved_count={}, events_processed={}",
+                        state.phase, state.checkpoint_saved_count, events_processed
+                    ));
                     return Err(err);
                 }
             }
@@ -301,6 +309,11 @@ where
                 } else {
                     ctx.logger.error("Event loop recovered from panic");
                 }
+
+                ctx.logger.error(&format!(
+                    "Event loop exiting: reason=panic, phase={:?}, checkpoint_saved_count={}, events_processed={}",
+                    state.phase, state.checkpoint_saved_count, events_processed
+                ));
 
                 // Panics inside effect handlers are treated as catastrophic-but-contained.
                 // We dump a trace and return a non-completed result so unattended runs can
@@ -351,6 +364,10 @@ where
         // This ensures that transitions to terminal phases (e.g., Interrupted)
         // have a chance to save their checkpoint before the loop exits.
         if state.is_complete() {
+            ctx.logger.info(&format!(
+                "Event loop: state became complete (phase: {:?}, checkpoint_saved_count: {})",
+                state.phase, state.checkpoint_saved_count
+            ));
             break;
         }
     }
@@ -368,10 +385,22 @@ where
                 config.max_iterations
             ));
         }
+        ctx.logger.error(&format!(
+            "Event loop exiting: reason=max_iterations, phase={:?}, checkpoint_saved_count={}, events_processed={}",
+            state.phase, state.checkpoint_saved_count, events_processed
+        ));
+    }
+
+    let completed = state.is_complete();
+    if !completed {
+        ctx.logger.warn(&format!(
+            "Event loop exiting without completion: phase={:?}, checkpoint_saved_count={}",
+            state.phase, state.checkpoint_saved_count
+        ));
     }
 
     Ok(EventLoopResult {
-        completed: state.is_complete(),
+        completed,
         events_processed,
     })
 }

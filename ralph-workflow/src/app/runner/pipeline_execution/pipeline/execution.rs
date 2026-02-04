@@ -385,7 +385,14 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
             loop_result.events_processed
         ));
     } else {
-        ctx.logger.warn("Pipeline exited without completion marker");
+        ctx.logger
+            .error("⚠️  EXCEPTIONAL: Pipeline exited without normal completion");
+        ctx.logger.warn(&format!(
+            "This indicates a bug in the event loop or reducer. \
+             Expected final phase: Complete or Interrupted+checkpoint. \
+             Actual: completed=false, events_processed={}",
+            loop_result.events_processed
+        ));
 
         // DEFENSIVE: Emit completion marker for orchestration
         // This ensures external systems can detect termination even if the

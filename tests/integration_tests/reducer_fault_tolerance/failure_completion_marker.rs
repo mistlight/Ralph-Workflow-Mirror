@@ -274,3 +274,72 @@ fn test_completion_marker_written_before_interrupted_transition() {
         );
     });
 }
+
+#[test]
+fn test_failure_completion_full_event_loop_with_logging() {
+    with_default_timeout(|| {
+        // This test verifies that AgentChainExhausted triggers the complete
+        // failure handling flow through the event loop, emitting completion marker
+        // and completing successfully WITHOUT triggering the defensive completion marker.
+        //
+        // Expected flow:
+        // 1. AgentChainExhausted error -> AwaitingDevFix phase
+        // 2. TriggerDevFixFlow effect -> writes completion marker + emits events
+        // 3. CompletionMarkerEmitted event -> Interrupted phase
+        // 4. SaveCheckpoint effect -> CheckpointSaved event
+        // 5. is_complete() returns true
+        // 6. Event loop exits with completed=true
+
+        let mut fixture = Fixture::new();
+        let mut ctx = fixture.ctx();
+
+        // Start in AwaitingDevFix phase (simulating an AgentChainExhausted error)
+        let state = PipelineState {
+            phase: PipelinePhase::AwaitingDevFix,
+            previous_phase: Some(PipelinePhase::Development),
+            ..PipelineState::initial(2, 1)
+        };
+
+        let mut handler = MockEffectHandler::new(state.clone());
+        let config = EventLoopConfig {
+            max_iterations: 100,
+        };
+
+        let result = run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
+            .expect("Event loop should not error");
+
+        // Verify completion marker was written
+        let marker_path = Path::new(".agent/tmp/completion_marker");
+        assert!(
+            fixture.workspace.exists(marker_path),
+            "Completion marker should be written during TriggerDevFixFlow"
+        );
+
+        let marker_content = fixture
+            .workspace
+            .read(marker_path)
+            .expect("Should read completion marker");
+        assert!(
+            marker_content.starts_with("failure"),
+            "Completion marker should indicate failure, got: {}",
+            marker_content
+        );
+
+        // CRITICAL: Event loop should complete successfully
+        assert!(
+            result.completed,
+            "Event loop MUST complete after failure handling. \
+             If this fails, the 'Pipeline exited without completion marker' bug has occurred. \
+             Check event loop logs for: phase, checkpoint_saved_count, exit reason."
+        );
+
+        // Verify we processed the expected events:
+        // TriggerDevFixFlow -> DevFixSkipped + CompletionMarkerEmitted (2 events) + SaveCheckpoint -> CheckpointSaved (1 event)
+        // Total: at least 3 events
+        assert!(
+            result.events_processed >= 3,
+            "Should process at least 3 events (DevFixSkipped, CompletionMarkerEmitted, CheckpointSaved), got {}",
+            result.events_processed
+        );
+    });
+}
