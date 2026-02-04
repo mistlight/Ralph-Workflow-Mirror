@@ -418,3 +418,14 @@ fn test_prepare_fix_prompt_uses_prompt_history_replay() {
         .expect("fix prompt should be written");
     assert!(content.contains("REPLAYED PROMPT"));
 }
+
+#[test]
+fn test_fix_mode_xsd_retry_template_mentions_illegal_control_characters() {
+    let template = include_str!("../../../../prompts/templates/fix_mode_xsd_retry.txt");
+    assert!(
+        template.contains(
+            r"Illegal control characters (NUL byte, etc.) - common: \u0000 instead of \u00A0"
+        ),
+        "Expected fix_mode_xsd_retry template to mention illegal control characters"
+    );
+}
