@@ -436,3 +436,38 @@ fn monitor_reports_timeout_even_if_process_still_alive_after_force_kill_hard_cap
     controller.store(false, Ordering::Release);
     let _ = monitor_handle.join();
 }
+
+#[test]
+#[cfg(unix)]
+fn kill_process_targets_process_group_by_default_to_avoid_fd_inheritance_hangs() {
+    use crate::executor::MockAgentChild;
+
+    let (mock_child, _controller) = MockAgentChild::new_running(0);
+    let child = Arc::new(Mutex::new(
+        Box::new(mock_child) as Box<dyn crate::executor::AgentChild>
+    ));
+
+    let executor = crate::executor::MockProcessExecutor::new();
+    let pid = 12345;
+
+    let _ = super::super::kill::kill_process(
+        pid,
+        &executor,
+        Some(&child),
+        config(
+            Duration::from_millis(0),
+            Duration::from_millis(1),
+            Duration::from_millis(0),
+            Duration::from_millis(0),
+            Duration::from_millis(1),
+        ),
+    );
+
+    let calls = executor.execute_calls_for("kill");
+    assert!(
+        calls.iter().any(|(_, args, _, _)| {
+            args.iter().any(|a| a == "-TERM") && args.iter().any(|a| a == "-12345")
+        }),
+        "expected SIGTERM to be sent to process group (-PID)"
+    );
+}

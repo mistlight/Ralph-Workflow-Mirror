@@ -106,6 +106,19 @@ impl ProcessExecutor for RealProcessExecutor {
         cmd.env("PYTHONUNBUFFERED", "1");
         cmd.env("NODE_ENV", "production");
 
+        // Put the agent in its own process group so idle-timeout enforcement can
+        // terminate the whole subtree (and not just the direct child PID).
+        #[cfg(unix)]
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+
         // Spawn the process with piped stdout/stderr
         let mut child = cmd
             .stdin(std::process::Stdio::null())
@@ -122,11 +135,12 @@ impl ProcessExecutor for RealProcessExecutor {
             .take()
             .ok_or_else(|| io::Error::other("Failed to capture stderr"))?;
 
-        // The stderr collector thread relies on non-blocking reads so it can
+        // The stderr collector and stdout pump rely on non-blocking reads so they can
         // be cancelled promptly (idle timeout, early failures).
         #[cfg(unix)]
         {
             use std::os::unix::io::AsRawFd;
+            set_nonblocking_fd(stdout.as_raw_fd())?;
             set_nonblocking_fd(stderr.as_raw_fd())?;
         }
 

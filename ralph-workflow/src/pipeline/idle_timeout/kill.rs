@@ -86,8 +86,22 @@ pub const DEFAULT_KILL_CONFIG: KillConfig = KillConfig::new(
 
 #[cfg(unix)]
 pub(crate) fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -> bool {
+    let pid_str = pid.to_string();
+    let pgid_str = format!("-{pid_str}");
+
+    // Prefer killing the whole process group so descendant processes that inherited
+    // stdout/stderr FDs don't keep pipes open after the parent is gone.
+    let group_ok = executor
+        .execute("kill", &["-KILL", &pgid_str], &[], None)
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if group_ok {
+        return true;
+    }
+
     executor
-        .execute("kill", &["-KILL", &pid.to_string()], &[], None)
+        .execute("kill", &["-KILL", &pid_str], &[], None)
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -95,7 +109,12 @@ pub(crate) fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -
 #[cfg(windows)]
 pub(crate) fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -> bool {
     executor
-        .execute("taskkill", &["/F", "/PID", &pid.to_string()], &[], None)
+        .execute(
+            "taskkill",
+            &["/F", "/T", "/PID", &pid.to_string()],
+            &[],
+            None,
+        )
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -111,9 +130,19 @@ pub(crate) fn kill_process(
     child: Option<&Arc<Mutex<Box<dyn AgentChild>>>>,
     config: KillConfig,
 ) -> KillResult {
-    let term_result = executor.execute("kill", &["-TERM", &pid.to_string()], &[], None);
+    let pid_str = pid.to_string();
+    let pgid_str = format!("-{pid_str}");
 
-    let term_ok = term_result.map(|o| o.status.success()).unwrap_or(false);
+    // Send SIGTERM to the process group first (see module docs).
+    let term_ok = executor
+        .execute("kill", &["-TERM", &pgid_str], &[], None)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+        || executor
+            .execute("kill", &["-TERM", &pid_str], &[], None)
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
     if !term_ok {
         return KillResult::Failed;
     }
@@ -133,8 +162,14 @@ pub(crate) fn kill_process(
             }
         }
 
-        let kill_result = executor.execute("kill", &["-KILL", &pid.to_string()], &[], None);
-        let kill_ok = kill_result.map(|o| o.status.success()).unwrap_or(false);
+        let kill_ok = executor
+            .execute("kill", &["-KILL", &pgid_str], &[], None)
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+            || executor
+                .execute("kill", &["-KILL", &pid_str], &[], None)
+                .map(|o| o.status.success())
+                .unwrap_or(false);
         if !kill_ok {
             return KillResult::Failed;
         }
@@ -169,7 +204,12 @@ pub(crate) fn kill_process(
     child: Option<&Arc<Mutex<Box<dyn AgentChild>>>>,
     config: KillConfig,
 ) -> KillResult {
-    let result = executor.execute("taskkill", &["/F", "/PID", &pid.to_string()], &[], None);
+    let result = executor.execute(
+        "taskkill",
+        &["/F", "/T", "/PID", &pid.to_string()],
+        &[],
+        None,
+    );
     let kill_ok = result.map(|o| o.status.success()).unwrap_or(false);
     if !kill_ok {
         return KillResult::Failed;

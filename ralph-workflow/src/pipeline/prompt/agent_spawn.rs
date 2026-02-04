@@ -110,6 +110,8 @@ pub(super) fn run_with_agent_spawn(
     let child_for_monitor = Arc::clone(&child_shared);
 
     let activity_timestamp = new_activity_timestamp();
+    let stdout_cancel = Arc::new(AtomicBool::new(false));
+    let stdout_cancel_for_monitor = Arc::clone(&stdout_cancel);
     let monitor_should_stop = Arc::new(AtomicBool::new(false));
     let monitor_should_stop_clone = Arc::clone(&monitor_should_stop);
     let activity_timestamp_clone = activity_timestamp.clone();
@@ -118,13 +120,17 @@ pub(super) fn run_with_agent_spawn(
         std::sync::Arc::clone(&runtime.executor_arc);
 
     let mut monitor_handle = Some(std::thread::spawn(move || {
-        monitor_idle_timeout(
+        let result = monitor_idle_timeout(
             activity_timestamp_clone,
             child_for_monitor,
             IDLE_TIMEOUT_SECS,
             monitor_should_stop_clone,
             monitor_executor,
-        )
+        );
+        if matches!(result, MonitorResult::TimedOut { .. }) {
+            stdout_cancel_for_monitor.store(true, Ordering::Release);
+        }
+        result
     }));
 
     let stderr_activity_timestamp = activity_timestamp.clone();
@@ -143,9 +149,13 @@ pub(super) fn run_with_agent_spawn(
     }));
 
     let activity_timestamp_for_timeout = activity_timestamp.clone();
-    if let Err(e) =
-        super::streaming::stream_agent_output_from_handle(stdout, cmd, runtime, activity_timestamp)
-    {
+    if let Err(e) = super::streaming::stream_agent_output_from_handle(
+        stdout,
+        cmd,
+        runtime,
+        activity_timestamp,
+        Arc::clone(&stdout_cancel),
+    ) {
         super::cleanup::cleanup_after_agent_failure(
             &child_shared,
             &monitor_should_stop,

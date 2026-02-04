@@ -93,6 +93,8 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
     let child_for_monitor = Arc::clone(&child_shared);
 
     let activity_timestamp = new_activity_timestamp();
+    let stdout_cancel = Arc::new(AtomicBool::new(false));
+    let stdout_cancel_for_monitor = Arc::clone(&stdout_cancel);
     let monitor_should_stop = Arc::new(AtomicBool::new(false));
     let monitor_should_stop_clone = Arc::clone(&monitor_should_stop);
     let activity_timestamp_clone = activity_timestamp.clone();
@@ -101,15 +103,20 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
         std::sync::Arc::clone(&runtime.executor_arc);
 
     let mut monitor_handle = Some(std::thread::spawn(move || {
-        crate::pipeline::idle_timeout::monitor_idle_timeout_with_interval_and_kill_config(
-            activity_timestamp_clone,
-            child_for_monitor,
-            idle_timeout_secs,
-            monitor_should_stop_clone,
-            monitor_executor,
-            monitor_check_interval,
-            kill_config,
-        )
+        let result =
+            crate::pipeline::idle_timeout::monitor_idle_timeout_with_interval_and_kill_config(
+                activity_timestamp_clone,
+                child_for_monitor,
+                idle_timeout_secs,
+                monitor_should_stop_clone,
+                monitor_executor,
+                monitor_check_interval,
+                kill_config,
+            );
+        if matches!(result, MonitorResult::TimedOut { .. }) {
+            stdout_cancel_for_monitor.store(true, Ordering::Release);
+        }
+        result
     }));
 
     let stderr_activity_timestamp = activity_timestamp.clone();
@@ -127,9 +134,13 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
     }));
 
     let activity_timestamp_for_timeout = activity_timestamp.clone();
-    if let Err(e) =
-        super::streaming::stream_agent_output_from_handle(stdout, cmd, runtime, activity_timestamp)
-    {
+    if let Err(e) = super::streaming::stream_agent_output_from_handle(
+        stdout,
+        cmd,
+        runtime,
+        activity_timestamp,
+        Arc::clone(&stdout_cancel),
+    ) {
         super::cleanup::cleanup_after_agent_failure(
             &child_shared,
             &monitor_should_stop,
