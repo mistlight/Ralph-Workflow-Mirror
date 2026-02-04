@@ -400,12 +400,15 @@ pub enum Effect {
         duration_ms: u64,
     },
 
-    /// Abort the pipeline with a reason.
+    /// Report agent chain exhaustion.
     ///
-    /// This provides an explicit terminal effect for unrecoverable situations
-    /// (e.g., exhausted agent chain) so the pipeline never stalls on checkpoints.
-    AbortPipeline {
-        reason: String,
+    /// This effect is emitted when the agent chain has exhausted all retry attempts.
+    /// The handler converts this to an ErrorEvent::AgentChainExhausted which the
+    /// reducer processes to transition to Interrupted phase.
+    ReportAgentChainExhausted {
+        role: AgentRole,
+        phase: super::event::PipelinePhase,
+        cycle: u32,
     },
 
     ValidateFinalState,

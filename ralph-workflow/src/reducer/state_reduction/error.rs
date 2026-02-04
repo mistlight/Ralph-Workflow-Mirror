@@ -38,6 +38,17 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             // State remains unchanged - event loop will terminate on Err
             state.clone()
         }
+
+        // Agent chain exhausted - this is a terminal condition
+        // The reducer transitions to Interrupted phase to signal pipeline termination
+        ErrorEvent::AgentChainExhausted { .. } => {
+            // Transition to Interrupted phase
+            // This signals the event loop that the pipeline should terminate
+            use crate::reducer::event::PipelinePhase;
+            let mut new_state = state.clone();
+            new_state.phase = PipelinePhase::Interrupted;
+            new_state
+        }
     }
 }
 
@@ -78,5 +89,25 @@ mod tests {
             // State should not change - event loop will terminate on Err
             assert_eq!(new_state.phase, state.phase);
         }
+    }
+
+    #[test]
+    fn test_reduce_agent_chain_exhausted_transitions_to_interrupted() {
+        use crate::agents::AgentRole;
+        use crate::reducer::event::PipelinePhase;
+
+        let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+        assert_eq!(state.phase, PipelinePhase::Planning);
+
+        let error = ErrorEvent::AgentChainExhausted {
+            role: AgentRole::Developer,
+            phase: PipelinePhase::Development,
+            cycle: 3,
+        };
+
+        let new_state = reduce_error(&state, &error);
+
+        // Should transition to Interrupted phase
+        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
     }
 }

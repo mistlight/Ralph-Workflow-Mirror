@@ -370,7 +370,7 @@ fn test_effects_are_single_task() {
             CreateCommit,
             SkipCommit,
             BackoffWait,
-            AbortPipeline,
+            ReportAgentChainExhausted,
             ValidateFinalState,
             SaveCheckpoint,
             CleanupContext,
@@ -436,7 +436,7 @@ fn test_effects_are_single_task() {
                 Effect::CreateCommit { .. } => EffectTask::CreateCommit,
                 Effect::SkipCommit { .. } => EffectTask::SkipCommit,
                 Effect::BackoffWait { .. } => EffectTask::BackoffWait,
-                Effect::AbortPipeline { .. } => EffectTask::AbortPipeline,
+                Effect::ReportAgentChainExhausted { .. } => EffectTask::ReportAgentChainExhausted,
                 Effect::ValidateFinalState => EffectTask::ValidateFinalState,
                 Effect::SaveCheckpoint { .. } => EffectTask::SaveCheckpoint,
                 Effect::CleanupContext => EffectTask::CleanupContext,
@@ -545,8 +545,10 @@ fn test_effects_are_single_task() {
                 cycle: 1,
                 duration_ms: 1,
             },
-            Effect::AbortPipeline {
-                reason: "test".to_string(),
+            Effect::ReportAgentChainExhausted {
+                role: AgentRole::Developer,
+                phase: ralph_workflow::reducer::event::PipelinePhase::Development,
+                cycle: 1,
             },
             Effect::ValidateFinalState,
             Effect::SaveCheckpoint {

@@ -557,8 +557,11 @@ src/lib.rs</ralph-files-changed>
                 vec![],
             ),
 
-            Effect::AbortPipeline { reason } => {
-                panic!("MockEffectHandler received AbortPipeline effect: {reason}")
+            Effect::ReportAgentChainExhausted { role, phase, cycle } => {
+                panic!(
+                    "MockEffectHandler received ReportAgentChainExhausted effect: role={:?}, phase={:?}, cycle={}",
+                    role, phase, cycle
+                )
             }
 
             Effect::ValidateFinalState => {
@@ -618,7 +621,10 @@ src/lib.rs</ralph-files-changed>
 impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
     fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         match effect {
-            Effect::AbortPipeline { reason } => Err(anyhow::anyhow!(reason)),
+            Effect::ReportAgentChainExhausted { role, phase, cycle } => {
+                use crate::reducer::event::ErrorEvent;
+                Err(ErrorEvent::AgentChainExhausted { role, phase, cycle }.into())
+            }
             _ => Ok(self.execute_mock(effect)),
         }
     }

@@ -441,8 +441,8 @@ fn test_exhausted_chain_triggers_checkpoint() {
 
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::AbortPipeline { .. }),
-            "Exhausted chain should abort explicitly, got {:?}",
+            matches!(effect, Effect::ReportAgentChainExhausted { .. }),
+            "Exhausted chain should report exhaustion, got {:?}",
             effect
         );
     });

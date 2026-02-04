@@ -131,6 +131,35 @@ fn build_trace_entry(
     }
 }
 
+/// Extract ErrorEvent from anyhow::Error if present.
+///
+/// # Error Event Processing Architecture
+///
+/// Effect handlers return errors through `Err(ErrorEvent::Variant.into())`. This function
+/// extracts the original `ErrorEvent` so it can be processed through the reducer.
+///
+/// ## Why Downcast?
+///
+/// When an effect handler returns `Err(ErrorEvent::Variant.into())`, the error is wrapped
+/// in an `anyhow::Error`. Since `ErrorEvent` implements `std::error::Error`, anyhow's
+/// blanket `From` implementation preserves the original error type, allowing us to downcast
+/// back to `ErrorEvent` for reducer processing.
+///
+/// ## Processing Flow
+///
+/// 1. Handler returns `Err(ErrorEvent::AgentChainExhausted { ... }.into())`
+/// 2. Event loop catches the error and calls this function
+/// 3. If downcast succeeds, wrap in `PipelineEvent::Error()` and process through reducer
+/// 4. If downcast fails, return `Err()` to terminate the event loop (truly unrecoverable error)
+///
+/// This architecture allows the reducer to decide recovery strategy based on the specific
+/// error type, rather than terminating immediately on any `Err()`.
+fn extract_error_event(err: &anyhow::Error) -> Option<crate::reducer::event::ErrorEvent> {
+    // Try to downcast to ErrorEvent
+    err.downcast_ref::<crate::reducer::event::ErrorEvent>()
+        .cloned()
+}
+
 fn dump_event_loop_trace(
     ctx: &mut PhaseContext<'_>,
     trace: &EventTraceBuffer,
@@ -226,7 +255,19 @@ where
             handler.execute(effect, ctx)
         })) {
             Ok(Ok(result)) => result,
-            Ok(Err(err)) => return Err(err),
+            Ok(Err(err)) => {
+                // Check if this is an error event that should be processed through the reducer
+                if let Some(error_event) = extract_error_event(&err) {
+                    // Process error event through reducer like a normal event
+                    ctx.logger.warn(&format!("Error event: {error_event:?}"));
+                    crate::reducer::effect::EffectResult::event(
+                        crate::reducer::event::PipelineEvent::Error(error_event),
+                    )
+                } else {
+                    // Truly unrecoverable error - cannot continue
+                    return Err(err);
+                }
+            }
             Err(_) => {
                 let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
                 if dumped {

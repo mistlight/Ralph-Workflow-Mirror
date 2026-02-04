@@ -6,8 +6,8 @@ use super::*;
 
 #[test]
 fn test_interrupted_phase_saves_checkpoint_before_abort_loop() {
-    // Regression: if agent chain exhaustion triggers AbortPipeline and the reducer
-    // transitions to Interrupted, orchestration must not keep returning AbortPipeline.
+    // Regression: if agent chain exhaustion triggers ReportAgentChainExhausted and the reducer
+    // transitions to Interrupted, orchestration must not keep returning ReportAgentChainExhausted.
     // It should drive a checkpoint save so the event loop can mark completion.
     let state = PipelineState {
         phase: PipelinePhase::Interrupted,
