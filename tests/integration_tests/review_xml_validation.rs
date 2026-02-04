@@ -614,3 +614,54 @@ fn test_review_xml_allows_valid_control_characters() {
         );
     });
 }
+
+/// Test that XSD validation error detail flows correctly.
+///
+/// This integration test verifies:
+/// 1. Validation fails with specific XSD error (NUL byte)
+/// 2. The error detail is actionable and mentions the specific problem
+///
+/// This is a regression test for the bug where validation errors were not
+/// propagated, causing the XSD retry prompt to show only a generic message.
+///
+/// Note: This test currently only validates that the XSD error is detailed.
+/// Full flow testing (event -> state -> prompt) requires internal APIs that
+/// are tested in unit tests.
+#[test]
+fn test_review_xsd_error_is_detailed_for_retry() {
+    with_default_timeout(|| {
+        // Setup: Create XML with NUL byte that will fail validation
+        let xml_with_nul =
+            "<ralph-issues><ralph-issue>Check git\u{0000}diff usage</ralph-issue></ralph-issues>";
+
+        // Execute: Verify validation produces specific error about NUL
+        let validation_result = ralph_workflow::validate_issues_xml(xml_with_nul);
+        assert!(
+            validation_result.is_err(),
+            "NUL byte should fail validation"
+        );
+
+        let xsd_error = validation_result.unwrap_err();
+        let error_detail = xsd_error.format_for_ai_retry();
+
+        // Assert: Error detail should be specific and actionable
+        assert!(
+            error_detail.contains("NUL") || error_detail.contains("0x00"),
+            "Error detail should mention NUL byte, got: {}",
+            error_detail
+        );
+
+        assert!(
+            error_detail.contains("How to fix") || error_detail.contains("fix:"),
+            "Error detail should provide fix guidance, got: {}",
+            error_detail
+        );
+
+        // The error should suggest the common NBSP typo fix
+        assert!(
+            error_detail.contains("\\u00A0") || error_detail.contains("non-breaking space"),
+            "Error should suggest NBSP as common cause, got: {}",
+            error_detail
+        );
+    });
+}

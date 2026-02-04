@@ -173,7 +173,10 @@ fn test_fix_output_validation_failed_sets_xsd_retry_pending() {
         ..create_test_state()
     };
 
-    let new_state = reduce(state, PipelineEvent::fix_output_validation_failed(0, 0));
+    let new_state = reduce(
+        state,
+        PipelineEvent::fix_output_validation_failed(0, 0, None),
+    );
 
     assert!(
         new_state.continuation.xsd_retry_pending,
@@ -206,7 +209,10 @@ fn test_fix_output_validation_exhausted_switches_agent() {
         ..PipelineState::initial(5, 2)
     };
 
-    let new_state = reduce(state, PipelineEvent::fix_output_validation_failed(0, 2));
+    let new_state = reduce(
+        state,
+        PipelineEvent::fix_output_validation_failed(0, 2, None),
+    );
 
     // Should have switched to next agent
     assert_eq!(

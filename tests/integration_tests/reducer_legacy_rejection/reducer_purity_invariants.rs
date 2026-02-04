@@ -773,6 +773,7 @@ fn test_review_validation_failure_surfaces_via_event() {
             PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
                 pass: 0,
                 attempt: 0,
+                error_detail: None,
             }),
         );
 
@@ -789,6 +790,7 @@ fn test_review_validation_failure_surfaces_via_event() {
             PipelineEvent::Review(ReviewEvent::OutputValidationFailed {
                 pass: 0,
                 attempt: 1,
+                error_detail: None,
             }),
         );
 

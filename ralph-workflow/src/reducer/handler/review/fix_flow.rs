@@ -100,12 +100,17 @@ impl MainEffectHandler {
                         "fix_{pass}_xsd_retry_{}",
                         continuation_state.invalid_output_attempts
                     );
+                    // Use the actual XSD error from state, or fall back to generic message
+                    let xsd_error = continuation_state
+                        .last_fix_xsd_error
+                        .as_deref()
+                        .unwrap_or("XML output failed validation. Provide valid XML output.");
                     let (prompt, was_replayed) =
                         get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
                             prompt_fix_xsd_retry_with_context(
                                 ctx.template_context,
                                 &issues_content,
-                                "XML output failed validation. Provide valid XML output.",
+                                xsd_error,
                                 &last_output,
                                 ctx.workspace,
                             )
@@ -262,10 +267,22 @@ impl MainEffectHandler {
             Ok(_) => Ok(EffectResult::event(
                 PipelineEvent::fix_result_xml_extracted(pass),
             )),
-            Err(_) => Ok(EffectResult::event(PipelineEvent::fix_result_xml_missing(
-                pass,
-                self.state.continuation.invalid_output_attempts,
-            ))),
+            Err(err) => {
+                let detail = if err.kind() == std::io::ErrorKind::NotFound {
+                    None
+                } else {
+                    Some(format!(
+                        "{:?}: {}",
+                        WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                        err
+                    ))
+                };
+                Ok(EffectResult::event(PipelineEvent::fix_result_xml_missing(
+                    pass,
+                    self.state.continuation.invalid_output_attempts,
+                    detail,
+                )))
+            }
         }
     }
 
@@ -280,11 +297,21 @@ impl MainEffectHandler {
 
         let fix_xml = match ctx.workspace.read(Path::new(xml_paths::FIX_RESULT_XML)) {
             Ok(s) => s,
-            Err(_) => {
+            Err(err) => {
+                let detail = if err.kind() == std::io::ErrorKind::NotFound {
+                    None
+                } else {
+                    Some(format!(
+                        "{:?}: {}",
+                        WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                        err
+                    ))
+                };
                 return Ok(EffectResult::event(
                     PipelineEvent::fix_output_validation_failed(
                         pass,
                         self.state.continuation.invalid_output_attempts,
+                        detail,
                     ),
                 ));
             }
@@ -307,10 +334,11 @@ impl MainEffectHandler {
                     }],
                 ))
             }
-            Err(_) => Ok(EffectResult::event(
+            Err(err) => Ok(EffectResult::event(
                 PipelineEvent::fix_output_validation_failed(
                     pass,
                     self.state.continuation.invalid_output_attempts,
+                    Some(err.format_for_ai_retry()),
                 ),
             )),
         }

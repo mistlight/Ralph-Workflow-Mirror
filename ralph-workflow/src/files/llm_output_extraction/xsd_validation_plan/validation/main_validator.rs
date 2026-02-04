@@ -1,5 +1,9 @@
 // Main validation function (validate_plan_xml)
 
+// Note: XsdErrorType, XsdValidationError, Event, and Reader
+// are already imported in the parent module (xsd_validation_plan/mod.rs)
+// and are available via `use super::*;` in validation/mod.rs
+
 /// Validate plan XML content against the structured XSD schema.
 ///
 /// This validates that the XML content conforms to the expected

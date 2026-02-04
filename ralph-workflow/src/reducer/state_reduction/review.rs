@@ -71,6 +71,11 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                 issues,
                 no_issues_found,
             }),
+            continuation: crate::reducer::state::ContinuationState {
+                // Clear error when validation succeeds
+                last_review_xsd_error: None,
+                ..state.continuation
+            },
             ..state
         },
 
@@ -125,6 +130,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         xsd_retry_count: 0,
                         xsd_retry_pending: false,
                         xsd_retry_session_reuse_pending: false,
+                        // Clear review error when transitioning to commit phase
+                        last_review_xsd_error: None,
                         ..state.continuation
                     },
                     fix_result_xml_cleaned_pass: None,
@@ -178,6 +185,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                 xsd_retry_pending: false,
                 same_agent_retry_pending: false,
                 same_agent_retry_reason: None,
+                // Clear fix error when starting a new fix attempt
+                last_fix_xsd_error: None,
                 ..state.continuation
             },
             fix_prompt_prepared_pass: None,
@@ -237,6 +246,11 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                 status,
                 summary,
             }),
+            continuation: crate::reducer::state::ContinuationState {
+                // Clear error when validation succeeds
+                last_fix_xsd_error: None,
+                ..state.continuation
+            },
             ..state
         },
 
@@ -297,6 +311,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             commit_xml_archived: false,
             continuation: crate::reducer::state::ContinuationState {
                 invalid_output_attempts: 0,
+                // Clear fix error when transitioning to commit phase
+                last_fix_xsd_error: None,
                 ..state.continuation
             },
             ..state
@@ -391,8 +407,16 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                 }
             }
         }
-        ReviewEvent::OutputValidationFailed { pass, attempt }
-        | ReviewEvent::IssuesXmlMissing { pass, attempt } => {
+        ReviewEvent::OutputValidationFailed {
+            pass,
+            attempt,
+            error_detail,
+        }
+        | ReviewEvent::IssuesXmlMissing {
+            pass,
+            attempt,
+            error_detail,
+        } => {
             // Policy: The reducer maintains retry state for determinism.
             // Handlers should emit `attempt` from state (checkpoint-resume safe).
             let new_xsd_count = state.continuation.xsd_retry_count + 1;
@@ -412,6 +436,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         same_agent_retry_count: 0,
                         same_agent_retry_pending: false,
                         same_agent_retry_reason: None,
+                        // Clear error when switching agents
+                        last_review_xsd_error: None,
                         ..state.continuation
                     },
                     review_issues_xml_cleaned_pass: None,
@@ -427,6 +453,8 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
                         xsd_retry_count: new_xsd_count,
                         xsd_retry_pending: true,
                         xsd_retry_session_reuse_pending: false,
+                        // Preserve error detail for XSD retry prompt
+                        last_review_xsd_error: error_detail.clone(),
                         ..state.continuation
                     },
                     review_issues_xml_cleaned_pass: None,
@@ -485,10 +513,16 @@ pub(super) fn reduce_review_event(state: PipelineState, event: ReviewEvent) -> P
             last_status: _,
         } => reduce_fix_continuation_budget_exhausted(state, pass),
 
-        ReviewEvent::FixOutputValidationFailed { pass, attempt }
-        | ReviewEvent::FixResultXmlMissing { pass, attempt } => {
-            reduce_fix_output_validation_failure(state, pass, attempt)
+        ReviewEvent::FixOutputValidationFailed {
+            pass,
+            attempt,
+            error_detail,
         }
+        | ReviewEvent::FixResultXmlMissing {
+            pass,
+            attempt,
+            error_detail,
+        } => reduce_fix_output_validation_failure(state, pass, attempt, error_detail.clone()),
     }
 }
 
