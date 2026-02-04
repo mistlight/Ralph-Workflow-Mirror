@@ -386,6 +386,20 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         ));
     } else {
         ctx.logger.warn("Pipeline exited without completion marker");
+
+        // DEFENSIVE: Emit completion marker for orchestration
+        // This ensures external systems can detect termination even if the
+        // event loop exited unexpectedly before SaveCheckpoint was processed.
+        let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+        let content = "failure\nEvent loop exited without normal completion";
+        if let Err(err) = ctx.workspace.write(marker_path, content) {
+            ctx.logger.error(&format!(
+                "Failed to write defensive completion marker: {err}"
+            ));
+        } else {
+            ctx.logger
+                .info("Defensive completion marker written: failure");
+        }
     }
 
     // Save Complete checkpoint before clearing (for idempotent resume)

@@ -259,7 +259,9 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             && state.checkpoint_saved_count == 0
             && !matches!(
                 state.phase,
-                PipelinePhase::Complete | PipelinePhase::Interrupted
+                PipelinePhase::Complete
+                    | PipelinePhase::Interrupted
+                    | PipelinePhase::AwaitingDevFix
             )
         {
             return Effect::SaveCheckpoint {
@@ -267,11 +269,18 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             };
         }
 
-        return Effect::ReportAgentChainExhausted {
-            role: state.agent_chain.current_role,
-            phase: state.phase,
-            cycle: state.agent_chain.retry_cycle,
-        };
+        // AwaitingDevFix is the phase we transition to AFTER reporting agent chain exhaustion.
+        // If we're already in AwaitingDevFix with an exhausted chain, don't report exhaustion
+        // again - instead fall through to phase-specific orchestration (TriggerDevFixFlow).
+        if matches!(state.phase, PipelinePhase::AwaitingDevFix) {
+            // Fall through to determine_next_effect_for_phase
+        } else {
+            return Effect::ReportAgentChainExhausted {
+                role: state.agent_chain.current_role,
+                phase: state.phase,
+                cycle: state.agent_chain.retry_cycle,
+            };
+        }
     }
 
     if let Some(duration_ms) = state.agent_chain.backoff_pending_ms {

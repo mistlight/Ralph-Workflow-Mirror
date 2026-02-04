@@ -53,6 +53,9 @@ fn test_error_event_downcast_roundtrip() {
 fn test_agent_chain_exhausted_transitions_to_interrupted() {
     with_default_timeout(|| {
         use ralph_workflow::agents::AgentRole;
+        use ralph_workflow::reducer::determine_next_effect;
+        use ralph_workflow::reducer::effect::Effect;
+        use ralph_workflow::reducer::event::AwaitingDevFixEvent;
 
         let state = PipelineState::initial(1, 1);
         assert_eq!(state.phase, PipelinePhase::Planning);
@@ -68,8 +71,42 @@ fn test_agent_chain_exhausted_transitions_to_interrupted() {
 
         let new_state = reduce(state, error_event);
 
-        // Should transition to Interrupted phase
-        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        // Should transition to AwaitingDevFix phase (not directly to Interrupted)
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(new_state.previous_phase, Some(PipelinePhase::Planning));
+
+        // Orchestration should determine TriggerDevFixFlow effect
+        let effect = determine_next_effect(&new_state);
+        assert!(
+            matches!(effect, Effect::TriggerDevFixFlow { .. }),
+            "Expected TriggerDevFixFlow effect, got {:?}",
+            effect
+        );
+
+        // After dev-fix flow (which immediately skips and emits completion marker),
+        // state should transition to Interrupted
+        let after_skip_state = reduce(
+            new_state.clone(),
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixSkipped {
+                reason: "Dev-fix flow not yet implemented".to_string(),
+            }),
+        );
+        // DevFixSkipped doesn't change phase, stays in AwaitingDevFix
+        assert_eq!(after_skip_state.phase, PipelinePhase::AwaitingDevFix);
+
+        let final_state = reduce(
+            after_skip_state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
+                is_failure: true,
+            }),
+        );
+
+        // CompletionMarkerEmitted transitions to Interrupted
+        assert_eq!(final_state.phase, PipelinePhase::Interrupted);
+        assert_eq!(
+            final_state.previous_phase,
+            Some(PipelinePhase::AwaitingDevFix)
+        );
     });
 }
 

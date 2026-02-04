@@ -285,18 +285,31 @@ impl MainEffectHandler {
                 failed_role,
                 retry_cycle,
             } => {
-                // For initial implementation, log the failure and immediately emit
-                // a skip event to proceed to completion marker emission.
+                // For initial implementation, log the failure and write completion marker
+                // before proceeding to termination.
                 // Full dev-fix flow implementation requires prompt engineering and
                 // agent invocation plumbing.
+                ctx.logger.error("⚠️  PIPELINE FAILURE DETECTED ⚠️");
                 ctx.logger.warn(&format!(
                     "Pipeline failure detected (phase: {}, role: {:?}, cycle: {})",
                     failed_phase, failed_role, retry_cycle
                 ));
+                ctx.logger.info("Entering AwaitingDevFix flow...");
                 ctx.logger
                     .info("Dev-fix flow not yet implemented - proceeding to termination");
 
-                // Emit skip event to continue flow
+                // Write completion marker BEFORE emitting events
+                let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+                let content = format!(
+                    "failure\nAgent chain exhausted: phase={}, role={:?}, cycle={}",
+                    failed_phase, failed_role, retry_cycle
+                );
+                ctx.workspace.write(marker_path, &content)?;
+                ctx.logger.info("Completion marker written: failure");
+                ctx.logger
+                    .info("Emitting DevFixSkipped and CompletionMarkerEmitted events...");
+
+                // Emit skip event and completion marker event to continue flow
                 Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::DevFixSkipped {
                         reason: "Dev-fix flow not yet implemented".to_string(),

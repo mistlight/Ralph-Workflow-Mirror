@@ -470,6 +470,34 @@ pub enum PipelinePhase {
     /// signals that the development agent should be invoked to diagnose and fix
     /// the failure root cause.
     ///
+    /// ## Failure Handling Flow
+    ///
+    /// 1. ErrorEvent::AgentChainExhausted occurs in any phase
+    /// 2. Reducer transitions state to AwaitingDevFix
+    /// 3. Orchestration determines Effect::TriggerDevFixFlow
+    /// 4. Handler executes TriggerDevFixFlow:
+    ///    a. Writes completion marker to .agent/tmp/completion_marker (failure status)
+    ///    b. Emits DevFixSkipped event (current implementation)
+    ///    c. Emits CompletionMarkerEmitted event
+    /// 5. DevFixSkipped event: no state change (stays in AwaitingDevFix)
+    /// 6. CompletionMarkerEmitted event: transitions to Interrupted
+    /// 7. Orchestration determines Effect::SaveCheckpoint for Interrupted
+    /// 8. Handler saves checkpoint, increments checkpoint_saved_count
+    /// 9. Event loop recognizes is_complete() == true and exits successfully
+    ///
+    /// ## Completion Marker Requirement
+    ///
+    /// The completion marker MUST be written before transitioning to Interrupted.
+    /// This ensures external orchestration systems (CI, monitoring) can detect
+    /// pipeline termination even if the event loop exits unexpectedly.
+    ///
+    /// ## Agent Chain Exhaustion Handling
+    ///
+    /// When in AwaitingDevFix phase with an exhausted agent chain, orchestration
+    /// falls through to phase-specific logic (TriggerDevFixFlow) instead of reporting
+    /// exhaustion again. This prevents infinite loops where exhaustion is reported
+    /// repeatedly.
+    ///
     /// Transitions:
     /// - From: Any phase where AgentChainExhausted error occurs
     /// - To: Interrupted (after dev-fix attempt completes or fails)

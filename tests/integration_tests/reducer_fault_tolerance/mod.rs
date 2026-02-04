@@ -5,5 +5,6 @@
 
 mod agent_crash_handling;
 mod continuation_exhaustion;
+mod failure_completion_marker;
 mod helpers;
 mod model_fallback;

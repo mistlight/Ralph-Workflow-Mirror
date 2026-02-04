@@ -382,6 +382,8 @@ fn test_effects_are_single_task() {
             CleanupReviewIssuesXml,
             CleanupFixResultXml,
             CleanupCommitXml,
+            TriggerDevFixFlow,
+            EmitCompletionMarkerAndTerminate,
         }
 
         fn describe_effect_task(effect: &Effect) -> EffectTask {
@@ -448,6 +450,10 @@ fn test_effects_are_single_task() {
                 Effect::CleanupReviewIssuesXml { .. } => EffectTask::CleanupReviewIssuesXml,
                 Effect::CleanupFixResultXml { .. } => EffectTask::CleanupFixResultXml,
                 Effect::CleanupCommitXml => EffectTask::CleanupCommitXml,
+                Effect::TriggerDevFixFlow { .. } => EffectTask::TriggerDevFixFlow,
+                Effect::EmitCompletionMarkerAndTerminate { .. } => {
+                    EffectTask::EmitCompletionMarkerAndTerminate
+                }
             }
         }
 

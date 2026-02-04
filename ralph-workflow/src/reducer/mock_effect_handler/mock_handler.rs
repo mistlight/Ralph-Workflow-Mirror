@@ -599,16 +599,10 @@ src/lib.rs</ralph-files-changed>
                 vec![],
             ),
 
-            Effect::TriggerDevFixFlow {
-                failed_phase: _,
-                failed_role: _,
-                retry_cycle: _,
-            } => (
-                PipelineEvent::AwaitingDevFix(crate::reducer::event::AwaitingDevFixEvent::DevFixSkipped {
-                    reason: "Mock dev-fix flow".to_string(),
-                }),
-                vec![],
-            ),
+            Effect::TriggerDevFixFlow { .. } => {
+                // Handled in execute() method to access PhaseContext workspace
+                panic!("TriggerDevFixFlow should be handled in execute() method, not execute_mock()")
+            }
 
             Effect::EmitCompletionMarkerAndTerminate {
                 is_failure,
@@ -640,11 +634,45 @@ src/lib.rs</ralph-files-changed>
 /// MainEffectHandler in tests. The PhaseContext is ignored - the mock
 /// simply captures the effect and returns an appropriate mock event.
 impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
-    fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         match effect {
             Effect::ReportAgentChainExhausted { role, phase, cycle } => {
                 use crate::reducer::event::ErrorEvent;
                 Err(ErrorEvent::AgentChainExhausted { role, phase, cycle }.into())
+            }
+            Effect::TriggerDevFixFlow {
+                failed_phase,
+                failed_role,
+                retry_cycle,
+            } => {
+                // Write completion marker BEFORE emitting events, matching real handler behavior
+                let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+                let content = format!(
+                    "failure\nAgent chain exhausted: phase={}, role={:?}, cycle={}",
+                    failed_phase, failed_role, retry_cycle
+                );
+                ctx.workspace.write(marker_path, &content)?;
+
+                // Capture the effect for test verification
+                self.captured_effects
+                    .borrow_mut()
+                    .push(Effect::TriggerDevFixFlow {
+                        failed_phase,
+                        failed_role,
+                        retry_cycle,
+                    });
+
+                // Emit skip event and completion marker event to continue flow
+                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::DevFixSkipped {
+                        reason: "Mock dev-fix flow".to_string(),
+                    },
+                ))
+                .with_additional_event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
+                        is_failure: true,
+                    },
+                )))
             }
             _ => Ok(self.execute_mock(effect)),
         }
