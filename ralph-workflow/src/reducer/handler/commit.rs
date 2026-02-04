@@ -14,6 +14,7 @@ use crate::reducer::effect::EffectResult;
 use crate::reducer::event::AgentEvent;
 use crate::reducer::event::ErrorEvent;
 use crate::reducer::event::PipelineEvent;
+use crate::reducer::event::WorkspaceIoErrorKind;
 use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::{
     CommitState, MaterializedPromptInput, PromptInputKind, PromptInputRepresentation,
@@ -61,11 +62,20 @@ impl MainEffectHandler {
 
         let tmp_dir = Path::new(".agent/tmp");
         if !ctx.workspace.exists(tmp_dir) {
-            ctx.workspace.create_dir_all(tmp_dir)?;
+            ctx.workspace.create_dir_all(tmp_dir).map_err(|err| {
+                ErrorEvent::WorkspaceCreateDirAllFailed {
+                    path: tmp_dir.display().to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+            })?;
         }
         let model_safe_path = Path::new(".agent/tmp/commit_diff.model_safe.txt");
         ctx.workspace
-            .write_atomic(model_safe_path, &model_safe_diff)?;
+            .write_atomic(model_safe_path, &model_safe_diff)
+            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                path: model_safe_path.display().to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
         let representation = if final_bytes <= inline_budget_bytes {
@@ -95,14 +105,14 @@ impl MainEffectHandler {
                 original_bytes / 1024,
                 model_budget_bytes / 1024,
                 final_bytes / 1024,
-                ctx.workspace.absolute(model_safe_path).display()
+                model_safe_path.display()
             ));
         } else if final_bytes > inline_budget_bytes {
             ctx.logger.warn(&format!(
                 "Diff size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 final_bytes / 1024,
                 inline_budget_bytes / 1024,
-                ctx.workspace.absolute(model_safe_path).display()
+                model_safe_path.display()
             ));
         }
 
@@ -215,10 +225,19 @@ impl MainEffectHandler {
 
             let tmp_dir = Path::new(".agent/tmp");
             if !ctx.workspace.exists(tmp_dir) {
-                ctx.workspace.create_dir_all(tmp_dir)?;
+                ctx.workspace.create_dir_all(tmp_dir).map_err(|err| {
+                    ErrorEvent::WorkspaceCreateDirAllFailed {
+                        path: tmp_dir.display().to_string(),
+                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                    }
+                })?;
             }
             ctx.workspace
-                .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)?;
+                .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
+                .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                    path: ".agent/tmp/commit_prompt.txt".to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                })?;
 
             return Ok(
                 EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
@@ -233,9 +252,7 @@ impl MainEffectHandler {
             .commit
             .as_ref()
             .filter(|c| c.attempt == attempt)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Commit inputs not materialized for attempt {attempt}")
-            })?;
+            .ok_or(ErrorEvent::CommitInputsNotMaterialized { attempt })?;
 
         let model_safe_path = Path::new(".agent/tmp/commit_diff.model_safe.txt");
         let diff_for_prompt = match &inputs.diff.representation {
@@ -257,7 +274,7 @@ impl MainEffectHandler {
                 if !ctx.workspace.exists(path) {
                     ctx.logger.warn(&format!(
                         "Missing materialized commit diff reference at {}; invalidating commit inputs to rematerialize",
-                        ctx.workspace.absolute(path).display()
+                        path.display()
                     ));
                     // Recoverability: tmp artifacts may be cleaned between checkpoints.
                     // Force rerunning CheckCommitDiff to recreate the diff and its materialization.
@@ -266,7 +283,7 @@ impl MainEffectHandler {
                     )));
                 }
                 DiffContentReference::ReadFromFile {
-                    path: ctx.workspace.absolute(path),
+                    path: path.to_path_buf(),
                     start_commit: String::new(),
                     description: format!(
                         "Diff is {} bytes (exceeds {} limit)",
@@ -304,10 +321,19 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         let tmp_dir = Path::new(".agent/tmp");
         if !ctx.workspace.exists(tmp_dir) {
-            ctx.workspace.create_dir_all(tmp_dir)?;
+            ctx.workspace.create_dir_all(tmp_dir).map_err(|err| {
+                ErrorEvent::WorkspaceCreateDirAllFailed {
+                    path: tmp_dir.display().to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+            })?;
         }
         ctx.workspace
-            .write(Path::new(".agent/tmp/commit_diff.txt"), diff)?;
+            .write(Path::new(".agent/tmp/commit_diff.txt"), diff)
+            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                path: ".agent/tmp/commit_diff.txt".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         Ok(EffectResult::event(PipelineEvent::commit_diff_prepared(
             diff.trim().is_empty(),
@@ -416,11 +442,20 @@ impl MainEffectHandler {
 
         let tmp_dir = Path::new(".agent/tmp");
         if !ctx.workspace.exists(tmp_dir) {
-            ctx.workspace.create_dir_all(tmp_dir)?;
+            ctx.workspace.create_dir_all(tmp_dir).map_err(|err| {
+                ErrorEvent::WorkspaceCreateDirAllFailed {
+                    path: tmp_dir.display().to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+            })?;
         }
 
         ctx.workspace
-            .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)?;
+            .write(Path::new(".agent/tmp/commit_prompt.txt"), &prompt)
+            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                path: ".agent/tmp/commit_prompt.txt".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         Ok(
             EffectResult::event(PipelineEvent::commit_prompt_prepared(attempt)).with_ui_event(
@@ -437,9 +472,7 @@ impl MainEffectHandler {
         let prompt = ctx
             .workspace
             .read(Path::new(".agent/tmp/commit_prompt.txt"))
-            .map_err(|_| {
-                anyhow::anyhow!("Missing commit prompt at .agent/tmp/commit_prompt.txt")
-            })?;
+            .map_err(|_| ErrorEvent::CommitPromptMissing { attempt })?;
 
         let agent = self
             .state

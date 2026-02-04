@@ -14,7 +14,12 @@ impl MainEffectHandler {
 
         let tmp_dir = Path::new(".agent/tmp");
         if !ctx.workspace.exists(tmp_dir) {
-            ctx.workspace.create_dir_all(tmp_dir)?;
+            ctx.workspace
+                .create_dir_all(tmp_dir)
+                .map_err(|err| ErrorEvent::WorkspaceCreateDirAllFailed {
+                    path: tmp_dir.display().to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                })?;
         }
 
         let prompt_content = ctx
@@ -267,7 +272,7 @@ impl MainEffectHandler {
             .fix_validated_outcome
             .as_ref()
             .filter(|o| o.pass == pass)
-            .ok_or_else(|| anyhow::anyhow!("Missing validated fix outcome for pass {pass}"))?;
+            .ok_or(ErrorEvent::ValidatedFixOutcomeMissing { pass })?;
 
         Ok(EffectResult::event(PipelineEvent::fix_outcome_applied(
             pass,

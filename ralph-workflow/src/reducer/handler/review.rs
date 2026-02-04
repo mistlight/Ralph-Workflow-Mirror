@@ -6,7 +6,7 @@ use crate::prompts::content_reference::{
     DiffContentReference, PlanContentReference, MAX_INLINE_CONTENT_SIZE,
 };
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{AgentEvent, ErrorEvent, PipelineEvent};
+use crate::reducer::event::{AgentEvent, ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::PromptMode;
 use crate::reducer::state::{

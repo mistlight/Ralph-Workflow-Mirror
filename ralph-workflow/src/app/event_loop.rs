@@ -149,7 +149,8 @@ fn build_trace_entry(
 ///
 /// 1. Handler returns `Err(ErrorEvent::AgentChainExhausted { ... }.into())`
 /// 2. Event loop catches the error and calls this function
-/// 3. If downcast succeeds, wrap in `PipelineEvent::Error()` and process through reducer
+/// 3. If downcast succeeds, wrap in `PipelineEvent::PromptInput(PromptInputEvent::HandlerError { ... })`
+///    and process through reducer
 /// 4. If downcast fails, return `Err()` to terminate the event loop (truly unrecoverable error)
 ///
 /// This architecture allows the reducer to decide recovery strategy based on the specific
@@ -261,7 +262,12 @@ where
                     // Process error event through reducer like a normal event
                     ctx.logger.warn(&format!("Error event: {error_event:?}"));
                     crate::reducer::effect::EffectResult::event(
-                        crate::reducer::event::PipelineEvent::Error(error_event),
+                        crate::reducer::event::PipelineEvent::PromptInput(
+                            crate::reducer::event::PromptInputEvent::HandlerError {
+                                phase: state.phase,
+                                error: error_event,
+                            },
+                        ),
                     )
                 } else {
                     // Truly unrecoverable error - cannot continue

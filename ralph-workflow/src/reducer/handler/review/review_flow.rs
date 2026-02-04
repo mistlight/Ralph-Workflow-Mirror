@@ -47,7 +47,11 @@ impl MainEffectHandler {
                 let sentinel = Self::sentinel_plan_content(ctx.config.isolation_mode);
                 // Write sentinel content to PLAN.md so FileReference representation works
                 ctx.workspace
-                    .write(Path::new(".agent/PLAN.md"), &sentinel)?;
+                    .write(Path::new(".agent/PLAN.md"), &sentinel)
+                    .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                        path: ".agent/PLAN.md".to_string(),
+                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                    })?;
                 sentinel
             }
         };
@@ -79,7 +83,7 @@ impl MainEffectHandler {
                 "PLAN size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (plan_content.len() as u64) / 1024,
                 inline_budget_bytes / 1024,
-                ctx.workspace.absolute(plan_path).display()
+                plan_path.display()
             ));
             (
                 PromptInputRepresentation::FileReference {
@@ -99,15 +103,24 @@ impl MainEffectHandler {
         {
             let tmp_dir = Path::new(".agent/tmp");
             if !ctx.workspace.exists(tmp_dir) {
-                ctx.workspace.create_dir_all(tmp_dir)?;
+                ctx.workspace
+                    .create_dir_all(tmp_dir)
+                    .map_err(|err| ErrorEvent::WorkspaceCreateDirAllFailed {
+                        path: tmp_dir.display().to_string(),
+                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                    })?;
             }
             ctx.workspace
-                .write_atomic(Path::new(".agent/tmp/diff.txt"), &diff_content)?;
+                .write_atomic(Path::new(".agent/tmp/diff.txt"), &diff_content)
+                .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                    path: ".agent/tmp/diff.txt".to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                })?;
             ctx.logger.warn(&format!(
                 "DIFF size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (diff_content.len() as u64) / 1024,
                 inline_budget_bytes / 1024,
-                ctx.workspace.absolute(diff_path).display()
+                diff_path.display()
             ));
             (
                 PromptInputRepresentation::FileReference {
@@ -241,7 +254,12 @@ impl MainEffectHandler {
 
         let tmp_dir = Path::new(".agent/tmp");
         if !ctx.workspace.exists(tmp_dir) {
-            ctx.workspace.create_dir_all(tmp_dir)?;
+            ctx.workspace
+                .create_dir_all(tmp_dir)
+                .map_err(|err| ErrorEvent::WorkspaceCreateDirAllFailed {
+                    path: tmp_dir.display().to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                })?;
         }
         let mut additional_events: Vec<PipelineEvent> = Vec::new();
 
@@ -303,11 +321,9 @@ impl MainEffectHandler {
             let last_output = ctx
                 .workspace
                 .read(Path::new(xml_paths::ISSUES_XML))
-                .map_err(|err| {
-                    anyhow::anyhow!(
-                        "Failed to read last review output at {}: {err}",
-                        xml_paths::ISSUES_XML
-                    )
+                .map_err(|err| ErrorEvent::WorkspaceReadFailed {
+                    path: xml_paths::ISSUES_XML.to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                 })?;
 
             let content_id_sha256 = sha256_hex_str(&last_output);
@@ -329,7 +345,12 @@ impl MainEffectHandler {
 
             if !already_materialized {
                 let last_output_path = Path::new(".agent/tmp/last_output.xml");
-                ctx.workspace.write_atomic(last_output_path, &last_output)?;
+                ctx.workspace
+                    .write_atomic(last_output_path, &last_output)
+                    .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                        path: last_output_path.display().to_string(),
+                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                    })?;
 
                 let input = MaterializedPromptInput {
                     kind: PromptInputKind::LastOutput,
@@ -406,10 +427,8 @@ impl MainEffectHandler {
                                 }
                                 PromptInputRepresentation::FileReference { path } => {
                                     PlanContentReference::ReadFromFile {
-                                        primary_path: ctx.workspace.absolute(path),
-                                        fallback_path: Some(
-                                            ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
-                                        ),
+                                        primary_path: path.to_path_buf(),
+                                        fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
                                         description: format!(
                                             "Plan is {} bytes (exceeds {} limit)",
                                             inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
@@ -426,7 +445,7 @@ impl MainEffectHandler {
                                 }
                                 PromptInputRepresentation::FileReference { path } => {
                                     DiffContentReference::ReadFromFile {
-                                        path: ctx.workspace.absolute(path),
+                                        path: path.to_path_buf(),
                                         start_commit: baseline_oid_for_prompts.clone(),
                                         description: format!(
                                             "Diff is {} bytes (exceeds {} limit)",
@@ -471,10 +490,8 @@ impl MainEffectHandler {
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             PlanContentReference::ReadFromFile {
-                                primary_path: ctx.workspace.absolute(path),
-                                fallback_path: Some(
-                                    ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
-                                ),
+                                primary_path: path.to_path_buf(),
+                                fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
                                 description: format!(
                                     "Plan is {} bytes (exceeds {} limit)",
                                     inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
@@ -491,7 +508,7 @@ impl MainEffectHandler {
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             DiffContentReference::ReadFromFile {
-                                path: ctx.workspace.absolute(path),
+                                path: path.to_path_buf(),
                                 start_commit: baseline_oid_for_prompts.clone(),
                                 description: format!(
                                     "Diff is {} bytes (exceeds {} limit)",
@@ -565,7 +582,7 @@ impl MainEffectHandler {
             .workspace
             .read(Path::new(".agent/tmp/review_prompt.txt"))
             .map_err(|_| {
-                anyhow::anyhow!("Missing review prompt at .agent/tmp/review_prompt.txt")
+                ErrorEvent::ReviewPromptMissing { pass }
             })?;
 
         let agent = self
@@ -692,7 +709,7 @@ impl MainEffectHandler {
             .review_validated_outcome
             .as_ref()
             .filter(|outcome| outcome.pass == pass)
-            .ok_or_else(|| anyhow::anyhow!("Missing validated review outcome"))?;
+            .ok_or(ErrorEvent::ValidatedReviewOutcomeMissing { pass })?;
 
         let elements = crate::files::llm_output_extraction::IssuesElements {
             issues: outcome.issues.clone(),
@@ -700,7 +717,11 @@ impl MainEffectHandler {
         };
         let markdown = render_issues_markdown(&elements);
         ctx.workspace
-            .write(Path::new(".agent/ISSUES.md"), &markdown)?;
+            .write(Path::new(".agent/ISSUES.md"), &markdown)
+            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                path: ".agent/ISSUES.md".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         Ok(EffectResult::event(
             PipelineEvent::review_issues_markdown_written(pass),
@@ -720,12 +741,12 @@ impl MainEffectHandler {
             .review_validated_outcome
             .as_ref()
             .filter(|outcome| outcome.pass == pass)
-            .ok_or_else(|| anyhow::anyhow!("Missing validated review outcome"))?;
+            .ok_or(ErrorEvent::ValidatedReviewOutcomeMissing { pass })?;
 
         let issues_xml = ctx
             .workspace
             .read(Path::new(xml_paths::ISSUES_XML))
-            .map_err(|_| anyhow::anyhow!("Missing review issues XML for snippet extraction"))?;
+            .unwrap_or_default();
 
         let snippets = extract_issue_snippets(&outcome.issues, ctx.workspace);
         Ok(EffectResult::with_ui(

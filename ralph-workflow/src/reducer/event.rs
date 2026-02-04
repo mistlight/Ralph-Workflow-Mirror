@@ -207,6 +207,18 @@ pub enum PromptInputEvent {
         /// Materialized representation of the last invalid output.
         last_output: MaterializedPromptInput,
     },
+    /// A typed error event returned by an effect handler.
+    ///
+    /// Effect handlers surface failures by returning `Err(ErrorEvent::... .into())`.
+    /// The event loop extracts the underlying `ErrorEvent` and re-emits it through
+    /// this existing category so the reducer can decide recovery strategy without
+    /// adding new top-level `PipelineEvent` variants.
+    HandlerError {
+        /// Phase during which the error occurred (best-effort; derived from current state).
+        phase: PipelinePhase,
+        /// The typed error event.
+        error: ErrorEvent,
+    },
 }
 
 #[path = "event/development.rs"]
@@ -224,6 +236,7 @@ pub use agent::AgentEvent;
 #[path = "event/error.rs"]
 mod error;
 pub use error::ErrorEvent;
+pub use error::WorkspaceIoErrorKind;
 
 /// Rebase operation events.
 ///
@@ -531,8 +544,6 @@ pub enum PipelineEvent {
     Rebase(RebaseEvent),
     /// Commit generation events.
     Commit(CommitEvent),
-    /// Error events for failures requiring reducer handling.
-    Error(ErrorEvent),
 
     // ========================================================================
     // Miscellaneous events that don't fit a category
@@ -652,7 +663,6 @@ mod tests {
                 PipelineEvent::Agent(_) => "agent",
                 PipelineEvent::Rebase(_) => "rebase",
                 PipelineEvent::Commit(_) => "commit",
-                PipelineEvent::Error(_) => "error",
                 PipelineEvent::ContextCleaned => "context_cleaned",
                 PipelineEvent::CheckpointSaved { .. } => "checkpoint_saved",
                 PipelineEvent::FinalizingStarted => "finalizing_started",

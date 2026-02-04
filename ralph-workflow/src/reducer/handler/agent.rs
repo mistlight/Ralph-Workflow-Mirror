@@ -3,6 +3,7 @@ use crate::agents::AgentRole;
 use crate::phases::PhaseContext;
 use crate::pipeline::PipelineRuntime;
 use crate::reducer::effect::EffectResult;
+use crate::reducer::event::ErrorEvent;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::event::PipelinePhase;
 use crate::reducer::fault_tolerant_executor::{
@@ -73,7 +74,9 @@ impl MainEffectHandler {
         let agent_config = ctx
             .registry
             .resolve_config(&effective_agent)
-            .ok_or_else(|| anyhow::anyhow!("Agent not found: {}", effective_agent))?;
+            .ok_or_else(|| ErrorEvent::AgentNotFound {
+                agent: effective_agent.clone(),
+            })?;
 
         // Determine log file path.
         //
