@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[test]
-fn test_prepare_review_prompt_aborts_when_inputs_not_materialized() {
+fn test_prepare_review_prompt_returns_error_when_inputs_not_materialized() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
@@ -55,17 +55,13 @@ fn test_prepare_review_prompt_aborts_when_inputs_not_materialized() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler
+    let err = handler
         .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
-        .expect("prepare_review_prompt should return an EffectResult");
+        .expect_err("prepare_review_prompt should return an error when inputs not materialized");
 
     assert!(
-        matches!(
-            result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
-        ),
-        "Expected pipeline_aborted when review inputs are missing, got {:?}",
-        result.event
+        err.to_string().contains("not materialized"),
+        "Expected error message about inputs not being materialized, got: {err}"
     );
 }
 

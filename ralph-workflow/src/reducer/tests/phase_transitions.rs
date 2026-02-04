@@ -83,25 +83,6 @@ fn test_phase_transitions_preserve_reviewer_pass() {
 }
 
 #[test]
-fn test_pipeline_aborted_from_any_phase() {
-    for phase in [
-        PipelinePhase::Planning,
-        PipelinePhase::Development,
-        PipelinePhase::Review,
-        PipelinePhase::CommitMessage,
-        PipelinePhase::FinalValidation,
-    ] {
-        let state = create_state_in_phase(phase);
-        let new_state = reduce(
-            state,
-            PipelineEvent::pipeline_aborted("User cancelled".to_string()),
-        );
-
-        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
-    }
-}
-
-#[test]
 fn test_commit_skipped_transitions_preserve_phase_history() {
     let state = PipelineState {
         phase: PipelinePhase::CommitMessage,

@@ -251,9 +251,7 @@ impl MainEffectHandler {
                 ))
             }
 
-            Effect::AbortPipeline { reason } => {
-                Ok(EffectResult::event(PipelineEvent::pipeline_aborted(reason)))
-            }
+            Effect::AbortPipeline { reason } => Err(anyhow::anyhow!(reason)),
 
             Effect::ValidateFinalState => self.validate_final_state(ctx),
 

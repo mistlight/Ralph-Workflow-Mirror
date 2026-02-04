@@ -1,23 +1,64 @@
 impl MainEffectHandler {
+    /// Sentinel content for missing PLAN during review phase.
+    ///
+    /// This is used when `.agent/PLAN.md` is missing, which can happen in isolation mode
+    /// (developer_iters=0, reviewer_reviews>0) where no planning occurred.
+    fn sentinel_plan_content(isolation_mode: bool) -> String {
+        if isolation_mode {
+            "No PLAN provided (normal in isolation mode)".to_string()
+        } else {
+            "No PLAN provided".to_string()
+        }
+    }
+
+    /// Fallback diff instructions when `.agent/DIFF.backup` is missing.
+    ///
+    /// These instructions tell the reviewer how to obtain the diff via git commands.
+    fn fallback_diff_instructions(baseline_oid: &str) -> String {
+        if !baseline_oid.is_empty() {
+            format!(
+                "[DIFF NOT AVAILABLE - Use git to obtain changes]\n\n\
+                 Run: git diff {}..HEAD\n\n\
+                 This shows all changes since the baseline commit.",
+                baseline_oid
+            )
+        } else {
+            "[DIFF NOT AVAILABLE - Use git to obtain changes]\n\n\
+             Run: git diff HEAD~1..HEAD  # Changes in last commit\n\
+             Or:  git diff --staged      # Staged changes\n\
+             Or:  git diff               # Unstaged changes\n\n\
+             Review the diff and identify any issues.".to_string()
+        }
+    }
+
     pub(super) fn materialize_review_inputs(
         &mut self,
         ctx: &mut PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
+        // PLAN is optional for review phase (e.g., isolation mode without planning).
+        // Use sentinel content when missing.
         let plan_content = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
             Ok(plan_content) => plan_content,
-            Err(err) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
-                    "Failed to read required .agent/PLAN.md: {err}",
-                ))));
+            Err(_) => {
+                ctx.logger.warn("Missing .agent/PLAN.md; using sentinel PLAN content for review");
+                Self::sentinel_plan_content(ctx.config.isolation_mode)
             }
         };
+
+        // DIFF is optional for review phase. Use fallback git instructions when missing.
+        let baseline_oid = ctx
+            .workspace
+            .read(Path::new(Self::DIFF_BASELINE_PATH))
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
         let diff_content = match ctx.workspace.read(Path::new(".agent/DIFF.backup")) {
             Ok(diff_content) => diff_content,
-            Err(err) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
-                    "Failed to read required .agent/DIFF.backup: {err}",
-                ))));
+            Err(_) => {
+                ctx.logger.warn("Missing .agent/DIFF.backup; providing git diff fallback instructions");
+                Self::fallback_diff_instructions(&baseline_oid)
             }
         };
 
@@ -47,21 +88,10 @@ impl MainEffectHandler {
         let (diff_representation, diff_reason) = if diff_content.len() as u64 > inline_budget_bytes {
             let tmp_dir = Path::new(".agent/tmp");
             if !ctx.workspace.exists(tmp_dir) {
-                if let Err(err) = ctx.workspace.create_dir_all(tmp_dir) {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
-                        "Failed to create directory {}: {err}",
-                        tmp_dir.display()
-                    ))));
-                }
+                ctx.workspace.create_dir_all(tmp_dir)?;
             }
-            if let Err(err) =
-                ctx.workspace
-                    .write_atomic(Path::new(".agent/tmp/diff.txt"), &diff_content)
-            {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
-                    "Failed to write materialized diff to .agent/tmp/diff.txt: {err}",
-                ))));
-            }
+            ctx.workspace
+                .write_atomic(Path::new(".agent/tmp/diff.txt"), &diff_content)?;
             ctx.logger.warn(&format!(
                 "DIFF size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (diff_content.len() as u64) / 1024,
@@ -217,22 +247,17 @@ impl MainEffectHandler {
             let inputs = match materialized_inputs {
                 Some(inputs) => inputs,
                 None => {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
+                    return Err(anyhow::anyhow!(
                         "Review inputs not materialized for pass {} (expected materialize_review_inputs before prepare_review_prompt)",
                         pass
-                    ))));
+                    ));
                 }
             };
             let plan_inline = match &inputs.plan.representation {
                 PromptInputRepresentation::Inline => {
-                    let plan = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
-                        Ok(plan) => plan,
-                        Err(err) => {
-                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                format!("Failed to read required .agent/PLAN.md: {err}"),
-                            )));
-                        }
-                    };
+                    // Use sentinel if .agent/PLAN.md is missing
+                    let plan = ctx.workspace.read(Path::new(".agent/PLAN.md"))
+                        .unwrap_or_else(|_| Self::sentinel_plan_content(ctx.config.isolation_mode));
                     ignore_sources_owned.push(plan.clone());
                     Some(plan)
                 }
@@ -240,14 +265,9 @@ impl MainEffectHandler {
             };
             let diff_inline = match &inputs.diff.representation {
                 PromptInputRepresentation::Inline => {
-                    let diff = match ctx.workspace.read(Path::new(".agent/DIFF.backup")) {
-                        Ok(diff) => diff,
-                        Err(err) => {
-                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                format!("Failed to read required .agent/DIFF.backup: {err}"),
-                            )));
-                        }
-                    };
+                    // Use fallback if .agent/DIFF.backup is missing
+                    let diff = ctx.workspace.read(Path::new(".agent/DIFF.backup"))
+                        .unwrap_or_else(|_| Self::fallback_diff_instructions(&baseline_oid_for_prompts));
                     ignore_sources_owned.push(diff.clone());
                     Some(diff)
                 }
@@ -260,15 +280,11 @@ impl MainEffectHandler {
         let continuation_state = &self.state.continuation;
         let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
         if is_xsd_retry {
-            let last_output = match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
-                Ok(output) => output,
-                Err(err) => {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
-                        "Failed to read last review output at {}: {err}",
-                        xml_paths::ISSUES_XML
-                    ))));
-                }
-            };
+            let last_output = ctx.workspace.read(Path::new(xml_paths::ISSUES_XML))
+                .map_err(|err| anyhow::anyhow!(
+                    "Failed to read last review output at {}: {err}",
+                    xml_paths::ISSUES_XML
+                ))?;
 
             let content_id_sha256 = sha256_hex_str(&last_output);
             let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
@@ -354,24 +370,17 @@ impl MainEffectHandler {
                             let inputs = match materialized_inputs {
                                 Some(inputs) => inputs,
                                 None => {
-                                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                        format!(
-                                            "Review inputs not materialized for pass {} (expected materialize_review_inputs before prepare_review_prompt)",
-                                            pass
-                                        ),
-                                    )));
+                                    return Err(anyhow::anyhow!(
+                                        "Review inputs not materialized for pass {} (expected materialize_review_inputs before prepare_review_prompt)",
+                                        pass
+                                    ));
                                 }
                             };
                             let plan_ref = match &inputs.plan.representation {
                                 PromptInputRepresentation::Inline => {
-                                    let plan_inline = match plan_inline.clone() {
-                                        Some(plan_inline) => plan_inline,
-                                        None => {
-                                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                                "Missing in-memory .agent/PLAN.md content for inline review prompt (expected .agent/PLAN.md to be loaded)".to_string(),
-                                            )));
-                                        }
-                                    };
+                                    let plan_inline = plan_inline.clone().unwrap_or_else(||
+                                        Self::sentinel_plan_content(ctx.config.isolation_mode)
+                                    );
                                     PlanContentReference::Inline(plan_inline)
                                 }
                                 PromptInputRepresentation::FileReference { path } => {
@@ -389,14 +398,9 @@ impl MainEffectHandler {
                             };
                             let diff_ref = match &inputs.diff.representation {
                                 PromptInputRepresentation::Inline => {
-                                    let diff_inline = match diff_inline.clone() {
-                                        Some(diff_inline) => diff_inline,
-                                        None => {
-                                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                                "Missing in-memory .agent/DIFF.backup content for inline review prompt (expected .agent/DIFF.backup to be loaded)".to_string(),
-                                            )));
-                                        }
-                                    };
+                                    let diff_inline = diff_inline.clone().unwrap_or_else(||
+                                        Self::fallback_diff_instructions(&baseline_oid_for_prompts)
+                                    );
                                     DiffContentReference::Inline(diff_inline)
                                 }
                                 PromptInputRepresentation::FileReference { path } => {
@@ -433,23 +437,18 @@ impl MainEffectHandler {
                 let inputs = match materialized_inputs {
                     Some(inputs) => inputs,
                     None => {
-                        return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(format!(
+                        return Err(anyhow::anyhow!(
                             "Review inputs not materialized for pass {} (expected materialize_review_inputs before prepare_review_prompt)",
                             pass
-                        ))));
+                        ));
                     }
                 };
                 let prompt_key = format!("review_{pass}");
                 let plan_ref = match &inputs.plan.representation {
                     PromptInputRepresentation::Inline => {
-                        let plan_inline = match plan_inline.clone() {
-                            Some(plan_inline) => plan_inline,
-                            None => {
-                                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                    "Missing in-memory .agent/PLAN.md content for inline review prompt (expected .agent/PLAN.md to be loaded)".to_string(),
-                                )));
-                            }
-                        };
+                        let plan_inline = plan_inline.clone().unwrap_or_else(||
+                            Self::sentinel_plan_content(ctx.config.isolation_mode)
+                        );
                         PlanContentReference::Inline(plan_inline)
                     }
                     PromptInputRepresentation::FileReference { path } => {
@@ -465,14 +464,9 @@ impl MainEffectHandler {
                 };
                 let diff_ref = match &inputs.diff.representation {
                     PromptInputRepresentation::Inline => {
-                        let diff_inline = match diff_inline.clone() {
-                            Some(diff_inline) => diff_inline,
-                            None => {
-                                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                    "Missing in-memory .agent/DIFF.backup content for inline review prompt (expected .agent/DIFF.backup to be loaded)".to_string(),
-                                )));
-                            }
-                        };
+                        let diff_inline = diff_inline.clone().unwrap_or_else(||
+                            Self::fallback_diff_instructions(&baseline_oid_for_prompts)
+                        );
                         DiffContentReference::Inline(diff_inline)
                     }
                     PromptInputRepresentation::FileReference { path } => {
@@ -501,9 +495,7 @@ impl MainEffectHandler {
                 (prompt_key, prompt, was_replayed, "review_xml", true)
             }
             PromptMode::Continuation => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Review does not support continuation prompts".to_string(),
-                )));
+                return Err(anyhow::anyhow!("Review does not support continuation prompts"));
             }
         };
         let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
@@ -549,17 +541,12 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use std::path::Path;
 
-        let prompt = match ctx
+        let prompt = ctx
             .workspace
             .read(Path::new(".agent/tmp/review_prompt.txt"))
-        {
-            Ok(prompt) => prompt,
-            Err(_) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing review prompt at .agent/tmp/review_prompt.txt".to_string(),
-                )));
-            }
-        };
+            .map_err(|_| anyhow::anyhow!(
+                "Missing review prompt at .agent/tmp/review_prompt.txt"
+            ))?;
 
         let agent = self
             .state
@@ -680,19 +667,13 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use std::path::Path;
 
-        let outcome = match self
+        let outcome = self
             .state
             .review_validated_outcome
             .as_ref()
             .filter(|outcome| outcome.pass == pass)
-        {
-            Some(outcome) => outcome,
-            None => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing validated review outcome".to_string(),
-                )));
-            }
-        };
+            .ok_or_else(|| anyhow::anyhow!("Missing validated review outcome"))?;
+
         let elements = crate::files::llm_output_extraction::IssuesElements {
             issues: outcome.issues.clone(),
             no_issues_found: outcome.no_issues_found.clone(),
@@ -714,28 +695,17 @@ impl MainEffectHandler {
         use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
         use std::path::Path;
 
-        let outcome = match self
+        let outcome = self
             .state
             .review_validated_outcome
             .as_ref()
             .filter(|outcome| outcome.pass == pass)
-        {
-            Some(outcome) => outcome,
-            None => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing validated review outcome".to_string(),
-                )));
-            }
-        };
+            .ok_or_else(|| anyhow::anyhow!("Missing validated review outcome"))?;
 
-        let issues_xml = match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
-            Ok(content) => content,
-            Err(_) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing review issues XML for snippet extraction".to_string(),
-                )));
-            }
-        };
+        let issues_xml = ctx.workspace.read(Path::new(xml_paths::ISSUES_XML))
+            .map_err(|_| anyhow::anyhow!(
+                "Missing review issues XML for snippet extraction"
+            ))?;
 
         let snippets = extract_issue_snippets(&outcome.issues, ctx.workspace);
         Ok(EffectResult::with_ui(

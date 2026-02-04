@@ -370,7 +370,7 @@ fn test_extract_review_issue_snippets_includes_snippets_for_windows_paths() {
 }
 
 #[test]
-fn test_write_issues_markdown_aborts_when_missing_validated_outcome() {
+fn test_write_issues_markdown_returns_error_when_missing_validated_outcome() {
     let workspace = MemoryWorkspace::new_test();
 
     let colors = Colors { enabled: false };
@@ -408,9 +408,12 @@ fn test_write_issues_markdown_aborts_when_missing_validated_outcome() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
-    let result = handler
+    let err = handler
         .write_issues_markdown(&mut ctx, 0)
-        .expect("write_issues_markdown should succeed");
+        .expect_err("write_issues_markdown should return error when validated outcome is missing");
 
-    assert!(matches!(result.event, PipelineEvent::Lifecycle(_)));
+    assert!(
+        err.to_string().contains("validated review outcome"),
+        "Expected error about missing validated review outcome, got: {err}"
+    );
 }

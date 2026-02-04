@@ -225,7 +225,7 @@ fn test_apply_fix_outcome_emits_fix_continuation_budget_exhausted_when_limit_rea
 }
 
 #[test]
-fn test_apply_fix_outcome_emits_pipeline_aborted_when_missing_outcome() {
+fn test_apply_fix_outcome_returns_error_when_missing_outcome() {
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
     let mut timer = Timer::new();
@@ -261,12 +261,12 @@ fn test_apply_fix_outcome_emits_pipeline_aborted_when_missing_outcome() {
         workspace: &workspace,
     };
 
-    let result = handler
+    let err = handler
         .apply_fix_outcome(&mut ctx, 0)
-        .expect("apply_fix_outcome should succeed");
+        .expect_err("apply_fix_outcome should return error when fix outcome is missing");
 
-    assert!(matches!(
-        result.event,
-        PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
-    ));
+    assert!(
+        err.to_string().contains("Missing validated fix outcome"),
+        "Expected error about missing validated fix outcome, got: {err}"
+    );
 }

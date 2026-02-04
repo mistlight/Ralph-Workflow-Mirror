@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[test]
-fn test_materialize_review_inputs_aborts_when_plan_missing() {
+fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
         .with_dir(".agent/tmp");
@@ -57,20 +57,22 @@ fn test_materialize_review_inputs_aborts_when_plan_missing() {
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .materialize_review_inputs(&mut ctx, 0)
-        .expect("materialize_review_inputs should return an EffectResult");
+        .expect("materialize_review_inputs should succeed with sentinel PLAN");
 
     assert!(
         matches!(
             result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
+            PipelineEvent::PromptInput(
+                crate::reducer::event::PromptInputEvent::ReviewInputsMaterialized { .. }
+            )
         ),
-        "Expected pipeline_aborted when .agent/PLAN.md is missing, got {:?}",
+        "Expected ReviewInputsMaterialized event with sentinel PLAN, got {:?}",
         result.event
     );
 }
 
 #[test]
-fn test_materialize_review_inputs_aborts_when_diff_missing() {
+fn test_materialize_review_inputs_uses_fallback_diff_instructions_when_missing() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
         .with_dir(".agent/tmp");
@@ -110,14 +112,16 @@ fn test_materialize_review_inputs_aborts_when_diff_missing() {
     let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
     let result = handler
         .materialize_review_inputs(&mut ctx, 0)
-        .expect("materialize_review_inputs should return an EffectResult");
+        .expect("materialize_review_inputs should succeed with fallback DIFF instructions");
 
     assert!(
         matches!(
             result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
+            PipelineEvent::PromptInput(
+                crate::reducer::event::PromptInputEvent::ReviewInputsMaterialized { .. }
+            )
         ),
-        "Expected pipeline_aborted when .agent/DIFF.backup is missing, got {:?}",
+        "Expected ReviewInputsMaterialized event with fallback DIFF, got {:?}",
         result.event
     );
 }

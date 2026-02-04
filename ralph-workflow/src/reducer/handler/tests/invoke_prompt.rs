@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[test]
-fn test_invoke_planning_agent_aborts_when_prompt_missing() {
+fn test_invoke_planning_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -50,11 +50,14 @@ fn test_invoke_planning_agent_aborts_when_prompt_missing() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    let result = handler
+    let err = handler
         .invoke_planning_agent(&mut ctx, 0)
-        .expect("invoke_planning_agent should succeed");
+        .expect_err("invoke_planning_agent should return error when prompt missing");
 
-    assert!(matches!(result.event, PipelineEvent::Lifecycle(_)));
+    assert!(
+        err.to_string().contains("planning prompt"),
+        "Expected error about missing planning prompt, got: {err}"
+    );
 }
 
 #[test]
@@ -587,7 +590,7 @@ fn test_invoke_planning_agent_logfile_attempt_does_not_collide_across_distinct_a
 }
 
 #[test]
-fn test_invoke_development_agent_aborts_when_prompt_missing() {
+fn test_invoke_development_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -622,15 +625,18 @@ fn test_invoke_development_agent_aborts_when_prompt_missing() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    let result = handler
+    let err = handler
         .invoke_development_agent(&mut ctx, 0)
-        .expect("invoke_development_agent should succeed");
+        .expect_err("invoke_development_agent should return error when prompt missing");
 
-    assert!(matches!(result.event, PipelineEvent::Lifecycle(_)));
+    assert!(
+        err.to_string().contains("development prompt"),
+        "Expected error about missing development prompt, got: {err}"
+    );
 }
 
 #[test]
-fn test_invoke_review_agent_aborts_when_prompt_missing() {
+fn test_invoke_review_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -665,15 +671,18 @@ fn test_invoke_review_agent_aborts_when_prompt_missing() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    let result = handler
+    let err = handler
         .invoke_review_agent(&mut ctx, 0)
-        .expect("invoke_review_agent should succeed");
+        .expect_err("invoke_review_agent should return error when prompt missing");
 
-    assert!(matches!(result.event, PipelineEvent::Lifecycle(_)));
+    assert!(
+        err.to_string().contains("review prompt"),
+        "Expected error about missing review prompt, got: {err}"
+    );
 }
 
 #[test]
-fn test_invoke_fix_agent_aborts_when_prompt_missing() {
+fn test_invoke_fix_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -708,15 +717,18 @@ fn test_invoke_fix_agent_aborts_when_prompt_missing() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    let result = handler
+    let err = handler
         .invoke_fix_agent(&mut ctx, 0)
-        .expect("invoke_fix_agent should succeed");
+        .expect_err("invoke_fix_agent should return error when prompt missing");
 
-    assert!(matches!(result.event, PipelineEvent::Lifecycle(_)));
+    assert!(
+        err.to_string().contains("fix prompt"),
+        "Expected error about missing fix prompt, got: {err}"
+    );
 }
 
 #[test]
-fn test_invoke_commit_agent_aborts_when_prompt_missing() {
+fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test();
     let colors = Colors { enabled: false };
     let logger = Logger::new(colors);
@@ -761,11 +773,14 @@ fn test_invoke_commit_agent_aborts_when_prompt_missing() {
         AgentRole::Commit,
     );
 
-    let result = handler
+    let err = handler
         .invoke_commit_agent(&mut ctx)
-        .expect("invoke_commit_agent should succeed");
+        .expect_err("invoke_commit_agent should return error when prompt missing");
 
-    assert!(matches!(result.event, PipelineEvent::Lifecycle(_)));
+    assert!(
+        err.to_string().contains("commit prompt"),
+        "Expected error about missing commit prompt, got: {err}"
+    );
 }
 
 /// Test that rate_limit_continuation_prompt is used when available.

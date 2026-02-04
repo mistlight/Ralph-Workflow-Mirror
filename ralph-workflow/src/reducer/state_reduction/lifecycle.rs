@@ -11,9 +11,5 @@ pub(super) fn reduce_lifecycle_event(state: PipelineState, event: LifecycleEvent
             phase: crate::reducer::event::PipelinePhase::Complete,
             ..state
         },
-        LifecycleEvent::Aborted { .. } => PipelineState {
-            phase: crate::reducer::event::PipelinePhase::Interrupted,
-            ..state
-        },
     }
 }

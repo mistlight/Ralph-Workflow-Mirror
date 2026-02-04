@@ -21,10 +21,11 @@ impl MainEffectHandler {
             .workspace
             .read(Path::new(".agent/PROMPT.md.backup"))
             .unwrap_or_default();
+        // Use sentinel PLAN content when missing (consistent with review phase)
         let plan_content = ctx
             .workspace
             .read(Path::new(".agent/PLAN.md"))
-            .unwrap_or_default();
+            .unwrap_or_else(|_| Self::sentinel_plan_content(ctx.config.isolation_mode));
         let issues_content = ctx
             .workspace
             .read(Path::new(".agent/ISSUES.md"))
@@ -113,9 +114,7 @@ impl MainEffectHandler {
                 (prompt_key, prompt, was_replayed, "fix_mode_xml", true)
             }
             PromptMode::Continuation => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Fix does not support continuation prompts".to_string(),
-                )));
+                return Err(anyhow::anyhow!("Fix does not support continuation prompts"));
             }
         };
         if should_validate {
@@ -156,14 +155,10 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use std::path::Path;
 
-        let prompt = match ctx.workspace.read(Path::new(".agent/tmp/fix_prompt.txt")) {
-            Ok(prompt) => prompt,
-            Err(_) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing fix prompt at .agent/tmp/fix_prompt.txt".to_string(),
-                )));
-            }
-        };
+        let prompt = ctx.workspace.read(Path::new(".agent/tmp/fix_prompt.txt"))
+            .map_err(|_| anyhow::anyhow!(
+                "Missing fix prompt at .agent/tmp/fix_prompt.txt"
+            ))?;
 
         let agent = self
             .state
@@ -268,17 +263,12 @@ impl MainEffectHandler {
         _ctx: &mut PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
-        let outcome = self
+        self
             .state
             .fix_validated_outcome
             .as_ref()
-            .filter(|o| o.pass == pass);
-
-        if outcome.is_none() {
-            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                format!("Missing validated fix outcome for pass {pass}"),
-            )));
-        }
+            .filter(|o| o.pass == pass)
+            .ok_or_else(|| anyhow::anyhow!("Missing validated fix outcome for pass {pass}"))?;
 
         Ok(EffectResult::event(PipelineEvent::fix_outcome_applied(
             pass,
