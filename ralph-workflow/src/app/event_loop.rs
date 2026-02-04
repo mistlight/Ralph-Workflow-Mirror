@@ -248,12 +248,14 @@ where
     ctx.logger.info("Starting reducer-based event loop");
 
     while events_processed < config.max_iterations {
-        let effect = determine_next_effect(&state);
-
+        // Check if we're already in a terminal state before executing any effect.
+        // This handles the case where the initial state is already complete
+        // (e.g., resuming from an Interrupted checkpoint).
         if state.is_complete() {
             break;
         }
 
+        let effect = determine_next_effect(&state);
         let effect_str = format!("{effect:?}");
 
         // Execute returns EffectResult with both PipelineEvent and UIEvents.
@@ -343,6 +345,13 @@ where
             handler.update_state(new_state.clone());
             state = new_state;
             events_processed += 1;
+        }
+
+        // Check completion AFTER effect execution and state update.
+        // This ensures that transitions to terminal phases (e.g., Interrupted)
+        // have a chance to save their checkpoint before the loop exits.
+        if state.is_complete() {
+            break;
         }
     }
 

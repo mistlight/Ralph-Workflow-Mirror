@@ -6,7 +6,7 @@
 
 use crate::test_timeout::with_default_timeout;
 use ralph_workflow::reducer::effect::Effect;
-use ralph_workflow::reducer::event::PipelineEvent;
+use ralph_workflow::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
 use ralph_workflow::reducer::orchestration::determine_next_effect;
 use ralph_workflow::reducer::state::{AgentChainState, DevelopmentStatus, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
@@ -115,6 +115,90 @@ fn test_all_agents_exhausted_reports_chain_exhaustion() {
             matches!(effect, Effect::ReportAgentChainExhausted { .. }),
             "Should report agent chain exhaustion when all agents tried and cycles exhausted; got {:?}",
             effect
+        );
+    });
+}
+
+#[test]
+fn test_agent_chain_exhausted_emits_completion_marker() {
+    with_default_timeout(|| {
+        // Given: A state where agent chain is exhausted
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Development;
+
+        // Create an exhausted agent chain by setting retry_cycle to max_cycles
+        let agent_chain = state
+            .agent_chain
+            .with_agents(
+                vec!["agent1".to_string()],
+                vec![vec![]],
+                ralph_workflow::agents::AgentRole::Developer,
+            )
+            .with_max_cycles(1);
+
+        // Set retry_cycle to max_cycles to make it exhausted
+        state.agent_chain = AgentChainState {
+            retry_cycle: 1,
+            ..agent_chain
+        };
+
+        // Verify it's exhausted
+        assert!(
+            state.agent_chain.is_exhausted(),
+            "Agent chain should be exhausted"
+        );
+
+        // When: The orchestration determines the next effect
+        let effect = determine_next_effect(&state);
+
+        // Then: It should report agent chain exhaustion
+        assert!(
+            matches!(effect, Effect::ReportAgentChainExhausted { .. }),
+            "Expected ReportAgentChainExhausted, got {:?}",
+            effect
+        );
+
+        // When: The error event is reduced
+        let error_event = ErrorEvent::AgentChainExhausted {
+            role: ralph_workflow::agents::AgentRole::Developer,
+            phase: PipelinePhase::Development,
+            cycle: 1,
+        };
+        let new_state = reduce(
+            state,
+            PipelineEvent::PromptInput(PromptInputEvent::HandlerError {
+                phase: PipelinePhase::Development,
+                error: error_event,
+            }),
+        );
+
+        // Then: State transitions to Interrupted
+        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        assert!(
+            !new_state.is_complete(),
+            "Should not be complete yet (no checkpoint)"
+        );
+
+        // When: Orchestration determines next effect for Interrupted phase
+        let next_effect = determine_next_effect(&new_state);
+
+        // Then: It should save a checkpoint
+        assert!(
+            matches!(next_effect, Effect::SaveCheckpoint { .. }),
+            "Expected SaveCheckpoint for Interrupted phase, got {:?}",
+            next_effect
+        );
+
+        // When: Checkpoint is saved (simulate by applying CheckpointSaved event)
+        let final_state = reduce(
+            new_state,
+            PipelineEvent::checkpoint_saved(ralph_workflow::reducer::CheckpointTrigger::Interrupt),
+        );
+
+        // Then: Pipeline is marked as complete
+        assert!(
+            final_state.is_complete(),
+            "Pipeline should be complete after saving checkpoint in Interrupted phase"
         );
     });
 }
