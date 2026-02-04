@@ -189,7 +189,7 @@ fn monitor_reports_timeout_even_if_sigkill_confirmation_times_out() {
 
 #[test]
 #[cfg(unix)]
-fn monitor_treats_try_wait_errors_as_process_gone_during_kill_verification() {
+fn monitor_treats_try_wait_errors_as_status_unknown_and_continues_enforcement() {
     use std::io;
 
     #[derive(Debug)]
@@ -238,12 +238,12 @@ fn monitor_treats_try_wait_errors_as_process_gone_during_kill_verification() {
             Duration::from_millis(10),
             Duration::from_millis(1),
             Duration::from_millis(10),
-            Duration::from_secs(2),
+            Duration::from_millis(50),
             Duration::from_millis(20),
         ),
     );
 
-    assert_eq!(result, MonitorResult::TimedOut { escalated: false });
+    assert_eq!(result, MonitorResult::TimedOut { escalated: true });
 }
 
 #[test]

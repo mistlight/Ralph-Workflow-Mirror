@@ -31,8 +31,8 @@ pub(super) fn terminate_child_best_effort(
                 };
 
                 match status {
-                    Ok(Some(_)) | Err(_) => return true,
-                    Ok(None) => {
+                    Ok(Some(_)) => return true,
+                    Ok(None) | Err(_) => {
                         let now = Instant::now();
                         let should_resend = match last_kill_sent_at {
                             None => true,
@@ -59,8 +59,8 @@ pub(super) fn terminate_child_best_effort(
                 locked_child.try_wait()
             };
             match status {
-                Ok(Some(_)) | Err(_) => true,
-                Ok(None) => false,
+                Ok(Some(_)) => true,
+                Ok(None) | Err(_) => false,
             }
         }
     }

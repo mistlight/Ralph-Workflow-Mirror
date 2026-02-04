@@ -109,12 +109,12 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             };
 
             match status {
-                Ok(Some(_)) | Err(_) => {
+                Ok(Some(_)) => {
                     return MonitorResult::TimedOut {
                         escalated: state.escalated,
                     }
                 }
-                Ok(None) => {
+                Ok(None) | Err(_) => {
                     let now = std::time::Instant::now();
 
                     // Be robust to future changes: if we ever enter the enforcement state
@@ -166,8 +166,8 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                                 };
 
                                 match status {
-                                    Ok(Some(_)) | Err(_) => return,
-                                    Ok(None) => {
+                                    Ok(Some(_)) => return,
+                                    Ok(None) | Err(_) => {
                                         let now = std::time::Instant::now();
                                         let should_resend = match last_kill_sent_at {
                                             None => true,
@@ -206,9 +206,8 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
 
         let child_id = {
             let mut locked_child = child.lock().unwrap();
-            match locked_child.try_wait() {
-                Ok(Some(_)) | Err(_) => return MonitorResult::ProcessCompleted,
-                Ok(None) => {}
+            if let Ok(Some(_)) = locked_child.try_wait() {
+                return MonitorResult::ProcessCompleted;
             }
             locked_child.id()
         };

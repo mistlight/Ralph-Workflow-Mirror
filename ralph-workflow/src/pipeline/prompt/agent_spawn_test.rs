@@ -99,6 +99,30 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
     let monitor_should_stop_clone = Arc::clone(&monitor_should_stop);
     let activity_timestamp_clone = activity_timestamp.clone();
 
+    // Cancel stdout parsing as soon as idle-timeout enforcement begins.
+    {
+        let stdout_cancel_for_thread = Arc::clone(&stdout_cancel);
+        let should_stop_for_thread = Arc::clone(&monitor_should_stop);
+        let activity_for_thread = activity_timestamp.clone();
+        std::thread::spawn(move || {
+            use std::sync::atomic::Ordering;
+            let poll = std::time::Duration::from_millis(5);
+            loop {
+                if should_stop_for_thread.load(Ordering::Acquire) {
+                    return;
+                }
+                if crate::pipeline::idle_timeout::is_idle_timeout_exceeded(
+                    &activity_for_thread,
+                    idle_timeout_secs,
+                ) {
+                    stdout_cancel_for_thread.store(true, Ordering::Release);
+                    return;
+                }
+                std::thread::sleep(poll);
+            }
+        });
+    }
+
     let monitor_executor: Arc<dyn crate::executor::ProcessExecutor> =
         std::sync::Arc::clone(&runtime.executor_arc);
 
@@ -176,11 +200,14 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
         };
 
     if matches!(monitor_result_early, Some(MonitorResult::TimedOut { .. })) {
-        super::cleanup::terminate_child_best_effort(
+        let exited = super::cleanup::terminate_child_best_effort(
             &child_shared,
             runtime.executor_arc.as_ref(),
             kill_config,
         );
+        if exited {
+            monitor_should_stop.store(true, Ordering::Release);
+        }
         super::stderr_collector::cancel_and_join_stderr_collector(
             &stderr_cancel,
             &mut stderr_join_handle,
@@ -188,7 +215,9 @@ pub(crate) fn run_with_agent_spawn_with_monitor_config(
         );
     }
 
-    monitor_should_stop.store(true, Ordering::Release);
+    if !matches!(monitor_result_early, Some(MonitorResult::TimedOut { .. })) {
+        monitor_should_stop.store(true, Ordering::Release);
+    }
 
     let monitor_result = monitor_result_early
         .or_else(|| monitor_handle.take().and_then(|handle| handle.join().ok()))
