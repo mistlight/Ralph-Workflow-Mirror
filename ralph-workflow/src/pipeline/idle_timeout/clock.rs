@@ -1,11 +1,8 @@
 // Clock trait and implementations for idle timeout monitoring
 
-use std::io::{self, Read};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-use crate::executor::ProcessExecutor;
 
 /// Clock trait for obtaining current time. Enables testing with mock clocks.
 ///

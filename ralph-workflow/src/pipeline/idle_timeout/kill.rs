@@ -1,0 +1,195 @@
+//! Subprocess termination helpers for idle-timeout enforcement.
+
+use crate::executor::{AgentChild, ProcessExecutor};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+/// Result of attempting to kill a process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KillResult {
+    /// Process was successfully killed with SIGTERM.
+    TerminatedByTerm,
+    /// Process required SIGKILL/taskkill escalation.
+    TerminatedByKill,
+    /// Kill signals were sent successfully, but the process was not confirmed exited yet.
+    ///
+    /// The monitor should continue polling for exit and report `TimedOut` once
+    /// the process is observed dead.
+    SignalsSentAwaitingExit { escalated: bool },
+    /// Kill attempt failed (process may have already exited).
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KillConfig {
+    sigterm_grace: Duration,
+    poll_interval: Duration,
+    sigkill_confirm_timeout: Duration,
+    post_sigkill_hard_cap: Duration,
+    sigkill_resend_interval: Duration,
+}
+
+impl KillConfig {
+    pub const fn new(
+        sigterm_grace: Duration,
+        poll_interval: Duration,
+        sigkill_confirm_timeout: Duration,
+        post_sigkill_hard_cap: Duration,
+        sigkill_resend_interval: Duration,
+    ) -> Self {
+        Self {
+            sigterm_grace,
+            poll_interval,
+            sigkill_confirm_timeout,
+            post_sigkill_hard_cap,
+            sigkill_resend_interval,
+        }
+    }
+
+    pub fn sigterm_grace(&self) -> Duration {
+        self.sigterm_grace
+    }
+
+    pub fn poll_interval(&self) -> Duration {
+        self.poll_interval
+    }
+
+    pub fn sigkill_confirm_timeout(&self) -> Duration {
+        self.sigkill_confirm_timeout
+    }
+
+    pub fn post_sigkill_hard_cap(&self) -> Duration {
+        self.post_sigkill_hard_cap
+    }
+
+    pub fn sigkill_resend_interval(&self) -> Duration {
+        self.sigkill_resend_interval
+    }
+}
+
+/// Default kill configuration.
+///
+/// - SIGTERM grace: 5s
+/// - Poll interval: 100ms
+/// - SIGKILL confirm timeout: 500ms
+/// - Post-SIGKILL hard cap: 5s
+/// - SIGKILL resend interval: 1s
+pub const DEFAULT_KILL_CONFIG: KillConfig = KillConfig::new(
+    Duration::from_secs(5),
+    Duration::from_millis(100),
+    Duration::from_millis(500),
+    Duration::from_secs(5),
+    Duration::from_secs(1),
+);
+
+#[cfg(unix)]
+pub(crate) fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -> bool {
+    executor
+        .execute("kill", &["-KILL", &pid.to_string()], &[], None)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+pub(crate) fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -> bool {
+    executor
+        .execute("taskkill", &["/F", "/PID", &pid.to_string()], &[], None)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Kill a process by PID using platform-specific commands via executor.
+///
+/// First attempts SIGTERM, waits for a grace period while verifying liveness,
+/// then escalates to SIGKILL if the process hasn't terminated.
+#[cfg(unix)]
+pub(crate) fn kill_process(
+    pid: u32,
+    executor: &dyn ProcessExecutor,
+    child: Option<&Arc<Mutex<Box<dyn AgentChild>>>>,
+    config: KillConfig,
+) -> KillResult {
+    let term_result = executor.execute("kill", &["-TERM", &pid.to_string()], &[], None);
+
+    let term_ok = term_result.map(|o| o.status.success()).unwrap_or(false);
+    if !term_ok {
+        return KillResult::Failed;
+    }
+
+    if let Some(child_arc) = child {
+        let grace_deadline = std::time::Instant::now() + config.sigterm_grace;
+        while std::time::Instant::now() < grace_deadline {
+            let status = {
+                let mut locked_child = child_arc.lock().unwrap();
+                locked_child.try_wait()
+            };
+
+            match status {
+                Ok(Some(_)) => return KillResult::TerminatedByTerm,
+                Ok(None) => std::thread::sleep(config.poll_interval),
+                Err(_) => return KillResult::TerminatedByTerm,
+            }
+        }
+
+        let kill_result = executor.execute("kill", &["-KILL", &pid.to_string()], &[], None);
+        let kill_ok = kill_result.map(|o| o.status.success()).unwrap_or(false);
+        if !kill_ok {
+            return KillResult::Failed;
+        }
+
+        let confirm_deadline = std::time::Instant::now() + config.sigkill_confirm_timeout;
+        while std::time::Instant::now() < confirm_deadline {
+            let status = {
+                let mut locked_child = child_arc.lock().unwrap();
+                locked_child.try_wait()
+            };
+
+            match status {
+                Ok(Some(_)) => return KillResult::TerminatedByKill,
+                Ok(None) => std::thread::sleep(config.poll_interval),
+                Err(_) => return KillResult::TerminatedByKill,
+            }
+        }
+
+        return KillResult::SignalsSentAwaitingExit { escalated: true };
+    }
+
+    KillResult::TerminatedByTerm
+}
+
+/// Windows kill implementation.
+///
+/// `taskkill /F` is already forceful; treat this as an escalated kill.
+#[cfg(windows)]
+pub(crate) fn kill_process(
+    pid: u32,
+    executor: &dyn ProcessExecutor,
+    child: Option<&Arc<Mutex<Box<dyn AgentChild>>>>,
+    config: KillConfig,
+) -> KillResult {
+    let result = executor.execute("taskkill", &["/F", "/PID", &pid.to_string()], &[], None);
+    let kill_ok = result.map(|o| o.status.success()).unwrap_or(false);
+    if !kill_ok {
+        return KillResult::Failed;
+    }
+
+    if let Some(child_arc) = child {
+        let confirm_deadline = std::time::Instant::now() + config.sigkill_confirm_timeout;
+        while std::time::Instant::now() < confirm_deadline {
+            let status = {
+                let mut locked_child = child_arc.lock().unwrap();
+                locked_child.try_wait()
+            };
+
+            match status {
+                Ok(Some(_)) => return KillResult::TerminatedByKill,
+                Ok(None) => std::thread::sleep(config.poll_interval),
+                Err(_) => return KillResult::TerminatedByKill,
+            }
+        }
+
+        return KillResult::SignalsSentAwaitingExit { escalated: true };
+    }
+
+    KillResult::TerminatedByKill
+}

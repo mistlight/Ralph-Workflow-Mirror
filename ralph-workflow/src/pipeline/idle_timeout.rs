@@ -23,6 +23,23 @@
 //! - Short enough to detect truly stuck agents
 //! - Aligned with typical CI/CD step timeouts
 
-include!("idle_timeout/clock.rs");
-include!("idle_timeout/activity_tracking.rs");
-include!("idle_timeout/tests.rs");
+mod clock;
+mod kill;
+mod monitor;
+mod readers;
+
+pub use clock::{
+    is_idle_timeout_exceeded, is_idle_timeout_exceeded_with_clock, new_activity_timestamp,
+    new_activity_timestamp_with_clock, time_since_activity, time_since_activity_with_clock,
+    touch_activity, touch_activity_with_clock, Clock, MonotonicClock, SharedActivityTimestamp,
+    IDLE_TIMEOUT_SECS,
+};
+pub use kill::{KillConfig, DEFAULT_KILL_CONFIG};
+pub use monitor::{
+    monitor_idle_timeout, monitor_idle_timeout_with_interval,
+    monitor_idle_timeout_with_interval_and_kill_config, MonitorResult,
+};
+pub use readers::{ActivityTrackingReader, StderrActivityTracker};
+
+#[cfg(test)]
+mod tests;
