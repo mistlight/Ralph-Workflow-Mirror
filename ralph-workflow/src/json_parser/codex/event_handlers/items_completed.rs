@@ -38,6 +38,22 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
 }
 
 /// Handle `ItemCompleted` event for `reasoning` type.
+///
+/// # Reasoning Completion Strategy (Bug Fix: Codex Thinking Spam)
+///
+/// This handler completes the reasoning spam fix by flushing accumulated content:
+///
+/// ## Full TTY Mode
+/// - Reasoning was already rendered in-place during deltas
+/// - Emit cursor finalization sequence (`\x1b[1B\n`) to move cursor down
+///
+/// ## Non-TTY Modes (Basic/None)
+/// - Per-delta output was suppressed during streaming
+/// - Now flush the final accumulated thinking content **once** with "Thinking:" label
+/// - If no streamed thinking exists, fall back to verbose mode "Thought:" summary
+///
+/// ## Regression Test
+/// See `tests/integration_tests/codex_reasoning_spam_regression.rs` for verification.
 pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     let full_reasoning = ctx
         .reasoning_accumulator
@@ -48,24 +64,70 @@ pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&Strin
         .borrow_mut()
         .clear_key(ContentType::Thinking, "reasoning");
 
-    if ctx.verbosity.is_verbose() {
-        if let Some(text) = full_reasoning.as_ref().or(text) {
-            let limit = ctx.verbosity.truncate_limit("text");
-            let preview = truncate_text(text, limit);
-            return format!(
-                "{}[{}]{} {}Thought:{} {}{}{}\n",
-                ctx.colors.dim(),
-                ctx.display_name,
-                ctx.colors.reset(),
-                ctx.colors.cyan(),
-                ctx.colors.reset(),
-                ctx.colors.dim(),
-                preview,
-                ctx.colors.reset()
-            );
+    // In Full mode, we already rendered thinking in-place during deltas.
+    // Just emit a completion sequence if needed.
+    match ctx.terminal_mode {
+        TerminalMode::Full => {
+            // In Full mode, thinking was already rendered in-place.
+            // Emit cursor finalization (move cursor down from in-place update position).
+            let session = ctx.streaming_session.borrow();
+            let has_thinking = session
+                .get_accumulated(ContentType::Thinking, "reasoning")
+                .is_some_and(|s| !s.is_empty());
+            drop(session);
+
+            if has_thinking {
+                ThinkingDeltaRenderer::render_completion(ctx.terminal_mode)
+            } else {
+                String::new()
+            }
+        }
+        TerminalMode::Basic | TerminalMode::None => {
+            // In non-TTY modes, we suppressed per-delta output during streaming.
+            // Now flush the final accumulated thinking content once.
+            //
+            // Check if we have accumulated thinking from streaming deltas
+            let session = ctx.streaming_session.borrow();
+            let streamed_thinking = session
+                .get_accumulated(ContentType::Thinking, "reasoning")
+                .map(std::string::ToString::to_string);
+            drop(session);
+
+            // If we have streamed thinking, flush it with "Thinking:" label
+            if let Some(thinking) = streamed_thinking {
+                let sanitized = sanitize_for_display(&thinking);
+                if !sanitized.is_empty() {
+                    return ThinkingDeltaRenderer::render_first_delta(
+                        &sanitized,
+                        ctx.display_name,
+                        *ctx.colors,
+                        ctx.terminal_mode,
+                    );
+                }
+            }
+
+            // Otherwise, in Verbose mode, show summarized "Thought:" line
+            // This handles the case where reasoning comes only in the completion event (no deltas)
+            if ctx.verbosity.is_verbose() {
+                if let Some(text) = full_reasoning.as_ref().or(text) {
+                    let limit = ctx.verbosity.truncate_limit("text");
+                    let preview = truncate_text(text, limit);
+                    return format!(
+                        "{}[{}]{} {}Thought:{} {}{}{}\n",
+                        ctx.colors.dim(),
+                        ctx.display_name,
+                        ctx.colors.reset(),
+                        ctx.colors.cyan(),
+                        ctx.colors.reset(),
+                        ctx.colors.dim(),
+                        preview,
+                        ctx.colors.reset()
+                    );
+                }
+            }
+            String::new()
         }
     }
-    String::new()
 }
 
 /// Handle `ItemCompleted` event for `command_execution` type.
