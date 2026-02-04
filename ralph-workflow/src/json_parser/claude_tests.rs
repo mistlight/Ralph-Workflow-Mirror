@@ -263,7 +263,7 @@ fn test_thinking_deltas_tty_finalize_before_text() {
         .expect("thinking delta should render in TTY");
     assert!(out1.contains("Thinking:"));
     assert!(out1.contains("git"));
-    assert!(out1.ends_with("\n\x1b[1A"));
+    assert!(!out1.contains('\n'));
 
     let d2 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" status"}}}"#;
     let out2 = parser
@@ -272,13 +272,63 @@ fn test_thinking_deltas_tty_finalize_before_text() {
     assert!(out2.contains(CLEAR_LINE));
     assert!(out2.contains("Thinking:"));
     assert!(out2.contains("git status"));
-    assert!(out2.ends_with("\n\x1b[1A"));
+    assert!(!out2.contains('\n'));
 
     // First text delta should first finalize thinking line (cursor down + newline)
     // and then begin streaming text.
     let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
     let out3 = parser.parse_event(text).expect("text delta should render");
-    assert!(out3.starts_with("\x1b[1B\n"));
+    assert!(out3.starts_with("\n"));
     assert!(out3.contains("[ccs/codex]"));
     assert!(out3.contains("Hello"));
+}
+
+#[test]
+fn test_thinking_deltas_full_mode_do_not_create_extra_terminal_lines() {
+    use crate::json_parser::printer::{SharedPrinter, VirtualTerminal};
+    use crate::json_parser::terminal::TerminalMode;
+    use std::cell::RefCell;
+    use std::io::Write;
+    use std::rc::Rc;
+
+    let vterm = Rc::new(RefCell::new(VirtualTerminal::new()));
+    let printer: SharedPrinter = vterm.clone();
+    let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer)
+        .with_terminal_mode(TerminalMode::Full)
+        .with_display_name("ccs/codex");
+
+    let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_vt_1","type":"message","role":"assistant"}}}"#;
+    assert!(parser.parse_event(start).is_none());
+
+    let d1 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"git"}}}"#;
+    let out1 = parser
+        .parse_event(d1)
+        .expect("thinking delta should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out1}").unwrap();
+        t.flush().unwrap();
+    }
+    assert!(
+        !vterm.borrow().get_visible_output().contains('\n'),
+        "Thinking streaming should not allocate extra rows in Full mode. Visible: {:?}. Raw: {:?}",
+        vterm.borrow().get_visible_output(),
+        vterm.borrow().get_write_history()
+    );
+
+    let d2 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" status"}}}"#;
+    let out2 = parser
+        .parse_event(d2)
+        .expect("thinking delta should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out2}").unwrap();
+        t.flush().unwrap();
+    }
+    assert!(
+        !vterm.borrow().get_visible_output().contains('\n'),
+        "Thinking streaming should remain single-line after updates. Visible: {:?}. Raw: {:?}",
+        vterm.borrow().get_visible_output(),
+        vterm.borrow().get_write_history()
+    );
 }

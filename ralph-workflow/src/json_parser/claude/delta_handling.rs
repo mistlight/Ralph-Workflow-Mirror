@@ -14,11 +14,10 @@ impl ClaudeParser {
         let terminal_mode = *self.terminal_mode.borrow();
         match terminal_mode {
             TerminalMode::Full => {
-                // Finalize the multi-line in-place update pattern for thinking.
-                // This leaves the final thinking line visible and moves the cursor to the next line.
-                <crate::json_parser::delta_display::ThinkingDeltaRenderer as DeltaRenderer>::render_completion(
+                crate::json_parser::delta_display::ThinkingDeltaRenderer::render_completion(
                     terminal_mode,
                 )
+                .to_string()
             }
             TerminalMode::Basic | TerminalMode::None => {
                 let index_str = index.to_string();

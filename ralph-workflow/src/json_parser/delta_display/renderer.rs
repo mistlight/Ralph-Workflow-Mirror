@@ -257,7 +257,7 @@ impl DeltaRenderer for ThinkingDeltaRenderer {
 
         match terminal_mode {
             TerminalMode::Full => format!(
-                "{}[{}]{} {}Thinking: {}{}{}\n\x1b[1A",
+                "{CLEAR_LINE}\r{}[{}]{} {}Thinking: {}{}{}",
                 colors.dim(),
                 prefix,
                 colors.reset(),
@@ -289,7 +289,7 @@ impl DeltaRenderer for ThinkingDeltaRenderer {
 
         match terminal_mode {
             TerminalMode::Full => format!(
-                "{CLEAR_LINE}\r{}[{}]{} {}Thinking: {}{}{}\n\x1b[1A",
+                "{CLEAR_LINE}\r{}[{}]{} {}Thinking: {}{}{}",
                 colors.dim(),
                 prefix,
                 colors.reset(),
@@ -308,6 +308,17 @@ impl DeltaRenderer for ThinkingDeltaRenderer {
                 sanitized,
                 colors.reset()
             ),
+        }
+    }
+}
+
+impl ThinkingDeltaRenderer {
+    pub(crate) const fn render_completion(terminal_mode: TerminalMode) -> &'static str {
+        match terminal_mode {
+            // Full mode uses single-line updates via `\r` without cursor positioning.
+            // Finalize by moving to the next line.
+            TerminalMode::Full => "\n",
+            TerminalMode::Basic | TerminalMode::None => "",
         }
     }
 }
