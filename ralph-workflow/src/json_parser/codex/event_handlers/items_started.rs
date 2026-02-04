@@ -42,12 +42,49 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&Str
 /// Handle `ItemStarted` event for `reasoning` type.
 pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     if let Some(text) = text {
+        // Use StreamingSession to track first vs subsequent chunks
+        let show_prefix = {
+            let mut session = ctx.streaming_session.borrow_mut();
+            session.on_thinking_delta_key("reasoning", text)
+        };
+
+        // Accumulate for backward compatibility with reasoning_completed
         let mut acc = ctx.reasoning_accumulator.borrow_mut();
         acc.add_delta(ContentType::Thinking, "reasoning", text);
-        let formatter = DeltaDisplayFormatter::new();
-        return formatter.format_thinking(text, ctx.display_name, *ctx.colors);
-    }
-    if ctx.verbosity.is_verbose() {
+        drop(acc);
+
+        // In non-TTY modes, suppress per-delta reasoning output and flush once
+        // at the next output boundary (item.completed or message boundary).
+        match ctx.terminal_mode {
+            TerminalMode::Full => {
+                let session = ctx.streaming_session.borrow();
+                let accumulated = session
+                    .get_accumulated(ContentType::Thinking, "reasoning")
+                    .unwrap_or("");
+
+                if show_prefix {
+                    ThinkingDeltaRenderer::render_first_delta(
+                        accumulated,
+                        ctx.display_name,
+                        *ctx.colors,
+                        ctx.terminal_mode,
+                    )
+                } else {
+                    ThinkingDeltaRenderer::render_subsequent_delta(
+                        accumulated,
+                        ctx.display_name,
+                        *ctx.colors,
+                        ctx.terminal_mode,
+                    )
+                }
+            }
+            TerminalMode::Basic | TerminalMode::None => {
+                // Suppress per-delta output in non-TTY modes
+                // Will be flushed at reasoning completion boundary
+                String::new()
+            }
+        }
+    } else if ctx.verbosity.is_verbose() {
         format!(
             "{}[{}]{} {}Reasoning...{}\n",
             ctx.colors.dim(),
