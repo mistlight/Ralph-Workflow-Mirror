@@ -20,12 +20,12 @@
 //!
 //! ## How?
 //!
-//! For `ccs/glm`, instead of running `ccs glm -p --output-format=stream-json ...`, we run:
+//! For `ccs/glm`, instead of running `ccs glm --print --output-format=stream-json ...`, we run:
 //! ```bash
 //! ANTHROPIC_BASE_URL="..." \
 //! ANTHROPIC_AUTH_TOKEN="..." \
 //! ANTHROPIC_MODEL="..." \
-//! claude -p --output-format=stream-json ...
+//! claude --print --output-format=stream-json ...
 //! ```
 //!
 //! The environment variables are loaded from CCS' settings files using the same

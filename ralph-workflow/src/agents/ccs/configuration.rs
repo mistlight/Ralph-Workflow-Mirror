@@ -275,13 +275,15 @@ fn build_ccs_config_from_flags(
         .verbose_flag
         .clone()
         .unwrap_or_else(|| defaults.verbose_flag.clone());
-    // CRITICAL: CCS always requires -p flag for non-interactive mode.
-    // If defaults.print_flag is empty (missing config), fall back to "-p".
+    // CCS headless behavior: when invoking via the `ccs` wrapper, avoid `-p` because CCS
+    // interprets `-p`/`--prompt` as its own headless delegation mode.
+    // Use Claude's long-form `--print` flag for non-interactive mode instead.
+    // If defaults.print_flag is empty (missing config), fall back to "--print".
     let print_flag = alias_config.print_flag.clone().unwrap_or_else(|| {
         let pf = defaults.print_flag.clone();
         if pf.is_empty() {
-            // Hardcoded safety fallback: CCS commands need -p for non-interactive mode
-            "-p".to_string()
+            // Hardcoded safety fallback: use --print to avoid CCS delegation interception
+            "--print".to_string()
         } else {
             pf
         }
@@ -318,7 +320,7 @@ fn build_ccs_config_from_flags(
         can_commit,
         json_parser: JsonParserType::parse(json_parser),
         model_flag: alias_config.model_flag.clone(),
-        print_flag, // CCS requires -p for non-interactive mode (from defaults or alias override)
+        print_flag, // Default: --print (safe for `ccs` wrapper); user can override per-alias
         streaming_flag, // Required for JSON streaming when using -p
         session_flag, // Session continuation flag for XSD retries
         env_vars,   // Loaded from CCS settings for the resolved profile, if available

@@ -36,7 +36,7 @@ verbose_flag = "--verbose"
 can_commit = true
 json_parser = "ccs"
 display_name = "CCS (Claude Code Switch)"
-print_flag = "-p"  # Required for non-interactive mode (Claude CLI requirement)
+print_flag = "--print"  # Use Claude's --print (CCS reserves -p/--prompt for delegation)
 # Session continuation: --resume <session_id> (passed through to Claude CLI)
 session_flag = "--resume {}"
 
@@ -54,7 +54,7 @@ yolo_flag = "--dangerously-skip-permissions"
 verbose_flag = "--verbose"
 can_commit = true
 json_parser = "claude"
-print_flag = "-p"  # Required for non-interactive mode
+print_flag = "--print"  # Print mode for non-interactive runs
 display_name = "GLM (Direct via Claude)"
 # Session continuation: --resume <session_id> (from `claude --help`)
 session_flag = "--resume {}"

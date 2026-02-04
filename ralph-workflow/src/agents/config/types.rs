@@ -31,10 +31,10 @@ pub struct AgentConfig {
     pub json_parser: JsonParserType,
     /// Model/provider flag for agents that support model selection.
     pub model_flag: Option<String>,
-    /// Print/non-interactive mode flag (e.g., "-p" for Claude/CCS).
+    /// Print/non-interactive mode flag (e.g., "-p" or "--print" for Claude).
     pub print_flag: String,
-    /// Include partial messages flag for streaming with -p (e.g., "--include-partial-messages").
-    /// Required for Claude/CCS to stream JSON output when using -p mode.
+    /// Include partial messages flag for streaming in print mode (e.g., "--include-partial-messages").
+    /// Required for Claude output streaming when using `--output-format=stream-json` with print mode.
     pub streaming_flag: String,
     /// Session continuation flag template (e.g., "--session {}" for OpenCode).
     /// The `{}` placeholder is replaced with the session ID at runtime.
@@ -88,7 +88,8 @@ impl AgentConfig {
     ) -> String {
         let mut parts = vec![self.cmd.clone()];
 
-        // Add print flag first (for CCS that needs -p after the profile name)
+        // Add print flag early (for wrappers like `ccs <profile>` where the print flag must
+        // come after the profile argument)
         if !self.print_flag.is_empty() {
             parts.push(self.print_flag.clone());
         }
@@ -97,8 +98,8 @@ impl AgentConfig {
             parts.push(self.output_flag.clone());
         }
 
-        // Add streaming flag when using stream-json output with -p
-        // Claude/CCS require --include-partial-messages to stream JSON in -p mode
+        // Add streaming flag when using stream-json output with print mode.
+        // Claude requires --include-partial-messages to stream JSON in print mode.
         if output
             && !self.output_flag.is_empty()
             && self.output_flag.contains("stream-json")

@@ -128,15 +128,15 @@ These agents have known compatibility issues with Ralph's review process:
 - **Universal Prompt**: Ralph automatically uses a simplified review prompt for GLM
 - **Fast Fallback**: GLM exit code 1 errors now trigger immediate fallback (no indefinite retries)
 - **Pre-flight Warning**: Ralph warns you before running review with GLM
-- **Hardcoded print_flag fallback**: Ralph automatically adds `-p` flag for CCS agents even if missing from config
+- **Hardcoded print_flag fallback**: Ralph automatically adds `--print` flag for CCS agents even if missing from config
 
 **Configuration Requirements**:
-CCS agents require `print_flag = "-p"` in your `~/.config/ralph-workflow.toml`:
+CCS agents require `print_flag = "--print"` in your `~/.config/ralph-workflow.toml`:
 
 ```toml
 [ccs]
 # REQUIRED: print_flag enables non-interactive mode for Claude CLI
-print_flag = "-p"
+print_flag = "--print"
 output_flag = "--output-format=stream-json"
 yolo_flag = "--dangerously-skip-permissions"
 verbose_flag = "--verbose"
@@ -148,7 +148,7 @@ glm = "ccs glm"
 ```
 
 **Note**: As of Ralph v0.2.7+, if `print_flag` is missing from your config, Ralph will
-automatically use `-p` as a fallback. However, it's still recommended to explicitly
+automatically use `--print` as a fallback. However, it's still recommended to explicitly
 configure it to avoid warnings.
 
 **Manual Workaround Configuration**:
@@ -158,7 +158,7 @@ name = "ccs/glm"
 command = "ccs"
 args = ["glm", "--output-format=stream-json", "--dangerously-skip-permissions", "<PROMPT>"]
 json_parser = "claude"  # CCS always uses Claude parser (outputs stream-json format)
-print_flag = "-p"  # Required for non-interactive mode
+print_flag = "--print"  # Use Claude's --print (CCS reserves -p/--prompt for delegation)
 ```
 
 > **IMPORTANT**: CCS (Claude Code Switcher) ALWAYS outputs Claude's stream-json format, regardless of which provider you're using (GLM, Gemini, etc.). The Claude parser is the correct parser for all CCS agents. If `ccs/glm` is not using the Claude parser, **this is a bug** and should be reported.
@@ -184,6 +184,7 @@ RALPH_REVIEWER_REVIEWS=0 ralph
 
 **Issue with `ccs/glm`**:
 Older Ralph versions could run `ccs glm -p ...` directly, which can cause CCS to intercept/reformat output (breaking stream-json parsing).
+Additionally, CCS treats `-p` / `--prompt` as its own headless delegation mode, so `ccs <profile> -p ...` is not a safe way to pass Claude's print flag through CCS.
 
 **Current behavior**:
 Ralph now bypasses the CCS wrapper for `ccs/<alias>` by loading the profile’s env vars from CCS config/settings and invoking `claude` directly. This preserves Claude CLI flag passthrough and stream-json output for `ccs/glm`.
@@ -201,7 +202,7 @@ verbose_flag = "--verbose"
 can_commit = true
 json_parser = "claude"
 ccs_profile = "glm"  # Auto-loads env vars from CCS
-print_flag = "-p"
+print_flag = "--print"
 display_name = "GLM (Direct via Claude)"
 ```
 

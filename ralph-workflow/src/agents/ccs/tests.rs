@@ -445,8 +445,10 @@ fn test_ccs_config_has_correct_flags() {
     assert_eq!(config.output_flag, "--output-format=stream-json");
     assert_eq!(config.yolo_flag, "--dangerously-skip-permissions");
     assert_eq!(config.verbose_flag, "--verbose");
-    // CCS requires -p for non-interactive mode
-    assert_eq!(config.print_flag, "-p");
+    // IMPORTANT: CCS uses `-p/--prompt` for headless delegation.
+    // When invoking Claude through CCS (e.g. `ccs codex`), we must use Claude's
+    // `--print` flag instead of `-p` to avoid triggering CCS delegation.
+    assert_eq!(config.print_flag, "--print");
     assert!(config.can_commit);
 
     // CCS always outputs stream-json format, so always use Claude parser
@@ -554,7 +556,7 @@ fn test_ccs_display_names() {
 
 #[test]
 fn test_ccs_glm_command_has_print_flag() {
-    // Verify that GLM commands include the -p flag for non-interactive mode
+    // Verify that GLM commands include the print flag for non-interactive mode
     let mut aliases = HashMap::new();
     aliases.insert(
         "glm".to_string(),
@@ -567,14 +569,17 @@ fn test_ccs_glm_command_has_print_flag() {
     let resolver = CcsAliasResolver::new(aliases, default_ccs());
     let glm_config = resolver.try_resolve("ccs/glm").unwrap();
 
-    // Verify print_flag is set to "-p" (from defaults)
-    assert_eq!(glm_config.print_flag, "-p");
+    // Verify print_flag is set (from defaults)
+    assert_eq!(glm_config.print_flag, "--print");
 
-    // Build the command and verify -p is included
+    // Build the command and verify --print is included
     let cmd = glm_config.build_cmd(true, true, true);
-    assert!(cmd.contains(" -p"), "GLM command must include -p flag");
+    assert!(
+        cmd.contains(" --print"),
+        "GLM command must include --print flag"
+    );
     // When claude binary is found, command should contain "claude" as the base command
-    // The actual command is now "claude -p ..." instead of "ccs glm -p ..."
+    // The actual command is now "claude --print ..." instead of "ccs glm --print ..."
     // We check if the first word (before any space) ends with "claude"
     let first_word = cmd.split_whitespace().next().unwrap_or("");
     assert!(
@@ -586,7 +591,7 @@ fn test_ccs_glm_command_has_print_flag() {
 #[test]
 fn test_ccs_glm_flag_ordering() {
     // Verify that flags are in the correct order for CCS GLM
-    // The -p flag must come AFTER the command name (e.g., "claude -p" not "-p claude")
+    // The --print flag must come AFTER the command name
     let mut aliases = HashMap::new();
     aliases.insert(
         "glm".to_string(),
@@ -613,10 +618,13 @@ fn test_ccs_glm_flag_ordering() {
         "First part should end with 'claude' or be 'ccs', got: {first_part}"
     );
 
-    // -p flag should come after the command name
-    let p_index = parts.iter().position(|&s| s == "-p");
-    assert!(p_index.is_some(), "-p flag must be present");
-    assert!(p_index.unwrap() > 0, "-p flag must come after command name");
+    // --print flag should come after the command name
+    let p_index = parts.iter().position(|&s| s == "--print");
+    assert!(p_index.is_some(), "--print flag must be present");
+    assert!(
+        p_index.unwrap() > 0,
+        "--print flag must come after command name"
+    );
 }
 
 #[test]
@@ -638,11 +646,11 @@ fn test_ccs_glm_with_empty_print_override() {
     // User override should take precedence
     assert_eq!(glm_config.print_flag, "");
 
-    // Command should NOT include -p (user explicitly disabled it)
+    // Command should NOT include --print (user explicitly disabled it)
     let cmd = glm_config.build_cmd(true, true, true);
     assert!(
-        !cmd.contains(" -p"),
-        "Command should not include -p when explicitly disabled"
+        !cmd.contains(" --print"),
+        "Command should not include --print when explicitly disabled"
     );
 }
 

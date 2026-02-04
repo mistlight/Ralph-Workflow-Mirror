@@ -236,8 +236,13 @@ pub struct CcsConfig {
     pub yolo_flag: String,
     /// Flag for verbose output.
     pub verbose_flag: String,
-    /// Print flag for non-interactive mode (required by Claude CLI).
-    /// Default: "-p"
+    /// Print flag for non-interactive mode.
+    ///
+    /// IMPORTANT: CCS treats `-p` / `--prompt` as *its own* headless delegation mode.
+    /// When we execute via the `ccs` wrapper (e.g. `ccs codex`), we must use
+    /// Claude's long-form `--print` flag to avoid triggering CCS delegation.
+    ///
+    /// Default: "--print"
     pub print_flag: String,
     /// Streaming flag for JSON output with -p (required for Claude/CCS to stream).
     /// Default: "--include-partial-messages"
@@ -255,7 +260,7 @@ impl Default for CcsConfig {
             // Default to unattended automation (config can override to disable).
             yolo_flag: "--dangerously-skip-permissions".to_string(),
             verbose_flag: "--verbose".to_string(),
-            print_flag: "-p".to_string(),
+            print_flag: "--print".to_string(),
             streaming_flag: "--include-partial-messages".to_string(),
             json_parser: "claude".to_string(),
             can_commit: true,

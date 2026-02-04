@@ -292,7 +292,7 @@ ralph.dev/
   output_flag = "--output-format=stream-json"
   yolo_flag = "--dangerously-skip-permissions"
   verbose_flag = "--verbose"
-  print_flag = "-p"
+  print_flag = "--print"
   can_commit = true
   json_parser = "claude"
   ```
@@ -380,7 +380,7 @@ ralph.dev/
    [ccs]
    output_flag = "--output-format=stream-json"
    verbose_flag = "--verbose"
-   print_flag = "-p"
+   print_flag = "--print"
    yolo_flag = "--dangerously-skip-permissions"
    json_parser = "claude"
    can_commit = true
@@ -538,7 +538,7 @@ export async function GET() {
    output_flag = "--output-format=stream-json"
    yolo_flag = "--dangerously-skip-permissions"
    verbose_flag = "--verbose"
-   print_flag = "-p"
+   print_flag = "--print"
    streaming_flag = "--include-partial-messages"
    json_parser = "claude"
    can_commit = true

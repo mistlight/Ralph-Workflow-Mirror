@@ -73,7 +73,7 @@ fn build_cmd_includes_streaming_flag_with_print_and_stream_json() {
         can_commit: true,
         json_parser: JsonParserType::Claude,
         model_flag: None,
-        print_flag: "-p".to_string(),
+        print_flag: "--print".to_string(),
         streaming_flag: "--include-partial-messages".to_string(),
         session_flag: String::new(),
         env_vars: HashMap::new(),
@@ -81,7 +81,7 @@ fn build_cmd_includes_streaming_flag_with_print_and_stream_json() {
     };
 
     let cmd = agent.build_cmd(true, true, true);
-    assert!(cmd.contains("ccs glm -p"));
+    assert!(cmd.contains("ccs glm --print"));
     assert!(cmd.contains("--output-format=stream-json"));
     assert!(cmd.contains("--include-partial-messages"));
 }
@@ -138,4 +138,3 @@ fn build_cmd_with_session_ignores_session_id_when_unsupported() {
     assert!(!cmd.contains("ses_abc123"));
     assert!(!agent.supports_session_continuation());
 }
-
