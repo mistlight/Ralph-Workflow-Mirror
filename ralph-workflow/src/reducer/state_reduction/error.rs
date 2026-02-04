@@ -86,6 +86,7 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::WorkspaceRemoveFailed { .. } => {
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
+            new_state.previous_phase = Some(state.phase);
             new_state.phase = PipelinePhase::Interrupted;
             new_state
         }
@@ -97,6 +98,7 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             // This signals the event loop that the pipeline should terminate
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
+            new_state.previous_phase = Some(state.phase);
             new_state.phase = PipelinePhase::Interrupted;
             new_state
         }
@@ -166,5 +168,32 @@ mod tests {
 
         // Should transition to Interrupted phase
         assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        assert_eq!(
+            new_state.previous_phase,
+            Some(state.phase),
+            "previous_phase should be recorded for interrupted transitions"
+        );
+    }
+
+    #[test]
+    fn test_reduce_workspace_failures_transition_to_interrupted_and_set_previous_phase() {
+        use crate::reducer::event::{PipelinePhase, WorkspaceIoErrorKind};
+
+        let mut state =
+            PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
+        state.phase = PipelinePhase::Review;
+
+        let error = ErrorEvent::WorkspaceWriteFailed {
+            path: ".agent/tmp/out.txt".to_string(),
+            kind: WorkspaceIoErrorKind::Other,
+        };
+
+        let new_state = reduce_error(&state, &error);
+        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        assert_eq!(
+            new_state.previous_phase,
+            Some(state.phase),
+            "previous_phase should be recorded for interrupted transitions"
+        );
     }
 }

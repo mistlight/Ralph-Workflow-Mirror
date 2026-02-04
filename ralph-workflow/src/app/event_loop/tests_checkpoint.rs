@@ -126,7 +126,11 @@ fn test_event_loop_result_completed_false_for_interrupted_with_checkpoint() {
     struct PanicHandler;
 
     impl<'ctx> EffectHandler<'ctx> for PanicHandler {
-        fn execute(&mut self, _effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+        fn execute(
+            &mut self,
+            _effect: Effect,
+            _ctx: &mut PhaseContext<'_>,
+        ) -> Result<EffectResult> {
             panic!("event loop should not execute effects when initial state is terminal");
         }
     }
@@ -183,6 +187,76 @@ fn test_event_loop_result_completed_false_for_interrupted_with_checkpoint() {
         "interrupted-with-checkpoint is terminal but must not be reported as successful completion"
     );
     assert_eq!(result.events_processed, 0);
+}
+
+#[test]
+fn test_event_loop_returns_error_on_handler_panic() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::{Stats, Timer};
+    use crate::prompts::template_context::TemplateContext;
+    use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct PanickingHandler;
+
+    impl<'ctx> EffectHandler<'ctx> for PanickingHandler {
+        fn execute(
+            &mut self,
+            _effect: Effect,
+            _ctx: &mut PhaseContext<'_>,
+        ) -> Result<EffectResult> {
+            panic!("boom")
+        }
+    }
+
+    impl super::StatefulHandler for PanickingHandler {
+        fn update_state(&mut self, _state: PipelineState) {}
+    }
+
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "test-developer",
+        reviewer_agent: "test-reviewer",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+    };
+
+    let state = PipelineState::initial(0, 0);
+    let mut handler = PanickingHandler;
+    let loop_config = EventLoopConfig { max_iterations: 1 };
+
+    run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
+        .expect_err("panic inside handler.execute must surface as Err() to avoid false success");
 }
 
 #[test]

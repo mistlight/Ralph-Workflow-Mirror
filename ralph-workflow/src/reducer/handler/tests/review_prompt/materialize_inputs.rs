@@ -7,14 +7,122 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::{Stats, Timer};
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::PipelineEvent;
+use crate::reducer::event::{ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::PipelineState;
 use crate::workspace::MemoryWorkspace;
 use crate::workspace::Workspace;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+#[derive(Debug)]
+struct ReadFailingWorkspace {
+    inner: MemoryWorkspace,
+    forbidden_read_path: PathBuf,
+    kind: io::ErrorKind,
+}
+
+impl ReadFailingWorkspace {
+    fn new(inner: MemoryWorkspace, forbidden_read_path: PathBuf, kind: io::ErrorKind) -> Self {
+        Self {
+            inner,
+            forbidden_read_path,
+            kind,
+        }
+    }
+}
+
+impl Workspace for ReadFailingWorkspace {
+    fn root(&self) -> &Path {
+        self.inner.root()
+    }
+
+    fn read(&self, relative: &Path) -> io::Result<String> {
+        if relative == self.forbidden_read_path.as_path() {
+            return Err(io::Error::new(
+                self.kind,
+                format!("read forbidden for {}", self.forbidden_read_path.display()),
+            ));
+        }
+        self.inner.read(relative)
+    }
+
+    fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+        if relative == self.forbidden_read_path.as_path() {
+            return Err(io::Error::new(
+                self.kind,
+                format!("read forbidden for {}", self.forbidden_read_path.display()),
+            ));
+        }
+        self.inner.read_bytes(relative)
+    }
+
+    fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.inner.write(relative, content)
+    }
+
+    fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.inner.write_bytes(relative, content)
+    }
+
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.inner.append_bytes(relative, content)
+    }
+
+    fn exists(&self, relative: &Path) -> bool {
+        self.inner.exists(relative)
+    }
+
+    fn is_file(&self, relative: &Path) -> bool {
+        self.inner.is_file(relative)
+    }
+
+    fn is_dir(&self, relative: &Path) -> bool {
+        self.inner.is_dir(relative)
+    }
+
+    fn remove(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove(relative)
+    }
+
+    fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_if_exists(relative)
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all_if_exists(relative)
+    }
+
+    fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.create_dir_all(relative)
+    }
+
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
+        self.inner.read_dir(relative)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        self.inner.rename(from, to)
+    }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.inner.write_atomic(relative, content)
+    }
+
+    fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_readonly(relative)
+    }
+
+    fn set_writable(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_writable(relative)
+    }
+}
 
 #[test]
 fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
@@ -78,6 +186,70 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
     assert_eq!(
         plan_content, "No PLAN provided",
         "Sentinel PLAN content should not include isolation mode context when isolation_mode=false"
+    );
+}
+
+#[test]
+fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors() {
+    let inner = MemoryWorkspace::new_test()
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_dir(".agent/tmp");
+    let workspace = ReadFailingWorkspace::new(
+        inner,
+        PathBuf::from(".agent/PLAN.md"),
+        io::ErrorKind::PermissionDenied,
+    );
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let mut config = Config::default();
+    config.isolation_mode = false;
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let err = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect_err("materialize_review_inputs should surface non-NotFound PLAN read failures");
+
+    let error_event = err
+        .downcast_ref::<ErrorEvent>()
+        .expect("error should preserve ErrorEvent for event-loop recovery");
+    assert!(
+        matches!(
+            error_event,
+            ErrorEvent::WorkspaceReadFailed {
+                path,
+                kind: WorkspaceIoErrorKind::PermissionDenied
+            } if path == ".agent/PLAN.md"
+        ),
+        "expected WorkspaceReadFailed for PLAN read, got: {error_event:?}"
     );
 }
 

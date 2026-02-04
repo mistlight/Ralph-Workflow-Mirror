@@ -346,7 +346,11 @@ impl MainEffectHandler {
         }
 
         ctx.workspace
-            .write(Path::new(PLANNING_PROMPT_PATH), &prompt)?;
+            .write(Path::new(PLANNING_PROMPT_PATH), &prompt)
+            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                path: PLANNING_PROMPT_PATH.to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         let mut result = EffectResult::event(PipelineEvent::planning_prompt_prepared(iteration));
         for ev in additional_events {

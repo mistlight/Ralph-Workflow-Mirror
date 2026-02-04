@@ -284,10 +284,9 @@ where
                     ctx.logger.error("Event loop recovered from panic");
                 }
 
-                return Ok(EventLoopResult {
-                    completed: false,
-                    events_processed,
-                });
+                return Err(anyhow::anyhow!(
+                    "event loop panicked while executing {effect_str}"
+                ));
             }
         };
 

@@ -49,7 +49,7 @@ impl MainEffectHandler {
         // Use sentinel content when missing and write it to PLAN.md.
         let plan_content = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
             Ok(plan_content) => plan_content,
-            Err(_) => {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 ctx.logger
                     .warn("Missing .agent/PLAN.md; using sentinel PLAN content for review");
                 let sentinel = Self::sentinel_plan_content(ctx.config.isolation_mode);
@@ -61,6 +61,13 @@ impl MainEffectHandler {
                         kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                     })?;
                 sentinel
+            }
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: ".agent/PLAN.md".to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
             }
         };
 
@@ -111,12 +118,12 @@ impl MainEffectHandler {
         {
             let tmp_dir = Path::new(".agent/tmp");
             if !ctx.workspace.exists(tmp_dir) {
-                ctx.workspace
-                    .create_dir_all(tmp_dir)
-                    .map_err(|err| ErrorEvent::WorkspaceCreateDirAllFailed {
+                ctx.workspace.create_dir_all(tmp_dir).map_err(|err| {
+                    ErrorEvent::WorkspaceCreateDirAllFailed {
                         path: tmp_dir.display().to_string(),
                         kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-                    })?;
+                    }
+                })?;
             }
             ctx.workspace
                 .write_atomic(Path::new(".agent/tmp/diff.txt"), &diff_content)
@@ -275,12 +282,12 @@ impl MainEffectHandler {
 
         let tmp_dir = Path::new(".agent/tmp");
         if !ctx.workspace.exists(tmp_dir) {
-            ctx.workspace
-                .create_dir_all(tmp_dir)
-                .map_err(|err| ErrorEvent::WorkspaceCreateDirAllFailed {
+            ctx.workspace.create_dir_all(tmp_dir).map_err(|err| {
+                ErrorEvent::WorkspaceCreateDirAllFailed {
                     path: tmp_dir.display().to_string(),
                     kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-                })?;
+                }
+            })?;
         }
         let mut additional_events: Vec<PipelineEvent> = Vec::new();
 
@@ -580,7 +587,10 @@ impl MainEffectHandler {
         }
 
         ctx.workspace
-            .write(Path::new(".agent/tmp/review_prompt.txt"), &review_prompt_xml)
+            .write(
+                Path::new(".agent/tmp/review_prompt.txt"),
+                &review_prompt_xml,
+            )
             .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
                 path: ".agent/tmp/review_prompt.txt".to_string(),
                 kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
@@ -604,9 +614,7 @@ impl MainEffectHandler {
         let prompt = ctx
             .workspace
             .read(Path::new(".agent/tmp/review_prompt.txt"))
-            .map_err(|_| {
-                ErrorEvent::ReviewPromptMissing { pass }
-            })?;
+            .map_err(|_| ErrorEvent::ReviewPromptMissing { pass })?;
 
         let agent = self
             .state
