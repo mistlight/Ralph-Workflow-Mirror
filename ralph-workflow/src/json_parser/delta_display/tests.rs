@@ -198,6 +198,51 @@ mod tests {
     }
 
     #[test]
+    fn test_thinking_delta_renderer_first_delta_full_mode() {
+        let colors = test_colors();
+        let out = ThinkingDeltaRenderer::render_first_delta(
+            "git status",
+            "ccs/codex",
+            colors,
+            TerminalMode::Full,
+        );
+        assert!(out.contains("[ccs/codex]"));
+        assert!(out.contains("Thinking:"));
+        assert!(out.contains("git status"));
+        assert!(out.ends_with("\n\x1b[1A"));
+    }
+
+    #[test]
+    fn test_thinking_delta_renderer_subsequent_delta_full_mode() {
+        let colors = test_colors();
+        let out = ThinkingDeltaRenderer::render_subsequent_delta(
+            "git status --porcelain",
+            "ccs/codex",
+            colors,
+            TerminalMode::Full,
+        );
+        assert!(out.contains(CLEAR_LINE));
+        assert!(out.contains("Thinking:"));
+        assert!(out.contains("git status --porcelain"));
+        assert!(out.ends_with("\n\x1b[1A"));
+    }
+
+    #[test]
+    fn test_thinking_delta_renderer_basic_mode_no_cursor_sequences() {
+        let colors = test_colors();
+        let out = ThinkingDeltaRenderer::render_first_delta(
+            "git status",
+            "ccs/codex",
+            colors,
+            TerminalMode::Basic,
+        );
+        assert!(out.contains("Thinking:"));
+        assert!(out.ends_with('\n'));
+        assert!(!out.contains("\x1b[1A"));
+        assert!(!out.contains(CLEAR_LINE));
+    }
+
+    #[test]
     fn test_full_streaming_sequence_no_extra_blank_lines() {
         let colors = test_colors();
 

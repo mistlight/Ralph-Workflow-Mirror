@@ -239,3 +239,75 @@ impl DeltaRenderer for TextDeltaRenderer {
         }
     }
 }
+
+/// Renderer for streaming thinking deltas.
+///
+/// This uses the same multi-line in-place update pattern as `TextDeltaRenderer` in `TerminalMode::Full`
+/// so the caller can finalize the line with `DeltaRenderer::render_completion`.
+pub struct ThinkingDeltaRenderer;
+
+impl DeltaRenderer for ThinkingDeltaRenderer {
+    fn render_first_delta(
+        accumulated: &str,
+        prefix: &str,
+        colors: Colors,
+        terminal_mode: TerminalMode,
+    ) -> String {
+        let sanitized = sanitize_for_display(accumulated);
+
+        match terminal_mode {
+            TerminalMode::Full => format!(
+                "{}[{}]{} {}Thinking: {}{}{}\n\x1b[1A",
+                colors.dim(),
+                prefix,
+                colors.reset(),
+                colors.dim(),
+                colors.cyan(),
+                sanitized,
+                colors.reset()
+            ),
+            TerminalMode::Basic | TerminalMode::None => format!(
+                "{}[{}]{} {}Thinking: {}{}{}\n",
+                colors.dim(),
+                prefix,
+                colors.reset(),
+                colors.dim(),
+                colors.cyan(),
+                sanitized,
+                colors.reset()
+            ),
+        }
+    }
+
+    fn render_subsequent_delta(
+        accumulated: &str,
+        prefix: &str,
+        colors: Colors,
+        terminal_mode: TerminalMode,
+    ) -> String {
+        let sanitized = sanitize_for_display(accumulated);
+
+        match terminal_mode {
+            TerminalMode::Full => format!(
+                "{CLEAR_LINE}\r{}[{}]{} {}Thinking: {}{}{}\n\x1b[1A",
+                colors.dim(),
+                prefix,
+                colors.reset(),
+                colors.dim(),
+                colors.cyan(),
+                sanitized,
+                colors.reset()
+            ),
+            TerminalMode::Basic | TerminalMode::None => format!(
+                "{}[{}]{} {}Thinking: {}{}{}\n",
+                colors.dim(),
+                prefix,
+                colors.reset(),
+                colors.dim(),
+                colors.cyan(),
+                sanitized,
+                colors.reset()
+            ),
+        }
+    }
+}

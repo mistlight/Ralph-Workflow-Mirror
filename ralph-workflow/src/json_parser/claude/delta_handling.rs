@@ -3,6 +3,43 @@
 // Contains methods for handling streaming delta events.
 
 impl ClaudeParser {
+    fn flush_pending_thinking(
+        &self,
+        session: &mut std::cell::RefMut<'_, StreamingSession>,
+    ) -> String {
+        let Some(index) = self.thinking_active_index.borrow_mut().take() else {
+            return String::new();
+        };
+
+        let terminal_mode = *self.terminal_mode.borrow();
+        match terminal_mode {
+            TerminalMode::Full => {
+                // Finalize the multi-line in-place update pattern for thinking.
+                // This leaves the final thinking line visible and moves the cursor to the next line.
+                <crate::json_parser::delta_display::ThinkingDeltaRenderer as DeltaRenderer>::render_completion(
+                    terminal_mode,
+                )
+            }
+            TerminalMode::Basic | TerminalMode::None => {
+                let index_str = index.to_string();
+                let accumulated = session
+                    .get_accumulated(ContentType::Thinking, &index_str)
+                    .unwrap_or("");
+                let sanitized =
+                    crate::json_parser::delta_display::sanitize_for_display(accumulated);
+                if sanitized.is_empty() {
+                    return String::new();
+                }
+                crate::json_parser::delta_display::ThinkingDeltaRenderer::render_first_delta(
+                    &sanitized,
+                    &self.display_name,
+                    self.colors,
+                    terminal_mode,
+                )
+            }
+        }
+    }
+
     /// Handle content block delta events
     fn handle_content_block_delta(
         &self,
@@ -15,6 +52,7 @@ impl ClaudeParser {
 
         match delta {
             ContentBlockDelta::TextDelta { text: Some(text) } => {
+                let thinking_flush = self.flush_pending_thinking(session);
                 let index_str = index.to_string();
 
                 // Track this delta with StreamingSession for state management.
@@ -92,19 +130,46 @@ impl ClaudeParser {
                 session.mark_rendered(ContentType::Text, &index_str);
                 session.mark_content_hash_rendered(ContentType::Text, &index_str, &sanitized_text);
 
-                output
+                format!("{thinking_flush}{output}")
             }
             ContentBlockDelta::ThinkingDelta {
                 thinking: Some(text),
             } => {
-                // Track thinking deltas
-                session.on_thinking_delta(index, &text);
-                // Display thinking with visual distinction
-                Self::formatter().format_thinking(text.as_str(), prefix, *c)
+                let show_prefix = session.on_thinking_delta(index, &text);
+                *self.thinking_active_index.borrow_mut() = Some(index);
+
+                // In non-TTY modes, we suppress per-delta thinking output and flush once
+                // at the next output boundary (or at message_stop).
+                let terminal_mode = *self.terminal_mode.borrow();
+                match terminal_mode {
+                    TerminalMode::Full => {
+                        let index_str = index.to_string();
+                        let accumulated = session
+                            .get_accumulated(ContentType::Thinking, &index_str)
+                            .unwrap_or("");
+                        if show_prefix {
+                            crate::json_parser::delta_display::ThinkingDeltaRenderer::render_first_delta(
+                                accumulated,
+                                prefix,
+                                *c,
+                                terminal_mode,
+                            )
+                        } else {
+                            crate::json_parser::delta_display::ThinkingDeltaRenderer::render_subsequent_delta(
+                                accumulated,
+                                prefix,
+                                *c,
+                                terminal_mode,
+                            )
+                        }
+                    }
+                    TerminalMode::Basic | TerminalMode::None => String::new(),
+                }
             }
             ContentBlockDelta::ToolUseDelta {
                 tool_use: Some(tool_delta),
             } => {
+                let thinking_flush = self.flush_pending_thinking(session);
                 // Track tool name for GLM/CCS deduplication (if available in delta)
                 if let Some(serde_json::Value::String(name)) = tool_delta.get("name") {
                     session.set_tool_name(index, Some(name.to_string()));
@@ -121,14 +186,15 @@ impl ClaudeParser {
                         });
 
                 if input_str.is_empty() {
-                    String::new()
+                    thinking_flush
                 } else {
                     // Accumulate tool input
                     session.on_tool_input_delta(index, &input_str);
 
                     // Show partial tool input in real-time
                     let formatter = DeltaDisplayFormatter::new();
-                    formatter.format_tool_input(&input_str, prefix, *c)
+                    let tool_out = formatter.format_tool_input(&input_str, prefix, *c);
+                    format!("{thinking_flush}{tool_out}")
                 }
             }
             _ => String::new(),
@@ -141,6 +207,7 @@ impl ClaudeParser {
         session: &mut std::cell::RefMut<'_, StreamingSession>,
         text: &str,
     ) -> String {
+        let thinking_flush = self.flush_pending_thinking(session);
         let c = &self.colors;
         let prefix = &self.display_name;
 
@@ -203,20 +270,22 @@ impl ClaudeParser {
         session.mark_rendered(ContentType::Text, default_index_str);
         session.mark_content_hash_rendered(ContentType::Text, default_index_str, &sanitized_text);
 
-        output
+        format!("{thinking_flush}{output}")
     }
 
     /// Handle message stop events
     fn handle_message_stop(&self, session: &mut std::cell::RefMut<'_, StreamingSession>) -> String {
         let c = &self.colors;
 
+        let thinking_flush = self.flush_pending_thinking(session);
+
         // Message complete - add final newline if we were in a content block
         // OR if any content was streamed (handles edge cases where block state
         // may not have been set but content was still streamed)
         let metrics = session.get_streaming_quality_metrics();
         let was_in_block = session.on_message_stop();
-        let had_content = session.has_any_streamed_content();
-        if was_in_block || had_content {
+
+        if was_in_block {
             // Use TextDeltaRenderer for completion - adds final newline
             let terminal_mode = *self.terminal_mode.borrow();
             let completion = format!(
@@ -227,13 +296,14 @@ impl ClaudeParser {
             // Show streaming quality metrics in debug mode or when flag is set
             let show_metrics = (self.verbosity.is_debug() || self.show_streaming_metrics)
                 && metrics.total_deltas > 0;
-            if show_metrics {
+            let completion_with_metrics = if show_metrics {
                 format!("{}\n{}", completion, metrics.format(*c))
             } else {
                 completion
-            }
+            };
+            format!("{thinking_flush}{completion_with_metrics}")
         } else {
-            String::new()
+            thinking_flush
         }
     }
 

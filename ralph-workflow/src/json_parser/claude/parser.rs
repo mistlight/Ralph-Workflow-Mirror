@@ -23,6 +23,14 @@ pub struct ClaudeParser {
     show_streaming_metrics: bool,
     /// Output printer for capturing or displaying output
     printer: SharedPrinter,
+
+    /// Tracks whether a thinking delta line is currently being streamed.
+    ///
+    /// - In `TerminalMode::Full`, thinking deltas use the multi-line in-place update pattern
+    ///   and must be finalized (cursor down + newline) before emitting other newline-based output.
+    /// - In `TerminalMode::Basic|None`, we suppress per-delta thinking output and flush a single
+    ///   final thinking line at the next output boundary (or at `message_stop`).
+    thinking_active_index: RefCell<Option<u64>>,
 }
 
 impl ClaudeParser {
@@ -78,6 +86,7 @@ impl ClaudeParser {
             terminal_mode: RefCell::new(TerminalMode::detect()),
             show_streaming_metrics: false,
             printer,
+            thinking_active_index: RefCell::new(None),
         }
     }
 
@@ -274,6 +283,9 @@ impl ClaudeParser {
                 message,
                 message_id,
             } => {
+                // Reset any pending thinking line from a previous message.
+                *self.thinking_active_index.borrow_mut() = None;
+
                 // Extract message_id from either the top-level field or nested message.id
                 // The Claude API typically puts the ID in message.id, not at the top level
                 let effective_message_id =
@@ -358,10 +370,5 @@ impl ClaudeParser {
             } => self.handle_error_event(err),
             StreamInnerEvent::Unknown => self.handle_unknown_event(),
         }
-    }
-
-    /// Get a shared delta display formatter
-    const fn formatter() -> DeltaDisplayFormatter {
-        DeltaDisplayFormatter::new()
     }
 }

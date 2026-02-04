@@ -180,3 +180,105 @@ fn test_with_terminal_mode() {
     let output = parser.parse_event(json);
     assert!(output.is_some());
 }
+
+#[test]
+fn test_thinking_deltas_non_tty_flushed_once_on_message_stop() {
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None)
+        .with_display_name("ccs/codex");
+
+    // Start message
+    let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant"}}}"#;
+    assert!(parser.parse_event(start).is_none());
+
+    // Stream thinking deltas (token-ish chunks)
+    let d1 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"git"}}}"#;
+    let d2 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":",\""}}}"#;
+    let d3 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" but"}}}"#;
+
+    // In non-TTY mode, thinking should NOT be emitted per-delta.
+    assert!(parser.parse_event(d1).is_none());
+    assert!(parser.parse_event(d2).is_none());
+    assert!(parser.parse_event(d3).is_none());
+
+    // On message_stop we flush exactly one final thinking line.
+    let stop = r#"{"type":"stream_event","event":{"type":"message_stop"}}"#;
+    let out = parser
+        .parse_event(stop)
+        .expect("message_stop should flush thinking");
+
+    assert!(out.contains("[ccs/codex]"));
+    assert!(out.contains("Thinking:"));
+    assert!(out.contains("git"));
+    assert!(out.contains(",\""));
+    assert!(out.contains("but"));
+    assert_eq!(out.matches("Thinking:").count(), 1);
+    assert_eq!(out.matches('\n').count(), 1);
+}
+
+#[test]
+fn test_thinking_flushes_before_text_in_non_tty_mode() {
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::None)
+        .with_display_name("ccs/codex");
+
+    let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_2","type":"message","role":"assistant"}}}"#;
+    assert!(parser.parse_event(start).is_none());
+
+    let think = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Checking..."}}}"#;
+    assert!(parser.parse_event(think).is_none());
+
+    // First text delta should flush thinking first, then render text.
+    let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
+    let out = parser
+        .parse_event(text)
+        .expect("text delta should produce output");
+
+    // Two lines: thinking line + text line
+    assert_eq!(out.matches('\n').count(), 2);
+    assert!(out.contains("Thinking:"));
+    assert!(out.contains("Checking..."));
+    assert!(out.contains("Hello"));
+}
+
+#[test]
+fn test_thinking_deltas_tty_finalize_before_text() {
+    use crate::json_parser::delta_display::CLEAR_LINE;
+    use crate::json_parser::terminal::TerminalMode;
+
+    let parser = ClaudeParser::new(Colors { enabled: false }, Verbosity::Normal)
+        .with_terminal_mode(TerminalMode::Full)
+        .with_display_name("ccs/codex");
+
+    let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_3","type":"message","role":"assistant"}}}"#;
+    assert!(parser.parse_event(start).is_none());
+
+    let d1 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"git"}}}"#;
+    let out1 = parser
+        .parse_event(d1)
+        .expect("thinking delta should render in TTY");
+    assert!(out1.contains("Thinking:"));
+    assert!(out1.contains("git"));
+    assert!(out1.ends_with("\n\x1b[1A"));
+
+    let d2 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" status"}}}"#;
+    let out2 = parser
+        .parse_event(d2)
+        .expect("thinking delta should render in TTY");
+    assert!(out2.contains(CLEAR_LINE));
+    assert!(out2.contains("Thinking:"));
+    assert!(out2.contains("git status"));
+    assert!(out2.ends_with("\n\x1b[1A"));
+
+    // First text delta should first finalize thinking line (cursor down + newline)
+    // and then begin streaming text.
+    let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
+    let out3 = parser.parse_event(text).expect("text delta should render");
+    assert!(out3.starts_with("\x1b[1B\n"));
+    assert!(out3.contains("[ccs/codex]"));
+    assert!(out3.contains("Hello"));
+}
