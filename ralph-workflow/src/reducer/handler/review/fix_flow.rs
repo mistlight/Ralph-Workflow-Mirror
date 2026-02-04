@@ -21,10 +21,11 @@ impl MainEffectHandler {
             .workspace
             .read(Path::new(".agent/PROMPT.md.backup"))
             .unwrap_or_default();
+        // Use sentinel PLAN content when missing (consistent with review phase)
         let plan_content = ctx
             .workspace
             .read(Path::new(".agent/PLAN.md"))
-            .unwrap_or_default();
+            .unwrap_or_else(|_| Self::sentinel_plan_content(ctx.config.isolation_mode));
         let issues_content = ctx
             .workspace
             .read(Path::new(".agent/ISSUES.md"))
@@ -49,31 +50,31 @@ impl MainEffectHandler {
         }
         let (prompt_key, fix_prompt, was_replayed, template_name, should_validate) =
             match prompt_mode {
-            PromptMode::XsdRetry => {
-                let prompt_key = format!(
-                    "fix_{pass}_xsd_retry_{}",
-                    continuation_state.invalid_output_attempts
-                );
-                let (prompt, was_replayed) =
-                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        prompt_fix_xsd_retry_with_context(
-                            ctx.template_context,
-                            &issues_content,
-                            "XML output failed validation. Provide valid XML output.",
-                            &last_output,
-                            ctx.workspace,
-                        )
-                    });
-                (prompt_key, prompt, was_replayed, "fix_mode_xsd_retry", true)
-            }
-            PromptMode::SameAgentRetry => {
-                // Same-agent retry: prepend retry guidance to the last prepared prompt for this
-                // phase (preserves XSD retry / continuation context if present).
-                let retry_preamble =
-                    crate::reducer::handler::retry_guidance::same_agent_retry_preamble(
-                        continuation_state,
+                PromptMode::XsdRetry => {
+                    let prompt_key = format!(
+                        "fix_{pass}_xsd_retry_{}",
+                        continuation_state.invalid_output_attempts
                     );
-                let (base_prompt, should_validate) =
+                    let (prompt, was_replayed) =
+                        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                            prompt_fix_xsd_retry_with_context(
+                                ctx.template_context,
+                                &issues_content,
+                                "XML output failed validation. Provide valid XML output.",
+                                &last_output,
+                                ctx.workspace,
+                            )
+                        });
+                    (prompt_key, prompt, was_replayed, "fix_mode_xsd_retry", true)
+                }
+                PromptMode::SameAgentRetry => {
+                    // Same-agent retry: prepend retry guidance to the last prepared prompt for this
+                    // phase (preserves XSD retry / continuation context if present).
+                    let retry_preamble =
+                        crate::reducer::handler::retry_guidance::same_agent_retry_preamble(
+                            continuation_state,
+                        );
+                    let (base_prompt, should_validate) =
                     match ctx.workspace.read(Path::new(".agent/tmp/fix_prompt.txt")) {
                         Ok(previous_prompt) => (
                             crate::reducer::handler::retry_guidance::strip_existing_same_agent_retry_preamble(&previous_prompt)
@@ -91,33 +92,31 @@ impl MainEffectHandler {
                             true,
                         ),
                     };
-                let prompt = format!("{retry_preamble}\n{base_prompt}");
-                let prompt_key = format!(
-                    "fix_{pass}_same_agent_retry_{}",
-                    continuation_state.same_agent_retry_count
-                );
-                (prompt_key, prompt, false, "fix_mode_xml", should_validate)
-            }
-            PromptMode::Normal => {
-                let prompt_key = format!("fix_{pass}");
-                let (prompt, was_replayed) =
-                    get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
-                        prompt_fix_xml_with_context(
-                            ctx.template_context,
-                            &prompt_content,
-                            &plan_content,
-                            &issues_content,
-                            &[],
-                        )
-                    });
-                (prompt_key, prompt, was_replayed, "fix_mode_xml", true)
-            }
-            PromptMode::Continuation => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Fix does not support continuation prompts".to_string(),
-                )));
-            }
-        };
+                    let prompt = format!("{retry_preamble}\n{base_prompt}");
+                    let prompt_key = format!(
+                        "fix_{pass}_same_agent_retry_{}",
+                        continuation_state.same_agent_retry_count
+                    );
+                    (prompt_key, prompt, false, "fix_mode_xml", should_validate)
+                }
+                PromptMode::Normal => {
+                    let prompt_key = format!("fix_{pass}");
+                    let (prompt, was_replayed) =
+                        get_stored_or_generate_prompt(&prompt_key, &ctx.prompt_history, || {
+                            prompt_fix_xml_with_context(
+                                ctx.template_context,
+                                &prompt_content,
+                                &plan_content,
+                                &issues_content,
+                                &[],
+                            )
+                        });
+                    (prompt_key, prompt, was_replayed, "fix_mode_xml", true)
+                }
+                PromptMode::Continuation => {
+                    return Err(ErrorEvent::FixContinuationNotSupported.into());
+                }
+            };
         if should_validate {
             if let Err(err) =
                 crate::prompts::validate_no_unresolved_placeholders_with_ignored_content(
@@ -156,14 +155,10 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use std::path::Path;
 
-        let prompt = match ctx.workspace.read(Path::new(".agent/tmp/fix_prompt.txt")) {
-            Ok(prompt) => prompt,
-            Err(_) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing fix prompt at .agent/tmp/fix_prompt.txt".to_string(),
-                )));
-            }
-        };
+        let prompt = ctx
+            .workspace
+            .read(Path::new(".agent/tmp/fix_prompt.txt"))
+            .map_err(|_| ErrorEvent::FixPromptMissing)?;
 
         let agent = self
             .state
@@ -268,17 +263,11 @@ impl MainEffectHandler {
         _ctx: &mut PhaseContext<'_>,
         pass: u32,
     ) -> Result<EffectResult> {
-        let outcome = self
-            .state
+        self.state
             .fix_validated_outcome
             .as_ref()
-            .filter(|o| o.pass == pass);
-
-        if outcome.is_none() {
-            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                format!("Missing validated fix outcome for pass {pass}"),
-            )));
-        }
+            .filter(|o| o.pass == pass)
+            .ok_or_else(|| anyhow::anyhow!("Missing validated fix outcome for pass {pass}"))?;
 
         Ok(EffectResult::event(PipelineEvent::fix_outcome_applied(
             pass,

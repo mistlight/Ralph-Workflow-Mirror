@@ -129,6 +129,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("reducer_effect_invariants.rs"),
     },
     SourceFile {
+        path: "reducer_error_handling.rs",
+        contents: include_str!("reducer_error_handling.rs"),
+    },
+    SourceFile {
         path: "reducer_fault_tolerance/mod.rs",
         contents: include_str!("reducer_fault_tolerance/mod.rs"),
     },

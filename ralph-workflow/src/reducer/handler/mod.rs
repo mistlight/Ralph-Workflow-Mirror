@@ -251,8 +251,9 @@ impl MainEffectHandler {
                 ))
             }
 
-            Effect::AbortPipeline { reason } => {
-                Ok(EffectResult::event(PipelineEvent::pipeline_aborted(reason)))
+            Effect::ReportAgentChainExhausted { role, phase, cycle } => {
+                use crate::reducer::event::ErrorEvent;
+                Err(ErrorEvent::AgentChainExhausted { role, phase, cycle }.into())
             }
 
             Effect::ValidateFinalState => self.validate_final_state(ctx),

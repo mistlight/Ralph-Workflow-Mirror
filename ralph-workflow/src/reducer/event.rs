@@ -8,7 +8,7 @@
 //! Events are organized into logical categories for type-safe routing to
 //! category-specific reducers. Each category has a dedicated inner enum:
 //!
-//! - [`LifecycleEvent`] - Pipeline start/stop/resume/abort
+//! - [`LifecycleEvent`] - Pipeline start/stop/resume
 //! - [`PlanningEvent`] - Plan generation events
 //! - [`DevelopmentEvent`] - Development iteration and continuation events
 //! - [`ReviewEvent`] - Review pass and fix attempt events
@@ -28,21 +28,49 @@ use std::path::PathBuf;
 // Event Category Enums
 // ============================================================================
 
-/// Pipeline lifecycle events (start, stop, resume, abort).
+/// Pipeline lifecycle events (start, stop, resume).
 ///
 /// These events control the overall pipeline execution lifecycle,
 /// distinct from phase-specific transitions. Use these for:
 ///
 /// - Starting or resuming a pipeline run
 /// - Completing a successful pipeline execution
-/// - Aborting due to unrecoverable errors
 ///
 /// # When to Use
 ///
 /// - `Started`: When a fresh pipeline run begins
 /// - `Resumed`: When resuming from a checkpoint
 /// - `Completed`: When all phases complete successfully
-/// - `Aborted`: When an unrecoverable error occurs
+///
+/// # ⚠️ FROZEN - DO NOT ADD VARIANTS ⚠️
+///
+/// This enum is **FROZEN**. Adding new variants is **PROHIBITED**.
+///
+/// ## Why is this frozen?
+///
+/// Lifecycle events control pipeline flow (start/stop/completion). Allowing effect
+/// handlers to emit new lifecycle events would violate the core architectural principle:
+/// **handlers describe what happened; reducers decide what happens next.**
+///
+/// ## What to do instead
+///
+/// If you need to express new observations or failures:
+///
+/// 1. **Reuse existing phase/category events** - Use `PlanningEvent`, `DevelopmentEvent`,
+///    `ReviewEvent`, `CommitEvent`, etc. to describe what happened within that phase.
+///    Example: `PlanningEvent::PlanXmlMissing` instead of creating a generic "Aborted" event.
+///
+/// 2. **Return errors from the event loop** - For truly unrecoverable failures (permission
+///    errors, invariant violations), return `Err` from the effect handler. The outer runner
+///    will handle termination, not the reducer.
+///
+/// 3. **Handle in orchestration** - Some conditions don't need events at all and can be
+///    handled in the effect handler or runner logic.
+///
+/// ## Enforcement
+///
+/// The freeze policy is enforced by the `lifecycle_event_is_frozen` test in this module,
+/// which will fail to compile if new variants are added. This is intentional.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum LifecycleEvent {
     /// Pipeline execution started fresh (not from checkpoint).
@@ -54,11 +82,6 @@ pub enum LifecycleEvent {
     },
     /// Pipeline execution completed successfully.
     Completed,
-    /// Pipeline execution aborted due to an error.
-    Aborted {
-        /// The reason for aborting.
-        reason: String,
-    },
 }
 
 /// Planning phase events.
@@ -197,6 +220,10 @@ pub use review::ReviewEvent;
 #[path = "event/agent.rs"]
 mod agent;
 pub use agent::AgentEvent;
+
+#[path = "event/error.rs"]
+mod error;
+pub use error::ErrorEvent;
 
 /// Rebase operation events.
 ///
@@ -426,7 +453,7 @@ impl std::fmt::Display for PipelinePhase {
 ///
 /// # Event Categories
 ///
-/// - `Lifecycle` - Pipeline start/stop/resume/abort
+/// - `Lifecycle` - Pipeline start/stop/resume
 /// - `Planning` - Plan generation events
 /// - `Development` - Development iteration and continuation events
 /// - `Review` - Review pass and fix attempt events
@@ -451,9 +478,44 @@ impl std::fmt::Display for PipelinePhase {
 ///     // ...
 /// }
 /// ```
+///
+/// # ⚠️ FROZEN - DO NOT ADD VARIANTS ⚠️
+///
+/// This enum is **FROZEN**. Adding new top-level variants is **PROHIBITED**.
+///
+/// ## Why is this frozen?
+///
+/// `PipelineEvent` provides category-based event routing to the reducer. The existing
+/// categories (Lifecycle, Planning, Development, Review, etc.) cover all pipeline phases.
+/// Adding new top-level variants would indicate a missing architectural abstraction or
+/// an attempt to bypass phase-specific event handling.
+///
+/// ## What to do instead
+///
+/// 1. **Express events through existing categories** - Use the category enums:
+///    - `PlanningEvent` for planning phase observations
+///    - `DevelopmentEvent` for development phase observations
+///    - `ReviewEvent` for review phase observations
+///    - `CommitEvent` for commit generation observations
+///    - `AgentEvent` for agent invocation observations
+///    - `RebaseEvent` for rebase state machine transitions
+///
+/// 2. **Return errors for unrecoverable failures** - Don't create events for conditions
+///    that should terminate the pipeline. Return `Err` from the effect handler instead.
+///
+/// 3. **Extend category enums if needed** - If you truly need a new event within an
+///    existing phase, add it to that phase's category enum (e.g., add a new variant to
+///    `ReviewEvent` rather than creating a new top-level category).
+///
+/// ## Enforcement
+///
+/// The freeze policy is enforced by the `pipeline_event_is_frozen` test in this module,
+/// which will fail to compile if new variants are added. This is intentional.
+///
+/// See `LifecycleEvent` documentation for additional context on the freeze policy rationale.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum PipelineEvent {
-    /// Pipeline lifecycle events (start, stop, resume, abort).
+    /// Pipeline lifecycle events (start, stop, resume).
     Lifecycle(LifecycleEvent),
     /// Planning phase events.
     Planning(PlanningEvent),
@@ -469,6 +531,8 @@ pub enum PipelineEvent {
     Rebase(RebaseEvent),
     /// Commit generation events.
     Commit(CommitEvent),
+    /// Error events for failures requiring reducer handling.
+    Error(ErrorEvent),
 
     // ========================================================================
     // Miscellaneous events that don't fit a category
@@ -550,5 +614,52 @@ mod tests {
         assert_eq!(format!("{}", PipelinePhase::Finalizing), "Finalizing");
         assert_eq!(format!("{}", PipelinePhase::Complete), "Complete");
         assert_eq!(format!("{}", PipelinePhase::Interrupted), "Interrupted");
+    }
+
+    /// This test enforces the FROZEN policy on LifecycleEvent.
+    ///
+    /// If you're here because this test failed to compile after adding
+    /// a variant, you are violating the freeze policy. See the FROZEN
+    /// comment on LifecycleEvent for alternatives.
+    #[test]
+    fn lifecycle_event_is_frozen() {
+        fn exhaustive_match(e: LifecycleEvent) -> &'static str {
+            match e {
+                LifecycleEvent::Started => "started",
+                LifecycleEvent::Resumed { .. } => "resumed",
+                LifecycleEvent::Completed => "completed",
+                // DO NOT ADD _ WILDCARD - intentionally exhaustive
+            }
+        }
+        // Just needs to compile; actual call proves exhaustiveness
+        let _ = exhaustive_match(LifecycleEvent::Started);
+    }
+
+    /// This test enforces the FROZEN policy on PipelineEvent.
+    ///
+    /// If you're here because this test failed to compile after adding
+    /// a variant, you are violating the freeze policy. See the FROZEN
+    /// comment on PipelineEvent for alternatives.
+    #[test]
+    fn pipeline_event_is_frozen() {
+        fn exhaustive_match(e: PipelineEvent) -> &'static str {
+            match e {
+                PipelineEvent::Lifecycle(_) => "lifecycle",
+                PipelineEvent::Planning(_) => "planning",
+                PipelineEvent::Development(_) => "development",
+                PipelineEvent::Review(_) => "review",
+                PipelineEvent::PromptInput(_) => "prompt_input",
+                PipelineEvent::Agent(_) => "agent",
+                PipelineEvent::Rebase(_) => "rebase",
+                PipelineEvent::Commit(_) => "commit",
+                PipelineEvent::Error(_) => "error",
+                PipelineEvent::ContextCleaned => "context_cleaned",
+                PipelineEvent::CheckpointSaved { .. } => "checkpoint_saved",
+                PipelineEvent::FinalizingStarted => "finalizing_started",
+                PipelineEvent::PromptPermissionsRestored => "prompt_permissions_restored",
+                // DO NOT ADD _ WILDCARD - intentionally exhaustive
+            }
+        }
+        let _ = exhaustive_match(PipelineEvent::ContextCleaned);
     }
 }

@@ -557,7 +557,12 @@ src/lib.rs</ralph-files-changed>
                 vec![],
             ),
 
-            Effect::AbortPipeline { reason } => (PipelineEvent::pipeline_aborted(reason), vec![]),
+            Effect::ReportAgentChainExhausted { role, phase, cycle } => {
+                panic!(
+                    "MockEffectHandler received ReportAgentChainExhausted effect: role={:?}, phase={:?}, cycle={}",
+                    role, phase, cycle
+                )
+            }
 
             Effect::ValidateFinalState => {
                 let ui = vec![UIEvent::PhaseTransition {
@@ -615,8 +620,13 @@ src/lib.rs</ralph-files-changed>
 /// simply captures the effect and returns an appropriate mock event.
 impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
     fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
-        // Delegate to execute_mock which ignores the context
-        Ok(self.execute_mock(effect))
+        match effect {
+            Effect::ReportAgentChainExhausted { role, phase, cycle } => {
+                use crate::reducer::event::ErrorEvent;
+                Err(ErrorEvent::AgentChainExhausted { role, phase, cycle }.into())
+            }
+            _ => Ok(self.execute_mock(effect)),
+        }
     }
 }
 

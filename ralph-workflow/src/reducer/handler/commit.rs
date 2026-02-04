@@ -12,6 +12,7 @@ use crate::prompts::{
 };
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::AgentEvent;
+use crate::reducer::event::ErrorEvent;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::{
@@ -165,9 +166,7 @@ impl MainEffectHandler {
         prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
         if matches!(prompt_mode, PromptMode::Continuation) {
-            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                "Commit message generation does not support continuation prompts".to_string(),
-            )));
+            return Err(ErrorEvent::CommitContinuationNotSupported.into());
         }
         let attempt = current_commit_attempt(&self.state.commit);
 
@@ -228,20 +227,15 @@ impl MainEffectHandler {
             );
         }
 
-        let inputs = match self
+        let inputs = self
             .state
             .prompt_inputs
             .commit
             .as_ref()
             .filter(|c| c.attempt == attempt)
-        {
-            Some(inputs) => inputs,
-            None => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    format!("Commit inputs not materialized for attempt {attempt}"),
-                )));
-            }
-        };
+            .ok_or_else(|| {
+                anyhow::anyhow!("Commit inputs not materialized for attempt {attempt}")
+            })?;
 
         let model_safe_path = Path::new(".agent/tmp/commit_diff.model_safe.txt");
         let diff_for_prompt = match &inputs.diff.representation {
@@ -394,9 +388,7 @@ impl MainEffectHandler {
                 (prompt_key, prompt, was_replayed, true)
             }
             PromptMode::Continuation => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Commit message generation does not support continuation prompts".to_string(),
-                )));
+                return Err(ErrorEvent::CommitContinuationNotSupported.into());
             }
         };
 
@@ -442,17 +434,12 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
         let attempt = current_commit_attempt(&self.state.commit);
-        let prompt = match ctx
+        let prompt = ctx
             .workspace
             .read(Path::new(".agent/tmp/commit_prompt.txt"))
-        {
-            Ok(prompt) => prompt,
-            Err(_) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing commit prompt at .agent/tmp/commit_prompt.txt".to_string(),
-                )));
-            }
-        };
+            .map_err(|_| {
+                anyhow::anyhow!("Missing commit prompt at .agent/tmp/commit_prompt.txt")
+            })?;
 
         let agent = self
             .state

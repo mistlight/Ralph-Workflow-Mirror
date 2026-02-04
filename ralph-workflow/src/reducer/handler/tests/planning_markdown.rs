@@ -77,7 +77,7 @@ fn test_write_planning_markdown_uses_validated_markdown_without_xml() {
 }
 
 #[test]
-fn test_write_planning_markdown_aborts_when_missing_validated_outcome() {
+fn test_write_planning_markdown_returns_error_when_missing_validated_outcome() {
     let workspace = MemoryWorkspace::new_test().with_dir(".agent");
 
     let colors = Colors { enabled: false };
@@ -113,9 +113,12 @@ fn test_write_planning_markdown_aborts_when_missing_validated_outcome() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
-    let result = handler
-        .write_planning_markdown(&mut ctx, 0)
-        .expect("write_planning_markdown should succeed");
+    let err = handler.write_planning_markdown(&mut ctx, 0).expect_err(
+        "write_planning_markdown should return error when validated outcome is missing",
+    );
 
-    assert!(matches!(result.event, PipelineEvent::Lifecycle(_)));
+    assert!(
+        err.to_string().contains("validated planning markdown"),
+        "Expected error about missing validated planning markdown, got: {err}"
+    );
 }

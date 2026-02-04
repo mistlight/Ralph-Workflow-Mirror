@@ -1,4 +1,4 @@
-//! Tests for pipeline lifecycle events (start, resume, complete, abort).
+//! Tests for pipeline lifecycle events (start, resume, complete).
 
 use super::*;
 
@@ -54,32 +54,4 @@ fn test_pipeline_completed_transitions_to_complete_phase() {
     let new_state = reduce(state, PipelineEvent::pipeline_completed());
 
     assert_eq!(new_state.phase, PipelinePhase::Complete);
-}
-
-#[test]
-fn test_pipeline_aborted_transitions_to_interrupted() {
-    let state = create_state_in_phase(PipelinePhase::Development);
-    let new_state = reduce(
-        state,
-        PipelineEvent::pipeline_aborted("User cancelled".to_string()),
-    );
-
-    assert_eq!(new_state.phase, PipelinePhase::Interrupted);
-}
-
-#[test]
-fn test_pipeline_aborted_preserves_progress() {
-    let state = PipelineState {
-        phase: PipelinePhase::Development,
-        iteration: 3,
-        reviewer_pass: 0,
-        ..create_test_state()
-    };
-    let new_state = reduce(
-        state.clone(),
-        PipelineEvent::pipeline_aborted("Error".to_string()),
-    );
-
-    assert_eq!(new_state.iteration, state.iteration);
-    assert_eq!(new_state.reviewer_pass, state.reviewer_pass);
 }

@@ -69,7 +69,7 @@ fn test_determine_effect_exhausted_chain_after_checkpoint_aborts() {
         ..create_test_state()
     };
     let effect = determine_next_effect(&state);
-    assert!(matches!(effect, Effect::AbortPipeline { .. }));
+    assert!(matches!(effect, Effect::ReportAgentChainExhausted { .. }));
 }
 
 #[test]

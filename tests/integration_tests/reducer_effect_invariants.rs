@@ -210,11 +210,11 @@ fn test_exhausted_agent_chain_emits_abort_effect() {
         };
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::AbortPipeline { .. }),
-            "Exhausted chain must abort explicitly; got {effect:?}"
+            matches!(effect, Effect::ReportAgentChainExhausted { .. }),
+            "Exhausted chain must report exhaustion explicitly; got {effect:?}"
         );
 
-        // Review phase exhausted chain -> AbortPipeline
+        // Review phase exhausted chain -> ReportAgentChainExhausted
         let mut chain = AgentChainState::initial()
             .with_agents(
                 vec!["reviewer".to_string()],
@@ -237,8 +237,8 @@ fn test_exhausted_agent_chain_emits_abort_effect() {
         };
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::AbortPipeline { .. }),
-            "Exhausted chain must abort explicitly; got {effect:?}"
+            matches!(effect, Effect::ReportAgentChainExhausted { .. }),
+            "Exhausted chain must report exhaustion explicitly; got {effect:?}"
         );
     });
 }

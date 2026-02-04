@@ -248,7 +248,7 @@ fn test_prepare_development_prompt_xsd_retry_includes_real_last_output() {
 }
 
 #[test]
-fn test_prepare_development_prompt_aborts_when_inputs_not_materialized() {
+fn test_prepare_development_prompt_returns_error_when_inputs_not_materialized() {
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "# Prompt\n")
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -289,17 +289,15 @@ fn test_prepare_development_prompt_aborts_when_inputs_not_materialized() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    let result = handler
+    let err = handler
         .prepare_development_prompt(&mut ctx, 0, PromptMode::Normal)
-        .expect("prepare_development_prompt should return an EffectResult");
+        .expect_err(
+            "prepare_development_prompt should return an error when inputs not materialized",
+        );
 
     assert!(
-        matches!(
-            result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
-        ),
-        "Expected pipeline_aborted when development inputs are missing, got {:?}",
-        result.event
+        err.to_string().contains("not materialized"),
+        "Expected error message about inputs not being materialized, got: {err}"
     );
 }
 
@@ -458,7 +456,7 @@ fn test_prepare_development_prompt_same_agent_retry_does_not_stack_retry_notes()
 }
 
 #[test]
-fn test_materialize_development_inputs_aborts_when_prompt_missing() {
+fn test_materialize_development_inputs_returns_error_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test().with_file(".agent/PLAN.md", "# Plan\n");
 
     let colors = Colors { enabled: false };
@@ -496,17 +494,15 @@ fn test_materialize_development_inputs_aborts_when_prompt_missing() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    let result = handler
+    let err = handler
         .materialize_development_inputs(&mut ctx, 0)
-        .expect("materialize_development_inputs should return an EffectResult");
+        .expect_err(
+            "materialize_development_inputs should return an error when PROMPT.md is missing",
+        );
 
     assert!(
-        matches!(
-            result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
-        ),
-        "Expected pipeline_aborted when PROMPT.md is missing, got {:?}",
-        result.event
+        err.to_string().contains("PROMPT.md"),
+        "Expected error message about PROMPT.md, got: {err}"
     );
 }
 
@@ -637,7 +633,7 @@ fn test_development_xsd_retry_oversize_detected_is_deduped_across_retries() {
 }
 
 #[test]
-fn test_materialize_development_inputs_aborts_when_plan_missing() {
+fn test_materialize_development_inputs_returns_error_when_plan_missing() {
     let workspace = MemoryWorkspace::new_test().with_file("PROMPT.md", "Prompt\n");
 
     let colors = Colors { enabled: false };
@@ -675,17 +671,15 @@ fn test_materialize_development_inputs_aborts_when_plan_missing() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
-    let result = handler
+    let err = handler
         .materialize_development_inputs(&mut ctx, 0)
-        .expect("materialize_development_inputs should return an EffectResult");
+        .expect_err(
+            "materialize_development_inputs should return an error when PLAN.md is missing",
+        );
 
     assert!(
-        matches!(
-            result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
-        ),
-        "Expected pipeline_aborted when .agent/PLAN.md is missing, got {:?}",
-        result.event
+        err.to_string().contains("PLAN.md"),
+        "Expected error message about PLAN.md, got: {err}"
     );
 }
 

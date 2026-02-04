@@ -266,11 +266,10 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             };
         }
 
-        return Effect::AbortPipeline {
-            reason: format!(
-                "Agent chain exhausted for role {:?} in phase {:?} (cycle {})",
-                state.agent_chain.current_role, state.phase, state.agent_chain.retry_cycle
-            ),
+        return Effect::ReportAgentChainExhausted {
+            role: state.agent_chain.current_role,
+            phase: state.phase,
+            cycle: state.agent_chain.retry_cycle,
         };
     }
 

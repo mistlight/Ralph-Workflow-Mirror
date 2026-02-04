@@ -17,11 +17,6 @@ impl PipelineEvent {
         Self::Lifecycle(LifecycleEvent::Completed)
     }
 
-    /// Create a PipelineAborted event.
-    pub fn pipeline_aborted(reason: String) -> Self {
-        Self::Lifecycle(LifecycleEvent::Aborted { reason })
-    }
-
     // Planning constructors
     /// Create a PlanningPhaseStarted event.
     pub fn planning_phase_started() -> Self {

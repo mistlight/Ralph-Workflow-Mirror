@@ -28,22 +28,15 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let prompt_md = match ctx.workspace.read(Path::new("PROMPT.md")) {
-            Ok(prompt_md) => prompt_md,
-            Err(err) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    format!("Failed to read required PROMPT.md: {err}"),
-                )));
-            }
-        };
-        let plan_md = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
-            Ok(plan_md) => plan_md,
-            Err(err) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    format!("Failed to read required .agent/PLAN.md: {err}"),
-                )));
-            }
-        };
+        let prompt_md = ctx
+            .workspace
+            .read(Path::new("PROMPT.md"))
+            .map_err(|err| anyhow::anyhow!("Failed to read required PROMPT.md: {err}"))?;
+
+        let plan_md = ctx
+            .workspace
+            .read(Path::new(".agent/PLAN.md"))
+            .map_err(|err| anyhow::anyhow!("Failed to read required .agent/PLAN.md: {err}"))?;
 
         let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
         let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
@@ -51,18 +44,8 @@ impl MainEffectHandler {
         let prompt_backup_path = Path::new(".agent/PROMPT.md.backup");
         let (prompt_representation, prompt_reason) = if prompt_md.len() as u64 > inline_budget_bytes
         {
-            match crate::files::create_prompt_backup_with_workspace(ctx.workspace) {
-                Ok(Some(warning)) => {
-                    ctx.logger
-                        .warn(&format!("PROMPT backup created with warning: {warning}"));
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                        format!("Failed to create PROMPT backup: {err}"),
-                    )));
-                }
-            }
+            crate::files::create_prompt_backup_with_workspace(ctx.workspace)
+                .map_err(|err| anyhow::anyhow!("Failed to create PROMPT backup: {err}"))?;
             ctx.logger.warn(&format!(
                 "PROMPT size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (prompt_md.len() as u64) / 1024,
@@ -222,20 +205,16 @@ impl MainEffectHandler {
                     )
                 }
                 PromptMode::XsdRetry => {
-                    let last_output = match ctx
+                    let last_output = ctx
                         .workspace
                         .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
-                    {
-                        Ok(output) => output,
-                        Err(err) => {
-                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                format!(
-                                    "Failed to read last development output at {}: {err}",
-                                    xml_paths::DEVELOPMENT_RESULT_XML
-                                ),
-                            )));
-                        }
-                    };
+                        .map_err(|err| {
+                            anyhow::anyhow!(
+                                "Failed to read last development output at {}: {err}",
+                                xml_paths::DEVELOPMENT_RESULT_XML
+                            )
+                        })?;
+
                     let content_id_sha256 = sha256_hex_str(&last_output);
                     let consumer_signature_sha256 =
                         self.state.agent_chain.consumer_signature_sha256();
@@ -321,37 +300,27 @@ impl MainEffectHandler {
                             false,
                         ),
                         Err(_) => {
-                            let inputs = match self
+                            let inputs = self
                                 .state
                                 .prompt_inputs
                                 .development
                                 .as_ref()
                                 .filter(|p| p.iteration == iteration)
-                            {
-                                Some(inputs) => inputs,
-                                None => {
-                                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                        format!(
-                                            "Development inputs not materialized for iteration {} (expected materialize_development_inputs before prepare_development_prompt)",
-                                            iteration
-                                        ),
-                                    )));
-                                }
-                            };
+                                .ok_or_else(|| anyhow::anyhow!(
+                                    "Development inputs not materialized for iteration {} (expected materialize_development_inputs before prepare_development_prompt)",
+                                    iteration
+                                ))?;
 
                             let prompt_ref = match &inputs.prompt.representation {
                                 PromptInputRepresentation::Inline => {
-                                    let prompt_md = match ctx.workspace.read(Path::new("PROMPT.md"))
-                                    {
-                                        Ok(prompt_md) => prompt_md,
-                                        Err(err) => {
-                                            return Ok(EffectResult::event(
-                                                PipelineEvent::pipeline_aborted(format!(
-                                                    "Failed to read required PROMPT.md: {err}"
-                                                )),
-                                            ));
-                                        }
-                                    };
+                                    let prompt_md = ctx
+                                        .workspace
+                                        .read(Path::new("PROMPT.md"))
+                                        .map_err(|err| {
+                                            anyhow::anyhow!(
+                                                "Failed to read required PROMPT.md: {err}"
+                                            )
+                                        })?;
                                     ignore_sources_owned.push(prompt_md.clone());
                                     PromptContentReference::inline(prompt_md)
                                 }
@@ -365,17 +334,14 @@ impl MainEffectHandler {
 
                             let plan_ref = match &inputs.plan.representation {
                                 PromptInputRepresentation::Inline => {
-                                    let plan_md =
-                                        match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
-                                            Ok(plan_md) => plan_md,
-                                            Err(err) => {
-                                                return Ok(EffectResult::event(
-                                                    PipelineEvent::pipeline_aborted(format!(
-                                                    "Failed to read required .agent/PLAN.md: {err}"
-                                                )),
-                                                ));
-                                            }
-                                        };
+                                    let plan_md = ctx
+                                        .workspace
+                                        .read(Path::new(".agent/PLAN.md"))
+                                        .map_err(|err| {
+                                        anyhow::anyhow!(
+                                            "Failed to read required .agent/PLAN.md: {err}"
+                                        )
+                                    })?;
                                     ignore_sources_owned.push(plan_md.clone());
                                     PlanContentReference::Inline(plan_md)
                                 }
@@ -422,36 +388,23 @@ impl MainEffectHandler {
                     )
                 }
                 PromptMode::Normal => {
-                    let inputs = match self
+                    let inputs = self
                         .state
                         .prompt_inputs
                         .development
                         .as_ref()
                         .filter(|p| p.iteration == iteration)
-                    {
-                        Some(inputs) => inputs,
-                        None => {
-                            return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                            format!(
-                                "Development inputs not materialized for iteration {} (expected materialize_development_inputs before prepare_development_prompt)",
-                                iteration
-                            ),
-                        )));
-                        }
-                    };
+                        .ok_or_else(|| anyhow::anyhow!(
+                            "Development inputs not materialized for iteration {} (expected materialize_development_inputs before prepare_development_prompt)",
+                            iteration
+                        ))?;
 
                     let prompt_md = match &inputs.prompt.representation {
                         PromptInputRepresentation::Inline => {
-                            let prompt_md = match ctx.workspace.read(Path::new("PROMPT.md")) {
-                                Ok(prompt_md) => prompt_md,
-                                Err(err) => {
-                                    return Ok(EffectResult::event(
-                                        PipelineEvent::pipeline_aborted(format!(
-                                            "Failed to read required PROMPT.md: {err}"
-                                        )),
-                                    ));
-                                }
-                            };
+                            let prompt_md =
+                                ctx.workspace.read(Path::new("PROMPT.md")).map_err(|err| {
+                                    anyhow::anyhow!("Failed to read required PROMPT.md: {err}")
+                                })?;
                             ignore_sources_owned.push(prompt_md.clone());
                             Some(prompt_md)
                         }
@@ -459,16 +412,14 @@ impl MainEffectHandler {
                     };
                     let plan_md = match &inputs.plan.representation {
                         PromptInputRepresentation::Inline => {
-                            let plan_md = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
-                                Ok(plan_md) => plan_md,
-                                Err(err) => {
-                                    return Ok(EffectResult::event(
-                                        PipelineEvent::pipeline_aborted(format!(
+                            let plan_md =
+                                ctx.workspace
+                                    .read(Path::new(".agent/PLAN.md"))
+                                    .map_err(|err| {
+                                        anyhow::anyhow!(
                                             "Failed to read required .agent/PLAN.md: {err}"
-                                        )),
-                                    ));
-                                }
-                            };
+                                        )
+                                    })?;
                             ignore_sources_owned.push(plan_md.clone());
                             Some(plan_md)
                         }
@@ -478,14 +429,9 @@ impl MainEffectHandler {
                     let prompt_key = format!("development_{}", iteration);
                     let prompt_ref = match &inputs.prompt.representation {
                         PromptInputRepresentation::Inline => {
-                            let prompt_md = match prompt_md.clone() {
-                                Some(prompt_md) => prompt_md,
-                                None => {
-                                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                    "Missing in-memory PROMPT.md content for inline development prompt (expected PROMPT.md to be loaded)".to_string(),
-                                )));
-                                }
-                            };
+                            let prompt_md = prompt_md.clone().ok_or_else(|| anyhow::anyhow!(
+                                "Missing in-memory PROMPT.md content for inline development prompt (expected PROMPT.md to be loaded)"
+                            ))?;
                             PromptContentReference::inline(prompt_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {
@@ -497,14 +443,9 @@ impl MainEffectHandler {
                     };
                     let plan_ref = match &inputs.plan.representation {
                         PromptInputRepresentation::Inline => {
-                            let plan_md = match plan_md.clone() {
-                                Some(plan_md) => plan_md,
-                                None => {
-                                    return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                                    "Missing in-memory .agent/PLAN.md content for inline development prompt (expected .agent/PLAN.md to be loaded)".to_string(),
-                                )));
-                                }
-                            };
+                            let plan_md = plan_md.clone().ok_or_else(|| anyhow::anyhow!(
+                                "Missing in-memory .agent/PLAN.md content for inline development prompt (expected .agent/PLAN.md to be loaded)"
+                            ))?;
                             PlanContentReference::Inline(plan_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {
@@ -588,17 +529,12 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let prompt = match ctx
+        let prompt = ctx
             .workspace
             .read(Path::new(".agent/tmp/development_prompt.txt"))
-        {
-            Ok(prompt) => prompt,
-            Err(_) => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing development prompt at .agent/tmp/development_prompt.txt".to_string(),
-                )));
-            }
-        };
+            .map_err(|_| {
+                anyhow::anyhow!("Missing development prompt at .agent/tmp/development_prompt.txt")
+            })?;
 
         let agent = self
             .state
@@ -755,16 +691,12 @@ impl MainEffectHandler {
         _ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let outcome = match self.state.development_validated_outcome.as_ref() {
-            Some(outcome) if outcome.iteration == iteration => outcome,
-            _ => {
-                return Ok(EffectResult::event(PipelineEvent::pipeline_aborted(
-                    "Missing validated development outcome".to_string(),
-                )));
-            }
-        };
+        self.state
+            .development_validated_outcome
+            .as_ref()
+            .filter(|outcome| outcome.iteration == iteration)
+            .ok_or_else(|| anyhow::anyhow!("Missing validated development outcome"))?;
 
-        let _ = outcome;
         Ok(EffectResult::event(
             PipelineEvent::development_outcome_applied(iteration),
         ))

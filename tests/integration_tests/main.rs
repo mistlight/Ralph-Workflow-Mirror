@@ -40,6 +40,7 @@ mod logger;
 mod opencode_parser_tests;
 mod reducer_agent_fallback;
 mod reducer_effect_invariants;
+mod reducer_error_handling;
 mod reducer_fault_tolerance;
 mod reducer_hidden_behavior;
 mod reducer_legacy_rejection;

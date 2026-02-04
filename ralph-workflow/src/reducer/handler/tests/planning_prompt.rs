@@ -238,7 +238,7 @@ fn test_prepare_planning_prompt_uses_references_for_oversize_prompt() {
 }
 
 #[test]
-fn test_materialize_planning_inputs_aborts_when_prompt_missing() {
+fn test_materialize_planning_inputs_errors_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
 
     let colors = Colors { enabled: false };
@@ -280,22 +280,15 @@ fn test_materialize_planning_inputs_aborts_when_prompt_missing() {
         crate::agents::AgentRole::Developer,
     );
 
-    let result = handler
-        .materialize_planning_inputs(&mut ctx, 0)
-        .expect("materialize_planning_inputs should return an EffectResult");
-
+    let result = handler.materialize_planning_inputs(&mut ctx, 0);
     assert!(
-        matches!(
-            result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
-        ),
-        "Expected pipeline_aborted when PROMPT.md is missing, got {:?}",
-        result.event
+        result.is_err(),
+        "Expected Err when PROMPT.md is missing, got {result:?}",
     );
 }
 
 #[test]
-fn test_prepare_planning_prompt_aborts_when_prompt_missing() {
+fn test_prepare_planning_prompt_errors_when_prompt_missing() {
     let workspace = MemoryWorkspace::new_test().with_dir(".agent/tmp");
 
     let colors = Colors { enabled: false };
@@ -353,22 +346,15 @@ fn test_prepare_planning_prompt_aborts_when_prompt_missing() {
             },
         });
 
-    let result = handler
-        .prepare_planning_prompt(&mut ctx, 0, PromptMode::Normal)
-        .expect("prepare_planning_prompt should return an EffectResult");
-
+    let result = handler.prepare_planning_prompt(&mut ctx, 0, PromptMode::Normal);
     assert!(
-        matches!(
-            result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
-        ),
-        "Expected pipeline_aborted when PROMPT.md is missing, got {:?}",
-        result.event
+        result.is_err(),
+        "Expected Err when PROMPT.md is missing, got {result:?}",
     );
 }
 
 #[test]
-fn test_prepare_planning_prompt_aborts_when_inputs_not_materialized() {
+fn test_prepare_planning_prompt_errors_when_inputs_not_materialized() {
     let workspace = MemoryWorkspace::new_test()
         .with_file("PROMPT.md", "# Prompt\n")
         .with_dir(".agent/tmp");
@@ -406,17 +392,10 @@ fn test_prepare_planning_prompt_aborts_when_inputs_not_materialized() {
     };
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
-    let result = handler
-        .prepare_planning_prompt(&mut ctx, 0, PromptMode::Normal)
-        .expect("prepare_planning_prompt should return an EffectResult");
-
+    let result = handler.prepare_planning_prompt(&mut ctx, 0, PromptMode::Normal);
     assert!(
-        matches!(
-            result.event,
-            PipelineEvent::Lifecycle(crate::reducer::event::LifecycleEvent::Aborted { .. })
-        ),
-        "Expected pipeline_aborted when planning inputs are missing, got {:?}",
-        result.event
+        result.is_err(),
+        "Expected Err when planning inputs are missing, got {result:?}",
     );
 }
 
