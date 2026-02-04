@@ -58,10 +58,14 @@ Output your analysis using the development_result.xml format:
 
 Write the XML to .agent/tmp/development_result.xml
 
+IMPORTANT: Your XML MUST conform to the XSD schema at .agent/tmp/development_result.xsd
+to ensure it can be parsed correctly. The schema is available for reference if needed.
+
 NOTE: You are analyzing COMPLETED work, not doing the work yourself. Base your
 assessment on the git diff vs the plan if possible. 
 If git diff does not exist, broken or does not provide enough context, use the
-current working tree to determine the status. This is iteration {} (for reference only).
+current working tree to determine the status against the plan. 
+This is iteration {} (for reference only).
 "#,
         plan_content, diff_content, iteration
     )

@@ -8,10 +8,24 @@ fn derive_xsd_retry_effect(state: &PipelineState) -> Effect {
             iteration: state.iteration,
             prompt_mode: PromptMode::XsdRetry,
         },
-        PipelinePhase::Development => Effect::PrepareDevelopmentPrompt {
-            iteration: state.iteration,
-            prompt_mode: PromptMode::XsdRetry,
-        },
+        PipelinePhase::Development => {
+            // NOTE: In the new architecture, development_result.xml is produced by the
+            // ANALYSIS agent, not the development agent. If XSD validation fails, it means
+            // the analysis agent's XML is invalid. Ideally, we should retry the analysis
+            // agent directly. However, the current implementation retries the entire
+            // development flow (dev agent + analysis agent), which works but is inefficient.
+            //
+            // The analysis prompt includes XSD schema reference to minimize validation
+            // failures. If validation still fails, the retry mechanism will eventually
+            // succeed by re-running the full development iteration.
+            //
+            // TODO: Optimize XSD retry to detect when analysis agent's XML failed and
+            // retry InvokeAnalysisAgent directly instead of PrepareDevelopmentPrompt.
+            Effect::PrepareDevelopmentPrompt {
+                iteration: state.iteration,
+                prompt_mode: PromptMode::XsdRetry,
+            }
+        }
         PipelinePhase::Review => {
             if state.review_issues_found || state.continuation.fix_continue_pending {
                 Effect::PrepareFixPrompt {
