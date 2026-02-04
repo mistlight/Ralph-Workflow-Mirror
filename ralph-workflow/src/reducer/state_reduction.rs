@@ -9,7 +9,7 @@
 //!
 //! | Category     | Handler                    | Responsibility                    |
 //! |--------------|----------------------------|-----------------------------------|
-//! | Lifecycle    | reduce_lifecycle_event     | Pipeline start/stop/abort         |
+//! | Lifecycle    | reduce_lifecycle_event     | Pipeline start/resume/complete    |
 //! | Planning     | reduce_planning_event      | Plan generation                   |
 //! | Development  | reduce_development_event   | Dev iterations, continuation      |
 //! | Review       | reduce_review_event        | Review passes, fix attempts       |
@@ -34,7 +34,7 @@ use super::state::PipelineState;
 ///
 /// | Category     | Handler                    | Responsibility                    |
 /// |--------------|----------------------------|-----------------------------------|
-/// | Lifecycle    | reduce_lifecycle_event     | Pipeline start/stop/abort         |
+/// | Lifecycle    | reduce_lifecycle_event     | Pipeline start/resume/complete    |
 /// | Planning     | reduce_planning_event      | Plan generation                   |
 /// | Development  | reduce_development_event   | Dev iterations, continuation      |
 /// | Review       | reduce_review_event        | Review passes, fix attempts       |
@@ -54,6 +54,7 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         PipelineEvent::Agent(e) => agent::reduce_agent_event(state, e),
         PipelineEvent::Rebase(e) => rebase::reduce_rebase_event(state, e),
         PipelineEvent::Commit(e) => commit::reduce_commit_event(state, e),
+        PipelineEvent::Error(e) => error::reduce_error(&state, &e),
 
         // Handle miscellaneous events directly
         PipelineEvent::ContextCleaned => PipelineState {
@@ -88,6 +89,8 @@ mod agent;
 mod commit;
 #[path = "state_reduction/development.rs"]
 mod development;
+#[path = "state_reduction/error.rs"]
+mod error;
 #[path = "state_reduction/lifecycle.rs"]
 mod lifecycle;
 #[path = "state_reduction/planning.rs"]

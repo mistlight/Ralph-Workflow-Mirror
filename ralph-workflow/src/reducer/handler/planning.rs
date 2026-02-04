@@ -10,7 +10,7 @@ use crate::prompts::{
     prompt_planning_xsd_retry_with_context_files,
 };
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{AgentEvent, PipelineEvent, PipelinePhase};
+use crate::reducer::event::{AgentEvent, ErrorEvent, PipelineEvent, PipelinePhase};
 use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::PromptMode;
 use crate::reducer::state::{
@@ -301,9 +301,7 @@ impl MainEffectHandler {
                 (prompt, "planning_xml", Some(prompt_key), was_replayed, true)
             }
             PromptMode::Continuation => {
-                return Err(anyhow::anyhow!(
-                    "Planning does not support continuation prompts"
-                ));
+                return Err(ErrorEvent::PlanningContinuationNotSupported.into());
             }
         };
         let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();

@@ -12,6 +12,7 @@ use crate::prompts::{
 };
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::AgentEvent;
+use crate::reducer::event::ErrorEvent;
 use crate::reducer::event::PipelineEvent;
 use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::{
@@ -165,9 +166,7 @@ impl MainEffectHandler {
         prompt_mode: PromptMode,
     ) -> Result<EffectResult> {
         if matches!(prompt_mode, PromptMode::Continuation) {
-            return Err(anyhow::anyhow!(
-                "Commit message generation does not support continuation prompts"
-            ));
+            return Err(ErrorEvent::CommitContinuationNotSupported.into());
         }
         let attempt = current_commit_attempt(&self.state.commit);
 
@@ -389,9 +388,7 @@ impl MainEffectHandler {
                 (prompt_key, prompt, was_replayed, true)
             }
             PromptMode::Continuation => {
-                return Err(anyhow::anyhow!(
-                    "Commit message generation does not support continuation prompts"
-                ));
+                return Err(ErrorEvent::CommitContinuationNotSupported.into());
             }
         };
 

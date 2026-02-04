@@ -473,3 +473,158 @@ fn test_prepare_review_prompt_normal_mode_ignores_retry_state() {
             if template_name == "review_xml"
     ));
 }
+
+#[test]
+fn test_prepare_review_prompt_missing_diff_backup_with_baseline_uses_fallback_instructions() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.base", "abc123def456")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+
+    // Materialize review inputs (should succeed despite missing DIFF.backup)
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed with fallback DIFF instructions");
+
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
+    // Prepare review prompt (should use fallback instructions with baseline)
+    let result = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect("prepare_review_prompt should succeed with fallback DIFF");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Review(crate::reducer::event::ReviewEvent::PromptPrepared { .. })
+        ),
+        "Expected PromptPrepared event, got {:?}",
+        result.event
+    );
+
+    // Verify fallback instructions contain the baseline git diff command
+    let prompt = workspace
+        .read(Path::new(".agent/tmp/review_prompt.txt"))
+        .expect("review prompt file should be written");
+
+    assert!(
+        prompt.contains("git diff abc123def456..HEAD"),
+        "Review prompt should include baseline-based git diff fallback instruction; got: {prompt}"
+    );
+}
+
+#[test]
+fn test_prepare_review_prompt_missing_diff_backup_without_baseline_uses_generic_fallback() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+
+    // Materialize review inputs (should succeed despite missing DIFF.backup and baseline)
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed with generic fallback");
+
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
+    // Prepare review prompt (should use generic fallback instructions)
+    let result = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect("prepare_review_prompt should succeed with generic fallback");
+
+    assert!(
+        matches!(
+            result.event,
+            PipelineEvent::Review(crate::reducer::event::ReviewEvent::PromptPrepared { .. })
+        ),
+        "Expected PromptPrepared event, got {:?}",
+        result.event
+    );
+
+    // Verify fallback instructions contain generic git diff commands
+    let prompt = workspace
+        .read(Path::new(".agent/tmp/review_prompt.txt"))
+        .expect("review prompt file should be written");
+
+    assert!(
+        prompt.contains("git diff HEAD~1..HEAD")
+            || prompt.contains("git diff --staged")
+            || prompt.contains("git diff"),
+        "Review prompt should include generic git diff fallback instructions; got: {prompt}"
+    );
+}
