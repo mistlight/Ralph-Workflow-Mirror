@@ -173,6 +173,13 @@ pub enum ErrorEvent {
         kind: WorkspaceIoErrorKind,
     },
 
+    /// Failed to stage changes before creating a commit.
+    ///
+    /// Commit creation requires staging (equivalent to `git add -A`). When this fails,
+    /// the error must flow through the reducer as a typed event so the reducer can
+    /// decide whether to retry, fallback, or terminate.
+    GitAddAllFailed { kind: WorkspaceIoErrorKind },
+
     /// Agent registry lookup failed (unknown agent).
     AgentNotFound { agent: String },
 
@@ -247,6 +254,9 @@ impl std::fmt::Display for ErrorEvent {
             }
             ErrorEvent::WorkspaceRemoveFailed { path, kind } => {
                 write!(f, "Workspace remove failed at {path} ({kind:?})")
+            }
+            ErrorEvent::GitAddAllFailed { kind } => {
+                write!(f, "git add -A (stage all changes) failed ({kind:?})")
             }
             ErrorEvent::AgentNotFound { agent } => {
                 write!(f, "Agent not found: {agent}")

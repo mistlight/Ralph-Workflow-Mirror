@@ -106,7 +106,8 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         ErrorEvent::WorkspaceReadFailed { .. }
         | ErrorEvent::WorkspaceWriteFailed { .. }
         | ErrorEvent::WorkspaceCreateDirAllFailed { .. }
-        | ErrorEvent::WorkspaceRemoveFailed { .. } => {
+        | ErrorEvent::WorkspaceRemoveFailed { .. }
+        | ErrorEvent::GitAddAllFailed { .. } => {
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);

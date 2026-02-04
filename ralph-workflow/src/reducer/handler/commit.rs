@@ -610,7 +610,9 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::git_helpers::{git_add_all, git_commit};
 
-        git_add_all()?;
+        git_add_all().map_err(|err| ErrorEvent::GitAddAllFailed {
+            kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+        })?;
 
         match git_commit(&message, None, None, Some(_ctx.executor)) {
             Ok(Some(hash)) => Ok(EffectResult::event(PipelineEvent::commit_created(
