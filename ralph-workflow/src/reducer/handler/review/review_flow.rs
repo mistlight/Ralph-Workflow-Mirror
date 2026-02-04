@@ -462,6 +462,7 @@ impl MainEffectHandler {
                 }
             }
         }
+        let mut xsd_error_for_validation: Option<String> = None;
         let (prompt_key, review_prompt_xml, was_replayed, template_name, should_validate) =
             match prompt_mode {
                 PromptMode::XsdRetry => {
@@ -474,6 +475,7 @@ impl MainEffectHandler {
                         .last_review_xsd_error
                         .as_deref()
                         .unwrap_or("XML output failed validation. Provide valid XML output.");
+                    xsd_error_for_validation = Some(xsd_error.to_string());
                     let prompt = prompt_review_xsd_retry_with_context_files(
                         ctx.template_context,
                         xsd_error,
@@ -620,6 +622,9 @@ impl MainEffectHandler {
                     return Err(ErrorEvent::ReviewContinuationNotSupported.into());
                 }
             };
+        if let Some(xsd_error) = xsd_error_for_validation {
+            ignore_sources_owned.push(xsd_error);
+        }
         let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
         if should_validate {
             if let Err(err) =

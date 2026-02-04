@@ -6,7 +6,7 @@ use crate::executor::MockProcessExecutor;
 use crate::logger::{Colors, Logger};
 use crate::pipeline::{Stats, Timer};
 use crate::prompts::template_context::TemplateContext;
-use crate::reducer::event::{AgentEvent, PipelineEvent};
+use crate::reducer::event::{AgentEvent, PipelineEvent, ReviewEvent};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{ContinuationState, PipelineState, PromptMode};
 use crate::workspace::MemoryWorkspace;
@@ -230,6 +230,65 @@ fn test_prepare_review_prompt_xsd_retry_ignores_last_output_placeholders() {
 }
 
 #[test]
+fn test_prepare_review_prompt_xsd_retry_ignores_xsd_error_placeholders() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            invalid_output_attempts: 1,
+            last_review_xsd_error: Some("XSD error {{BROKEN}}".to_string()),
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(0, 1)
+    });
+
+    let result = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect("prepare_review_prompt should succeed");
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Review(ReviewEvent::PromptPrepared { .. })
+    ));
+}
+
+#[test]
 fn test_prepare_review_prompt_uses_xsd_retry_template_name() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")
@@ -424,6 +483,65 @@ fn test_prepare_fix_prompt_uses_xsd_retry_template_name() {
         result.event,
         PipelineEvent::Agent(AgentEvent::TemplateVariablesInvalid { template_name, .. })
             if template_name == "fix_mode_xsd_retry"
+    ));
+}
+
+#[test]
+fn test_prepare_fix_prompt_xsd_retry_ignores_xsd_error_placeholders() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/ISSUES.md", "Issue\n")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState {
+        continuation: ContinuationState {
+            invalid_output_attempts: 1,
+            last_fix_xsd_error: Some("XSD error {{BROKEN}}".to_string()),
+            ..ContinuationState::new()
+        },
+        ..PipelineState::initial(0, 1)
+    });
+
+    let result = handler
+        .prepare_fix_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect("prepare_fix_prompt should succeed");
+
+    assert!(matches!(
+        result.event,
+        PipelineEvent::Review(ReviewEvent::FixPromptPrepared { .. })
     ));
 }
 
