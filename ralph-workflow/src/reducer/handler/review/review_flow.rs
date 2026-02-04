@@ -54,6 +54,15 @@ impl MainEffectHandler {
                     .warn("Missing .agent/PLAN.md; using sentinel PLAN content for review");
                 let sentinel = Self::sentinel_plan_content(ctx.config.isolation_mode);
                 // Write sentinel content to PLAN.md so FileReference representation works
+                let agent_dir = Path::new(".agent");
+                if !ctx.workspace.exists(agent_dir) {
+                    ctx.workspace.create_dir_all(agent_dir).map_err(|err| {
+                        ErrorEvent::WorkspaceCreateDirAllFailed {
+                            path: agent_dir.display().to_string(),
+                            kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                        }
+                    })?;
+                }
                 ctx.workspace
                     .write(Path::new(".agent/PLAN.md"), &sentinel)
                     .map_err(|err| ErrorEvent::WorkspaceWriteFailed {

@@ -11,26 +11,8 @@ use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::PipelineState;
 use crate::workspace::MemoryWorkspace;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
-
-struct CwdGuard {
-    previous: PathBuf,
-}
-
-impl CwdGuard {
-    fn enter(path: &Path) -> Self {
-        let previous = std::env::current_dir().expect("current_dir should succeed in tests");
-        std::env::set_current_dir(path).expect("set_current_dir should succeed in tests");
-        Self { previous }
-    }
-}
-
-impl Drop for CwdGuard {
-    fn drop(&mut self) {
-        let _ = std::env::set_current_dir(&self.previous);
-    }
-}
 
 #[test]
 fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
@@ -46,7 +28,9 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
     let executor = Arc::new(MockProcessExecutor::new());
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
-    let repo_root = PathBuf::from("/mock/repo");
+    // Use a non-existent repo root so git discovery fails. This avoids mutating
+    // process-wide CWD (which would be flaky under parallel test execution).
+    let repo_root = PathBuf::from("/mock/repo/does-not-exist");
 
     let mut ctx = crate::phases::PhaseContext {
         config: &config,
@@ -70,12 +54,9 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
 
     let mut handler = MainEffectHandler::new(PipelineState::initial(1, 0));
 
-    // Force git discovery/staging to fail by leaving the repository.
-    let _cwd = CwdGuard::enter(Path::new("/tmp"));
-
     let err = handler
         .create_commit(&mut ctx, "test message".to_string())
-        .expect_err("create_commit should fail outside a git repository");
+        .expect_err("create_commit should fail when repo discovery fails");
 
     assert!(
         err.downcast_ref::<ErrorEvent>().is_some(),

@@ -16,7 +16,9 @@ mod diff_review;
 mod discovery;
 mod snapshot;
 
-pub use commit::{git_add_all, git_commit, CommitResultFallback};
+pub use commit::{
+    git_add_all, git_add_all_in_repo, git_commit, git_commit_in_repo, CommitResultFallback,
+};
 pub use diff::{
     get_git_diff_for_review_with_workspace, get_git_diff_from_start,
     get_git_diff_from_start_with_workspace, git_diff, git_diff_from,

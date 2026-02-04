@@ -1,4 +1,5 @@
 use std::io;
+use std::path::Path;
 
 use crate::git_helpers::git2_to_io_error;
 use crate::git_helpers::identity::GitIdentity;
@@ -35,7 +36,15 @@ fn is_internal_agent_artifact(path: &std::path::Path) -> bool {
 /// Returns `Ok(true)` if files were successfully staged, `Ok(false)` if there
 /// were no files to stage, or an error if staging failed.
 pub fn git_add_all() -> io::Result<bool> {
-    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    git_add_all_in_repo(Path::new("."))
+}
+
+/// Stage all changes in the repository discovered from `repo_root`.
+///
+/// This avoids relying on process-wide CWD and allows callers (including tests)
+/// to control which repository is targeted.
+pub fn git_add_all_in_repo(repo_root: &Path) -> io::Result<bool> {
+    let repo = git2::Repository::discover(repo_root).map_err(|e| git2_to_io_error(&e))?;
     git_add_all_impl(&repo)
 }
 
@@ -203,7 +212,27 @@ pub fn git_commit(
     git_user_email: Option<&str>,
     executor: Option<&dyn crate::executor::ProcessExecutor>,
 ) -> io::Result<Option<git2::Oid>> {
-    let repo = git2::Repository::discover(".").map_err(|e| git2_to_io_error(&e))?;
+    git_commit_in_repo(
+        Path::new("."),
+        message,
+        git_user_name,
+        git_user_email,
+        executor,
+    )
+}
+
+/// Create a commit in the repository discovered from `repo_root`.
+///
+/// This avoids relying on process-wide CWD and allows callers to select the
+/// repository to operate on.
+pub fn git_commit_in_repo(
+    repo_root: &Path,
+    message: &str,
+    git_user_name: Option<&str>,
+    git_user_email: Option<&str>,
+    executor: Option<&dyn crate::executor::ProcessExecutor>,
+) -> io::Result<Option<git2::Oid>> {
+    let repo = git2::Repository::discover(repo_root).map_err(|e| git2_to_io_error(&e))?;
     git_commit_impl(&repo, message, git_user_name, git_user_email, executor)
 }
 

@@ -607,16 +607,16 @@ impl MainEffectHandler {
 
     pub(super) fn create_commit(
         &mut self,
-        _ctx: &mut PhaseContext<'_>,
+        ctx: &mut PhaseContext<'_>,
         message: String,
     ) -> Result<EffectResult> {
-        use crate::git_helpers::{git_add_all, git_commit};
+        use crate::git_helpers::{git_add_all_in_repo, git_commit_in_repo};
 
-        git_add_all().map_err(|err| ErrorEvent::GitAddAllFailed {
+        git_add_all_in_repo(ctx.repo_root).map_err(|err| ErrorEvent::GitAddAllFailed {
             kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
         })?;
 
-        match git_commit(&message, None, None, Some(_ctx.executor)) {
+        match git_commit_in_repo(ctx.repo_root, &message, None, None, Some(ctx.executor)) {
             Ok(Some(hash)) => Ok(EffectResult::event(PipelineEvent::commit_created(
                 hash.to_string(),
                 message,

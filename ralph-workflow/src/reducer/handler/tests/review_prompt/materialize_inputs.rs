@@ -24,6 +24,115 @@ struct ReadFailingWorkspace {
     kind: io::ErrorKind,
 }
 
+/// Workspace wrapper that enforces "parent directory must exist" semantics on write.
+///
+/// This models workspace implementations that do not implicitly create parent
+/// directories, ensuring we don't rely on `Workspace::write` doing so.
+#[derive(Debug)]
+struct ParentDirRequiredWorkspace {
+    inner: MemoryWorkspace,
+}
+
+impl ParentDirRequiredWorkspace {
+    fn new(inner: MemoryWorkspace) -> Self {
+        Self { inner }
+    }
+
+    fn ensure_parent_dir_exists(&self, relative: &Path) -> io::Result<()> {
+        if let Some(parent) = relative.parent() {
+            if !parent.as_os_str().is_empty() && !self.inner.is_dir(parent) {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("parent directory does not exist for {}", relative.display()),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Workspace for ParentDirRequiredWorkspace {
+    fn root(&self) -> &Path {
+        self.inner.root()
+    }
+
+    fn read(&self, relative: &Path) -> io::Result<String> {
+        self.inner.read(relative)
+    }
+
+    fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+        self.inner.read_bytes(relative)
+    }
+
+    fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.ensure_parent_dir_exists(relative)?;
+        self.inner.write(relative, content)
+    }
+
+    fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.ensure_parent_dir_exists(relative)?;
+        self.inner.write_bytes(relative, content)
+    }
+
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.ensure_parent_dir_exists(relative)?;
+        self.inner.append_bytes(relative, content)
+    }
+
+    fn exists(&self, relative: &Path) -> bool {
+        self.inner.exists(relative)
+    }
+
+    fn is_file(&self, relative: &Path) -> bool {
+        self.inner.is_file(relative)
+    }
+
+    fn is_dir(&self, relative: &Path) -> bool {
+        self.inner.is_dir(relative)
+    }
+
+    fn remove(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove(relative)
+    }
+
+    fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_if_exists(relative)
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all_if_exists(relative)
+    }
+
+    fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.create_dir_all(relative)
+    }
+
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<crate::workspace::DirEntry>> {
+        self.inner.read_dir(relative)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        self.inner.rename(from, to)
+    }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+        self.ensure_parent_dir_exists(relative)?;
+        self.inner.write_atomic(relative, content)
+    }
+
+    fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_readonly(relative)
+    }
+
+    fn set_writable(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_writable(relative)
+    }
+}
+
 impl ReadFailingWorkspace {
     fn new(inner: MemoryWorkspace, forbidden_read_path: PathBuf, kind: io::ErrorKind) -> Self {
         Self {
@@ -187,6 +296,57 @@ fn test_materialize_review_inputs_uses_sentinel_plan_when_missing() {
         plan_content, "No PLAN provided",
         "Sentinel PLAN content should not include isolation mode context when isolation_mode=false"
     );
+}
+
+#[test]
+fn test_materialize_review_inputs_creates_agent_dir_before_writing_sentinel_plan() {
+    // Intentionally do not create `.agent/` up-front. Some workspace implementations
+    // do not auto-create parent directories on write.
+    let inner = MemoryWorkspace::new_test();
+    let workspace = ParentDirRequiredWorkspace::new(inner);
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let mut config = Config::default();
+    config.isolation_mode = false;
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should create .agent/ and write sentinel PLAN");
+
+    let plan_content = workspace
+        .read(Path::new(".agent/PLAN.md"))
+        .expect("PLAN.md should exist after materialization");
+    assert_eq!(plan_content, "No PLAN provided");
 }
 
 #[test]
