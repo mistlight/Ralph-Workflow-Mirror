@@ -8,7 +8,7 @@ use crate::prompts::content_reference::{
 };
 use crate::reducer::effect::ContinuationContextData;
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{AgentEvent, PipelineEvent};
+use crate::reducer::event::{AgentEvent, ErrorEvent, PipelineEvent, WorkspaceIoErrorKind};
 use crate::reducer::prompt_inputs::sha256_hex_str;
 use crate::reducer::state::PromptMode;
 use crate::reducer::state::{
@@ -28,15 +28,20 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let prompt_md = ctx
-            .workspace
-            .read(Path::new("PROMPT.md"))
-            .map_err(|err| anyhow::anyhow!("Failed to read required PROMPT.md: {err}"))?;
+        let prompt_md = ctx.workspace.read(Path::new("PROMPT.md")).map_err(|err| {
+            ErrorEvent::WorkspaceReadFailed {
+                path: "PROMPT.md".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            }
+        })?;
 
         let plan_md = ctx
             .workspace
             .read(Path::new(".agent/PLAN.md"))
-            .map_err(|err| anyhow::anyhow!("Failed to read required .agent/PLAN.md: {err}"))?;
+            .map_err(|err| ErrorEvent::WorkspaceReadFailed {
+                path: ".agent/PLAN.md".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         let inline_budget_bytes = MAX_INLINE_CONTENT_SIZE as u64;
         let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
@@ -44,13 +49,17 @@ impl MainEffectHandler {
         let prompt_backup_path = Path::new(".agent/PROMPT.md.backup");
         let (prompt_representation, prompt_reason) = if prompt_md.len() as u64 > inline_budget_bytes
         {
-            crate::files::create_prompt_backup_with_workspace(ctx.workspace)
-                .map_err(|err| anyhow::anyhow!("Failed to create PROMPT backup: {err}"))?;
+            crate::files::create_prompt_backup_with_workspace(ctx.workspace).map_err(|err| {
+                ErrorEvent::WorkspaceWriteFailed {
+                    path: prompt_backup_path.display().to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+            })?;
             ctx.logger.warn(&format!(
                 "PROMPT size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (prompt_md.len() as u64) / 1024,
                 inline_budget_bytes / 1024,
-                ctx.workspace.absolute(prompt_backup_path).display()
+                prompt_backup_path.display()
             ));
             (
                 PromptInputRepresentation::FileReference {
@@ -71,7 +80,7 @@ impl MainEffectHandler {
                 "PLAN size ({} KB) exceeds inline limit ({} KB). Referencing: {}",
                 (plan_md.len() as u64) / 1024,
                 inline_budget_bytes / 1024,
-                ctx.workspace.absolute(plan_path).display()
+                plan_path.display()
             ));
             (
                 PromptInputRepresentation::FileReference {
@@ -208,11 +217,9 @@ impl MainEffectHandler {
                     let last_output = ctx
                         .workspace
                         .read(Path::new(xml_paths::DEVELOPMENT_RESULT_XML))
-                        .map_err(|err| {
-                            anyhow::anyhow!(
-                                "Failed to read last development output at {}: {err}",
-                                xml_paths::DEVELOPMENT_RESULT_XML
-                            )
+                        .map_err(|err| ErrorEvent::WorkspaceReadFailed {
+                            path: xml_paths::DEVELOPMENT_RESULT_XML.to_string(),
+                            kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                         })?;
 
                     let content_id_sha256 = sha256_hex_str(&last_output);
@@ -237,10 +244,20 @@ impl MainEffectHandler {
                     if !already_materialized {
                         let tmp_dir = Path::new(".agent/tmp");
                         if !ctx.workspace.exists(tmp_dir) {
-                            ctx.workspace.create_dir_all(tmp_dir)?;
+                            ctx.workspace.create_dir_all(tmp_dir).map_err(|err| {
+                                ErrorEvent::WorkspaceCreateDirAllFailed {
+                                    path: tmp_dir.display().to_string(),
+                                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                                }
+                            })?;
                         }
                         let last_output_path = Path::new(".agent/tmp/last_output.xml");
-                        ctx.workspace.write_atomic(last_output_path, &last_output)?;
+                        ctx.workspace
+                            .write_atomic(last_output_path, &last_output)
+                            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                                path: last_output_path.display().to_string(),
+                                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                            })?;
 
                         let input = MaterializedPromptInput {
                             kind: PromptInputKind::LastOutput,
@@ -306,27 +323,27 @@ impl MainEffectHandler {
                                 .development
                                 .as_ref()
                                 .filter(|p| p.iteration == iteration)
-                                .ok_or_else(|| anyhow::anyhow!(
-                                    "Development inputs not materialized for iteration {} (expected materialize_development_inputs before prepare_development_prompt)",
-                                    iteration
-                                ))?;
+                                .ok_or(ErrorEvent::DevelopmentInputsNotMaterialized {
+                                    iteration,
+                                })?;
 
                             let prompt_ref = match &inputs.prompt.representation {
                                 PromptInputRepresentation::Inline => {
                                     let prompt_md = ctx
                                         .workspace
                                         .read(Path::new("PROMPT.md"))
-                                        .map_err(|err| {
-                                            anyhow::anyhow!(
-                                                "Failed to read required PROMPT.md: {err}"
-                                            )
+                                        .map_err(|err| ErrorEvent::WorkspaceReadFailed {
+                                            path: "PROMPT.md".to_string(),
+                                            kind: WorkspaceIoErrorKind::from_io_error_kind(
+                                                err.kind(),
+                                            ),
                                         })?;
                                     ignore_sources_owned.push(prompt_md.clone());
                                     PromptContentReference::inline(prompt_md)
                                 }
                                 PromptInputRepresentation::FileReference { path } => {
                                     PromptContentReference::file_path(
-                                        ctx.workspace.absolute(path),
+                                        path.to_path_buf(),
                                         "Original user requirements from PROMPT.md",
                                     )
                                 }
@@ -334,23 +351,23 @@ impl MainEffectHandler {
 
                             let plan_ref = match &inputs.plan.representation {
                                 PromptInputRepresentation::Inline => {
-                                    let plan_md = ctx
-                                        .workspace
-                                        .read(Path::new(".agent/PLAN.md"))
-                                        .map_err(|err| {
-                                        anyhow::anyhow!(
-                                            "Failed to read required .agent/PLAN.md: {err}"
-                                        )
-                                    })?;
+                                    let plan_md =
+                                        ctx.workspace.read(Path::new(".agent/PLAN.md")).map_err(
+                                            |err| ErrorEvent::WorkspaceReadFailed {
+                                                path: ".agent/PLAN.md".to_string(),
+                                                kind: WorkspaceIoErrorKind::from_io_error_kind(
+                                                    err.kind(),
+                                                ),
+                                            },
+                                        )?;
                                     ignore_sources_owned.push(plan_md.clone());
                                     PlanContentReference::Inline(plan_md)
                                 }
                                 PromptInputRepresentation::FileReference { path } => {
                                     PlanContentReference::ReadFromFile {
-                                        primary_path: ctx.workspace.absolute(path),
+                                        primary_path: path.to_path_buf(),
                                         fallback_path: Some(
-                                            ctx.workspace
-                                                .absolute(Path::new(".agent/tmp/plan.xml")),
+                                            Path::new(".agent/tmp/plan.xml").to_path_buf(),
                                         ),
                                         description: format!(
                                             "Plan is {} bytes (exceeds {} limit)",
@@ -394,16 +411,16 @@ impl MainEffectHandler {
                         .development
                         .as_ref()
                         .filter(|p| p.iteration == iteration)
-                        .ok_or_else(|| anyhow::anyhow!(
-                            "Development inputs not materialized for iteration {} (expected materialize_development_inputs before prepare_development_prompt)",
-                            iteration
-                        ))?;
+                        .ok_or(ErrorEvent::DevelopmentInputsNotMaterialized { iteration })?;
 
                     let prompt_md = match &inputs.prompt.representation {
                         PromptInputRepresentation::Inline => {
                             let prompt_md =
                                 ctx.workspace.read(Path::new("PROMPT.md")).map_err(|err| {
-                                    anyhow::anyhow!("Failed to read required PROMPT.md: {err}")
+                                    ErrorEvent::WorkspaceReadFailed {
+                                        path: "PROMPT.md".to_string(),
+                                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                                    }
                                 })?;
                             ignore_sources_owned.push(prompt_md.clone());
                             Some(prompt_md)
@@ -415,10 +432,9 @@ impl MainEffectHandler {
                             let plan_md =
                                 ctx.workspace
                                     .read(Path::new(".agent/PLAN.md"))
-                                    .map_err(|err| {
-                                        anyhow::anyhow!(
-                                            "Failed to read required .agent/PLAN.md: {err}"
-                                        )
+                                    .map_err(|err| ErrorEvent::WorkspaceReadFailed {
+                                        path: ".agent/PLAN.md".to_string(),
+                                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                                     })?;
                             ignore_sources_owned.push(plan_md.clone());
                             Some(plan_md)
@@ -429,31 +445,29 @@ impl MainEffectHandler {
                     let prompt_key = format!("development_{}", iteration);
                     let prompt_ref = match &inputs.prompt.representation {
                         PromptInputRepresentation::Inline => {
-                            let prompt_md = prompt_md.clone().ok_or_else(|| anyhow::anyhow!(
-                                "Missing in-memory PROMPT.md content for inline development prompt (expected PROMPT.md to be loaded)"
-                            ))?;
+                            let prompt_md = prompt_md.clone().ok_or(
+                                ErrorEvent::DevelopmentInputsNotMaterialized { iteration },
+                            )?;
                             PromptContentReference::inline(prompt_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             PromptContentReference::file_path(
-                                ctx.workspace.absolute(path),
+                                path.to_path_buf(),
                                 "Original user requirements from PROMPT.md",
                             )
                         }
                     };
                     let plan_ref = match &inputs.plan.representation {
                         PromptInputRepresentation::Inline => {
-                            let plan_md = plan_md.clone().ok_or_else(|| anyhow::anyhow!(
-                                "Missing in-memory .agent/PLAN.md content for inline development prompt (expected .agent/PLAN.md to be loaded)"
-                            ))?;
+                            let plan_md = plan_md.clone().ok_or(
+                                ErrorEvent::DevelopmentInputsNotMaterialized { iteration },
+                            )?;
                             PlanContentReference::Inline(plan_md)
                         }
                         PromptInputRepresentation::FileReference { path } => {
                             PlanContentReference::ReadFromFile {
-                                primary_path: ctx.workspace.absolute(path),
-                                fallback_path: Some(
-                                    ctx.workspace.absolute(Path::new(".agent/tmp/plan.xml")),
-                                ),
+                                primary_path: path.to_path_buf(),
+                                fallback_path: Some(Path::new(".agent/tmp/plan.xml").to_path_buf()),
                                 description: format!(
                                     "Plan is {} bytes (exceeds {} limit)",
                                     inputs.plan.final_bytes, MAX_INLINE_CONTENT_SIZE
@@ -511,11 +525,20 @@ impl MainEffectHandler {
 
         let tmp_dir = Path::new(".agent/tmp");
         if !ctx.workspace.exists(tmp_dir) {
-            ctx.workspace.create_dir_all(tmp_dir)?;
+            ctx.workspace.create_dir_all(tmp_dir).map_err(|err| {
+                ErrorEvent::WorkspaceCreateDirAllFailed {
+                    path: tmp_dir.display().to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+            })?;
         }
 
         ctx.workspace
-            .write(Path::new(".agent/tmp/development_prompt.txt"), &dev_prompt)?;
+            .write(Path::new(".agent/tmp/development_prompt.txt"), &dev_prompt)
+            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                path: ".agent/tmp/development_prompt.txt".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         let mut result = EffectResult::event(PipelineEvent::development_prompt_prepared(iteration));
         for ev in additional_events {
@@ -532,9 +555,7 @@ impl MainEffectHandler {
         let prompt = ctx
             .workspace
             .read(Path::new(".agent/tmp/development_prompt.txt"))
-            .map_err(|_| {
-                anyhow::anyhow!("Missing development prompt at .agent/tmp/development_prompt.txt")
-            })?;
+            .map_err(|_| ErrorEvent::DevelopmentPromptMissing { iteration })?;
 
         let agent = self
             .state
@@ -695,7 +716,7 @@ impl MainEffectHandler {
             .development_validated_outcome
             .as_ref()
             .filter(|outcome| outcome.iteration == iteration)
-            .ok_or_else(|| anyhow::anyhow!("Missing validated development outcome"))?;
+            .ok_or(ErrorEvent::ValidatedDevelopmentOutcomeMissing { iteration })?;
 
         Ok(EffectResult::event(
             PipelineEvent::development_outcome_applied(iteration),
@@ -710,7 +731,12 @@ pub(super) fn write_continuation_context_to_workspace(
 ) -> Result<()> {
     let tmp_dir = Path::new(".agent/tmp");
     if !workspace.exists(tmp_dir) {
-        workspace.create_dir_all(tmp_dir)?;
+        workspace.create_dir_all(tmp_dir).map_err(|err| {
+            ErrorEvent::WorkspaceCreateDirAllFailed {
+                path: tmp_dir.display().to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            }
+        })?;
     }
 
     let mut content = String::new();
@@ -742,7 +768,12 @@ pub(super) fn write_continuation_context_to_workspace(
     content.push_str("- PROMPT.md\n");
     content.push_str("- .agent/PLAN.md\n");
 
-    workspace.write(Path::new(".agent/tmp/continuation_context.md"), &content)?;
+    workspace
+        .write(Path::new(".agent/tmp/continuation_context.md"), &content)
+        .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+            path: ".agent/tmp/continuation_context.md".to_string(),
+            kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+        })?;
 
     logger.info("Continuation context written to .agent/tmp/continuation_context.md");
 

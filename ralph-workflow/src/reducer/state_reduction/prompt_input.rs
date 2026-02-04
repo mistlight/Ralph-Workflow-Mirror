@@ -58,5 +58,6 @@ pub fn reduce_prompt_input_event(state: PipelineState, event: PromptInputEvent) 
             },
             ..state
         },
+        PromptInputEvent::HandlerError { error, .. } => super::error::reduce_error(&state, &error),
     }
 }

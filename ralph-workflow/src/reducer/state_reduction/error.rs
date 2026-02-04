@@ -27,16 +27,65 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::ReviewContinuationNotSupported
         | ErrorEvent::FixContinuationNotSupported
         | ErrorEvent::CommitContinuationNotSupported => {
-            // These should never happen - continuation mode should not be passed to these phases
-            // State remains unchanged - event loop will terminate on Err
-            state.clone()
+            // Invariant violations: terminate cleanly by transitioning to Interrupted.
+            use crate::reducer::event::PipelinePhase;
+            let mut new_state = state.clone();
+            new_state.previous_phase = Some(state.phase);
+            new_state.phase = PipelinePhase::Interrupted;
+            new_state
         }
 
         // Missing inputs are handler bugs - these should be caught by effect sequencing
-        ErrorEvent::ReviewInputsNotMaterialized { .. } | ErrorEvent::FixPromptMissing => {
-            // These indicate effect sequencing bugs
-            // State remains unchanged - event loop will terminate on Err
-            state.clone()
+        ErrorEvent::ReviewInputsNotMaterialized { .. }
+        | ErrorEvent::PlanningInputsNotMaterialized { .. }
+        | ErrorEvent::DevelopmentInputsNotMaterialized { .. }
+        | ErrorEvent::CommitInputsNotMaterialized { .. }
+        | ErrorEvent::ValidatedPlanningMarkdownMissing { .. }
+        | ErrorEvent::ValidatedDevelopmentOutcomeMissing { .. }
+        | ErrorEvent::ValidatedReviewOutcomeMissing { .. }
+        | ErrorEvent::ValidatedFixOutcomeMissing { .. }
+        | ErrorEvent::FixPromptMissing
+        | ErrorEvent::AgentNotFound { .. } => {
+            // Invariant violations: terminate cleanly by transitioning to Interrupted.
+            use crate::reducer::event::PipelinePhase;
+            let mut new_state = state.clone();
+            new_state.previous_phase = Some(state.phase);
+            new_state.phase = PipelinePhase::Interrupted;
+            new_state
+        }
+
+        // Missing prompt files are recoverable - tmp artifacts can be cleaned between checkpoints.
+        // Clear the corresponding "prepared" flag so the event loop will regenerate the prompt.
+        ErrorEvent::PlanningPromptMissing { .. } => {
+            let mut new_state = state.clone();
+            new_state.planning_prompt_prepared_iteration = None;
+            new_state
+        }
+        ErrorEvent::DevelopmentPromptMissing { .. } => {
+            let mut new_state = state.clone();
+            new_state.development_prompt_prepared_iteration = None;
+            new_state
+        }
+        ErrorEvent::ReviewPromptMissing { .. } => {
+            let mut new_state = state.clone();
+            new_state.review_prompt_prepared_pass = None;
+            new_state
+        }
+        ErrorEvent::CommitPromptMissing { .. } => {
+            let mut new_state = state.clone();
+            new_state.commit_prompt_prepared = false;
+            new_state
+        }
+
+        // Workspace operation failures are treated as terminal.
+        ErrorEvent::WorkspaceReadFailed { .. }
+        | ErrorEvent::WorkspaceWriteFailed { .. }
+        | ErrorEvent::WorkspaceCreateDirAllFailed { .. }
+        | ErrorEvent::WorkspaceRemoveFailed { .. } => {
+            use crate::reducer::event::PipelinePhase;
+            let mut new_state = state.clone();
+            new_state.phase = PipelinePhase::Interrupted;
+            new_state
         }
 
         // Agent chain exhausted - this is a terminal condition
@@ -58,7 +107,7 @@ mod tests {
     use crate::reducer::state::ContinuationState;
 
     #[test]
-    fn test_reduce_continuation_not_supported_errors_no_state_change() {
+    fn test_reduce_continuation_not_supported_errors_transition_to_interrupted() {
         let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
 
         let errors = vec![
@@ -70,13 +119,16 @@ mod tests {
 
         for error in errors {
             let new_state = reduce_error(&state, &error);
-            // State should not change - event loop will terminate on Err
-            assert_eq!(new_state.phase, state.phase);
+            // Terminate cleanly
+            assert_eq!(
+                new_state.phase,
+                crate::reducer::event::PipelinePhase::Interrupted
+            );
         }
     }
 
     #[test]
-    fn test_reduce_missing_inputs_errors_no_state_change() {
+    fn test_reduce_missing_inputs_errors_transition_to_interrupted() {
         let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
 
         let errors = vec![
@@ -86,8 +138,11 @@ mod tests {
 
         for error in errors {
             let new_state = reduce_error(&state, &error);
-            // State should not change - event loop will terminate on Err
-            assert_eq!(new_state.phase, state.phase);
+            // Terminate cleanly
+            assert_eq!(
+                new_state.phase,
+                crate::reducer::event::PipelinePhase::Interrupted
+            );
         }
     }
 

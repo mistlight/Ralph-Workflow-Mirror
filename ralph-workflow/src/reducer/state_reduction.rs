@@ -54,7 +54,6 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         PipelineEvent::Agent(e) => agent::reduce_agent_event(state, e),
         PipelineEvent::Rebase(e) => rebase::reduce_rebase_event(state, e),
         PipelineEvent::Commit(e) => commit::reduce_commit_event(state, e),
-        PipelineEvent::Error(e) => error::reduce_error(&state, &e),
 
         // Handle miscellaneous events directly
         PipelineEvent::ContextCleaned => PipelineState {

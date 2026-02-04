@@ -14,18 +14,20 @@
 //!    ```
 //!
 //! 2. **Event loop extracts error event**
-//!    The event loop catches `Err()`, downcasts to `ErrorEvent`, and wraps it in
-//!    `PipelineEvent::Error()` for processing through the reducer.
+//!    The event loop catches `Err()`, downcasts to `ErrorEvent`, and re-emits it as
+//!    `PipelineEvent::PromptInput(PromptInputEvent::HandlerError { ... })` so the
+//!    reducer can decide recovery strategy without adding new top-level `PipelineEvent`
+//!    variants.
 //!
 //! 3. **Reducer decides recovery strategy**
-//!    The reducer processes `PipelineEvent::Error()` identically to success events,
-//!    deciding whether to retry, fallback, skip, or terminate based on the specific
-//!    error variant.
+//!    The reducer processes the error identically to other events (it is still routed
+//!    through the main `reduce` function), deciding whether to retry, fallback, skip,
+//!    or terminate based on the specific error variant.
 //!
 //! 4. **Event loop acts on reducer decision**
 //!    If the reducer transitions to Interrupted phase, the event loop terminates.
-//!    If the reducer keeps the state unchanged for invariant violations, the event
-//!    loop also terminates. Otherwise, execution continues with the next effect.
+//!    Otherwise, execution continues with the next effect (e.g., by clearing a
+//!    "prepared" flag to force re-materialization after a checkpoint resume).
 //!
 //! ## Why Not String Errors?
 //!
@@ -44,6 +46,32 @@
 //! will implement retry/fallback strategies in the reducer.
 
 use serde::{Deserialize, Serialize};
+
+/// Serializable subset of `std::io::ErrorKind`.
+///
+/// `std::io::Error` / `ErrorKind` are not serde-serializable, but reducer error events
+/// must be persisted in checkpoints. This enum captures the subset of error kinds we
+/// need for recovery policy decisions.
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub enum WorkspaceIoErrorKind {
+    NotFound,
+    PermissionDenied,
+    AlreadyExists,
+    InvalidData,
+    Other,
+}
+
+impl WorkspaceIoErrorKind {
+    pub fn from_io_error_kind(kind: std::io::ErrorKind) -> Self {
+        match kind {
+            std::io::ErrorKind::NotFound => Self::NotFound,
+            std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
+            std::io::ErrorKind::AlreadyExists => Self::AlreadyExists,
+            std::io::ErrorKind::InvalidData => Self::InvalidData,
+            _ => Self::Other,
+        }
+    }
+}
 
 /// Error events for failures requiring reducer handling.
 ///
@@ -119,6 +147,59 @@ pub enum ErrorEvent {
         /// The retry cycle number when exhaustion occurred.
         cycle: u32,
     },
+
+    /// Workspace read failure that must be handled by the reducer.
+    WorkspaceReadFailed {
+        /// Workspace-relative path.
+        path: String,
+        kind: WorkspaceIoErrorKind,
+    },
+    /// Workspace write failure that must be handled by the reducer.
+    WorkspaceWriteFailed {
+        /// Workspace-relative path.
+        path: String,
+        kind: WorkspaceIoErrorKind,
+    },
+    /// Workspace directory creation failure that must be handled by the reducer.
+    WorkspaceCreateDirAllFailed {
+        /// Workspace-relative path.
+        path: String,
+        kind: WorkspaceIoErrorKind,
+    },
+    /// Workspace remove failure that must be handled by the reducer.
+    WorkspaceRemoveFailed {
+        /// Workspace-relative path.
+        path: String,
+        kind: WorkspaceIoErrorKind,
+    },
+
+    /// Agent registry lookup failed (unknown agent).
+    AgentNotFound { agent: String },
+
+    /// Planning inputs not materialized before preparing/invoking planning prompt.
+    PlanningInputsNotMaterialized { iteration: u32 },
+    /// Development inputs not materialized before preparing/invoking development prompt.
+    DevelopmentInputsNotMaterialized { iteration: u32 },
+    /// Commit inputs not materialized before preparing commit prompt.
+    CommitInputsNotMaterialized { attempt: u32 },
+
+    /// Prepared planning prompt file missing/unreadable when invoking planning agent.
+    PlanningPromptMissing { iteration: u32 },
+    /// Prepared development prompt file missing/unreadable when invoking development agent.
+    DevelopmentPromptMissing { iteration: u32 },
+    /// Prepared review prompt file missing/unreadable when invoking review agent.
+    ReviewPromptMissing { pass: u32 },
+    /// Prepared commit prompt file missing/unreadable when invoking commit agent.
+    CommitPromptMissing { attempt: u32 },
+
+    /// Missing validated planning markdown when writing `.agent/PLAN.md`.
+    ValidatedPlanningMarkdownMissing { iteration: u32 },
+    /// Missing validated development outcome when applying/writing results.
+    ValidatedDevelopmentOutcomeMissing { iteration: u32 },
+    /// Missing validated review outcome when applying/writing results.
+    ValidatedReviewOutcomeMissing { pass: u32 },
+    /// Missing validated fix outcome when applying fixes.
+    ValidatedFixOutcomeMissing { pass: u32 },
 }
 
 impl std::fmt::Display for ErrorEvent {
@@ -154,6 +235,81 @@ impl std::fmt::Display for ErrorEvent {
                     "Agent chain exhausted for role {:?} in phase {:?} (cycle {})",
                     role, phase, cycle
                 )
+            }
+            ErrorEvent::WorkspaceReadFailed { path, kind } => {
+                write!(f, "Workspace read failed at {path} ({kind:?})")
+            }
+            ErrorEvent::WorkspaceWriteFailed { path, kind } => {
+                write!(f, "Workspace write failed at {path} ({kind:?})")
+            }
+            ErrorEvent::WorkspaceCreateDirAllFailed { path, kind } => {
+                write!(f, "Workspace create_dir_all failed at {path} ({kind:?})")
+            }
+            ErrorEvent::WorkspaceRemoveFailed { path, kind } => {
+                write!(f, "Workspace remove failed at {path} ({kind:?})")
+            }
+            ErrorEvent::AgentNotFound { agent } => {
+                write!(f, "Agent not found: {agent}")
+            }
+            ErrorEvent::PlanningInputsNotMaterialized { iteration } => {
+                write!(
+                    f,
+                    "Planning inputs not materialized for iteration {iteration} (expected materialize_planning_inputs before prepare/invoke)"
+                )
+            }
+            ErrorEvent::DevelopmentInputsNotMaterialized { iteration } => {
+                write!(
+                    f,
+                    "Development inputs not materialized for iteration {iteration} (expected materialize_development_inputs before prepare/invoke)"
+                )
+            }
+            ErrorEvent::CommitInputsNotMaterialized { attempt } => {
+                write!(
+                    f,
+                    "Commit inputs not materialized for attempt {attempt} (expected materialize_commit_inputs before prepare)"
+                )
+            }
+            ErrorEvent::PlanningPromptMissing { iteration } => {
+                write!(
+                    f,
+                    "Missing planning prompt at .agent/tmp/planning_prompt.txt for iteration {iteration}"
+                )
+            }
+            ErrorEvent::DevelopmentPromptMissing { iteration } => {
+                write!(
+                    f,
+                    "Missing development prompt at .agent/tmp/development_prompt.txt for iteration {iteration}"
+                )
+            }
+            ErrorEvent::ReviewPromptMissing { pass } => {
+                write!(
+                    f,
+                    "Missing review prompt at .agent/tmp/review_prompt.txt for pass {pass}"
+                )
+            }
+            ErrorEvent::CommitPromptMissing { attempt } => {
+                write!(
+                    f,
+                    "Missing commit prompt at .agent/tmp/commit_prompt.txt for attempt {attempt}"
+                )
+            }
+            ErrorEvent::ValidatedPlanningMarkdownMissing { iteration } => {
+                write!(
+                    f,
+                    "Missing validated planning markdown for iteration {iteration}"
+                )
+            }
+            ErrorEvent::ValidatedDevelopmentOutcomeMissing { iteration } => {
+                write!(
+                    f,
+                    "Missing validated development outcome for iteration {iteration}"
+                )
+            }
+            ErrorEvent::ValidatedReviewOutcomeMissing { pass } => {
+                write!(f, "Missing validated review outcome for pass {pass}")
+            }
+            ErrorEvent::ValidatedFixOutcomeMissing { pass } => {
+                write!(f, "Missing validated fix outcome for pass {pass}")
             }
         }
     }

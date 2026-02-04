@@ -1,7 +1,7 @@
 use super::MainEffectHandler;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
-use crate::reducer::event::{PipelineEvent, PipelinePhase};
+use crate::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, WorkspaceIoErrorKind};
 use anyhow::Result;
 use std::path::Path;
 
@@ -124,7 +124,12 @@ impl MainEffectHandler {
 fn cleanup_continuation_context_file(ctx: &mut PhaseContext<'_>) -> anyhow::Result<()> {
     let path = Path::new(".agent/tmp/continuation_context.md");
     if ctx.workspace.exists(path) {
-        ctx.workspace.remove(path)?;
+        ctx.workspace
+            .remove(path)
+            .map_err(|err| ErrorEvent::WorkspaceRemoveFailed {
+                path: path.display().to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
     }
     Ok(())
 }

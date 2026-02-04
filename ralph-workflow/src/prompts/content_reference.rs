@@ -26,9 +26,9 @@ pub const MAX_INLINE_CONTENT_SIZE: usize = 100 * 1024; // 100KB
 pub enum PromptContentReference {
     /// Content is small enough to embed inline in the prompt.
     Inline(String),
-    /// Content is too large; agent should read from this absolute path.
+    /// Content is too large; agent should read from this workspace-relative path.
     FilePath {
-        /// Absolute path to the backup file containing the content.
+        /// Workspace-relative path to the backup file containing the content.
         path: PathBuf,
         /// Human-readable description of what the content contains.
         description: String,
@@ -105,7 +105,7 @@ pub enum DiffContentReference {
     Inline(String),
     /// DIFF is too large; agent should read from a file (with git diff fallback).
     ReadFromFile {
-        /// Absolute path to the diff file containing the content.
+        /// Workspace-relative path to the diff file containing the content.
         path: PathBuf,
         /// The commit hash to diff from (fallback if file is missing).
         start_commit: String,
@@ -206,9 +206,9 @@ pub enum PlanContentReference {
     Inline(String),
     /// PLAN is too large; agent should read from file.
     ReadFromFile {
-        /// Primary path to the plan file (usually .agent/PLAN.md).
+        /// Primary path to the plan file (usually .agent/PLAN.md), workspace-relative.
         primary_path: PathBuf,
-        /// Optional fallback path if primary is missing (usually .agent/tmp/plan.xml).
+        /// Optional fallback path if primary is missing (usually .agent/tmp/plan.xml), workspace-relative.
         fallback_path: Option<PathBuf>,
         /// Description of why file reading is needed.
         description: String,
