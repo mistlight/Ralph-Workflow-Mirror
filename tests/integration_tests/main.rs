@@ -28,6 +28,7 @@
 
 mod agent_spawn_errors;
 mod cli;
+mod codex_reasoning_spam_regression;
 mod commit;
 mod common;
 mod deduplication;

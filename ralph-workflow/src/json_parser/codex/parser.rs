@@ -100,6 +100,16 @@ impl CodexParser {
         self
     }
 
+    /// Set the display name (for testing).
+    ///
+    /// This method is public when the `test-utils` feature is enabled,
+    /// allowing integration tests to configure display name.
+    #[cfg(feature = "test-utils")]
+    pub fn with_display_name_for_test(mut self, display_name: &str) -> Self {
+        self.display_name = display_name.to_string();
+        self
+    }
+
     /// Parse a stream of JSON events (for testing).
     ///
     /// This method is public when the `test-utils` feature is enabled,
