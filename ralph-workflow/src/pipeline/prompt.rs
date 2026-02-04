@@ -140,7 +140,7 @@ use types::{PromptArchiveInfo, PromptSaveOptions};
 
 /// Waits for process completion and collects stderr output.
 fn wait_for_completion_and_collect_stderr(
-    mut child: Box<dyn crate::executor::AgentChild>,
+    mut child: std::sync::MutexGuard<Box<dyn crate::executor::AgentChild>>,
     stderr_join_handle: Option<std::thread::JoinHandle<io::Result<String>>>,
     runtime: &PipelineRuntime<'_>,
 ) -> io::Result<(i32, String)> {
@@ -392,8 +392,14 @@ fn run_with_agent_spawn(
         }
     };
 
-    // Get child PID for idle timeout monitoring
-    let child_id = agent_handle.inner.id();
+    // Extract stdout and stderr from the handle
+    let stdout = agent_handle.stdout;
+    let stderr = agent_handle.stderr;
+    let inner = agent_handle.inner;
+
+    // Wrap child in Arc<Mutex> for shared access between monitor and main thread
+    let child_shared = Arc::new(std::sync::Mutex::new(inner));
+    let child_for_monitor = Arc::clone(&child_shared);
 
     // Set up idle timeout monitoring
     let activity_timestamp = new_activity_timestamp();
@@ -406,21 +412,16 @@ fn run_with_agent_spawn(
     let monitor_executor: Arc<dyn crate::executor::ProcessExecutor> =
         std::sync::Arc::clone(&runtime.executor_arc);
 
-    // Spawn idle timeout monitor thread
+    // Spawn idle timeout monitor thread with child reference
     let monitor_handle = std::thread::spawn(move || {
         monitor_idle_timeout(
             activity_timestamp_clone,
-            child_id,
+            child_for_monitor,
             IDLE_TIMEOUT_SECS,
             monitor_should_stop_clone,
             monitor_executor,
         )
     });
-
-    // Extract stdout and stderr from the handle
-    let stdout = agent_handle.stdout;
-    let stderr = agent_handle.stderr;
-    let inner = agent_handle.inner;
 
     // Clone activity timestamp for stderr thread to share with stdout tracking.
     // This ensures both stdout AND stderr activity prevent idle timeout kills.
@@ -447,29 +448,38 @@ fn run_with_agent_spawn(
     // Signal monitor to stop (process completed or streaming ended)
     monitor_should_stop.store(true, Ordering::Release);
 
-    let (exit_code, stderr_output) =
-        wait_for_completion_and_collect_stderr(inner, Some(stderr_join_handle), runtime)?;
+    // After streaming completes, wait for child
+    let (exit_code, stderr_output) = {
+        let child_locked = child_shared.lock().unwrap();
+        wait_for_completion_and_collect_stderr(child_locked, Some(stderr_join_handle), runtime)?
+    };
 
     // Check if monitor killed the process due to idle timeout
     let monitor_result = monitor_handle
         .join()
         .unwrap_or(MonitorResult::ProcessCompleted);
 
-    // If monitor timed out, use SIGTERM exit code regardless of actual exit code
-    // and provide detailed diagnostics for debugging
-    let final_exit_code = if monitor_result == MonitorResult::TimedOut {
-        let idle_duration = time_since_activity(&activity_timestamp_for_timeout);
-        runtime.logger.warn(&format!(
-            "Agent killed due to idle timeout (no stdout/stderr for {} seconds, \
-             last activity {:.1}s ago, process exit code was {}, \
-             kill reason: IDLE_TIMEOUT_MONITOR)",
-            IDLE_TIMEOUT_SECS,
-            idle_duration.as_secs_f64(),
-            exit_code
-        ));
-        SIGTERM_EXIT_CODE
-    } else {
-        exit_code
+    // Handle timeout with escalation diagnostics
+    let final_exit_code = match monitor_result {
+        MonitorResult::TimedOut { escalated } => {
+            let idle_duration = time_since_activity(&activity_timestamp_for_timeout);
+            let escalation_msg = if escalated {
+                ", escalated to SIGKILL after SIGTERM grace period"
+            } else {
+                ""
+            };
+            runtime.logger.warn(&format!(
+                "Agent killed due to idle timeout (no stdout/stderr for {} seconds, \
+                 last activity {:.1}s ago, process exit code was {}{}, \
+                 kill reason: IDLE_TIMEOUT_MONITOR)",
+                IDLE_TIMEOUT_SECS,
+                idle_duration.as_secs_f64(),
+                exit_code,
+                escalation_msg
+            ));
+            SIGTERM_EXIT_CODE
+        }
+        MonitorResult::ProcessCompleted => exit_code,
     };
 
     if runtime.config.verbosity.is_verbose() {

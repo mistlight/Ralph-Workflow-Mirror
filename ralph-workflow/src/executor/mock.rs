@@ -373,26 +373,53 @@ fn generate_mock_agent_output(parser_type: JsonParserType, _command: &str) -> St
 
 /// Mock agent child process for testing.
 ///
-/// This simulates a real Child process but returns a predetermined exit code.
+/// This simulates a real Child process with configurable termination behavior.
 #[derive(Debug)]
 pub struct MockAgentChild {
     exit_code: i32,
+    /// Simulates a process that hasn't terminated yet
+    still_running: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl MockAgentChild {
-    fn new(exit_code: i32) -> Self {
-        Self { exit_code }
+    pub fn new(exit_code: i32) -> Self {
+        Self {
+            exit_code,
+            still_running: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    /// Create a mock child that simulates a running process that needs to be killed.
+    /// Call set_terminated() on the returned Arc to simulate process termination.
+    pub fn new_running(exit_code: i32) -> (Self, std::sync::Arc<std::sync::atomic::AtomicBool>) {
+        let still_running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let controller = std::sync::Arc::clone(&still_running);
+        (
+            Self {
+                exit_code,
+                still_running,
+            },
+            controller,
+        )
     }
 }
 
 impl AgentChild for MockAgentChild {
     fn id(&self) -> u32 {
-        0 // Mock PID
+        12345 // Mock PID
     }
 
     fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
         #[cfg(unix)]
         use std::os::unix::process::ExitStatusExt;
+
+        // Wait until process is no longer running
+        while self
+            .still_running
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
 
         // On Unix, wait status encoding: exit code is in bits 8-15, so shift left by 8
         #[cfg(unix)]
@@ -404,6 +431,13 @@ impl AgentChild for MockAgentChild {
     fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
         #[cfg(unix)]
         use std::os::unix::process::ExitStatusExt;
+
+        if self
+            .still_running
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Ok(None); // Still running
+        }
 
         // On Unix, wait status encoding: exit code is in bits 8-15, so shift left by 8
         #[cfg(unix)]

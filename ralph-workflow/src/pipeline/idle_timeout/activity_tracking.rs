@@ -1,5 +1,7 @@
 // Activity tracking readers and monitor functions for idle timeout
 
+use crate::executor::AgentChild;
+
 /// A reader wrapper that updates an activity timestamp on every read.
 ///
 /// This wraps any `Read` implementation and updates a shared atomic timestamp
@@ -90,11 +92,26 @@ pub enum MonitorResult {
     /// Process completed normally (not killed by monitor).
     ProcessCompleted,
     /// Process was killed due to idle timeout.
-    TimedOut,
+    /// The boolean indicates whether escalation to SIGKILL was required.
+    TimedOut { escalated: bool },
 }
 
 /// Default check interval for the idle monitor (1 second).
 const DEFAULT_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Result of attempting to kill a process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KillResult {
+    /// Process was successfully killed with SIGTERM.
+    TerminatedByTerm,
+    /// Process required SIGKILL escalation.
+    TerminatedByKill,
+    /// Kill attempt failed (process may have already exited).
+    Failed,
+}
+
+/// Grace period to wait for SIGTERM to take effect before escalating to SIGKILL.
+const SIGTERM_GRACE_PERIOD_MS: u64 = 5000; // 5 seconds
 
 /// Monitors activity and kills a process if idle timeout is exceeded.
 ///
@@ -109,24 +126,25 @@ const DEFAULT_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 /// # Arguments
 ///
 /// * `activity_timestamp` - Shared timestamp updated by the reader
-/// * `child_id` - Process ID to kill if timeout exceeded
+/// * `child` - Shared mutable reference to the child process for liveness checks
 /// * `timeout_secs` - Maximum seconds of inactivity before killing
 /// * `should_stop` - Atomic flag to signal monitor should exit (set when process completes)
 /// * `executor` - Process executor for killing the subprocess
 ///
 /// # Platform Notes
 ///
-/// Uses `kill -TERM` command on Unix and `taskkill` on Windows via the ProcessExecutor trait.
+/// Uses `kill -TERM` command on Unix (with SIGKILL escalation) and `taskkill` on Windows
+/// via the ProcessExecutor trait.
 pub fn monitor_idle_timeout(
     activity_timestamp: SharedActivityTimestamp,
-    child_id: u32,
+    child: Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
     timeout_secs: u64,
     should_stop: Arc<std::sync::atomic::AtomicBool>,
     executor: Arc<dyn ProcessExecutor>,
 ) -> MonitorResult {
     monitor_idle_timeout_with_interval(
         activity_timestamp,
-        child_id,
+        child,
         timeout_secs,
         should_stop,
         executor,
@@ -142,14 +160,14 @@ pub fn monitor_idle_timeout(
 /// # Arguments
 ///
 /// * `activity_timestamp` - Shared timestamp updated by the reader
-/// * `child_id` - Process ID to kill if timeout exceeded
+/// * `child` - Shared mutable reference to the child process for liveness checks
 /// * `timeout_secs` - Maximum seconds of inactivity before killing
 /// * `should_stop` - Atomic flag to signal monitor should exit (set when process completes)
 /// * `executor` - Process executor for killing the subprocess
 /// * `check_interval` - How often to check for timeout/stop signal
 pub fn monitor_idle_timeout_with_interval(
     activity_timestamp: SharedActivityTimestamp,
-    child_id: u32,
+    child: Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
     timeout_secs: u64,
     should_stop: Arc<std::sync::atomic::AtomicBool>,
     executor: Arc<dyn ProcessExecutor>,
@@ -167,40 +185,124 @@ pub fn monitor_idle_timeout_with_interval(
 
         // Check if idle timeout exceeded
         if is_idle_timeout_exceeded(&activity_timestamp, timeout_secs) {
-            // Kill the process using platform-specific command
-            let killed = kill_process(child_id, executor.as_ref());
-            if killed {
-                return MonitorResult::TimedOut;
+            // Get the PID before locking
+            let child_id = {
+                let locked_child = child.lock().unwrap();
+                locked_child.id()
+            };
+
+            // Kill the process using platform-specific command with escalation
+            let mut locked_child = child.lock().unwrap();
+            let kill_result =
+                kill_process(child_id, executor.as_ref(), Some(locked_child.as_mut()));
+            drop(locked_child); // Release lock
+
+            match kill_result {
+                KillResult::TerminatedByTerm => {
+                    return MonitorResult::TimedOut { escalated: false };
+                }
+                KillResult::TerminatedByKill => {
+                    return MonitorResult::TimedOut { escalated: true };
+                }
+                KillResult::Failed => {
+                    // Kill failed - process may have already exited
+                    if should_stop.load(Ordering::Acquire) {
+                        return MonitorResult::ProcessCompleted;
+                    }
+                    // Kill failed for unknown reason, try again next iteration
+                }
             }
-            // If kill failed, process may have already exited - check should_stop again
-            if should_stop.load(Ordering::Acquire) {
-                return MonitorResult::ProcessCompleted;
-            }
-            // Kill failed for unknown reason, try again next iteration
         }
     }
 }
 
 /// Kill a process by PID using platform-specific commands via executor.
 ///
-/// Returns true if the kill command succeeded, false otherwise.
+/// First attempts SIGTERM, waits for a grace period, then escalates to SIGKILL
+/// if the process hasn't terminated. Returns the kill result indicating
+/// whether escalation was required.
+///
+/// # Arguments
+///
+/// * `pid` - Process ID to kill
+/// * `executor` - Process executor for running kill commands
+/// * `child` - Optional mutable reference to AgentChild for liveness checks
+///
+/// # Returns
+///
+/// Returns KillResult indicating how the process was terminated or if it failed.
 #[cfg(unix)]
-fn kill_process(pid: u32, executor: &dyn ProcessExecutor) -> bool {
-    // Use kill command to send SIGTERM via ProcessExecutor
-    executor
-        .execute("kill", &["-TERM", &pid.to_string()], &[], None)
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+fn kill_process(
+    pid: u32,
+    executor: &dyn ProcessExecutor,
+    child: Option<&mut dyn AgentChild>,
+) -> KillResult {
+    use std::thread;
+    use std::time::Duration;
+
+    // First attempt: send SIGTERM
+    let term_result = executor.execute("kill", &["-TERM", &pid.to_string()], &[], None);
+
+    if term_result.is_err() {
+        // Kill command itself failed (process may have already exited)
+        return KillResult::Failed;
+    }
+
+    // Wait for process to terminate gracefully
+    if let Some(child_ref) = child {
+        let grace_start = std::time::Instant::now();
+        let grace_duration = Duration::from_millis(SIGTERM_GRACE_PERIOD_MS);
+        let check_interval = Duration::from_millis(100);
+
+        while grace_start.elapsed() < grace_duration {
+            match child_ref.try_wait() {
+                Ok(Some(_status)) => {
+                    // Process has exited
+                    return KillResult::TerminatedByTerm;
+                }
+                Ok(None) => {
+                    // Still running, keep waiting
+                    thread::sleep(check_interval);
+                }
+                Err(_) => {
+                    // Error checking status - assume process is gone
+                    return KillResult::TerminatedByTerm;
+                }
+            }
+        }
+
+        // Grace period expired, process still alive - escalate to SIGKILL
+        let kill_result = executor.execute("kill", &["-KILL", &pid.to_string()], &[], None);
+
+        if kill_result.is_ok() {
+            // Wait a short time to confirm SIGKILL took effect
+            thread::sleep(Duration::from_millis(500));
+            return KillResult::TerminatedByKill;
+        } else {
+            return KillResult::Failed;
+        }
+    }
+
+    // No child reference provided - assume SIGTERM worked
+    // (This path is for backward compatibility with tests that don't provide child)
+    KillResult::TerminatedByTerm
 }
 
 /// Kill a process by PID using platform-specific commands via executor.
 ///
-/// Returns true if the kill command succeeded, false otherwise.
+/// Windows version uses taskkill /F which is already forceful.
 #[cfg(windows)]
-fn kill_process(pid: u32, executor: &dyn ProcessExecutor) -> bool {
-    // Use taskkill to force kill the process via ProcessExecutor
-    executor
-        .execute("taskkill", &["/F", "/PID", &pid.to_string()], &[], None)
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+fn kill_process(
+    pid: u32,
+    executor: &dyn ProcessExecutor,
+    _child: Option<&mut dyn AgentChild>,
+) -> KillResult {
+    // Windows taskkill /F is already forceful, no escalation needed
+    let result = executor.execute("taskkill", &["/F", "/PID", &pid.to_string()], &[], None);
+
+    if result.map(|o| o.status.success()).unwrap_or(false) {
+        KillResult::TerminatedByKill // /F flag is always forceful
+    } else {
+        KillResult::Failed
+    }
 }
