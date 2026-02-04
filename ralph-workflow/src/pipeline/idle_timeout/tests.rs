@@ -281,10 +281,34 @@ mod tests {
         use std::sync::{Arc, Mutex};
         use std::time::{Duration, Instant};
 
+        #[derive(Debug)]
+        struct CountingChild {
+            inner: MockAgentChild,
+            try_wait_calls: Arc<std::sync::atomic::AtomicUsize>,
+        }
+
+        impl crate::executor::AgentChild for CountingChild {
+            fn id(&self) -> u32 {
+                self.inner.id()
+            }
+
+            fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+                self.inner.wait()
+            }
+
+            fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+                self.try_wait_calls.fetch_add(1, Ordering::SeqCst);
+                self.inner.try_wait()
+            }
+        }
+
         let (mock_child, running_controller) = MockAgentChild::new_running(0);
-        let child = Arc::new(Mutex::new(
-            Box::new(mock_child) as Box<dyn crate::executor::AgentChild>
-        ));
+        let try_wait_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let child = Arc::new(Mutex::new(Box::new(CountingChild {
+            inner: mock_child,
+            try_wait_calls: Arc::clone(&try_wait_calls),
+        })
+            as Box<dyn crate::executor::AgentChild>));
 
         let timestamp = new_activity_timestamp();
         timestamp.store(0, Ordering::Release);
@@ -293,42 +317,48 @@ mod tests {
         let executor: Arc<dyn crate::executor::ProcessExecutor> =
             Arc::new(crate::executor::MockProcessExecutor::new());
 
-        let running_controller_clone = Arc::clone(&running_controller);
-
-        // Ensure the monitor observes at least one "still running" check.
-        let terminator = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(20));
-            running_controller_clone.store(false, Ordering::Release);
-        });
+        // Keep the child alive long enough that the monitor enters and stays in the
+        // SIGTERM grace polling loop. We'll stop it after the assertions.
 
         let child_for_monitor = Arc::clone(&child);
         let timestamp_for_monitor = timestamp.clone();
         let should_stop_for_monitor = Arc::clone(&should_stop);
 
+        let kill_config = KillConfig {
+            sigterm_grace: Duration::from_millis(200),
+            poll_interval: Duration::from_millis(50),
+            sigkill_confirm_timeout: Duration::from_millis(50),
+        };
+
         let monitor = thread::spawn(move || {
-            monitor_idle_timeout_with_interval(
+            monitor_idle_timeout_with_interval_and_kill_config(
                 timestamp_for_monitor,
                 child_for_monitor,
                 0,
                 should_stop_for_monitor,
                 executor,
                 Duration::from_millis(1),
+                kill_config,
             )
         });
 
-        // Wait until the monitor has entered the kill path and is holding the lock.
-        let lock_wait_start = Instant::now();
-        while lock_wait_start.elapsed() < Duration::from_millis(50) {
-            if child.try_lock().is_err() {
+        // Wait until we know the kill path is running and has performed multiple
+        // try_wait polls (i.e., we're in the grace-period loop, which includes sleeping).
+        let poll_deadline = Instant::now() + Duration::from_millis(300);
+        while Instant::now() < poll_deadline {
+            if try_wait_calls.load(Ordering::Acquire) >= 3 {
                 break;
             }
             thread::sleep(Duration::from_millis(1));
         }
+        assert!(
+            try_wait_calls.load(Ordering::Acquire) >= 3,
+            "expected monitor to enter SIGTERM grace polling loop"
+        );
 
-        // Now verify we can still acquire the lock briefly while the monitor is running.
-        // If the monitor holds the mutex across the sleep between try_wait() checks,
-        // this will fail.
-        let deadline = Instant::now() + Duration::from_millis(50);
+        // While the monitor is in its grace-period sleep/poll loop, we should be able to
+        // acquire the child lock (because the monitor must not hold it across sleeps).
+        let deadline = Instant::now() + Duration::from_millis(150);
         let mut acquired = false;
         while Instant::now() < deadline {
             if let Ok(_guard) = child.try_lock() {
@@ -338,13 +368,147 @@ mod tests {
             thread::sleep(Duration::from_millis(1));
         }
 
-        terminator.join().expect("Terminator thread panicked");
+        // Stop the monitor and child to avoid hanging the test.
+        should_stop.store(true, Ordering::Release);
+        running_controller.store(false, Ordering::Release);
         let _ = monitor.join();
 
         assert!(
             acquired,
             "Monitor held child lock while sleeping between SIGTERM checks"
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_monitor_reports_timeout_even_if_sigkill_confirmation_times_out() {
+        // Regression test for missed timeout:
+        // If SIGKILL is sent successfully but the child isn't observed dead within the
+        // confirmation window, the monitor must still classify the run as TimedOut once
+        // the child is later observed exited.
+        use crate::executor::MockAgentChild;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::{Arc, Mutex};
+
+        let (mock_child, running_controller) = MockAgentChild::new_running(0);
+        let child = Arc::new(Mutex::new(
+            Box::new(mock_child) as Box<dyn crate::executor::AgentChild>
+        ));
+
+        let timestamp = new_activity_timestamp();
+        timestamp.store(0, Ordering::Release); // timeout exceeded
+        let should_stop = Arc::new(AtomicBool::new(false));
+
+        // Use a concrete executor so we can observe calls.
+        let executor = Arc::new(crate::executor::MockProcessExecutor::new());
+        let executor_dyn: Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
+
+        // Make SIGTERM grace short and SIGKILL confirmation extremely short so the
+        // confirmation loop times out before we flip still_running.
+        let kill_config = KillConfig {
+            sigterm_grace: Duration::from_millis(10),
+            poll_interval: Duration::from_millis(1),
+            sigkill_confirm_timeout: Duration::from_millis(1),
+        };
+
+        let child_for_monitor = Arc::clone(&child);
+        let timestamp_for_monitor = timestamp.clone();
+        let should_stop_for_monitor = Arc::clone(&should_stop);
+
+        let monitor_handle = thread::spawn(move || {
+            monitor_idle_timeout_with_interval_and_kill_config(
+                timestamp_for_monitor,
+                child_for_monitor,
+                0,
+                should_stop_for_monitor,
+                executor_dyn,
+                Duration::from_millis(1),
+                kill_config,
+            )
+        });
+
+        // Wait until SIGKILL is attempted, then shortly after mark the child as dead.
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            let calls = executor.execute_calls_for("kill");
+            if calls
+                .iter()
+                .any(|(_, args, _, _)| args.iter().any(|a| a == "-KILL"))
+            {
+                thread::sleep(Duration::from_millis(5));
+                running_controller.store(false, Ordering::Release);
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        let result = monitor_handle.join().expect("Monitor thread panicked");
+        assert_eq!(result, MonitorResult::TimedOut { escalated: true });
+        assert!(!running_controller.load(Ordering::Acquire));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_monitor_treats_try_wait_errors_as_process_gone_during_kill_verification() {
+        // Regression test: try_wait() errors during SIGTERM/SIGKILL verification should not
+        // cause the monitor to misclassify a timeout-triggered kill as ProcessCompleted.
+        use std::io;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Debug)]
+        struct TryWaitErrorsChild {
+            first: bool,
+        }
+
+        impl crate::executor::AgentChild for TryWaitErrorsChild {
+            fn id(&self) -> u32 {
+                12345
+            }
+
+            fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+                Err(io::Error::other("wait should not be called in this test"))
+            }
+
+            fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
+                if self.first {
+                    self.first = false;
+                    return Ok(None);
+                }
+
+                Err(io::Error::other(
+                    "simulated already-reaped / status unavailable",
+                ))
+            }
+        }
+
+        let child =
+            Arc::new(Mutex::new(Box::new(TryWaitErrorsChild { first: true })
+                as Box<dyn crate::executor::AgentChild>));
+
+        let timestamp = new_activity_timestamp();
+        timestamp.store(0, Ordering::Release);
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let executor: Arc<dyn crate::executor::ProcessExecutor> =
+            Arc::new(crate::executor::MockProcessExecutor::new());
+
+        let kill_config = KillConfig {
+            sigterm_grace: Duration::from_millis(10),
+            poll_interval: Duration::from_millis(1),
+            sigkill_confirm_timeout: Duration::from_millis(10),
+        };
+
+        let result = monitor_idle_timeout_with_interval_and_kill_config(
+            timestamp,
+            child,
+            0,
+            should_stop,
+            executor,
+            Duration::from_millis(1),
+            kill_config,
+        );
+
+        assert_eq!(result, MonitorResult::TimedOut { escalated: false });
     }
 
     #[test]
@@ -577,7 +741,7 @@ mod tests {
         use std::sync::mpsc;
         use std::sync::{Arc, Mutex};
 
-        let (mock_child, _controller) = MockAgentChild::new_running(0);
+        let (mock_child, controller) = MockAgentChild::new_running(0);
         let child = Arc::new(Mutex::new(
             Box::new(mock_child) as Box<dyn crate::executor::AgentChild>
         ));
@@ -622,8 +786,8 @@ mod tests {
             "Monitor returned early despite still-running child"
         );
 
-        // Stop the monitor thread to avoid hanging the test.
-        should_stop.store(true, Ordering::Release);
+        // Clean up: terminate the mock child so the monitor can observe exit.
+        controller.store(false, Ordering::Release);
         let _ = monitor_handle.join();
     }
 }

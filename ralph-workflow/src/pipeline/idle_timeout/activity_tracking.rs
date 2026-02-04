@@ -149,15 +149,34 @@ enum KillResult {
     TerminatedByTerm,
     /// Process required SIGKILL escalation.
     TerminatedByKill,
+    /// Kill signals were sent successfully, but the process was not confirmed exited yet.
+    ///
+    /// The monitor should continue polling for exit and report `TimedOut` once
+    /// the process is observed dead.
+    SignalsSentAwaitingExit { escalated: bool },
     /// Kill attempt failed (process may have already exited).
     Failed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct KillConfig {
+pub(crate) struct KillConfig {
     sigterm_grace: Duration,
     poll_interval: Duration,
     sigkill_confirm_timeout: Duration,
+}
+
+impl KillConfig {
+    pub(crate) const fn new(
+        sigterm_grace: Duration,
+        poll_interval: Duration,
+        sigkill_confirm_timeout: Duration,
+    ) -> Self {
+        Self {
+            sigterm_grace,
+            poll_interval,
+            sigkill_confirm_timeout,
+        }
+    }
 }
 
 /// Default kill configuration.
@@ -165,7 +184,7 @@ struct KillConfig {
 /// - SIGTERM grace: 5s
 /// - Poll interval: 100ms
 /// - SIGKILL confirm timeout: 500ms
-const DEFAULT_KILL_CONFIG: KillConfig = KillConfig {
+pub(crate) const DEFAULT_KILL_CONFIG: KillConfig = KillConfig {
     sigterm_grace: Duration::from_secs(5),
     poll_interval: Duration::from_millis(100),
     sigkill_confirm_timeout: Duration::from_millis(500),
@@ -242,7 +261,7 @@ pub fn monitor_idle_timeout_with_interval(
     )
 }
 
-fn monitor_idle_timeout_with_interval_and_kill_config(
+pub(crate) fn monitor_idle_timeout_with_interval_and_kill_config(
     activity_timestamp: SharedActivityTimestamp,
     child: Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
     timeout_secs: u64,
@@ -253,8 +272,27 @@ fn monitor_idle_timeout_with_interval_and_kill_config(
 ) -> MonitorResult {
     use std::sync::atomic::Ordering;
 
+    // Once we have triggered a timeout and sent signals, we must not later
+    // misreport normal completion. Keep the timeout classification sticky
+    // until the child is observed exited.
+    let mut timeout_triggered: Option<bool> = None;
+
     loop {
         std::thread::sleep(check_interval);
+
+        // If we already triggered a timeout, keep polling until the child is
+        // observed exited (or try_wait fails, which we treat as "no longer running").
+        if let Some(escalated) = timeout_triggered {
+            let status = {
+                let mut locked_child = child.lock().unwrap();
+                locked_child.try_wait()
+            };
+
+            match status {
+                Ok(Some(_)) | Err(_) => return MonitorResult::TimedOut { escalated },
+                Ok(None) => continue,
+            }
+        }
 
         // Check if we should stop (process completed normally)
         if should_stop.load(Ordering::Acquire) {
@@ -271,8 +309,11 @@ fn monitor_idle_timeout_with_interval_and_kill_config(
             let mut locked_child = child.lock().unwrap();
 
             // If the process already exited, treat as completed.
-            if locked_child.try_wait().ok().flatten().is_some() {
-                return MonitorResult::ProcessCompleted;
+            match locked_child.try_wait() {
+                Ok(Some(_)) | Err(_) => {
+                    return MonitorResult::ProcessCompleted;
+                }
+                Ok(None) => {}
             }
 
             locked_child.id()
@@ -287,6 +328,9 @@ fn monitor_idle_timeout_with_interval_and_kill_config(
             }
             KillResult::TerminatedByKill => {
                 return MonitorResult::TimedOut { escalated: true };
+            }
+            KillResult::SignalsSentAwaitingExit { escalated } => {
+                timeout_triggered = Some(escalated);
             }
             KillResult::Failed => {
                 // Kill failed - this can happen if:
@@ -356,7 +400,7 @@ fn kill_process(
             match status {
                 Ok(Some(_)) => return KillResult::TerminatedByTerm,
                 Ok(None) => std::thread::sleep(config.poll_interval),
-                Err(_) => return KillResult::Failed,
+                Err(_) => return KillResult::TerminatedByTerm,
             }
         }
 
@@ -378,11 +422,13 @@ fn kill_process(
             match status {
                 Ok(Some(_)) => return KillResult::TerminatedByKill,
                 Ok(None) => std::thread::sleep(config.poll_interval),
-                Err(_) => return KillResult::Failed,
+                Err(_) => return KillResult::TerminatedByKill,
             }
         }
 
-        return KillResult::Failed;
+        // SIGKILL was sent but the process may exit shortly after our confirmation window.
+        // Keep monitoring so the timeout can be surfaced once the child is observed dead.
+        return KillResult::SignalsSentAwaitingExit { escalated: true };
     }
 
     // No child reference provided - assume SIGTERM worked
@@ -420,11 +466,11 @@ fn kill_process(
             match status {
                 Ok(Some(_)) => return KillResult::TerminatedByKill,
                 Ok(None) => std::thread::sleep(config.poll_interval),
-                Err(_) => return KillResult::Failed,
+                Err(_) => return KillResult::TerminatedByKill,
             }
         }
 
-        return KillResult::Failed;
+        return KillResult::SignalsSentAwaitingExit { escalated: true };
     }
 
     KillResult::TerminatedByKill
