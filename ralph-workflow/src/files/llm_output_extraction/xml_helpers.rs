@@ -115,8 +115,7 @@ fn illegal_character_error(ch: char, byte_index: usize, content: &str) -> XsdVal
         format!(
             "Illegal character {} found at position {}. Options to fix:\n\
              - Remove the illegal character\n\
-             - Use CDATA section if this is code: <![CDATA[your content]]>\n\
-             - Replace with a valid character\n\n\
+             - Replace with a valid character (e.g., space or \u{00A0})\n\n\
              Near: {}",
             char_display, byte_index, preview
         )
@@ -341,7 +340,7 @@ pub fn malformed_xml_error(error: quick_xml::Error) -> XsdValidationError {
             "Invalid character detected in XML content. Common causes:\n\
          - Illegal control characters (NUL, etc.) in text\n\
          - Invalid UTF-8 encoding\n\
-         - Use CDATA for code blocks with special characters: <![CDATA[your code]]>"
+         - Remove or replace illegal characters with valid Unicode"
                 .to_string()
         } else if error_str.contains("code") || error_str.contains("block") {
             "Code blocks with special characters (<, >, &) MUST use CDATA sections:\n\
@@ -591,6 +590,20 @@ mod tests {
                 error.found
             );
         }
+    }
+
+    #[test]
+    fn test_illegal_character_error_does_not_suggest_cdata_for_control_chars() {
+        let invalid = "text\u{0001}here";
+        let result = check_for_illegal_xml_characters(invalid);
+        assert!(result.is_err(), "Control character should be rejected");
+
+        let error = result.unwrap_err();
+        assert!(
+            !error.suggestion.contains("CDATA"),
+            "Control character suggestions should not mention CDATA, got: {}",
+            error.suggestion
+        );
     }
 
     #[test]

@@ -608,3 +608,14 @@ fn test_fix_mode_xsd_retry_template_mentions_illegal_control_characters() {
         "Expected fix_mode_xsd_retry template to mention illegal control characters"
     );
 }
+
+#[test]
+fn test_fix_mode_xsd_retry_template_lists_fix_result_status_values() {
+    let template = include_str!("../../../../prompts/templates/fix_mode_xsd_retry.txt");
+    assert!(
+        template.contains("all_issues_addressed")
+            && template.contains("issues_remain")
+            && template.contains("no_issues_found"),
+        "Expected fix_mode_xsd_retry template to list fix-result status values"
+    );
+}

@@ -71,7 +71,7 @@ COMMON XML MISTAKES TO FIX
 
 1. Missing required elements (status, summary, etc.)
 2. Wrong element order (check XSD for correct sequence)
-3. Invalid status value (must be: completed, partial, or failed)
+3. Invalid status value (must be: all_issues_addressed, issues_remain, or no_issues_found)
 4. Unescaped special characters (use &lt; &gt; &amp; or CDATA)
 5. Illegal control characters (NUL byte, etc.) - common: \u0000 instead of \u00A0
 6. Missing closing tags
