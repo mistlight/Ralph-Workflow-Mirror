@@ -117,7 +117,13 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                 Ok(None) => {
                     let now = std::time::Instant::now();
 
-                    if state.escalated {
+                    // Be robust to future changes: if we ever enter the enforcement state
+                    // without having escalated yet, force escalation now.
+                    if !state.escalated {
+                        let _ = force_kill_best_effort(state.pid, executor.as_ref());
+                        state.escalated = true;
+                        state.last_sigkill_sent_at = Some(now);
+                    } else {
                         let should_resend = match state.last_sigkill_sent_at {
                             None => true,
                             Some(t) => {
@@ -138,20 +144,47 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                     {
                         let child_for_reaper = Arc::clone(&child);
                         let executor_for_reaper = Arc::clone(&executor);
+                        let should_stop_for_reaper = Arc::clone(&should_stop);
                         let config_for_reaper = kill_config;
                         let pid = state.pid;
-                        std::thread::spawn(move || loop {
-                            let status = {
-                                let mut locked_child = child_for_reaper.lock().unwrap();
-                                locked_child.try_wait()
-                            };
+                        std::thread::spawn(move || {
+                            // Bound the reaper's lifetime to avoid leaking threads across
+                            // repeated timeouts. If the process is truly unkillable, a bounded
+                            // best-effort reaper is the least-bad option.
+                            let deadline = std::time::Instant::now()
+                                + config_for_reaper.post_sigkill_hard_cap();
+                            let mut last_kill_sent_at: Option<std::time::Instant> = None;
 
-                            match status {
-                                Ok(Some(_)) | Err(_) => return,
-                                Ok(None) => {
-                                    let _ =
-                                        force_kill_best_effort(pid, executor_for_reaper.as_ref());
-                                    std::thread::sleep(config_for_reaper.sigkill_resend_interval());
+                            while std::time::Instant::now() < deadline {
+                                if should_stop_for_reaper.load(Ordering::Acquire) {
+                                    return;
+                                }
+
+                                let status = {
+                                    let mut locked_child = child_for_reaper.lock().unwrap();
+                                    locked_child.try_wait()
+                                };
+
+                                match status {
+                                    Ok(Some(_)) | Err(_) => return,
+                                    Ok(None) => {
+                                        let now = std::time::Instant::now();
+                                        let should_resend = match last_kill_sent_at {
+                                            None => true,
+                                            Some(t) => {
+                                                now.duration_since(t)
+                                                    >= config_for_reaper.sigkill_resend_interval()
+                                            }
+                                        };
+                                        if should_resend {
+                                            let _ = force_kill_best_effort(
+                                                pid,
+                                                executor_for_reaper.as_ref(),
+                                            );
+                                            last_kill_sent_at = Some(now);
+                                        }
+                                        std::thread::sleep(config_for_reaper.poll_interval());
+                                    }
                                 }
                             }
                         });

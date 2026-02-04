@@ -416,7 +416,8 @@ fn monitor_reports_timeout_even_if_process_still_alive_after_force_kill_hard_cap
         "expected process to still be running"
     );
 
-    // Ensure we did not give up: a background reaper keeps sending SIGKILL.
+    // Ensure we did not give up immediately: a background reaper keeps sending SIGKILL
+    // for a bounded amount of time to avoid leaking threads.
     let kill_calls_before = executor
         .execute_calls_for("kill")
         .iter()
@@ -431,6 +432,25 @@ fn monitor_reports_timeout_even_if_process_still_alive_after_force_kill_hard_cap
     assert!(
         kill_calls_after > kill_calls_before,
         "expected background reaper to continue sending SIGKILL"
+    );
+
+    // But it must be bounded: after the reaper window expires, it should stop.
+    // Wait long enough for the bounded reaper window to elapse.
+    thread::sleep(Duration::from_millis(250));
+    let kill_calls_after_reaper_window = executor
+        .execute_calls_for("kill")
+        .iter()
+        .filter(|(_, args, _, _)| args.iter().any(|a| a == "-KILL"))
+        .count();
+    thread::sleep(Duration::from_millis(250));
+    let kill_calls_final = executor
+        .execute_calls_for("kill")
+        .iter()
+        .filter(|(_, args, _, _)| args.iter().any(|a| a == "-KILL"))
+        .count();
+    assert_eq!(
+        kill_calls_final, kill_calls_after_reaper_window,
+        "expected bounded reaper to stop sending SIGKILL after its time limit"
     );
 
     controller.store(false, Ordering::Release);

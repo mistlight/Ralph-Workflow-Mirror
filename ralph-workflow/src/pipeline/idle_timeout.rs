@@ -24,7 +24,7 @@
 //! - Aligned with typical CI/CD step timeouts
 
 mod clock;
-mod kill;
+pub(crate) mod kill;
 mod monitor;
 mod readers;
 

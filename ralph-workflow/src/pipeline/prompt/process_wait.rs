@@ -19,15 +19,34 @@ pub(super) fn wait_for_completion_and_collect_stderr(
 
     fn try_take_monitor_result(
         monitor_handle: &mut Option<std::thread::JoinHandle<MonitorResult>>,
-    ) -> Option<MonitorResult> {
+    ) -> Result<Option<MonitorResult>, String> {
         let finished = match monitor_handle.as_ref() {
             Some(h) => h.is_finished(),
             None => false,
         };
         if !finished {
-            return None;
+            return Ok(None);
         }
-        monitor_handle.take().and_then(|h| h.join().ok())
+
+        let handle = monitor_handle
+            .take()
+            .ok_or_else(|| "monitor handle missing after finished check".to_string())?;
+
+        match handle.join() {
+            Ok(result) => Ok(Some(result)),
+            Err(panic_payload) => {
+                let panic_msg = panic_payload.downcast_ref::<String>().map_or_else(
+                    || {
+                        panic_payload.downcast_ref::<&str>().map_or_else(
+                            || "<unknown panic>".to_string(),
+                            std::string::ToString::to_string,
+                        )
+                    },
+                    std::clone::Clone::clone,
+                );
+                Err(panic_msg)
+            }
+        }
     }
 
     fn try_take_stderr_output(
@@ -58,9 +77,18 @@ pub(super) fn wait_for_completion_and_collect_stderr(
 
     let check_interval = Duration::from_millis(100);
     let outcome = loop {
-        if let Some(monitor_result) = try_take_monitor_result(monitor_handle) {
-            if matches!(monitor_result, MonitorResult::TimedOut { .. }) {
-                break WaitOutcome::TimedOut(monitor_result);
+        match try_take_monitor_result(monitor_handle) {
+            Ok(Some(monitor_result)) => {
+                if matches!(monitor_result, MonitorResult::TimedOut { .. }) {
+                    break WaitOutcome::TimedOut(monitor_result);
+                }
+            }
+            Ok(None) => {}
+            Err(panic_msg) => {
+                runtime.logger.warn(&format!(
+                    "Idle-timeout monitor thread panicked: {panic_msg}. Treating as timeout and forcing termination."
+                ));
+                break WaitOutcome::TimedOut(MonitorResult::TimedOut { escalated: true });
             }
         }
 
@@ -132,4 +160,88 @@ pub(super) fn wait_for_completion_and_collect_stderr(
     }
 
     Ok((exit_code, stderr_output, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::executor::MockAgentChild;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::Timer;
+    use crate::workspace::MemoryWorkspace;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn monitor_thread_panic_is_treated_as_timeout_to_avoid_hanging_wait_loop() {
+        let (child, controller) = MockAgentChild::new_running(0);
+        let child_arc: Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>> =
+            Arc::new(std::sync::Mutex::new(Box::new(child)));
+
+        let mut stderr_join_handle: Option<std::thread::JoinHandle<io::Result<String>>> = None;
+        let mut monitor_handle: Option<std::thread::JoinHandle<MonitorResult>> =
+            Some(std::thread::spawn(|| panic!("monitor blew up")));
+
+        let workspace = MemoryWorkspace::new_test();
+        let logger = Logger::new(Colors::new());
+        let colors = Colors::new();
+        let config = crate::config::Config::test_default();
+        let mut timer = Timer::new();
+
+        let executor_arc: Arc<dyn crate::executor::ProcessExecutor> =
+            Arc::new(crate::executor::MockProcessExecutor::new());
+
+        let runtime = PipelineRuntime {
+            timer: &mut timer,
+            logger: &logger,
+            colors: &colors,
+            config: &config,
+            executor: executor_arc.as_ref(),
+            executor_arc: Arc::clone(&executor_arc),
+            workspace: &workspace,
+        };
+
+        let done = Arc::new(AtomicBool::new(false));
+        std::thread::scope(|scope| {
+            let done_for_stopper = Arc::clone(&done);
+            let controller_for_stopper = Arc::clone(&controller);
+            scope.spawn(move || {
+                let deadline = Instant::now() + Duration::from_millis(300);
+                while Instant::now() < deadline {
+                    if done_for_stopper.load(Ordering::Acquire) {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                controller_for_stopper.store(false, Ordering::Release);
+            });
+
+            let start = Instant::now();
+            let result = wait_for_completion_and_collect_stderr(
+                Arc::clone(&child_arc),
+                &mut stderr_join_handle,
+                &mut monitor_handle,
+                &runtime,
+            );
+            let elapsed = start.elapsed();
+
+            done.store(true, Ordering::Release);
+            controller.store(false, Ordering::Release);
+
+            // The desired behavior is to return promptly on monitor panic (treat as timeout).
+            assert!(
+                elapsed < Duration::from_millis(150),
+                "wait loop returned too late ({elapsed:?}); monitor panic was likely swallowed"
+            );
+
+            let (exit_code, _stderr, monitor_result) =
+                result.expect("expected wait_for_completion to return Ok");
+            assert_eq!(exit_code, super::super::SIGTERM_EXIT_CODE);
+            assert!(matches!(
+                monitor_result,
+                Some(MonitorResult::TimedOut { .. })
+            ));
+        });
+    }
 }
