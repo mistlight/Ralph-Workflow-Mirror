@@ -2,6 +2,7 @@
 //
 // Contains AgentChainState and backoff computation helpers.
 
+use serde::de::Deserializer;
 use sha2::{Digest, Sha256};
 
 /// Agent fallback chain state (explicit, not loop indices).
@@ -31,12 +32,18 @@ pub struct AgentChainState {
     #[serde(default)]
     pub backoff_pending_ms: Option<u64>,
     pub current_role: AgentRole,
-    /// Prompt context preserved from rate-limited agent for continuation.
+    /// Prompt context preserved from a rate-limited agent for continuation.
     ///
-    /// When an agent hits 429, we save the prompt here so the next agent
-    /// can continue the same work instead of starting from scratch.
-    #[serde(default)]
-    pub rate_limit_continuation_prompt: Option<String>,
+    /// When an agent hits 429, we save the prompt here so the next agent can
+    /// continue the SAME role/task instead of starting from scratch.
+    ///
+    /// IMPORTANT: This must be role-scoped to prevent cross-task contamination
+    /// (e.g., a developer continuation prompt overriding an analysis prompt).
+    #[serde(
+        default,
+        deserialize_with = "deserialize_rate_limit_continuation_prompt"
+    )]
+    pub rate_limit_continuation_prompt: Option<RateLimitContinuationPrompt>,
     /// Session ID from the last agent response.
     ///
     /// Used for XSD retry to continue with the same session when possible.
@@ -44,6 +51,38 @@ pub struct AgentChainState {
     /// that can be passed back for continuation.
     #[serde(default)]
     pub last_session_id: Option<String>,
+}
+
+/// Role-scoped continuation prompt captured from a rate limit (429).
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct RateLimitContinuationPrompt {
+    pub role: AgentRole,
+    pub prompt: String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RateLimitContinuationPromptRepr {
+    LegacyString(String),
+    Structured { role: AgentRole, prompt: String },
+}
+
+fn deserialize_rate_limit_continuation_prompt<'de, D>(
+    deserializer: D,
+) -> Result<Option<RateLimitContinuationPrompt>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<RateLimitContinuationPromptRepr>::deserialize(deserializer)?;
+    Ok(opt.map(|repr| match repr {
+        RateLimitContinuationPromptRepr::LegacyString(prompt) => RateLimitContinuationPrompt {
+            role: AgentRole::Developer,
+            prompt,
+        },
+        RateLimitContinuationPromptRepr::Structured { role, prompt } => {
+            RateLimitContinuationPrompt { role, prompt }
+        }
+    }))
 }
 
 const fn default_retry_delay_ms() -> u64 {
@@ -255,7 +294,23 @@ impl AgentChainState {
     /// can continue the same work.
     pub fn switch_to_next_agent_with_prompt(&self, prompt: Option<String>) -> Self {
         let mut next = self.switch_to_next_agent();
-        next.rate_limit_continuation_prompt = prompt;
+        // Back-compat: older callers didn't track role. Preserve prompt only.
+        next.rate_limit_continuation_prompt = prompt.map(|p| RateLimitContinuationPrompt {
+            role: next.current_role,
+            prompt: p,
+        });
+        next
+    }
+
+    /// Switch to next agent after rate limit, preserving prompt for continuation (role-scoped).
+    pub fn switch_to_next_agent_with_prompt_for_role(
+        &self,
+        role: AgentRole,
+        prompt: Option<String>,
+    ) -> Self {
+        let mut next = self.switch_to_next_agent();
+        next.rate_limit_continuation_prompt =
+            prompt.map(|p| RateLimitContinuationPrompt { role, prompt: p });
         next
     }
 

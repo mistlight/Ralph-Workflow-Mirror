@@ -1,6 +1,7 @@
 //! Analysis agent effect handlers.
 
 use crate::agents::AgentRole;
+use crate::files::write_diff_backup_with_workspace;
 use crate::git_helpers::get_git_diff_from_start_with_workspace;
 use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
@@ -44,12 +45,31 @@ impl MainEffectHandler {
         let diff_content = get_git_diff_from_start_with_workspace(ctx.workspace)
             .context("Failed to generate git diff for analysis")?;
 
+        // Best-effort: persist diff for prompt materialization fallbacks.
+        // Missing `.agent/DIFF.backup` must not be fatal.
+        let _ = write_diff_backup_with_workspace(ctx.workspace, &diff_content);
+
         // Generate analysis prompt
-        let prompt = crate::prompts::analysis::generate_analysis_prompt(
+        let mut prompt = crate::prompts::analysis::generate_analysis_prompt(
             &plan_content,
             &diff_content,
             iteration,
         );
+
+        // XSD retry context: if the last analysis XML was invalid, instruct the agent to
+        // read the schema error and previous invalid output from workspace files.
+        if self.state.continuation.xsd_retry_pending {
+            let xsd_error_path = ".agent/tmp/development_xsd_error.txt";
+            let last_output_path = ".agent/tmp/development_result.xml";
+            prompt = format!(
+                "## XSD Retry Note\n\n\
+Your previous XML output failed XSD validation.\n\
+- Read the validation error: {xsd_error_path}\n\
+- Read your previous invalid output: {last_output_path}\n\
+Then produce a corrected development_result.xml that conforms to the schema.\n\n\
+{prompt}"
+            );
+        }
 
         // Get current agent from chain
         let agent = self
@@ -60,7 +80,7 @@ impl MainEffectHandler {
             .unwrap_or_else(|| ctx.developer_agent.to_string());
 
         // Invoke agent with analysis role
-        let mut result = self.invoke_agent(ctx, AgentRole::Developer, agent, None, prompt)?;
+        let mut result = self.invoke_agent(ctx, AgentRole::Analysis, agent, None, prompt)?;
 
         // Emit AnalysisAgentInvoked event if agent invocation succeeded
         if result.additional_events.iter().any(|e| {

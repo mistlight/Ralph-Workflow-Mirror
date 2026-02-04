@@ -1,6 +1,6 @@
 // Analysis agent system prompt generation.
 //
-// Generates prompts for the analysis agent to produce objective assessment
+// Generates prompts for the analysis agent to produce an objective assessment
 // of development progress by comparing git diff against PLAN.md.
 //
 // TIMING: Analysis agent runs after EVERY development iteration, not just
@@ -26,9 +26,40 @@
 ///
 /// Returns the complete prompt for the analysis agent.
 pub fn generate_analysis_prompt(plan_content: &str, diff_content: &str, iteration: u32) -> String {
+    use crate::prompts::content_reference::{DiffContentReference, PlanContentReference};
+    use std::path::Path;
+
+    let plan_ref = PlanContentReference::from_plan(
+        plan_content.to_string(),
+        Path::new(".agent/PLAN.md"),
+        Some(Path::new(".agent/tmp/plan.xml")),
+    );
+    let diff_ref = DiffContentReference::from_diff(
+        diff_content.to_string(),
+        "",
+        Path::new(".agent/DIFF.backup"),
+    );
+
+    let plan_rendered = plan_ref.render_for_template();
+    let diff_rendered = diff_ref.render_for_template();
+
+    // TODO THIS NEEDS to be migrated to .txt this is not conforming, prompt strings should almost
+    // never be allowed since users won't be able to edit them when we add prompt editing in the
+    // future
+    //
+    // *important* we need to get the status no matter what, if working tree is analysis is needed,
+    // we NEED to do so
+    //
+    // *important* working tree is not off limits for a reason btw if diff is not available to ensure
+    // continuity
     format!(
         r#"You are an independent code analysis agent. Your task is to objectively assess
-whether the code changes align with the original plan.
+whether the code changes align with the original plan. 
+
+You are in read only mode EXCEPT for outputting the required xml at .agent/tmp/development_result.xml
+
+IMPORTANT: Base your assessment strictly on the explicit PLAN + DIFF inputs below.
+If Diff is unavailable use the current working tree
 
 PLAN (from PLAN.md):
 {}
@@ -48,6 +79,8 @@ IMPORTANT - If git diff is EMPTY:
 - If changes were expected but not made (dev agent failed): status="failed"
 - Always explain in summary WHY there are no changes
 
+IMPORTANT - If you cannot access the DIFF content (inline or referenced file), use the current working tree
+
 Output your analysis using the development_result.xml format:
 <ralph-development-result>
   <ralph-status>completed|partial|failed</ralph-status>
@@ -61,19 +94,16 @@ Write the XML to .agent/tmp/development_result.xml
 IMPORTANT: Your XML MUST conform to the XSD schema at .agent/tmp/development_result.xsd
 to ensure it can be parsed correctly. The schema is available for reference if needed.
 
-NOTE: You are analyzing COMPLETED work, not doing the work yourself. Base your
-assessment on the git diff vs the plan if possible. 
-If git diff does not exist, broken or does not provide enough context, use the
-current working tree to determine the status against the plan. 
 This is iteration {} (for reference only).
 "#,
-        plan_content, diff_content, iteration
+        plan_rendered, diff_rendered, iteration
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prompts::content_reference::MAX_INLINE_CONTENT_SIZE;
 
     #[test]
     fn test_generate_analysis_prompt_includes_all_parts() {
@@ -102,6 +132,38 @@ mod tests {
         assert!(prompt.contains("If git diff is EMPTY"));
         assert!(prompt.contains("no changes were needed"));
         assert!(prompt.contains("changes were expected but not made"));
+    }
+
+    #[test]
+    fn test_generate_analysis_prompt_uses_materialized_references_when_plan_is_oversize() {
+        let plan = "x".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+        let diff = "small diff";
+        let prompt = generate_analysis_prompt(&plan, diff, 0);
+
+        assert!(
+            prompt.contains("[PLAN too large to embed"),
+            "expected plan to be referenced when oversize"
+        );
+        assert!(
+            !prompt.contains(&plan),
+            "oversize plan must not be inlined into the prompt"
+        );
+    }
+
+    #[test]
+    fn test_generate_analysis_prompt_uses_materialized_references_when_diff_is_oversize() {
+        let plan = "small plan";
+        let diff = "d".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+        let prompt = generate_analysis_prompt(plan, &diff, 0);
+
+        assert!(
+            prompt.contains("[DIFF too large to embed"),
+            "expected diff to be referenced when oversize"
+        );
+        assert!(
+            !prompt.contains(&diff),
+            "oversize diff must not be inlined into the prompt"
+        );
     }
 
     #[test]

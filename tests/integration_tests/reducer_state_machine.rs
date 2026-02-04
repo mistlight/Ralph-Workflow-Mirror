@@ -481,7 +481,12 @@ fn test_rate_limit_error_triggers_agent_fallback() {
         // Prompt context should be preserved
         assert_eq!(
             new_state.agent_chain.rate_limit_continuation_prompt,
-            Some("continue work".to_string())
+            Some(
+                ralph_workflow::reducer::state::RateLimitContinuationPrompt {
+                    role: AgentRole::Developer,
+                    prompt: "continue work".to_string(),
+                }
+            )
         );
     });
 }

@@ -253,3 +253,65 @@ fn test_analysis_does_not_increment_iteration_counter() {
         );
     });
 }
+
+/// Test that starting a new continuation attempt resets analysis tracking.
+///
+/// Regression for a bug where continuation attempts would re-run CleanupDevelopmentXml,
+/// delete `.agent/tmp/development_result.xml`, and then SKIP analysis because
+/// `analysis_agent_invoked_iteration` was still set. That caused missing XML and
+/// validation failures.
+#[test]
+fn test_continuation_triggered_resets_analysis_invoked_tracking() {
+    with_default_timeout(|| {
+        use ralph_workflow::reducer::state::DevelopmentStatus;
+
+        // Given: A state where analysis already ran for iteration 0
+        let mut state = PipelineState::initial(3, 0);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 0;
+        state.analysis_agent_invoked_iteration = Some(0);
+
+        // When: Continuation is triggered (new dev-agent invocation will happen in same iteration)
+        let event = PipelineEvent::Development(DevelopmentEvent::ContinuationTriggered {
+            iteration: 0,
+            status: DevelopmentStatus::Partial,
+            summary: "work incomplete".to_string(),
+            files_changed: None,
+            next_steps: Some("continue".to_string()),
+        });
+        let new_state = reduce(state, event);
+
+        // Then: analysis invocation marker must be reset so analysis runs again after the next
+        // development-agent invocation.
+        assert_eq!(
+            new_state.analysis_agent_invoked_iteration, None,
+            "ContinuationTriggered must reset analysis tracking"
+        );
+    });
+}
+
+/// Test that XSD retry during Development targets analysis (not dev prompt).
+///
+/// Regression: XSD retry used to re-run PrepareDevelopmentPrompt, which re-ran the
+/// entire dev flow even though the invalid XML is produced by the analysis agent.
+#[test]
+fn test_development_xsd_retry_reinvokes_analysis_agent() {
+    with_default_timeout(|| {
+        // Given: Development phase with an XSD retry pending
+        let mut state = PipelineState::initial(1, 0);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 0;
+        state.continuation.xsd_retry_pending = true;
+        state.continuation.xsd_retry_count = 1;
+
+        // When: Determining next effect
+        let effect = determine_next_effect(&state);
+
+        // Then: Should re-invoke analysis agent directly
+        assert!(
+            matches!(effect, Effect::InvokeAnalysisAgent { iteration: 0 }),
+            "expected XSD retry to invoke analysis agent, got {:?}",
+            effect
+        );
+    });
+}

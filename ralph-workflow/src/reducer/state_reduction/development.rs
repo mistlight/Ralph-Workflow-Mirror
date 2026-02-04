@@ -82,6 +82,10 @@ pub(super) fn reduce_development_event(
         },
         DevelopmentEvent::AnalysisAgentInvoked { iteration } => PipelineState {
             analysis_agent_invoked_iteration: Some(iteration),
+            // If analysis was invoked as part of an XSD retry cycle, clear the retry flag here
+            // so orchestration can proceed to Extract/Validate instead of repeatedly deriving
+            // the XSD retry effect.
+            continuation: state.continuation.clear_xsd_retry_pending(),
             ..state
         },
         DevelopmentEvent::XmlExtracted { iteration } => PipelineState {
@@ -218,6 +222,7 @@ pub(super) fn reduce_development_event(
                         development_prompt_prepared_iteration: None,
                         development_xml_cleaned_iteration: None,
                         development_agent_invoked_iteration: None,
+                        analysis_agent_invoked_iteration: None,
                         development_xml_extracted_iteration: None,
                         development_validated_outcome: None,
                         development_xml_archived_iteration: None,
@@ -237,6 +242,7 @@ pub(super) fn reduce_development_event(
                         development_prompt_prepared_iteration: None,
                         development_xml_cleaned_iteration: None,
                         development_agent_invoked_iteration: None,
+                        analysis_agent_invoked_iteration: None,
                         development_xml_extracted_iteration: None,
                         development_validated_outcome: None,
                         development_xml_archived_iteration: None,
@@ -278,6 +284,10 @@ pub(super) fn reduce_development_event(
                 development_prompt_prepared_iteration: None,
                 development_xml_cleaned_iteration: None,
                 development_agent_invoked_iteration: None,
+                // IMPORTANT: analysis must run after EVERY development-agent invocation.
+                // Reset this marker so the orchestrator will invoke analysis for the new
+                // continuation attempt within the same iteration.
+                analysis_agent_invoked_iteration: None,
                 development_xml_extracted_iteration: None,
                 development_validated_outcome: None,
                 development_xml_archived_iteration: None,
@@ -339,10 +349,15 @@ pub(super) fn reduce_development_event(
                         same_agent_retry_reason: None,
                         ..state.continuation
                     },
-                    development_context_prepared_iteration: None,
-                    development_prompt_prepared_iteration: None,
-                    development_xml_cleaned_iteration: None,
-                    development_agent_invoked_iteration: None,
+                    // IMPORTANT: XSD retry is for the analysis agent's XML output.
+                    // Preserve developer-agent progress and retry analysis only.
+                    development_context_prepared_iteration: state
+                        .development_context_prepared_iteration,
+                    development_prompt_prepared_iteration: state
+                        .development_prompt_prepared_iteration,
+                    development_xml_cleaned_iteration: state.development_xml_cleaned_iteration,
+                    development_agent_invoked_iteration: state.development_agent_invoked_iteration,
+                    analysis_agent_invoked_iteration: None,
                     development_xml_extracted_iteration: None,
                     development_validated_outcome: None,
                     development_xml_archived_iteration: None,
@@ -357,13 +372,18 @@ pub(super) fn reduce_development_event(
                         invalid_output_attempts: attempt + 1,
                         xsd_retry_count: new_xsd_count,
                         xsd_retry_pending: true,
-                        xsd_retry_session_reuse_pending: false,
+                        // Reuse last session id for analysis XSD retry when available.
+                        xsd_retry_session_reuse_pending: true,
                         ..state.continuation
                     },
-                    development_context_prepared_iteration: None,
-                    development_prompt_prepared_iteration: None,
-                    development_xml_cleaned_iteration: None,
-                    development_agent_invoked_iteration: None,
+                    // Preserve developer-agent progress and retry analysis only.
+                    development_context_prepared_iteration: state
+                        .development_context_prepared_iteration,
+                    development_prompt_prepared_iteration: state
+                        .development_prompt_prepared_iteration,
+                    development_xml_cleaned_iteration: state.development_xml_cleaned_iteration,
+                    development_agent_invoked_iteration: state.development_agent_invoked_iteration,
+                    analysis_agent_invoked_iteration: None,
                     development_xml_extracted_iteration: None,
                     development_validated_outcome: None,
                     development_xml_archived_iteration: None,

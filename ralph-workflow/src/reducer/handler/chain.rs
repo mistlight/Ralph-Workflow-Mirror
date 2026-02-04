@@ -36,6 +36,7 @@ impl MainEffectHandler {
                         )));
                     }
                 }
+                AgentRole::Analysis => ctx.developer_agent.to_string(),
             };
             agents.push(fallback_agent);
         }
