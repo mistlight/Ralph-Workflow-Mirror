@@ -1,4 +1,4 @@
-use super::*;
+use super::environment::sanitize_command_env;
 use std::collections::HashMap;
 
 const ANTHROPIC_ENV_VARS_TO_SANITIZE: &[&str] = &[

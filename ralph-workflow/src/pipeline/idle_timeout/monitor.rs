@@ -13,7 +13,16 @@ use std::time::Duration;
 pub enum MonitorResult {
     /// Process completed normally (not killed by monitor).
     ProcessCompleted,
-    /// Process was killed due to idle timeout.
+    /// Idle timeout was exceeded and termination was initiated.
+    ///
+    /// In the common case the subprocess exits promptly after SIGTERM/SIGKILL,
+    /// and by the time this result is returned the process is already gone.
+    ///
+    /// In pathological cases (e.g. a stuck/unresponsive subprocess or one that
+    /// does not terminate even after repeated SIGKILL attempts), the monitor may
+    /// return `TimedOut` after a bounded enforcement window so the pipeline can
+    /// regain control. When that happens, a background reaper continues best-effort
+    /// SIGKILL attempts until the process is observed dead.
     ///
     /// The `escalated` flag indicates whether SIGKILL/taskkill was required:
     /// - `false`: Process terminated after SIGTERM within grace period
@@ -78,13 +87,19 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
     struct TimeoutEnforcementState {
         pid: u32,
         escalated: bool,
-        triggered_at: std::time::Instant,
         last_sigkill_sent_at: Option<std::time::Instant>,
+        triggered_at: std::time::Instant,
     }
 
     let mut timeout_triggered: Option<TimeoutEnforcementState> = None;
 
     loop {
+        // Fast-path teardown: if the process completed and we have not already
+        // triggered idle-timeout enforcement, stop immediately.
+        if timeout_triggered.is_none() && should_stop.load(Ordering::Acquire) {
+            return MonitorResult::ProcessCompleted;
+        }
+
         std::thread::sleep(check_interval);
 
         if let Some(mut state) = timeout_triggered.take() {
@@ -115,11 +130,32 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                         }
                     }
 
+                    // After a bounded enforcement window, return TimedOut so the
+                    // main pipeline can regain control. A detached reaper keeps
+                    // trying to kill until the process is observed dead.
                     if now.duration_since(state.triggered_at) >= kill_config.post_sigkill_hard_cap()
+                        && state.escalated
                     {
-                        if state.escalated {
-                            let _ = force_kill_best_effort(state.pid, executor.as_ref());
-                        }
+                        let child_for_reaper = Arc::clone(&child);
+                        let executor_for_reaper = Arc::clone(&executor);
+                        let config_for_reaper = kill_config;
+                        let pid = state.pid;
+                        std::thread::spawn(move || loop {
+                            let status = {
+                                let mut locked_child = child_for_reaper.lock().unwrap();
+                                locked_child.try_wait()
+                            };
+
+                            match status {
+                                Ok(Some(_)) | Err(_) => return,
+                                Ok(None) => {
+                                    let _ =
+                                        force_kill_best_effort(pid, executor_for_reaper.as_ref());
+                                    std::thread::sleep(config_for_reaper.sigkill_resend_interval());
+                                }
+                            }
+                        });
+
                         return MonitorResult::TimedOut {
                             escalated: state.escalated,
                         };
@@ -129,10 +165,6 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
                     continue;
                 }
             }
-        }
-
-        if should_stop.load(Ordering::Acquire) {
-            return MonitorResult::ProcessCompleted;
         }
 
         if !is_idle_timeout_exceeded(&activity_timestamp, timeout_secs) {
@@ -153,12 +185,11 @@ pub fn monitor_idle_timeout_with_interval_and_kill_config(
             KillResult::TerminatedByTerm => return MonitorResult::TimedOut { escalated: false },
             KillResult::TerminatedByKill => return MonitorResult::TimedOut { escalated: true },
             KillResult::SignalsSentAwaitingExit { escalated } => {
-                let now = std::time::Instant::now();
                 timeout_triggered = Some(TimeoutEnforcementState {
                     pid: child_id,
                     escalated,
-                    triggered_at: now,
-                    last_sigkill_sent_at: escalated.then_some(now),
+                    triggered_at: std::time::Instant::now(),
+                    last_sigkill_sent_at: escalated.then_some(std::time::Instant::now()),
                 });
             }
             KillResult::Failed => {

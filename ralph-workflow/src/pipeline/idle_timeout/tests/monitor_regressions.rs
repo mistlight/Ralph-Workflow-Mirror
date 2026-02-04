@@ -365,7 +365,7 @@ fn monitor_succeeds_with_sigterm_when_process_terminates() {
 
 #[test]
 #[cfg(unix)]
-fn monitor_does_not_report_timeout_if_process_still_alive_after_force_kill() {
+fn monitor_reports_timeout_even_if_process_still_alive_after_force_kill_hard_cap() {
     use crate::executor::MockAgentChild;
 
     let (mock_child, controller) = MockAgentChild::new_running(0);
@@ -404,11 +404,35 @@ fn monitor_does_not_report_timeout_if_process_still_alive_after_force_kill() {
         }
     });
 
-    let received = rx.recv_timeout(Duration::from_secs(2));
+    // The monitor returns TimedOut after a bounded enforcement window so the
+    // pipeline can regain control, even if the process is still running.
+    let result = rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("expected monitor to return within bounded time");
+    assert_eq!(result, MonitorResult::TimedOut { escalated: true });
+
+    assert!(
+        controller.load(Ordering::Acquire),
+        "expected process to still be running"
+    );
+
+    // Ensure we did not give up: a background reaper keeps sending SIGKILL.
+    let kill_calls_before = executor
+        .execute_calls_for("kill")
+        .iter()
+        .filter(|(_, args, _, _)| args.iter().any(|a| a == "-KILL"))
+        .count();
+    thread::sleep(Duration::from_millis(50));
+    let kill_calls_after = executor
+        .execute_calls_for("kill")
+        .iter()
+        .filter(|(_, args, _, _)| args.iter().any(|a| a == "-KILL"))
+        .count();
+    assert!(
+        kill_calls_after > kill_calls_before,
+        "expected background reaper to continue sending SIGKILL"
+    );
 
     controller.store(false, Ordering::Release);
     let _ = monitor_handle.join();
-
-    let result = received.expect("expected monitor to return within bounded time");
-    assert_eq!(result, MonitorResult::TimedOut { escalated: true });
 }

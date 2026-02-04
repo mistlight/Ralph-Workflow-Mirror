@@ -71,3 +71,37 @@ fn test_collect_stderr_with_cap_and_drain_retries_on_wouldblock() {
         .expect("stderr collector should not fail on WouldBlock");
     assert!(out.is_empty());
 }
+
+#[test]
+fn test_cancel_and_join_stderr_collector_does_not_drop_handle_on_timeout() {
+    // Regression test: if join times out, we must not drop the JoinHandle.
+    // Dropping detaches a potentially-blocked thread, which can leak resources
+    // until EOF.
+    let cancel = Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_for_thread = Arc::clone(&stop);
+
+    let mut join_handle = Some(std::thread::spawn(move || -> io::Result<String> {
+        // Simulate a blocked stderr read that does not observe cancellation.
+        while !stop_for_thread.load(Ordering::Acquire) {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        Ok(String::new())
+    }));
+
+    super::super::stderr_collector::cancel_and_join_stderr_collector(
+        &cancel,
+        &mut join_handle,
+        std::time::Duration::from_millis(10),
+    );
+
+    assert!(
+        join_handle.is_some(),
+        "expected JoinHandle to be preserved when join times out"
+    );
+
+    stop.store(true, Ordering::Release);
+    if let Some(h) = join_handle.take() {
+        let _ = h.join();
+    }
+}

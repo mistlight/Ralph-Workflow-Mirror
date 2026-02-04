@@ -192,6 +192,23 @@ pub(super) fn run_with_agent_spawn(
             &mut stderr_join_handle,
             std::time::Duration::from_millis(250),
         );
+
+        // Try again with a larger window. After idle timeout, we prefer to join
+        // and avoid leaking a live stderr collector thread.
+        if stderr_join_handle.is_some() {
+            super::stderr_collector::cancel_and_join_stderr_collector(
+                &stderr_cancel,
+                &mut stderr_join_handle,
+                std::time::Duration::from_secs(2),
+            );
+        }
+
+        if stderr_join_handle.is_some() {
+            runtime
+                .logger
+                .warn("Stderr collector thread did not exit after cancellation; detaching thread");
+            let _ = stderr_join_handle.take();
+        }
     }
 
     monitor_should_stop.store(true, Ordering::Release);

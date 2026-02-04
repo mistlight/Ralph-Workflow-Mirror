@@ -89,6 +89,18 @@ pub(super) fn cleanup_after_agent_failure(
         std::time::Duration::from_millis(250),
     );
 
+    if stderr_join_handle.is_some() {
+        super::stderr_collector::cancel_and_join_stderr_collector(
+            stderr_cancel,
+            stderr_join_handle,
+            std::time::Duration::from_secs(2),
+        );
+    }
+
+    if stderr_join_handle.is_some() {
+        let _ = stderr_join_handle.take();
+    }
+
     if let Some(handle) = monitor_handle.take() {
         let _ = handle.join();
     }

@@ -78,7 +78,5 @@ pub(super) fn cancel_and_join_stderr_collector(
         .unwrap_or(false);
     if finished {
         let _ = stderr_join_handle.take().and_then(|h| h.join().ok());
-    } else {
-        let _ = stderr_join_handle.take();
     }
 }

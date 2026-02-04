@@ -7,6 +7,24 @@ use super::{AgentChildHandle, AgentSpawnConfig, ProcessExecutor, ProcessOutput, 
 use std::io;
 use std::path::Path;
 
+#[cfg(unix)]
+fn set_nonblocking_fd(fd: std::os::unix::io::RawFd) -> io::Result<()> {
+    // Make the file descriptor non-blocking so readers can poll/cancel without
+    // getting stuck in a blocking read().
+    //
+    // Safety: fcntl is called with a valid fd owned by this process.
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        if flags < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+
 /// Real process executor that uses `std::process::Command`.
 ///
 /// This is the production implementation that spawns actual processes.
@@ -103,6 +121,14 @@ impl ProcessExecutor for RealProcessExecutor {
             .stderr
             .take()
             .ok_or_else(|| io::Error::other("Failed to capture stderr"))?;
+
+        // The stderr collector thread relies on non-blocking reads so it can
+        // be cancelled promptly (idle timeout, early failures).
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            set_nonblocking_fd(stderr.as_raw_fd())?;
+        }
 
         Ok(AgentChildHandle {
             stdout: Box::new(stdout),

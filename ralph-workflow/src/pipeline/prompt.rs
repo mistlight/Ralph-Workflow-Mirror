@@ -15,7 +15,6 @@ mod streaming;
 mod streaming_line_reader;
 mod types;
 
-pub use environment::sanitize_command_env;
 pub use run::run_with_prompt;
 pub use types::{PipelineRuntime, PromptCommand};
 

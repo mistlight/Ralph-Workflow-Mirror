@@ -47,6 +47,9 @@ chrono = "0.4"
 # Environment and process management
 which = "6.0"
 
+# Low-level OS helpers (used for non-blocking pipes on Unix)
+libc = "0.2"
+
 # Cross-platform home/config directory resolution
 dirs = "5.0"
 

@@ -13,8 +13,10 @@ pub(crate) enum KillResult {
     TerminatedByKill,
     /// Kill signals were sent successfully, but the process was not confirmed exited yet.
     ///
-    /// The monitor should continue polling for exit and report `TimedOut` once
-    /// the process is observed dead.
+    /// The monitor should continue polling for exit. It may return `TimedOut`
+    /// after a bounded enforcement window so the pipeline can regain control,
+    /// but it must not silently stop enforcing termination; a background reaper
+    /// should continue best-effort SIGKILL/taskkill attempts until exit is observed.
     SignalsSentAwaitingExit { escalated: bool },
     /// Kill attempt failed (process may have already exited).
     Failed,
