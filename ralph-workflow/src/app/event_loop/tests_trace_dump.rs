@@ -279,6 +279,10 @@ fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
         workspace.exists(Path::new(super::EVENT_LOOP_TRACE_PATH)),
         "expected trace file to be dumped on unrecoverable handler error"
     );
+    assert!(
+        workspace.exists(Path::new(".agent/tmp/completion_marker")),
+        "expected completion marker to be written on unrecoverable handler error"
+    );
 }
 
 #[test]

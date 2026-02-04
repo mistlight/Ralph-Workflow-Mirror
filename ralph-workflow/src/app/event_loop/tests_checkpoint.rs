@@ -187,6 +187,11 @@ fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
         result.completed,
         "Interrupted+checkpoint is terminal and should be reported as completed (matches state.is_complete())"
     );
+    assert_eq!(
+        result.final_phase,
+        PipelinePhase::Interrupted,
+        "event loop should report the final phase"
+    );
     assert!(
         state.is_complete(),
         "State.is_complete() should return true for Interrupted+checkpoint"

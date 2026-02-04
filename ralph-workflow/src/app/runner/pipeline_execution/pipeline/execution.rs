@@ -410,7 +410,9 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     }
 
     // Save Complete checkpoint before clearing (for idempotent resume)
-    if config.features.checkpoint_enabled {
+    if config.features.checkpoint_enabled
+        && should_write_complete_checkpoint(loop_result.final_phase)
+    {
         let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::Complete,

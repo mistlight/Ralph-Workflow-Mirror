@@ -5,6 +5,7 @@
 //! run the pipeline using the event-sourced architecture from RFC-004.
 
 use crate::phases::PhaseContext;
+use crate::reducer::event::PipelinePhase;
 use crate::reducer::state::ContinuationState;
 use crate::reducer::{
     determine_next_effect, reduce, EffectHandler, MainEffectHandler, PipelineState,
@@ -59,6 +60,8 @@ pub struct EventLoopResult {
     pub completed: bool,
     /// Total events processed.
     pub events_processed: usize,
+    /// Final reducer phase when the loop stopped.
+    pub final_phase: PipelinePhase,
 }
 
 const EVENT_LOOP_TRACE_PATH: &str = ".agent/tmp/event_loop_trace.jsonl";
@@ -230,6 +233,27 @@ fn dump_event_loop_trace(
     }
 }
 
+fn write_completion_marker_on_error(ctx: &mut PhaseContext<'_>, err: &anyhow::Error) -> bool {
+    if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
+        ctx.logger.error(&format!(
+            "Failed to create completion marker directory: {err}"
+        ));
+        return false;
+    }
+
+    let marker_path = Path::new(".agent/tmp/completion_marker");
+    let content = format!("failure\nUnrecoverable handler error: {err}");
+    match ctx.workspace.write(marker_path, &content) {
+        Ok(()) => true,
+        Err(err) => {
+            ctx.logger.error(&format!(
+                "Failed to write completion marker for unrecoverable handler error: {err}"
+            ));
+            false
+        }
+    }
+}
+
 fn run_event_loop_with_handler_traced<'ctx, H>(
     ctx: &mut PhaseContext<'_>,
     initial_state: Option<PipelineState>,
@@ -285,6 +309,7 @@ where
                     // Truly unrecoverable error - cannot continue
                     let dumped =
                         dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
+                    let marker_written = write_completion_marker_on_error(ctx, &err);
                     if dumped {
                         ctx.logger.error(&format!(
                             "Event loop encountered unrecoverable handler error (trace: {EVENT_LOOP_TRACE_PATH})"
@@ -297,6 +322,10 @@ where
                         "Event loop exiting: reason=unrecoverable_error, phase={:?}, checkpoint_saved_count={}, events_processed={}",
                         state.phase, state.checkpoint_saved_count, events_processed
                     ));
+                    if marker_written {
+                        ctx.logger
+                            .info("Completion marker written for unrecoverable handler error");
+                    }
                     return Err(err);
                 }
             }
@@ -321,6 +350,7 @@ where
                 return Ok(EventLoopResult {
                     completed: false,
                     events_processed,
+                    final_phase: state.phase,
                 });
             }
         };
@@ -402,6 +432,7 @@ where
     Ok(EventLoopResult {
         completed,
         events_processed,
+        final_phase: state.phase,
     })
 }
 

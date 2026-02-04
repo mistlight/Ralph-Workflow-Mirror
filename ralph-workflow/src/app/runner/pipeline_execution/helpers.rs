@@ -322,3 +322,24 @@ pub fn handle_rebase_only(
         }
     }
 }
+
+fn should_write_complete_checkpoint(final_phase: crate::reducer::event::PipelinePhase) -> bool {
+    matches!(final_phase, crate::reducer::event::PipelinePhase::Complete)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_write_complete_checkpoint;
+    use crate::reducer::event::PipelinePhase;
+
+    #[test]
+    fn test_should_write_complete_checkpoint_only_on_complete_phase() {
+        assert!(should_write_complete_checkpoint(PipelinePhase::Complete));
+        assert!(!should_write_complete_checkpoint(
+            PipelinePhase::Interrupted
+        ));
+        assert!(!should_write_complete_checkpoint(
+            PipelinePhase::AwaitingDevFix
+        ));
+    }
+}
