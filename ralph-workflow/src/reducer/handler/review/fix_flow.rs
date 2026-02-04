@@ -22,19 +22,28 @@ impl MainEffectHandler {
             })?;
         }
 
-        let prompt_content = ctx
-            .workspace
-            .read(Path::new(".agent/PROMPT.md.backup"))
-            .unwrap_or_default();
+        let prompt_content = match ctx.workspace.read(Path::new(".agent/PROMPT.md.backup")) {
+            Ok(s) => s,
+            Err(_) => {
+                ctx.logger.warn(
+                    "Missing .agent/PROMPT.md.backup; embedding sentinel in fix prompt input",
+                );
+                "[MISSING INPUT: .agent/PROMPT.md.backup]\n\nNo PROMPT backup was found. Continuing without original request context.\n".to_string()
+            }
+        };
         // Use sentinel PLAN content when missing (consistent with review phase)
         let plan_content = ctx
             .workspace
             .read(Path::new(".agent/PLAN.md"))
             .unwrap_or_else(|_| Self::sentinel_plan_content(ctx.config.isolation_mode));
-        let issues_content = ctx
-            .workspace
-            .read(Path::new(".agent/ISSUES.md"))
-            .unwrap_or_default();
+        let issues_content = match ctx.workspace.read(Path::new(".agent/ISSUES.md")) {
+            Ok(s) => s,
+            Err(_) => {
+                ctx.logger
+                    .warn("Missing .agent/ISSUES.md; embedding sentinel in fix prompt input");
+                "[MISSING INPUT: .agent/ISSUES.md]\n\nNo ISSUES.md was found. This may indicate a cleaned workspace or a skipped review pass.\n".to_string()
+            }
+        };
 
         let continuation_state = &self.state.continuation;
         let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);

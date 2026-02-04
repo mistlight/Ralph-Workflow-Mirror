@@ -45,14 +45,37 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::ValidatedPlanningMarkdownMissing { .. }
         | ErrorEvent::ValidatedDevelopmentOutcomeMissing { .. }
         | ErrorEvent::ValidatedReviewOutcomeMissing { .. }
-        | ErrorEvent::ValidatedFixOutcomeMissing { .. }
-        | ErrorEvent::FixPromptMissing
-        | ErrorEvent::AgentNotFound { .. } => {
+        | ErrorEvent::ValidatedFixOutcomeMissing { .. } => {
             // Invariant violations: terminate cleanly by transitioning to Interrupted.
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);
             new_state.phase = PipelinePhase::Interrupted;
+            new_state
+        }
+
+        // Fix prompt file missing is recoverable - tmp artifacts can be cleaned between checkpoints.
+        // Clear the "prepared" flag so orchestration re-runs PrepareFixPrompt.
+        ErrorEvent::FixPromptMissing => {
+            let mut new_state = state.clone();
+            new_state.fix_prompt_prepared_pass = None;
+            new_state
+        }
+
+        // Unknown agent lookup is recoverable - advance the agent chain to preserve
+        // unattended-mode fallback behavior.
+        ErrorEvent::AgentNotFound { .. } => {
+            let mut new_state = state.clone();
+            new_state.agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
+            new_state.continuation = crate::reducer::state::ContinuationState {
+                xsd_retry_count: 0,
+                xsd_retry_pending: false,
+                xsd_retry_session_reuse_pending: false,
+                same_agent_retry_count: 0,
+                same_agent_retry_pending: false,
+                same_agent_retry_reason: None,
+                ..state.continuation.clone()
+            };
             new_state
         }
 
@@ -135,10 +158,7 @@ mod tests {
     fn test_reduce_missing_inputs_errors_transition_to_interrupted() {
         let state = PipelineState::initial_with_continuation(1, 1, ContinuationState::default());
 
-        let errors = vec![
-            ErrorEvent::ReviewInputsNotMaterialized { pass: 1 },
-            ErrorEvent::FixPromptMissing,
-        ];
+        let errors = vec![ErrorEvent::ReviewInputsNotMaterialized { pass: 1 }];
 
         for error in errors {
             let new_state = reduce_error(&state, &error);
@@ -148,6 +168,47 @@ mod tests {
                 crate::reducer::event::PipelinePhase::Interrupted
             );
         }
+    }
+
+    #[test]
+    fn test_reduce_fix_prompt_missing_is_recoverable_by_clearing_prepared_flag() {
+        use crate::reducer::event::PipelinePhase;
+
+        let mut state =
+            PipelineState::initial_with_continuation(0, 1, ContinuationState::default());
+        state.phase = PipelinePhase::Review;
+        state.fix_prompt_prepared_pass = Some(0);
+
+        let new_state = reduce_error(&state, &ErrorEvent::FixPromptMissing);
+
+        assert_eq!(new_state.phase, PipelinePhase::Review);
+        assert_eq!(new_state.fix_prompt_prepared_pass, None);
+    }
+
+    #[test]
+    fn test_reduce_agent_not_found_advances_agent_chain_instead_of_terminating() {
+        use crate::agents::AgentRole;
+        use crate::reducer::event::PipelinePhase;
+        use crate::reducer::state::AgentChainState;
+
+        let mut state =
+            PipelineState::initial_with_continuation(1, 0, ContinuationState::default());
+        state.phase = PipelinePhase::Development;
+        state.agent_chain = AgentChainState::initial().with_agents(
+            vec!["missing".to_string(), "fallback".to_string()],
+            vec![vec![], vec![]],
+            AgentRole::Developer,
+        );
+
+        let new_state = reduce_error(
+            &state,
+            &ErrorEvent::AgentNotFound {
+                agent: "missing".to_string(),
+            },
+        );
+
+        assert_eq!(new_state.phase, PipelinePhase::Development);
+        assert_eq!(new_state.agent_chain.current_agent_index, 1);
     }
 
     #[test]
