@@ -422,19 +422,7 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         // DEFENSIVE: Emit completion marker for orchestration
         // This ensures external systems can detect termination even if the
         // event loop exited unexpectedly before SaveCheckpoint was processed.
-        let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
-        let content = format!(
-            "failure\nEvent loop exited without normal completion (final_phase={:?})",
-            loop_result.final_phase
-        );
-        if let Err(err) = ctx.workspace.write(marker_path, &content) {
-            ctx.logger.error(&format!(
-                "Failed to write defensive completion marker: {err}"
-            ));
-        } else {
-            ctx.logger
-                .info("Defensive completion marker written: failure");
-        }
+        write_defensive_completion_marker(&*ctx.workspace, &ctx.logger, loop_result.final_phase);
     }
 
     // Save Complete checkpoint before clearing (for idempotent resume)
@@ -485,4 +473,164 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         &*ctx.workspace,
     );
     Ok(())
+}
+
+fn write_defensive_completion_marker(
+    workspace: &dyn crate::workspace::Workspace,
+    logger: &Logger,
+    final_phase: crate::reducer::event::PipelinePhase,
+) -> bool {
+    if let Err(err) = workspace.create_dir_all(std::path::Path::new(".agent/tmp")) {
+        logger.error(&format!(
+            "Failed to create completion marker directory: {err}"
+        ));
+        return false;
+    }
+
+    let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+    let content = format!(
+        "failure\nEvent loop exited without normal completion (final_phase={:?})",
+        final_phase
+    );
+    if let Err(err) = workspace.write(marker_path, &content) {
+        logger.error(&format!(
+            "Failed to write defensive completion marker: {err}"
+        ));
+        return false;
+    }
+
+    logger.info("Defensive completion marker written: failure");
+    true
+}
+
+#[cfg(test)]
+mod execution_tests {
+    use super::write_defensive_completion_marker;
+    use crate::logger::{Colors, Logger};
+    use crate::workspace::{DirEntry, MemoryWorkspace, Workspace};
+    use std::io;
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    #[derive(Debug)]
+    struct TrackingWorkspace {
+        inner: MemoryWorkspace,
+        tmp_created: Mutex<bool>,
+    }
+
+    impl TrackingWorkspace {
+        fn new() -> Self {
+            Self {
+                inner: MemoryWorkspace::new(PathBuf::from("/test/repo")),
+                tmp_created: Mutex::new(false),
+            }
+        }
+
+        fn tmp_created(&self) -> bool {
+            *self.tmp_created.lock().unwrap()
+        }
+    }
+
+    impl Workspace for TrackingWorkspace {
+        fn root(&self) -> &Path {
+            self.inner.root()
+        }
+
+        fn read(&self, relative: &Path) -> io::Result<String> {
+            self.inner.read(relative)
+        }
+
+        fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+            self.inner.read_bytes(relative)
+        }
+
+        fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+            self.inner.write(relative, content)
+        }
+
+        fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+            self.inner.write_bytes(relative, content)
+        }
+
+        fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+            self.inner.append_bytes(relative, content)
+        }
+
+        fn exists(&self, relative: &Path) -> bool {
+            self.inner.exists(relative)
+        }
+
+        fn is_file(&self, relative: &Path) -> bool {
+            self.inner.is_file(relative)
+        }
+
+        fn is_dir(&self, relative: &Path) -> bool {
+            self.inner.is_dir(relative)
+        }
+
+        fn remove(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove(relative)
+        }
+
+        fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_if_exists(relative)
+        }
+
+        fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_dir_all(relative)
+        }
+
+        fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_dir_all_if_exists(relative)
+        }
+
+        fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+            if relative == Path::new(".agent/tmp") {
+                *self.tmp_created.lock().unwrap() = true;
+            }
+            self.inner.create_dir_all(relative)
+        }
+
+        fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>> {
+            self.inner.read_dir(relative)
+        }
+
+        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+            self.inner.rename(from, to)
+        }
+
+        fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+            self.inner.write_atomic(relative, content)
+        }
+
+        fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+            self.inner.set_readonly(relative)
+        }
+
+        fn set_writable(&self, relative: &Path) -> io::Result<()> {
+            self.inner.set_writable(relative)
+        }
+    }
+
+    #[test]
+    fn test_defensive_completion_marker_creates_tmp_dir() {
+        let workspace = TrackingWorkspace::new();
+        let logger = Logger::new(Colors { enabled: false });
+
+        let wrote = write_defensive_completion_marker(
+            &workspace,
+            &logger,
+            crate::reducer::event::PipelinePhase::AwaitingDevFix,
+        );
+
+        assert!(wrote, "marker write should succeed");
+        assert!(
+            workspace.tmp_created(),
+            "should create .agent/tmp before writing marker"
+        );
+        assert!(
+            workspace.exists(Path::new(".agent/tmp/completion_marker")),
+            "completion marker should exist after defensive write"
+        );
+    }
 }

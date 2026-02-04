@@ -5,7 +5,8 @@
 //! run the pipeline using the event-sourced architecture from RFC-004.
 
 use crate::phases::PhaseContext;
-use crate::reducer::event::PipelinePhase;
+use crate::reducer::effect::Effect;
+use crate::reducer::event::{AwaitingDevFixEvent, CheckpointTrigger, PipelineEvent, PipelinePhase};
 use crate::reducer::state::ContinuationState;
 use crate::reducer::{
     determine_next_effect, reduce, EffectHandler, MainEffectHandler, PipelineState,
@@ -459,11 +460,58 @@ where
                 ctx.logger
                     .info("Completion marker written for max iterations failure");
 
-                // Force transition to Interrupted with a saved checkpoint marker
-                // to satisfy is_complete() requirements
-                state.phase = PipelinePhase::Interrupted;
-                state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
-                state.checkpoint_saved_count += 1;
+                let completion_event =
+                    PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
+                        is_failure: true,
+                    });
+                let completion_event_str = format!("{:?}", completion_event);
+                state = reduce(state, completion_event);
+                trace.push(build_trace_entry(
+                    events_processed,
+                    &state,
+                    "ForcedCompletionMarker",
+                    &completion_event_str,
+                ));
+                handler.update_state(state.clone());
+                events_processed += 1;
+
+                let save_effect = Effect::SaveCheckpoint {
+                    trigger: CheckpointTrigger::Interrupt,
+                };
+                let save_effect_str = format!("{save_effect:?}");
+                match handler.execute(save_effect, ctx) {
+                    Ok(result) => {
+                        let event_str = format!("{:?}", result.event);
+                        state = reduce(state, result.event.clone());
+                        trace.push(build_trace_entry(
+                            events_processed,
+                            &state,
+                            &save_effect_str,
+                            &event_str,
+                        ));
+                        handler.update_state(state.clone());
+                        events_processed += 1;
+
+                        for event in result.additional_events {
+                            let event_str = format!("{:?}", event);
+                            state = reduce(state, event);
+                            trace.push(build_trace_entry(
+                                events_processed,
+                                &state,
+                                &save_effect_str,
+                                &event_str,
+                            ));
+                            handler.update_state(state.clone());
+                            events_processed += 1;
+                        }
+                    }
+                    Err(err) => {
+                        ctx.logger.error(&format!(
+                            "Failed to save checkpoint after max-iterations completion: {err}"
+                        ));
+                    }
+                }
+
                 forced_completion = true;
 
                 ctx.logger.info(

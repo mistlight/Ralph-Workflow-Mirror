@@ -273,6 +273,115 @@ fn test_event_loop_returns_incomplete_result_on_handler_panic() {
 }
 
 #[test]
+fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
+    use crate::agents::{AgentRegistry, AgentRole};
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::{Stats, Timer};
+    use crate::prompts::template_context::TemplateContext;
+    use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+    use crate::reducer::event::{AwaitingDevFixEvent, PipelinePhase};
+    use crate::reducer::PipelineEvent;
+    use crate::workspace::{MemoryWorkspace, Workspace};
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct StallingHandler {
+        state: PipelineState,
+        effects: Vec<Effect>,
+    }
+
+    impl StallingHandler {
+        fn new(state: PipelineState) -> Self {
+            Self {
+                state,
+                effects: Vec::new(),
+            }
+        }
+    }
+
+    impl<'ctx> EffectHandler<'ctx> for StallingHandler {
+        fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+            self.effects.push(effect.clone());
+            let event = match effect {
+                Effect::SaveCheckpoint { trigger } => PipelineEvent::checkpoint_saved(trigger),
+                _ => PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixTriggered {
+                    failed_phase: PipelinePhase::Development,
+                    failed_role: AgentRole::Developer,
+                }),
+            };
+            Ok(EffectResult::event(event))
+        }
+    }
+
+    impl super::StatefulHandler for StallingHandler {
+        fn update_state(&mut self, state: PipelineState) {
+            self.state = state;
+        }
+    }
+
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "test-developer",
+        reviewer_agent: "test-reviewer",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+    };
+
+    let mut state = PipelineState::initial(1, 1);
+    state.phase = PipelinePhase::AwaitingDevFix;
+    state.previous_phase = Some(PipelinePhase::Development);
+
+    let mut handler = StallingHandler::new(state.clone());
+    let loop_config = EventLoopConfig { max_iterations: 2 };
+
+    let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
+        .expect("event loop should run");
+
+    assert!(
+        result.completed,
+        "expected forced completion when max iterations reached in AwaitingDevFix"
+    );
+    assert!(
+        handler
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SaveCheckpoint { .. })),
+        "forced completion should execute SaveCheckpoint instead of mutating state directly"
+    );
+    assert!(
+        workspace.exists(Path::new(".agent/tmp/completion_marker")),
+        "completion marker should be written when max iterations are exceeded"
+    );
+}
+
+#[test]
 fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
