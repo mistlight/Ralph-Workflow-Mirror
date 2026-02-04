@@ -1,0 +1,286 @@
+use super::super::{
+    AgentChildHandle, AgentCommandResult, AgentSpawnConfig, ProcessExecutor, ProcessOutput,
+};
+use super::agent_child::MockAgentChild;
+use super::agent_output::generate_mock_agent_output;
+use super::ExecuteCall;
+use std::collections::HashMap;
+use std::io::{self, Cursor};
+use std::path::Path;
+use std::process::ExitStatus;
+use std::sync::Mutex;
+
+/// Clonable representation of an `io::Result`.
+///
+/// Since `io::Error` doesn't implement `Clone`, we store error info as strings
+/// and reconstruct the error on demand.
+#[derive(Debug, Clone)]
+pub(crate) enum MockResult<T: Clone> {
+    Ok(T),
+    Err {
+        kind: io::ErrorKind,
+        message: String,
+    },
+}
+
+impl<T: Clone> MockResult<T> {
+    pub(crate) fn to_io_result(&self) -> io::Result<T> {
+        match self {
+            MockResult::Ok(v) => Ok(v.clone()),
+            MockResult::Err { kind, message } => Err(io::Error::new(*kind, message.clone())),
+        }
+    }
+
+    pub(crate) fn from_io_result(result: io::Result<T>) -> Self {
+        match result {
+            Ok(v) => MockResult::Ok(v),
+            Err(e) => MockResult::Err {
+                kind: e.kind(),
+                message: e.to_string(),
+            },
+        }
+    }
+}
+
+impl<T: Clone + Default> Default for MockResult<T> {
+    fn default() -> Self {
+        MockResult::Ok(T::default())
+    }
+}
+
+/// Mock process executor for testing.
+///
+/// Captures all calls and allows tests to control what each execution returns.
+#[derive(Debug)]
+pub struct MockProcessExecutor {
+    execute_calls: Mutex<Vec<ExecuteCall>>,
+    results: Mutex<HashMap<String, MockResult<ProcessOutput>>>,
+    default_result: Mutex<MockResult<ProcessOutput>>,
+    agent_calls: Mutex<Vec<AgentSpawnConfig>>,
+    agent_results: Mutex<HashMap<String, MockResult<AgentCommandResult>>>,
+    default_agent_result: Mutex<MockResult<AgentCommandResult>>,
+}
+
+impl Default for MockProcessExecutor {
+    fn default() -> Self {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+
+        Self {
+            execute_calls: Mutex::new(Vec::new()),
+            results: Mutex::new(HashMap::new()),
+            #[cfg(unix)]
+            default_result: Mutex::new(MockResult::Ok(ProcessOutput {
+                status: ExitStatus::from_raw(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            })),
+            #[cfg(not(unix))]
+            default_result: Mutex::new(MockResult::Ok(ProcessOutput {
+                status: std::process::ExitStatus::default(),
+                stdout: String::new(),
+                stderr: String::new(),
+            })),
+            agent_calls: Mutex::new(Vec::new()),
+            agent_results: Mutex::new(HashMap::new()),
+            default_agent_result: Mutex::new(MockResult::Ok(AgentCommandResult::success())),
+        }
+    }
+}
+
+impl MockProcessExecutor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn new_error() -> Self {
+        fn err_result<T: Clone>(msg: &str) -> MockResult<T> {
+            MockResult::Err {
+                kind: io::ErrorKind::Other,
+                message: msg.to_string(),
+            }
+        }
+
+        Self {
+            execute_calls: Mutex::new(Vec::new()),
+            results: Mutex::new(HashMap::new()),
+            default_result: Mutex::new(err_result("mock process error")),
+            agent_calls: Mutex::new(Vec::new()),
+            agent_results: Mutex::new(HashMap::new()),
+            default_agent_result: Mutex::new(err_result("mock agent error")),
+        }
+    }
+
+    pub fn with_result(self, command: &str, result: io::Result<ProcessOutput>) -> Self {
+        self.results
+            .lock()
+            .unwrap()
+            .insert(command.to_string(), MockResult::from_io_result(result));
+        self
+    }
+
+    pub fn with_output(self, command: &str, stdout: &str) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+
+        #[cfg(unix)]
+        let result = Ok(ProcessOutput {
+            status: ExitStatus::from_raw(0),
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+        });
+        #[cfg(not(unix))]
+        let result = Ok(ProcessOutput {
+            status: std::process::ExitStatus::default(),
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+        });
+        self.with_result(command, result)
+    }
+
+    pub fn with_error(self, command: &str, stderr: &str) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+
+        #[cfg(unix)]
+        let result = Ok(ProcessOutput {
+            status: ExitStatus::from_raw(1),
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+        });
+        #[cfg(not(unix))]
+        let result = Ok(ProcessOutput {
+            status: std::process::ExitStatus::default(),
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+        });
+        self.with_result(command, result)
+    }
+
+    pub fn with_io_error(self, command: &str, kind: io::ErrorKind, message: &str) -> Self {
+        self.with_result(command, Err(io::Error::new(kind, message)))
+    }
+
+    pub fn execute_count(&self) -> usize {
+        self.execute_calls.lock().unwrap().len()
+    }
+
+    pub fn execute_calls(&self) -> Vec<ExecuteCall> {
+        self.execute_calls.lock().unwrap().clone()
+    }
+
+    pub fn execute_calls_for(&self, command: &str) -> Vec<ExecuteCall> {
+        self.execute_calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(cmd, _, _, _)| cmd == command)
+            .cloned()
+            .collect()
+    }
+
+    pub fn reset_calls(&self) {
+        self.execute_calls.lock().unwrap().clear();
+        self.agent_calls.lock().unwrap().clear();
+    }
+
+    pub fn with_agent_result(
+        self,
+        command_pattern: &str,
+        result: io::Result<AgentCommandResult>,
+    ) -> Self {
+        self.agent_results.lock().unwrap().insert(
+            command_pattern.to_string(),
+            MockResult::from_io_result(result),
+        );
+        self
+    }
+
+    pub fn agent_calls(&self) -> Vec<AgentSpawnConfig> {
+        self.agent_calls.lock().unwrap().clone()
+    }
+
+    pub fn agent_calls_for(&self, command_pattern: &str) -> Vec<AgentSpawnConfig> {
+        self.agent_calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|config| config.command.contains(command_pattern))
+            .cloned()
+            .collect()
+    }
+
+    fn find_agent_result(&self, command: &str) -> AgentCommandResult {
+        if let Some(result) = self.agent_results.lock().unwrap().get(command) {
+            return result
+                .clone()
+                .to_io_result()
+                .unwrap_or_else(|_| AgentCommandResult::success());
+        }
+
+        for (pattern, result) in self.agent_results.lock().unwrap().iter() {
+            if command.contains(pattern) {
+                return result
+                    .clone()
+                    .to_io_result()
+                    .unwrap_or_else(|_| AgentCommandResult::success());
+            }
+        }
+
+        self.default_agent_result
+            .lock()
+            .unwrap()
+            .clone()
+            .to_io_result()
+            .unwrap_or_else(|_| AgentCommandResult::success())
+    }
+}
+
+impl ProcessExecutor for MockProcessExecutor {
+    fn spawn(
+        &self,
+        _command: &str,
+        _args: &[&str],
+        _env: &[(String, String)],
+        _workdir: Option<&Path>,
+    ) -> io::Result<std::process::Child> {
+        Err(io::Error::other(
+            "MockProcessExecutor doesn't support spawn() - use execute() instead",
+        ))
+    }
+
+    fn spawn_agent(&self, config: &AgentSpawnConfig) -> io::Result<AgentChildHandle> {
+        self.agent_calls.lock().unwrap().push(config.clone());
+
+        let result = self.find_agent_result(&config.command);
+        let mock_output = generate_mock_agent_output(config.parser_type, &config.command);
+
+        Ok(AgentChildHandle {
+            stdout: Box::new(Cursor::new(mock_output)),
+            stderr: Box::new(Cursor::new(result.stderr)),
+            inner: Box::new(MockAgentChild::new(result.exit_code)),
+        })
+    }
+
+    fn execute(
+        &self,
+        command: &str,
+        args: &[&str],
+        env: &[(String, String)],
+        workdir: Option<&Path>,
+    ) -> io::Result<ProcessOutput> {
+        let workdir_str = workdir.map(|p| p.display().to_string());
+        self.execute_calls.lock().unwrap().push((
+            command.to_string(),
+            args.iter().map(|s| s.to_string()).collect(),
+            env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            workdir_str,
+        ));
+
+        if let Some(result) = self.results.lock().unwrap().get(command) {
+            result.to_io_result()
+        } else {
+            self.default_result.lock().unwrap().to_io_result()
+        }
+    }
+}
