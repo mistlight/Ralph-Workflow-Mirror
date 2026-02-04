@@ -40,6 +40,28 @@ pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&Str
 }
 
 /// Handle `ItemStarted` event for `reasoning` type.
+///
+/// # Reasoning Output Strategy (Bug Fix: Codex Thinking Spam)
+///
+/// This handler prevents reasoning spam in logs by aligning with Claude's approach:
+///
+/// ## Non-TTY Modes (Basic/None)
+/// - Per-delta reasoning output is **suppressed** (returns `String::new()`)
+/// - Accumulated reasoning is flushed **once** at `item.completed` boundary
+/// - This prevents dozens of repeated "[ccs/codex] Thinking:" lines in logs
+///
+/// ## Full TTY Mode
+/// - Uses `ThinkingDeltaRenderer` for in-place updates with cursor positioning
+/// - First delta: shows prefix + content + cursor up (`\n\x1b[1A`)
+/// - Subsequent deltas: clear line + rewrite + cursor up (`\x1b[2K\r...\n\x1b[1A`)
+/// - Completion: cursor down + newline (`\x1b[1B\n`)
+///
+/// ## State Tracking
+/// - Uses `StreamingSession::on_thinking_delta_key("reasoning", ...)` to detect first vs subsequent chunks
+/// - Accumulates in `reasoning_accumulator` for backward compatibility with completion handler
+///
+/// ## Regression Test
+/// See `tests/integration_tests/codex_reasoning_spam_regression.rs` for verification.
 pub fn handle_reasoning_started(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     if let Some(text) = text {
         // Use StreamingSession to track first vs subsequent chunks

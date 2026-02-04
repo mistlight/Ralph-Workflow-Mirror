@@ -38,6 +38,22 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
 }
 
 /// Handle `ItemCompleted` event for `reasoning` type.
+///
+/// # Reasoning Completion Strategy (Bug Fix: Codex Thinking Spam)
+///
+/// This handler completes the reasoning spam fix by flushing accumulated content:
+///
+/// ## Full TTY Mode
+/// - Reasoning was already rendered in-place during deltas
+/// - Emit cursor finalization sequence (`\x1b[1B\n`) to move cursor down
+///
+/// ## Non-TTY Modes (Basic/None)
+/// - Per-delta output was suppressed during streaming
+/// - Now flush the final accumulated thinking content **once** with "Thinking:" label
+/// - If no streamed thinking exists, fall back to verbose mode "Thought:" summary
+///
+/// ## Regression Test
+/// See `tests/integration_tests/codex_reasoning_spam_regression.rs` for verification.
 pub fn handle_reasoning_completed(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     let full_reasoning = ctx
         .reasoning_accumulator
