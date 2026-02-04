@@ -19,8 +19,8 @@
 //
 // The monitor does NOT assume that a successful kill command means termination.
 // After sending SIGTERM, it actively polls the process using try_wait() during
-// a grace period (SIGTERM_GRACE_PERIOD_MS). If the process is still running
-// after the grace period, it escalates to SIGKILL.
+// a grace period (KillConfig::sigterm_grace; default: DEFAULT_KILL_CONFIG). If the
+// process is still running after the grace period, it escalates to SIGKILL.
 //
 // This prevents a critical bug where:
 // - Monitor sends SIGTERM, kill command succeeds
@@ -177,6 +177,18 @@ impl KillConfig {
             sigkill_confirm_timeout,
         }
     }
+
+    pub(crate) fn sigterm_grace(&self) -> Duration {
+        self.sigterm_grace
+    }
+
+    pub(crate) fn poll_interval(&self) -> Duration {
+        self.poll_interval
+    }
+
+    pub(crate) fn sigkill_confirm_timeout(&self) -> Duration {
+        self.sigkill_confirm_timeout
+    }
 }
 
 /// Default kill configuration.
@@ -184,11 +196,11 @@ impl KillConfig {
 /// - SIGTERM grace: 5s
 /// - Poll interval: 100ms
 /// - SIGKILL confirm timeout: 500ms
-pub(crate) const DEFAULT_KILL_CONFIG: KillConfig = KillConfig {
-    sigterm_grace: Duration::from_secs(5),
-    poll_interval: Duration::from_millis(100),
-    sigkill_confirm_timeout: Duration::from_millis(500),
-};
+pub(crate) const DEFAULT_KILL_CONFIG: KillConfig = KillConfig::new(
+    Duration::from_secs(5),
+    Duration::from_millis(100),
+    Duration::from_millis(500),
+);
 
 /// Monitors activity and kills a process if idle timeout is exceeded.
 ///
