@@ -44,3 +44,56 @@ fn test_mock_executor_can_be_reset() {
     mock.reset_calls();
     assert_eq!(mock.execute_count(), 0);
 }
+
+#[test]
+fn test_mock_agent_output_is_valid_ndjson_for_json_parsers() {
+    use crate::agents::JsonParserType;
+
+    fn assert_all_lines_are_json(output: &str) {
+        for line in output.lines().map(str::trim).filter(|l| !l.is_empty()) {
+            serde_json::from_str::<serde_json::Value>(line)
+                .unwrap_or_else(|e| panic!("expected valid JSON line, got error {e}: {line}"));
+        }
+    }
+
+    // Claude: system init + assistant content.
+    let claude = super::agent_output::generate_mock_agent_output(JsonParserType::Claude, "test");
+    assert_all_lines_are_json(&claude);
+    assert!(
+        claude.contains(r#""session_id":"#),
+        "expected session_id in Claude mock output"
+    );
+
+    // Codex: dot-separated event types with item payload.
+    let codex = super::agent_output::generate_mock_agent_output(JsonParserType::Codex, "test");
+    assert_all_lines_are_json(&codex);
+    assert!(
+        codex.contains(r#""type":"thread.started""#),
+        "expected thread.started event in Codex mock output"
+    );
+
+    // Gemini: init event should include session_id.
+    let gemini = super::agent_output::generate_mock_agent_output(JsonParserType::Gemini, "test");
+    assert_all_lines_are_json(&gemini);
+    assert!(
+        gemini.contains(r#""type":"init""#),
+        "expected init event in Gemini mock output"
+    );
+    assert!(
+        gemini.contains(r#""session_id":"#),
+        "expected session_id in Gemini mock output"
+    );
+
+    // OpenCode: requires sessionID and a part object with text.
+    let opencode =
+        super::agent_output::generate_mock_agent_output(JsonParserType::OpenCode, "test");
+    assert_all_lines_are_json(&opencode);
+    assert!(
+        opencode.contains(r#""sessionID":"#),
+        "expected sessionID in OpenCode mock output"
+    );
+    assert!(
+        opencode.contains(r#""part":{"#) && opencode.contains(r#""text":"#),
+        "expected part.text in OpenCode mock output"
+    );
+}

@@ -88,3 +88,28 @@ fn kill_process_returns_failed_when_sigterm_command_exits_nonzero() {
     let result = super::super::kill::kill_process(12345, &executor, None, DEFAULT_KILL_CONFIG);
     assert_eq!(result, super::super::kill::KillResult::Failed);
 }
+
+#[test]
+#[cfg(unix)]
+fn kill_process_uses_double_dash_before_negative_pgid() {
+    let executor = crate::executor::MockProcessExecutor::new();
+
+    let _ = super::super::kill::kill_process(12345, &executor, None, DEFAULT_KILL_CONFIG);
+
+    let calls = executor.execute_calls_for("kill");
+    assert!(!calls.is_empty(), "expected at least one kill invocation");
+    assert_eq!(calls[0].1, vec!["-TERM", "--", "-12345"]);
+}
+
+#[test]
+#[cfg(unix)]
+fn force_kill_best_effort_uses_double_dash_before_negative_pgid() {
+    let executor = crate::executor::MockProcessExecutor::new();
+
+    let ok = super::super::kill::force_kill_best_effort(12345, &executor);
+    assert!(ok);
+
+    let calls = executor.execute_calls_for("kill");
+    assert!(!calls.is_empty(), "expected at least one kill invocation");
+    assert_eq!(calls[0].1, vec!["-KILL", "--", "-12345"]);
+}
