@@ -367,14 +367,38 @@ impl PipelineState {
         }
     }
 
+    /// Returns true if the pipeline is in a terminal state for event loop purposes.
+    ///
+    /// # Terminal States
+    ///
+    /// - **Complete phase**: Always terminal (successful completion)
+    /// - **Interrupted phase**: Terminal under these conditions:
+    ///   1. A checkpoint has been saved (normal Ctrl+C interruption path)
+    ///   2. Transitioning from AwaitingDevFix phase (failure handling completed)
+    ///
+    /// # AwaitingDevFix → Interrupted Path
+    ///
+    /// When the pipeline encounters a terminal failure (e.g., AgentChainExhausted),
+    /// it transitions through AwaitingDevFix phase where:
+    /// 1. TriggerDevFixFlow effect writes completion marker to filesystem
+    /// 2. Dev-fix agent is dispatched (optional remediation attempt)
+    /// 3. CompletionMarkerEmitted event transitions to Interrupted phase
+    ///
+    /// At this point, the completion marker has been written, signaling external
+    /// orchestration that the pipeline has terminated. The SaveCheckpoint effect
+    /// will execute next, but the phase is already considered terminal because
+    /// the failure has been properly signaled.
+    ///
+    /// # Edge Cases
+    ///
+    /// An Interrupted phase without a checkpoint and without previous_phase context
+    /// is NOT considered terminal. This can occur when resuming from a checkpoint
+    /// that was interrupted mid-execution.
     pub fn is_complete(&self) -> bool {
-        // NOTE: `is_complete` means "terminal for the event loop", not necessarily "successful".
-        // `PipelinePhase::Interrupted` may be treated as terminal once a checkpoint has been
-        // saved, so unattended pipelines can stop safely and be resumed later.
-        // `PipelinePhase::AwaitingDevFix` is NOT terminal - we must wait for the completion
-        // marker to be emitted and transition to Interrupted.
         matches!(self.phase, PipelinePhase::Complete)
-            || (matches!(self.phase, PipelinePhase::Interrupted) && self.checkpoint_saved_count > 0)
+            || (matches!(self.phase, PipelinePhase::Interrupted)
+                && (self.checkpoint_saved_count > 0
+                    || matches!(self.previous_phase, Some(PipelinePhase::AwaitingDevFix))))
     }
 
     pub fn current_head(&self) -> String {

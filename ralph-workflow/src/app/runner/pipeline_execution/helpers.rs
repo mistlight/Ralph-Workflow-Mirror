@@ -328,7 +328,7 @@ fn should_write_complete_checkpoint(final_phase: crate::reducer::event::Pipeline
 }
 
 #[cfg(test)]
-mod tests {
+mod helpers_tests {
     use super::should_write_complete_checkpoint;
     use crate::reducer::event::PipelinePhase;
 

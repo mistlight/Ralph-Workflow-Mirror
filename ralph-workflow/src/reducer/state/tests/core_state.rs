@@ -1,4 +1,3 @@
-
 #[test]
 fn test_pipeline_state_initial() {
     let state = PipelineState::initial(5, 2);
@@ -354,5 +353,45 @@ fn test_awaiting_dev_fix_not_terminal() {
     assert!(
         !state.is_complete(),
         "AwaitingDevFix phase should not be terminal even with checkpoint"
+    );
+}
+
+#[test]
+fn test_interrupted_from_awaiting_dev_fix_is_complete() {
+    let mut state = PipelineState::initial(1, 1);
+    state.phase = PipelinePhase::Interrupted;
+    state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
+    state.checkpoint_saved_count = 0;
+
+    assert!(
+        state.is_complete(),
+        "Interrupted phase from AwaitingDevFix should be complete even without checkpoint, \
+         because completion marker was written during TriggerDevFixFlow"
+    );
+}
+
+#[test]
+fn test_interrupted_with_checkpoint_is_complete() {
+    let mut state = PipelineState::initial(1, 1);
+    state.phase = PipelinePhase::Interrupted;
+    state.checkpoint_saved_count = 1;
+
+    assert!(
+        state.is_complete(),
+        "Interrupted phase with checkpoint should always be complete"
+    );
+}
+
+#[test]
+fn test_interrupted_without_context_not_complete() {
+    let mut state = PipelineState::initial(1, 1);
+    state.phase = PipelinePhase::Interrupted;
+    state.previous_phase = None;
+    state.checkpoint_saved_count = 0;
+
+    assert!(
+        !state.is_complete(),
+        "Interrupted phase without previous_phase and without checkpoint should not be complete \
+         (edge case for resumed checkpoints)"
     );
 }
