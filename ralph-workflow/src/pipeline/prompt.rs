@@ -485,7 +485,11 @@ fn run_with_agent_spawn(
         MonitorResult::TimedOut { escalated } => {
             let idle_duration = time_since_activity(&activity_timestamp_for_timeout);
             let escalation_msg = if escalated {
-                ", escalated to SIGKILL after SIGTERM grace period"
+                if cfg!(windows) {
+                    ", force killed (taskkill /F)"
+                } else {
+                    ", escalated to SIGKILL after SIGTERM grace period"
+                }
             } else {
                 ""
             };

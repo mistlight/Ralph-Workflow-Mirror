@@ -390,7 +390,7 @@ impl MockAgentChild {
     }
 
     /// Create a mock child that simulates a running process that needs to be killed.
-    /// Call set_terminated() on the returned Arc to simulate process termination.
+    /// Set the returned AtomicBool to `false` to simulate process termination.
     pub fn new_running(exit_code: i32) -> (Self, std::sync::Arc<std::sync::atomic::AtomicBool>) {
         let still_running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let controller = std::sync::Arc::clone(&still_running);

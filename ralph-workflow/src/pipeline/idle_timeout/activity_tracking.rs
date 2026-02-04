@@ -153,8 +153,23 @@ enum KillResult {
     Failed,
 }
 
-/// Grace period to wait for SIGTERM to take effect before escalating to SIGKILL.
-const SIGTERM_GRACE_PERIOD_MS: u64 = 5000; // 5 seconds
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct KillConfig {
+    sigterm_grace: Duration,
+    poll_interval: Duration,
+    sigkill_confirm_timeout: Duration,
+}
+
+/// Default kill configuration.
+///
+/// - SIGTERM grace: 5s
+/// - Poll interval: 100ms
+/// - SIGKILL confirm timeout: 500ms
+const DEFAULT_KILL_CONFIG: KillConfig = KillConfig {
+    sigterm_grace: Duration::from_secs(5),
+    poll_interval: Duration::from_millis(100),
+    sigkill_confirm_timeout: Duration::from_millis(500),
+};
 
 /// Monitors activity and kills a process if idle timeout is exceeded.
 ///
@@ -216,6 +231,26 @@ pub fn monitor_idle_timeout_with_interval(
     executor: Arc<dyn ProcessExecutor>,
     check_interval: Duration,
 ) -> MonitorResult {
+    monitor_idle_timeout_with_interval_and_kill_config(
+        activity_timestamp,
+        child,
+        timeout_secs,
+        should_stop,
+        executor,
+        check_interval,
+        DEFAULT_KILL_CONFIG,
+    )
+}
+
+fn monitor_idle_timeout_with_interval_and_kill_config(
+    activity_timestamp: SharedActivityTimestamp,
+    child: Arc<std::sync::Mutex<Box<dyn AgentChild>>>,
+    timeout_secs: u64,
+    should_stop: Arc<std::sync::atomic::AtomicBool>,
+    executor: Arc<dyn ProcessExecutor>,
+    check_interval: Duration,
+    kill_config: KillConfig,
+) -> MonitorResult {
     use std::sync::atomic::Ordering;
 
     loop {
@@ -227,32 +262,41 @@ pub fn monitor_idle_timeout_with_interval(
         }
 
         // Check if idle timeout exceeded
-        if is_idle_timeout_exceeded(&activity_timestamp, timeout_secs) {
-            // Get the PID before locking
-            let child_id = {
-                let locked_child = child.lock().unwrap();
-                locked_child.id()
-            };
+        if !is_idle_timeout_exceeded(&activity_timestamp, timeout_secs) {
+            continue;
+        }
 
-            // Kill the process using platform-specific command with escalation
+        // Check liveness and capture pid while holding the lock briefly.
+        let child_id = {
             let mut locked_child = child.lock().unwrap();
-            let kill_result =
-                kill_process(child_id, executor.as_ref(), Some(locked_child.as_mut()));
-            drop(locked_child); // Release lock
 
-            match kill_result {
-                KillResult::TerminatedByTerm => {
-                    return MonitorResult::TimedOut { escalated: false };
-                }
-                KillResult::TerminatedByKill => {
-                    return MonitorResult::TimedOut { escalated: true };
-                }
-                KillResult::Failed => {
-                    // Kill failed - process may have already exited
-                    if should_stop.load(Ordering::Acquire) {
-                        return MonitorResult::ProcessCompleted;
-                    }
-                    // Kill failed for unknown reason, try again next iteration
+            // If the process already exited, treat as completed.
+            if locked_child.try_wait().ok().flatten().is_some() {
+                return MonitorResult::ProcessCompleted;
+            }
+
+            locked_child.id()
+        };
+
+        // Kill using platform-specific command with liveness verification.
+        let kill_result = kill_process(child_id, executor.as_ref(), Some(&child), kill_config);
+
+        match kill_result {
+            KillResult::TerminatedByTerm => {
+                return MonitorResult::TimedOut { escalated: false };
+            }
+            KillResult::TerminatedByKill => {
+                return MonitorResult::TimedOut { escalated: true };
+            }
+            KillResult::Failed => {
+                // Kill failed - this can happen if:
+                // - process already exited between checks
+                // - kill/taskkill failed
+                // - SIGKILL/taskkill succeeded but process is still running (rare)
+                //
+                // Keep monitoring so we can retry the kill attempt.
+                if should_stop.load(Ordering::Acquire) {
+                    return MonitorResult::ProcessCompleted;
                 }
             }
         }
@@ -288,52 +332,57 @@ pub fn monitor_idle_timeout_with_interval(
 fn kill_process(
     pid: u32,
     executor: &dyn ProcessExecutor,
-    child: Option<&mut dyn AgentChild>,
+    child: Option<&Arc<std::sync::Mutex<Box<dyn AgentChild>>>>,
+    config: KillConfig,
 ) -> KillResult {
-    use std::thread;
-    use std::time::Duration;
-
     // First attempt: send SIGTERM
     let term_result = executor.execute("kill", &["-TERM", &pid.to_string()], &[], None);
 
-    if term_result.is_err() {
-        // Kill command itself failed (process may have already exited)
+    let term_ok = term_result.map(|o| o.status.success()).unwrap_or(false);
+    if !term_ok {
         return KillResult::Failed;
     }
 
     // Wait for process to terminate gracefully
-    if let Some(child_ref) = child {
-        let grace_start = std::time::Instant::now();
-        let grace_duration = Duration::from_millis(SIGTERM_GRACE_PERIOD_MS);
-        let check_interval = Duration::from_millis(100);
+    if let Some(child_arc) = child {
+        let grace_deadline = std::time::Instant::now() + config.sigterm_grace;
 
-        while grace_start.elapsed() < grace_duration {
-            match child_ref.try_wait() {
-                Ok(Some(_status)) => {
-                    // Process has exited
-                    return KillResult::TerminatedByTerm;
-                }
-                Ok(None) => {
-                    // Still running, keep waiting
-                    thread::sleep(check_interval);
-                }
-                Err(_) => {
-                    // Error checking status - assume process is gone
-                    return KillResult::TerminatedByTerm;
-                }
+        while std::time::Instant::now() < grace_deadline {
+            let status = {
+                let mut locked_child = child_arc.lock().unwrap();
+                locked_child.try_wait()
+            };
+
+            match status {
+                Ok(Some(_)) => return KillResult::TerminatedByTerm,
+                Ok(None) => std::thread::sleep(config.poll_interval),
+                Err(_) => return KillResult::Failed,
             }
         }
 
         // Grace period expired, process still alive - escalate to SIGKILL
         let kill_result = executor.execute("kill", &["-KILL", &pid.to_string()], &[], None);
-
-        if kill_result.is_ok() {
-            // Wait a short time to confirm SIGKILL took effect
-            thread::sleep(Duration::from_millis(500));
-            return KillResult::TerminatedByKill;
-        } else {
+        let kill_ok = kill_result.map(|o| o.status.success()).unwrap_or(false);
+        if !kill_ok {
             return KillResult::Failed;
         }
+
+        // Confirm SIGKILL took effect with bounded polling.
+        let confirm_deadline = std::time::Instant::now() + config.sigkill_confirm_timeout;
+        while std::time::Instant::now() < confirm_deadline {
+            let status = {
+                let mut locked_child = child_arc.lock().unwrap();
+                locked_child.try_wait()
+            };
+
+            match status {
+                Ok(Some(_)) => return KillResult::TerminatedByKill,
+                Ok(None) => std::thread::sleep(config.poll_interval),
+                Err(_) => return KillResult::Failed,
+            }
+        }
+
+        return KillResult::Failed;
     }
 
     // No child reference provided - assume SIGTERM worked
@@ -348,14 +397,35 @@ fn kill_process(
 fn kill_process(
     pid: u32,
     executor: &dyn ProcessExecutor,
-    _child: Option<&mut dyn AgentChild>,
+    child: Option<&Arc<std::sync::Mutex<Box<dyn AgentChild>>>>,
+    config: KillConfig,
 ) -> KillResult {
     // Windows taskkill /F is already forceful, no escalation needed
     let result = executor.execute("taskkill", &["/F", "/PID", &pid.to_string()], &[], None);
 
-    if result.map(|o| o.status.success()).unwrap_or(false) {
-        KillResult::TerminatedByKill // /F flag is always forceful
-    } else {
-        KillResult::Failed
+    let kill_ok = result.map(|o| o.status.success()).unwrap_or(false);
+    if !kill_ok {
+        return KillResult::Failed;
     }
+
+    // If we can verify liveness, do so with bounded polling.
+    if let Some(child_arc) = child {
+        let confirm_deadline = std::time::Instant::now() + config.sigkill_confirm_timeout;
+        while std::time::Instant::now() < confirm_deadline {
+            let status = {
+                let mut locked_child = child_arc.lock().unwrap();
+                locked_child.try_wait()
+            };
+
+            match status {
+                Ok(Some(_)) => return KillResult::TerminatedByKill,
+                Ok(None) => std::thread::sleep(config.poll_interval),
+                Err(_) => return KillResult::Failed,
+            }
+        }
+
+        return KillResult::Failed;
+    }
+
+    KillResult::TerminatedByKill
 }

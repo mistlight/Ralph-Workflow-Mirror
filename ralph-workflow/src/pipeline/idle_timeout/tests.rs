@@ -238,6 +238,116 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn test_kill_process_returns_failed_when_sigterm_command_exits_nonzero() {
+        use std::io;
+        use std::path::Path;
+        use std::process::ExitStatus;
+
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+
+        #[derive(Debug)]
+        struct NonZeroKillExecutor;
+
+        impl ProcessExecutor for NonZeroKillExecutor {
+            fn execute(
+                &self,
+                _command: &str,
+                _args: &[&str],
+                _env: &[(String, String)],
+                _workdir: Option<&Path>,
+            ) -> io::Result<crate::executor::ProcessOutput> {
+                Ok(crate::executor::ProcessOutput {
+                    status: ExitStatus::from_raw(1),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                })
+            }
+        }
+
+        let executor = NonZeroKillExecutor;
+        let result = kill_process(12345, &executor, None, DEFAULT_KILL_CONFIG);
+        assert_eq!(result, KillResult::Failed);
+    }
+
+    #[test]
+    fn test_monitor_does_not_hold_child_lock_while_waiting_between_sigterm_checks() {
+        // Regression test for lock contention:
+        // monitor_idle_timeout_with_interval() must not hold the child mutex while sleeping
+        // during the SIGTERM grace-period polling loop.
+        use crate::executor::MockAgentChild;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::{Arc, Mutex};
+        use std::time::{Duration, Instant};
+
+        let (mock_child, running_controller) = MockAgentChild::new_running(0);
+        let child = Arc::new(Mutex::new(
+            Box::new(mock_child) as Box<dyn crate::executor::AgentChild>
+        ));
+
+        let timestamp = new_activity_timestamp();
+        timestamp.store(0, Ordering::Release);
+
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let executor: Arc<dyn crate::executor::ProcessExecutor> =
+            Arc::new(crate::executor::MockProcessExecutor::new());
+
+        let running_controller_clone = Arc::clone(&running_controller);
+
+        // Ensure the monitor observes at least one "still running" check.
+        let terminator = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            running_controller_clone.store(false, Ordering::Release);
+        });
+
+        let child_for_monitor = Arc::clone(&child);
+        let timestamp_for_monitor = timestamp.clone();
+        let should_stop_for_monitor = Arc::clone(&should_stop);
+
+        let monitor = thread::spawn(move || {
+            monitor_idle_timeout_with_interval(
+                timestamp_for_monitor,
+                child_for_monitor,
+                0,
+                should_stop_for_monitor,
+                executor,
+                Duration::from_millis(1),
+            )
+        });
+
+        // Wait until the monitor has entered the kill path and is holding the lock.
+        let lock_wait_start = Instant::now();
+        while lock_wait_start.elapsed() < Duration::from_millis(50) {
+            if child.try_lock().is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        // Now verify we can still acquire the lock briefly while the monitor is running.
+        // If the monitor holds the mutex across the sleep between try_wait() checks,
+        // this will fail.
+        let deadline = Instant::now() + Duration::from_millis(50);
+        let mut acquired = false;
+        while Instant::now() < deadline {
+            if let Ok(_guard) = child.try_lock() {
+                acquired = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        terminator.join().expect("Terminator thread panicked");
+        let _ = monitor.join();
+
+        assert!(
+            acquired,
+            "Monitor held child lock while sleeping between SIGTERM checks"
+        );
+    }
+
+    #[test]
     fn test_stderr_activity_tracker_updates_timestamp() {
         let data = b"debug output\nmore output\n";
         let cursor = Cursor::new(data.to_vec());
@@ -323,6 +433,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_monitor_escalates_to_sigkill_when_sigterm_ignored() {
         use crate::executor::MockAgentChild;
         use std::sync::atomic::AtomicBool;
@@ -337,9 +448,10 @@ mod tests {
         let timestamp = new_activity_timestamp();
         let should_stop = Arc::new(AtomicBool::new(false));
 
-        // Mock executor that reports successful kill commands
-        let executor: Arc<dyn crate::executor::ProcessExecutor> =
-            Arc::new(crate::executor::MockProcessExecutor::new());
+        // Mock executor that reports successful kill commands.
+        // Keep a concrete Arc so we can inspect captured calls.
+        let executor = Arc::new(crate::executor::MockProcessExecutor::new());
+        let executor_dyn: Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
 
         // Set up the scenario: timestamp is old (timeout exceeded)
         timestamp.store(0, Ordering::Release);
@@ -347,36 +459,42 @@ mod tests {
         let child_clone = Arc::clone(&child);
         let timestamp_clone = timestamp.clone();
         let should_stop_clone = should_stop.clone();
-        let running_controller_clone = Arc::clone(&running_controller);
 
-        // Simulate a process that ignores SIGTERM but responds to SIGKILL
-        // by terminating well AFTER the grace period expires
-        let terminator = thread::spawn(move || {
-            // Wait significantly longer than the grace period to ensure
-            // the monitor has time to detect the timeout and escalate
-            // (5000ms grace + 1000ms to ensure SIGKILL is definitely sent)
-            thread::sleep(Duration::from_millis(6000));
-            // Mark process as terminated (simulating SIGKILL effect)
-            running_controller_clone.store(false, Ordering::Release);
-        });
+        let kill_config = KillConfig {
+            sigterm_grace: Duration::from_millis(20),
+            poll_interval: Duration::from_millis(1),
+            sigkill_confirm_timeout: Duration::from_millis(50),
+        };
 
         // Spawn monitor with very short timeout and check interval
         let monitor_handle = thread::spawn(move || {
-            monitor_idle_timeout_with_interval(
+            monitor_idle_timeout_with_interval_and_kill_config(
                 timestamp_clone,
                 child_clone,
-                1, // 1 second timeout
+                0,
                 should_stop_clone,
-                executor,
-                Duration::from_millis(100), // Fast check interval
+                executor_dyn,
+                Duration::from_millis(1),
+                kill_config,
             )
         });
 
+        // Wait until SIGKILL is attempted, then simulate termination.
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            let calls = executor.execute_calls_for("kill");
+            if calls
+                .iter()
+                .any(|(_, args, _, _)| args.iter().any(|a| a == "-KILL"))
+            {
+                running_controller.store(false, Ordering::Release);
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+
         // Wait for monitor to complete
         let result = monitor_handle.join().expect("Monitor thread panicked");
-
-        // Wait for terminator thread to finish
-        terminator.join().expect("Terminator thread panicked");
 
         // Verify we got TimedOut with escalation
         assert_eq!(result, MonitorResult::TimedOut { escalated: true });
@@ -386,6 +504,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_monitor_succeeds_with_sigterm_when_process_terminates() {
         use crate::executor::MockAgentChild;
         use std::sync::atomic::AtomicBool;
@@ -400,8 +519,8 @@ mod tests {
         let timestamp = new_activity_timestamp();
         let should_stop = Arc::new(AtomicBool::new(false));
 
-        let executor: Arc<dyn crate::executor::ProcessExecutor> =
-            Arc::new(crate::executor::MockProcessExecutor::new());
+        let executor = Arc::new(crate::executor::MockProcessExecutor::new());
+        let executor_dyn: Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
 
         // Set up timeout scenario
         timestamp.store(0, Ordering::Release);
@@ -409,25 +528,38 @@ mod tests {
         let child_clone = Arc::clone(&child);
         let timestamp_clone = timestamp.clone();
         let should_stop_clone = should_stop.clone();
-        let running_controller_clone = Arc::clone(&running_controller);
 
-        // Spawn monitor
+        let kill_config = KillConfig {
+            sigterm_grace: Duration::from_millis(50),
+            poll_interval: Duration::from_millis(1),
+            sigkill_confirm_timeout: Duration::from_millis(50),
+        };
+
         let monitor_handle = thread::spawn(move || {
-            // Simulate process terminating promptly after SIGTERM
-            thread::spawn(move || {
-                thread::sleep(Duration::from_millis(200)); // Terminate within grace period
-                running_controller_clone.store(false, Ordering::Release);
-            });
-
-            monitor_idle_timeout_with_interval(
+            monitor_idle_timeout_with_interval_and_kill_config(
                 timestamp_clone,
                 child_clone,
-                1,
+                0,
                 should_stop_clone,
-                executor,
-                Duration::from_millis(100),
+                executor_dyn,
+                Duration::from_millis(1),
+                kill_config,
             )
         });
+
+        // Wait until SIGTERM is attempted, then simulate termination.
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            let calls = executor.execute_calls_for("kill");
+            if calls
+                .iter()
+                .any(|(_, args, _, _)| args.iter().any(|a| a == "-TERM"))
+            {
+                running_controller.store(false, Ordering::Release);
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
 
         let result = monitor_handle.join().expect("Monitor thread panicked");
 
@@ -436,15 +568,14 @@ mod tests {
     }
 
     #[test]
-    fn test_monitor_does_not_hang_on_unresponsive_process() {
-        // This test verifies that the monitor thread completes in reasonable time
-        // even if the process doesn't terminate. This is the regression test for
-        // the original bug where the monitor would return TimedOut but the main
-        // thread would hang forever.
+    #[cfg(unix)]
+    fn test_monitor_does_not_report_timeout_if_process_still_alive_after_force_kill() {
+        // If SIGKILL does not actually terminate the child (or we can't confirm it),
+        // the monitor must NOT return TimedOut and stop monitoring.
         use crate::executor::MockAgentChild;
         use std::sync::atomic::AtomicBool;
+        use std::sync::mpsc;
         use std::sync::{Arc, Mutex};
-        use std::time::Instant;
 
         let (mock_child, _controller) = MockAgentChild::new_running(0);
         let child = Arc::new(Mutex::new(
@@ -455,35 +586,44 @@ mod tests {
         timestamp.store(0, Ordering::Release); // Timeout exceeded
 
         let should_stop = Arc::new(AtomicBool::new(false));
-        let executor: Arc<dyn crate::executor::ProcessExecutor> =
-            Arc::new(crate::executor::MockProcessExecutor::new());
+        let executor = Arc::new(crate::executor::MockProcessExecutor::new());
+        let executor_dyn: Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
 
-        let start = Instant::now();
+        let kill_config = KillConfig {
+            sigterm_grace: Duration::from_millis(1),
+            poll_interval: Duration::from_millis(1),
+            sigkill_confirm_timeout: Duration::from_millis(5),
+        };
 
-        // The monitor should complete within grace period + overhead
-        // even if process never terminates
+        let (tx, rx) = mpsc::channel();
+
+        let child_for_monitor = Arc::clone(&child);
+        let should_stop_for_monitor = Arc::clone(&should_stop);
         let monitor_handle = thread::spawn(move || {
-            monitor_idle_timeout_with_interval(
+            let result = monitor_idle_timeout_with_interval_and_kill_config(
                 timestamp,
-                child,
-                1,
-                should_stop,
-                executor,
-                Duration::from_millis(100),
-            )
+                child_for_monitor,
+                0,
+                should_stop_for_monitor,
+                executor_dyn,
+                Duration::from_millis(1),
+                kill_config,
+            );
+            let _ = tx.send(result);
         });
 
-        let result = monitor_handle.join().expect("Monitor thread panicked");
-        let elapsed = start.elapsed();
+        // Give the monitor a moment to attempt killing.
+        thread::sleep(Duration::from_millis(20));
 
-        // Monitor should complete in reasonable time (grace period + overhead)
+        // If the monitor claims TimedOut while the child is still running,
+        // it reintroduces the hang risk in the main thread.
         assert!(
-            elapsed < Duration::from_secs(10),
-            "Monitor took too long: {:?}",
-            elapsed
+            rx.recv_timeout(Duration::from_millis(20)).is_err(),
+            "Monitor returned early despite still-running child"
         );
 
-        // Should return TimedOut with escalation attempted
-        assert_eq!(result, MonitorResult::TimedOut { escalated: true });
+        // Stop the monitor thread to avoid hanging the test.
+        should_stop.store(true, Ordering::Release);
+        let _ = monitor_handle.join();
     }
 }
