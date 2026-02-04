@@ -389,13 +389,22 @@ impl MainEffectHandler {
         let continuation_state = &self.state.continuation;
         let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
         if is_xsd_retry {
-            let last_output = ctx
-                .workspace
-                .read(Path::new(xml_paths::ISSUES_XML))
-                .map_err(|err| ErrorEvent::WorkspaceReadFailed {
-                    path: xml_paths::ISSUES_XML.to_string(),
-                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
-                })?;
+            let last_output = match ctx.workspace.read(Path::new(xml_paths::ISSUES_XML)) {
+                Ok(output) => output,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    ctx.logger.warn(
+                        "Missing .agent/tmp/issues.xml; using empty output for review XSD retry",
+                    );
+                    String::new()
+                }
+                Err(err) => {
+                    return Err(ErrorEvent::WorkspaceReadFailed {
+                        path: xml_paths::ISSUES_XML.to_string(),
+                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                    }
+                    .into());
+                }
+            };
 
             let content_id_sha256 = sha256_hex_str(&last_output);
             let consumer_signature_sha256 = self.state.agent_chain.consumer_signature_sha256();
@@ -453,6 +462,7 @@ impl MainEffectHandler {
                 }
             }
         }
+        let mut xsd_error_for_validation: Option<String> = None;
         let (prompt_key, review_prompt_xml, was_replayed, template_name, should_validate) =
             match prompt_mode {
                 PromptMode::XsdRetry => {
@@ -460,9 +470,15 @@ impl MainEffectHandler {
                         "review_{pass}_xsd_retry_{}",
                         continuation_state.invalid_output_attempts
                     );
+                    // Use the actual XSD error from state, or fall back to generic message
+                    let xsd_error = continuation_state
+                        .last_review_xsd_error
+                        .as_deref()
+                        .unwrap_or("XML output failed validation. Provide valid XML output.");
+                    xsd_error_for_validation = Some(xsd_error.to_string());
                     let prompt = prompt_review_xsd_retry_with_context_files(
                         ctx.template_context,
-                        "XML output failed validation. Provide valid XML output.",
+                        xsd_error,
                         ctx.workspace,
                     );
                     // XSD retry prompts must not replay potentially stale prompt history content.
@@ -606,6 +622,9 @@ impl MainEffectHandler {
                     return Err(ErrorEvent::ReviewContinuationNotSupported.into());
                 }
             };
+        if let Some(xsd_error) = xsd_error_for_validation {
+            ignore_sources_owned.push(xsd_error);
+        }
         let ignore_sources: Vec<&str> = ignore_sources_owned.iter().map(|s| s.as_str()).collect();
         if should_validate {
             if let Err(err) =
@@ -719,12 +738,25 @@ impl MainEffectHandler {
             Ok(_) => Ok(EffectResult::event(
                 PipelineEvent::review_issues_xml_extracted(pass),
             )),
-            Err(_) => Ok(EffectResult::event(
-                PipelineEvent::review_issues_xml_missing(
-                    pass,
-                    self.state.continuation.invalid_output_attempts,
-                ),
-            )),
+            Err(err) => {
+                let detail = if err.kind() == std::io::ErrorKind::NotFound {
+                    None
+                } else {
+                    Some(format!(
+                        "{:?}: {}",
+                        WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                        err
+                    ))
+                };
+
+                Ok(EffectResult::event(
+                    PipelineEvent::review_issues_xml_missing(
+                        pass,
+                        self.state.continuation.invalid_output_attempts,
+                        detail,
+                    ),
+                ))
+            }
         }
     }
 
@@ -740,11 +772,22 @@ impl MainEffectHandler {
         let issues_xml = ctx.workspace.read(Path::new(xml_paths::ISSUES_XML));
         let issues_xml = match issues_xml {
             Ok(s) => s,
-            Err(_) => {
+            Err(err) => {
+                let detail = if err.kind() == std::io::ErrorKind::NotFound {
+                    None
+                } else {
+                    Some(format!(
+                        "{:?}: {}",
+                        WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                        err
+                    ))
+                };
+
                 return Ok(EffectResult::event(
                     PipelineEvent::review_output_validation_failed(
                         pass,
                         self.state.continuation.invalid_output_attempts,
+                        detail,
                     ),
                 ));
             }
@@ -774,10 +817,11 @@ impl MainEffectHandler {
                     }],
                 ))
             }
-            Err(_) => Ok(EffectResult::event(
+            Err(err) => Ok(EffectResult::event(
                 PipelineEvent::review_output_validation_failed(
                     pass,
                     self.state.continuation.invalid_output_attempts,
+                    Some(err.format_for_ai_retry()),
                 ),
             )),
         }

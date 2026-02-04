@@ -60,6 +60,8 @@ pub enum ReviewEvent {
         pass: u32,
         /// The invalid output attempt count.
         attempt: u32,
+        /// Error detail if file read failed for a reason other than NotFound.
+        error_detail: Option<String>,
     },
 
     /// Review issues XML validated for a pass.
@@ -113,6 +115,11 @@ pub enum ReviewEvent {
         pass: u32,
         /// The invalid output attempt count.
         attempt: u32,
+        /// Detailed error message from file read failure (if not NotFound).
+        ///
+        /// This field is populated when the file exists but cannot be read
+        /// (e.g., permission denied, I/O error). It's None for simple NotFound.
+        error_detail: Option<String>,
     },
 
     /// Fix result XML validated for a pass.
@@ -172,11 +179,24 @@ pub enum ReviewEvent {
     ///
     /// Emitted when review output cannot be parsed. Reducer decides
     /// whether to retry or switch agents.
+    ///
+    /// The `error_detail` field contains the formatted validation error that will
+    /// be shown to the agent in the XSD retry prompt. This error should be
+    /// actionable and guide the agent toward producing valid XML.
     OutputValidationFailed {
         /// The pass number.
         pass: u32,
         /// Current invalid output attempt number.
         attempt: u32,
+        /// Detailed error message from XSD validation, formatted for AI retry.
+        ///
+        /// This is the output of `XsdValidationError::format_for_ai_retry()` and
+        /// includes:
+        /// - Error type and location
+        /// - What was expected vs. what was found
+        /// - Actionable suggestions for fixing
+        /// - Examples of correct format
+        error_detail: Option<String>,
     },
 
     /// Fix attempt completed with incomplete status, needs continuation.
@@ -228,5 +248,13 @@ pub enum ReviewEvent {
         pass: u32,
         /// Current invalid output attempt number.
         attempt: u32,
+        /// Detailed error message from XSD validation, formatted for AI retry.
+        ///
+        /// This is the output of `XsdValidationError::format_for_ai_retry()` and includes:
+        /// - Error type and location
+        /// - What was expected vs. what was found
+        /// - Actionable suggestions for fixing
+        /// - Examples of correct format
+        error_detail: Option<String>,
     },
 }

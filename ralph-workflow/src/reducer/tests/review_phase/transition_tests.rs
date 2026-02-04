@@ -50,7 +50,10 @@ fn test_review_output_validation_failed_retries_within_limit() {
         ..create_test_state()
     };
 
-    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+    let new_state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(0, 0, None),
+    );
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
     // Should stay on same agent when within retry limit
@@ -81,7 +84,10 @@ fn test_review_output_validation_failed_switches_agent_at_limit() {
     };
 
     // This validation failure should trigger agent switch since xsd_retry_count is at the limit.
-    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+    let new_state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(0, 0, None),
+    );
 
     assert_eq!(new_state.phase, PipelinePhase::Review);
     assert_eq!(new_state.agent_chain.current_agent_index, 1);
@@ -99,7 +105,10 @@ fn test_review_output_validation_failed_stays_in_review_phase() {
         ..create_test_state()
     };
 
-    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(1, 0));
+    let new_state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(1, 0, None),
+    );
 
     assert_eq!(
         new_state.phase,
@@ -125,12 +134,18 @@ fn test_review_output_validation_event_sequence_retry_then_success() {
     };
 
     // First validation failure - retry
-    state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+    state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(0, 0, None),
+    );
     assert_eq!(state.phase, PipelinePhase::Review);
     assert_eq!(state.agent_chain.current_agent_index, 0);
 
-    // Second validation failure - retry
-    state = reduce(state, PipelineEvent::review_output_validation_failed(0, 1));
+    // Second validation failure - switch to next agent
+    state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(0, 1, None),
+    );
     assert_eq!(state.phase, PipelinePhase::Review);
     assert_eq!(state.agent_chain.current_agent_index, 0);
 

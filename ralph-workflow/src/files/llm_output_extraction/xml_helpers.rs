@@ -3,6 +3,35 @@
 //! This module provides common parsing functions used across all XSD validators
 //! to ensure consistent XML handling with proper whitespace management.
 //!
+//! # Illegal Character Validation (CRITICAL)
+//!
+//! **ALL XML validators MUST call `check_for_illegal_xml_characters()` BEFORE parsing.**
+//!
+//! This is mandatory for all validators because:
+//! - It catches illegal XML 1.0 characters (NUL byte, control chars, etc.)
+//! - It provides clear, actionable error messages for AI agents
+//! - It enables XSD retry to converge instead of spinning with cryptic parse errors
+//!
+//! Required validation flow for ALL validators:
+//! 1. `check_for_illegal_xml_characters()` - MUST be called first
+//! 2. `create_reader()` - creates quick_xml reader
+//! 3. XSD validation - validates structure and content
+//!
+//! ## XSD Retry Integration
+//!
+//! When illegal character validation fails:
+//! 1. `check_for_illegal_xml_characters()` returns `XsdValidationError` with detailed context
+//! 2. The error includes character position, surrounding text, and fix suggestions
+//! 3. `format_for_ai_retry()` enhances the error with prominent illegal character warnings
+//! 4. XSD retry prompt templates include character validation guidance
+//! 5. Agents receive clear, actionable feedback to remove/replace illegal characters
+//!
+//! This design ensures agents can converge on valid XML even when the initial output
+//! contains illegal characters (e.g., from typos like `\u0000` instead of `\u00A0`).
+//!
+//! Common mistake: Writing `\u0000` (NUL) instead of `\u00A0` (NBSP).
+//! The illegal character check detects this and suggests the NBSP fix.
+//!
 //! # Code Block Content
 //!
 //! Code blocks containing special characters (`<`, `>`, `&`) MUST use CDATA sections:
@@ -21,6 +50,103 @@ use crate::common::truncate_text;
 use crate::files::llm_output_extraction::xsd_validation::{XsdErrorType, XsdValidationError};
 use quick_xml::events::Event;
 use quick_xml::Reader;
+
+/// Check for illegal XML 1.0 characters in content.
+///
+/// XML 1.0 specification allows only specific characters:
+/// - Tab (0x09), Line Feed (0x0A), Carriage Return (0x0D)
+/// - Characters from 0x20 to 0xD7FF
+/// - Characters from 0xE000 to 0xFFFD
+/// - Characters from 0x10000 to 0x10FFFF
+///
+/// This function detects illegal characters and returns a detailed error
+/// with position, context, and actionable suggestions.
+pub fn check_for_illegal_xml_characters(content: &str) -> Result<(), XsdValidationError> {
+    for (byte_index, ch) in content.char_indices() {
+        let is_illegal = match ch as u32 {
+            0x00 => true,            // NUL byte
+            0x01..=0x08 => true,     // Control characters
+            0x0B | 0x0C => true,     // Vertical tab, form feed
+            0x0E..=0x1F => true,     // Other control characters
+            0xD800..=0xDFFF => true, // UTF-16 surrogates
+            0xFFFE | 0xFFFF => true, // Non-characters
+            _ => false,
+        };
+        if is_illegal {
+            return Err(illegal_character_error(ch, byte_index, content));
+        }
+    }
+    Ok(())
+}
+
+/// Create a detailed error message for an illegal XML character.
+///
+/// The error includes:
+/// - Character description (e.g., "NUL (null byte)" or "control character 0x0B")
+/// - Position in the content
+/// - Surrounding context (up to 100 characters)
+/// - Actionable suggestion for fixing
+fn illegal_character_error(ch: char, byte_index: usize, content: &str) -> XsdValidationError {
+    let char_display = match ch {
+        '\0' => "NUL (null byte)".to_string(),
+        '\u{0001}'..='\u{001F}' => format!("control character 0x{:02X}", ch as u32),
+        _ => format!("0x{:04X}", ch as u32),
+    };
+
+    // Extract context around the error position (50 chars before, 50 chars after)
+    let context_start = byte_index.saturating_sub(50);
+    let context_end = (byte_index + 50).min(content.len());
+    let safe_start = floor_char_boundary(content, context_start);
+    let safe_end = ceil_char_boundary(content, context_end.max(safe_start));
+    let context = content.get(safe_start..safe_end).unwrap_or(content);
+    let preview = truncate_text(context, 100);
+
+    // Provide specific suggestions based on character type
+    let suggestion = if ch == '\0' {
+        format!(
+            "NUL byte found at position {}. Common causes:\n\
+             - Intended to use non-breaking space (\\u00A0) but wrote \\u0000 instead\n\
+             - Binary data mixed into text content\n\
+             - Incorrect escape sequence\n\n\
+             Near: {}",
+            byte_index, preview
+        )
+    } else {
+        format!(
+            "Illegal character {} found at position {}. Options to fix:\n\
+             - Remove the illegal character\n\
+             - Replace with a valid character (e.g., space or \u{00A0})\n\n\
+             Near: {}",
+            char_display, byte_index, preview
+        )
+    };
+
+    XsdValidationError {
+        error_type: XsdErrorType::MalformedXml,
+        element_path: "xml".to_string(),
+        expected: "valid XML 1.0 content (no illegal control characters)".to_string(),
+        found: format!(
+            "illegal character {} at byte position {}",
+            char_display, byte_index
+        ),
+        suggestion,
+        example: None,
+    }
+}
+
+fn floor_char_boundary(content: &str, mut index: usize) -> usize {
+    while index > 0 && !content.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn ceil_char_boundary(content: &str, mut index: usize) -> usize {
+    while index < content.len() && !content.is_char_boundary(index) {
+        index += 1;
+    }
+    index
+}
 
 /// Create a configured quick_xml reader with whitespace trimming enabled.
 ///
@@ -207,18 +333,26 @@ pub fn format_content_preview(content: &str) -> String {
 pub fn malformed_xml_error(error: quick_xml::Error) -> XsdValidationError {
     let error_str = error.to_string();
 
-    // Check if this is likely a code-block escaping issue
-    let suggestion = if error_str.contains("code") || error_str.contains("block") {
-        "Code blocks with special characters (<, >, &) MUST use CDATA sections:\n\
+    // Check if this is likely an illegal character issue (even though we pre-validate)
+    // This can catch cases where quick_xml detects invalid UTF-8 or other encoding issues
+    let suggestion =
+        if error_str.contains("invalid character") || error_str.contains("Invalid character") {
+            "Invalid character detected in XML content. Common causes:\n\
+         - Illegal control characters (NUL, etc.) in text\n\
+         - Invalid UTF-8 encoding\n\
+         - Remove or replace illegal characters with valid Unicode"
+                .to_string()
+        } else if error_str.contains("code") || error_str.contains("block") {
+            "Code blocks with special characters (<, >, &) MUST use CDATA sections:\n\
          <code-block><![CDATA[\n\
            if a < b && c > d { ... }\n\
          ]]></code-block>"
-            .to_string()
-    } else {
-        "Check that all XML tags are properly opened and closed. \
+                .to_string()
+        } else {
+            "Check that all XML tags are properly opened and closed. \
          For code with special characters, use CDATA: <![CDATA[your code]]>"
-            .to_string()
-    };
+                .to_string()
+        };
 
     XsdValidationError {
         error_type: XsdErrorType::MalformedXml,
@@ -382,5 +516,167 @@ mod tests {
         let long_text = "x".repeat(100);
         let error = text_outside_tags_error(&long_text, "parent");
         assert!(error.found.contains("..."));
+    }
+
+    // =========================================================================
+    // ILLEGAL CHARACTER DETECTION TESTS
+    // =========================================================================
+
+    #[test]
+    fn test_check_for_illegal_xml_characters_accepts_valid_content() {
+        // Valid content with allowed characters
+        let valid = "Hello world\nNew line\tTab\rCarriage return";
+        assert!(
+            check_for_illegal_xml_characters(valid).is_ok(),
+            "Valid content should pass"
+        );
+    }
+
+    #[test]
+    fn test_check_for_illegal_xml_characters_accepts_unicode() {
+        // Valid Unicode characters
+        let valid = "Hello 世界 🌍 Ωμέγα";
+        assert!(
+            check_for_illegal_xml_characters(valid).is_ok(),
+            "Valid Unicode should pass"
+        );
+    }
+
+    #[test]
+    fn test_check_for_illegal_xml_characters_rejects_nul() {
+        // NUL byte (the bug from the issue report)
+        let invalid = "text\0here";
+        let result = check_for_illegal_xml_characters(invalid);
+        assert!(result.is_err(), "NUL byte should be rejected");
+
+        let error = result.unwrap_err();
+        assert!(
+            error.found.contains("NUL") || error.found.contains("0x00"),
+            "Error should mention NUL or 0x00, got: {}",
+            error.found
+        );
+        assert!(
+            error.suggestion.contains("\\u00A0") || error.suggestion.contains("non-breaking space"),
+            "Error should suggest NBSP as common fix, got: {}",
+            error.suggestion
+        );
+    }
+
+    #[test]
+    fn test_check_for_illegal_xml_characters_rejects_control_chars() {
+        // Various control characters
+        let test_cases = vec![
+            ("\u{0001}", "0x01"),
+            ("\u{0008}", "0x08"),
+            ("\u{000B}", "0x0B"), // Vertical tab
+            ("\u{000C}", "0x0C"), // Form feed
+            ("\u{000E}", "0x0E"),
+            ("\u{001F}", "0x1F"),
+        ];
+
+        for (invalid_str, expected_code) in test_cases {
+            let content = format!("text{}here", invalid_str);
+            let result = check_for_illegal_xml_characters(&content);
+            assert!(
+                result.is_err(),
+                "Control character {} should be rejected",
+                expected_code
+            );
+
+            let error = result.unwrap_err();
+            assert!(
+                error.found.contains(expected_code) || error.found.contains("control character"),
+                "Error should mention control character, got: {}",
+                error.found
+            );
+        }
+    }
+
+    #[test]
+    fn test_illegal_character_error_does_not_suggest_cdata_for_control_chars() {
+        let invalid = "text\u{0001}here";
+        let result = check_for_illegal_xml_characters(invalid);
+        assert!(result.is_err(), "Control character should be rejected");
+
+        let error = result.unwrap_err();
+        assert!(
+            !error.suggestion.contains("CDATA"),
+            "Control character suggestions should not mention CDATA, got: {}",
+            error.suggestion
+        );
+    }
+
+    #[test]
+    fn test_check_for_illegal_xml_characters_provides_context() {
+        // Position and context information
+        let invalid = "Valid text before\0invalid character after";
+        let result = check_for_illegal_xml_characters(invalid);
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        // Should include surrounding context
+        assert!(
+            error.suggestion.contains("before") || error.suggestion.contains("after"),
+            "Error should include context, got: {}",
+            error.suggestion
+        );
+        // Should mention position
+        assert!(
+            error.found.contains("position"),
+            "Error should mention position, got: {}",
+            error.found
+        );
+    }
+
+    #[test]
+    fn test_illegal_character_error_handles_multibyte_context_without_panic() {
+        let mut prefix = String::from("aaaaaaaaa");
+        prefix.push('é');
+        let remaining = 60 - prefix.len();
+        prefix.push_str(&"b".repeat(remaining));
+        assert_eq!(prefix.len(), 60);
+
+        let content = format!("{}\0tail", prefix);
+
+        let result = std::panic::catch_unwind(|| check_for_illegal_xml_characters(&content));
+        assert!(result.is_ok(), "Should not panic on multibyte boundaries");
+
+        let error = result.unwrap().unwrap_err();
+        assert!(
+            error.suggestion.contains("Near:"),
+            "Error should include context preview, got: {}",
+            error.suggestion
+        );
+    }
+
+    #[test]
+    fn test_check_for_illegal_xml_characters_allows_tab_newline_cr() {
+        // These control characters ARE allowed in XML
+        let valid = "text\twith\ntab\rand\nnewlines";
+        assert!(
+            check_for_illegal_xml_characters(valid).is_ok(),
+            "Tab, LF, CR should be allowed"
+        );
+    }
+
+    #[test]
+    fn test_illegal_character_error_format_is_actionable() {
+        // Verify error format is suitable for AI retry
+        let invalid = "git\0diff";
+        let result = check_for_illegal_xml_characters(invalid);
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        let formatted = error.format_for_ai_retry();
+
+        // Should contain key information for agent to fix
+        assert!(
+            formatted.contains("NUL") || formatted.contains("0x00"),
+            "Formatted error should mention NUL"
+        );
+        assert!(
+            formatted.contains("How to fix") || formatted.contains("suggestion"),
+            "Formatted error should include fix guidance"
+        );
     }
 }

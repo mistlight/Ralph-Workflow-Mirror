@@ -119,7 +119,10 @@ fn test_review_output_validation_failed_sets_xsd_retry_pending() {
         ..create_test_state()
     };
 
-    let new_state = reduce(state, PipelineEvent::review_output_validation_failed(0, 0));
+    let new_state = reduce(
+        state,
+        PipelineEvent::review_output_validation_failed(0, 0, None),
+    );
 
     assert!(
         new_state.continuation.xsd_retry_pending,

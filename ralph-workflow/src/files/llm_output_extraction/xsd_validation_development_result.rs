@@ -50,6 +50,11 @@ pub fn validate_development_result_xml(
 ) -> Result<DevelopmentResultElements, XsdValidationError> {
     let trimmed = xml_content.trim();
     let content = unwrap_cdata_wrapper(trimmed);
+
+    // Check for illegal XML characters BEFORE parsing
+    use crate::files::llm_output_extraction::xml_helpers::check_for_illegal_xml_characters;
+    check_for_illegal_xml_characters(content.as_ref())?;
+
     let mut reader = create_reader(content.as_ref());
     let mut buf = Vec::new();
 
