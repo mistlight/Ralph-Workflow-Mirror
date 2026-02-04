@@ -662,10 +662,17 @@ impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
                         retry_cycle,
                     });
 
-                // Emit skip event and completion marker event to continue flow
+                // Emit trigger and completion events, then completion marker
                 Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
-                    crate::reducer::event::AwaitingDevFixEvent::DevFixSkipped {
-                        reason: "Mock dev-fix flow".to_string(),
+                    crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                        failed_phase,
+                        failed_role,
+                    },
+                ))
+                .with_additional_event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
+                        success: false,
+                        summary: Some("Mock dev-fix flow".to_string()),
                     },
                 ))
                 .with_additional_event(PipelineEvent::AwaitingDevFix(

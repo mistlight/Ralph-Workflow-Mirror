@@ -5,7 +5,7 @@
 //! next agent in the fallback chain rather than immediately aborting.
 
 use crate::test_timeout::with_default_timeout;
-use ralph_workflow::agents::AgentRegistry;
+use ralph_workflow::agents::{AgentRegistry, AgentRole};
 use ralph_workflow::app::event_loop::{run_event_loop_with_handler, EventLoopConfig};
 use ralph_workflow::checkpoint::{ExecutionHistory, RunContext};
 use ralph_workflow::config::Config;
@@ -202,19 +202,30 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
             next_effect
         );
 
-        // When: Dev-fix flow is skipped and completion marker is emitted
-        let after_skip_state = reduce(
+        // When: Dev-fix flow is triggered and completion marker is emitted
+        let after_trigger_state = reduce(
             new_state.clone(),
             PipelineEvent::AwaitingDevFix(
-                ralph_workflow::reducer::event::AwaitingDevFixEvent::DevFixSkipped {
-                    reason: "Dev-fix flow not yet implemented".to_string(),
+                ralph_workflow::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                    failed_phase: PipelinePhase::Development,
+                    failed_role: AgentRole::Developer,
                 },
             ),
         );
-        assert_eq!(after_skip_state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(after_trigger_state.phase, PipelinePhase::AwaitingDevFix);
+
+        let after_fix_state = reduce(
+            after_trigger_state,
+            PipelineEvent::AwaitingDevFix(
+                ralph_workflow::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
+                    success: false,
+                    summary: None,
+                },
+            ),
+        );
 
         let interrupted_state = reduce(
-            after_skip_state,
+            after_fix_state,
             PipelineEvent::AwaitingDevFix(
                 ralph_workflow::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
                     is_failure: true,

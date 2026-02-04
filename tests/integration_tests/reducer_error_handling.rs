@@ -83,19 +83,26 @@ fn test_agent_chain_exhausted_transitions_to_interrupted() {
             effect
         );
 
-        // After dev-fix flow (which immediately skips and emits completion marker),
-        // state should transition to Interrupted
-        let after_skip_state = reduce(
+        // After dev-fix flow, state should transition to Interrupted
+        let after_trigger_state = reduce(
             new_state.clone(),
-            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixSkipped {
-                reason: "Dev-fix flow not yet implemented".to_string(),
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixTriggered {
+                failed_phase: PipelinePhase::Planning,
+                failed_role: AgentRole::Developer,
             }),
         );
-        // DevFixSkipped doesn't change phase, stays in AwaitingDevFix
-        assert_eq!(after_skip_state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(after_trigger_state.phase, PipelinePhase::AwaitingDevFix);
+
+        let after_fix_state = reduce(
+            after_trigger_state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: false,
+                summary: None,
+            }),
+        );
 
         let final_state = reduce(
-            after_skip_state,
+            after_fix_state,
             PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
                 is_failure: true,
             }),

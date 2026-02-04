@@ -20,8 +20,9 @@ use ralph_workflow::prompts::template_context::TemplateContext;
 use ralph_workflow::reducer::determine_next_effect;
 use ralph_workflow::reducer::effect::Effect;
 use ralph_workflow::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
+use ralph_workflow::reducer::handler::MainEffectHandler;
 use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
-use ralph_workflow::reducer::state::PipelineState;
+use ralph_workflow::reducer::state::{AgentChainState, PipelineState};
 use ralph_workflow::reducer::state_reduction::reduce;
 use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
 use std::path::{Path, PathBuf};
@@ -159,6 +160,57 @@ fn test_agent_chain_exhausted_emits_completion_marker() {
 }
 
 #[test]
+fn test_failed_status_dispatches_dev_fix_agent_and_emits_completion_marker() {
+    with_default_timeout(|| {
+        let mut fixture = Fixture::new();
+        fixture
+            .workspace
+            .write(Path::new("PROMPT.md"), "Fix pipeline failure")
+            .expect("PROMPT.md should be writable");
+        fixture
+            .workspace
+            .write(
+                Path::new(".agent/PLAN.md"),
+                "1. Diagnose failure\n2. Fix root cause",
+            )
+            .expect("PLAN.md should be writable");
+
+        let mut ctx = fixture.ctx();
+
+        let mut state = PipelineState {
+            phase: PipelinePhase::AwaitingDevFix,
+            previous_phase: Some(PipelinePhase::Development),
+            ..PipelineState::initial(1, 1)
+        };
+        state.agent_chain = AgentChainState::initial().with_agents(
+            vec!["claude".to_string()],
+            vec![vec![]],
+            AgentRole::Developer,
+        );
+
+        let mut handler = MainEffectHandler::new(state.clone());
+        let config = EventLoopConfig {
+            max_iterations: 100,
+        };
+
+        let result = run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
+            .expect("Event loop should complete");
+
+        assert!(result.completed, "Failure handling should complete");
+        assert!(
+            fixture
+                .workspace
+                .exists(Path::new(".agent/tmp/completion_marker")),
+            "Completion marker should be written"
+        );
+        assert!(
+            !fixture.executor.agent_calls().is_empty(),
+            "Dev-fix agent should be dispatched on failure"
+        );
+    });
+}
+
+#[test]
 fn test_failure_status_triggers_awaiting_dev_fix_not_immediate_exit() {
     with_default_timeout(|| {
         // Given: Pipeline in Development phase
@@ -190,11 +242,22 @@ fn test_failure_status_triggers_awaiting_dev_fix_not_immediate_exit() {
         );
 
         // When: TriggerDevFixFlow effect is processed (simulated)
-        let after_fix_state = reduce(
+        let after_trigger_state = reduce(
             new_state,
             PipelineEvent::AwaitingDevFix(
-                ralph_workflow::reducer::event::AwaitingDevFixEvent::DevFixSkipped {
-                    reason: "Dev-fix flow not yet implemented".to_string(),
+                ralph_workflow::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                    failed_phase: PipelinePhase::Development,
+                    failed_role: AgentRole::Developer,
+                },
+            ),
+        );
+
+        let after_fix_state = reduce(
+            after_trigger_state,
+            PipelineEvent::AwaitingDevFix(
+                ralph_workflow::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
+                    success: false,
+                    summary: None,
                 },
             ),
         );
@@ -334,12 +397,81 @@ fn test_failure_completion_full_event_loop_with_logging() {
         );
 
         // Verify we processed the expected events:
-        // TriggerDevFixFlow -> DevFixSkipped + CompletionMarkerEmitted (2 events) + SaveCheckpoint -> CheckpointSaved (1 event)
-        // Total: at least 3 events
+        // TriggerDevFixFlow -> DevFixTriggered + DevFixCompleted + CompletionMarkerEmitted (3 events)
+        // SaveCheckpoint -> CheckpointSaved (1 event)
+        // Total: at least 4 events
         assert!(
-            result.events_processed >= 3,
-            "Should process at least 3 events (DevFixSkipped, CompletionMarkerEmitted, CheckpointSaved), got {}",
+            result.events_processed >= 4,
+            "Should process at least 4 events (DevFixTriggered, DevFixCompleted, CompletionMarkerEmitted, CheckpointSaved), got {}",
             result.events_processed
+        );
+    });
+}
+
+#[test]
+fn test_event_loop_does_not_exit_prematurely_on_agent_exhaustion() {
+    with_default_timeout(|| {
+        // This test specifically targets the bug where the event loop exits
+        // with completed=false when AgentChainExhausted occurs.
+
+        let mut fixture = Fixture::new();
+        let mut ctx = fixture.ctx();
+
+        // Start in Planning phase (will transition to AwaitingDevFix on error)
+        let state = PipelineState::initial(1, 1);
+
+        // Inject AgentChainExhausted error
+        let error_event = PipelineEvent::PromptInput(PromptInputEvent::HandlerError {
+            phase: PipelinePhase::Planning,
+            error: ErrorEvent::AgentChainExhausted {
+                role: AgentRole::Developer,
+                phase: PipelinePhase::Planning,
+                cycle: 3,
+            },
+        });
+
+        let awaiting_fix_state = reduce(state, error_event);
+        assert_eq!(awaiting_fix_state.phase, PipelinePhase::AwaitingDevFix);
+
+        let mut handler = MockEffectHandler::new(awaiting_fix_state.clone());
+        let config = EventLoopConfig {
+            max_iterations: 100,
+        };
+
+        let result =
+            run_event_loop_with_handler(&mut ctx, Some(awaiting_fix_state), config, &mut handler)
+                .expect("Event loop should not error");
+
+        // CRITICAL: Event loop MUST report completion
+        assert!(
+            result.completed,
+            "BUG: Event loop exited without completion marker. \
+             This is the bug we're fixing. \
+             final_phase={:?}, events_processed={}, checkpoint_saved_count={}",
+            result.final_phase, result.events_processed, handler.state.checkpoint_saved_count
+        );
+
+        // Verify we reached Interrupted phase with checkpoint saved
+        assert_eq!(
+            result.final_phase,
+            PipelinePhase::Interrupted,
+            "Should transition to Interrupted after failure handling"
+        );
+
+        // Verify completion marker exists
+        let marker_path = Path::new(".agent/tmp/completion_marker");
+        assert!(
+            fixture.workspace.exists(marker_path),
+            "Completion marker must be written during dev-fix flow"
+        );
+
+        let marker_content = fixture
+            .workspace
+            .read(marker_path)
+            .expect("Should read completion marker");
+        assert!(
+            marker_content.starts_with("failure"),
+            "Completion marker should indicate failure"
         );
     });
 }

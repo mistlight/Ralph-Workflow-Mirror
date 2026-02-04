@@ -455,8 +455,7 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
         PipelinePhase::Finalizing => Effect::RestorePromptPermissions,
 
         PipelinePhase::AwaitingDevFix => {
-            // For the initial implementation, trigger dev-fix flow immediately
-            // The handler will emit a skip event since full dev-fix is not yet implemented
+            // Trigger dev-fix flow immediately to dispatch remediation.
             Effect::TriggerDevFixFlow {
                 failed_phase: state.previous_phase.unwrap_or(PipelinePhase::Development),
                 failed_role: state.agent_chain.current_role,

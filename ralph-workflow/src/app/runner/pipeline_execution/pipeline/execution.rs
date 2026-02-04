@@ -390,16 +390,31 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
         ctx.logger.warn(&format!(
             "This indicates a bug in the event loop or reducer. \
              Expected final phase: Complete or Interrupted+checkpoint. \
-             Actual: completed=false, events_processed={}",
-            loop_result.events_processed
+             Actual: completed=false, final_phase={:?}, events_processed={}",
+            loop_result.final_phase, loop_result.events_processed
         ));
+
+        // If we exited from AwaitingDevFix without completing, this is the specific bug
+        // we're trying to fix - log it explicitly
+        if matches!(
+            loop_result.final_phase,
+            crate::reducer::event::PipelinePhase::AwaitingDevFix
+        ) {
+            ctx.logger.error(
+                "BUG DETECTED: Event loop exited from AwaitingDevFix without completing dev-fix flow. \
+                 This should transition to Interrupted and save checkpoint."
+            );
+        }
 
         // DEFENSIVE: Emit completion marker for orchestration
         // This ensures external systems can detect termination even if the
         // event loop exited unexpectedly before SaveCheckpoint was processed.
         let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
-        let content = "failure\nEvent loop exited without normal completion";
-        if let Err(err) = ctx.workspace.write(marker_path, content) {
+        let content = format!(
+            "failure\nEvent loop exited without normal completion (final_phase={:?})",
+            loop_result.final_phase
+        );
+        if let Err(err) = ctx.workspace.write(marker_path, &content) {
             ctx.logger.error(&format!(
                 "Failed to write defensive completion marker: {err}"
             ));

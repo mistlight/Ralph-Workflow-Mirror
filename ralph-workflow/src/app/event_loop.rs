@@ -404,6 +404,31 @@ where
 
     if events_processed >= config.max_iterations && !state.is_complete() {
         let dumped = dump_event_loop_trace(ctx, &trace, &state, "max_iterations");
+
+        // CRITICAL: If we hit max iterations in AwaitingDevFix, we need to write completion marker
+        // and transition to Interrupted to ensure proper termination
+        if matches!(state.phase, PipelinePhase::AwaitingDevFix) {
+            ctx.logger
+                .warn("Max iterations reached in AwaitingDevFix - forcing completion marker");
+
+            // Write completion marker
+            if let Err(err) = ctx.workspace.create_dir_all(Path::new(".agent/tmp")) {
+                ctx.logger.error(&format!(
+                    "Failed to create completion marker directory: {err}"
+                ));
+            }
+            let marker_path = Path::new(".agent/tmp/completion_marker");
+            let content = format!(
+                "failure\nMax iterations reached in AwaitingDevFix phase (events_processed={})",
+                events_processed
+            );
+            let _ = ctx.workspace.write(marker_path, &content);
+
+            // Force transition to Interrupted
+            state.phase = PipelinePhase::Interrupted;
+            state.previous_phase = Some(PipelinePhase::AwaitingDevFix);
+        }
+
         if dumped {
             ctx.logger.warn(&format!(
                 "Event loop reached max iterations ({}) without completion (trace: {EVENT_LOOP_TRACE_PATH})",
@@ -424,8 +449,13 @@ where
     let completed = state.is_complete();
     if !completed {
         ctx.logger.warn(&format!(
-            "Event loop exiting without completion: phase={:?}, checkpoint_saved_count={}",
-            state.phase, state.checkpoint_saved_count
+            "Event loop exiting without completion: phase={:?}, checkpoint_saved_count={}, \
+             previous_phase={:?}, events_processed={}",
+            state.phase, state.checkpoint_saved_count, state.previous_phase, events_processed
+        ));
+        ctx.logger.info(&format!(
+            "Final state: agent_chain.retry_cycle={}, agent_chain.current_role={:?}",
+            state.agent_chain.retry_cycle, state.agent_chain.current_role
         ));
     }
 

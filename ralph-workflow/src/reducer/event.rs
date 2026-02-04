@@ -477,13 +477,27 @@ pub enum PipelinePhase {
     /// 3. Orchestration determines Effect::TriggerDevFixFlow
     /// 4. Handler executes TriggerDevFixFlow:
     ///    a. Writes completion marker to .agent/tmp/completion_marker (failure status)
-    ///    b. Emits DevFixSkipped event (current implementation)
-    ///    c. Emits CompletionMarkerEmitted event
-    /// 5. DevFixSkipped event: no state change (stays in AwaitingDevFix)
+    ///    b. Emits DevFixTriggered event
+    ///    c. Dispatches dev-fix agent
+    ///    d. Emits DevFixCompleted event
+    ///    e. Emits CompletionMarkerEmitted event
+    /// 5. DevFixTriggered/DevFixCompleted events: no state change (stays in AwaitingDevFix)
     /// 6. CompletionMarkerEmitted event: transitions to Interrupted
     /// 7. Orchestration determines Effect::SaveCheckpoint for Interrupted
     /// 8. Handler saves checkpoint, increments checkpoint_saved_count
     /// 9. Event loop recognizes is_complete() == true and exits successfully
+    ///
+    /// ## Event Loop Termination Guarantees
+    ///
+    /// The event loop MUST NOT exit with completed=false when in AwaitingDevFix phase.
+    /// The failure handling flow is designed to always complete with:
+    /// - Completion marker written to filesystem
+    /// - State transitioned to Interrupted
+    /// - Checkpoint saved (checkpoint_saved_count > 0)
+    /// - Event loop returning completed=true
+    ///
+    /// If the event loop exits with completed=false from AwaitingDevFix, this indicates
+    /// a critical bug (e.g., max iterations reached before checkpoint saved).
     ///
     /// ## Completion Marker Requirement
     ///

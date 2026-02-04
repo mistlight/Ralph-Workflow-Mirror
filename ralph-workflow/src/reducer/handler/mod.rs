@@ -285,10 +285,6 @@ impl MainEffectHandler {
                 failed_role,
                 retry_cycle,
             } => {
-                // For initial implementation, log the failure and write completion marker
-                // before proceeding to termination.
-                // Full dev-fix flow implementation requires prompt engineering and
-                // agent invocation plumbing.
                 ctx.logger.error("⚠️  PIPELINE FAILURE DETECTED ⚠️");
                 ctx.logger.warn(&format!(
                     "Pipeline failure detected (phase: {}, role: {:?}, cycle: {})",
@@ -296,9 +292,91 @@ impl MainEffectHandler {
                 ));
                 ctx.logger.info("Entering AwaitingDevFix flow...");
                 ctx.logger
-                    .info("Dev-fix flow not yet implemented - proceeding to termination");
+                    .info("Dispatching dev-fix agent for remediation...");
 
-                // Write completion marker BEFORE emitting events
+                let read_or_fallback = |path: &str, label: &str| -> String {
+                    match ctx.workspace.read(std::path::Path::new(path)) {
+                        Ok(content) => content,
+                        Err(err) => {
+                            ctx.logger.warn(&format!(
+                                "Dev-fix prompt fallback: failed to read {}: {}",
+                                label, err
+                            ));
+                            format!("(Missing {}: {})", label, err)
+                        }
+                    }
+                };
+
+                let prompt_content = read_or_fallback("PROMPT.md", "PROMPT.md");
+                let plan_content = read_or_fallback(".agent/PLAN.md", ".agent/PLAN.md");
+                let issues_content = format!(
+                    "# Issues\n\n- [High] Pipeline failure: agent chain exhausted (phase: {}, role: {:?}, cycle: {}).\n  Diagnose the root cause and fix the failure.\n",
+                    failed_phase, failed_role, retry_cycle
+                );
+                let dev_fix_prompt = crate::prompts::prompt_fix_with_context(
+                    ctx.template_context,
+                    &prompt_content,
+                    &plan_content,
+                    &issues_content,
+                );
+
+                if let Err(err) = ctx.workspace.write(
+                    std::path::Path::new(".agent/tmp/dev_fix_prompt.txt"),
+                    &dev_fix_prompt,
+                ) {
+                    ctx.logger.warn(&format!(
+                        "Failed to write dev-fix prompt to workspace: {}",
+                        err
+                    ));
+                }
+
+                let agent = self
+                    .state
+                    .agent_chain
+                    .current_agent()
+                    .cloned()
+                    .unwrap_or_else(|| ctx.developer_agent.to_string());
+
+                let agent_result = self.invoke_agent(
+                    ctx,
+                    crate::agents::AgentRole::Developer,
+                    agent,
+                    None,
+                    dev_fix_prompt,
+                )?;
+
+                let dev_fix_success = agent_result.additional_events.iter().any(|event| {
+                    matches!(
+                        event,
+                        PipelineEvent::Agent(
+                            crate::reducer::event::AgentEvent::InvocationSucceeded { .. }
+                        )
+                    )
+                });
+
+                let mut result = EffectResult::with_ui(
+                    PipelineEvent::AwaitingDevFix(
+                        crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                            failed_phase,
+                            failed_role,
+                        },
+                    ),
+                    agent_result.ui_events,
+                )
+                .with_additional_event(agent_result.event);
+
+                for event in agent_result.additional_events {
+                    result = result.with_additional_event(event);
+                }
+
+                result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
+                        success: dev_fix_success,
+                        summary: None,
+                    },
+                ));
+
+                // Write completion marker BEFORE emitting CompletionMarkerEmitted
                 let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
                 let content = format!(
                     "failure\nAgent chain exhausted: phase={}, role={:?}, cycle={}",
@@ -306,20 +384,13 @@ impl MainEffectHandler {
                 );
                 ctx.workspace.write(marker_path, &content)?;
                 ctx.logger.info("Completion marker written: failure");
-                ctx.logger
-                    .info("Emitting DevFixSkipped and CompletionMarkerEmitted events...");
-
-                // Emit skip event and completion marker event to continue flow
-                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
-                    crate::reducer::event::AwaitingDevFixEvent::DevFixSkipped {
-                        reason: "Dev-fix flow not yet implemented".to_string(),
-                    },
-                ))
-                .with_additional_event(PipelineEvent::AwaitingDevFix(
+                result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
                         is_failure: true,
                     },
-                )))
+                ));
+
+                Ok(result)
             }
 
             Effect::EmitCompletionMarkerAndTerminate { is_failure, reason } => {
