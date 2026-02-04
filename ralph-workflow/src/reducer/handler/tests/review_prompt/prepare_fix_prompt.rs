@@ -587,6 +587,78 @@ fn test_prepare_fix_prompt_does_not_mask_non_not_found_issues_read_errors() {
 }
 
 #[test]
+fn test_prepare_fix_prompt_xsd_retry_does_not_mask_non_not_found_last_output_read_errors() {
+    use crate::files::llm_output_extraction::file_based_extraction::paths as xml_paths;
+
+    let inner = MemoryWorkspace::new_test()
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/ISSUES.md", "# Issues\n")
+        .with_dir(".agent/tmp");
+    let workspace = ReadFailingWorkspace::new(
+        inner,
+        PathBuf::from(xml_paths::FIX_RESULT_XML),
+        io::ErrorKind::PermissionDenied,
+    );
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    handler.state.continuation = ContinuationState {
+        invalid_output_attempts: 1,
+        ..ContinuationState::default()
+    };
+
+    let err = handler
+        .prepare_fix_prompt(&mut ctx, 0, PromptMode::XsdRetry)
+        .expect_err("prepare_fix_prompt should surface non-NotFound FIX_RESULT_XML read failures");
+
+    let error_event = err
+        .downcast_ref::<ErrorEvent>()
+        .expect("error should preserve ErrorEvent for event-loop recovery");
+    assert!(
+        matches!(
+            error_event,
+            ErrorEvent::WorkspaceReadFailed {
+                path,
+                kind: WorkspaceIoErrorKind::PermissionDenied
+            } if path == xml_paths::FIX_RESULT_XML
+        ),
+        "expected WorkspaceReadFailed for FIX_RESULT_XML read, got: {error_event:?}"
+    );
+}
+
+#[test]
 fn test_prepare_fix_prompt_embeds_sentinel_when_prompt_backup_missing() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/PLAN.md", "# Plan\n")

@@ -148,3 +148,20 @@ fn test_cleanup_orphaned_marker() {
         assert!(!marker_path.exists());
     });
 }
+
+#[test]
+fn test_git2_to_io_error_preserves_not_found_kind_for_missing_repo() {
+    let missing =
+        std::env::temp_dir().join(format!("ralph-nonexistent-repo-{}", std::process::id()));
+    let err = match git2::Repository::discover(&missing) {
+        Ok(_) => panic!("expected repo discovery to fail for missing path"),
+        Err(err) => err,
+    };
+
+    let io_err = git2_to_io_error(&err);
+    assert_eq!(
+        io_err.kind(),
+        std::io::ErrorKind::NotFound,
+        "expected NotFound kind for missing repo discovery error"
+    );
+}

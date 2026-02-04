@@ -166,6 +166,122 @@ fn test_dump_event_loop_trace_creates_parent_dir_before_write() {
 }
 
 #[test]
+fn test_extract_error_event_searches_anyhow_error_chain() {
+    use crate::reducer::event::ErrorEvent;
+    use std::error::Error;
+    use std::fmt;
+
+    #[derive(Debug)]
+    struct WrapperError {
+        source: ErrorEvent,
+    }
+
+    impl fmt::Display for WrapperError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "wrapper")
+        }
+    }
+
+    impl Error for WrapperError {
+        fn source(&self) -> Option<&(dyn Error + 'static)> {
+            Some(&self.source)
+        }
+    }
+
+    let wrapped: anyhow::Error = anyhow::Error::new(WrapperError {
+        source: ErrorEvent::FixPromptMissing,
+    });
+
+    let extracted = super::extract_error_event(&wrapped)
+        .expect("expected ErrorEvent to be found in error chain");
+    assert!(matches!(extracted, ErrorEvent::FixPromptMissing));
+}
+
+#[test]
+fn test_event_loop_dumps_trace_on_unrecoverable_handler_error() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::phases::PhaseContext;
+    use crate::pipeline::{Stats, Timer};
+    use crate::prompts::template_context::TemplateContext;
+    use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+    use crate::reducer::state::PipelineState;
+    use crate::workspace::{MemoryWorkspace, Workspace};
+    use anyhow::Result;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct UnrecoverableErrorHandler {
+        state: PipelineState,
+    }
+
+    impl EffectHandler<'_> for UnrecoverableErrorHandler {
+        fn execute(
+            &mut self,
+            _effect: Effect,
+            _ctx: &mut PhaseContext<'_>,
+        ) -> Result<EffectResult> {
+            Err(anyhow::anyhow!("boom"))
+        }
+    }
+
+    impl super::StatefulHandler for UnrecoverableErrorHandler {
+        fn update_state(&mut self, state: PipelineState) {
+            self.state = state;
+        }
+    }
+
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "test-developer",
+        reviewer_agent: "test-reviewer",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+    };
+
+    let state = PipelineState::initial(1, 0);
+    let mut handler = UnrecoverableErrorHandler {
+        state: state.clone(),
+    };
+    let loop_config = super::EventLoopConfig { max_iterations: 10 };
+
+    let _ = super::run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
+        .expect_err("expected event loop to return Err for non-ErrorEvent handler error");
+
+    assert!(
+        workspace.exists(Path::new(super::EVENT_LOOP_TRACE_PATH)),
+        "expected trace file to be dumped on unrecoverable handler error"
+    );
+}
+
+#[test]
 fn test_event_loop_config_creation() {
     let config = EventLoopConfig {
         max_iterations: 1000,

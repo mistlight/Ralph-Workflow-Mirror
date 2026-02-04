@@ -654,10 +654,22 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use std::path::Path;
 
-        let prompt = ctx
+        let prompt = match ctx
             .workspace
             .read(Path::new(".agent/tmp/review_prompt.txt"))
-            .map_err(|_| ErrorEvent::ReviewPromptMissing { pass })?;
+        {
+            Ok(s) => s,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Err(ErrorEvent::ReviewPromptMissing { pass }.into());
+            }
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: ".agent/tmp/review_prompt.txt".to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
+            }
+        };
 
         let agent = self
             .state
@@ -817,10 +829,22 @@ impl MainEffectHandler {
             .filter(|outcome| outcome.pass == pass)
             .ok_or(ErrorEvent::ValidatedReviewOutcomeMissing { pass })?;
 
-        let issues_xml = ctx
-            .workspace
-            .read(Path::new(xml_paths::ISSUES_XML))
-            .unwrap_or_default();
+        let issues_xml = ctx.workspace.read(Path::new(xml_paths::ISSUES_XML));
+        let issues_xml = match issues_xml {
+            Ok(s) => s,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                ctx.logger
+                    .warn("Missing .agent/tmp/issues.xml; using empty content for UI output");
+                String::new()
+            }
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: xml_paths::ISSUES_XML.to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
+            }
+        };
 
         let snippets = extract_issue_snippets(&outcome.issues, ctx.workspace);
         Ok(EffectResult::with_ui(

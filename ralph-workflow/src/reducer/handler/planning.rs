@@ -364,10 +364,19 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        let prompt = ctx
-            .workspace
-            .read(Path::new(PLANNING_PROMPT_PATH))
-            .map_err(|_| ErrorEvent::PlanningPromptMissing { iteration })?;
+        let prompt = match ctx.workspace.read(Path::new(PLANNING_PROMPT_PATH)) {
+            Ok(s) => s,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Err(ErrorEvent::PlanningPromptMissing { iteration }.into());
+            }
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: PLANNING_PROMPT_PATH.to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
+            }
+        };
 
         let agent = self
             .state

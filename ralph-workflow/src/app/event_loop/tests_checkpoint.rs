@@ -190,7 +190,7 @@ fn test_event_loop_result_completed_false_for_interrupted_with_checkpoint() {
 }
 
 #[test]
-fn test_event_loop_returns_error_on_handler_panic() {
+fn test_event_loop_returns_incomplete_result_on_handler_panic() {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -200,6 +200,7 @@ fn test_event_loop_returns_error_on_handler_panic() {
     use crate::prompts::template_context::TemplateContext;
     use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
     use crate::workspace::MemoryWorkspace;
+    use crate::workspace::Workspace;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -255,8 +256,10 @@ fn test_event_loop_returns_error_on_handler_panic() {
     let mut handler = PanickingHandler;
     let loop_config = EventLoopConfig { max_iterations: 1 };
 
-    run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
-        .expect_err("panic inside handler.execute must surface as Err() to avoid false success");
+    let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
+        .expect("event loop should return an EventLoopResult even on panic");
+    assert!(!result.completed);
+    assert!(workspace.exists(std::path::Path::new(super::EVENT_LOOP_TRACE_PATH)));
 }
 
 #[test]

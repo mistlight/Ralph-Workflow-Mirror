@@ -156,9 +156,15 @@ fn build_trace_entry(
 /// This architecture allows the reducer to decide recovery strategy based on the specific
 /// error type, rather than terminating immediately on any `Err()`.
 fn extract_error_event(err: &anyhow::Error) -> Option<crate::reducer::event::ErrorEvent> {
-    // Try to downcast to ErrorEvent
-    err.downcast_ref::<crate::reducer::event::ErrorEvent>()
-        .cloned()
+    // Handlers are allowed to wrap typed ErrorEvents with additional context
+    // (e.g. via `anyhow::Context`). Search the full error chain so we still
+    // recover the underlying reducer error event.
+    for cause in err.chain() {
+        if let Some(error_event) = cause.downcast_ref::<crate::reducer::event::ErrorEvent>() {
+            return Some(error_event.clone());
+        }
+    }
+    None
 }
 
 fn dump_event_loop_trace(
@@ -271,6 +277,16 @@ where
                     )
                 } else {
                     // Truly unrecoverable error - cannot continue
+                    let dumped =
+                        dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
+                    if dumped {
+                        ctx.logger.error(&format!(
+                            "Event loop encountered unrecoverable handler error (trace: {EVENT_LOOP_TRACE_PATH})"
+                        ));
+                    } else {
+                        ctx.logger
+                            .error("Event loop encountered unrecoverable handler error");
+                    }
                     return Err(err);
                 }
             }
@@ -284,9 +300,13 @@ where
                     ctx.logger.error("Event loop recovered from panic");
                 }
 
-                return Err(anyhow::anyhow!(
-                    "event loop panicked while executing {effect_str}"
-                ));
+                // Panics inside effect handlers are treated as catastrophic-but-contained.
+                // We dump a trace and return a non-completed result so unattended runs can
+                // surface diagnostics without crashing the process.
+                return Ok(EventLoopResult {
+                    completed: false,
+                    events_processed,
+                });
             }
         };
 

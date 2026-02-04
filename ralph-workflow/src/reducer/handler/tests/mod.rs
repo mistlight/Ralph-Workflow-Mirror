@@ -3,9 +3,9 @@
 // decomposed into single-task effects.
 
 mod commit_handler;
+mod context_cleanup;
 mod development_outcome;
 mod development_prompt;
-mod context_cleanup;
 mod extract_missing;
 mod fix_outcome;
 mod invoke_prompt;

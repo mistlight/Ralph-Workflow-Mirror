@@ -11,8 +11,8 @@ use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::PipelineState;
 use crate::workspace::MemoryWorkspace;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
@@ -28,9 +28,13 @@ fn test_create_commit_returns_typed_error_event_when_git_add_all_fails() {
     let executor = Arc::new(MockProcessExecutor::new());
     let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
     let executor_ref = executor_arc.clone();
-    // Use a non-existent repo root so git discovery fails. This avoids mutating
-    // process-wide CWD (which would be flaky under parallel test execution).
-    let repo_root = PathBuf::from("/mock/repo/does-not-exist");
+    // Use a unique, non-existent repo root so git discovery fails deterministically.
+    // This avoids mutating process-wide CWD (which would be flaky under parallel test execution).
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let repo_root = std::env::temp_dir().join(format!("ralph-nonexistent-repo-{unique}"));
 
     let mut ctx = crate::phases::PhaseContext {
         config: &config,

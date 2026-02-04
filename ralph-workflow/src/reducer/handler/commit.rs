@@ -469,10 +469,22 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
         let attempt = current_commit_attempt(&self.state.commit);
-        let prompt = ctx
+        let prompt = match ctx
             .workspace
             .read(Path::new(".agent/tmp/commit_prompt.txt"))
-            .map_err(|_| ErrorEvent::CommitPromptMissing { attempt })?;
+        {
+            Ok(s) => s,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Err(ErrorEvent::CommitPromptMissing { attempt }.into());
+            }
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: ".agent/tmp/commit_prompt.txt".to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
+            }
+        };
 
         let agent = self
             .state

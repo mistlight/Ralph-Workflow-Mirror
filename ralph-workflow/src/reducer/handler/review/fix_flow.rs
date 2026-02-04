@@ -71,9 +71,17 @@ impl MainEffectHandler {
         let continuation_state = &self.state.continuation;
         let is_xsd_retry = matches!(prompt_mode, PromptMode::XsdRetry);
         let last_output = if is_xsd_retry {
-            ctx.workspace
-                .read(Path::new(xml_paths::FIX_RESULT_XML))
-                .unwrap_or_default()
+            match ctx.workspace.read(Path::new(xml_paths::FIX_RESULT_XML)) {
+                Ok(s) => s,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+                Err(err) => {
+                    return Err(ErrorEvent::WorkspaceReadFailed {
+                        path: xml_paths::FIX_RESULT_XML.to_string(),
+                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                    }
+                    .into());
+                }
+            }
         } else {
             String::new()
         };
@@ -196,10 +204,19 @@ impl MainEffectHandler {
         use crate::agents::AgentRole;
         use std::path::Path;
 
-        let prompt = ctx
-            .workspace
-            .read(Path::new(".agent/tmp/fix_prompt.txt"))
-            .map_err(|_| ErrorEvent::FixPromptMissing)?;
+        let prompt = match ctx.workspace.read(Path::new(".agent/tmp/fix_prompt.txt")) {
+            Ok(s) => s,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Err(ErrorEvent::FixPromptMissing.into());
+            }
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: ".agent/tmp/fix_prompt.txt".to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
+            }
+        };
 
         let agent = self
             .state
