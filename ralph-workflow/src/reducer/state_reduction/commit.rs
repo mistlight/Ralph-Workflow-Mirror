@@ -130,12 +130,12 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
         CommitEvent::Created { hash, .. } => {
             let (next_phase, next_iter, next_reviewer_pass) =
                 compute_post_commit_transition(&state);
-            // When transitioning from Development to Review, clear the agent chain
-            // so orchestration will emit InitializeAgentChain for Reviewer role.
-            // This ensures the reviewer fallback chain is used, not the developer chain.
-            let agent_chain = if next_phase == crate::reducer::event::PipelinePhase::Review
-                && state.previous_phase == Some(crate::reducer::event::PipelinePhase::Development)
-            {
+            // When transitioning to Review phase, reset the agent chain for Reviewer role
+            // to ensure the reviewer fallback chain is used, not any other chain (Developer, Commit).
+            // This handles both:
+            // - Development → CommitMessage → Review (first review pass)
+            // - Review → CommitMessage → Review (between review passes after fix)
+            let agent_chain = if next_phase == crate::reducer::event::PipelinePhase::Review {
                 crate::reducer::state::AgentChainState::initial()
                     .with_max_cycles(state.agent_chain.max_cycles)
                     .with_backoff_policy(
@@ -185,12 +185,12 @@ pub(super) fn reduce_commit_event(state: PipelineState, event: CommitEvent) -> P
         CommitEvent::Skipped { .. } => {
             let (next_phase, next_iter, next_reviewer_pass) =
                 compute_post_commit_transition(&state);
-            // When transitioning from Development to Review, clear the agent chain
-            // so orchestration will emit InitializeAgentChain for Reviewer role.
-            // This ensures the reviewer fallback chain is used, not the developer chain.
-            let agent_chain = if next_phase == crate::reducer::event::PipelinePhase::Review
-                && state.previous_phase == Some(crate::reducer::event::PipelinePhase::Development)
-            {
+            // When transitioning to Review phase, reset the agent chain for Reviewer role
+            // to ensure the reviewer fallback chain is used, not any other chain (Developer, Commit).
+            // This handles both:
+            // - Development → CommitMessage → Review (first review pass)
+            // - Review → CommitMessage → Review (between review passes after fix)
+            let agent_chain = if next_phase == crate::reducer::event::PipelinePhase::Review {
                 crate::reducer::state::AgentChainState::initial()
                     .with_max_cycles(state.agent_chain.max_cycles)
                     .with_backoff_policy(

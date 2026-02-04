@@ -257,3 +257,83 @@ fn test_review_phase_agent_selection_uses_reducer_state() {
         effect
     );
 }
+
+/// When transitioning from Review → CommitMessage → Review (between review passes),
+/// the agent chain should be cleared or reset to Reviewer role so orchestration
+/// uses the reviewer chain, not the commit chain.
+#[test]
+fn test_commit_created_after_review_fix_clears_or_resets_chain() {
+    let mut state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: Some(PipelinePhase::Review),
+        reviewer_pass: 0, // First pass completed, moving to second
+        total_reviewer_passes: 2,
+        ..create_test_state()
+    };
+
+    // Populate with commit agent chain (as would happen in CommitMessage phase)
+    state.agent_chain = AgentChainState::initial()
+        .with_agents(
+            vec!["commit-agent-1".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        )
+        .with_max_cycles(3);
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::commit_created("abc123".to_string(), "fix commit".to_string()),
+    );
+
+    // Should transition back to Review for next pass
+    assert_eq!(new_state.phase, PipelinePhase::Review);
+    assert_eq!(new_state.reviewer_pass, 1);
+
+    // CRITICAL: Agent chain should be either empty OR have Reviewer role
+    // so orchestration will use/initialize the reviewer chain
+    if !new_state.agent_chain.agents.is_empty() {
+        assert_eq!(
+            new_state.agent_chain.current_role,
+            AgentRole::Reviewer,
+            "If chain is not empty after commit, role must be Reviewer, got {:?}",
+            new_state.agent_chain.current_role
+        );
+    }
+    // If empty, orchestration will initialize for Reviewer role (tested elsewhere)
+}
+
+/// Same test for CommitSkipped
+#[test]
+fn test_commit_skipped_after_review_fix_clears_or_resets_chain() {
+    let mut state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        previous_phase: Some(PipelinePhase::Review),
+        reviewer_pass: 0,
+        total_reviewer_passes: 2,
+        ..create_test_state()
+    };
+
+    state.agent_chain = AgentChainState::initial()
+        .with_agents(
+            vec!["commit-agent-1".to_string()],
+            vec![vec![]],
+            AgentRole::Commit,
+        )
+        .with_max_cycles(3);
+
+    let new_state = reduce(
+        state,
+        PipelineEvent::commit_skipped("no changes".to_string()),
+    );
+
+    assert_eq!(new_state.phase, PipelinePhase::Review);
+    assert_eq!(new_state.reviewer_pass, 1);
+
+    if !new_state.agent_chain.agents.is_empty() {
+        assert_eq!(
+            new_state.agent_chain.current_role,
+            AgentRole::Reviewer,
+            "If chain is not empty after skip, role must be Reviewer"
+        );
+    }
+}

@@ -289,7 +289,9 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 // Legacy super-effect placeholder. Removed once the fix chain is complete.
             }
 
-            if state.agent_chain.agents.is_empty() {
+            if state.agent_chain.agents.is_empty()
+                || state.agent_chain.current_role != AgentRole::Reviewer
+            {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Reviewer,
                 };
