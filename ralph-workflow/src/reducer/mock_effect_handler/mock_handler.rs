@@ -210,6 +210,13 @@ impl MockEffectHandler {
                 (PipelineEvent::development_agent_invoked(iteration), vec![])
             }
 
+            Effect::InvokeAnalysisAgent { iteration } => (
+                PipelineEvent::Development(
+                    crate::reducer::event::DevelopmentEvent::AnalysisAgentInvoked { iteration },
+                ),
+                vec![],
+            ),
+
             Effect::ExtractDevelopmentXml { iteration } => {
                 let mock_dev_result_xml = r#"<ralph-development-result>
 <ralph-status>completed</ralph-status>

@@ -337,6 +337,7 @@ fn test_effects_are_single_task() {
             MaterializeDevelopmentInputs,
             PrepareDevelopmentPrompt,
             InvokeDevelopmentAgent,
+            InvokeAnalysisAgent,
             ExtractDevelopmentXml,
             ValidateDevelopmentXml,
             ApplyDevelopmentOutcome,
@@ -403,6 +404,7 @@ fn test_effects_are_single_task() {
                 }
                 Effect::PrepareDevelopmentPrompt { .. } => EffectTask::PrepareDevelopmentPrompt,
                 Effect::InvokeDevelopmentAgent { .. } => EffectTask::InvokeDevelopmentAgent,
+                Effect::InvokeAnalysisAgent { .. } => EffectTask::InvokeAnalysisAgent,
                 Effect::ExtractDevelopmentXml { .. } => EffectTask::ExtractDevelopmentXml,
                 Effect::ValidateDevelopmentXml { .. } => EffectTask::ValidateDevelopmentXml,
                 Effect::ApplyDevelopmentOutcome { .. } => EffectTask::ApplyDevelopmentOutcome,
@@ -484,6 +486,7 @@ fn test_effects_are_single_task() {
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
             Effect::InvokeDevelopmentAgent { iteration: 0 },
+            Effect::InvokeAnalysisAgent { iteration: 0 },
             Effect::ExtractDevelopmentXml { iteration: 0 },
             Effect::ValidateDevelopmentXml { iteration: 0 },
             Effect::ApplyDevelopmentOutcome { iteration: 0 },
@@ -575,8 +578,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            57,
-            "Expected 57 Effect variants; update this test if variants were added or removed"
+            58,
+            "Expected 58 Effect variants; update this test if variants were added or removed"
         );
     });
 }

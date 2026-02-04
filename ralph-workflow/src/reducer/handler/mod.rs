@@ -12,6 +12,7 @@
 // XML `.processed` files are archives only and are never read as inputs.
 
 mod agent;
+mod analysis;
 mod chain;
 mod checkpoint;
 mod commit;
@@ -139,6 +140,8 @@ impl MainEffectHandler {
             Effect::InvokeDevelopmentAgent { iteration } => {
                 self.invoke_development_agent(ctx, iteration)
             }
+
+            Effect::InvokeAnalysisAgent { iteration } => self.invoke_analysis_agent(ctx, iteration),
 
             Effect::ExtractDevelopmentXml { iteration } => {
                 self.extract_development_xml(ctx, iteration)

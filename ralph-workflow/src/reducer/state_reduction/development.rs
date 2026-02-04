@@ -19,6 +19,7 @@ pub(super) fn reduce_development_event(
             development_prompt_prepared_iteration: None,
             development_xml_cleaned_iteration: None,
             development_agent_invoked_iteration: None,
+            analysis_agent_invoked_iteration: None,
             development_xml_extracted_iteration: None,
             development_validated_outcome: None,
             development_xml_archived_iteration: None,
@@ -36,6 +37,7 @@ pub(super) fn reduce_development_event(
             development_prompt_prepared_iteration: None,
             development_xml_cleaned_iteration: None,
             development_agent_invoked_iteration: None,
+            analysis_agent_invoked_iteration: None,
             development_xml_extracted_iteration: None,
             development_validated_outcome: None,
             development_xml_archived_iteration: None,
@@ -76,6 +78,10 @@ pub(super) fn reduce_development_event(
                 same_agent_retry_reason: None,
                 ..state.continuation
             },
+            ..state
+        },
+        DevelopmentEvent::AnalysisAgentInvoked { iteration } => PipelineState {
+            analysis_agent_invoked_iteration: Some(iteration),
             ..state
         },
         DevelopmentEvent::XmlExtracted { iteration } => PipelineState {

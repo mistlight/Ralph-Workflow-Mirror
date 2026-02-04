@@ -148,6 +148,14 @@ fn test_complete_pipeline_flow() {
             Effect::InvokeDevelopmentAgent { iteration } => {
                 state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
             }
+            Effect::InvokeAnalysisAgent { iteration } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked {
+                        iteration,
+                    }),
+                );
+            }
             Effect::ExtractDevelopmentXml { iteration } => {
                 state = reduce(state, PipelineEvent::development_xml_extracted(iteration));
             }

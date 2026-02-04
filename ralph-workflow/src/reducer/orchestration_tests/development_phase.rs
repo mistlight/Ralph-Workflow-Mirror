@@ -134,6 +134,14 @@ fn test_development_runs_exactly_n_iterations() {
             Effect::InvokeDevelopmentAgent { iteration } => {
                 state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
             }
+            Effect::InvokeAnalysisAgent { iteration } => {
+                state = reduce(
+                    state,
+                    PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked {
+                        iteration,
+                    }),
+                );
+            }
             Effect::ExtractDevelopmentXml { iteration } => {
                 state = reduce(state, PipelineEvent::development_xml_extracted(iteration));
             }
