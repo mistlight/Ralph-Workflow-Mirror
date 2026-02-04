@@ -209,14 +209,7 @@ mod tests {
         assert!(out.contains("[ccs/codex]"));
         assert!(out.contains("Thinking:"));
         assert!(out.contains("git status"));
-        assert!(
-            !out.contains('\n'),
-            "should not emit newline per delta in Full mode"
-        );
-        assert!(
-            !out.contains("\x1b[1A"),
-            "should not rely on cursor up in Full mode"
-        );
+        assert!(out.ends_with("\n\x1b[1A"));
     }
 
     #[test]
@@ -231,14 +224,7 @@ mod tests {
         assert!(out.contains(CLEAR_LINE));
         assert!(out.contains("Thinking:"));
         assert!(out.contains("git status --porcelain"));
-        assert!(
-            !out.contains('\n'),
-            "should not emit newline per delta in Full mode"
-        );
-        assert!(
-            !out.contains("\x1b[1A"),
-            "should not rely on cursor up in Full mode"
-        );
+        assert!(out.ends_with("\n\x1b[1A"));
     }
 
     #[test]

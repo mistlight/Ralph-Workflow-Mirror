@@ -31,6 +31,14 @@ pub struct ClaudeParser {
     /// - In `TerminalMode::Basic|None`, we suppress per-delta thinking output and flush a single
     ///   final thinking line at the next output boundary (or at `message_stop`).
     thinking_active_index: RefCell<Option<u64>>,
+
+    /// Once non-thinking output has started for the current message, suppress any
+    /// subsequent thinking deltas to avoid corrupting visible output.
+    ///
+    /// Claude/CCS can occasionally emit thinking deltas after text deltas. Because
+    /// both use in-place terminal updates, allowing late thinking can overwrite
+    /// previously-rendered text.
+    suppress_thinking_for_message: RefCell<bool>,
 }
 
 impl ClaudeParser {
@@ -87,6 +95,7 @@ impl ClaudeParser {
             show_streaming_metrics: false,
             printer,
             thinking_active_index: RefCell::new(None),
+            suppress_thinking_for_message: RefCell::new(false),
         }
     }
 
@@ -285,6 +294,7 @@ impl ClaudeParser {
             } => {
                 // Reset any pending thinking line from a previous message.
                 *self.thinking_active_index.borrow_mut() = None;
+                *self.suppress_thinking_for_message.borrow_mut() = false;
 
                 // Extract message_id from either the top-level field or nested message.id
                 // The Claude API typically puts the ID in message.id, not at the top level

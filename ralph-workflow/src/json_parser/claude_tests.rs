@@ -232,17 +232,23 @@ fn test_thinking_flushes_before_text_in_non_tty_mode() {
     let think = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Checking..."}}}"#;
     assert!(parser.parse_event(think).is_none());
 
-    // First text delta should flush thinking first, then render text.
+    // In non-TTY mode we do not interleave thinking with streaming text.
+    // Thinking is flushed once at message_stop.
     let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
     let out = parser
         .parse_event(text)
         .expect("text delta should produce output");
 
-    // Two lines: thinking line + text line
-    assert_eq!(out.matches('\n').count(), 2);
-    assert!(out.contains("Thinking:"));
-    assert!(out.contains("Checking..."));
     assert!(out.contains("Hello"));
+
+    assert!(!out.contains("Thinking:"));
+
+    let stop = r#"{"type":"stream_event","event":{"type":"message_stop"}}"#;
+    let out2 = parser
+        .parse_event(stop)
+        .expect("message_stop should flush thinking");
+    assert!(out2.contains("Thinking:"));
+    assert!(out2.contains("Checking..."));
 }
 
 #[test]
@@ -263,7 +269,7 @@ fn test_thinking_deltas_tty_finalize_before_text() {
         .expect("thinking delta should render in TTY");
     assert!(out1.contains("Thinking:"));
     assert!(out1.contains("git"));
-    assert!(!out1.contains('\n'));
+    assert!(out1.ends_with("\n\x1b[1A"));
 
     let d2 = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" status"}}}"#;
     let out2 = parser
@@ -272,13 +278,13 @@ fn test_thinking_deltas_tty_finalize_before_text() {
     assert!(out2.contains(CLEAR_LINE));
     assert!(out2.contains("Thinking:"));
     assert!(out2.contains("git status"));
-    assert!(!out2.contains('\n'));
+    assert!(out2.ends_with("\n\x1b[1A"));
 
     // First text delta should first finalize thinking line (cursor down + newline)
     // and then begin streaming text.
     let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
     let out3 = parser.parse_event(text).expect("text delta should render");
-    assert!(out3.starts_with("\n"));
+    assert!(out3.starts_with("\x1b[1B\n"));
     assert!(out3.contains("[ccs/codex]"));
     assert!(out3.contains("Hello"));
 }
@@ -309,10 +315,11 @@ fn test_thinking_deltas_full_mode_do_not_create_extra_terminal_lines() {
         write!(t, "{out1}").unwrap();
         t.flush().unwrap();
     }
-    assert!(
-        !vterm.borrow().get_visible_output().contains('\n'),
-        "Thinking streaming should not allocate extra rows in Full mode. Visible: {:?}. Raw: {:?}",
-        vterm.borrow().get_visible_output(),
+    assert_eq!(
+        vterm.borrow().get_visible_lines().len(),
+        1,
+        "Thinking streaming should not create multiple non-empty visible lines. Visible: {:?}. Raw: {:?}",
+        vterm.borrow().get_visible_lines(),
         vterm.borrow().get_write_history()
     );
 
@@ -325,10 +332,57 @@ fn test_thinking_deltas_full_mode_do_not_create_extra_terminal_lines() {
         write!(t, "{out2}").unwrap();
         t.flush().unwrap();
     }
-    assert!(
-        !vterm.borrow().get_visible_output().contains('\n'),
+    assert_eq!(
+        vterm.borrow().get_visible_lines().len(),
+        1,
         "Thinking streaming should remain single-line after updates. Visible: {:?}. Raw: {:?}",
-        vterm.borrow().get_visible_output(),
+        vterm.borrow().get_visible_lines(),
         vterm.borrow().get_write_history()
+    );
+}
+
+#[test]
+fn test_thinking_deltas_after_text_do_not_corrupt_visible_output_in_full_mode() {
+    use crate::json_parser::printer::{SharedPrinter, VirtualTerminal};
+    use crate::json_parser::terminal::TerminalMode;
+    use std::cell::RefCell;
+    use std::io::Write;
+    use std::rc::Rc;
+
+    let vterm = Rc::new(RefCell::new(VirtualTerminal::new()));
+    let printer: SharedPrinter = vterm.clone();
+    let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer)
+        .with_terminal_mode(TerminalMode::Full)
+        .with_display_name("ccs/codex");
+
+    let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_vt_2","type":"message","role":"assistant"}}}"#;
+    assert!(parser.parse_event(start).is_none());
+
+    // First, stream some text.
+    let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}}"#;
+    let out1 = parser.parse_event(text).expect("text delta should render");
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out1}").unwrap();
+        t.flush().unwrap();
+    }
+
+    // If thinking arrives after text output has started, it should not overwrite/corrupt the visible text.
+    let think = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"oops"}}}"#;
+    let out2 = parser.parse_event(think).unwrap_or_default();
+    {
+        let mut t = vterm.borrow_mut();
+        write!(t, "{out2}").unwrap();
+        t.flush().unwrap();
+    }
+
+    let visible = vterm.borrow().get_visible_output();
+    assert!(
+        visible.contains("hello"),
+        "Visible output must keep text. Got: {visible:?}"
+    );
+    assert!(
+        !visible.contains("Thinking:"),
+        "Thinking should not corrupt text output once text has started. Got: {visible:?}"
     );
 }
