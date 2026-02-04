@@ -665,3 +665,69 @@ fn test_review_xsd_error_is_detailed_for_retry() {
         );
     });
 }
+
+/// Test that XSD retry error messages provide sufficient context for convergence.
+///
+/// This test verifies that when validation fails with a NUL byte error,
+/// the error message provides all necessary information for an agent to fix it:
+/// 1. Identifies the problem (NUL byte)
+/// 2. Provides context (position/location)
+/// 3. Suggests the fix (NBSP typo)
+/// 4. Is actionable (has "How to fix" section)
+///
+/// This is a regression test for the bug where review prints "Found N issue(s)"
+/// but validation fails with illegal characters, causing AgentChainExhausted.
+/// The error message must be detailed enough for XSD retry to converge.
+#[test]
+fn test_review_xsd_error_provides_convergence_context() {
+    with_default_timeout(|| {
+        // Setup: Invalid XML with NUL byte (the bug scenario from issue report)
+        // This simulates: .replace("git diff", "git\0A0diff")
+        let invalid_xml =
+            "<ralph-issues><ralph-issue>Check git\u{0000}A0diff usage</ralph-issue></ralph-issues>";
+
+        // Execute: Get validation error
+        let result = ralph_workflow::validate_issues_xml(invalid_xml);
+        assert!(result.is_err(), "NUL byte should fail validation");
+
+        let error = result.unwrap_err();
+        let formatted = error.format_for_ai_retry();
+
+        // Assert: Error provides all information needed for agent to fix
+
+        // 1. Identifies the problem (NUL byte)
+        assert!(
+            formatted.contains("NUL") || formatted.contains("0x00"),
+            "Formatted error should identify NUL byte, got: {}",
+            formatted
+        );
+
+        // 2. Provides context (position/location)
+        assert!(
+            error.found.contains("position") || error.found.contains("byte"),
+            "Error should provide position context, got: {}",
+            error.found
+        );
+
+        // 3. Suggests the fix (NBSP typo)
+        assert!(
+            formatted.contains("\\u00A0") || formatted.contains("non-breaking space"),
+            "Formatted error should suggest NBSP as likely fix, got: {}",
+            formatted
+        );
+
+        // 4. Is actionable (has "How to fix" section)
+        assert!(
+            formatted.contains("How to fix") || formatted.contains("fix:"),
+            "Formatted error should have actionable fix guidance, got: {}",
+            formatted
+        );
+
+        // The formatted error should be detailed enough for retry convergence
+        assert!(
+            formatted.len() > 100,
+            "Error should be detailed enough for retry convergence, got {} chars",
+            formatted.len()
+        );
+    });
+}

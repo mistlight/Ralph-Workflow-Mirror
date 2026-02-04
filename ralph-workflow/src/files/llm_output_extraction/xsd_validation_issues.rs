@@ -487,4 +487,32 @@ Suggested fix: Replace with appropriate semantic HTML elements.</ralph-issue></r
         let elements = result.unwrap();
         assert!(elements.issues[0].contains("a < b && c > d"));
     }
+
+    // =========================================================================
+    // REGRESSION TEST FOR BUG: NUL byte from NBSP typo
+    // =========================================================================
+
+    #[test]
+    fn test_validate_nul_byte_from_nbsp_typo() {
+        // Regression test for bug where agent writes \u0000 instead of \u00A0
+        // This simulates: .replace("git diff", "git\0A0diff")
+        // The bug report shows this exact pattern in `.agent/tmp/issues.xml.processed`
+        let xml =
+            "<ralph-issues><ralph-issue>Check git\u{0000}A0diff usage</ralph-issue></ralph-issues>";
+
+        let result = validate_issues_xml(xml);
+        assert!(result.is_err(), "NUL byte should be rejected");
+
+        let error = result.unwrap_err();
+        assert!(
+            error.found.contains("NUL") || error.found.contains("0x00"),
+            "Error should identify NUL byte, got: {}",
+            error.found
+        );
+        assert!(
+            error.suggestion.contains("\\u00A0") || error.suggestion.contains("non-breaking space"),
+            "Error should suggest NBSP as common fix, got: {}",
+            error.suggestion
+        );
+    }
 }

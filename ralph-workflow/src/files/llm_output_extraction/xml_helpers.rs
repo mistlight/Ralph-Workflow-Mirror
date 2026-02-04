@@ -3,16 +3,22 @@
 //! This module provides common parsing functions used across all XSD validators
 //! to ensure consistent XML handling with proper whitespace management.
 //!
-//! # Illegal Character Validation
+//! # Illegal Character Validation (CRITICAL)
 //!
-//! All XML content must be validated for illegal XML 1.0 characters
-//! BEFORE quick_xml parsing. This ensures clear, actionable error messages
-//! rather than cryptic parser errors.
+//! **ALL XML validators MUST call `check_for_illegal_xml_characters()` BEFORE parsing.**
 //!
-//! Validation flow:
-//! 1. check_for_illegal_xml_characters() - scans for illegal chars
-//! 2. create_reader() - creates quick_xml reader
+//! This is mandatory for all validators because:
+//! - It catches illegal XML 1.0 characters (NUL byte, control chars, etc.)
+//! - It provides clear, actionable error messages for AI agents
+//! - It enables XSD retry to converge instead of spinning with cryptic parse errors
+//!
+//! Required validation flow for ALL validators:
+//! 1. `check_for_illegal_xml_characters()` - MUST be called first
+//! 2. `create_reader()` - creates quick_xml reader
 //! 3. XSD validation - validates structure and content
+//!
+//! Common mistake: Writing `\u0000` (NUL) instead of `\u00A0` (NBSP).
+//! The illegal character check detects this and suggests the NBSP fix.
 //!
 //! # Code Block Content
 //!

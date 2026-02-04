@@ -71,9 +71,10 @@ COMMON XML MISTAKES TO FIX
 1. Missing required elements (check XSD)
 2. Wrong element order (check XSD for correct sequence)
 3. Unescaped special characters (use &lt; &gt; &amp; or CDATA)
-4. Missing closing tags
-5. Text before/after root element
-6. Markdown code fences around XML (remove ```)
+4. Illegal control characters (NUL byte, etc.) - common: \u0000 instead of \u00A0
+5. Missing closing tags
+6. Text before/after root element
+7. Markdown code fences around XML (remove ```)
 
 After reading the XSD schema, fix ONLY the XML validation error.
 DO NOT do any other work.
