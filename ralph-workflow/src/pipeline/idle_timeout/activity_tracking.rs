@@ -6,14 +6,35 @@
 // child process via `Arc<Mutex<Box<dyn AgentChild>>>`. The monitor:
 // 1. Periodically checks if idle timeout has been exceeded
 // 2. Acquires the child lock briefly to send kill signals
-// 3. Releases the lock between checks to allow main thread to wait on process
+// 3. Verifies process liveness after SIGTERM using try_wait()
+// 4. Escalates to SIGKILL if process doesn't terminate within grace period
+// 5. Releases the lock between checks to allow main thread to wait on process
 //
 // The main thread:
 // 1. Streams stdout without holding the child lock
 // 2. Acquires the child lock momentarily during try_wait() checks
 // 3. Releases the lock between checks to allow monitor to kill process
 //
-// This design prevents deadlock while ensuring both threads can make progress.
+// # Liveness Verification and Escalation
+//
+// The monitor does NOT assume that a successful kill command means termination.
+// After sending SIGTERM, it actively polls the process using try_wait() during
+// a grace period (SIGTERM_GRACE_PERIOD_MS). If the process is still running
+// after the grace period, it escalates to SIGKILL.
+//
+// This prevents a critical bug where:
+// - Monitor sends SIGTERM, kill command succeeds
+// - Monitor immediately returns MonitorResult::TimedOut
+// - Process ignores SIGTERM and never exits
+// - Main thread blocks forever on stdout streaming or wait()
+// - Pipeline hangs instead of timing out
+//
+// With liveness verification, the monitor doesn't return until either:
+// - Process has terminated (verified via try_wait)
+// - SIGKILL has been sent (after grace period expires)
+//
+// This design prevents deadlock while ensuring timeouts are reliably detected
+// and enforced, even if subprocesses ignore or handle SIGTERM without exiting.
 
 use crate::executor::AgentChild;
 
@@ -107,7 +128,14 @@ pub enum MonitorResult {
     /// Process completed normally (not killed by monitor).
     ProcessCompleted,
     /// Process was killed due to idle timeout.
-    /// The boolean indicates whether escalation to SIGKILL was required.
+    ///
+    /// The `escalated` flag indicates whether SIGKILL was required:
+    /// - `false`: Process terminated after SIGTERM within grace period
+    /// - `true`: Process did not respond to SIGTERM, required SIGKILL escalation
+    ///
+    /// In both cases, the process was successfully killed (or kill was attempted).
+    /// The escalation flag is for diagnostic purposes and does not affect the
+    /// timeout handling - both cases result in AgentEvent::TimedOut.
     TimedOut { escalated: bool },
 }
 
@@ -233,9 +261,19 @@ pub fn monitor_idle_timeout_with_interval(
 
 /// Kill a process by PID using platform-specific commands via executor.
 ///
-/// First attempts SIGTERM, waits for a grace period, then escalates to SIGKILL
-/// if the process hasn't terminated. Returns the kill result indicating
-/// whether escalation was required.
+/// First attempts SIGTERM, waits for a grace period while verifying liveness,
+/// then escalates to SIGKILL if the process hasn't terminated. Returns the kill
+/// result indicating whether escalation was required.
+///
+/// # Liveness Verification
+///
+/// After sending SIGTERM, this function actively polls the child process using
+/// `try_wait()` to verify termination. If the process is still running after the
+/// grace period, it escalates to SIGKILL. This prevents the bug where:
+/// - Monitor sends SIGTERM and immediately returns TimedOut
+/// - Process ignores SIGTERM and never exits
+/// - Main thread blocks forever on streaming/wait()
+/// - Pipeline hangs instead of timing out
 ///
 /// # Arguments
 ///
