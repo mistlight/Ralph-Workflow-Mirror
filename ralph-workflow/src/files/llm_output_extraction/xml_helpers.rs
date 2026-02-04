@@ -17,6 +17,18 @@
 //! 2. `create_reader()` - creates quick_xml reader
 //! 3. XSD validation - validates structure and content
 //!
+//! ## XSD Retry Integration
+//!
+//! When illegal character validation fails:
+//! 1. `check_for_illegal_xml_characters()` returns `XsdValidationError` with detailed context
+//! 2. The error includes character position, surrounding text, and fix suggestions
+//! 3. `format_for_ai_retry()` enhances the error with prominent illegal character warnings
+//! 4. XSD retry prompt templates include character validation guidance
+//! 5. Agents receive clear, actionable feedback to remove/replace illegal characters
+//!
+//! This design ensures agents can converge on valid XML even when the initial output
+//! contains illegal characters (e.g., from typos like `\u0000` instead of `\u00A0`).
+//!
 //! Common mistake: Writing `\u0000` (NUL) instead of `\u00A0` (NBSP).
 //! The illegal character check detects this and suggests the NBSP fix.
 //!
@@ -84,7 +96,9 @@ fn illegal_character_error(ch: char, byte_index: usize, content: &str) -> XsdVal
     // Extract context around the error position (50 chars before, 50 chars after)
     let context_start = byte_index.saturating_sub(50);
     let context_end = (byte_index + 50).min(content.len());
-    let context = &content[context_start..context_end];
+    let safe_start = floor_char_boundary(content, context_start);
+    let safe_end = ceil_char_boundary(content, context_end.max(safe_start));
+    let context = content.get(safe_start..safe_end).unwrap_or(content);
     let preview = truncate_text(context, 100);
 
     // Provide specific suggestions based on character type
@@ -119,6 +133,20 @@ fn illegal_character_error(ch: char, byte_index: usize, content: &str) -> XsdVal
         suggestion,
         example: None,
     }
+}
+
+fn floor_char_boundary(content: &str, mut index: usize) -> usize {
+    while index > 0 && !content.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn ceil_char_boundary(content: &str, mut index: usize) -> usize {
+    while index < content.len() && !content.is_char_boundary(index) {
+        index += 1;
+    }
+    index
 }
 
 /// Create a configured quick_xml reader with whitespace trimming enabled.
@@ -584,6 +612,27 @@ mod tests {
             error.found.contains("position"),
             "Error should mention position, got: {}",
             error.found
+        );
+    }
+
+    #[test]
+    fn test_illegal_character_error_handles_multibyte_context_without_panic() {
+        let mut prefix = String::from("aaaaaaaaa");
+        prefix.push('é');
+        let remaining = 60 - prefix.len();
+        prefix.push_str(&"b".repeat(remaining));
+        assert_eq!(prefix.len(), 60);
+
+        let content = format!("{}\0tail", prefix);
+
+        let result = std::panic::catch_unwind(|| check_for_illegal_xml_characters(&content));
+        assert!(result.is_ok(), "Should not panic on multibyte boundaries");
+
+        let error = result.unwrap().unwrap_err();
+        assert!(
+            error.suggestion.contains("Near:"),
+            "Error should include context preview, got: {}",
+            error.suggestion
         );
     }
 

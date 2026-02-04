@@ -731,3 +731,69 @@ fn test_review_xsd_error_provides_convergence_context() {
         );
     });
 }
+
+/// Test that XSD retry provides actionable error messages for illegal character errors.
+///
+/// This regression test verifies the complete XSD retry flow when a reviewer produces
+/// XML containing an illegal NUL byte. The error message must be clear enough for
+/// an agent to understand and fix the problem on retry.
+///
+/// This addresses the bug where review prints "Found N issue(s)" but validation fails
+/// with illegal characters, causing retries until AgentChainExhausted.
+#[test]
+fn test_xsd_retry_error_message_for_nul_byte_is_actionable() {
+    with_default_timeout(|| {
+        // Setup: Create XML with NUL byte (simulating the bug scenario)
+        let xml_with_nul =
+            "<ralph-issues><ralph-issue>Check git\u{0000}diff usage</ralph-issue></ralph-issues>";
+
+        // Execute: Validate and get error
+        let result = ralph_workflow::validate_issues_xml(xml_with_nul);
+        assert!(result.is_err(), "NUL byte should cause validation error");
+
+        let error = result.unwrap_err();
+
+        // Verify: The error message formatted for AI retry must:
+        let formatted = error.format_for_ai_retry();
+
+        // 1. Clearly identify this as an illegal character issue
+        assert!(
+            formatted.contains("ILLEGAL CHARACTER")
+                || formatted.contains("illegal character")
+                || formatted.contains("CRITICAL"),
+            "Error should prominently identify illegal character issue, got:\n{}",
+            formatted
+        );
+
+        // 2. Identify the specific character (NUL/0x00)
+        assert!(
+            formatted.contains("NUL") || formatted.contains("0x00"),
+            "Error should identify NUL byte, got:\n{}",
+            formatted
+        );
+
+        // 3. Provide actionable fix guidance
+        assert!(
+            formatted.contains("How to fix")
+                || formatted.contains("FIX REQUIRED")
+                || formatted.contains("Solution"),
+            "Error should provide fix guidance, got:\n{}",
+            formatted
+        );
+
+        // 4. Mention the common mistake (NBSP typo)
+        assert!(
+            formatted.contains("\\u00A0") || formatted.contains("non-breaking space"),
+            "Error should mention common NBSP typo, got:\n{}",
+            formatted
+        );
+
+        // 5. Include position/context information for finding the error
+        assert!(
+            error.found.contains("position") || error.suggestion.contains("Near:"),
+            "Error should include position/context, got found: {}, suggestion: {}",
+            error.found,
+            error.suggestion
+        );
+    });
+}

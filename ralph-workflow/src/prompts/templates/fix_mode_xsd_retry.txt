@@ -26,6 +26,22 @@ XSD VALIDATION FAILED - FIX XML ONLY
 
 Your XML output at `{{FIX_RESULT_XML_PATH}}` failed XSD validation.
 
+═══════════════════════════════════════════════════════════════════════════════
+XML CHARACTER RESTRICTIONS (CRITICAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+XML 1.0 only allows specific characters:
+- Tab (0x09), Line Feed (0x0A), Carriage Return (0x0D)
+- Printable characters from 0x20 onwards
+- Most Unicode characters
+
+*** FORBIDDEN in XML: ***
+- NUL byte (0x00, \u0000) - COMMON MISTAKE: Using \u0000 instead of \u00A0 (NBSP)
+- Control characters 0x01-0x08, 0x0B, 0x0C, 0x0E-0x1F
+- Any binary or non-printable characters
+
+If you need to reference code with special characters, use <code> elements or CDATA sections.
+
 ERROR: {{XSD_ERROR}}
 
 ═══════════════════════════════════════════════════════════════════════════════
