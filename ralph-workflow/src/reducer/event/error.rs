@@ -199,6 +199,13 @@ pub enum ErrorEvent {
     /// Prepared commit prompt file missing/unreadable when invoking commit agent.
     CommitPromptMissing { attempt: u32 },
 
+    /// Commit agent chain not initialized when invoking commit agent.
+    ///
+    /// This is an invariant violation: InitializeAgentChain must run before invoking.
+    /// Effect handlers must surface this as a typed error event (never panic) so the
+    /// reducer can deterministically interrupt/checkpoint.
+    CommitAgentNotInitialized { attempt: u32 },
+
     /// Missing validated planning markdown when writing `.agent/PLAN.md`.
     ValidatedPlanningMarkdownMissing { iteration: u32 },
     /// Missing validated development outcome when applying/writing results.
@@ -207,6 +214,8 @@ pub enum ErrorEvent {
     ValidatedReviewOutcomeMissing { pass: u32 },
     /// Missing validated fix outcome when applying fixes.
     ValidatedFixOutcomeMissing { pass: u32 },
+    /// Missing validated commit outcome when applying commit message outcome.
+    ValidatedCommitOutcomeMissing { attempt: u32 },
 }
 
 impl std::fmt::Display for ErrorEvent {
@@ -303,6 +312,12 @@ impl std::fmt::Display for ErrorEvent {
                     "Missing commit prompt at .agent/tmp/commit_prompt.txt for attempt {attempt}"
                 )
             }
+            ErrorEvent::CommitAgentNotInitialized { attempt } => {
+                write!(
+                    f,
+                    "Commit agent not initialized for attempt {attempt} (expected InitializeAgentChain before invoke_commit_agent)"
+                )
+            }
             ErrorEvent::ValidatedPlanningMarkdownMissing { iteration } => {
                 write!(
                     f,
@@ -320,6 +335,9 @@ impl std::fmt::Display for ErrorEvent {
             }
             ErrorEvent::ValidatedFixOutcomeMissing { pass } => {
                 write!(f, "Missing validated fix outcome for pass {pass}")
+            }
+            ErrorEvent::ValidatedCommitOutcomeMissing { attempt } => {
+                write!(f, "Missing validated commit outcome for attempt {attempt}")
             }
         }
     }

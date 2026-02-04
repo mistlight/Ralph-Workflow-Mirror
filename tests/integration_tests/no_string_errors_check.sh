@@ -18,9 +18,9 @@ echo "Checking for string-based errors in effect handlers..."
 # - `return Err(anyhow::anyhow!(...))`
 #
 # Handler tests are excluded; only production handler code matters.
-if rg -n -q --glob '!**/tests/**' '\banyhow::anyhow!\(|\banyhow!\(' ralph-workflow/src/reducer/handler/; then
+if rg -n -q --glob '!**/tests/**' '\banyhow::anyhow!\(|\banyhow!\(|\banyhow::bail!\(|\bbail!\(|\banyhow::ensure!\(|\bensure!\(|\banyhow::format_err!\(|\bformat_err!\(|\banyhow::Error::msg\(' ralph-workflow/src/reducer/handler/; then
     echo "ERROR: Found string-based errors in effect handlers:"
-    rg -n --glob '!**/tests/**' '\banyhow::anyhow!\(|\banyhow!\(' ralph-workflow/src/reducer/handler/
+    rg -n --glob '!**/tests/**' '\banyhow::anyhow!\(|\banyhow!\(|\banyhow::bail!\(|\bbail!\(|\banyhow::ensure!\(|\bensure!\(|\banyhow::format_err!\(|\bformat_err!\(|\banyhow::Error::msg\(' ralph-workflow/src/reducer/handler/
     echo ""
     echo "Effect handlers must return error events from the Error namespace, not string errors."
     echo "See ErrorEvent enum in ralph-workflow/src/reducer/event/error.rs"

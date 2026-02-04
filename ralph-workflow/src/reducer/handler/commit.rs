@@ -479,7 +479,7 @@ impl MainEffectHandler {
             .agent_chain
             .current_agent()
             .cloned()
-            .expect("commit agent should be initialized via InitializeAgentChain effect");
+            .ok_or(ErrorEvent::CommitAgentNotInitialized { attempt })?;
 
         let mut result = self.invoke_agent(ctx, AgentRole::Commit, agent, None, prompt)?;
         if result.additional_events.iter().any(|e| {
@@ -572,10 +572,12 @@ impl MainEffectHandler {
         &mut self,
         _ctx: &mut PhaseContext<'_>,
     ) -> Result<EffectResult> {
-        let outcome =
-            self.state.commit_validated_outcome.as_ref().expect(
-                "validated commit outcome should exist before applying commit message outcome",
-            );
+        let attempt = current_commit_attempt(&self.state.commit);
+        let outcome = self
+            .state
+            .commit_validated_outcome
+            .as_ref()
+            .ok_or(ErrorEvent::ValidatedCommitOutcomeMissing { attempt })?;
 
         let event = match (&outcome.message, &outcome.reason) {
             (Some(message), _) => {

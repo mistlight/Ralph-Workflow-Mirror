@@ -25,65 +25,63 @@ impl MainEffectHandler {
             .info("Cleaning up context files to prevent pollution...");
 
         let mut cleaned_count = 0;
-        let mut failed_count = 0;
 
         // Delete PLAN.md via workspace
         let plan_path = Path::new(".agent/PLAN.md");
         if ctx.workspace.exists(plan_path) {
-            if let Err(err) = ctx.workspace.remove(plan_path) {
-                ctx.logger.warn(&format!("Failed to delete PLAN.md: {err}"));
-                failed_count += 1;
-            } else {
-                cleaned_count += 1;
-            }
+            ctx.workspace
+                .remove(plan_path)
+                .map_err(|err| ErrorEvent::WorkspaceRemoveFailed {
+                    path: plan_path.display().to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                })?;
+            cleaned_count += 1;
         }
 
         // Delete ISSUES.md (may not exist if in isolation mode) via workspace
         let issues_path = Path::new(".agent/ISSUES.md");
         if ctx.workspace.exists(issues_path) {
-            if let Err(err) = ctx.workspace.remove(issues_path) {
-                ctx.logger
-                    .warn(&format!("Failed to delete ISSUES.md: {err}"));
-                failed_count += 1;
-            } else {
-                cleaned_count += 1;
-            }
+            ctx.workspace
+                .remove(issues_path)
+                .map_err(|err| ErrorEvent::WorkspaceRemoveFailed {
+                    path: issues_path.display().to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                })?;
+            cleaned_count += 1;
         }
 
         // Delete ALL .xml files in .agent/tmp/ to prevent context pollution via workspace
         let tmp_dir = Path::new(".agent/tmp");
         if ctx.workspace.exists(tmp_dir) {
-            if let Ok(entries) = ctx.workspace.read_dir(tmp_dir) {
-                for entry in entries {
-                    let path = entry.path();
-                    if path.extension().and_then(|s| s.to_str()) == Some("xml") {
-                        if let Err(err) = ctx.workspace.remove(path) {
-                            ctx.logger.warn(&format!(
-                                "Failed to delete {}: {}",
-                                path.display(),
-                                err
-                            ));
-                            failed_count += 1;
-                        } else {
-                            cleaned_count += 1;
+            let entries =
+                ctx.workspace
+                    .read_dir(tmp_dir)
+                    .map_err(|err| ErrorEvent::WorkspaceReadFailed {
+                        path: tmp_dir.display().to_string(),
+                        kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                    })?;
+
+            for entry in entries {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("xml") {
+                    ctx.workspace.remove(path).map_err(|err| {
+                        ErrorEvent::WorkspaceRemoveFailed {
+                            path: path.display().to_string(),
+                            kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
                         }
-                    }
+                    })?;
+                    cleaned_count += 1;
                 }
             }
         }
 
         // Delete continuation context file (if present) via workspace
-        let _ = cleanup_continuation_context_file(ctx);
+        cleanup_continuation_context_file(ctx)?;
 
         if cleaned_count > 0 {
             ctx.logger.success(&format!(
-                "Context cleanup complete: {} files deleted{}",
-                cleaned_count,
-                if failed_count > 0 {
-                    format!(", {} failures", failed_count)
-                } else {
-                    String::new()
-                }
+                "Context cleanup complete: {} files deleted",
+                cleaned_count
             ));
         } else {
             ctx.logger.info("No context files to clean up");

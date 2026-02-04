@@ -72,19 +72,31 @@ impl MainEffectHandler {
         };
 
         // DIFF is optional for review phase. Use fallback git instructions when missing.
-        let baseline_oid = ctx
-            .workspace
-            .read(Path::new(Self::DIFF_BASELINE_PATH))
-            .unwrap_or_default()
-            .trim()
-            .to_string();
+        let baseline_oid = match ctx.workspace.read(Path::new(Self::DIFF_BASELINE_PATH)) {
+            Ok(s) => s.trim().to_string(),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: Self::DIFF_BASELINE_PATH.to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
+            }
+        };
 
         let diff_content = match ctx.workspace.read(Path::new(".agent/DIFF.backup")) {
             Ok(diff_content) => diff_content,
-            Err(_) => {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 ctx.logger
                     .warn("Missing .agent/DIFF.backup; providing git diff fallback instructions");
                 Self::fallback_diff_instructions(&baseline_oid)
+            }
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: ".agent/DIFF.backup".to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
             }
         };
 
@@ -298,12 +310,18 @@ impl MainEffectHandler {
             .as_ref()
             .filter(|p| p.pass == pass);
 
-        let baseline_oid_for_prompts = ctx
-            .workspace
-            .read(Path::new(Self::DIFF_BASELINE_PATH))
-            .unwrap_or_default()
-            .trim()
-            .to_string();
+        let baseline_oid_for_prompts = match ctx.workspace.read(Path::new(Self::DIFF_BASELINE_PATH))
+        {
+            Ok(s) => s.trim().to_string(),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(err) => {
+                return Err(ErrorEvent::WorkspaceReadFailed {
+                    path: Self::DIFF_BASELINE_PATH.to_string(),
+                    kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                }
+                .into());
+            }
+        };
 
         let mut ignore_sources_owned: Vec<String> = Vec::new();
         let (plan_inline, diff_inline) = if matches!(prompt_mode, PromptMode::Normal) {
@@ -315,11 +333,20 @@ impl MainEffectHandler {
             };
             let plan_inline = match &inputs.plan.representation {
                 PromptInputRepresentation::Inline => {
-                    // Use sentinel if .agent/PLAN.md is missing
-                    let plan = ctx
-                        .workspace
-                        .read(Path::new(".agent/PLAN.md"))
-                        .unwrap_or_else(|_| Self::sentinel_plan_content(ctx.config.isolation_mode));
+                    // Use sentinel if .agent/PLAN.md is missing.
+                    let plan = match ctx.workspace.read(Path::new(".agent/PLAN.md")) {
+                        Ok(plan) => plan,
+                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                            Self::sentinel_plan_content(ctx.config.isolation_mode)
+                        }
+                        Err(err) => {
+                            return Err(ErrorEvent::WorkspaceReadFailed {
+                                path: ".agent/PLAN.md".to_string(),
+                                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                            }
+                            .into());
+                        }
+                    };
                     ignore_sources_owned.push(plan.clone());
                     Some(plan)
                 }
@@ -327,13 +354,20 @@ impl MainEffectHandler {
             };
             let diff_inline = match &inputs.diff.representation {
                 PromptInputRepresentation::Inline => {
-                    // Use fallback if .agent/DIFF.backup is missing
-                    let diff = ctx
-                        .workspace
-                        .read(Path::new(".agent/DIFF.backup"))
-                        .unwrap_or_else(|_| {
+                    // Use fallback if .agent/DIFF.backup is missing.
+                    let diff = match ctx.workspace.read(Path::new(".agent/DIFF.backup")) {
+                        Ok(diff) => diff,
+                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                             Self::fallback_diff_instructions(&baseline_oid_for_prompts)
-                        });
+                        }
+                        Err(err) => {
+                            return Err(ErrorEvent::WorkspaceReadFailed {
+                                path: ".agent/DIFF.backup".to_string(),
+                                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+                            }
+                            .into());
+                        }
+                    };
                     ignore_sources_owned.push(diff.clone());
                     Some(diff)
                 }

@@ -254,6 +254,135 @@ fn test_materialize_review_inputs_does_not_mask_non_not_found_plan_read_errors()
 }
 
 #[test]
+fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_backup_read_errors() {
+    let inner = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_dir(".agent/tmp");
+    let workspace = ReadFailingWorkspace::new(
+        inner,
+        PathBuf::from(".agent/DIFF.backup"),
+        io::ErrorKind::PermissionDenied,
+    );
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let mut config = Config::default();
+    config.isolation_mode = false;
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let err = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect_err("materialize_review_inputs should surface non-NotFound DIFF read failures");
+
+    let error_event = err
+        .downcast_ref::<ErrorEvent>()
+        .expect("error should preserve ErrorEvent for event-loop recovery");
+    assert!(
+        matches!(
+            error_event,
+            ErrorEvent::WorkspaceReadFailed {
+                path,
+                kind: WorkspaceIoErrorKind::PermissionDenied
+            } if path == ".agent/DIFF.backup"
+        ),
+        "expected WorkspaceReadFailed for DIFF backup read, got: {error_event:?}"
+    );
+}
+
+#[test]
+fn test_materialize_review_inputs_does_not_mask_non_not_found_diff_baseline_read_errors() {
+    let inner = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_dir(".agent/tmp");
+    let workspace = ReadFailingWorkspace::new(
+        inner,
+        PathBuf::from(".agent/DIFF.base"),
+        io::ErrorKind::PermissionDenied,
+    );
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let err = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect_err("materialize_review_inputs should surface non-NotFound baseline read failures");
+
+    let error_event = err
+        .downcast_ref::<ErrorEvent>()
+        .expect("error should preserve ErrorEvent for event-loop recovery");
+    assert!(
+        matches!(
+            error_event,
+            ErrorEvent::WorkspaceReadFailed {
+                path,
+                kind: WorkspaceIoErrorKind::PermissionDenied
+            } if path == ".agent/DIFF.base"
+        ),
+        "expected WorkspaceReadFailed for DIFF baseline read, got: {error_event:?}"
+    );
+}
+
+#[test]
 fn test_materialize_review_inputs_uses_sentinel_plan_with_isolation_mode_context() {
     let workspace = MemoryWorkspace::new_test()
         .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")

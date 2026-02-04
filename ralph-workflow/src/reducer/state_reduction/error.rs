@@ -42,10 +42,12 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
         | ErrorEvent::PlanningInputsNotMaterialized { .. }
         | ErrorEvent::DevelopmentInputsNotMaterialized { .. }
         | ErrorEvent::CommitInputsNotMaterialized { .. }
+        | ErrorEvent::CommitAgentNotInitialized { .. }
         | ErrorEvent::ValidatedPlanningMarkdownMissing { .. }
         | ErrorEvent::ValidatedDevelopmentOutcomeMissing { .. }
         | ErrorEvent::ValidatedReviewOutcomeMissing { .. }
-        | ErrorEvent::ValidatedFixOutcomeMissing { .. } => {
+        | ErrorEvent::ValidatedFixOutcomeMissing { .. }
+        | ErrorEvent::ValidatedCommitOutcomeMissing { .. } => {
             // Invariant violations: terminate cleanly by transitioning to Interrupted.
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();

@@ -7,6 +7,7 @@ use crate::logger::{Colors, Logger};
 use crate::pipeline::{Stats, Timer};
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
+use crate::reducer::event::{ErrorEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{AgentChainState, CommitState, PipelineState};
 use crate::workspace::MemoryWorkspace;
@@ -780,6 +781,80 @@ fn test_invoke_commit_agent_returns_error_when_prompt_missing() {
     assert!(
         err.to_string().contains("commit prompt"),
         "Expected error about missing commit prompt, got: {err}"
+    );
+}
+
+#[test]
+fn test_invoke_commit_agent_surfaces_uninitialized_agent_chain_as_error_event() {
+    // When the agent chain is empty/uninitialized, invoke_commit_agent must not panic.
+    // It must surface a typed ErrorEvent so the reducer can decide interruption policy.
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/tmp/commit_prompt.txt", "commit prompt content");
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+    let executor = Arc::new(MockProcessExecutor::new());
+
+    let repo_root = PathBuf::from("/mock/repo");
+    let executor_arc: Arc<dyn ProcessExecutor> = executor.clone();
+    let executor_ref = executor_arc.clone();
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "claude",
+        reviewer_agent: "codex",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor_ref.as_ref(),
+        executor_arc,
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(1, 1));
+    handler.state.commit = CommitState::Generating {
+        attempt: 1,
+        max_attempts: 2,
+    };
+    // Intentionally leave the agent chain uninitialized/empty.
+    handler.state.agent_chain = AgentChainState::initial();
+
+    let err = handler
+        .invoke_commit_agent(&mut ctx)
+        .expect_err("invoke_commit_agent should return typed error when agent chain is empty");
+
+    let error_event = err
+        .downcast_ref::<ErrorEvent>()
+        .expect("error should preserve ErrorEvent for event-loop recovery");
+    assert!(
+        matches!(
+            error_event,
+            ErrorEvent::CommitAgentNotInitialized { attempt: 1 }
+        ),
+        "expected CommitAgentNotInitialized, got: {error_event:?}"
+    );
+
+    // Defensive: ensure the error type is not a string-based anyhow error.
+    assert!(
+        !matches!(
+            error_event,
+            ErrorEvent::WorkspaceReadFailed {
+                kind: WorkspaceIoErrorKind::Other,
+                ..
+            }
+        ),
+        "expected a specific invariant error, not a generic workspace error"
     );
 }
 
