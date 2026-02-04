@@ -91,7 +91,31 @@ lint:
 
 # Run custom dylint lints (safe default: lib only)
 dylint:
-	$(CARGO) dylint -p ralph-workflow --lib file_too_long -- --lib
+	@bash -euo pipefail -c '\
+		if ! command -v cargo >/dev/null 2>&1; then \
+			echo "error: cargo not found in PATH" >&2; \
+			exit 1; \
+		fi; \
+		if ! cargo dylint --version >/dev/null 2>&1; then \
+			echo "Installing cargo-dylint (and dylint-link)..." >&2; \
+			cargo install cargo-dylint dylint-link; \
+		fi; \
+		if ! command -v rustup >/dev/null 2>&1; then \
+			echo "rustup not found; installing rustup to $$HOME/.cargo (required for nightly + rustc-dev)." >&2; \
+			if command -v curl >/dev/null 2>&1; then \
+				curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
+			elif command -v wget >/dev/null 2>&1; then \
+				wget -qO- https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
+			else \
+				echo "error: need curl or wget to install rustup automatically" >&2; \
+				exit 1; \
+			fi; \
+			export PATH="$$HOME/.cargo/bin:$$PATH"; \
+		fi; \
+		rustup toolchain install nightly --profile minimal --component rustc-dev --component llvm-tools-preview; \
+		rustup component add rustc-dev llvm-tools-preview --toolchain nightly || true; \
+		rustup run nightly cargo dylint -p ralph-workflow --lib file_too_long -- --lib; \
+	'
 
 # Run all checks (format, lint, test)
 ci: fmt-check lint test
