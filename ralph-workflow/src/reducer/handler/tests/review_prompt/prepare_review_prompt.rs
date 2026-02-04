@@ -1,3 +1,4 @@
+use super::AtomicWriteEnforcingWorkspace;
 use crate::agents::AgentRegistry;
 use crate::checkpoint::execution_history::ExecutionHistory;
 use crate::checkpoint::RunContext;
@@ -7,6 +8,7 @@ use crate::logger::{Colors, Logger};
 use crate::pipeline::{Stats, Timer};
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::event::{AgentEvent, PipelineEvent};
+use crate::reducer::event::{ErrorEvent, WorkspaceIoErrorKind};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::{ContinuationState, PipelineState, PromptMode, SameAgentRetryReason};
 use crate::workspace::MemoryWorkspace;
@@ -128,6 +130,150 @@ fn test_prepare_review_prompt_writes_prompt_file_with_required_markers() {
     assert!(
         prompt.contains("<ralph-issues>"),
         "review prompt should include XML output instructions"
+    );
+}
+
+#[test]
+fn test_prepare_review_prompt_maps_workspace_write_failure_to_error_event() {
+    let inner = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.backup", "diff --git a/a b/a\n+change\n")
+        .with_dir(".agent/tmp");
+    let workspace =
+        AtomicWriteEnforcingWorkspace::new(inner, PathBuf::from(".agent/tmp/review_prompt.txt"));
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+
+    let err = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect_err("prepare_review_prompt should return a typed error event on write failure");
+
+    let error_event = err
+        .downcast_ref::<ErrorEvent>()
+        .expect("error should preserve ErrorEvent for event-loop recovery");
+    assert!(
+        matches!(
+            error_event,
+            ErrorEvent::WorkspaceWriteFailed {
+                path,
+                kind: WorkspaceIoErrorKind::Other
+            } if path == ".agent/tmp/review_prompt.txt"
+        ),
+        "expected WorkspaceWriteFailed for review prompt write, got: {error_event:?}"
+    );
+}
+
+#[test]
+fn test_prepare_review_prompt_diff_fallback_instructions_include_staged_and_untracked() {
+    let workspace = MemoryWorkspace::new_test()
+        .with_file(".agent/PLAN.md", "# Plan\n")
+        .with_file(".agent/PROMPT.md.backup", "# Prompt backup\n")
+        .with_file(".agent/DIFF.base", "abc123")
+        .with_dir(".agent/tmp");
+
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let config = Config::default();
+    let registry = AgentRegistry::new().unwrap();
+    let template_context = TemplateContext::default();
+
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/mock/repo");
+
+    let mut ctx = crate::phases::PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "dev",
+        reviewer_agent: "rev",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: HashMap::new(),
+        executor: executor.as_ref(),
+        executor_arc: executor.clone(),
+        repo_root: repo_root.as_path(),
+        workspace: &workspace,
+    };
+
+    let mut handler = MainEffectHandler::new(PipelineState::initial(0, 1));
+    let materialize = handler
+        .materialize_review_inputs(&mut ctx, 0)
+        .expect("materialize_review_inputs should succeed (diff is optional for review)");
+    handler.state = crate::reducer::reduce(handler.state.clone(), materialize.event);
+    for ev in materialize.additional_events {
+        handler.state = crate::reducer::reduce(handler.state.clone(), ev);
+    }
+    let _ = handler
+        .prepare_review_prompt(&mut ctx, 0, PromptMode::Normal)
+        .expect("prepare_review_prompt should succeed with diff fallback instructions");
+
+    let prompt = workspace
+        .read(Path::new(".agent/tmp/review_prompt.txt"))
+        .expect("review prompt file should be written");
+
+    assert!(
+        prompt.contains("git diff abc123..HEAD"),
+        "fallback should include committed diff since baseline"
+    );
+    assert!(
+        prompt.contains("git diff abc123"),
+        "fallback should include working tree diff vs baseline"
+    );
+    assert!(
+        prompt.contains("git diff --cached abc123"),
+        "fallback should include staged diff vs baseline"
+    );
+    assert!(
+        prompt.contains("git ls-files --others --exclude-standard"),
+        "fallback should include untracked files command"
     );
 }
 

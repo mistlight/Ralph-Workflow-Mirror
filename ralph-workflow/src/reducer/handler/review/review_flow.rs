@@ -18,15 +18,23 @@ impl MainEffectHandler {
         if !baseline_oid.is_empty() {
             format!(
                 "[DIFF NOT AVAILABLE - Use git to obtain changes]\n\n\
-                 Run: git diff {}..HEAD\n\n\
-                 This shows all changes since the baseline commit.",
-                baseline_oid
+                 1) Committed changes since baseline:\n\
+                    git diff {baseline_oid}..HEAD\n\n\
+                 2) Include staged + unstaged working tree changes vs baseline:\n\
+                    git diff {baseline_oid}\n\n\
+                 3) Staged-only changes vs baseline:\n\
+                    git diff --cached {baseline_oid}\n\n\
+                 4) Untracked files (not shown by git diff):\n\
+                    git ls-files --others --exclude-standard\n\n\
+                 Review the full change set (committed + working tree + untracked).",
+                baseline_oid = baseline_oid
             )
         } else {
             "[DIFF NOT AVAILABLE - Use git to obtain changes]\n\n\
              Run: git diff HEAD~1..HEAD  # Changes in last commit\n\
              Or:  git diff --staged      # Staged changes\n\
-             Or:  git diff               # Unstaged changes\n\n\
+             Or:  git diff               # Unstaged changes\n\
+             And: git ls-files --others --exclude-standard  # Untracked files\n\n\
              Review the diff and identify any issues."
                 .to_string()
         }
@@ -209,7 +217,17 @@ impl MainEffectHandler {
     ) -> Result<EffectResult> {
         use crate::files::{create_prompt_backup_with_workspace, write_diff_backup_with_workspace};
 
-        let _ = create_prompt_backup_with_workspace(ctx.workspace);
+        match create_prompt_backup_with_workspace(ctx.workspace) {
+            Ok(Some(warning)) => {
+                ctx.logger
+                    .warn(&format!("PROMPT.md backup created with warning: {warning}"));
+            }
+            Ok(None) => {}
+            Err(err) => {
+                ctx.logger
+                    .warn(&format!("Failed to create PROMPT.md backup: {err}"));
+            }
+        }
 
         let (diff, baseline_oid) =
             match crate::git_helpers::get_git_diff_for_review_with_workspace(ctx.workspace) {
@@ -220,7 +238,10 @@ impl MainEffectHandler {
                     (String::new(), String::new())
                 }
             };
-        let _ = write_diff_backup_with_workspace(ctx.workspace, &diff);
+        if let Err(err) = write_diff_backup_with_workspace(ctx.workspace, &diff) {
+            ctx.logger
+                .warn(&format!("Failed to write .agent/DIFF.backup: {err}"));
+        }
 
         let baseline_path = Path::new(Self::DIFF_BASELINE_PATH);
         if baseline_oid.trim().is_empty() {
@@ -558,10 +579,12 @@ impl MainEffectHandler {
             ctx.capture_prompt(&prompt_key, &review_prompt_xml);
         }
 
-        ctx.workspace.write(
-            Path::new(".agent/tmp/review_prompt.txt"),
-            &review_prompt_xml,
-        )?;
+        ctx.workspace
+            .write(Path::new(".agent/tmp/review_prompt.txt"), &review_prompt_xml)
+            .map_err(|err| ErrorEvent::WorkspaceWriteFailed {
+                path: ".agent/tmp/review_prompt.txt".to_string(),
+                kind: WorkspaceIoErrorKind::from_io_error_kind(err.kind()),
+            })?;
 
         let mut result = EffectResult::event(PipelineEvent::review_prompt_prepared(pass));
         for ev in additional_events {

@@ -343,7 +343,7 @@ where
     }
 
     Ok(EventLoopResult {
-        completed: state.is_complete(),
+        completed: matches!(state.phase, crate::reducer::event::PipelinePhase::Complete),
         events_processed,
     })
 }

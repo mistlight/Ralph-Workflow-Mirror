@@ -15,11 +15,13 @@ use crate::reducer::state::PipelineState;
 ///
 /// - **Continuation not supported errors**: These are invariant violations indicating
 ///   that continuation mode was incorrectly passed to a phase that doesn't support it.
-///   The state remains unchanged and the event loop will terminate on Err.
+///   The reducer transitions to `PipelinePhase::Interrupted`, and the event loop will
+///   observe a terminal state and stop.
 ///
 /// - **Missing inputs errors**: These indicate effect sequencing bugs where a handler
-///   was called without required preconditions being met. The state remains unchanged
-///   and the event loop will terminate on Err.
+///   was called without required preconditions being met. The reducer transitions to
+///   `PipelinePhase::Interrupted`, and the event loop will observe a terminal state
+///   and stop.
 pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> PipelineState {
     match error {
         // Continuation not supported errors are invariant violations

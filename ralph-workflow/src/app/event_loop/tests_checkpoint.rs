@@ -108,6 +108,84 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
 }
 
 #[test]
+fn test_event_loop_result_completed_false_for_interrupted_with_checkpoint() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::{Stats, Timer};
+    use crate::prompts::template_context::TemplateContext;
+    use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+    use crate::reducer::event::PipelinePhase;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct PanicHandler;
+
+    impl<'ctx> EffectHandler<'ctx> for PanicHandler {
+        fn execute(&mut self, _effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+            panic!("event loop should not execute effects when initial state is terminal");
+        }
+    }
+
+    impl super::StatefulHandler for PanicHandler {
+        fn update_state(&mut self, _state: PipelineState) {}
+    }
+
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "test-developer",
+        reviewer_agent: "test-reviewer",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+    };
+
+    let state = PipelineState {
+        phase: PipelinePhase::Interrupted,
+        checkpoint_saved_count: 1,
+        ..PipelineState::initial(0, 0)
+    };
+
+    let mut handler = PanicHandler;
+    let loop_config = EventLoopConfig { max_iterations: 10 };
+
+    let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
+        .expect("event loop should run");
+
+    assert!(
+        !result.completed,
+        "interrupted-with-checkpoint is terminal but must not be reported as successful completion"
+    );
+    assert_eq!(result.events_processed, 0);
+}
+
+#[test]
 fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};

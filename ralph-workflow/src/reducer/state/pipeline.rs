@@ -368,6 +368,9 @@ impl PipelineState {
     }
 
     pub fn is_complete(&self) -> bool {
+        // NOTE: `is_complete` means "terminal for the event loop", not necessarily "successful".
+        // `PipelinePhase::Interrupted` may be treated as terminal once a checkpoint has been
+        // saved, so unattended pipelines can stop safely and be resumed later.
         matches!(self.phase, PipelinePhase::Complete)
             || (matches!(self.phase, PipelinePhase::Interrupted) && self.checkpoint_saved_count > 0)
     }
