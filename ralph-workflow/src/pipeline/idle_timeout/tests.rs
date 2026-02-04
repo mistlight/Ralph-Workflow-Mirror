@@ -278,13 +278,15 @@ mod tests {
         // during the SIGTERM grace-period polling loop.
         use crate::executor::MockAgentChild;
         use std::sync::atomic::AtomicBool;
-        use std::sync::{Arc, Mutex};
-        use std::time::{Duration, Instant};
+        use std::sync::{mpsc, Arc, Barrier, Mutex};
+        use std::time::Duration;
 
         #[derive(Debug)]
         struct CountingChild {
             inner: MockAgentChild,
             try_wait_calls: Arc<std::sync::atomic::AtomicUsize>,
+            first_try_wait_gate: Arc<Barrier>,
+            entered_first_try_wait: mpsc::Sender<()>,
         }
 
         impl crate::executor::AgentChild for CountingChild {
@@ -298,15 +300,30 @@ mod tests {
 
             fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
                 self.try_wait_calls.fetch_add(1, Ordering::SeqCst);
+
+                // Deterministic sync point: on the first try_wait call we pause while
+                // still holding the mutex, so the test can prove the lock is held.
+                // After releasing the gate, the monitor will return from try_wait and
+                // then sleep outside the lock (the behavior we require).
+                if self.try_wait_calls.load(Ordering::SeqCst) == 1 {
+                    let _ = self.entered_first_try_wait.send(());
+                    self.first_try_wait_gate.wait();
+                }
                 self.inner.try_wait()
             }
         }
 
         let (mock_child, running_controller) = MockAgentChild::new_running(0);
         let try_wait_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let gate = Arc::new(Barrier::new(2));
+
         let child = Arc::new(Mutex::new(Box::new(CountingChild {
             inner: mock_child,
             try_wait_calls: Arc::clone(&try_wait_calls),
+            first_try_wait_gate: Arc::clone(&gate),
+            entered_first_try_wait: entered_tx,
         })
             as Box<dyn crate::executor::AgentChild>));
 
@@ -325,9 +342,11 @@ mod tests {
         let should_stop_for_monitor = Arc::clone(&should_stop);
 
         let kill_config = KillConfig {
-            sigterm_grace: Duration::from_millis(200),
-            poll_interval: Duration::from_millis(50),
+            sigterm_grace: Duration::from_secs(2),
+            poll_interval: Duration::from_millis(500),
             sigkill_confirm_timeout: Duration::from_millis(50),
+            post_sigkill_hard_cap: Duration::from_secs(5),
+            sigkill_resend_interval: Duration::from_secs(1),
         };
 
         let monitor = thread::spawn(move || {
@@ -342,31 +361,36 @@ mod tests {
             )
         });
 
-        // Wait until we know the kill path is running and has performed multiple
-        // try_wait polls (i.e., we're in the grace-period loop, which includes sleeping).
-        let poll_deadline = Instant::now() + Duration::from_millis(300);
-        while Instant::now() < poll_deadline {
-            if try_wait_calls.load(Ordering::Acquire) >= 3 {
-                break;
-            }
-            thread::sleep(Duration::from_millis(1));
-        }
+        // Wait until the monitor reaches the first try_wait() while holding the lock.
+        entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("expected monitor to call try_wait");
+
+        // Prove the lock is currently held (we're synchronized inside try_wait()).
         assert!(
-            try_wait_calls.load(Ordering::Acquire) >= 3,
-            "expected monitor to enter SIGTERM grace polling loop"
+            child.try_lock().is_err(),
+            "expected child mutex to be held during try_wait"
         );
 
-        // While the monitor is in its grace-period sleep/poll loop, we should be able to
-        // acquire the child lock (because the monitor must not hold it across sleeps).
-        let deadline = Instant::now() + Duration::from_millis(150);
-        let mut acquired = false;
-        while Instant::now() < deadline {
-            if let Ok(_guard) = child.try_lock() {
-                acquired = true;
-                break;
+        // Release the gate so the monitor can return from try_wait(). It should then
+        // sleep outside the lock, which gives us a deterministic window to acquire it.
+        gate.wait();
+
+        // The monitor's poll interval is long enough that we should always be able to
+        // acquire the lock after the first try_wait returns. Use a bounded loop so this
+        // test fails fast instead of hanging if the lock is held incorrectly.
+        let acquired_after_gate = {
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            let mut acquired = false;
+            while std::time::Instant::now() < deadline {
+                if let Ok(_guard) = child.try_lock() {
+                    acquired = true;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
             }
-            thread::sleep(Duration::from_millis(1));
-        }
+            acquired
+        };
 
         // Stop the monitor and child to avoid hanging the test.
         should_stop.store(true, Ordering::Release);
@@ -374,9 +398,12 @@ mod tests {
         let _ = monitor.join();
 
         assert!(
-            acquired,
-            "Monitor held child lock while sleeping between SIGTERM checks"
+            acquired_after_gate,
+            "expected to acquire child lock while monitor sleeps"
         );
+
+        // Sanity: we should have observed at least one try_wait call.
+        assert!(try_wait_calls.load(Ordering::Acquire) >= 1);
     }
 
     #[test]
@@ -409,6 +436,8 @@ mod tests {
             sigterm_grace: Duration::from_millis(10),
             poll_interval: Duration::from_millis(1),
             sigkill_confirm_timeout: Duration::from_millis(1),
+            post_sigkill_hard_cap: Duration::from_secs(2),
+            sigkill_resend_interval: Duration::from_millis(20),
         };
 
         let child_for_monitor = Arc::clone(&child);
@@ -428,7 +457,7 @@ mod tests {
         });
 
         // Wait until SIGKILL is attempted, then shortly after mark the child as dead.
-        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while std::time::Instant::now() < deadline {
             let calls = executor.execute_calls_for("kill");
             if calls
@@ -439,7 +468,7 @@ mod tests {
                 running_controller.store(false, Ordering::Release);
                 break;
             }
-            thread::sleep(Duration::from_millis(1));
+            thread::sleep(Duration::from_millis(5));
         }
 
         let result = monitor_handle.join().expect("Monitor thread panicked");
@@ -496,6 +525,8 @@ mod tests {
             sigterm_grace: Duration::from_millis(10),
             poll_interval: Duration::from_millis(1),
             sigkill_confirm_timeout: Duration::from_millis(10),
+            post_sigkill_hard_cap: Duration::from_secs(2),
+            sigkill_resend_interval: Duration::from_millis(20),
         };
 
         let result = monitor_idle_timeout_with_interval_and_kill_config(
@@ -628,6 +659,8 @@ mod tests {
             sigterm_grace: Duration::from_millis(20),
             poll_interval: Duration::from_millis(1),
             sigkill_confirm_timeout: Duration::from_millis(50),
+            post_sigkill_hard_cap: Duration::from_secs(2),
+            sigkill_resend_interval: Duration::from_millis(20),
         };
 
         // Spawn monitor with very short timeout and check interval
@@ -644,7 +677,7 @@ mod tests {
         });
 
         // Wait until SIGKILL is attempted, then simulate termination.
-        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while std::time::Instant::now() < deadline {
             let calls = executor.execute_calls_for("kill");
             if calls
@@ -654,7 +687,7 @@ mod tests {
                 running_controller.store(false, Ordering::Release);
                 break;
             }
-            thread::sleep(Duration::from_millis(1));
+            thread::sleep(Duration::from_millis(5));
         }
 
         // Wait for monitor to complete
@@ -697,6 +730,8 @@ mod tests {
             sigterm_grace: Duration::from_millis(50),
             poll_interval: Duration::from_millis(1),
             sigkill_confirm_timeout: Duration::from_millis(50),
+            post_sigkill_hard_cap: Duration::from_secs(2),
+            sigkill_resend_interval: Duration::from_millis(20),
         };
 
         let monitor_handle = thread::spawn(move || {
@@ -712,7 +747,7 @@ mod tests {
         });
 
         // Wait until SIGTERM is attempted, then simulate termination.
-        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while std::time::Instant::now() < deadline {
             let calls = executor.execute_calls_for("kill");
             if calls
@@ -722,7 +757,7 @@ mod tests {
                 running_controller.store(false, Ordering::Release);
                 break;
             }
-            thread::sleep(Duration::from_millis(1));
+            thread::sleep(Duration::from_millis(5));
         }
 
         let result = monitor_handle.join().expect("Monitor thread panicked");
@@ -734,8 +769,13 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn test_monitor_does_not_report_timeout_if_process_still_alive_after_force_kill() {
-        // If SIGKILL does not actually terminate the child (or we can't confirm it),
-        // the monitor must NOT return TimedOut and stop monitoring.
+        // Regression test for a pipeline hang risk:
+        // If SIGKILL is sent but the child isn't observed exited, the monitor must not
+        // loop forever without an upper bound.
+        //
+        // Before the fix, this test would time out waiting for the monitor to return.
+        // After the fix, the monitor returns TimedOut even if the child never becomes
+        // observable as exited, allowing the caller to regain control.
         use crate::executor::MockAgentChild;
         use std::sync::atomic::AtomicBool;
         use std::sync::mpsc;
@@ -757,6 +797,8 @@ mod tests {
             sigterm_grace: Duration::from_millis(1),
             poll_interval: Duration::from_millis(1),
             sigkill_confirm_timeout: Duration::from_millis(5),
+            post_sigkill_hard_cap: Duration::from_millis(200),
+            sigkill_resend_interval: Duration::from_millis(20),
         };
 
         let (tx, rx) = mpsc::channel();
@@ -776,18 +818,15 @@ mod tests {
             let _ = tx.send(result);
         });
 
-        // Give the monitor a moment to attempt killing.
-        thread::sleep(Duration::from_millis(20));
+        // Before the fix, the monitor would never return while the child stays alive.
+        // We assert that it returns within a bounded time.
+        let received = rx.recv_timeout(Duration::from_secs(2));
 
-        // If the monitor claims TimedOut while the child is still running,
-        // it reintroduces the hang risk in the main thread.
-        assert!(
-            rx.recv_timeout(Duration::from_millis(20)).is_err(),
-            "Monitor returned early despite still-running child"
-        );
-
-        // Clean up: terminate the mock child so the monitor can observe exit.
+        // Clean up: ensure the monitor thread can join even if the assertion fails.
         controller.store(false, Ordering::Release);
         let _ = monitor_handle.join();
+
+        let result = received.expect("expected monitor to return within bounded time");
+        assert_eq!(result, MonitorResult::TimedOut { escalated: true });
     }
 }

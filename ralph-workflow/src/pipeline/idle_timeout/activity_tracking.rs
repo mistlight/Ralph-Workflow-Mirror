@@ -163,6 +163,8 @@ pub(crate) struct KillConfig {
     sigterm_grace: Duration,
     poll_interval: Duration,
     sigkill_confirm_timeout: Duration,
+    post_sigkill_hard_cap: Duration,
+    sigkill_resend_interval: Duration,
 }
 
 impl KillConfig {
@@ -170,11 +172,15 @@ impl KillConfig {
         sigterm_grace: Duration,
         poll_interval: Duration,
         sigkill_confirm_timeout: Duration,
+        post_sigkill_hard_cap: Duration,
+        sigkill_resend_interval: Duration,
     ) -> Self {
         Self {
             sigterm_grace,
             poll_interval,
             sigkill_confirm_timeout,
+            post_sigkill_hard_cap,
+            sigkill_resend_interval,
         }
     }
 
@@ -189,6 +195,14 @@ impl KillConfig {
     pub(crate) fn sigkill_confirm_timeout(&self) -> Duration {
         self.sigkill_confirm_timeout
     }
+
+    pub(crate) fn post_sigkill_hard_cap(&self) -> Duration {
+        self.post_sigkill_hard_cap
+    }
+
+    pub(crate) fn sigkill_resend_interval(&self) -> Duration {
+        self.sigkill_resend_interval
+    }
 }
 
 /// Default kill configuration.
@@ -196,10 +210,14 @@ impl KillConfig {
 /// - SIGTERM grace: 5s
 /// - Poll interval: 100ms
 /// - SIGKILL confirm timeout: 500ms
+/// - Post-SIGKILL hard cap: 5s
+/// - SIGKILL resend interval: 1s
 pub(crate) const DEFAULT_KILL_CONFIG: KillConfig = KillConfig::new(
     Duration::from_secs(5),
     Duration::from_millis(100),
     Duration::from_millis(500),
+    Duration::from_secs(5),
+    Duration::from_secs(1),
 );
 
 /// Monitors activity and kills a process if idle timeout is exceeded.
@@ -284,25 +302,73 @@ pub(crate) fn monitor_idle_timeout_with_interval_and_kill_config(
 ) -> MonitorResult {
     use std::sync::atomic::Ordering;
 
+    #[derive(Debug, Clone, Copy)]
+    struct TimeoutEnforcementState {
+        pid: u32,
+        escalated: bool,
+        triggered_at: std::time::Instant,
+        last_sigkill_sent_at: Option<std::time::Instant>,
+    }
+
     // Once we have triggered a timeout and sent signals, we must not later
-    // misreport normal completion. Keep the timeout classification sticky
-    // until the child is observed exited.
-    let mut timeout_triggered: Option<bool> = None;
+    // misreport normal completion. Keep the timeout classification sticky.
+    //
+    // IMPORTANT: we keep trying to observe exit, but we also have a hard cap
+    // so an unkillable/stuck process can't stall the pipeline indefinitely.
+    let mut timeout_triggered: Option<TimeoutEnforcementState> = None;
 
     loop {
         std::thread::sleep(check_interval);
 
         // If we already triggered a timeout, keep polling until the child is
         // observed exited (or try_wait fails, which we treat as "no longer running").
-        if let Some(escalated) = timeout_triggered {
+        if let Some(mut state) = timeout_triggered.take() {
             let status = {
                 let mut locked_child = child.lock().unwrap();
                 locked_child.try_wait()
             };
 
             match status {
-                Ok(Some(_)) | Err(_) => return MonitorResult::TimedOut { escalated },
-                Ok(None) => continue,
+                Ok(Some(_)) | Err(_) => {
+                    return MonitorResult::TimedOut {
+                        escalated: state.escalated,
+                    }
+                }
+                Ok(None) => {
+                    // Still running after timeout. Keep trying to regain control.
+                    let now = std::time::Instant::now();
+
+                    // Periodically re-send SIGKILL when we've already escalated.
+                    if state.escalated {
+                        let should_resend = match state.last_sigkill_sent_at {
+                            None => true,
+                            Some(t) => {
+                                now.duration_since(t) >= kill_config.sigkill_resend_interval()
+                            }
+                        };
+                        if should_resend {
+                            let _ = force_kill_best_effort(state.pid, executor.as_ref());
+                            state.last_sigkill_sent_at = Some(now);
+                        }
+                    }
+
+                    // Hard cap: stop waiting for an observable exit. The caller should
+                    // treat the run as TimedOut and proceed with best-effort cleanup.
+                    if now.duration_since(state.triggered_at) >= kill_config.post_sigkill_hard_cap()
+                    {
+                        // One final best-effort SIGKILL before giving up.
+                        if state.escalated {
+                            let _ = force_kill_best_effort(state.pid, executor.as_ref());
+                        }
+
+                        return MonitorResult::TimedOut {
+                            escalated: state.escalated,
+                        };
+                    }
+
+                    timeout_triggered = Some(state);
+                    continue;
+                }
             }
         }
 
@@ -342,7 +408,13 @@ pub(crate) fn monitor_idle_timeout_with_interval_and_kill_config(
                 return MonitorResult::TimedOut { escalated: true };
             }
             KillResult::SignalsSentAwaitingExit { escalated } => {
-                timeout_triggered = Some(escalated);
+                let now = std::time::Instant::now();
+                timeout_triggered = Some(TimeoutEnforcementState {
+                    pid: child_id,
+                    escalated,
+                    triggered_at: now,
+                    last_sigkill_sent_at: escalated.then_some(now),
+                });
             }
             KillResult::Failed => {
                 // Kill failed - this can happen if:
@@ -357,6 +429,22 @@ pub(crate) fn monitor_idle_timeout_with_interval_and_kill_config(
             }
         }
     }
+}
+
+#[cfg(unix)]
+fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -> bool {
+    executor
+        .execute("kill", &["-KILL", &pid.to_string()], &[], None)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn force_kill_best_effort(pid: u32, executor: &dyn ProcessExecutor) -> bool {
+    executor
+        .execute("taskkill", &["/F", "/PID", &pid.to_string()], &[], None)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 /// Kill a process by PID using platform-specific commands via executor.

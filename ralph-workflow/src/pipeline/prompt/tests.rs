@@ -528,6 +528,8 @@ fn test_run_with_agent_spawn_does_not_hang_when_stdout_closes_early_and_idle_tim
                     Duration::from_millis(20),
                     Duration::from_millis(1),
                     Duration::from_millis(20),
+                    Duration::from_secs(2),
+                    Duration::from_millis(50),
                 ),
             );
             let _ = tx.send(result);
@@ -551,6 +553,155 @@ fn test_run_with_agent_spawn_does_not_hang_when_stdout_closes_early_and_idle_tim
             "expected agent run to complete without hanging"
         );
         assert_eq!(exit_code, Some(143));
+    });
+}
+
+#[test]
+#[cfg(unix)]
+fn test_run_with_agent_spawn_regains_control_when_child_never_exits_after_sigkill() {
+    // Regression test for an extreme idle-timeout scenario:
+    // - stdout closes immediately (streaming finishes)
+    // - monitor sends SIGTERM/SIGKILL
+    // - child never becomes observable as exited (try_wait always returns None)
+    //
+    // Expected behavior: the runner returns a TimedOut classification and does not hang
+    // indefinitely waiting for the child.
+    use std::io;
+    use std::path::Path;
+    use std::process::ExitStatus;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{mpsc, Arc};
+    use std::time::Duration;
+
+    use std::os::unix::process::ExitStatusExt;
+
+    #[derive(Debug)]
+    struct UnkillableChild {
+        still_running: Arc<AtomicBool>,
+    }
+
+    impl crate::executor::AgentChild for UnkillableChild {
+        fn id(&self) -> u32 {
+            12345
+        }
+
+        fn wait(&mut self) -> io::Result<ExitStatus> {
+            while self.still_running.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Ok(ExitStatus::from_raw(0))
+        }
+
+        fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+            if self.still_running.load(Ordering::Acquire) {
+                return Ok(None);
+            }
+            Ok(Some(ExitStatus::from_raw(0)))
+        }
+    }
+
+    #[derive(Debug)]
+    struct UnkillableExecutor {
+        still_running: Arc<AtomicBool>,
+    }
+
+    impl crate::executor::ProcessExecutor for UnkillableExecutor {
+        fn execute(
+            &self,
+            _command: &str,
+            _args: &[&str],
+            _env: &[(String, String)],
+            _workdir: Option<&Path>,
+        ) -> io::Result<crate::executor::ProcessOutput> {
+            // Always report success for kill commands but never make the child exit.
+            Ok(crate::executor::ProcessOutput {
+                status: ExitStatus::from_raw(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        }
+
+        fn spawn_agent(
+            &self,
+            _config: &crate::executor::AgentSpawnConfig,
+        ) -> io::Result<crate::executor::AgentChildHandle> {
+            let stdout = Box::new(Cursor::new(Vec::<u8>::new())) as Box<dyn io::Read + Send>;
+            let stderr = Box::new(Cursor::new(Vec::<u8>::new())) as Box<dyn io::Read + Send>;
+            let inner: Box<dyn crate::executor::AgentChild> = Box::new(UnkillableChild {
+                still_running: Arc::clone(&self.still_running),
+            });
+
+            Ok(crate::executor::AgentChildHandle {
+                stdout,
+                stderr,
+                inner,
+            })
+        }
+    }
+
+    let workspace = MemoryWorkspace::new_test();
+    let logger = test_logger();
+    let colors = Colors::new();
+    let config = Config::test_default();
+    let mut timer = Timer::new();
+
+    let still_running = Arc::new(AtomicBool::new(true));
+    let executor = Arc::new(UnkillableExecutor {
+        still_running: Arc::clone(&still_running),
+    });
+    let executor_arc: Arc<dyn crate::executor::ProcessExecutor> = executor.clone();
+
+    let env_vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let cmd = PromptCommand {
+        label: "test",
+        display_name: "test",
+        cmd_str: "mock-agent",
+        prompt: "hello",
+        log_prefix: ".agent/logs/test",
+        model_index: None,
+        attempt: None,
+        logfile: ".agent/logs/test.log",
+        parser_type: JsonParserType::Generic,
+        env_vars: &env_vars,
+    };
+
+    let mut runtime = PipelineRuntime {
+        timer: &mut timer,
+        logger: &logger,
+        colors: &colors,
+        config: &config,
+        executor: executor.as_ref(),
+        executor_arc,
+        workspace: &workspace,
+    };
+
+    std::thread::scope(|scope| {
+        let (tx, rx) = mpsc::channel();
+        scope.spawn(move || {
+            let result = run_with_agent_spawn_with_monitor_config(
+                &cmd,
+                &mut runtime,
+                &[],
+                1,
+                Duration::from_millis(10),
+                crate::pipeline::idle_timeout::KillConfig::new(
+                    Duration::from_millis(20),
+                    Duration::from_millis(5),
+                    Duration::from_millis(20),
+                    Duration::from_millis(100),
+                    Duration::from_millis(20),
+                ),
+            );
+            let _ = tx.send(result);
+        });
+
+        let received = rx.recv_timeout(Duration::from_secs(5));
+        // Always stop the child so the runner thread can finish, even if the assertion fails.
+        still_running.store(false, Ordering::Release);
+
+        let result = received.expect("expected run to return without hanging");
+        let result = result.expect("expected successful CommandResult");
+        assert_eq!(result.exit_code, 143);
     });
 }
 
@@ -720,7 +871,6 @@ fn test_run_with_agent_spawn_terminates_child_and_joins_threads_when_streaming_e
     std::thread::scope(|scope| {
         let (tx, rx) = mpsc::channel();
         scope.spawn(move || {
-            let returned_at = start.elapsed();
             let result = run_with_agent_spawn_with_monitor_config(
                 &cmd,
                 &mut runtime,
@@ -731,8 +881,11 @@ fn test_run_with_agent_spawn_terminates_child_and_joins_threads_when_streaming_e
                     Duration::from_millis(20),
                     Duration::from_millis(1),
                     Duration::from_millis(20),
+                    Duration::from_secs(2),
+                    Duration::from_millis(50),
                 ),
             );
+            let returned_at = start.elapsed();
             let _ = tx.send((returned_at, result));
         });
 

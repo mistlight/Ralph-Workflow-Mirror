@@ -145,22 +145,96 @@ use types::{PromptArchiveInfo, PromptSaveOptions};
 fn wait_for_completion_and_collect_stderr(
     child_arc: Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>>,
     stderr_join_handle: &mut Option<std::thread::JoinHandle<io::Result<String>>>,
+    monitor_handle: &mut Option<
+        std::thread::JoinHandle<crate::pipeline::idle_timeout::MonitorResult>,
+    >,
     runtime: &PipelineRuntime<'_>,
-) -> io::Result<(i32, String)> {
+) -> io::Result<(
+    i32,
+    String,
+    Option<crate::pipeline::idle_timeout::MonitorResult>,
+)> {
     use std::time::Duration;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum WaitOutcome {
+        Completed(std::process::ExitStatus),
+        TimedOut(crate::pipeline::idle_timeout::MonitorResult),
+    }
+
+    fn try_take_monitor_result(
+        monitor_handle: &mut Option<
+            std::thread::JoinHandle<crate::pipeline::idle_timeout::MonitorResult>,
+        >,
+    ) -> Option<crate::pipeline::idle_timeout::MonitorResult> {
+        let finished = match monitor_handle.as_ref() {
+            Some(h) => h.is_finished(),
+            None => false,
+        };
+        if !finished {
+            return None;
+        }
+
+        monitor_handle.take().and_then(|h| h.join().ok())
+    }
+
+    fn try_take_stderr_output(
+        stderr_join_handle: &mut Option<std::thread::JoinHandle<io::Result<String>>>,
+        runtime: &PipelineRuntime<'_>,
+    ) -> String {
+        let finished = match stderr_join_handle.as_ref() {
+            Some(h) => h.is_finished(),
+            None => false,
+        };
+        if !finished {
+            return String::new();
+        }
+
+        match stderr_join_handle.take() {
+            Some(handle) => match handle.join() {
+                Ok(result) => result.unwrap_or_else(|e| {
+                    runtime
+                        .logger
+                        .warn(&format!("Stderr collection failed after timeout: {e}"));
+                    String::new()
+                }),
+                Err(_) => String::new(),
+            },
+            None => String::new(),
+        }
+    }
 
     // Poll for process completion without holding the lock continuously.
     // This allows the monitor thread to acquire the lock to kill the process.
     let check_interval = Duration::from_millis(100);
-    let status = loop {
+    let outcome = loop {
+        if let Some(monitor_result) = try_take_monitor_result(monitor_handle) {
+            if matches!(
+                monitor_result,
+                crate::pipeline::idle_timeout::MonitorResult::TimedOut { .. }
+            ) {
+                break WaitOutcome::TimedOut(monitor_result);
+            }
+        }
+
         let mut child = child_arc.lock().unwrap();
         match child.try_wait()? {
-            Some(status) => break status,
+            Some(status) => break WaitOutcome::Completed(status),
             None => {
                 // Release lock before sleeping to allow monitor thread to kill process
                 drop(child);
                 std::thread::sleep(check_interval);
             }
+        }
+    };
+
+    let status = match outcome {
+        WaitOutcome::Completed(status) => status,
+        WaitOutcome::TimedOut(monitor_result) => {
+            // The monitor has decided this run timed out. Avoid waiting indefinitely for
+            // an observable exit; return control to the caller.
+            let stderr_output = try_take_stderr_output(stderr_join_handle, runtime);
+            return Ok((SIGTERM_EXIT_CODE, stderr_output, Some(monitor_result)));
         }
     };
 
@@ -210,7 +284,7 @@ fn wait_for_completion_and_collect_stderr(
         }
     }
 
-    Ok((exit_code, stderr_output))
+    Ok((exit_code, stderr_output, None))
 }
 
 fn terminate_child_best_effort(
@@ -290,10 +364,13 @@ fn cleanup_after_agent_failure(
 ) {
     use std::sync::atomic::Ordering;
 
-    monitor_should_stop.store(true, Ordering::Release);
-
     // Ensure the child isn't left running when we abort early.
+    // Keep the idle-timeout monitor alive during this best-effort termination so it can
+    // provide redundant enforcement if termination is slow or fails.
     terminate_child_best_effort(child_arc, executor, kill_config);
+
+    // After we've attempted termination, stop the monitor so it can't fire later.
+    monitor_should_stop.store(true, Ordering::Release);
 
     // Join stderr collector so it doesn't outlive the caller.
     if let Some(handle) = stderr_join_handle.take() {
@@ -571,24 +648,45 @@ fn run_with_agent_spawn(
 
     // After streaming completes, wait for child
     // Pass the Arc to allow lock release between try_wait() polls
-    let (exit_code, stderr_output) = match wait_for_completion_and_collect_stderr(
-        Arc::clone(&child_shared),
-        &mut stderr_join_handle,
-        runtime,
-    ) {
-        Ok(v) => v,
-        Err(e) => {
-            cleanup_after_agent_failure(
-                &child_shared,
-                &monitor_should_stop,
-                &mut monitor_handle,
-                &mut stderr_join_handle,
-                runtime.executor_arc.as_ref(),
-                crate::pipeline::idle_timeout::DEFAULT_KILL_CONFIG,
-            );
-            return Err(e);
+    let (exit_code, stderr_output, monitor_result_early) =
+        match wait_for_completion_and_collect_stderr(
+            Arc::clone(&child_shared),
+            &mut stderr_join_handle,
+            &mut monitor_handle,
+            runtime,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                cleanup_after_agent_failure(
+                    &child_shared,
+                    &monitor_should_stop,
+                    &mut monitor_handle,
+                    &mut stderr_join_handle,
+                    runtime.executor_arc.as_ref(),
+                    crate::pipeline::idle_timeout::DEFAULT_KILL_CONFIG,
+                );
+                return Err(e);
+            }
+        };
+
+    // If the monitor timed out but the child never became observable as exited, we
+    // intentionally stop waiting here to guarantee the pipeline regains control.
+    if matches!(monitor_result_early, Some(MonitorResult::TimedOut { .. })) {
+        terminate_child_best_effort(
+            &child_shared,
+            runtime.executor_arc.as_ref(),
+            crate::pipeline::idle_timeout::DEFAULT_KILL_CONFIG,
+        );
+
+        // Avoid blocking on stderr thread in this extreme case.
+        if let Some(handle) = stderr_join_handle.as_ref() {
+            if handle.is_finished() {
+                let _ = stderr_join_handle.take().and_then(|h| h.join().ok());
+            } else {
+                let _ = stderr_join_handle.take();
+            }
         }
-    };
+    }
 
     // Signal monitor to stop only after the child has exited.
     // If stdout closes early but the child remains running, the monitor must
@@ -596,9 +694,8 @@ fn run_with_agent_spawn(
     monitor_should_stop.store(true, Ordering::Release);
 
     // Check if monitor killed the process due to idle timeout
-    let monitor_result = monitor_handle
-        .take()
-        .and_then(|handle| handle.join().ok())
+    let monitor_result = monitor_result_early
+        .or_else(|| monitor_handle.take().and_then(|handle| handle.join().ok()))
         .unwrap_or(MonitorResult::ProcessCompleted);
 
     // Handle timeout with escalation diagnostics
@@ -776,31 +873,47 @@ fn run_with_agent_spawn_with_monitor_config(
         return Err(e);
     }
 
-    let (exit_code, stderr_output) = match wait_for_completion_and_collect_stderr(
-        Arc::clone(&child_shared),
-        &mut stderr_join_handle,
-        runtime,
+    let (exit_code, stderr_output, monitor_result_early) =
+        match wait_for_completion_and_collect_stderr(
+            Arc::clone(&child_shared),
+            &mut stderr_join_handle,
+            &mut monitor_handle,
+            runtime,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                cleanup_after_agent_failure(
+                    &child_shared,
+                    &monitor_should_stop,
+                    &mut monitor_handle,
+                    &mut stderr_join_handle,
+                    runtime.executor_arc.as_ref(),
+                    kill_config,
+                );
+                return Err(e);
+            }
+        };
+
+    if matches!(
+        monitor_result_early,
+        Some(crate::pipeline::idle_timeout::MonitorResult::TimedOut { .. })
     ) {
-        Ok(v) => v,
-        Err(e) => {
-            cleanup_after_agent_failure(
-                &child_shared,
-                &monitor_should_stop,
-                &mut monitor_handle,
-                &mut stderr_join_handle,
-                runtime.executor_arc.as_ref(),
-                kill_config,
-            );
-            return Err(e);
+        terminate_child_best_effort(&child_shared, runtime.executor_arc.as_ref(), kill_config);
+
+        if let Some(handle) = stderr_join_handle.as_ref() {
+            if handle.is_finished() {
+                let _ = stderr_join_handle.take().and_then(|h| h.join().ok());
+            } else {
+                let _ = stderr_join_handle.take();
+            }
         }
-    };
+    }
 
     // Signal monitor to stop only after the child has exited.
     monitor_should_stop.store(true, Ordering::Release);
 
-    let monitor_result = monitor_handle
-        .take()
-        .and_then(|handle| handle.join().ok())
+    let monitor_result = monitor_result_early
+        .or_else(|| monitor_handle.take().and_then(|handle| handle.join().ok()))
         .unwrap_or(crate::pipeline::idle_timeout::MonitorResult::ProcessCompleted);
 
     let final_exit_code = match monitor_result {
