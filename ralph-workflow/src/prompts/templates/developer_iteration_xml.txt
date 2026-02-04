@@ -6,7 +6,8 @@
 {# PURPOSE:                                                                    #}
 {#   Prompt for developer agent during implementation phase.                    #}
 {#   Provides original user request and implementation plan for context.        #}
-{#   Uses XML output format for reliable parsing.                               #}
+{#   Developer agent executes plan and makes code changes.                       #}
+{#   No structured output is required; progress verification is done by analysis. #}
 {#                                                                             #}
 {# WHEN USED:                                                                  #}
 {#   During implementation mode (after planning phase is complete).              #}

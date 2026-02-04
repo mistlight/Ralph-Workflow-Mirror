@@ -13,7 +13,9 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
-            if state.agent_chain.agents.is_empty() {
+            if state.agent_chain.agents.is_empty()
+                || state.agent_chain.current_role != AgentRole::Developer
+            {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Developer,
                 };
@@ -124,6 +126,16 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 };
             }
 
+            // Development phase runs two distinct roles (Developer then Analysis). Ensure
+            // we are on the developer chain before preparing/invoking the developer agent.
+            if state.development_agent_invoked_iteration != Some(state.iteration)
+                && state.agent_chain.current_role != AgentRole::Developer
+            {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Developer,
+                };
+            }
+
             let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
 
             if state.iteration < state.total_iterations {
@@ -176,6 +188,11 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 if state.development_agent_invoked_iteration == Some(state.iteration)
                     && state.analysis_agent_invoked_iteration != Some(state.iteration)
                 {
+                    if state.agent_chain.current_role != AgentRole::Analysis {
+                        return Effect::InitializeAgentChain {
+                            role: AgentRole::Analysis,
+                        };
+                    }
                     return Effect::InvokeAnalysisAgent {
                         iteration: state.iteration,
                     };
@@ -370,7 +387,9 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
 
         PipelinePhase::CommitMessage => {
             // Commit phase requires explicit agent chain initialization like other phases
-            if state.agent_chain.agents.is_empty() {
+            if state.agent_chain.agents.is_empty()
+                || state.agent_chain.current_role != AgentRole::Commit
+            {
                 return Effect::InitializeAgentChain {
                     role: AgentRole::Commit,
                 };

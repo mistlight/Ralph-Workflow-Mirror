@@ -24,6 +24,31 @@ fn test_determine_effect_commit_message_empty_chain() {
 }
 
 #[test]
+fn test_determine_effect_commit_message_role_mismatch_reinitializes_chain() {
+    // Regression: entering CommitMessage with a non-commit agent chain must still
+    // initialize the commit chain so FallbackConfig.commit is honored.
+    let chain = AgentChainState::initial().with_agents(
+        vec!["dev-agent".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
+    let state = PipelineState {
+        phase: PipelinePhase::CommitMessage,
+        commit: CommitState::NotStarted,
+        agent_chain: chain,
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::InitializeAgentChain {
+            role: AgentRole::Commit
+        }
+    ));
+}
+
+#[test]
 fn test_determine_effect_commit_message_not_started() {
     // With initialized agent chain and diff prepared, commit phase should prepare prompt
     let state = PipelineState {

@@ -11,6 +11,12 @@ fn derive_xsd_retry_effect(state: &PipelineState) -> Effect {
         PipelinePhase::Development => {
             // development_result.xml is produced by the analysis agent.
             // When XSD validation fails, retry analysis output generation directly.
+            // Ensure the analysis agent chain role is initialized (resume safety).
+            if state.agent_chain.current_role != AgentRole::Analysis {
+                return Effect::InitializeAgentChain {
+                    role: AgentRole::Analysis,
+                };
+            }
             Effect::InvokeAnalysisAgent {
                 iteration: state.iteration,
             }
@@ -48,10 +54,21 @@ fn derive_same_agent_retry_effect(state: &PipelineState) -> Effect {
             iteration: state.iteration,
             prompt_mode: PromptMode::SameAgentRetry,
         },
-        PipelinePhase::Development => Effect::PrepareDevelopmentPrompt {
-            iteration: state.iteration,
-            prompt_mode: PromptMode::SameAgentRetry,
-        },
+        PipelinePhase::Development => {
+            // Development phase runs BOTH developer and analysis agents.
+            // Same-agent retries must be role-aware so analysis failures retry analysis,
+            // not the developer prompt chain.
+            if state.agent_chain.current_role == AgentRole::Analysis {
+                Effect::InvokeAnalysisAgent {
+                    iteration: state.iteration,
+                }
+            } else {
+                Effect::PrepareDevelopmentPrompt {
+                    iteration: state.iteration,
+                    prompt_mode: PromptMode::SameAgentRetry,
+                }
+            }
+        }
         PipelinePhase::Review => {
             if state.review_issues_found || state.continuation.fix_continue_pending {
                 Effect::PrepareFixPrompt {

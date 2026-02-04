@@ -135,6 +135,12 @@ fn test_development_runs_exactly_n_iterations() {
                 state = reduce(state, PipelineEvent::development_agent_invoked(iteration));
             }
             Effect::InvokeAnalysisAgent { iteration } => {
+                // XSD retry / resume safety: analysis invocations may require switching agent role.
+                assert_eq!(
+                    state.agent_chain.current_role,
+                    AgentRole::Analysis,
+                    "InvokeAnalysisAgent must only occur when agent chain is initialized for Analysis"
+                );
                 state = reduce(
                     state,
                     PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked {
@@ -230,11 +236,11 @@ fn test_development_runs_exactly_n_iterations() {
                 );
             }
             Effect::SaveCheckpoint { .. } => break,
-            Effect::InitializeAgentChain { .. } => {
+            Effect::InitializeAgentChain { role } => {
                 state = reduce(
                     state,
                     PipelineEvent::agent_chain_initialized(
-                        AgentRole::Developer,
+                        role,
                         vec!["claude".to_string()],
                         3,
                         1000,
@@ -355,6 +361,67 @@ fn test_development_timeout_retry_does_not_use_xsd_retry_prompt_mode() {
     } else {
         panic!("Expected PrepareDevelopmentPrompt after timeout, got {effect:?}");
     }
+}
+
+#[test]
+fn test_same_agent_retry_in_development_retries_analysis_when_chain_role_is_analysis() {
+    // Regression: analysis runs inside Development. Same-agent retries must retry analysis,
+    // not restart the developer prompt flow.
+    let chain = crate::reducer::state::AgentChainState::initial().with_agents(
+        vec!["agent-a".to_string()],
+        vec![vec![]],
+        AgentRole::Analysis,
+    );
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 0,
+        total_iterations: 1,
+        agent_chain: chain,
+        continuation: crate::reducer::state::ContinuationState {
+            same_agent_retry_count: 1,
+            same_agent_retry_pending: true,
+            ..crate::reducer::state::ContinuationState::new()
+        },
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::InvokeAnalysisAgent { iteration: 0 }
+    ));
+}
+
+#[test]
+fn test_development_initializes_analysis_chain_before_invoking_analysis() {
+    // Regression: analysis invocations should honor FallbackConfig.analysis.
+    let chain = crate::reducer::state::AgentChainState::initial().with_agents(
+        vec!["dev-agent".to_string()],
+        vec![vec![]],
+        AgentRole::Developer,
+    );
+
+    let state = PipelineState {
+        phase: PipelinePhase::Development,
+        iteration: 1,
+        total_iterations: 5,
+        agent_chain: chain,
+        development_context_prepared_iteration: Some(1),
+        development_prompt_prepared_iteration: Some(1),
+        development_xml_cleaned_iteration: Some(1),
+        development_agent_invoked_iteration: Some(1),
+        analysis_agent_invoked_iteration: None,
+        ..create_test_state()
+    };
+
+    let effect = determine_next_effect(&state);
+    assert!(matches!(
+        effect,
+        Effect::InitializeAgentChain {
+            role: AgentRole::Analysis
+        }
+    ));
 }
 
 #[test]

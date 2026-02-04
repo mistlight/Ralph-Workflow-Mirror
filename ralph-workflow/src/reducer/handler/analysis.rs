@@ -7,7 +7,7 @@ use crate::phases::PhaseContext;
 use crate::reducer::effect::EffectResult;
 use crate::reducer::event::{AgentEvent, DevelopmentEvent, PipelineEvent};
 use crate::reducer::handler::MainEffectHandler;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::Path;
 
 impl MainEffectHandler {
@@ -34,20 +34,47 @@ impl MainEffectHandler {
         ctx: &mut PhaseContext<'_>,
         iteration: u32,
     ) -> Result<EffectResult> {
-        // Read PLAN.md
+        // Read PLAN.md (non-fatal if missing).
+        // Requirements: analysis should still run and report missing inputs.
         let plan_path = Path::new(".agent/PLAN.md");
-        let plan_content = ctx
-            .workspace
-            .read(plan_path)
-            .context("Failed to read PLAN.md for analysis")?;
+        let plan_content = match ctx.workspace.read(plan_path) {
+            Ok(s) => s,
+            Err(err) => {
+                // Best-effort fallback: older checkpoints or interrupted runs may still have
+                // the XML plan available.
+                let xml_fallback = Path::new(".agent/tmp/plan.xml");
+                match ctx.workspace.read(xml_fallback) {
+                    Ok(xml) => format!(
+                        "[PLAN unavailable: failed to read .agent/PLAN.md ({err}); using fallback .agent/tmp/plan.xml]\n\n{xml}"
+                    ),
+                    Err(fallback_err) => format!(
+                        "[PLAN unavailable: failed to read .agent/PLAN.md ({err}); also failed to read .agent/tmp/plan.xml ({fallback_err})]"
+                    ),
+                }
+            }
+        };
 
-        // Generate git diff since pipeline start
-        let diff_content = get_git_diff_from_start_with_workspace(ctx.workspace)
-            .context("Failed to generate git diff for analysis")?;
-
-        // Best-effort: persist diff for prompt materialization fallbacks.
-        // Missing `.agent/DIFF.backup` must not be fatal.
-        let _ = write_diff_backup_with_workspace(ctx.workspace, &diff_content);
+        // Generate git diff since pipeline start (non-fatal if it fails).
+        // If generation fails, fall back to `.agent/DIFF.backup` if present; otherwise
+        // provide a placeholder with recovery commands.
+        let diff_content = match get_git_diff_from_start_with_workspace(ctx.workspace) {
+            Ok(diff) => {
+                // Best-effort: persist diff for prompt materialization fallbacks.
+                // Missing `.agent/DIFF.backup` must not be fatal.
+                let _ = write_diff_backup_with_workspace(ctx.workspace, &diff);
+                diff
+            }
+            Err(err) => match ctx.workspace.read(Path::new(".agent/DIFF.backup")) {
+                Ok(backup) => backup,
+                Err(backup_err) => format!(
+                    "[DIFF unavailable: failed to generate git diff ({err}); and failed to read .agent/DIFF.backup ({backup_err})]\n\n\
+Fallback commands (last resort):\n\
+- Unstaged changes: git diff\n\
+- Staged changes:   git diff --cached\n\
+- Untracked files:  git ls-files --others --exclude-standard\n"
+                ),
+            },
+        };
 
         // Generate analysis prompt
         let mut prompt = crate::prompts::analysis::generate_analysis_prompt(

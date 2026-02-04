@@ -90,10 +90,15 @@ fn test_analysis_runs_after_first_iteration_when_multiple_iterations() {
         // When: Determining next effect
         let effect = determine_next_effect(&state);
 
-        // Then: Should invoke analysis agent for iteration 0
+        // Then: Should initialize analysis agent chain first (role-aware), then invoke analysis.
         assert!(
-            matches!(effect, Effect::InvokeAnalysisAgent { iteration: 0 }),
-            "Analysis agent should run after first iteration, got {:?}",
+            matches!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Analysis
+                }
+            ),
+            "Expected InitializeAgentChain(Analysis) before invoking analysis agent, got {:?}",
             effect
         );
     });
@@ -131,10 +136,15 @@ fn test_analysis_runs_after_every_iteration() {
             // When: Determining next effect after dev agent completes
             let effect = determine_next_effect(&state);
 
-            // Then: Should invoke analysis agent for this iteration
+            // Then: Should initialize analysis agent chain first (role-aware), then invoke analysis.
             assert!(
-                matches!(effect, Effect::InvokeAnalysisAgent { iteration: i } if i == iter),
-                "Analysis should run after iteration {}, got {:?}",
+                matches!(
+                    effect,
+                    Effect::InitializeAgentChain {
+                        role: AgentRole::Analysis
+                    }
+                ),
+                "Expected InitializeAgentChain(Analysis) after iteration {}, got {:?}",
                 iter,
                 effect
             );
@@ -297,6 +307,8 @@ fn test_continuation_triggered_resets_analysis_invoked_tracking() {
 #[test]
 fn test_development_xsd_retry_reinvokes_analysis_agent() {
     with_default_timeout(|| {
+        use ralph_workflow::agents::AgentRole;
+
         // Given: Development phase with an XSD retry pending
         let mut state = PipelineState::initial(1, 0);
         state.phase = PipelinePhase::Development;
@@ -307,10 +319,17 @@ fn test_development_xsd_retry_reinvokes_analysis_agent() {
         // When: Determining next effect
         let effect = determine_next_effect(&state);
 
-        // Then: Should re-invoke analysis agent directly
+        // Then: XSD retry should target analysis. Depending on current role, orchestration may
+        // initialize the analysis chain before invoking the analysis agent.
         assert!(
-            matches!(effect, Effect::InvokeAnalysisAgent { iteration: 0 }),
-            "expected XSD retry to invoke analysis agent, got {:?}",
+            matches!(effect, Effect::InvokeAnalysisAgent { iteration: 0 })
+                || matches!(
+                    effect,
+                    Effect::InitializeAgentChain {
+                        role: AgentRole::Analysis
+                    }
+                ),
+            "expected XSD retry to initialize analysis chain or invoke analysis agent, got {:?}",
             effect
         );
     });
@@ -401,11 +420,11 @@ fn test_analysis_xsd_invalid_triggers_retry() {
         state.continuation.xsd_retry_pending = true;
         state.continuation.xsd_retry_count = 1;
 
-        // Set up agent chain
+        // Set up agent chain (role is Analysis because XSD retry should re-invoke analysis directly)
         state.agent_chain = state.agent_chain.with_agents(
             vec!["claude".to_string()],
             vec![vec![]],
-            AgentRole::Developer,
+            AgentRole::Analysis,
         );
 
         // When: Determining next effect during XSD retry
@@ -493,11 +512,37 @@ fn test_complete_pipeline_with_analysis_verification() {
         // Step 1: Development agent completes
         state.development_agent_invoked_iteration = Some(0);
 
-        // Step 2: Orchestrator should invoke analysis agent
+        // Step 2: Orchestrator should initialize analysis chain (role-aware), then invoke analysis
+        let effect = determine_next_effect(&state);
+        assert!(
+            matches!(
+                effect,
+                Effect::InitializeAgentChain {
+                    role: AgentRole::Analysis
+                }
+            ),
+            "After dev agent, should initialize analysis chain, got {:?}",
+            effect
+        );
+
+        // Step 2b: Simulate chain initialization
+        state = reduce(
+            state,
+            PipelineEvent::agent_chain_initialized(
+                AgentRole::Analysis,
+                vec!["claude".to_string()],
+                3,
+                1000,
+                2.0,
+                60_000,
+            ),
+        );
+
+        // Step 2c: Now analysis agent should be invoked
         let effect = determine_next_effect(&state);
         assert!(
             matches!(effect, Effect::InvokeAnalysisAgent { iteration: 0 }),
-            "After dev agent, should invoke analysis agent, got {:?}",
+            "After analysis chain init, should invoke analysis agent, got {:?}",
             effect
         );
 

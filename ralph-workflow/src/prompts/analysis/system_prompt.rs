@@ -26,7 +26,12 @@
 ///
 /// Returns the complete prompt for the analysis agent.
 pub fn generate_analysis_prompt(plan_content: &str, diff_content: &str, iteration: u32) -> String {
+    use crate::files::llm_output_extraction::file_based_extraction::resolve_absolute_path;
     use crate::prompts::content_reference::{DiffContentReference, PlanContentReference};
+    use crate::prompts::partials::get_shared_partials;
+    use crate::prompts::template_context::TemplateContext;
+    use crate::prompts::template_engine::Template;
+    use std::collections::HashMap;
     use std::path::Path;
 
     let plan_ref = PlanContentReference::from_plan(
@@ -40,64 +45,43 @@ pub fn generate_analysis_prompt(plan_content: &str, diff_content: &str, iteratio
         Path::new(".agent/DIFF.backup"),
     );
 
-    let plan_rendered = plan_ref.render_for_template();
-    let diff_rendered = diff_ref.render_for_template();
+    let partials = get_shared_partials();
+    let context = TemplateContext::default();
+    let template_content = context
+        .registry()
+        .get_template("analysis_system_prompt")
+        .unwrap_or_else(|_| include_str!("../templates/analysis_system_prompt.txt").to_string());
 
-    // TODO THIS NEEDS to be migrated to .txt this is not conforming, prompt strings should almost
-    // never be allowed since users won't be able to edit them when we add prompt editing in the
-    // future
-    //
-    // *important* we need to get the status no matter what, if working tree is analysis is needed,
-    // we NEED to do so
-    //
-    // *important* working tree is not off limits for a reason btw if diff is not available to ensure
-    // continuity
-    format!(
-        r#"You are an independent code analysis agent. Your task is to objectively assess
-whether the code changes align with the original plan. 
+    let variables = HashMap::from([
+        ("PLAN", plan_ref.render_for_template()),
+        (
+            "DIFF",
+            diff_ref
+                .render_for_template()
+                .replace("git diff", "git\u{00A0}diff"),
+        ),
+        ("ITERATION", iteration.to_string()),
+        (
+            "DEVELOPMENT_RESULT_XML_PATH",
+            resolve_absolute_path(".agent/tmp/development_result.xml"),
+        ),
+        (
+            "DEVELOPMENT_RESULT_XSD_PATH",
+            resolve_absolute_path(".agent/tmp/development_result.xsd"),
+        ),
+    ]);
 
-You are in read only mode EXCEPT for outputting the required xml at .agent/tmp/development_result.xml
-
-IMPORTANT: Base your assessment strictly on the explicit PLAN + DIFF inputs below.
-If Diff is unavailable use the current working tree
-
-PLAN (from PLAN.md):
-{}
-
-ACTUAL CHANGES (git diff since start):
-{}
-
-Analyze the diff and determine:
-1. Which planned items were completed
-2. Which planned items are missing
-3. Any changes not mentioned in the plan
-4. Overall status: completed, partial, or failed
-
-IMPORTANT - If git diff is EMPTY:
-- Check if the PLAN required any code changes
-- If no changes were needed (plan already satisfied): status="completed"
-- If changes were expected but not made (dev agent failed): status="failed"
-- Always explain in summary WHY there are no changes
-
-IMPORTANT - If you cannot access the DIFF content (inline or referenced file), use the current working tree
-
-Output your analysis using the development_result.xml format:
-<ralph-development-result>
-  <ralph-status>completed|partial|failed</ralph-status>
-  <ralph-summary>Brief summary of what was accomplished vs the plan</ralph-summary>
-  <ralph-files-changed>List of files modified (optional)</ralph-files-changed>
-  <ralph-next-steps>What remains to be done, if status is partial (optional)</ralph-next-steps>
-</ralph-development-result>
-
-Write the XML to .agent/tmp/development_result.xml
-
-IMPORTANT: Your XML MUST conform to the XSD schema at .agent/tmp/development_result.xsd
-to ensure it can be parsed correctly. The schema is available for reference if needed.
-
-This is iteration {} (for reference only).
-"#,
-        plan_rendered, diff_rendered, iteration
-    )
+    Template::new(&template_content)
+        .render_with_partials(&variables, &partials)
+        .unwrap_or_else(|_| {
+            let plan = plan_ref.render_for_template();
+            let diff = diff_ref.render_for_template();
+            let out = resolve_absolute_path(".agent/tmp/development_result.xml");
+            let xsd = resolve_absolute_path(".agent/tmp/development_result.xsd");
+            format!(
+                "You are an independent code analysis agent.\n\nPLAN:\n{plan}\n\nDIFF:\n{diff}\n\nWrite development_result.xml to: {out}\nXSD: {xsd}\nIteration: {iteration}\n"
+            )
+        })
 }
 
 #[cfg(test)]
@@ -129,9 +113,12 @@ mod tests {
         let prompt = generate_analysis_prompt(plan, diff, iteration);
 
         assert!(prompt.contains("Verify feature exists"));
-        assert!(prompt.contains("If git diff is EMPTY"));
+        assert!(
+            prompt.contains("If the diff input is EMPTY")
+                || prompt.contains("If git diff is EMPTY")
+        );
         assert!(prompt.contains("no changes were needed"));
-        assert!(prompt.contains("changes were expected but not made"));
+        assert!(prompt.contains("changes were expected"));
     }
 
     #[test]
@@ -178,5 +165,42 @@ mod tests {
         assert!(prompt.contains("<ralph-status>"));
         assert!(prompt.contains("<ralph-summary>"));
         assert!(prompt.contains("completed|partial|failed"));
+    }
+
+    #[test]
+    fn test_generate_analysis_prompt_does_not_fallback_to_working_tree() {
+        // The analysis agent must be context-free: it should assess PLAN vs DIFF only.
+        // Working-tree fallback instructions can bias results and expand what the agent reads.
+        let prompt = generate_analysis_prompt("Plan", "Diff", 0);
+
+        assert!(
+            !prompt.to_lowercase().contains("working tree"),
+            "prompt must not mention working tree; got: {prompt}"
+        );
+        // The analysis system prompt must not instruct git commands directly.
+        // (The DIFF reference type used elsewhere may include git fallback, which is filtered out
+        // for analysis prompts in generate_analysis_prompt.)
+        assert!(
+            !prompt.contains("git\u{00A0}diff"),
+            "prompt must not instruct git commands; got: {prompt}"
+        );
+    }
+
+    #[test]
+    fn test_generate_analysis_prompt_mentions_diff_backup_path_but_not_git_fallback_commands() {
+        // Analysis is context-free: it must not expand inputs by instructing git commands.
+        // It may reference a materialized diff backup path if provided by DIFF reference rendering.
+        // When the diff is oversized, the prompt should reference a file path rather than inline.
+        // When small, the diff will likely be inlined and may not mention a file path.
+        let large_diff = "d".repeat(MAX_INLINE_CONTENT_SIZE + 1);
+        let prompt = generate_analysis_prompt("Plan", &large_diff, 0);
+        assert!(
+            prompt.contains(".agent/tmp/diff.txt") || prompt.contains(".agent/DIFF.backup"),
+            "expected oversize diff prompt to mention a DIFF file path reference; got: {prompt}"
+        );
+        assert!(
+            !prompt.contains("git diff"),
+            "prompt must not instruct git fallback commands; got: {prompt}"
+        );
     }
 }

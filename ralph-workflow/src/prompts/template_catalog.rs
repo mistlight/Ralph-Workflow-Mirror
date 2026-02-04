@@ -119,6 +119,20 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
         );
 
         // ============================================================================
+        // Analysis Templates
+        // ============================================================================
+
+        m.insert(
+            "analysis_system_prompt",
+            EmbeddedTemplate {
+                name: "analysis_system_prompt",
+                content: include_str!("templates/analysis_system_prompt.txt"),
+                description: "Independent analysis agent system prompt (verifies PLAN vs DIFF and writes development_result.xml)",
+                deprecated: false,
+            },
+        );
+
+        // ============================================================================
         // Developer Templates
         // ============================================================================
 
@@ -127,7 +141,7 @@ static EMBEDDED_TEMPLATES: std::sync::LazyLock<HashMap<&str, EmbeddedTemplate>> 
             EmbeddedTemplate {
                 name: "developer_iteration_xml",
                 content: include_str!("templates/developer_iteration_xml.txt"),
-                description: "Developer agent implementation mode prompt with XML output format and XSD validation",
+                description: "Developer agent implementation mode prompt (no structured output; analysis verifies progress)",
                 deprecated: false,
             },
         );
