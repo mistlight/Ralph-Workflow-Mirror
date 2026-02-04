@@ -420,6 +420,28 @@ pub enum CommitEvent {
     },
 }
 
+/// Events for AwaitingDevFix phase.
+///
+/// This phase handles pipeline failure remediation by invoking the development
+/// agent to diagnose and fix the root cause before termination.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum AwaitingDevFixEvent {
+    /// Dev-fix flow was triggered.
+    DevFixTriggered {
+        failed_phase: PipelinePhase,
+        failed_role: AgentRole,
+    },
+    /// Dev-fix flow was skipped (not yet implemented or disabled).
+    DevFixSkipped { reason: String },
+    /// Dev-fix flow completed (may or may not have fixed the issue).
+    DevFixCompleted {
+        success: bool,
+        summary: Option<String>,
+    },
+    /// Completion marker was emitted to filesystem.
+    CompletionMarkerEmitted { is_failure: bool },
+}
+
 // ============================================================================
 // Supporting Types
 // ============================================================================
@@ -441,6 +463,17 @@ pub enum PipelinePhase {
     /// - Any other cleanup that must go through the effect system
     Finalizing,
     Complete,
+    /// Awaiting development agent to fix pipeline failure.
+    ///
+    /// This phase occurs when the pipeline encounters a terminal failure condition
+    /// (e.g., agent chain exhausted) but before transitioning to Interrupted. It
+    /// signals that the development agent should be invoked to diagnose and fix
+    /// the failure root cause.
+    ///
+    /// Transitions:
+    /// - From: Any phase where AgentChainExhausted error occurs
+    /// - To: Interrupted (after dev-fix attempt completes or fails)
+    AwaitingDevFix,
     Interrupted,
 }
 
@@ -454,6 +487,7 @@ impl std::fmt::Display for PipelinePhase {
             Self::FinalValidation => write!(f, "Final Validation"),
             Self::Finalizing => write!(f, "Finalizing"),
             Self::Complete => write!(f, "Complete"),
+            Self::AwaitingDevFix => write!(f, "Awaiting Dev Fix"),
             Self::Interrupted => write!(f, "Interrupted"),
         }
     }
@@ -544,6 +578,8 @@ pub enum PipelineEvent {
     Rebase(RebaseEvent),
     /// Commit generation events.
     Commit(CommitEvent),
+    /// AwaitingDevFix phase events.
+    AwaitingDevFix(AwaitingDevFixEvent),
 
     // ========================================================================
     // Miscellaneous events that don't fit a category
@@ -624,6 +660,10 @@ mod tests {
         );
         assert_eq!(format!("{}", PipelinePhase::Finalizing), "Finalizing");
         assert_eq!(format!("{}", PipelinePhase::Complete), "Complete");
+        assert_eq!(
+            format!("{}", PipelinePhase::AwaitingDevFix),
+            "Awaiting Dev Fix"
+        );
         assert_eq!(format!("{}", PipelinePhase::Interrupted), "Interrupted");
     }
 
@@ -663,6 +703,7 @@ mod tests {
                 PipelineEvent::Agent(_) => "agent",
                 PipelineEvent::Rebase(_) => "rebase",
                 PipelineEvent::Commit(_) => "commit",
+                PipelineEvent::AwaitingDevFix(_) => "awaiting_dev_fix",
                 PipelineEvent::ContextCleaned => "context_cleaned",
                 PipelineEvent::CheckpointSaved { .. } => "checkpoint_saved",
                 PipelineEvent::FinalizingStarted => "finalizing_started",

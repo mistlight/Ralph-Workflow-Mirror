@@ -118,6 +118,9 @@ fn suggest_next_step(checkpoint: &PipelineCheckpoint) -> Option<String> {
         PipelinePhase::FinalValidation => Some("complete final validation".to_string()),
         PipelinePhase::Complete => Some("pipeline complete!".to_string()),
         PipelinePhase::Rebase => Some("complete rebase operation".to_string()),
+        PipelinePhase::AwaitingDevFix => {
+            Some("attempt to fix pipeline failure and emit completion marker".to_string())
+        }
         PipelinePhase::Interrupted => {
             // Provide more detailed information for interrupted state
             // The interrupted phase can occur at any point, so we need to describe
@@ -184,6 +187,7 @@ fn get_phase_emoji(phase: PipelinePhase) -> &'static str {
         PipelinePhase::PreRebaseConflict => "⚠️",
         PipelinePhase::PostRebase => "⏩",
         PipelinePhase::PostRebaseConflict => "⚠️",
+        PipelinePhase::AwaitingDevFix => "🔧",
         PipelinePhase::Interrupted => "⏸️",
     }
 }

@@ -102,6 +102,7 @@ impl MainEffectHandler {
             PipelinePhase::FinalValidation => ".agent/logs/final_validation".to_string(),
             PipelinePhase::Finalizing => ".agent/logs/finalizing".to_string(),
             PipelinePhase::Complete => ".agent/logs/complete".to_string(),
+            PipelinePhase::AwaitingDevFix => ".agent/logs/awaiting_dev_fix".to_string(),
             PipelinePhase::Interrupted => ".agent/logs/interrupted".to_string(),
         };
 

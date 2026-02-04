@@ -27,11 +27,8 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
             }
 
             if state.planning_prompt_prepared_iteration != Some(state.iteration) {
-                let planning_inputs_materialized_for_iteration = state
-                    .prompt_inputs
-                    .planning
-                    .as_ref()
-                    .is_some_and(|p| {
+                let planning_inputs_materialized_for_iteration =
+                    state.prompt_inputs.planning.as_ref().is_some_and(|p| {
                         p.iteration == state.iteration
                             && p.prompt.consumer_signature_sha256 == consumer_signature_sha256
                     });
@@ -137,11 +134,8 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 }
 
                 if state.development_prompt_prepared_iteration != Some(state.iteration) {
-                    let development_inputs_materialized_for_iteration = state
-                        .prompt_inputs
-                        .development
-                        .as_ref()
-                        .is_some_and(|p| {
+                    let development_inputs_materialized_for_iteration =
+                        state.prompt_inputs.development.as_ref().is_some_and(|p| {
                             p.iteration == state.iteration
                                 && p.prompt.consumer_signature_sha256 == consumer_signature_sha256
                                 && p.plan.consumer_signature_sha256 == consumer_signature_sha256
@@ -283,11 +277,8 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                 }
 
                 if state.review_prompt_prepared_pass != Some(state.reviewer_pass) {
-                    let review_inputs_materialized_for_pass = state
-                        .prompt_inputs
-                        .review
-                        .as_ref()
-                        .is_some_and(|p| {
+                    let review_inputs_materialized_for_pass =
+                        state.prompt_inputs.review.as_ref().is_some_and(|p| {
                             p.pass == state.reviewer_pass
                                 && p.plan.consumer_signature_sha256 == consumer_signature_sha256
                                 && p.diff.consumer_signature_sha256 == consumer_signature_sha256
@@ -425,14 +416,10 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
                     let consumer_signature_sha256 = state.agent_chain.consumer_signature_sha256();
                     let diff_content_id_sha256 = state.commit_diff_content_id_sha256.as_deref();
                     if !state.commit_prompt_prepared {
-                        let commit_inputs_materialized_for_attempt = state
-                            .prompt_inputs
-                            .commit
-                            .as_ref()
-                            .is_some_and(|c| {
+                        let commit_inputs_materialized_for_attempt =
+                            state.prompt_inputs.commit.as_ref().is_some_and(|c| {
                                 c.attempt == current_attempt
-                                    && c.diff.consumer_signature_sha256
-                                        == consumer_signature_sha256
+                                    && c.diff.consumer_signature_sha256 == consumer_signature_sha256
                                     && diff_content_id_sha256
                                         .is_some_and(|id| id == c.diff.content_id_sha256)
                             });
@@ -466,6 +453,16 @@ fn determine_next_effect_for_phase(state: &PipelineState) -> Effect {
         PipelinePhase::FinalValidation => Effect::ValidateFinalState,
 
         PipelinePhase::Finalizing => Effect::RestorePromptPermissions,
+
+        PipelinePhase::AwaitingDevFix => {
+            // For the initial implementation, trigger dev-fix flow immediately
+            // The handler will emit a skip event since full dev-fix is not yet implemented
+            Effect::TriggerDevFixFlow {
+                failed_phase: state.previous_phase.unwrap_or(PipelinePhase::Development),
+                failed_role: state.agent_chain.current_role,
+                retry_cycle: state.agent_chain.retry_cycle,
+            }
+        }
 
         PipelinePhase::Complete | PipelinePhase::Interrupted => Effect::SaveCheckpoint {
             trigger: CheckpointTrigger::Interrupt,

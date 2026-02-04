@@ -59,6 +59,7 @@ impl ResumeContext {
             PipelinePhase::PreRebaseConflict => "Pre-Rebase Conflict".to_string(),
             PipelinePhase::PostRebase => "Post-Rebase".to_string(),
             PipelinePhase::PostRebaseConflict => "Post-Rebase Conflict".to_string(),
+            PipelinePhase::AwaitingDevFix => "Awaiting Dev Fix".to_string(),
             PipelinePhase::Interrupted => "Interrupted".to_string(),
         }
     }
@@ -227,7 +228,8 @@ fn phase_rank(phase: PipelinePhase) -> u32 {
         PipelinePhase::CommitMessage => 3,
         PipelinePhase::FinalValidation => 4,
         PipelinePhase::Complete => 5,
-        PipelinePhase::Interrupted => 6,
+        PipelinePhase::AwaitingDevFix => 6,
+        PipelinePhase::Interrupted => 7,
         // Pre-rebase phases map to Review rank
         PipelinePhase::PreRebase | PipelinePhase::PreRebaseConflict => 2,
         // Rebase phases map between Development and Review

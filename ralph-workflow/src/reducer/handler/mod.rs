@@ -279,6 +279,61 @@ impl MainEffectHandler {
             }
 
             Effect::CleanupContinuationContext => self.cleanup_continuation_context(ctx),
+
+            Effect::TriggerDevFixFlow {
+                failed_phase,
+                failed_role,
+                retry_cycle,
+            } => {
+                // For initial implementation, log the failure and immediately emit
+                // a skip event to proceed to completion marker emission.
+                // Full dev-fix flow implementation requires prompt engineering and
+                // agent invocation plumbing.
+                ctx.logger.warn(&format!(
+                    "Pipeline failure detected (phase: {}, role: {:?}, cycle: {})",
+                    failed_phase, failed_role, retry_cycle
+                ));
+                ctx.logger
+                    .info("Dev-fix flow not yet implemented - proceeding to termination");
+
+                // Emit skip event to continue flow
+                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::DevFixSkipped {
+                        reason: "Dev-fix flow not yet implemented".to_string(),
+                    },
+                ))
+                .with_additional_event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
+                        is_failure: true,
+                    },
+                )))
+            }
+
+            Effect::EmitCompletionMarkerAndTerminate { is_failure, reason } => {
+                // Write completion marker to .agent/tmp/completion_marker
+                let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+                let content = if is_failure {
+                    format!(
+                        "failure\n{}",
+                        reason.unwrap_or_else(|| "unknown".to_string())
+                    )
+                } else {
+                    "success\n".to_string()
+                };
+
+                ctx.workspace.write(marker_path, &content)?;
+                ctx.logger.info(&format!(
+                    "Completion marker written: {}",
+                    if is_failure { "failure" } else { "success" }
+                ));
+
+                // Emit event to transition to Interrupted
+                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
+                        is_failure,
+                    },
+                )))
+            }
         }
     }
 }

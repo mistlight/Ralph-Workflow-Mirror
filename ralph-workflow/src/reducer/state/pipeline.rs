@@ -371,6 +371,8 @@ impl PipelineState {
         // NOTE: `is_complete` means "terminal for the event loop", not necessarily "successful".
         // `PipelinePhase::Interrupted` may be treated as terminal once a checkpoint has been
         // saved, so unattended pipelines can stop safely and be resumed later.
+        // `PipelinePhase::AwaitingDevFix` is NOT terminal - we must wait for the completion
+        // marker to be emitted and transition to Interrupted.
         matches!(self.phase, PipelinePhase::Complete)
             || (matches!(self.phase, PipelinePhase::Interrupted) && self.checkpoint_saved_count > 0)
     }
@@ -461,6 +463,7 @@ fn map_checkpoint_phase(phase: CheckpointPhase) -> PipelinePhase {
         CheckpointPhase::PreRebaseConflict => PipelinePhase::Planning,
         CheckpointPhase::PostRebase => PipelinePhase::CommitMessage,
         CheckpointPhase::PostRebaseConflict => PipelinePhase::CommitMessage,
+        CheckpointPhase::AwaitingDevFix => PipelinePhase::AwaitingDevFix,
         CheckpointPhase::Interrupted => PipelinePhase::Interrupted,
     }
 }

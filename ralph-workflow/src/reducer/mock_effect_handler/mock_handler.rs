@@ -598,6 +598,27 @@ src/lib.rs</ralph-files-changed>
                 PipelineEvent::development_continuation_context_cleaned(),
                 vec![],
             ),
+
+            Effect::TriggerDevFixFlow {
+                failed_phase: _,
+                failed_role: _,
+                retry_cycle: _,
+            } => (
+                PipelineEvent::AwaitingDevFix(crate::reducer::event::AwaitingDevFixEvent::DevFixSkipped {
+                    reason: "Mock dev-fix flow".to_string(),
+                }),
+                vec![],
+            ),
+
+            Effect::EmitCompletionMarkerAndTerminate {
+                is_failure,
+                reason: _,
+            } => (
+                PipelineEvent::AwaitingDevFix(crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
+                    is_failure,
+                }),
+                vec![],
+            ),
         };
 
         // Capture UI events

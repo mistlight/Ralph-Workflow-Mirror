@@ -251,6 +251,7 @@ pub fn determine_next_effect(state: &PipelineState) -> Effect {
             PipelinePhase::FinalValidation
             | PipelinePhase::Finalizing
             | PipelinePhase::Complete
+            | PipelinePhase::AwaitingDevFix
             | PipelinePhase::Interrupted => false,
         };
 

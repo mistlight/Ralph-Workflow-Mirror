@@ -117,15 +117,16 @@ pub(super) fn reduce_error(state: &PipelineState, error: &ErrorEvent) -> Pipelin
             new_state
         }
 
-        // Agent chain exhausted - this is a terminal condition
-        // The reducer transitions to Interrupted phase to signal pipeline termination
+        // Agent chain exhausted - transition to AwaitingDevFix for remediation attempt
+        // instead of immediately terminating
         ErrorEvent::AgentChainExhausted { .. } => {
-            // Transition to Interrupted phase
-            // This signals the event loop that the pipeline should terminate
+            // Transition to AwaitingDevFix phase
+            // This signals orchestration to invoke the development agent to diagnose
+            // and fix the pipeline failure before deciding whether to proceed or terminate
             use crate::reducer::event::PipelinePhase;
             let mut new_state = state.clone();
             new_state.previous_phase = Some(state.phase);
-            new_state.phase = PipelinePhase::Interrupted;
+            new_state.phase = PipelinePhase::AwaitingDevFix;
             new_state
         }
     }
@@ -215,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reduce_agent_chain_exhausted_transitions_to_interrupted() {
+    fn test_reduce_agent_chain_exhausted_transitions_to_awaiting_dev_fix() {
         use crate::agents::AgentRole;
         use crate::reducer::event::PipelinePhase;
 
@@ -230,12 +231,12 @@ mod tests {
 
         let new_state = reduce_error(&state, &error);
 
-        // Should transition to Interrupted phase
-        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        // Should transition to AwaitingDevFix phase for remediation
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
         assert_eq!(
             new_state.previous_phase,
             Some(state.phase),
-            "previous_phase should be recorded for interrupted transitions"
+            "previous_phase should be recorded for dev-fix transitions"
         );
     }
 

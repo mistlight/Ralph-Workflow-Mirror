@@ -54,6 +54,9 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
         PipelineEvent::Agent(e) => agent::reduce_agent_event(state, e),
         PipelineEvent::Rebase(e) => rebase::reduce_rebase_event(state, e),
         PipelineEvent::Commit(e) => commit::reduce_commit_event(state, e),
+        PipelineEvent::AwaitingDevFix(e) => {
+            awaiting_dev_fix::reduce_awaiting_dev_fix_event(state, e)
+        }
 
         // Handle miscellaneous events directly
         PipelineEvent::ContextCleaned => PipelineState {
@@ -84,6 +87,8 @@ pub fn reduce(state: PipelineState, event: PipelineEvent) -> PipelineState {
 
 #[path = "state_reduction/agent.rs"]
 mod agent;
+#[path = "state_reduction/awaiting_dev_fix.rs"]
+mod awaiting_dev_fix;
 #[path = "state_reduction/commit.rs"]
 mod commit;
 #[path = "state_reduction/development.rs"]
