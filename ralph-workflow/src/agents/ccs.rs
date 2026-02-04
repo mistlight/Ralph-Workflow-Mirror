@@ -4,19 +4,23 @@
 //! CCS is a universal AI profile manager that supports multiple Claude accounts,
 //! Gemini, Copilot, `OpenRouter`, and other providers.
 //!
-//! # Direct Claude Execution for CCS Aliases
+//! # Direct Claude Execution for CCS GLM Only
 //!
-//! **IMPORTANT**: This module bypasses the `ccs` wrapper command and uses `claude` directly.
+//! **IMPORTANT**: This module bypasses the `ccs` wrapper command only for `ccs/glm`.
 //!
 //! ## Why?
 //!
-//! The `ccs` wrapper command does not pass through all Claude CLI flags properly,
-//! especially streaming-related flags like `--include-partial-messages`. This causes
-//! issues with Ralph's JSON streaming output.
+//! The `ccs` wrapper command does not pass through all Claude CLI flags properly
+//! (especially streaming-related flags like `--include-partial-messages`). For GLM,
+//! Ralph also needs to inject Anthropic-compatible env vars from CCS settings.
+//!
+//! For other CCS profiles/providers (e.g. Gemini, Codex), CCS must initialize
+//! provider-specific state itself, so Ralph runs `ccs ...` directly and does not
+//! inject GLM/Anthropic env vars.
 //!
 //! ## How?
 //!
-//! Instead of running `ccs glm -p --output-format=stream-json ...`, we run:
+//! For `ccs/glm`, instead of running `ccs glm -p --output-format=stream-json ...`, we run:
 //! ```bash
 //! ANTHROPIC_BASE_URL="..." \
 //! ANTHROPIC_AUTH_TOKEN="..." \

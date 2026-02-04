@@ -139,6 +139,10 @@ fn log_ccs_env_vars_loaded(
     }
 }
 
+fn is_glm_alias(alias_name: &str) -> bool {
+    alias_name.eq_ignore_ascii_case("glm")
+}
+
 /// Resolve the CCS command, potentially bypassing the ccs wrapper for direct claude binary.
 ///
 /// For CCS aliases, we try to use `claude` directly instead of the `ccs` wrapper
@@ -175,7 +179,10 @@ fn resolve_ccs_command(
             original_cmd.to_string()
         },
         |claude_path| {
-            let can_bypass_wrapper = !alias_name.is_empty() && env_vars_loaded;
+            // Only GLM supports bypassing the `ccs` wrapper.
+            // Other CCS profiles (gemini, codex, etc.) must run through `ccs` directly so
+            // CCS can initialize provider-specific state.
+            let can_bypass_wrapper = is_glm_alias(alias_name) && env_vars_loaded;
 
             // Debug logging
             if debug_mode {
@@ -333,7 +340,7 @@ pub(super) fn build_ccs_agent_config(
     let mut profile_used_for_env: Option<String> = None;
     let (env_vars, env_vars_loaded) = if alias_name.is_empty() {
         (HashMap::new(), false)
-    } else {
+    } else if is_glm_alias(alias_name) {
         let original_cmd = alias_config.cmd.as_str();
         let profile =
             ccs_profile_from_command(original_cmd).unwrap_or_else(|| alias_name.to_string());
@@ -358,6 +365,10 @@ pub(super) fn build_ccs_agent_config(
                 (HashMap::new(), false)
             }
         }
+    } else {
+        // Non-GLM CCS aliases must execute `ccs ...` directly.
+        // Do not inject GLM/Anthropic-style env vars for other providers.
+        (HashMap::new(), false)
     };
 
     // Debug logging: Show env vars loaded
