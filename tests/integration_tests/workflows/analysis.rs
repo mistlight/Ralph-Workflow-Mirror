@@ -216,3 +216,40 @@ fn test_analysis_agent_invoked_event_updates_state() {
         );
     });
 }
+
+/// Test that analysis does NOT increment the iteration counter.
+///
+/// CRITICAL: This verifies the core constraint that -D N means exactly N
+/// planning cycles, regardless of analysis or continuation.
+///
+/// Only the commit phase (via compute_post_commit_transition) should
+/// increment the iteration counter. Analysis is verification only, NOT
+/// a development iteration.
+#[test]
+fn test_analysis_does_not_increment_iteration_counter() {
+    with_default_timeout(|| {
+        // Given: State at iteration 1 before analysis
+        let mut state = PipelineState::initial(3, 0);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 1;
+        state.development_agent_invoked_iteration = Some(1);
+
+        // When: Processing AnalysisAgentInvoked event
+        let event =
+            PipelineEvent::Development(DevelopmentEvent::AnalysisAgentInvoked { iteration: 1 });
+        let new_state = reduce(state, event);
+
+        // Then: Iteration counter should remain unchanged
+        assert_eq!(
+            new_state.iteration, 1,
+            "Analysis must NOT increment iteration counter"
+        );
+
+        // And: Only analysis_agent_invoked_iteration should be updated
+        assert_eq!(
+            new_state.analysis_agent_invoked_iteration,
+            Some(1),
+            "Should record analysis invocation"
+        );
+    });
+}

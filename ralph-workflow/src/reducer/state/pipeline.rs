@@ -157,8 +157,9 @@ pub struct PipelineState {
     pub development_agent_invoked_iteration: Option<u32>,
     /// Tracks whether the analysis agent was invoked for the current iteration.
     ///
-    /// Analysis agent runs after the final development iteration to produce
+    /// Analysis agent runs after EVERY development iteration to produce
     /// an objective assessment of progress by comparing git diff against PLAN.md.
+    /// This ensures continuous verification throughout the development phase.
     #[serde(default)]
     pub analysis_agent_invoked_iteration: Option<u32>,
     /// Tracks whether `.agent/tmp/development_result.xml` was extracted for the current iteration.

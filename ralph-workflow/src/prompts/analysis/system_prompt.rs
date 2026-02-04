@@ -59,7 +59,9 @@ Output your analysis using the development_result.xml format:
 Write the XML to .agent/tmp/development_result.xml
 
 NOTE: You are analyzing COMPLETED work, not doing the work yourself. Base your
-assessment purely on the git diff vs the plan. This is iteration {} (for reference only).
+assessment on the git diff vs the plan if possible. 
+If git diff does not exist, broken or does not provide enough context, use the
+current working tree to determine the status. This is iteration {} (for reference only).
 "#,
         plan_content, diff_content, iteration
     )
