@@ -139,12 +139,31 @@ use super::types::CommandResult;
 use types::{PromptArchiveInfo, PromptSaveOptions};
 
 /// Waits for process completion and collects stderr output.
+///
+/// Uses try_wait() with polling to avoid holding the child mutex during blocking wait(),
+/// which could deadlock with the monitor thread trying to kill the process.
 fn wait_for_completion_and_collect_stderr(
-    mut child: std::sync::MutexGuard<Box<dyn crate::executor::AgentChild>>,
+    child_arc: Arc<std::sync::Mutex<Box<dyn crate::executor::AgentChild>>>,
     stderr_join_handle: Option<std::thread::JoinHandle<io::Result<String>>>,
     runtime: &PipelineRuntime<'_>,
 ) -> io::Result<(i32, String)> {
-    let status = child.wait()?;
+    use std::time::Duration;
+
+    // Poll for process completion without holding the lock continuously.
+    // This allows the monitor thread to acquire the lock to kill the process.
+    let check_interval = Duration::from_millis(100);
+    let status = loop {
+        let mut child = child_arc.lock().unwrap();
+        match child.try_wait()? {
+            Some(status) => break status,
+            None => {
+                // Release lock before sleeping to allow monitor thread to kill process
+                drop(child);
+                std::thread::sleep(check_interval);
+            }
+        }
+    };
+
     let exit_code = status.code().unwrap_or(1);
 
     if status.code().is_none() && runtime.config.verbosity.is_debug() {
@@ -449,10 +468,12 @@ fn run_with_agent_spawn(
     monitor_should_stop.store(true, Ordering::Release);
 
     // After streaming completes, wait for child
-    let (exit_code, stderr_output) = {
-        let child_locked = child_shared.lock().unwrap();
-        wait_for_completion_and_collect_stderr(child_locked, Some(stderr_join_handle), runtime)?
-    };
+    // Pass the Arc to allow lock release between try_wait() polls
+    let (exit_code, stderr_output) = wait_for_completion_and_collect_stderr(
+        Arc::clone(&child_shared),
+        Some(stderr_join_handle),
+        runtime,
+    )?;
 
     // Check if monitor killed the process due to idle timeout
     let monitor_result = monitor_handle

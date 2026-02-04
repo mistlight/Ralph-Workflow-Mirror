@@ -1,4 +1,19 @@
 // Activity tracking readers and monitor functions for idle timeout
+//
+// # Threading Model
+//
+// The idle timeout monitor runs in a separate thread and shares access to the
+// child process via `Arc<Mutex<Box<dyn AgentChild>>>`. The monitor:
+// 1. Periodically checks if idle timeout has been exceeded
+// 2. Acquires the child lock briefly to send kill signals
+// 3. Releases the lock between checks to allow main thread to wait on process
+//
+// The main thread:
+// 1. Streams stdout without holding the child lock
+// 2. Acquires the child lock momentarily during try_wait() checks
+// 3. Releases the lock between checks to allow monitor to kill process
+//
+// This design prevents deadlock while ensuring both threads can make progress.
 
 use crate::executor::AgentChild;
 
