@@ -108,7 +108,7 @@ fn test_event_loop_does_not_bypass_save_checkpoint_when_checkpointing_disabled()
 }
 
 #[test]
-fn test_event_loop_result_completed_false_for_interrupted_with_checkpoint() {
+fn test_event_loop_result_completed_true_for_interrupted_with_checkpoint() {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};
     use crate::config::Config;
@@ -179,12 +179,17 @@ fn test_event_loop_result_completed_false_for_interrupted_with_checkpoint() {
     let mut handler = PanicHandler;
     let loop_config = EventLoopConfig { max_iterations: 10 };
 
-    let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
-        .expect("event loop should run");
+    let result =
+        run_event_loop_with_handler(&mut ctx, Some(state.clone()), loop_config, &mut handler)
+            .expect("event loop should run");
 
     assert!(
-        !result.completed,
-        "interrupted-with-checkpoint is terminal but must not be reported as successful completion"
+        result.completed,
+        "Interrupted+checkpoint is terminal and should be reported as completed (matches state.is_complete())"
+    );
+    assert!(
+        state.is_complete(),
+        "State.is_complete() should return true for Interrupted+checkpoint"
     );
     assert_eq!(result.events_processed, 0);
 }

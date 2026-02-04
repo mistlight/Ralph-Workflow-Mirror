@@ -375,8 +375,11 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     // Handle event loop result
     let loop_result = loop_result?;
     if loop_result.completed {
+        // Note: completed:true means the pipeline reached a terminal state
+        // (either Complete phase or Interrupted phase with saved checkpoint).
+        // The exact phase is recorded in the checkpoint system.
         ctx.logger
-            .success("Pipeline completed successfully via reducer event loop");
+            .success("Pipeline completed via reducer event loop");
         ctx.logger.info(&format!(
             "Total events processed: {}",
             loop_result.events_processed
@@ -432,4 +435,3 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     );
     Ok(())
 }
-

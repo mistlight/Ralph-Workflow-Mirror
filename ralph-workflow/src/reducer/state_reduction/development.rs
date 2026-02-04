@@ -370,14 +370,26 @@ pub(super) fn reduce_development_event(
             total_attempts: _,
             last_status: _,
         } => {
-            // Policy: Abort pipeline when continuations exhausted.
-            // Future enhancement: Could try fallback agent instead.
+            // Policy: Switch to next agent when continuations exhausted.
+            // If all agents are exhausted, orchestration layer will detect and emit
+            // ReportAgentChainExhausted, which transitions to Interrupted.
+            let new_agent_chain = state.agent_chain.switch_to_next_agent().clear_session_id();
+
             PipelineState {
-                phase: crate::reducer::event::PipelinePhase::Interrupted,
+                phase: crate::reducer::event::PipelinePhase::Development,
                 iteration,
+                agent_chain: new_agent_chain,
                 continuation: ContinuationState {
+                    continuation_attempt: 0,
+                    invalid_output_attempts: 0,
+                    xsd_retry_count: 0,
+                    xsd_retry_pending: false,
+                    xsd_retry_session_reuse_pending: false,
+                    same_agent_retry_count: 0,
+                    same_agent_retry_pending: false,
+                    same_agent_retry_reason: None,
                     context_cleanup_pending: true,
-                    ..ContinuationState::new()
+                    ..state.continuation
                 },
                 development_context_prepared_iteration: None,
                 development_prompt_prepared_iteration: None,
