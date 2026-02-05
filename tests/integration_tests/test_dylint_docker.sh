@@ -94,13 +94,25 @@ if grep -q "may not be used on the stable release channel" "$DOCKER_OUTPUT"; the
 	exit 1
 fi
 
-# Check if dylint-link failed to find the .so file (known limitation in some Docker environments)
+# Check if dylint-link failed to find the compiled library.
+# This indicates the lint did not actually run, so treat as a failure by default.
+#
+# If you need to ignore this in a specific environment, set:
+#   RALPH_ALLOW_DYLINT_LINK_FAILURE=1
 if grep -q "Could not find.*libfile_too_long.*despite successful build" "$DOCKER_OUTPUT"; then
-	echo -e "${YELLOW}WARNING: dylint-link couldn't locate compiled library${NC}"
-	echo "This is a known dylint limitation in some Docker environments"
-	echo "The important verification passed: no E0554 errors (nightly toolchain was used)"
+	if [ "${RALPH_ALLOW_DYLINT_LINK_FAILURE:-}" = "1" ]; then
+		echo -e "${YELLOW}WARNING: dylint-link couldn't locate compiled library (allowed)${NC}"
+		echo "RALPH_ALLOW_DYLINT_LINK_FAILURE=1 set; treating as pass"
+		echo "Note: this means the lint may not have actually executed in Docker."
+		rm -f "$DOCKER_OUTPUT"
+		exit 0
+	fi
+
+	echo -e "${RED}FAIL: dylint-link couldn't locate compiled library${NC}"
+	echo "This means the lint did not run successfully in the Docker environment."
+	echo "If you need to allow this failure, re-run with RALPH_ALLOW_DYLINT_LINK_FAILURE=1"
 	rm -f "$DOCKER_OUTPUT"
-	exit 0
+	exit 1
 fi
 
 # Unknown failure
