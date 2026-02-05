@@ -299,6 +299,11 @@ fn test_event_loop_config_creation() {
 }
 
 #[test]
+fn test_max_event_loop_iterations_is_one_million() {
+    assert_eq!(MAX_EVENT_LOOP_ITERATIONS, 1_000_000);
+}
+
+#[test]
 fn test_create_initial_state_with_config_counts_total_attempts() {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};

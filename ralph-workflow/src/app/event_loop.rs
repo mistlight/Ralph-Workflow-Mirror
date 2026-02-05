@@ -70,7 +70,7 @@ fn create_initial_state_with_config(ctx: &PhaseContext<'_>) -> PipelineState {
 /// This is a safety limit - the pipeline should complete well before this limit
 /// under normal circumstances. If reached, it indicates either a bug in the
 /// reducer logic or an extremely complex project.
-pub const MAX_EVENT_LOOP_ITERATIONS: usize = 1000;
+pub const MAX_EVENT_LOOP_ITERATIONS: usize = 1_000_000;
 
 /// Configuration for event loop.
 #[derive(Clone, Debug)]
