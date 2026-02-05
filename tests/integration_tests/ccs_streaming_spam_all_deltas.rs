@@ -144,17 +144,26 @@ fn test_ccs_glm_thinking_deltas_no_spam_in_none_mode() {
 
         let output = test_printer.borrow().get_output();
 
-        // Count thinking prefix occurrences - should be AT MOST 1
-        let thinking_count = output.matches("[ccs/glm] Thinking:").count();
+        // Count thinking prefix occurrences - should be AT MOST 1.
+        // If colors are forced on in CI, the line may include ANSI sequences between
+        // "]" and "Thinking:". Match on the prefix and "Thinking:" separately.
+        let thinking_prefix_count = output.matches("[ccs/glm]").count();
+        let thinking_label_count = output.matches("Thinking:").count();
         assert!(
-            thinking_count <= 1,
-            "Expected <= 1 '[ccs/glm] Thinking:' line in None mode, found {}.\n\nOutput:\n{}",
-            thinking_count,
+            thinking_prefix_count <= 4,
+            "Expected limited '[ccs/glm]' prefixes in None mode, found {}.\n\nOutput:\n{}",
+            thinking_prefix_count,
+            output
+        );
+        assert!(
+            thinking_label_count <= 1,
+            "Expected <= 1 'Thinking:' label in None mode, found {}.\n\nOutput:\n{}",
+            thinking_label_count,
             output
         );
 
         // Verify thinking content is present (not lost)
-        if thinking_count > 0 {
+        if thinking_label_count > 0 {
             assert!(
                 output.contains("I need to think about this") || output.contains("think about"),
                 "Expected accumulated thinking content to be present. Output:\n{}",
@@ -191,11 +200,11 @@ fn test_ccs_glm_thinking_deltas_no_spam_in_basic_mode() {
 
         let output = test_printer.borrow().get_output();
 
-        let thinking_count = output.matches("[ccs/glm] Thinking:").count();
+        let thinking_label_count = output.matches("Thinking:").count();
         assert!(
-            thinking_count <= 1,
-            "Expected <= 1 '[ccs/glm] Thinking:' line in Basic mode, found {}.\n\nOutput:\n{}",
-            thinking_count,
+            thinking_label_count <= 1,
+            "Expected <= 1 'Thinking:' label in Basic mode, found {}.\n\nOutput:\n{}",
+            thinking_label_count,
             output
         );
     });
@@ -357,17 +366,18 @@ fn test_ccs_codex_reasoning_deltas_no_spam_in_none_mode() {
 
         let output = test_printer.borrow().get_output();
 
-        // Count reasoning prefix occurrences - should be AT MOST 1
-        let thinking_count = output.matches("[ccs/codex] Thinking:").count();
+        // Count reasoning label occurrences - should be AT MOST 1.
+        // If colors are forced on in CI, ANSI sequences may appear between the prefix and label.
+        let thinking_label_count = output.matches("Thinking:").count();
         assert!(
-            thinking_count <= 1,
-            "Expected <= 1 '[ccs/codex] Thinking:' line in None mode, found {}.\n\nOutput:\n{}",
-            thinking_count,
+            thinking_label_count <= 1,
+            "Expected <= 1 'Thinking:' label in None mode, found {}.\n\nOutput:\n{}",
+            thinking_label_count,
             output
         );
 
         // Verify reasoning content is present (not lost)
-        if thinking_count > 0 {
+        if thinking_label_count > 0 {
             assert!(
                 output.contains("First chunk") || output.contains("fifth"),
                 "Expected accumulated reasoning content to be present. Output:\n{}",
@@ -401,11 +411,11 @@ fn test_ccs_codex_reasoning_deltas_no_spam_in_basic_mode() {
 
         let output = test_printer.borrow().get_output();
 
-        let thinking_count = output.matches("[ccs/codex] Thinking:").count();
+        let thinking_label_count = output.matches("Thinking:").count();
         assert!(
-            thinking_count <= 1,
-            "Expected <= 1 '[ccs/codex] Thinking:' line in Basic mode, found {}.\n\nOutput:\n{}",
-            thinking_count,
+            thinking_label_count <= 1,
+            "Expected <= 1 'Thinking:' label in Basic mode, found {}.\n\nOutput:\n{}",
+            thinking_label_count,
             output
         );
     });

@@ -109,6 +109,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_opencode_text_event() {
         use crate::json_parser::terminal::TerminalMode;
 

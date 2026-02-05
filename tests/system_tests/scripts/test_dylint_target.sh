@@ -20,7 +20,8 @@ readonly YELLOW='\033[0;33m'
 readonly NC='\033[0m' # No Color
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# script lives at tests/system_tests/scripts; repo root is three levels up
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo "Testing dylint target..."
 echo "Repository root: $REPO_ROOT"

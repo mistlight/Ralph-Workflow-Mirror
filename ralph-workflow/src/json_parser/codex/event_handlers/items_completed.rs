@@ -20,7 +20,11 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
     // flush before checking duplication, we can print the final message twice.
     if is_duplicate {
         // Still finalize any cursor state (Full) and optionally emit metrics.
-        let completion = TextDeltaRenderer::render_completion(ctx.terminal_mode);
+        // In Basic/None, do not emit an extra newline for suppressed duplicates.
+        let completion = match ctx.terminal_mode {
+            TerminalMode::Full => TextDeltaRenderer::render_completion(ctx.terminal_mode),
+            TerminalMode::Basic | TerminalMode::None => String::new(),
+        };
         let show_metrics =
             (ctx.verbosity.is_debug() || ctx.show_streaming_metrics) && metrics.total_deltas > 0;
         if show_metrics {

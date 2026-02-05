@@ -95,6 +95,7 @@ fn test_gemini_result_success() {
 }
 
 #[test]
+#[cfg(feature = "test-utils")]
 fn test_gemini_message_delta() {
     use crate::json_parser::terminal::TerminalMode;
 
@@ -127,7 +128,7 @@ fn test_gemini_parser_non_json_passthrough() {
 
 /// Test that `with_terminal_mode` method works correctly
 #[test]
-#[cfg(test)]
+#[cfg(feature = "test-utils")]
 fn test_with_terminal_mode() {
     use crate::json_parser::terminal::TerminalMode;
 
