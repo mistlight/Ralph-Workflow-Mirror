@@ -382,6 +382,133 @@ fn test_max_iterations_in_awaiting_dev_fix_runs_save_checkpoint_effect() {
 }
 
 #[test]
+fn test_max_iterations_after_completion_marker_runs_save_checkpoint() {
+    use crate::agents::AgentRegistry;
+    use crate::checkpoint::{ExecutionHistory, RunContext};
+    use crate::config::Config;
+    use crate::executor::MockProcessExecutor;
+    use crate::logger::{Colors, Logger};
+    use crate::pipeline::{Stats, Timer};
+    use crate::prompts::template_context::TemplateContext;
+    use crate::reducer::effect::{Effect, EffectHandler, EffectResult};
+    use crate::reducer::event::{AwaitingDevFixEvent, PipelinePhase};
+    use crate::reducer::PipelineEvent;
+    use crate::workspace::MemoryWorkspace;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct BoundaryHandler {
+        state: PipelineState,
+        effects: Vec<Effect>,
+    }
+
+    impl BoundaryHandler {
+        fn new(state: PipelineState) -> Self {
+            Self {
+                state,
+                effects: Vec::new(),
+            }
+        }
+    }
+
+    impl<'ctx> EffectHandler<'ctx> for BoundaryHandler {
+        fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+            self.effects.push(effect.clone());
+            match effect {
+                Effect::TriggerDevFixFlow {
+                    failed_phase,
+                    failed_role,
+                    ..
+                } => {
+                    let mut result = EffectResult::event(PipelineEvent::AwaitingDevFix(
+                        AwaitingDevFixEvent::DevFixTriggered {
+                            failed_phase,
+                            failed_role,
+                        },
+                    ));
+                    result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
+                        AwaitingDevFixEvent::DevFixCompleted {
+                            success: false,
+                            summary: None,
+                        },
+                    ));
+                    result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
+                        AwaitingDevFixEvent::CompletionMarkerEmitted { is_failure: true },
+                    ));
+                    Ok(result)
+                }
+                Effect::SaveCheckpoint { trigger } => Ok(EffectResult::event(
+                    PipelineEvent::checkpoint_saved(trigger),
+                )),
+                _ => panic!("Unexpected effect: {effect:?}"),
+            }
+        }
+    }
+
+    impl super::StatefulHandler for BoundaryHandler {
+        fn update_state(&mut self, state: PipelineState) {
+            self.state = state;
+        }
+    }
+
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+
+    let mut ctx = PhaseContext {
+        config: &config,
+        registry: &registry,
+        logger: &logger,
+        colors: &colors,
+        timer: &mut timer,
+        stats: &mut stats,
+        developer_agent: "test-developer",
+        reviewer_agent: "test-reviewer",
+        review_guidelines: None,
+        template_context: &template_context,
+        run_context: RunContext::new(),
+        execution_history: ExecutionHistory::new(),
+        prompt_history: std::collections::HashMap::new(),
+        executor: &*executor,
+        executor_arc: Arc::clone(&executor) as Arc<dyn crate::executor::ProcessExecutor>,
+        repo_root: &repo_root,
+        workspace: &workspace,
+    };
+
+    let state = PipelineState {
+        phase: PipelinePhase::AwaitingDevFix,
+        previous_phase: Some(PipelinePhase::Development),
+        ..PipelineState::initial(1, 1)
+    };
+
+    let mut handler = BoundaryHandler::new(state.clone());
+    let loop_config = EventLoopConfig { max_iterations: 3 };
+
+    let result = run_event_loop_with_handler(&mut ctx, Some(state), loop_config, &mut handler)
+        .expect("event loop should run");
+
+    assert!(
+        result.completed,
+        "expected completion after AwaitingDevFix transitions to Interrupted"
+    );
+    assert!(
+        handler
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SaveCheckpoint { .. })),
+        "SaveCheckpoint should run even when max iterations reached after completion marker"
+    );
+}
+
+#[test]
 fn test_create_initial_state_with_config_plumbs_max_same_agent_retry_count() {
     use crate::agents::AgentRegistry;
     use crate::checkpoint::{ExecutionHistory, RunContext};

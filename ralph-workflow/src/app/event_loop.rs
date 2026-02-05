@@ -456,6 +456,92 @@ where
     // Track if we had to force-complete due to max iterations in AwaitingDevFix
     let mut forced_completion = false;
 
+    let should_force_checkpoint_after_completion =
+        matches!(state.phase, PipelinePhase::Interrupted)
+            && matches!(state.previous_phase, Some(PipelinePhase::AwaitingDevFix))
+            && state.checkpoint_saved_count == 0;
+
+    if events_processed >= config.max_iterations && should_force_checkpoint_after_completion {
+        ctx.logger.warn(
+            "Max iterations reached after completion marker; forcing SaveCheckpoint execution",
+        );
+
+        let save_effect = Effect::SaveCheckpoint {
+            trigger: CheckpointTrigger::Interrupt,
+        };
+        let save_effect_str = format!("{save_effect:?}");
+        match execute_effect_guarded(handler, save_effect, ctx, &state) {
+            GuardedEffectResult::Ok(result) => {
+                let event_str = format!("{:?}", result.event);
+                state = reduce(state, result.event.clone());
+                trace.push(build_trace_entry(
+                    events_processed,
+                    &state,
+                    &save_effect_str,
+                    &event_str,
+                ));
+                handler.update_state(state.clone());
+                events_processed += 1;
+
+                for event in result.additional_events {
+                    let event_str = format!("{:?}", event);
+                    state = reduce(state, event);
+                    trace.push(build_trace_entry(
+                        events_processed,
+                        &state,
+                        &save_effect_str,
+                        &event_str,
+                    ));
+                    handler.update_state(state.clone());
+                    events_processed += 1;
+                }
+            }
+            GuardedEffectResult::Unrecoverable(err) => {
+                let dumped =
+                    dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
+                let marker_written = write_completion_marker_on_error(ctx, &err);
+                if dumped {
+                    ctx.logger.error(&format!(
+                        "Event loop encountered unrecoverable handler error (trace: {EVENT_LOOP_TRACE_PATH})"
+                    ));
+                } else {
+                    ctx.logger
+                        .error("Event loop encountered unrecoverable handler error");
+                }
+                ctx.logger.error(&format!(
+                    "Event loop exiting: reason=unrecoverable_error, phase={:?}, checkpoint_saved_count={}, events_processed={}",
+                    state.phase, state.checkpoint_saved_count, events_processed
+                ));
+                if marker_written {
+                    ctx.logger
+                        .info("Completion marker written for unrecoverable handler error");
+                }
+                return Err(err);
+            }
+            GuardedEffectResult::Panic => {
+                let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
+                if dumped {
+                    ctx.logger.error(&format!(
+                        "Event loop recovered from panic (trace: {EVENT_LOOP_TRACE_PATH})"
+                    ));
+                } else {
+                    ctx.logger.error("Event loop recovered from panic");
+                }
+
+                ctx.logger.error(&format!(
+                    "Event loop exiting: reason=panic, phase={:?}, checkpoint_saved_count={}, events_processed={}",
+                    state.phase, state.checkpoint_saved_count, events_processed
+                ));
+
+                return Ok(EventLoopResult {
+                    completed: false,
+                    events_processed,
+                    final_phase: state.phase,
+                });
+            }
+        }
+    }
+
     if events_processed >= config.max_iterations && !state.is_complete() {
         let dumped = dump_event_loop_trace(ctx, &trace, &state, "max_iterations");
 

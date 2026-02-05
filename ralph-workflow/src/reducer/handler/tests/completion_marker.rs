@@ -1,4 +1,5 @@
 use crate::agents::AgentRegistry;
+use crate::agents::AgentRole;
 use crate::checkpoint::{ExecutionHistory, RunContext};
 use crate::config::Config;
 use crate::executor::MockProcessExecutor;
@@ -7,7 +8,7 @@ use crate::phases::PhaseContext;
 use crate::pipeline::{Stats, Timer};
 use crate::prompts::template_context::TemplateContext;
 use crate::reducer::effect::{Effect, EffectHandler};
-use crate::reducer::event::{AwaitingDevFixEvent, PipelineEvent};
+use crate::reducer::event::{AwaitingDevFixEvent, PipelineEvent, PipelinePhase};
 use crate::reducer::handler::MainEffectHandler;
 use crate::reducer::state::PipelineState;
 use crate::workspace::{MemoryWorkspace, Workspace};
@@ -346,4 +347,66 @@ fn emit_completion_marker_emits_event_on_write_failure() {
             is_failure: true
         })
     ));
+}
+
+#[test]
+fn trigger_dev_fix_flow_writes_marker_even_when_agent_invocation_fails() {
+    let config = Config::default();
+    let colors = Colors { enabled: false };
+    let logger = Logger::new(colors);
+    let template_context = TemplateContext::default();
+    let registry = AgentRegistry::new().unwrap();
+    let executor = Arc::new(MockProcessExecutor::new());
+    let repo_root = PathBuf::from("/test/repo");
+    let workspace = MemoryWorkspace::new(repo_root.clone());
+    let mut timer = Timer::new();
+    let mut stats = Stats::default();
+
+    let mut ctx = build_context(
+        &workspace,
+        &repo_root,
+        &executor,
+        &config,
+        &registry,
+        &logger,
+        &colors,
+        &template_context,
+        &mut timer,
+        &mut stats,
+    );
+    ctx.developer_agent = "missing-agent";
+
+    let state = PipelineState::initial(1, 0);
+    let mut handler = MainEffectHandler::new(state);
+
+    let result = handler.execute(
+        Effect::TriggerDevFixFlow {
+            failed_phase: PipelinePhase::Development,
+            failed_role: AgentRole::Developer,
+            retry_cycle: 1,
+        },
+        &mut ctx,
+    );
+
+    assert!(
+        result.is_ok(),
+        "TriggerDevFixFlow should emit completion marker even if dev-fix invocation fails"
+    );
+
+    let result = result.expect("Expected effect result");
+    assert!(
+        result.additional_events.iter().any(|event| matches!(
+            event,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
+                is_failure: true
+            })
+        )),
+        "CompletionMarkerEmitted should be emitted on dev-fix invocation failure"
+    );
+
+    let marker_path = Path::new(".agent/tmp/completion_marker");
+    assert!(
+        workspace.exists(marker_path),
+        "Completion marker should be written even when dev-fix invocation fails"
+    );
 }

@@ -363,51 +363,77 @@ impl MainEffectHandler {
                     .cloned()
                     .unwrap_or_else(|| ctx.developer_agent.to_string());
 
-                let agent_result = self.invoke_agent(
+                let completion_marker_content = format!(
+                    "failure\nAgent chain exhausted: phase={}, role={:?}, cycle={}",
+                    failed_phase, failed_role, retry_cycle
+                );
+                Self::write_completion_marker(ctx, &completion_marker_content, true);
+
+                let agent_result = match self.invoke_agent(
                     ctx,
                     crate::agents::AgentRole::Developer,
                     agent,
                     None,
                     dev_fix_prompt,
-                )?;
+                ) {
+                    Ok(result) => Ok(result),
+                    Err(err) => {
+                        ctx.logger
+                            .warn(&format!("Dev-fix agent invocation failed: {}", err));
+                        Err(err)
+                    }
+                };
 
-                let dev_fix_success = agent_result.additional_events.iter().any(|event| {
-                    matches!(
-                        event,
-                        PipelineEvent::Agent(
-                            crate::reducer::event::AgentEvent::InvocationSucceeded { .. }
-                        )
-                    )
-                });
+                let dev_fix_success = agent_result
+                    .as_ref()
+                    .map(|result| {
+                        result.additional_events.iter().any(|event| {
+                            matches!(
+                                event,
+                                PipelineEvent::Agent(
+                                    crate::reducer::event::AgentEvent::InvocationSucceeded { .. }
+                                )
+                            )
+                        })
+                    })
+                    .unwrap_or(false);
 
-                let mut result = EffectResult::with_ui(
-                    PipelineEvent::AwaitingDevFix(
+                let dev_fix_summary = agent_result
+                    .as_ref()
+                    .err()
+                    .map(|err| format!("Dev-fix agent invocation failed: {}", err));
+
+                let mut result = match agent_result.as_ref() {
+                    Ok(result) => EffectResult::with_ui(
+                        PipelineEvent::AwaitingDevFix(
+                            crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                                failed_phase,
+                                failed_role,
+                            },
+                        ),
+                        result.ui_events.clone(),
+                    ),
+                    Err(_) => EffectResult::event(PipelineEvent::AwaitingDevFix(
                         crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
                             failed_phase,
                             failed_role,
                         },
-                    ),
-                    agent_result.ui_events,
-                )
-                .with_additional_event(agent_result.event);
+                    )),
+                };
 
-                for event in agent_result.additional_events {
-                    result = result.with_additional_event(event);
+                if let Ok(result_events) = agent_result {
+                    result = result.with_additional_event(result_events.event);
+                    for event in result_events.additional_events {
+                        result = result.with_additional_event(event);
+                    }
                 }
 
                 result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
                         success: dev_fix_success,
-                        summary: None,
+                        summary: dev_fix_summary,
                     },
                 ));
-
-                // Write completion marker BEFORE emitting CompletionMarkerEmitted
-                let content = format!(
-                    "failure\nAgent chain exhausted: phase={}, role={:?}, cycle={}",
-                    failed_phase, failed_role, retry_cycle
-                );
-                Self::write_completion_marker(ctx, &content, true);
                 result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
                     crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
                         is_failure: true,
