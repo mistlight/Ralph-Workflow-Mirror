@@ -93,6 +93,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("deduplication/mod.rs"),
     },
     SourceFile {
+        path: "dylint_target.rs",
+        contents: include_str!("dylint_target.rs"),
+    },
+    SourceFile {
         path: "development_xml_validation.rs",
         contents: include_str!("development_xml_validation.rs"),
     },

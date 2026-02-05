@@ -55,3 +55,5 @@ mod test_timeout;
 mod test_traits;
 mod ui_events;
 mod workflows;
+
+mod dylint_target;
