@@ -1,16 +1,63 @@
 /// Handle `ItemCompleted` event for `agent_message` type.
 pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&String>) -> String {
-    let session = ctx.streaming_session.borrow();
-    let is_duplicate = session
-        .get_current_message_id()
-        .is_some_and(|message_id| session.is_duplicate_final_message(message_id));
-    let was_streaming = session.has_any_streamed_content();
-    let metrics = session.get_streaming_quality_metrics();
-    drop(session);
+    let (is_duplicate, was_streaming, metrics, streamed_agent_msg) = {
+        let session = ctx.streaming_session.borrow();
+        let is_duplicate = session
+            .get_current_message_id()
+            .is_some_and(|message_id| session.is_duplicate_final_message(message_id));
+        let was_streaming = session.has_any_streamed_content();
+        let metrics = session.get_streaming_quality_metrics();
+        let streamed_agent_msg = session
+            .get_accumulated(ContentType::Text, "agent_msg")
+            .map(std::string::ToString::to_string);
+        (is_duplicate, was_streaming, metrics, streamed_agent_msg)
+    };
 
     let _was_in_block = ctx.streaming_session.borrow_mut().on_message_stop();
 
-    if is_duplicate || was_streaming {
+    // If we streamed any content, the per-delta renderer may have suppressed output in non-TTY
+    // modes. Flush the final accumulated agent message ONCE at completion so logs remain
+    // observable, while still preventing per-delta prefix spam.
+    if was_streaming {
+        let completion = TextDeltaRenderer::render_completion(ctx.terminal_mode);
+        let show_metrics =
+            (ctx.verbosity.is_debug() || ctx.show_streaming_metrics) && metrics.total_deltas > 0;
+
+        let flush = match ctx.terminal_mode {
+            TerminalMode::Full => String::new(),
+            TerminalMode::Basic | TerminalMode::None => streamed_agent_msg.map_or_else(
+                String::new,
+                |msg| {
+                    let limit = ctx.verbosity.truncate_limit("agent_msg");
+                    let preview = truncate_text(&msg, limit);
+                    if preview.is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            "{}[{}]{} {}{}{}\n",
+                            ctx.colors.dim(),
+                            ctx.display_name,
+                            ctx.colors.reset(),
+                            ctx.colors.white(),
+                            preview,
+                            ctx.colors.reset()
+                        )
+                    }
+                },
+            ),
+        };
+
+        let mut out = String::new();
+        out.push_str(&flush);
+        out.push_str(&completion);
+        if show_metrics {
+            out.push('\n');
+            out.push_str(&metrics.format(*ctx.colors));
+        }
+        return out;
+    }
+
+    if is_duplicate {
         let completion = TextDeltaRenderer::render_completion(ctx.terminal_mode);
         let show_metrics =
             (ctx.verbosity.is_debug() || ctx.show_streaming_metrics) && metrics.total_deltas > 0;
@@ -33,6 +80,7 @@ pub fn handle_agent_message_completed(ctx: &EventHandlerContext, text: Option<&S
             ctx.colors.reset()
         );
     }
+
     String::new()
 }
 

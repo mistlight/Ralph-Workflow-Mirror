@@ -92,29 +92,144 @@ lint:
 # Run custom dylint lints (safe default: lib only)
 dylint:
 	@bash -euo pipefail -c '\
-		if ! command -v cargo >/dev/null 2>&1; then \
-			echo "error: cargo not found in PATH" >&2; \
-			exit 1; \
-		fi; \
-		if ! cargo dylint --version >/dev/null 2>&1; then \
-			echo "Installing cargo-dylint (and dylint-link)..." >&2; \
-			cargo install cargo-dylint dylint-link; \
-		fi; \
-		if ! command -v rustup >/dev/null 2>&1; then \
-			echo "rustup not found; installing rustup to $$HOME/.cargo (required for nightly + rustc-dev)." >&2; \
-			if command -v curl >/dev/null 2>&1; then \
-				curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
-			elif command -v wget >/dev/null 2>&1; then \
-				wget -qO- https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
+		HOME_DIR="$${HOME:-}"; \
+		CARGO_HOME_DIR="$${CARGO_HOME:-}"; \
+		RUSTUP_HOME_DIR="$${RUSTUP_HOME:-}"; \
+		DYLINT_DRIVER_DIR="$${DYLINT_DRIVER_PATH:-}"; \
+		\
+		if [ -z "$$CARGO_HOME_DIR" ]; then \
+			if [ -n "$$HOME_DIR" ]; then \
+				CARGO_HOME_DIR="$$HOME_DIR/.cargo"; \
 			else \
-				echo "error: need curl or wget to install rustup automatically" >&2; \
+				echo "error: HOME is not set and CARGO_HOME is not set." >&2; \
+				echo "Set HOME, or set CARGO_HOME and RUSTUP_HOME to writable locations." >&2; \
 				exit 1; \
 			fi; \
-			export PATH="$$HOME/.cargo/bin:$$PATH"; \
 		fi; \
-		rustup toolchain install nightly --profile minimal --component rustc-dev --component llvm-tools-preview; \
-		rustup component add rustc-dev llvm-tools-preview --toolchain nightly || true; \
-		rustup run nightly cargo dylint -p ralph-workflow --lib file_too_long -- --lib; \
+		if [ -z "$$RUSTUP_HOME_DIR" ]; then \
+			if [ -n "$$HOME_DIR" ]; then \
+				RUSTUP_HOME_DIR="$$HOME_DIR/.rustup"; \
+			else \
+				echo "error: HOME is not set and RUSTUP_HOME is not set." >&2; \
+				echo "Set HOME, or set RUSTUP_HOME to a writable location." >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		if [ -z "$$DYLINT_DRIVER_DIR" ]; then \
+			if [ -n "$$HOME_DIR" ]; then \
+				DYLINT_DRIVER_DIR="$$HOME_DIR/.dylint_drivers"; \
+			else \
+				echo "error: HOME is not set and DYLINT_DRIVER_PATH is not set." >&2; \
+				echo "Set HOME, or set DYLINT_DRIVER_PATH to a writable location." >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		\
+		export CARGO_HOME="$$CARGO_HOME_DIR"; \
+		export RUSTUP_HOME="$$RUSTUP_HOME_DIR"; \
+		export DYLINT_DRIVER_PATH="$$DYLINT_DRIVER_DIR"; \
+		export PATH="$$CARGO_HOME/bin:$$PATH"; \
+		\
+		for dir in "$$CARGO_HOME" "$$RUSTUP_HOME" "$$DYLINT_DRIVER_PATH"; do \
+			if ! mkdir -p "$$dir" 2>/dev/null; then \
+				echo "error: cannot create required directory: $$dir" >&2; \
+				echo "Set CARGO_HOME/RUSTUP_HOME/DYLINT_DRIVER_PATH to writable locations." >&2; \
+				exit 1; \
+			fi; \
+			if [ ! -w "$$dir" ]; then \
+				echo "error: required directory is not writable: $$dir" >&2; \
+				echo "Set CARGO_HOME/RUSTUP_HOME/DYLINT_DRIVER_PATH to writable locations." >&2; \
+				exit 1; \
+			fi; \
+		done; \
+		\
+		if ! command -v rustup >/dev/null 2>&1; then \
+			echo "error: rustup not found (required for nightly + rustc-dev)." >&2; \
+			echo "Install rustup manually, or opt in via ALLOW_RUSTUP_INSTALL=1." >&2; \
+			if [ "$${ALLOW_RUSTUP_INSTALL:-0}" = "1" ]; then \
+				echo "ALLOW_RUSTUP_INSTALL=1 set; installing rustup..." >&2; \
+				if command -v curl >/dev/null 2>&1; then \
+					curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
+				elif command -v wget >/dev/null 2>&1; then \
+					wget -qO- https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
+				else \
+					echo "error: need curl or wget to install rustup automatically" >&2; \
+					exit 1; \
+				fi; \
+			else \
+				exit 1; \
+			fi; \
+		fi; \
+		\
+		if ! command -v cargo >/dev/null 2>&1; then \
+			echo "error: cargo not found. Ensure $$CARGO_HOME/bin is on PATH." >&2; \
+			exit 1; \
+		fi; \
+		\
+		if ! rustup toolchain list | grep -qE "^nightly"; then \
+			echo "error: Rust nightly toolchain is not installed (required for dylint driver builds)." >&2; \
+			echo "Install it manually, or opt in via ALLOW_RUSTUP_INSTALL=1." >&2; \
+			if [ "$${ALLOW_RUSTUP_INSTALL:-0}" = "1" ]; then \
+				echo "ALLOW_RUSTUP_INSTALL=1 set; installing Rust nightly toolchain..." >&2; \
+				if ! rustup toolchain install nightly --profile minimal; then \
+					echo "error: failed to install nightly toolchain." >&2; \
+					exit 1; \
+				fi; \
+			else \
+				exit 1; \
+			fi; \
+		fi; \
+		\
+		INSTALLED_COMPONENTS="$$(rustup component list --toolchain nightly --installed 2>/dev/null || true)"; \
+		MISSING=""; \
+		echo "$$INSTALLED_COMPONENTS" | grep -q "^rustc-dev" || MISSING="$$MISSING rustc-dev"; \
+		echo "$$INSTALLED_COMPONENTS" | grep -q "^llvm-tools" || MISSING="$$MISSING llvm-tools"; \
+		if [ -n "$$MISSING" ]; then \
+			echo "error: missing required nightly components:$$MISSING" >&2; \
+			echo "Install them manually, or opt in via ALLOW_RUSTUP_INSTALL=1." >&2; \
+			if [ "$${ALLOW_RUSTUP_INSTALL:-0}" = "1" ]; then \
+				echo "ALLOW_RUSTUP_INSTALL=1 set; installing required nightly components:$$MISSING" >&2; \
+				if ! rustup component add rustc-dev llvm-tools --toolchain nightly; then \
+					echo "error: failed to install required nightly component(s):$$MISSING" >&2; \
+					exit 1; \
+				fi; \
+			else \
+				exit 1; \
+			fi; \
+		fi; \
+		\
+		NIGHTLY_CARGO="$$(rustup which cargo --toolchain nightly)"; \
+		NIGHTLY_RUSTC="$$(rustup which rustc --toolchain nightly)"; \
+		NIGHTLY_BIN_DIR="$$(dirname "$$NIGHTLY_CARGO")"; \
+		WRAPPER_DIR="$$(mktemp -d)"; \
+		trap "rm -rf $$WRAPPER_DIR" EXIT; \
+		printf "%s\n" \
+			"#!/usr/bin/env bash" \
+			"export RUSTUP_TOOLCHAIN=nightly" \
+			"exec \"$$NIGHTLY_CARGO\" \"\$$@\"" \
+			> "$$WRAPPER_DIR/cargo"; \
+		chmod +x "$$WRAPPER_DIR/cargo"; \
+		export PATH="$$WRAPPER_DIR:$$NIGHTLY_BIN_DIR:$$PATH"; \
+		export RUSTUP_TOOLCHAIN=nightly; \
+		# Do not export RUSTC here: cargo-dylint invokes the driver with `env -u RUSTC`, \
+		# and exporting it can cause toolchain/stdlib resolution issues in some environments. \
+		# The PATH wrapper ensures nightly is used for all subprocesses. \
+		\
+		if ! cargo dylint --version >/dev/null 2>&1; then \
+			echo "error: cargo-dylint is not installed (and dylint-link may be missing)." >&2; \
+			echo "Install it manually, or opt in via ALLOW_CARGO_INSTALL=1." >&2; \
+			if [ "$${ALLOW_CARGO_INSTALL:-0}" = "1" ]; then \
+				echo "ALLOW_CARGO_INSTALL=1 set; installing cargo-dylint (and dylint-link)..." >&2; \
+				if ! cargo install cargo-dylint dylint-link; then \
+					echo "error: failed to install cargo-dylint." >&2; \
+					exit 1; \
+				fi; \
+			else \
+				exit 1; \
+			fi; \
+		fi; \
+		\
+		cargo dylint -p ralph-workflow --lib file_too_long -- --lib; \
 	'
 
 # Run all checks (format, lint, test)

@@ -444,6 +444,13 @@ fn test_ccs_codex_agent_message_deltas_no_spam_in_none_mode() {
             prefix_count,
             output
         );
+
+        // Verify the content is present (not lost)
+        assert!(
+            output.contains("Hello World!"),
+            "Expected accumulated agent_message content to be present. Output:\n{}",
+            output
+        );
     });
 }
 
@@ -475,6 +482,12 @@ fn test_ccs_codex_agent_message_deltas_no_spam_in_basic_mode() {
             prefix_count <= 1,
             "Expected <= 1 '[ccs/codex]' prefix in Basic mode for agent_message deltas, found {}.\n\nOutput:\n{}",
             prefix_count,
+            output
+        );
+
+        assert!(
+            output.contains("Test message"),
+            "Expected accumulated agent_message content to be present. Output:\n{}",
             output
         );
     });

@@ -188,6 +188,8 @@ cargo build --release
 # - Running dylint against the `ralph` binary target can fail the build because the binary uses
 #   `#![deny(warnings)]` (warnings become hard errors).
 # - Run the lint against the `ralph-workflow` *library* target instead.
+# - The Makefile automatically ensures nightly toolchain's cargo is used for driver builds,
+#   even when system cargo (Homebrew/apt) is stable.
 #
 # Recommended (library target only):
 make dylint
@@ -232,3 +234,43 @@ cargo +nightly test
 ```
 
 **Note:** Dylint lints require nightly Rust due to use of rustc internals.
+
+### Environment Variables for Sandboxed Environments
+
+The `make dylint` target respects standard Rust environment variables:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `CARGO_HOME` | Override cargo cache/bin location | `/tmp/cargo-cache` |
+| `RUSTUP_HOME` | Override rustup installation location | `/tmp/rustup-home` |
+| `DYLINT_DRIVER_PATH` | Override dylint driver cache location | `/tmp/dylint-drivers` |
+
+For hermetic builds or CI environments with restricted HOME:
+
+```bash
+# Example: Run dylint in a sandboxed environment
+export CARGO_HOME=/writable/path/cargo
+export RUSTUP_HOME=/writable/path/rustup
+export DYLINT_DRIVER_PATH=/writable/path/drivers
+make dylint
+```
+
+### Known Issues
+
+**dylint_driver build failure (v3.5.1 and later):**
+
+If you encounter an error like:
+```
+error: environment variable `RUSTUP_TOOLCHAIN` not defined at compile time
+```
+
+This is a known upstream bug in dylint_driver (v3.5.1, v5.0.0, and potentially other versions) that occurs when cargo-dylint rebuilds the driver. The driver build script requires the `RUSTUP_TOOLCHAIN` environment variable to be set at compile time using `env!()`, but cargo-dylint explicitly unsets it when spawning the driver build subprocess (`env -u RUSTUP_TOOLCHAIN cargo build`).
+
+**Workaround:** 
+- Use a prebuilt dylint driver if available, or
+- Use an older version of cargo-dylint (e.g., v3.2.x) that may not have this issue, or  
+- Wait for an upstream fix in the dylint project
+
+The `make dylint` target prepends the nightly toolchain's `bin/` directory to `PATH` and also injects a `cargo` wrapper that re-exports `RUSTUP_TOOLCHAIN=nightly`. This addresses the common E0554 failure mode where cargo-dylint rebuilds its driver via a subprocess that unsets `RUSTUP_TOOLCHAIN` and then resolves `cargo` from `PATH`.
+
+This Makefile change cannot fully eliminate upstream failures where cargo-dylint (or the driver build) requires additional environment variables or pre-provisioned components in strictly offline/sandboxed environments.
