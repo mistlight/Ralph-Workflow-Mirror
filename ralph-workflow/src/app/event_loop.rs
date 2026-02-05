@@ -5,7 +5,7 @@
 //! run the pipeline using the event-sourced architecture from RFC-004.
 
 use crate::phases::PhaseContext;
-use crate::reducer::effect::Effect;
+use crate::reducer::effect::{Effect, EffectResult};
 use crate::reducer::event::{AwaitingDevFixEvent, CheckpointTrigger, PipelineEvent, PipelinePhase};
 use crate::reducer::state::ContinuationState;
 use crate::reducer::{
@@ -171,6 +171,43 @@ fn extract_error_event(err: &anyhow::Error) -> Option<crate::reducer::event::Err
     None
 }
 
+enum GuardedEffectResult {
+    Ok(EffectResult),
+    Unrecoverable(anyhow::Error),
+    Panic,
+}
+
+fn execute_effect_guarded<'ctx, H>(
+    handler: &mut H,
+    effect: Effect,
+    ctx: &mut PhaseContext<'_>,
+    state: &PipelineState,
+) -> GuardedEffectResult
+where
+    H: EffectHandler<'ctx>,
+{
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        handler.execute(effect, ctx)
+    })) {
+        Ok(Ok(result)) => GuardedEffectResult::Ok(result),
+        Ok(Err(err)) => {
+            if let Some(error_event) = extract_error_event(&err) {
+                GuardedEffectResult::Ok(crate::reducer::effect::EffectResult::event(
+                    crate::reducer::event::PipelineEvent::PromptInput(
+                        crate::reducer::event::PromptInputEvent::HandlerError {
+                            phase: state.phase,
+                            error: error_event,
+                        },
+                    ),
+                ))
+            } else {
+                GuardedEffectResult::Unrecoverable(err)
+            }
+        }
+        Err(_) => GuardedEffectResult::Panic,
+    }
+}
+
 fn dump_event_loop_trace(
     ctx: &mut PhaseContext<'_>,
     trace: &EventTraceBuffer,
@@ -296,48 +333,31 @@ where
 
         // Execute returns EffectResult with both PipelineEvent and UIEvents.
         // Catch panics here so we can still dump a best-effort trace.
-        let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            handler.execute(effect, ctx)
-        })) {
-            Ok(Ok(result)) => result,
-            Ok(Err(err)) => {
-                // Check if this is an error event that should be processed through the reducer
-                if let Some(error_event) = extract_error_event(&err) {
-                    // Process error event through reducer like a normal event
-                    ctx.logger.warn(&format!("Error event: {error_event:?}"));
-                    crate::reducer::effect::EffectResult::event(
-                        crate::reducer::event::PipelineEvent::PromptInput(
-                            crate::reducer::event::PromptInputEvent::HandlerError {
-                                phase: state.phase,
-                                error: error_event,
-                            },
-                        ),
-                    )
-                } else {
-                    // Truly unrecoverable error - cannot continue
-                    let dumped =
-                        dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
-                    let marker_written = write_completion_marker_on_error(ctx, &err);
-                    if dumped {
-                        ctx.logger.error(&format!(
-                            "Event loop encountered unrecoverable handler error (trace: {EVENT_LOOP_TRACE_PATH})"
-                        ));
-                    } else {
-                        ctx.logger
-                            .error("Event loop encountered unrecoverable handler error");
-                    }
+        let result = match execute_effect_guarded(handler, effect, ctx, &state) {
+            GuardedEffectResult::Ok(result) => result,
+            GuardedEffectResult::Unrecoverable(err) => {
+                let dumped =
+                    dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
+                let marker_written = write_completion_marker_on_error(ctx, &err);
+                if dumped {
                     ctx.logger.error(&format!(
-                        "Event loop exiting: reason=unrecoverable_error, phase={:?}, checkpoint_saved_count={}, events_processed={}",
-                        state.phase, state.checkpoint_saved_count, events_processed
+                        "Event loop encountered unrecoverable handler error (trace: {EVENT_LOOP_TRACE_PATH})"
                     ));
-                    if marker_written {
-                        ctx.logger
-                            .info("Completion marker written for unrecoverable handler error");
-                    }
-                    return Err(err);
+                } else {
+                    ctx.logger
+                        .error("Event loop encountered unrecoverable handler error");
                 }
+                ctx.logger.error(&format!(
+                    "Event loop exiting: reason=unrecoverable_error, phase={:?}, checkpoint_saved_count={}, events_processed={}",
+                    state.phase, state.checkpoint_saved_count, events_processed
+                ));
+                if marker_written {
+                    ctx.logger
+                        .info("Completion marker written for unrecoverable handler error");
+                }
+                return Err(err);
             }
-            Err(_) => {
+            GuardedEffectResult::Panic => {
                 let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
                 if dumped {
                     ctx.logger.error(&format!(
@@ -456,33 +476,53 @@ where
                 "failure\nMax iterations reached in AwaitingDevFix phase (events_processed={})",
                 events_processed
             );
-            if ctx.workspace.write(marker_path, &content).is_ok() {
-                ctx.logger
-                    .info("Completion marker written for max iterations failure");
+            match ctx.workspace.write(marker_path, &content) {
+                Ok(()) => {
+                    ctx.logger
+                        .info("Completion marker written for max iterations failure");
+                }
+                Err(err) => {
+                    ctx.logger.error(&format!(
+                        "Failed to write completion marker for max iterations failure: {err}"
+                    ));
+                }
+            }
 
-                let completion_event =
-                    PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
-                        is_failure: true,
-                    });
-                let completion_event_str = format!("{:?}", completion_event);
-                state = reduce(state, completion_event);
-                trace.push(build_trace_entry(
-                    events_processed,
-                    &state,
-                    "ForcedCompletionMarker",
-                    &completion_event_str,
-                ));
-                handler.update_state(state.clone());
-                events_processed += 1;
+            let completion_event =
+                PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
+                    is_failure: true,
+                });
+            let completion_event_str = format!("{:?}", completion_event);
+            state = reduce(state, completion_event);
+            trace.push(build_trace_entry(
+                events_processed,
+                &state,
+                "ForcedCompletionMarker",
+                &completion_event_str,
+            ));
+            handler.update_state(state.clone());
+            events_processed += 1;
 
-                let save_effect = Effect::SaveCheckpoint {
-                    trigger: CheckpointTrigger::Interrupt,
-                };
-                let save_effect_str = format!("{save_effect:?}");
-                match handler.execute(save_effect, ctx) {
-                    Ok(result) => {
-                        let event_str = format!("{:?}", result.event);
-                        state = reduce(state, result.event.clone());
+            let save_effect = Effect::SaveCheckpoint {
+                trigger: CheckpointTrigger::Interrupt,
+            };
+            let save_effect_str = format!("{save_effect:?}");
+            match execute_effect_guarded(handler, save_effect, ctx, &state) {
+                GuardedEffectResult::Ok(result) => {
+                    let event_str = format!("{:?}", result.event);
+                    state = reduce(state, result.event.clone());
+                    trace.push(build_trace_entry(
+                        events_processed,
+                        &state,
+                        &save_effect_str,
+                        &event_str,
+                    ));
+                    handler.update_state(state.clone());
+                    events_processed += 1;
+
+                    for event in result.additional_events {
+                        let event_str = format!("{:?}", event);
+                        state = reduce(state, event);
                         trace.push(build_trace_entry(
                             events_processed,
                             &state,
@@ -491,33 +531,57 @@ where
                         ));
                         handler.update_state(state.clone());
                         events_processed += 1;
-
-                        for event in result.additional_events {
-                            let event_str = format!("{:?}", event);
-                            state = reduce(state, event);
-                            trace.push(build_trace_entry(
-                                events_processed,
-                                &state,
-                                &save_effect_str,
-                                &event_str,
-                            ));
-                            handler.update_state(state.clone());
-                            events_processed += 1;
-                        }
-                    }
-                    Err(err) => {
-                        ctx.logger.error(&format!(
-                            "Failed to save checkpoint after max-iterations completion: {err}"
-                        ));
                     }
                 }
+                GuardedEffectResult::Unrecoverable(err) => {
+                    let dumped =
+                        dump_event_loop_trace(ctx, &trace, &state, "unrecoverable_handler_error");
+                    let marker_written = write_completion_marker_on_error(ctx, &err);
+                    if dumped {
+                        ctx.logger.error(&format!(
+                            "Event loop encountered unrecoverable handler error (trace: {EVENT_LOOP_TRACE_PATH})"
+                        ));
+                    } else {
+                        ctx.logger
+                            .error("Event loop encountered unrecoverable handler error");
+                    }
+                    ctx.logger.error(&format!(
+                        "Event loop exiting: reason=unrecoverable_error, phase={:?}, checkpoint_saved_count={}, events_processed={}",
+                        state.phase, state.checkpoint_saved_count, events_processed
+                    ));
+                    if marker_written {
+                        ctx.logger
+                            .info("Completion marker written for unrecoverable handler error");
+                    }
+                    return Err(err);
+                }
+                GuardedEffectResult::Panic => {
+                    let dumped = dump_event_loop_trace(ctx, &trace, &state, "panic");
+                    if dumped {
+                        ctx.logger.error(&format!(
+                            "Event loop recovered from panic (trace: {EVENT_LOOP_TRACE_PATH})"
+                        ));
+                    } else {
+                        ctx.logger.error("Event loop recovered from panic");
+                    }
 
-                forced_completion = true;
+                    ctx.logger.error(&format!(
+                        "Event loop exiting: reason=panic, phase={:?}, checkpoint_saved_count={}, events_processed={}",
+                        state.phase, state.checkpoint_saved_count, events_processed
+                    ));
 
-                ctx.logger.info(
-                    "Forced transition to Interrupted phase to satisfy termination requirements",
-                );
+                    return Ok(EventLoopResult {
+                        completed: false,
+                        events_processed,
+                        final_phase: state.phase,
+                    });
+                }
             }
+
+            forced_completion = true;
+
+            ctx.logger
+                .info("Forced transition to Interrupted phase to satisfy termination requirements");
         }
 
         if dumped {

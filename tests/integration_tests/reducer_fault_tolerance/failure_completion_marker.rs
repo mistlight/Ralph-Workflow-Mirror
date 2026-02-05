@@ -18,7 +18,7 @@ use ralph_workflow::logger::{Colors, Logger};
 use ralph_workflow::pipeline::{Stats, Timer};
 use ralph_workflow::prompts::template_context::TemplateContext;
 use ralph_workflow::reducer::determine_next_effect;
-use ralph_workflow::reducer::effect::Effect;
+use ralph_workflow::reducer::effect::{Effect, EffectResult};
 use ralph_workflow::reducer::event::{ErrorEvent, PipelineEvent, PipelinePhase, PromptInputEvent};
 use ralph_workflow::reducer::handler::MainEffectHandler;
 use ralph_workflow::reducer::mock_effect_handler::MockEffectHandler;
@@ -27,6 +27,7 @@ use ralph_workflow::reducer::state_reduction::reduce;
 use ralph_workflow::workspace::{MemoryWorkspace, Workspace};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{io, panic};
 
 struct Fixture {
     config: Config,
@@ -38,15 +39,20 @@ struct Fixture {
     registry: AgentRegistry,
     executor: Arc<MockProcessExecutor>,
     repo_root: PathBuf,
-    workspace: Arc<MemoryWorkspace>,
+    workspace: Arc<dyn Workspace>,
 }
 
 impl Fixture {
     fn new() -> Self {
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace: Arc<dyn Workspace> = Arc::new(MemoryWorkspace::new(repo_root.clone()));
+        Self::with_workspace(workspace)
+    }
+
+    fn with_workspace(workspace: Arc<dyn Workspace>) -> Self {
         let config = Config::default();
         let colors = Colors::new();
-        let repo_root = PathBuf::from("/test/repo");
-        let workspace = Arc::new(MemoryWorkspace::new(repo_root.clone()));
+        let repo_root = workspace.root().to_path_buf();
         let logger = Logger::new(colors);
         let registry = AgentRegistry::new().unwrap();
         let executor = Arc::new(MockProcessExecutor::new());
@@ -86,6 +92,187 @@ impl Fixture {
             repo_root: &self.repo_root,
             workspace: self.workspace.as_ref(),
         }
+    }
+}
+
+#[derive(Debug)]
+struct FailingWorkspace {
+    inner: MemoryWorkspace,
+    fail_marker_write: bool,
+}
+
+impl FailingWorkspace {
+    fn new(inner: MemoryWorkspace, fail_marker_write: bool) -> Self {
+        Self {
+            inner,
+            fail_marker_write,
+        }
+    }
+
+    fn should_fail_marker_write(&self, path: &Path) -> bool {
+        self.fail_marker_write && path == Path::new(".agent/tmp/completion_marker")
+    }
+}
+
+impl Workspace for FailingWorkspace {
+    fn root(&self) -> &Path {
+        self.inner.root()
+    }
+
+    fn read(&self, relative: &Path) -> io::Result<String> {
+        self.inner.read(relative)
+    }
+
+    fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+        self.inner.read_bytes(relative)
+    }
+
+    fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+        if self.should_fail_marker_write(relative) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "simulated completion marker write failure",
+            ));
+        }
+        self.inner.write(relative, content)
+    }
+
+    fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        if self.should_fail_marker_write(relative) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "simulated completion marker write failure",
+            ));
+        }
+        self.inner.write_bytes(relative, content)
+    }
+
+    fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+        self.inner.append_bytes(relative, content)
+    }
+
+    fn exists(&self, relative: &Path) -> bool {
+        self.inner.exists(relative)
+    }
+
+    fn is_file(&self, relative: &Path) -> bool {
+        self.inner.is_file(relative)
+    }
+
+    fn is_dir(&self, relative: &Path) -> bool {
+        self.inner.is_dir(relative)
+    }
+
+    fn remove(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove(relative)
+    }
+
+    fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_if_exists(relative)
+    }
+
+    fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all(relative)
+    }
+
+    fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+        self.inner.remove_dir_all_if_exists(relative)
+    }
+
+    fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+        self.inner.create_dir_all(relative)
+    }
+
+    fn read_dir(&self, relative: &Path) -> io::Result<Vec<ralph_workflow::workspace::DirEntry>> {
+        self.inner.read_dir(relative)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        self.inner.rename(from, to)
+    }
+
+    fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+        if self.should_fail_marker_write(relative) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "simulated completion marker write failure",
+            ));
+        }
+        self.inner.write_atomic(relative, content)
+    }
+
+    fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_readonly(relative)
+    }
+
+    fn set_writable(&self, relative: &Path) -> io::Result<()> {
+        self.inner.set_writable(relative)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SaveBehavior {
+    Ok,
+    ErrorEvent,
+    Panic,
+}
+
+#[derive(Debug)]
+struct StalledAwaitingDevFixHandler {
+    state: PipelineState,
+    save_behavior: SaveBehavior,
+    save_attempts: usize,
+}
+
+impl StalledAwaitingDevFixHandler {
+    fn new(state: PipelineState, save_behavior: SaveBehavior) -> Self {
+        Self {
+            state,
+            save_behavior,
+            save_attempts: 0,
+        }
+    }
+}
+
+impl<'ctx> ralph_workflow::reducer::effect::EffectHandler<'ctx> for StalledAwaitingDevFixHandler {
+    fn execute(
+        &mut self,
+        effect: Effect,
+        _ctx: &mut ralph_workflow::phases::PhaseContext<'_>,
+    ) -> anyhow::Result<EffectResult> {
+        match effect {
+            Effect::TriggerDevFixFlow {
+                failed_phase,
+                failed_role,
+                ..
+            } => Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                ralph_workflow::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                    failed_phase,
+                    failed_role,
+                },
+            ))),
+            Effect::SaveCheckpoint { trigger } => {
+                self.save_attempts += 1;
+                match self.save_behavior {
+                    SaveBehavior::Ok => Ok(EffectResult::event(PipelineEvent::checkpoint_saved(
+                        trigger,
+                    ))),
+                    SaveBehavior::ErrorEvent => Err(ErrorEvent::WorkspaceWriteFailed {
+                        path: ".agent/checkpoint.json".to_string(),
+                        kind: ralph_workflow::reducer::event::WorkspaceIoErrorKind::Other,
+                    }
+                    .into()),
+                    SaveBehavior::Panic => panic!("simulated SaveCheckpoint panic"),
+                }
+            }
+            other => Err(anyhow::anyhow!("unexpected effect: {other:?}")),
+        }
+    }
+}
+
+impl ralph_workflow::app::event_loop::StatefulHandler for StalledAwaitingDevFixHandler {
+    fn update_state(&mut self, state: PipelineState) {
+        self.state = state;
     }
 }
 
@@ -491,9 +678,10 @@ fn test_max_iterations_in_awaiting_dev_fix_emits_completion_marker() {
         state.phase = PipelinePhase::AwaitingDevFix;
         state.previous_phase = Some(PipelinePhase::Development);
 
-        let mut handler = MockEffectHandler::new(state.clone());
+        let mut handler = StalledAwaitingDevFixHandler::new(state.clone(), SaveBehavior::Ok);
         // Set a low max_iterations to trigger the defensive logic
-        let config = EventLoopConfig { max_iterations: 5 };
+        let max_iterations = 5;
+        let config = EventLoopConfig { max_iterations };
 
         let result = run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
             .expect("Event loop should not error");
@@ -521,6 +709,11 @@ fn test_max_iterations_in_awaiting_dev_fix_emits_completion_marker() {
             "checkpoint_saved_count should be incremented after forced completion"
         );
 
+        assert!(
+            handler.save_attempts > 0,
+            "SaveCheckpoint should be attempted after forced completion"
+        );
+
         // Verify completion marker was written
         let marker_path = Path::new(".agent/tmp/completion_marker");
         assert!(
@@ -536,10 +729,115 @@ fn test_max_iterations_in_awaiting_dev_fix_emits_completion_marker() {
             marker_content.contains("failure"),
             "Completion marker should indicate failure"
         );
-        // Note: MockEffectHandler completes dev-fix normally, so we don't actually
-        // hit max iterations. This test validates that the normal path works correctly.
-        // The defensive max-iterations logic is validated by the fact that it compiles
-        // and doesn't break existing tests.
+        assert!(
+            result.events_processed >= max_iterations,
+            "Event loop should reach max iterations to exercise forced completion"
+        );
+    });
+}
+
+#[test]
+fn test_forced_completion_transitions_to_interrupted_when_marker_write_fails() {
+    with_default_timeout(|| {
+        let failing_workspace = Arc::new(FailingWorkspace::new(MemoryWorkspace::new_test(), true));
+        let mut fixture = Fixture::with_workspace(failing_workspace);
+        let mut ctx = fixture.ctx();
+
+        let mut state = PipelineState::initial(1, 1);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::Development);
+
+        let mut handler = StalledAwaitingDevFixHandler::new(state.clone(), SaveBehavior::Ok);
+        let config = EventLoopConfig { max_iterations: 3 };
+
+        let result = run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
+            .expect("Event loop should not error");
+
+        assert!(
+            result.completed,
+            "Forced completion should mark the event loop as complete"
+        );
+        assert_eq!(
+            result.final_phase,
+            PipelinePhase::Interrupted,
+            "Forced completion should transition to Interrupted even if marker write fails"
+        );
+        assert!(
+            handler.save_attempts > 0,
+            "SaveCheckpoint should be attempted even if marker write fails"
+        );
+
+        let marker_path = Path::new(".agent/tmp/completion_marker");
+        assert!(
+            !fixture.workspace.exists(marker_path),
+            "Completion marker should not exist when write fails"
+        );
+    });
+}
+
+#[test]
+fn test_forced_completion_catches_save_checkpoint_panic() {
+    with_default_timeout(|| {
+        let mut fixture = Fixture::new();
+        let mut ctx = fixture.ctx();
+
+        let mut state = PipelineState::initial(1, 1);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::Development);
+
+        let mut handler = StalledAwaitingDevFixHandler::new(state.clone(), SaveBehavior::Panic);
+        let config = EventLoopConfig { max_iterations: 3 };
+
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
+        }));
+
+        assert!(
+            result.is_ok(),
+            "SaveCheckpoint panic should be caught by event loop"
+        );
+
+        let loop_result = result.expect("Expected event loop result");
+        assert!(
+            loop_result.is_ok(),
+            "Event loop should return Ok result when handling panics"
+        );
+
+        let loop_result = loop_result.expect("Expected event loop result");
+        assert!(
+            !loop_result.completed,
+            "Event loop should report incomplete when SaveCheckpoint panics"
+        );
+    });
+}
+
+#[test]
+fn test_forced_completion_reduces_save_checkpoint_error_event() {
+    with_default_timeout(|| {
+        let mut fixture = Fixture::new();
+        let mut ctx = fixture.ctx();
+
+        let mut state = PipelineState::initial(1, 1);
+        state.phase = PipelinePhase::AwaitingDevFix;
+        state.previous_phase = Some(PipelinePhase::Development);
+
+        let mut handler =
+            StalledAwaitingDevFixHandler::new(state.clone(), SaveBehavior::ErrorEvent);
+        let max_iterations = 3;
+        let config = EventLoopConfig { max_iterations };
+
+        let result = run_event_loop_with_handler(&mut ctx, Some(state), config, &mut handler)
+            .expect("Event loop should not error");
+
+        assert!(
+            result.events_processed >= max_iterations,
+            "Event loop should hit max iterations to exercise forced completion"
+        );
+        assert_eq!(
+            handler.state.previous_phase,
+            Some(PipelinePhase::Interrupted),
+            "SaveCheckpoint error event should be reduced through the reducer"
+        );
     });
 }
 
