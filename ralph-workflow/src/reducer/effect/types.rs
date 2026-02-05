@@ -457,6 +457,34 @@ pub enum Effect {
     /// The effect handler executes this as part of the development iteration
     /// flow when the reducer determines cleanup is needed.
     CleanupContinuationContext,
+
+    /// Trigger development agent to fix pipeline failure.
+    ///
+    /// Invoked when the pipeline reaches AwaitingDevFix phase after agent chain
+    /// exhaustion. The dev agent is given the full failure context (logs, error
+    /// messages, last state) and asked to diagnose and fix the root cause.
+    ///
+    /// After completion (success or failure), the pipeline emits a completion
+    /// marker and transitions to Interrupted.
+    TriggerDevFixFlow {
+        /// The phase where the failure occurred.
+        failed_phase: super::event::PipelinePhase,
+        /// The role of the exhausted agent chain.
+        failed_role: AgentRole,
+        /// Retry cycle count when exhaustion occurred.
+        retry_cycle: u32,
+    },
+
+    /// Emit completion marker and transition to Interrupted.
+    ///
+    /// This effect is emitted after dev-fix flow completes (or skips) to ensure
+    /// a completion marker is always written before pipeline termination.
+    EmitCompletionMarkerAndTerminate {
+        /// Whether the pipeline is terminating due to failure.
+        is_failure: bool,
+        /// Optional reason for termination.
+        reason: Option<String>,
+    },
 }
 
 /// Result of executing an effect.

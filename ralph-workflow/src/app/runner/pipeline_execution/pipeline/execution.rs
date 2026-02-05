@@ -144,7 +144,6 @@ fn run_pipeline(ctx: &PipelineContext) -> anyhow::Result<()> {
 /// This is the production entry point - it creates a MainEffectHandler internally.
 fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()> {
     use crate::app::event_loop::EventLoopConfig;
-    #[cfg(not(feature = "test-utils"))]
     use crate::reducer::MainEffectHandler;
     use crate::reducer::PipelineState;
 
@@ -220,25 +219,34 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     }
 
     // Set up git helpers and agent phase
-    // Use workspace-aware versions when test-utils feature is enabled
-    // to avoid real git operations that would cause test failures.
+    // Use workspace-aware marker operations; then attempt hook install / wrapper.
+    // This is best-effort: failures must not terminate the pipeline.
     let mut git_helpers = crate::git_helpers::GitHelpers::new();
 
-    #[cfg(feature = "test-utils")]
-    {
-        use crate::git_helpers::{
-            cleanup_orphaned_marker_with_workspace, create_marker_with_workspace,
-        };
-        // Use workspace-based operations that don't require real git
-        cleanup_orphaned_marker_with_workspace(&*ctx.workspace, &ctx.logger)?;
-        create_marker_with_workspace(&*ctx.workspace)?;
-        // Skip hook installation and git wrapper in test mode
+    // Marker cleanup/creation are filesystem concerns; use Workspace so tests can run
+    // with MemoryWorkspace, and production stays consistent.
+    if let Err(err) = crate::git_helpers::cleanup_orphaned_marker_with_workspace(
+        &*ctx.workspace,
+        &ctx.logger,
+    ) {
+        ctx.logger
+            .warn(&format!("Failed to cleanup orphaned marker: {err}"));
     }
-    #[cfg(not(feature = "test-utils"))]
-    {
-        cleanup_orphaned_marker(&ctx.logger)?;
-        start_agent_phase(&mut git_helpers)?;
+    if let Err(err) = crate::git_helpers::create_marker_with_workspace(&*ctx.workspace) {
+        ctx.logger
+            .warn(&format!("Failed to create agent phase marker: {err}"));
     }
+
+    // Hook install / wrapper require a real repo; treat as best-effort.
+    if let Err(err) = crate::git_helpers::cleanup_orphaned_marker(&ctx.logger) {
+        ctx.logger
+            .warn(&format!("Failed to cleanup orphaned marker via git helpers: {err}"));
+    }
+    if let Err(err) = crate::git_helpers::start_agent_phase(&mut git_helpers) {
+        ctx.logger
+            .warn(&format!("Failed to start agent phase: {err}"));
+    }
+
     let mut agent_phase_guard =
         AgentPhaseGuard::new(&mut git_helpers, &ctx.logger, &*ctx.workspace);
 
@@ -345,21 +353,6 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     let prompt_history_before = phase_ctx.clone_prompt_history();
 
     // Create effect handler and run event loop.
-    // Under test-utils feature, use MockEffectHandler to avoid real git operations.
-    #[cfg(feature = "test-utils")]
-    let loop_result = {
-        use crate::app::event_loop::run_event_loop_with_handler;
-        use crate::reducer::mock_effect_handler::MockEffectHandler;
-        let mut handler = MockEffectHandler::new(initial_state.clone());
-        let phase_ctx_ref = &mut phase_ctx;
-        run_event_loop_with_handler(
-            phase_ctx_ref,
-            Some(initial_state),
-            event_loop_config,
-            &mut handler,
-        )
-    };
-    #[cfg(not(feature = "test-utils"))]
     let loop_result = {
         use crate::app::event_loop::run_event_loop_with_handler;
         let mut handler = MainEffectHandler::new(initial_state.clone());
@@ -375,18 +368,62 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     // Handle event loop result
     let loop_result = loop_result?;
     if loop_result.completed {
-        ctx.logger
-            .success("Pipeline completed successfully via reducer event loop");
+        match loop_result.final_phase {
+            crate::reducer::event::PipelinePhase::Complete => {
+                ctx.logger
+                    .success("Pipeline completed successfully via reducer event loop");
+            }
+            crate::reducer::event::PipelinePhase::Interrupted => {
+                ctx.logger
+                    .info("Pipeline completed with Interrupted phase (failure handled)");
+                ctx.logger.info(
+                    "Completion marker was written during failure handling. \
+                     External orchestration can detect termination via .agent/tmp/completion_marker"
+                );
+            }
+            _ => {
+                ctx.logger
+                    .success("Pipeline completed via reducer event loop");
+            }
+        }
         ctx.logger.info(&format!(
             "Total events processed: {}",
             loop_result.events_processed
         ));
     } else {
-        ctx.logger.warn("Pipeline exited without completion marker");
+        ctx.logger
+            .error("⚠️  EXCEPTIONAL: Pipeline exited without normal completion");
+        ctx.logger.warn(&format!(
+            "This indicates a bug in the event loop or reducer. \
+             Expected final phase: Complete or Interrupted+checkpoint. \
+             Actual: completed=false, final_phase={:?}, events_processed={}",
+            loop_result.final_phase, loop_result.events_processed
+        ));
+
+        // If we exited from AwaitingDevFix without completing, this is the specific bug
+        // we're trying to fix - log it explicitly with state details
+        if matches!(
+            loop_result.final_phase,
+            crate::reducer::event::PipelinePhase::AwaitingDevFix
+        ) {
+            ctx.logger.error(
+                "BUG DETECTED: Event loop exited from AwaitingDevFix without completing dev-fix flow. \
+                 This should transition to Interrupted and save checkpoint. \
+                 Check: Was TriggerDevFixFlow executed? Was completion marker written? \
+                 See .agent/tmp/event_loop_trace.jsonl for execution trace."
+            );
+        }
+
+        // DEFENSIVE: Emit completion marker for orchestration
+        // This ensures external systems can detect termination even if the
+        // event loop exited unexpectedly before SaveCheckpoint was processed.
+        write_defensive_completion_marker(&*ctx.workspace, &ctx.logger, loop_result.final_phase);
     }
 
     // Save Complete checkpoint before clearing (for idempotent resume)
-    if config.features.checkpoint_enabled {
+    if config.features.checkpoint_enabled
+        && should_write_complete_checkpoint(loop_result.final_phase)
+    {
         let builder = CheckpointBuilder::new()
             .phase(
                 PipelinePhase::Complete,
@@ -433,3 +470,162 @@ fn run_pipeline_with_default_handler(ctx: &PipelineContext) -> anyhow::Result<()
     Ok(())
 }
 
+fn write_defensive_completion_marker(
+    workspace: &dyn crate::workspace::Workspace,
+    logger: &Logger,
+    final_phase: crate::reducer::event::PipelinePhase,
+) -> bool {
+    if let Err(err) = workspace.create_dir_all(std::path::Path::new(".agent/tmp")) {
+        logger.error(&format!(
+            "Failed to create completion marker directory: {err}"
+        ));
+        return false;
+    }
+
+    let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+    let content = format!(
+        "failure\nEvent loop exited without normal completion (final_phase={:?})",
+        final_phase
+    );
+    if let Err(err) = workspace.write(marker_path, &content) {
+        logger.error(&format!(
+            "Failed to write defensive completion marker: {err}"
+        ));
+        return false;
+    }
+
+    logger.info("Defensive completion marker written: failure");
+    true
+}
+
+#[cfg(test)]
+mod execution_tests {
+    use super::write_defensive_completion_marker;
+    use crate::logger::{Colors, Logger};
+    use crate::workspace::{DirEntry, MemoryWorkspace, Workspace};
+    use std::io;
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    #[derive(Debug)]
+    struct TrackingWorkspace {
+        inner: MemoryWorkspace,
+        tmp_created: Mutex<bool>,
+    }
+
+    impl TrackingWorkspace {
+        fn new() -> Self {
+            Self {
+                inner: MemoryWorkspace::new(PathBuf::from("/test/repo")),
+                tmp_created: Mutex::new(false),
+            }
+        }
+
+        fn tmp_created(&self) -> bool {
+            *self.tmp_created.lock().unwrap()
+        }
+    }
+
+    impl Workspace for TrackingWorkspace {
+        fn root(&self) -> &Path {
+            self.inner.root()
+        }
+
+        fn read(&self, relative: &Path) -> io::Result<String> {
+            self.inner.read(relative)
+        }
+
+        fn read_bytes(&self, relative: &Path) -> io::Result<Vec<u8>> {
+            self.inner.read_bytes(relative)
+        }
+
+        fn write(&self, relative: &Path, content: &str) -> io::Result<()> {
+            self.inner.write(relative, content)
+        }
+
+        fn write_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+            self.inner.write_bytes(relative, content)
+        }
+
+        fn append_bytes(&self, relative: &Path, content: &[u8]) -> io::Result<()> {
+            self.inner.append_bytes(relative, content)
+        }
+
+        fn exists(&self, relative: &Path) -> bool {
+            self.inner.exists(relative)
+        }
+
+        fn is_file(&self, relative: &Path) -> bool {
+            self.inner.is_file(relative)
+        }
+
+        fn is_dir(&self, relative: &Path) -> bool {
+            self.inner.is_dir(relative)
+        }
+
+        fn remove(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove(relative)
+        }
+
+        fn remove_if_exists(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_if_exists(relative)
+        }
+
+        fn remove_dir_all(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_dir_all(relative)
+        }
+
+        fn remove_dir_all_if_exists(&self, relative: &Path) -> io::Result<()> {
+            self.inner.remove_dir_all_if_exists(relative)
+        }
+
+        fn create_dir_all(&self, relative: &Path) -> io::Result<()> {
+            if relative == Path::new(".agent/tmp") {
+                *self.tmp_created.lock().unwrap() = true;
+            }
+            self.inner.create_dir_all(relative)
+        }
+
+        fn read_dir(&self, relative: &Path) -> io::Result<Vec<DirEntry>> {
+            self.inner.read_dir(relative)
+        }
+
+        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+            self.inner.rename(from, to)
+        }
+
+        fn write_atomic(&self, relative: &Path, content: &str) -> io::Result<()> {
+            self.inner.write_atomic(relative, content)
+        }
+
+        fn set_readonly(&self, relative: &Path) -> io::Result<()> {
+            self.inner.set_readonly(relative)
+        }
+
+        fn set_writable(&self, relative: &Path) -> io::Result<()> {
+            self.inner.set_writable(relative)
+        }
+    }
+
+    #[test]
+    fn test_defensive_completion_marker_creates_tmp_dir() {
+        let workspace = TrackingWorkspace::new();
+        let logger = Logger::new(Colors { enabled: false });
+
+        let wrote = write_defensive_completion_marker(
+            &workspace,
+            &logger,
+            crate::reducer::event::PipelinePhase::AwaitingDevFix,
+        );
+
+        assert!(wrote, "marker write should succeed");
+        assert!(
+            workspace.tmp_created(),
+            "should create .agent/tmp before writing marker"
+        );
+        assert!(
+            workspace.exists(Path::new(".agent/tmp/completion_marker")),
+            "completion marker should exist after defensive write"
+        );
+    }
+}

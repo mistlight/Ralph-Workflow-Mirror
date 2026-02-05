@@ -4,5 +4,7 @@
 //! never crash the pipeline and always trigger proper fallback behavior.
 
 mod agent_crash_handling;
+mod continuation_exhaustion;
+mod failure_completion_marker;
 mod helpers;
 mod model_fallback;

@@ -146,8 +146,8 @@ fn test_run_with_agent_spawn_cancels_stdout_pump_promptly_when_idle_timeout_enfo
                 &cmd,
                 &mut runtime,
                 &[],
-                0,
-                Duration::from_millis(1),
+                1,
+                Duration::from_millis(10),
                 crate::pipeline::idle_timeout::KillConfig::new(
                     Duration::from_millis(1),
                     Duration::from_millis(1),
@@ -173,18 +173,39 @@ fn test_run_with_agent_spawn_cancels_stdout_pump_promptly_when_idle_timeout_enfo
 
         // Once enforcement begins, stdout cancellation should stop the stdout pump quickly,
         // even if the monitor continues termination verification for longer.
-        let reads_at_start = stdout_reads.load(Ordering::Acquire);
-        std::thread::sleep(Duration::from_millis(40));
-        let reads_mid = stdout_reads.load(Ordering::Acquire);
+        //
+        // Ensure the stdout pump thread actually performed at least one read attempt before we
+        // assert cancellation behavior, otherwise this test could become vacuous.
+        let deadline = std::time::Instant::now() + Duration::from_millis(250);
+        while std::time::Instant::now() < deadline {
+            if stdout_reads.load(Ordering::Acquire) > 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            stdout_reads.load(Ordering::Acquire) > 0,
+            "expected stdout pump to attempt at least one read"
+        );
+
+        // Wait for reads to stabilize, then assert they remain stable for a short window.
+        let stable_deadline = std::time::Instant::now() + Duration::from_millis(250);
+        let mut last_reads = stdout_reads.load(Ordering::Acquire);
+        while std::time::Instant::now() < stable_deadline {
+            std::thread::sleep(Duration::from_millis(10));
+            let current = stdout_reads.load(Ordering::Acquire);
+            if current == last_reads {
+                break;
+            }
+            last_reads = current;
+        }
+        let reads_stable_at = stdout_reads.load(Ordering::Acquire);
         std::thread::sleep(Duration::from_millis(40));
         let reads_end = stdout_reads.load(Ordering::Acquire);
 
-        // The cancellation can occur before the stdout pump manages to perform its first read
-        // (especially with very small idle-timeout values). The key regression we care about is
-        // that reads stop increasing shortly after enforcement begins.
         assert_eq!(
-            reads_mid, reads_end,
-            "expected stdout pump reads to stop shortly after enforcement begins (reads_at_start={reads_at_start}, reads_mid={reads_mid}, reads_end={reads_end})"
+            reads_stable_at, reads_end,
+            "expected stdout pump reads to stop shortly after enforcement begins"
         );
 
         let result = rx

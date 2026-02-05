@@ -55,8 +55,12 @@ impl MainEffectHandler {
         };
 
         // Generate git diff since pipeline start (non-fatal if it fails).
-        // If generation fails, fall back to `.agent/DIFF.backup` if present; otherwise
-        // provide a placeholder with recovery commands.
+        //
+        // For analysis, we must remain context-free: do NOT instruct git commands, and do NOT
+        // silently reuse a potentially stale `.agent/DIFF.backup`.
+        //
+        // Instead, if diff generation fails, emit an explicit placeholder and also refresh
+        // `.agent/DIFF.backup` with that placeholder as best-effort diagnostic state.
         let diff_content = match get_git_diff_from_start_with_workspace(ctx.workspace) {
             Ok(diff) => {
                 // Best-effort: persist diff for prompt materialization fallbacks.
@@ -64,16 +68,12 @@ impl MainEffectHandler {
                 let _ = write_diff_backup_with_workspace(ctx.workspace, &diff);
                 diff
             }
-            Err(err) => match ctx.workspace.read(Path::new(".agent/DIFF.backup")) {
-                Ok(backup) => backup,
-                Err(backup_err) => format!(
-                    "[DIFF unavailable: failed to generate git diff ({err}); and failed to read .agent/DIFF.backup ({backup_err})]\n\n\
-Fallback commands (last resort):\n\
-- Unstaged changes: git diff\n\
-- Staged changes:   git diff --cached\n\
-- Untracked files:  git ls-files --others --exclude-standard\n"
-                ),
-            },
+            Err(err) => {
+                let placeholder =
+                    format!("[DIFF unavailable: failed to generate git diff ({err})]");
+                let _ = write_diff_backup_with_workspace(ctx.workspace, &placeholder);
+                placeholder
+            }
         };
 
         // Generate analysis prompt

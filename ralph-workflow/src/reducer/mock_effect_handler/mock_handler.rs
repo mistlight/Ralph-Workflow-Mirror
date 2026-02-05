@@ -605,6 +605,21 @@ src/lib.rs</ralph-files-changed>
                 PipelineEvent::development_continuation_context_cleaned(),
                 vec![],
             ),
+
+            Effect::TriggerDevFixFlow { .. } => {
+                // Handled in execute() method to access PhaseContext workspace
+                panic!("TriggerDevFixFlow should be handled in execute() method, not execute_mock()")
+            }
+
+            Effect::EmitCompletionMarkerAndTerminate {
+                is_failure,
+                reason: _,
+            } => (
+                PipelineEvent::AwaitingDevFix(crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
+                    is_failure,
+                }),
+                vec![],
+            ),
         };
 
         // Capture UI events
@@ -626,11 +641,62 @@ src/lib.rs</ralph-files-changed>
 /// MainEffectHandler in tests. The PhaseContext is ignored - the mock
 /// simply captures the effect and returns an appropriate mock event.
 impl<'ctx> EffectHandler<'ctx> for MockEffectHandler {
-    fn execute(&mut self, effect: Effect, _ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
+    fn execute(&mut self, effect: Effect, ctx: &mut PhaseContext<'_>) -> Result<EffectResult> {
         match effect {
             Effect::ReportAgentChainExhausted { role, phase, cycle } => {
                 use crate::reducer::event::ErrorEvent;
                 Err(ErrorEvent::AgentChainExhausted { role, phase, cycle }.into())
+            }
+            Effect::TriggerDevFixFlow {
+                failed_phase,
+                failed_role,
+                retry_cycle,
+            } => {
+                // Write completion marker BEFORE emitting events, matching real handler behavior
+                let marker_dir = std::path::Path::new(".agent/tmp");
+                if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
+                    ctx.logger.warn(&format!(
+                        "Failed to create completion marker directory: {}",
+                        err
+                    ));
+                }
+                let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+                let content = format!(
+                    "failure\nPipeline failure: phase={}, role={:?}, cycle={}",
+                    failed_phase, failed_role, retry_cycle
+                );
+                if let Err(err) = ctx.workspace.write(marker_path, &content) {
+                    ctx.logger
+                        .warn(&format!("Failed to write completion marker: {}", err));
+                }
+
+                // Capture the effect for test verification
+                self.captured_effects
+                    .borrow_mut()
+                    .push(Effect::TriggerDevFixFlow {
+                        failed_phase,
+                        failed_role,
+                        retry_cycle,
+                    });
+
+                // Emit trigger and completion events, then completion marker
+                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                        failed_phase,
+                        failed_role,
+                    },
+                ))
+                .with_additional_event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
+                        success: false,
+                        summary: Some("Mock dev-fix flow".to_string()),
+                    },
+                ))
+                .with_additional_event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
+                        is_failure: true,
+                    },
+                )))
             }
             _ => Ok(self.execute_mock(effect)),
         }

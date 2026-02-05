@@ -237,18 +237,28 @@ fn test_multiple_continuation_triggers_accumulate() {
 }
 
 #[test]
-fn test_continuation_budget_exhausted_transitions_to_interrupted() {
+fn test_continuation_budget_exhausted_switches_to_next_agent() {
     use crate::reducer::state::DevelopmentStatus;
 
     let state = create_test_state();
+    assert_eq!(state.agent_chain.current_agent_index, 0);
+
     let new_state = reduce(
         state,
         PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Partial),
     );
     assert_eq!(
         new_state.phase,
-        PipelinePhase::Interrupted,
-        "Should transition to Interrupted when continuation budget exhausted"
+        PipelinePhase::Development,
+        "Should stay in Development phase to try next agent"
+    );
+    assert_eq!(
+        new_state.agent_chain.current_agent_index, 1,
+        "Should switch to next agent when continuation budget exhausted"
+    );
+    assert_eq!(
+        new_state.continuation.continuation_attempt, 0,
+        "Should reset continuation attempt for new agent"
     );
 }
 
@@ -271,7 +281,11 @@ fn test_continuation_budget_exhausted_resets_continuation_state() {
     );
     assert!(
         !new_state.continuation.is_continuation(),
-        "Continuation state should be reset"
+        "Continuation state should be reset when switching to next agent"
+    );
+    assert_eq!(
+        new_state.continuation.continuation_attempt, 0,
+        "Continuation attempt should be reset for new agent"
     );
 }
 
@@ -289,5 +303,72 @@ fn test_continuation_budget_exhausted_preserves_iteration() {
     assert_eq!(
         new_state.iteration, 5,
         "Should preserve the iteration number"
+    );
+}
+
+#[test]
+fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
+    use crate::agents::AgentRole;
+    use crate::reducer::effect::Effect;
+    use crate::reducer::orchestration::determine_next_effect;
+    use crate::reducer::state::{AgentChainState, DevelopmentStatus};
+
+    let agent_chain = AgentChainState::initial()
+        .with_agents(
+            vec!["agent-a".to_string(), "agent-b".to_string()],
+            vec![vec!["model-1".to_string()], vec!["model-2".to_string()]],
+            AgentRole::Developer,
+        )
+        .with_max_cycles(1); // Only 1 cycle allowed
+
+    let mut state = PipelineState::initial(5, 3);
+    state.agent_chain = agent_chain;
+    state.phase = PipelinePhase::Development;
+
+    // Exhaust continuation for agent-a
+    state = reduce(
+        state,
+        PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Failed),
+    );
+    assert_eq!(state.agent_chain.current_agent_index, 1); // Now on agent-b
+
+    // Clean up context before next agent
+    state = reduce(
+        state,
+        PipelineEvent::development_continuation_context_cleaned(),
+    );
+
+    // Exhaust continuation for agent-b (last agent) with Failed status
+    // CRITICAL: Since all agents are exhausted AND last status is Failed,
+    // the reducer now transitions directly to AwaitingDevFix instead of
+    // just switching agents. This ensures the pipeline NEVER exits early
+    // due to budget exhaustion - it always continues through dev-fix flow.
+    state = reduce(
+        state,
+        PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Failed),
+    );
+
+    // Should transition to AwaitingDevFix (new behavior for non-terminating pipeline)
+    assert_eq!(
+        state.phase,
+        PipelinePhase::AwaitingDevFix,
+        "Should transition to AwaitingDevFix when all agents exhausted with Failed status"
+    );
+    assert_eq!(
+        state.previous_phase,
+        Some(PipelinePhase::Development),
+        "Should preserve previous phase"
+    );
+    assert!(
+        !state.dev_fix_triggered,
+        "dev_fix_triggered should be false so TriggerDevFixFlow executes"
+    );
+
+    // Now orchestration should trigger dev-fix flow
+    let effect = determine_next_effect(&state);
+    assert!(
+        matches!(effect, Effect::TriggerDevFixFlow { .. }),
+        "Should trigger dev-fix flow when in AwaitingDevFix phase; got {:?}",
+        effect
     );
 }

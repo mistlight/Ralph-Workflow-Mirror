@@ -175,6 +175,9 @@ impl PipelineCheckpoint {
             PipelinePhase::PreRebaseConflict => "Pre-rebase conflict resolution".to_string(),
             PipelinePhase::PostRebase => "Post-review rebase".to_string(),
             PipelinePhase::PostRebaseConflict => "Post-rebase conflict resolution".to_string(),
+            PipelinePhase::AwaitingDevFix => {
+                "Awaiting development agent to fix pipeline failure".to_string()
+            }
             PipelinePhase::Interrupted => {
                 // Provide more detailed information for interrupted state
                 let mut parts = vec!["Interrupted".to_string()];

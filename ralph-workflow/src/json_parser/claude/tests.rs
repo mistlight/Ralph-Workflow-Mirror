@@ -1,6 +1,6 @@
 // Claude parser tests.
 
-#[cfg(all(test, feature = "test-utils"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::json_parser::printer::{SharedPrinter, TestPrinter};

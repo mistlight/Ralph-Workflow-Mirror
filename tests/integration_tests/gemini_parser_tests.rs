@@ -73,7 +73,8 @@ fn test_gemini_parser_delta_streaming() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"init","session_id":"stream-test","model":"gemini-2.0"}
 {"type":"message","role":"assistant","content":"Hello","delta":true}
@@ -103,7 +104,8 @@ fn test_gemini_parser_tool_use() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Verbose, printer);
+            GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Verbose, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"tool_use","tool_name":"Bash","tool_id":"bash-123","parameters":{"command":"ls -la"}}"#;
 
@@ -127,7 +129,8 @@ fn test_gemini_parser_tool_result() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Verbose, printer);
+            GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Verbose, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"tool_result","tool_id":"bash-123","status":"success","output":"file1.txt\nfile2.txt"}"#;
 
@@ -152,7 +155,8 @@ fn test_gemini_parser_error_event() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"error","message":"Rate limit exceeded","code":"429"}"#;
 
@@ -179,7 +183,8 @@ fn test_gemini_parser_result_with_stats() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"result","status":"success","stats":{"total_tokens":250,"input_tokens":50,"output_tokens":200,"duration_ms":180000,"tool_calls":3}}"#;
 
@@ -216,7 +221,8 @@ fn test_gemini_parser_user_message() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input =
             r#"{"type":"message","role":"user","content":"List files in current directory"}"#;
@@ -283,7 +289,8 @@ fn test_gemini_parser_consecutive_duplicates_filtered() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"init","session_id":"dedup-test","model":"gemini-2.0"}
 {"type":"message","role":"assistant","content":"Hello","delta":true}
@@ -317,7 +324,8 @@ fn test_gemini_parser_snapshot_glitch() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         // Stream content incrementally, then send entire accumulated content as delta (snapshot glitch)
         let input = r#"{"type":"init","session_id":"snapshot-test","model":"gemini-2.0"}
@@ -350,7 +358,8 @@ fn test_gemini_parser_intentional_repetition_preserved() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"init","session_id":"repeat-test","model":"gemini-2.0"}
 {"type":"message","role":"assistant","content":"echo","delta":true}
@@ -462,7 +471,8 @@ fn test_gemini_parser_malformed_json() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         // Mix of valid and invalid JSON
         let input = r#"{"type":"init","session_id":"malformed-test","model":"gemini-2.0"}
@@ -538,7 +548,8 @@ fn test_gemini_parser_snapshot_as_delta_glitch() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         // Stream content incrementally, then send entire accumulated content as delta (snapshot glitch)
         let input = r#"{"type":"init","session_id":"snapshot-test","model":"gemini-2.0"}
@@ -578,7 +589,8 @@ fn test_gemini_parser_alternating_deltas_not_filtered() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         // Alternating pattern: Ping, Pong, Ping, Pong
         let input = r#"{"type":"init","session_id":"alt-test","model":"gemini-2.0"}
@@ -611,7 +623,8 @@ fn test_gemini_parser_consecutive_identical_deltas_filtered() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         // Same delta sent 4 times consecutively (resend glitch)
         let input = r#"{"type":"init","session_id":"dup-test","model":"gemini-2.0"}
@@ -649,7 +662,8 @@ fn test_gemini_parser_repeated_init_events() {
         let workspace = MemoryWorkspace::new_test();
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
-        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+        let parser = GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+            .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         // Multiple init events (GLM quirk)
         let input = r#"{"type":"init","session_id":"init-test-1","model":"gemini-2.0"}
@@ -681,7 +695,8 @@ fn test_gemini_parser_tool_use_interleaved_with_text() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Verbose, printer);
+            GeminiParser::with_printer_for_test(Colors::new(), Verbosity::Verbose, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"init","session_id":"tool-test","model":"gemini-2.0"}
 {"type":"message","role":"assistant","content":"Let me check","delta":true}

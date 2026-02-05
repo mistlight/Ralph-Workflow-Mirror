@@ -78,6 +78,32 @@ impl MainEffectHandler {
         }
     }
 
+    fn write_completion_marker(ctx: &PhaseContext<'_>, content: &str, is_failure: bool) -> bool {
+        let marker_dir = std::path::Path::new(".agent/tmp");
+        if let Err(err) = ctx.workspace.create_dir_all(marker_dir) {
+            ctx.logger.warn(&format!(
+                "Failed to create completion marker directory: {}",
+                err
+            ));
+        }
+
+        let marker_path = std::path::Path::new(".agent/tmp/completion_marker");
+        match ctx.workspace.write(marker_path, content) {
+            Ok(()) => {
+                ctx.logger.info(&format!(
+                    "Completion marker written: {}",
+                    if is_failure { "failure" } else { "success" }
+                ));
+                true
+            }
+            Err(err) => {
+                ctx.logger
+                    .warn(&format!("Failed to write completion marker: {}", err));
+                false
+            }
+        }
+    }
+
     fn execute_effect(
         &mut self,
         effect: Effect,
@@ -282,6 +308,164 @@ impl MainEffectHandler {
             }
 
             Effect::CleanupContinuationContext => self.cleanup_continuation_context(ctx),
+
+            Effect::TriggerDevFixFlow {
+                failed_phase,
+                failed_role,
+                retry_cycle,
+            } => {
+                ctx.logger.error("⚠️  PIPELINE FAILURE DETECTED ⚠️");
+                ctx.logger.warn(&format!(
+                    "Pipeline failure detected (phase: {}, role: {:?}, cycle: {})",
+                    failed_phase, failed_role, retry_cycle
+                ));
+                ctx.logger.info("Entering AwaitingDevFix flow...");
+                ctx.logger
+                    .info("Dispatching dev-fix agent for remediation...");
+
+                let read_or_fallback = |path: &str, label: &str| -> String {
+                    match ctx.workspace.read(std::path::Path::new(path)) {
+                        Ok(content) => content,
+                        Err(err) => {
+                            ctx.logger.warn(&format!(
+                                "Dev-fix prompt fallback: failed to read {}: {}",
+                                label, err
+                            ));
+                            format!("(Missing {}: {})", label, err)
+                        }
+                    }
+                };
+
+                let prompt_content = read_or_fallback("PROMPT.md", "PROMPT.md");
+                let plan_content = read_or_fallback(".agent/PLAN.md", ".agent/PLAN.md");
+                let issues_content = format!(
+                    "# Issues\n\n- [High] Pipeline failure (phase: {}, role: {:?}, cycle: {}).\n  Diagnose the root cause and fix the failure.\n",
+                    failed_phase, failed_role, retry_cycle
+                );
+                let dev_fix_prompt = crate::prompts::prompt_fix_with_context(
+                    ctx.template_context,
+                    &prompt_content,
+                    &plan_content,
+                    &issues_content,
+                );
+
+                if let Err(err) = ctx.workspace.write(
+                    std::path::Path::new(".agent/tmp/dev_fix_prompt.txt"),
+                    &dev_fix_prompt,
+                ) {
+                    ctx.logger.warn(&format!(
+                        "Failed to write dev-fix prompt to workspace: {}",
+                        err
+                    ));
+                }
+
+                let agent = self
+                    .state
+                    .agent_chain
+                    .current_agent()
+                    .cloned()
+                    .unwrap_or_else(|| ctx.developer_agent.to_string());
+
+                let completion_marker_content = format!(
+                    "failure\nPipeline failure: phase={}, role={:?}, cycle={}",
+                    failed_phase, failed_role, retry_cycle
+                );
+                Self::write_completion_marker(ctx, &completion_marker_content, true);
+
+                let agent_result = match self.invoke_agent(
+                    ctx,
+                    crate::agents::AgentRole::Developer,
+                    agent,
+                    None,
+                    dev_fix_prompt,
+                ) {
+                    Ok(result) => Ok(result),
+                    Err(err) => {
+                        ctx.logger
+                            .warn(&format!("Dev-fix agent invocation failed: {}", err));
+                        Err(err)
+                    }
+                };
+
+                let dev_fix_success = agent_result
+                    .as_ref()
+                    .map(|result| {
+                        result.additional_events.iter().any(|event| {
+                            matches!(
+                                event,
+                                PipelineEvent::Agent(
+                                    crate::reducer::event::AgentEvent::InvocationSucceeded { .. }
+                                )
+                            )
+                        })
+                    })
+                    .unwrap_or(false);
+
+                let dev_fix_summary = agent_result
+                    .as_ref()
+                    .err()
+                    .map(|err| format!("Dev-fix agent invocation failed: {}", err));
+
+                let mut result = match agent_result.as_ref() {
+                    Ok(result) => EffectResult::with_ui(
+                        PipelineEvent::AwaitingDevFix(
+                            crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                                failed_phase,
+                                failed_role,
+                            },
+                        ),
+                        result.ui_events.clone(),
+                    ),
+                    Err(_) => EffectResult::event(PipelineEvent::AwaitingDevFix(
+                        crate::reducer::event::AwaitingDevFixEvent::DevFixTriggered {
+                            failed_phase,
+                            failed_role,
+                        },
+                    )),
+                };
+
+                if let Ok(result_events) = agent_result {
+                    result = result.with_additional_event(result_events.event);
+                    for event in result_events.additional_events {
+                        result = result.with_additional_event(event);
+                    }
+                }
+
+                result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::DevFixCompleted {
+                        success: dev_fix_success,
+                        summary: dev_fix_summary,
+                    },
+                ));
+                result = result.with_additional_event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
+                        is_failure: true,
+                    },
+                ));
+
+                Ok(result)
+            }
+
+            Effect::EmitCompletionMarkerAndTerminate { is_failure, reason } => {
+                // Write completion marker to .agent/tmp/completion_marker
+                let content = if is_failure {
+                    format!(
+                        "failure\n{}",
+                        reason.unwrap_or_else(|| "unknown".to_string())
+                    )
+                } else {
+                    "success\n".to_string()
+                };
+
+                Self::write_completion_marker(ctx, &content, is_failure);
+
+                // Emit event to transition to Interrupted
+                Ok(EffectResult::event(PipelineEvent::AwaitingDevFix(
+                    crate::reducer::event::AwaitingDevFixEvent::CompletionMarkerEmitted {
+                        is_failure,
+                    },
+                )))
+            }
         }
     }
 }

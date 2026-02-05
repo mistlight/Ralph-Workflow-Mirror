@@ -100,8 +100,10 @@ fn test_ccs_glm_complete_message_deduplication() {
     let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
     let printer: SharedPrinter = test_printer.clone();
 
+    // This scenario targets non-TTY behavior: per-delta output is suppressed and
+    // flushed once at message_stop to avoid repeated prefixed lines.
     let parser = ClaudeParser::with_printer(Colors { enabled: false }, Verbosity::Normal, printer)
-        .with_terminal_mode(TerminalMode::Full);
+        .with_terminal_mode(TerminalMode::None);
 
     // Simulate streaming followed by a complete message event
     let input = r#"{"type":"stream_event","event":{"type":"message_start"}}
@@ -132,12 +134,12 @@ fn test_ccs_glm_complete_message_deduplication() {
         "Complete message should not be duplicated. Found {full_text_count} occurrences. Output: {output:?}"
     );
 
-    // With the single-line pattern, each delta includes the prefix
-    // 3 deltas = 3 prefixes in output string (but visually only one is shown)
+    // In non-TTY output, per-delta text output is suppressed and flushed once at message_stop.
+    // We should see a single prefix for the flushed text line.
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
-        prefix_count, 3,
-        "Should have 3 prefixes from streaming (one per delta). Output: {output:?}"
+        prefix_count, 1,
+        "Should have 1 prefix from flushed streaming output. Output: {output:?}"
     );
 }
 
@@ -233,9 +235,8 @@ fn test_repeated_content_block_start_no_duplicate_prefix() {
     let printer_ref = test_printer.borrow();
     let output = printer_ref.get_output();
 
-    // With the single-line pattern, each delta includes the prefix
-    // 3 deltas = 3 prefixes in output string (but visually only one is shown)
-    // Even though ContentBlockStart is repeated, it's for the same index so accumulation continues
+    // In Full TTY mode, each delta re-renders the line in-place and therefore includes the prefix.
+    // Even though ContentBlockStart is repeated, it's for the same index so accumulation continues.
     let prefix_count = output.matches("[Claude]").count();
     assert_eq!(
         prefix_count, 3,

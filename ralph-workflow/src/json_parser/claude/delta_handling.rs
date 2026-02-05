@@ -100,6 +100,10 @@ impl ClaudeParser {
                 // - Hash-based deduplication after sanitization (whitespace-insensitive)
                 let show_prefix = session.on_text_delta(index, &text);
 
+                // `on_text_delta` returns whether the prefix should be shown, not whether output
+                // should be emitted. If the accumulated content is non-empty and not a duplicate,
+                // we still need to render it even when `show_prefix` is false.
+
                 // Get accumulated text for streaming display
                 let accumulated_text = session
                     .get_accumulated(ContentType::Text, &index_str)

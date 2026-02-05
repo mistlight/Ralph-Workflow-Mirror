@@ -161,6 +161,14 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("reducer_fault_tolerance/model_fallback.rs"),
     },
     SourceFile {
+        path: "reducer_fault_tolerance/continuation_exhaustion.rs",
+        contents: include_str!("reducer_fault_tolerance/continuation_exhaustion.rs"),
+    },
+    SourceFile {
+        path: "reducer_fault_tolerance/failure_completion_marker.rs",
+        contents: include_str!("reducer_fault_tolerance/failure_completion_marker.rs"),
+    },
+    SourceFile {
         path: "reducer_hidden_behavior.rs",
         contents: include_str!("reducer_hidden_behavior.rs"),
     },

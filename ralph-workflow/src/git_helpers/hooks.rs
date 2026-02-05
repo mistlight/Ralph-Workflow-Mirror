@@ -188,7 +188,10 @@ pub fn uninstall_hooks(logger: &Logger) -> io::Result<()> {
     if restored > 0 {
         logger.success(&format!("Uninstalled {restored} Ralph hook(s)"));
     } else {
-        logger.info("No Ralph hooks to uninstall");
+        // Best-effort flows (hooks never installed, install failed, test mode) can
+        // legitimately result in no hooks being restored. Avoid logging a message that
+        // implies an exceptional termination path.
+        logger.info("No Ralph hooks were restored (hooks may not have been installed)");
     }
 
     Ok(())

@@ -83,6 +83,7 @@ fn map_to_checkpoint_phase(phase: crate::reducer::event::PipelinePhase) -> Check
         crate::reducer::event::PipelinePhase::FinalValidation => CheckpointPhase::FinalValidation,
         crate::reducer::event::PipelinePhase::Finalizing => CheckpointPhase::FinalValidation,
         crate::reducer::event::PipelinePhase::Complete => CheckpointPhase::Complete,
+        crate::reducer::event::PipelinePhase::AwaitingDevFix => CheckpointPhase::AwaitingDevFix,
         crate::reducer::event::PipelinePhase::Interrupted => CheckpointPhase::Interrupted,
     }
 }

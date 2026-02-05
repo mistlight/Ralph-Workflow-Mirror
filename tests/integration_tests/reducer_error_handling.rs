@@ -28,8 +28,9 @@ fn test_error_events_processed_through_reducer() {
         });
         let new_state = reduce(state.clone(), error_event);
 
-        // Invariant violations should terminate cleanly.
-        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        // Invariant violations must route through AwaitingDevFix so the pipeline never exits
+        // early and always emits a completion marker.
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
     });
 }
 
@@ -53,6 +54,9 @@ fn test_error_event_downcast_roundtrip() {
 fn test_agent_chain_exhausted_transitions_to_interrupted() {
     with_default_timeout(|| {
         use ralph_workflow::agents::AgentRole;
+        use ralph_workflow::reducer::determine_next_effect;
+        use ralph_workflow::reducer::effect::Effect;
+        use ralph_workflow::reducer::event::AwaitingDevFixEvent;
 
         let state = PipelineState::initial(1, 1);
         assert_eq!(state.phase, PipelinePhase::Planning);
@@ -68,13 +72,54 @@ fn test_agent_chain_exhausted_transitions_to_interrupted() {
 
         let new_state = reduce(state, error_event);
 
-        // Should transition to Interrupted phase
-        assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+        // Should transition to AwaitingDevFix phase (not directly to Interrupted)
+        assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
+        assert_eq!(new_state.previous_phase, Some(PipelinePhase::Planning));
+
+        // Orchestration should determine TriggerDevFixFlow effect
+        let effect = determine_next_effect(&new_state);
+        assert!(
+            matches!(effect, Effect::TriggerDevFixFlow { .. }),
+            "Expected TriggerDevFixFlow effect, got {:?}",
+            effect
+        );
+
+        // After dev-fix flow, state should transition to Interrupted
+        let after_trigger_state = reduce(
+            new_state.clone(),
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixTriggered {
+                failed_phase: PipelinePhase::Planning,
+                failed_role: AgentRole::Developer,
+            }),
+        );
+        assert_eq!(after_trigger_state.phase, PipelinePhase::AwaitingDevFix);
+
+        let after_fix_state = reduce(
+            after_trigger_state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::DevFixCompleted {
+                success: false,
+                summary: None,
+            }),
+        );
+
+        let final_state = reduce(
+            after_fix_state,
+            PipelineEvent::AwaitingDevFix(AwaitingDevFixEvent::CompletionMarkerEmitted {
+                is_failure: true,
+            }),
+        );
+
+        // CompletionMarkerEmitted transitions to Interrupted
+        assert_eq!(final_state.phase, PipelinePhase::Interrupted);
+        assert_eq!(
+            final_state.previous_phase,
+            Some(PipelinePhase::AwaitingDevFix)
+        );
     });
 }
 
 #[test]
-fn test_continuation_not_supported_errors_transition_to_interrupted() {
+fn test_continuation_not_supported_errors_route_to_awaiting_dev_fix() {
     with_default_timeout(|| {
         let state = PipelineState::initial(1, 1);
 
@@ -92,8 +137,9 @@ fn test_continuation_not_supported_errors_transition_to_interrupted() {
             });
             let new_state = reduce(state.clone(), error_event);
 
-            // Invariant violations should terminate cleanly.
-            assert_eq!(new_state.phase, PipelinePhase::Interrupted);
+            // Invariant violations must route through AwaitingDevFix so the pipeline never exits
+            // early and always emits a completion marker.
+            assert_eq!(new_state.phase, PipelinePhase::AwaitingDevFix);
         }
     });
 }

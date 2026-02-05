@@ -82,6 +82,7 @@ pub use claude::ClaudeParser;
 pub use codex::CodexParser;
 pub use gemini::GeminiParser;
 pub use opencode::OpenCodeParser;
+pub use terminal::TerminalMode;
 
 #[cfg(test)]
 mod tests;

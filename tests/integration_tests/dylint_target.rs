@@ -20,30 +20,43 @@ fn make_dylint_target_forces_nightly_cargo_resolution() {
     with_default_timeout(|| {
         let makefile = include_str!("../../Makefile");
 
+        // Scope assertions to the `dylint:` recipe body so that similar lines in
+        // `dylint-verbose` do not mask regressions.
+        let dylint_body = {
+            let start = makefile
+                .find("\ndylint:")
+                .expect("Makefile should contain a dylint: target")
+                + 1;
+            let rest = &makefile[start..];
+            let end = rest.find("\ndylint-verbose:").unwrap_or(rest.len());
+            &rest[..end]
+        };
+
         // Ensure we compute the nightly cargo path via rustup.
         assert!(
-            makefile.contains("rustup which cargo --toolchain nightly"),
-            "dylint target should resolve nightly cargo via rustup"
+            dylint_body.contains("rustup which cargo --toolchain \"$$NIGHTLY_TOOLCHAIN\""),
+            "dylint target should resolve nightly cargo via rustup with NIGHTLY_TOOLCHAIN variable"
         );
 
         // Ensure we prepend a PATH entry so that cargo-dylint's internal `cargo`
         // subprocesses resolve to nightly even if `RUSTUP_TOOLCHAIN` is unset.
         assert!(
-            makefile.contains("export PATH=\"$$WRAPPER_DIR:$$NIGHTLY_BIN_DIR:$$PATH\""),
+            dylint_body.contains("export PATH=\"$$WRAPPER_DIR:$$NIGHTLY_BIN_DIR:$$PATH\""),
             "dylint target should prepend wrapper + nightly bin dir to PATH"
         );
 
         // Ensure we use a wrapper `cargo` script which re-exports RUSTUP_TOOLCHAIN
         // to mitigate cargo-dylint unsetting it for driver rebuilds.
         assert!(
-            makefile.contains("export RUSTUP_TOOLCHAIN=nightly"),
-            "dylint target should export RUSTUP_TOOLCHAIN=nightly"
+            dylint_body.contains("export RUSTUP_TOOLCHAIN=\"$$NIGHTLY_TOOLCHAIN\""),
+            "dylint target should export RUSTUP_TOOLCHAIN to nightly toolchain variable"
         );
 
         // We should not suppress rustup component installation failures.
         assert!(
-            !makefile
-                .contains("rustup component add rustc-dev llvm-tools --toolchain nightly || true"),
+            !dylint_body.contains(
+                "rustup component add rustc-dev llvm-tools-preview --toolchain \"$$NIGHTLY_TOOLCHAIN\" || true"
+            ),
             "dylint target must not suppress rustup component install failures"
         );
 
@@ -51,7 +64,7 @@ fn make_dylint_target_forces_nightly_cargo_resolution() {
         // toolchain install when nightly is already installed.
         // (We allow toolchain install only when nightly is missing.)
         let has_guarded_nightly_install =
-            makefile.contains("if ! rustup toolchain list | grep -qE \"^nightly\"; then");
+            dylint_body.contains("if ! rustup toolchain list | grep -qE \"^nightly\"; then");
         assert!(
             has_guarded_nightly_install,
             "dylint target should only install nightly when missing"
@@ -59,7 +72,7 @@ fn make_dylint_target_forces_nightly_cargo_resolution() {
 
         // Unset HOME should yield an actionable message before bash -u fails.
         assert!(
-            makefile.contains("HOME_DIR=\"$${HOME:-}\""),
+            dylint_body.contains("HOME_DIR=\"$${HOME:-}\""),
             "dylint target should guard access to HOME under bash -u"
         );
     });

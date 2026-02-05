@@ -383,6 +383,8 @@ fn test_effects_are_single_task() {
             CleanupReviewIssuesXml,
             CleanupFixResultXml,
             CleanupCommitXml,
+            TriggerDevFixFlow,
+            EmitCompletionMarkerAndTerminate,
         }
 
         fn describe_effect_task(effect: &Effect) -> EffectTask {
@@ -450,6 +452,10 @@ fn test_effects_are_single_task() {
                 Effect::CleanupReviewIssuesXml { .. } => EffectTask::CleanupReviewIssuesXml,
                 Effect::CleanupFixResultXml { .. } => EffectTask::CleanupFixResultXml,
                 Effect::CleanupCommitXml => EffectTask::CleanupCommitXml,
+                Effect::TriggerDevFixFlow { .. } => EffectTask::TriggerDevFixFlow,
+                Effect::EmitCompletionMarkerAndTerminate { .. } => {
+                    EffectTask::EmitCompletionMarkerAndTerminate
+                }
             }
         }
 
@@ -470,6 +476,7 @@ fn test_effects_are_single_task() {
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
             Effect::MaterializePlanningInputs { iteration: 0 },
+            Effect::CleanupPlanningXml { iteration: 0 },
             Effect::InvokePlanningAgent { iteration: 0 },
             Effect::ExtractPlanningXml { iteration: 0 },
             Effect::ValidatePlanningXml { iteration: 0 },
@@ -485,6 +492,7 @@ fn test_effects_are_single_task() {
                 iteration: 0,
                 prompt_mode: ralph_workflow::reducer::state::PromptMode::Normal,
             },
+            Effect::CleanupDevelopmentXml { iteration: 0 },
             Effect::InvokeDevelopmentAgent { iteration: 0 },
             Effect::InvokeAnalysisAgent { iteration: 0 },
             Effect::ExtractDevelopmentXml { iteration: 0 },
@@ -568,6 +576,15 @@ fn test_effects_are_single_task() {
                 next_steps: None,
             }),
             Effect::CleanupContinuationContext,
+            Effect::TriggerDevFixFlow {
+                failed_phase: ralph_workflow::reducer::event::PipelinePhase::Development,
+                failed_role: AgentRole::Developer,
+                retry_cycle: 1,
+            },
+            Effect::EmitCompletionMarkerAndTerminate {
+                is_failure: true,
+                reason: Some("test".to_string()),
+            },
         ];
 
         // Verify each effect maps to a single-task category.
@@ -578,8 +595,8 @@ fn test_effects_are_single_task() {
         // Verify we covered all variants (update when Effect changes)
         assert_eq!(
             effects.len(),
-            58,
-            "Expected 58 Effect variants; update this test if variants were added or removed"
+            62,
+            "Expected 62 Effect variants; update this test if variants were added or removed"
         );
     });
 }

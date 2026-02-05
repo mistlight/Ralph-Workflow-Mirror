@@ -14,21 +14,17 @@
 use super::hooks::{install_hooks, uninstall_hooks_silent};
 use super::repo::get_repo_root;
 use crate::logger::Logger;
-#[cfg(any(test, feature = "test-utils"))]
 use crate::workspace::Workspace;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Write};
-#[cfg(any(test, feature = "test-utils"))]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use which::which;
 
 const WRAPPER_DIR_TRACK_FILE: &str = ".agent/git-wrapper-dir.txt";
 
 /// Marker file path for blocking commits during agent phase.
-#[cfg(any(test, feature = "test-utils"))]
 const MARKER_FILE: &str = ".no_agent_commit";
 
 /// Git helper state.
@@ -306,7 +302,7 @@ pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
 }
 
 // ============================================================================
-// Workspace-aware variants (for testing with MemoryWorkspace)
+// Workspace-aware variants
 // ============================================================================
 
 /// Create the agent phase marker file using workspace abstraction.
@@ -321,7 +317,6 @@ pub fn cleanup_orphaned_marker(logger: &Logger) -> io::Result<()> {
 /// # Returns
 ///
 /// Returns `Ok(())` on success, or an error if the file cannot be created.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn create_marker_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     workspace.write(Path::new(MARKER_FILE), "")
 }
@@ -338,7 +333,6 @@ pub fn create_marker_with_workspace(workspace: &dyn Workspace) -> io::Result<()>
 /// # Returns
 ///
 /// Returns `Ok(())` on success (including if file doesn't exist).
-#[cfg(any(test, feature = "test-utils"))]
 pub fn remove_marker_with_workspace(workspace: &dyn Workspace) -> io::Result<()> {
     workspace.remove_if_exists(Path::new(MARKER_FILE))
 }
@@ -355,7 +349,6 @@ pub fn remove_marker_with_workspace(workspace: &dyn Workspace) -> io::Result<()>
 /// # Returns
 ///
 /// Returns `true` if the marker file exists, `false` otherwise.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn marker_exists_with_workspace(workspace: &dyn Workspace) -> bool {
     workspace.exists(Path::new(MARKER_FILE))
 }
@@ -373,7 +366,6 @@ pub fn marker_exists_with_workspace(workspace: &dyn Workspace) -> bool {
 /// # Returns
 ///
 /// Returns `Ok(())` on success.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn cleanup_orphaned_marker_with_workspace(
     workspace: &dyn Workspace,
     logger: &Logger,

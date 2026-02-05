@@ -62,7 +62,8 @@ fn test_opencode_parser_text_streaming() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"test","part":{"id":"step_start_1","type":"step-start"}}
 {"type":"text","timestamp":1001,"sessionID":"test","part":{"id":"text1","type":"text","text":"Hello"}}
@@ -108,7 +109,8 @@ fn test_opencode_parser_tool_use_started() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"tool_use","timestamp":1768191346000,"sessionID":"test","part":{"id":"prt_001","type":"tool","callID":"call_123","tool":"Bash","state":{"status":"started","input":{"command":"ls -la"}}}}"#;
 
@@ -131,7 +133,8 @@ fn test_opencode_parser_step_finish_with_stats() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"step_finish","timestamp":1768191347296,"sessionID":"test","part":{"id":"prt_001","type":"step-finish","reason":"tool-calls","cost":0.05,"tokens":{"input":108,"output":151,"reasoning":10,"cache":{"read":11236,"write":500}}}}"#;
 
@@ -154,7 +157,8 @@ fn test_opencode_parser_step_finish_reasons() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input_end_turn = r#"{"type":"step_finish","timestamp":1000,"sessionID":"test","part":{"id":"prt_001","type":"step-finish","reason":"end-turn"}}"#;
 
@@ -230,7 +234,8 @@ fn test_opencode_parser_tool_sequence() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"test","part":{"type":"step-start"}}
 {"type":"tool_use","timestamp":1001,"sessionID":"test","part":{"type":"tool","tool":"read","state":{"status":"started","input":{"filePath":"file1.rs"}}}}
@@ -324,7 +329,8 @@ fn test_opencode_parser_malformed_json() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"malformed","part":{"type":"step-start"}}
 {not valid json at all}
@@ -386,7 +392,8 @@ fn test_opencode_parser_error_reason() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"error-test","part":{"type":"step-start"}}
 {"type":"text","timestamp":1001,"sessionID":"error-test","part":{"type":"text","text":"Some content"}}
@@ -411,7 +418,8 @@ fn test_opencode_parser_consecutive_text_handled() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"dedup","part":{"type":"step-start"}}
 {"type":"text","timestamp":1001,"sessionID":"dedup","part":{"type":"text","text":"Hello"}}
@@ -440,7 +448,8 @@ fn test_opencode_parser_interleaved_tool_text() {
         let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
         let printer: SharedPrinter = test_printer.clone();
         let parser =
-            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer);
+            OpenCodeParser::with_printer_for_test(Colors::new(), Verbosity::Normal, printer)
+                .with_terminal_mode(ralph_workflow::json_parser::TerminalMode::Full);
 
         let input = r#"{"type":"step_start","timestamp":1000,"sessionID":"interleaved","part":{"type":"step-start"}}
 {"type":"text","timestamp":1001,"sessionID":"interleaved","part":{"type":"text","text":"Let me check that file"}}

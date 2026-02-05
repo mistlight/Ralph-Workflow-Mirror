@@ -106,8 +106,8 @@ pub use wrapper::{
     start_agent_phase, GitHelpers,
 };
 
-// Workspace-aware variants for testing
-#[cfg(any(test, feature = "test-utils"))]
+// Workspace-aware variants (used by tests and by code paths that must operate
+// without requiring a real git repository).
 pub use wrapper::{
     cleanup_orphaned_marker_with_workspace, create_marker_with_workspace,
     marker_exists_with_workspace, remove_marker_with_workspace,
