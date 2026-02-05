@@ -1,4 +1,65 @@
+// Codex `item.started` event handlers.
+//
+// This file implements delta handlers for Codex streaming items.
+//
+// # CCS Spam Prevention Architecture (Layers 1 & 2: Suppress & Accumulate)
+//
+// These handlers work with the delta renderers to implement the first two layers
+// of the spam prevention architecture for Codex agents (ccs/codex):
+//
+// ## Architecture Overview
+//
+// 1. **Layer 1 (Suppression):** Delta renderers return empty strings in non-TTY modes
+//    - Called by these handlers via `TextDeltaRenderer::render_*` and `ThinkingDeltaRenderer::render_*`
+//    - Implemented in `ralph-workflow/src/json_parser/delta_display/renderer.rs`
+//
+// 2. **Layer 2 (Accumulation):** StreamingSession accumulates content across deltas
+//    - These handlers call `session.on_text_delta_key()` and `session.on_thinking_delta_key()`
+//    - Content is preserved for flush at completion
+//
+// 3. **Layer 3 (Flush):** Completion handlers flush accumulated content ONCE
+//    - Implemented in `ralph-workflow/src/json_parser/codex/event_handlers/items_completed.rs`
+//
+// ## Delta Rendering Strategy
+//
+// ### Full Mode (TTY)
+// - Each delta calls renderer which returns a line with cursor positioning
+// - Visual effect: one line updating in-place
+// - `render_first_delta`: prefix + content + `\n\x1b[1A` (cursor up)
+// - `render_subsequent_delta`: `\x1b[2K\r` (clear line) + prefix + content + `\n\x1b[1A`
+//
+// ### Basic/None Modes (non-TTY)
+// - Each delta calls renderer which returns empty string (suppression at Layer 1)
+// - Content is accumulated in StreamingSession (Layer 2)
+// - No output until completion boundary (Layer 3)
+//
+// ## Validation
+//
+// See comprehensive regression tests:
+// - `tests/integration_tests/ccs_comprehensive_spam_verification.rs` - Architecture verification
+// - `tests/integration_tests/ccs_nuclear_spam_test.rs` - 500+ deltas with hard assertions
+// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` - 1000+ deltas
+// - `tests/integration_tests/codex_reasoning_spam_regression.rs` - Original Codex fix
+//
+// ## Cross-References
+//
+// - Renderer suppression: `ralph-workflow/src/json_parser/delta_display/renderer.rs`
+// - Completion flush: `ralph-workflow/src/json_parser/codex/event_handlers/items_completed.rs`
+// - Claude equivalent: `ralph-workflow/src/json_parser/claude/delta_handling.rs`
+
 /// Handle `ItemStarted` event for `agent_message` type.
+///
+/// This handler implements Layers 1 & 2 (Suppress & Accumulate) of the spam
+/// prevention architecture for Codex `agent_message` items. In non-TTY modes,
+/// the renderer returns empty strings while StreamingSession accumulates content.
+///
+/// # CCS Spam Prevention Architecture
+///
+/// 1. **Layer 1 (Suppression):** Renderer returns empty strings in non-TTY modes
+/// 2. **Layer 2 (Accumulation):** StreamingSession preserves content across deltas
+/// 3. **Layer 3 (Flush):** Completion handler emits accumulated content once
+///
+/// See file-level documentation for details.
 pub fn handle_agent_message_started(ctx: &EventHandlerContext, text: Option<&String>) -> String {
     if let Some(text) = text {
         let (show_prefix, accumulated_text) = {
