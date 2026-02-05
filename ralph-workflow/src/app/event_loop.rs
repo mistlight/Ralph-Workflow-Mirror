@@ -3,6 +3,31 @@
 //! This module implements main event loop that coordinates reducer,
 //! effect handlers, and orchestration logic. It provides a unified way to
 //! run the pipeline using the event-sourced architecture from RFC-004.
+//!
+//! # Non-Terminating Pipeline Architecture
+//!
+//! The pipeline is designed to be **non-terminating by default** for unattended operation.
+//! It must NEVER exit early due to internal failures, budget exhaustion, or agent errors.
+//!
+//! ## Failure Handling Flow
+//!
+//! 1. Any terminal failure (Status: Failed, budget exhausted, agent chain exhausted)
+//!    transitions to `AwaitingDevFix` phase
+//! 2. `TriggerDevFixFlow` effect writes completion marker to `.agent/tmp/completion_marker`
+//! 3. Dev-fix agent is optionally dispatched for remediation attempt
+//! 4. `CompletionMarkerEmitted` event transitions to `Interrupted` phase
+//! 5. `SaveCheckpoint` effect saves state for resume
+//! 6. Event loop returns `EventLoopResult { completed: true, ... }`
+//!
+//! ## Acceptable Termination Reasons
+//!
+//! The ONLY acceptable reasons for pipeline termination are catastrophic external events:
+//! - Process termination (SIGKILL)
+//! - Machine outage / power loss
+//! - OS kill signal
+//! - Unrecoverable panic in effect handler (caught and logged)
+//!
+//! All internal errors route through the failure handling flow above.
 
 use crate::phases::PhaseContext;
 use crate::reducer::effect::{Effect, EffectResult};

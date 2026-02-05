@@ -338,26 +338,37 @@ fn test_orchestration_detects_exhaustion_after_all_agents_tried() {
         PipelineEvent::development_continuation_context_cleaned(),
     );
 
-    // Exhaust continuation for agent-b (last agent)
+    // Exhaust continuation for agent-b (last agent) with Failed status
+    // CRITICAL: Since all agents are exhausted AND last status is Failed,
+    // the reducer now transitions directly to AwaitingDevFix instead of
+    // just switching agents. This ensures the pipeline NEVER exits early
+    // due to budget exhaustion - it always continues through dev-fix flow.
     state = reduce(
         state,
         PipelineEvent::development_continuation_budget_exhausted(0, 3, DevelopmentStatus::Failed),
     );
-    // Should wrap back to agent-a with incremented retry_cycle
-    assert_eq!(state.agent_chain.current_agent_index, 0);
-    assert_eq!(state.agent_chain.retry_cycle, 1);
 
-    // Clean up context again
-    state = reduce(
-        state,
-        PipelineEvent::development_continuation_context_cleaned(),
+    // Should transition to AwaitingDevFix (new behavior for non-terminating pipeline)
+    assert_eq!(
+        state.phase,
+        PipelinePhase::AwaitingDevFix,
+        "Should transition to AwaitingDevFix when all agents exhausted with Failed status"
+    );
+    assert_eq!(
+        state.previous_phase,
+        Some(PipelinePhase::Development),
+        "Should preserve previous phase"
+    );
+    assert!(
+        !state.dev_fix_triggered,
+        "dev_fix_triggered should be false so TriggerDevFixFlow executes"
     );
 
-    // Now orchestration should detect agent chain exhaustion
+    // Now orchestration should trigger dev-fix flow
     let effect = determine_next_effect(&state);
     assert!(
-        matches!(effect, Effect::ReportAgentChainExhausted { .. }),
-        "Orchestration should detect agent chain exhaustion when all agents tried and cycles exhausted; got {:?}",
+        matches!(effect, Effect::TriggerDevFixFlow { .. }),
+        "Should trigger dev-fix flow when in AwaitingDevFix phase; got {:?}",
         effect
     );
 }

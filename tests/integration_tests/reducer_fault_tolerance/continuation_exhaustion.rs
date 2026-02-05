@@ -103,6 +103,10 @@ fn test_all_agents_exhausted_reports_chain_exhaustion() {
             PipelineEvent::development_continuation_context_cleaned(),
         );
 
+        // When: Second budget exhaustion with Failed status
+        // At this point, agent chain wraps to agent-a with retry_cycle=1, making it exhausted.
+        // CRITICAL: With the non-terminating pipeline fix, budget exhaustion with Failed status
+        // AND exhausted agent chain transitions directly to AwaitingDevFix (not Development).
         state = reduce(
             state,
             PipelineEvent::development_continuation_budget_exhausted(
@@ -111,21 +115,24 @@ fn test_all_agents_exhausted_reports_chain_exhaustion() {
                 DevelopmentStatus::Failed,
             ),
         );
-        // Wraps to agent-a with retry_cycle=1
-        assert_eq!(state.agent_chain.current_agent_index, 0);
-        assert_eq!(state.agent_chain.retry_cycle, 1);
 
-        // Clean up context again
-        state = reduce(
-            state,
-            PipelineEvent::development_continuation_context_cleaned(),
+        // Then: Should transition to AwaitingDevFix (new behavior)
+        assert_eq!(
+            state.phase,
+            PipelinePhase::AwaitingDevFix,
+            "Should transition to AwaitingDevFix when all agents exhausted with Failed status"
+        );
+        assert_eq!(
+            state.previous_phase,
+            Some(PipelinePhase::Development),
+            "Should preserve previous phase"
         );
 
-        // Then: Orchestration should detect agent chain exhaustion
+        // And: Orchestration should trigger dev-fix flow
         let effect = determine_next_effect(&state);
         assert!(
-            matches!(effect, Effect::ReportAgentChainExhausted { .. }),
-            "Should report agent chain exhaustion when all agents tried and cycles exhausted; got {:?}",
+            matches!(effect, Effect::TriggerDevFixFlow { .. }),
+            "Should trigger dev-fix flow when in AwaitingDevFix phase; got {:?}",
             effect
         );
     });
@@ -342,6 +349,202 @@ fn test_completion_marker_file_written_on_failure() {
         assert!(
             workspace.exists(marker_path),
             "Completion marker file should exist"
+        );
+
+        let marker_content = workspace
+            .read(marker_path)
+            .expect("Should read completion marker");
+        assert!(
+            marker_content.starts_with("failure"),
+            "Completion marker should indicate failure, got: {}",
+            marker_content
+        );
+    });
+}
+
+#[test]
+fn test_budget_exhausted_with_failed_status_transitions_to_awaiting_dev_fix() {
+    with_default_timeout(|| {
+        // Given: Pipeline in Development Iteration 2 with exhausted continuation budget
+        // AND all agents exhausted AND last status is Failed
+        let mut state = PipelineState::initial(3, 0);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 2;
+
+        // Create a single-agent chain (will be exhausted after first exhaustion)
+        let agent_chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent1".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(1);
+        state.agent_chain = agent_chain;
+
+        // When: Continuation budget exhausted with Status: Failed
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_continuation_budget_exhausted(
+                2,
+                3,
+                DevelopmentStatus::Failed,
+            ),
+        );
+
+        // Then: Should transition to AwaitingDevFix (not stay in Development)
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::AwaitingDevFix,
+            "Should transition to AwaitingDevFix when budget exhausted with Failed status and all agents exhausted"
+        );
+        assert_eq!(
+            new_state.previous_phase,
+            Some(PipelinePhase::Development),
+            "Should preserve previous phase for completion marker logic"
+        );
+        assert!(
+            !new_state.dev_fix_triggered,
+            "dev_fix_triggered should be false so TriggerDevFixFlow executes"
+        );
+
+        // And: TriggerDevFixFlow effect should be determined
+        let effect = determine_next_effect(&new_state);
+        assert!(
+            matches!(effect, Effect::TriggerDevFixFlow { .. }),
+            "Expected TriggerDevFixFlow, got {:?}",
+            effect
+        );
+    });
+}
+
+#[test]
+fn test_budget_exhausted_with_completed_status_proceeds_to_commit() {
+    with_default_timeout(|| {
+        // Given: Pipeline in Development with exhausted continuation budget
+        // BUT last status is Completed
+        let mut state = PipelineState::initial(3, 0);
+        state.phase = PipelinePhase::Development;
+        state.iteration = 1;
+
+        // Create a single-agent chain (will be exhausted after first exhaustion)
+        let agent_chain = AgentChainState::initial()
+            .with_agents(
+                vec!["agent1".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(1);
+        state.agent_chain = agent_chain;
+
+        // When: Continuation budget exhausted but Status: Completed
+        // (This shouldn't happen in practice, but verifies the logic)
+        let new_state = reduce(
+            state,
+            PipelineEvent::development_continuation_budget_exhausted(
+                1,
+                3,
+                DevelopmentStatus::Completed,
+            ),
+        );
+
+        // Then: Should stay in Development (agent fallback logic)
+        // Because Completed status means work is done, budget exhaustion shouldn't
+        // trigger failure path even if agents are exhausted
+        assert_eq!(
+            new_state.phase,
+            PipelinePhase::Development,
+            "Should stay in Development when budget exhausted with Completed status"
+        );
+    });
+}
+
+#[test]
+fn test_budget_exhausted_continues_to_completion_via_event_loop() {
+    with_default_timeout(|| {
+        // Given: A memory workspace and phase context
+        let repo_root = PathBuf::from("/test/repo");
+        let workspace = Arc::new(MemoryWorkspace::new(repo_root.clone()));
+
+        // Create test dependencies
+        let config = Config::default();
+        let registry = AgentRegistry::new().unwrap();
+        let colors = Colors::new();
+        let logger = Logger::new(colors);
+        let mut timer = Timer::new();
+        let mut stats = Stats::default();
+        let template_context = TemplateContext::default();
+        let executor = Arc::new(MockProcessExecutor::new());
+
+        let mut phase_ctx = ralph_workflow::phases::PhaseContext {
+            config: &config,
+            registry: &registry,
+            logger: &logger,
+            colors: &colors,
+            timer: &mut timer,
+            stats: &mut stats,
+            developer_agent: "test-developer",
+            reviewer_agent: "test-reviewer",
+            review_guidelines: None,
+            template_context: &template_context,
+            run_context: RunContext::new(),
+            execution_history: ExecutionHistory::new(),
+            prompt_history: std::collections::HashMap::new(),
+            executor: &*executor,
+            executor_arc: Arc::clone(&executor)
+                as Arc<dyn ralph_workflow::executor::ProcessExecutor>,
+            repo_root: &repo_root,
+            workspace: workspace.as_ref(),
+        };
+
+        // Given: A state where budget will be exhausted immediately
+        let mut initial_state = PipelineState::initial(3, 0);
+        initial_state.phase = PipelinePhase::Development;
+        initial_state.iteration = 2;
+
+        // Create exhausted agent chain
+        let agent_chain = initial_state
+            .agent_chain
+            .with_agents(
+                vec!["agent1".to_string()],
+                vec![vec![]],
+                AgentRole::Developer,
+            )
+            .with_max_cycles(1);
+
+        initial_state.agent_chain = AgentChainState {
+            retry_cycle: 1, // Already at max cycles, so is_exhausted() == true
+            ..agent_chain
+        };
+
+        // Verify exhaustion
+        assert!(initial_state.agent_chain.is_exhausted());
+
+        // When: Run the event loop (simulates budget exhaustion scenario)
+        let mut handler = MockEffectHandler::new(initial_state.clone());
+        let config = EventLoopConfig {
+            max_iterations: 100,
+        };
+
+        let result =
+            run_event_loop_with_handler(&mut phase_ctx, Some(initial_state), config, &mut handler)
+                .expect("Event loop should complete");
+
+        // Then: Pipeline should complete successfully (not exit early)
+        assert!(
+            result.completed,
+            "Pipeline should complete even when budget exhausted"
+        );
+        assert_eq!(
+            result.final_phase,
+            PipelinePhase::Interrupted,
+            "Final phase should be Interrupted after AwaitingDevFix flow"
+        );
+
+        // And: Completion marker should exist
+        let marker_path = Path::new(".agent/tmp/completion_marker");
+        assert!(
+            workspace.exists(marker_path),
+            "Completion marker should be written"
         );
 
         let marker_content = workspace

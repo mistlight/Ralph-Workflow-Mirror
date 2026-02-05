@@ -404,6 +404,18 @@ impl PipelineState {
     /// An Interrupted phase without a checkpoint and without previous_phase context
     /// is NOT considered terminal. This can occur when resuming from a checkpoint
     /// that was interrupted mid-execution.
+    ///
+    /// # Non-Terminating Pipeline Architecture
+    ///
+    /// The pipeline is designed to never exit early. All failure paths route through
+    /// `AwaitingDevFix` → `TriggerDevFixFlow` → completion marker write → `Interrupted`.
+    /// This ensures orchestration can reliably detect completion via the marker file,
+    /// even when budget is exhausted or all agents fail.
+    ///
+    /// Terminal states:
+    /// - `Complete`: Normal successful completion
+    /// - `Interrupted` with checkpoint saved: Resumable state
+    /// - `Interrupted` from `AwaitingDevFix`: Completion marker written, failure signaled
     pub fn is_complete(&self) -> bool {
         matches!(self.phase, PipelinePhase::Complete)
             || (matches!(self.phase, PipelinePhase::Interrupted)
