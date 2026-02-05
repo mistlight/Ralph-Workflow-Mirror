@@ -165,18 +165,21 @@ pub trait DeltaRenderer {
 /// ccs/glm) in non-TTY modes. The spam fix is validated with comprehensive regression
 /// tests that simulate real-world streaming scenarios:
 ///
-/// - **Extreme delta counts:** Tests verify no spam with 500+ deltas per content block
-/// - **Multi-turn sessions:** Validates 3+ turns with 200 deltas each (600+ total)
+/// - **Ultra-extreme delta counts:** Tests verify no spam with 1000+ deltas per content block
+/// - **Multi-turn sessions:** Validates 3+ turns with 200+ deltas each (600+ total)
 /// - **All delta types:** Covers text deltas, thinking deltas, and tool input deltas
+/// - **Real-world logs:** Tests with production logs containing 12,596 total deltas
 ///
 /// The multi-line pattern (in-place updates) is the industry standard used by
 /// Rich, Ink, Bubble Tea, and other production CLI libraries for clean streaming
 /// output.
 ///
-/// See tests:
-/// - `tests/integration_tests/codex_reasoning_spam_regression.rs`
-/// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs`
-/// - `tests/integration_tests/ccs_extreme_streaming_regression.rs`
+/// See comprehensive regression tests:
+/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (NEW: ultra-comprehensive edge case coverage)
+/// - `tests/integration_tests/ccs_extreme_streaming_regression.rs` (500+ deltas per block)
+/// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types)
+/// - `tests/integration_tests/ccs_real_world_log_regression.rs` (production log with 12,596 deltas)
+/// - `tests/integration_tests/codex_reasoning_spam_regression.rs` (original reasoning fix)
 pub struct TextDeltaRenderer;
 
 impl DeltaRenderer for TextDeltaRenderer {
@@ -258,12 +261,13 @@ impl DeltaRenderer for TextDeltaRenderer {
 ///
 /// Like `TextDeltaRenderer`, this implementation suppresses per-delta output in non-TTY modes
 /// to prevent repeated "[ccs/codex] Thinking:" and "[ccs/glm] Thinking:" lines in logs.
-/// The fix is validated with extreme streaming tests (500+ thinking deltas).
+/// The fix is validated with ultra-extreme streaming tests (1000+ thinking deltas).
 ///
-/// See tests:
-/// - `tests/integration_tests/codex_reasoning_spam_regression.rs`
-/// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs`
-/// - `tests/integration_tests/ccs_extreme_streaming_regression.rs`
+/// See comprehensive regression tests:
+/// - `tests/integration_tests/ccs_all_delta_types_spam_reproduction.rs` (NEW: 1000+ deltas, rapid succession, interleaved blocks)
+/// - `tests/integration_tests/ccs_extreme_streaming_regression.rs` (500+ deltas per block)
+/// - `tests/integration_tests/ccs_streaming_spam_all_deltas.rs` (all delta types)
+/// - `tests/integration_tests/codex_reasoning_spam_regression.rs` (original reasoning fix)
 pub struct ThinkingDeltaRenderer;
 
 impl DeltaRenderer for ThinkingDeltaRenderer {

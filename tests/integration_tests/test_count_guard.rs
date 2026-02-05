@@ -77,6 +77,10 @@ const INTEGRATION_TEST_SOURCES: &[SourceFile] = &[
         contents: include_str!("cli/mod.rs"),
     },
     SourceFile {
+        path: "ccs_all_delta_types_spam_reproduction.rs",
+        contents: include_str!("ccs_all_delta_types_spam_reproduction.rs"),
+    },
+    SourceFile {
         path: "ccs_basic_mode_nuclear_test.rs",
         contents: include_str!("ccs_basic_mode_nuclear_test.rs"),
     },
