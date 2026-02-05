@@ -22,7 +22,8 @@ fn make_dylint_target_forces_nightly_cargo_resolution() {
 
         // Ensure we compute the nightly cargo path via rustup.
         assert!(
-            makefile.contains("rustup which cargo --toolchain nightly"),
+            makefile.contains("rustup which cargo --toolchain nightly")
+                || makefile.contains("\"$$RUSTUP_BIN\" which cargo --toolchain nightly"),
             "dylint target should resolve nightly cargo via rustup"
         );
 
@@ -51,8 +52,9 @@ fn make_dylint_target_forces_nightly_cargo_resolution() {
         // Offline/hermetic acceptance: do not unconditionally invoke a network-dependent
         // toolchain install when nightly is already installed.
         // (We allow toolchain install only when nightly is missing.)
-        let has_guarded_nightly_install =
-            makefile.contains("if ! rustup toolchain list | grep -qE \"^nightly\"; then");
+        let has_guarded_nightly_install = makefile
+            .contains("if ! rustup toolchain list | grep -qE \"^nightly\"; then")
+            || makefile.contains("if ! \"$$RUSTUP_BIN\" toolchain list | grep -qE \"^nightly\"; then");
         assert!(
             has_guarded_nightly_install,
             "dylint target should only install nightly when missing"

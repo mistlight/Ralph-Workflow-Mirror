@@ -268,7 +268,7 @@ This is a known upstream bug in dylint_driver (v3.5.1, v5.0.0, and potentially o
 
 **Solution implemented in `make dylint`:**
 
-The `make dylint` target implements a multi-layered approach to ensure the dylint driver is always built with the nightly toolchain:
+The `make dylint` target implements a multi-layered approach intended to ensure the dylint driver is built with the nightly toolchain:
 
 1. **Environment validation:** Checks that CARGO_HOME, RUSTUP_HOME, and DYLINT_DRIVER_PATH are writable
 2. **Toolchain bootstrapping:** Installs rustup (if missing) and nightly toolchain with required components (rustc-dev, llvm-tools-preview)

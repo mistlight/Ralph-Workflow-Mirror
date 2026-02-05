@@ -96,7 +96,8 @@ echo
 echo "Test 4: Verify dylint driver uses nightly"
 # The driver should exist and work - if it was built with stable, it would have failed
 PLATFORM=$(rustup show active-toolchain | cut -d' ' -f1 | cut -d- -f2-)
-DRIVER_PATH="$HOME/.dylint_drivers/nightly-$PLATFORM/dylint-driver"
+DRIVER_ROOT="${DYLINT_DRIVER_PATH:-$HOME/.dylint_drivers}"
+DRIVER_PATH="$DRIVER_ROOT/nightly-$PLATFORM/dylint-driver"
 
 if [ -f "$DRIVER_PATH" ]; then
 	echo "Driver found: $DRIVER_PATH"
@@ -112,13 +113,8 @@ else
 fi
 echo
 
-# Test 5: Sandbox environment simulation (verify environment variable handling)
-echo "Test 5: Verify Makefile respects environment variable overrides"
-# This test verifies that the Makefile correctly reads and uses custom environment
-# variables, even though actually running with fully redirected HOME/CARGO_HOME/RUSTUP_HOME
-# would require a complete rustup installation in the alternate location.
-
-# Just verify that the default CARGO_HOME is shown correctly
+# Test 5: Capture verbose output once
+echo "Test 5: Capture make dylint-verbose output"
 VERBOSE_OUTPUT=$(mktemp)
 make dylint-verbose >"$VERBOSE_OUTPUT" 2>&1
 
@@ -151,15 +147,10 @@ else
 	echo -e "${YELLOW}WARNING: DYLINT_DRIVER_PATH not shown in verbose output${NC}"
 fi
 
-rm -f "$VERBOSE_OUTPUT"
 echo
 
 # Test 6: Path resolution verification
-echo "Test 6: Verify PATH includes nightly bin directory"
-# Run make dylint-verbose to capture debug output
-VERBOSE_OUTPUT=$(mktemp)
-make dylint-verbose >"$VERBOSE_OUTPUT" 2>&1
-
+echo "Test 6: Verify PATH includes wrapper and nightly bin directory"
 # Verify PATH is shown in the output
 if grep -q "PATH (first 3 entries):" "$VERBOSE_OUTPUT"; then
 	PATH_LINE=$(grep "PATH (first 3 entries):" "$VERBOSE_OUTPUT" | head -1)
@@ -180,25 +171,30 @@ else
 	echo -e "${YELLOW}WARNING: Nightly bin dir not shown in verbose output${NC}"
 fi
 
-# Verify that 'which cargo' resolves to nightly (should be in nightly toolchain path)
+# Verify that 'which cargo' resolves to nightly cargo OR the wrapper
 if grep -q "which cargo:" "$VERBOSE_OUTPUT"; then
 	WHICH_CARGO=$(grep "which cargo:" "$VERBOSE_OUTPUT" | head -1)
 	echo "$WHICH_CARGO"
-	# Check if the path contains 'nightly' to verify it's using the nightly cargo
 	if echo "$WHICH_CARGO" | grep -q "nightly"; then
 		echo -e "${GREEN}PASS: cargo resolves to nightly toolchain${NC}"
+	elif grep -q "Wrapper script path:" "$VERBOSE_OUTPUT"; then
+		WRAPPER_PATH=$(grep "Wrapper script path:" "$VERBOSE_OUTPUT" | cut -d: -f2- | xargs)
+		WHICH_CARGO_PATH=$(echo "$WHICH_CARGO" | cut -d: -f2- | xargs)
+		if [ "$WHICH_CARGO_PATH" = "$WRAPPER_PATH" ]; then
+			echo -e "${GREEN}PASS: cargo resolves to wrapper script${NC}"
+		else
+			echo -e "${YELLOW}WARNING: cargo resolves unexpectedly${NC}"
+			echo "Expected nightly or wrapper: $WRAPPER_PATH"
+		fi
 	else
-		echo -e "${YELLOW}WARNING: cargo path doesn't contain 'nightly'${NC}"
+		echo -e "${YELLOW}WARNING: cargo path doesn't contain 'nightly' and wrapper path not shown${NC}"
 	fi
 fi
 
-rm -f "$VERBOSE_OUTPUT"
 echo
 
 # Test 7: Verify wrapper script is used
 echo "Test 7: Verify cargo wrapper script is invoked"
-VERBOSE_OUTPUT=$(mktemp)
-make dylint-verbose >"$VERBOSE_OUTPUT" 2>&1
 
 # Check that wrapper script was created and used
 if grep -q "Wrapper script path:" "$VERBOSE_OUTPUT"; then
@@ -240,7 +236,31 @@ else
 	echo -e "${YELLOW}WARNING: Wrapper script does not export CARGO variable${NC}"
 fi
 
-rm -f "$VERBOSE_OUTPUT"
+# Test 8: Fail fast on unwritable cache directories
+# This asserts the Makefile emits the documented error message.
+echo "Test 8: Verify fail-fast on unwritable cache directories"
+UNWRITABLE_DIR="/"
+set +e
+HOME="$UNWRITABLE_DIR" CARGO_HOME="$UNWRITABLE_DIR" RUSTUP_HOME="$UNWRITABLE_DIR" DYLINT_DRIVER_PATH="$UNWRITABLE_DIR" make dylint-verbose >/dev/null 2>"$VERBOSE_OUTPUT.unwritable"
+UNWRITABLE_EXIT=$?
+set -e
+
+if [ $UNWRITABLE_EXIT -eq 0 ]; then
+	echo -e "${RED}FAIL: make dylint-verbose unexpectedly succeeded with unwritable dirs${NC}"
+	rm -f "$VERBOSE_OUTPUT" "$VERBOSE_OUTPUT.unwritable"
+	exit 1
+fi
+
+if grep -q "error: cannot create required directory:" "$VERBOSE_OUTPUT.unwritable" || grep -q "error: required directory is not writable:" "$VERBOSE_OUTPUT.unwritable"; then
+	echo -e "${GREEN}PASS: Makefile fails fast with actionable unwritable-dir error${NC}"
+else
+	echo -e "${RED}FAIL: Missing expected unwritable-dir error message${NC}"
+	echo "Output:" && tail -n 20 "$VERBOSE_OUTPUT.unwritable"
+	rm -f "$VERBOSE_OUTPUT" "$VERBOSE_OUTPUT.unwritable"
+	exit 1
+fi
+
+rm -f "$VERBOSE_OUTPUT" "$VERBOSE_OUTPUT.unwritable"
 echo
 
 echo -e "${GREEN}All tests passed!${NC}"

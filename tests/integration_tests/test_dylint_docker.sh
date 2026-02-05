@@ -103,5 +103,3 @@ echo "Last 30 lines of output:"
 tail -n 30 "$DOCKER_OUTPUT"
 rm -f "$DOCKER_OUTPUT"
 exit 1
-
-echo -e "${GREEN}Docker test completed successfully!${NC}"
