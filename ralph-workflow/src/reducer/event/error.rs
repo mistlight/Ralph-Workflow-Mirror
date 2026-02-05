@@ -9,7 +9,7 @@
 //! ## The Pattern
 //!
 //! 1. **Effect handler encounters error**
-//!    ```rust
+//!    ```rust,ignore
 //!    return Err(ErrorEvent::ReviewInputsNotMaterialized { pass }.into());
 //!    ```
 //!

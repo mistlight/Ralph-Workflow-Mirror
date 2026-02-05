@@ -502,3 +502,387 @@ fn test_ccs_codex_agent_message_deltas_no_spam_in_basic_mode() {
         );
     });
 }
+
+// ============================================================================
+// Extreme Stress Test - 100 Deltas
+// ============================================================================
+
+#[test]
+fn test_ccs_glm_extreme_text_deltas_no_spam_in_none_mode() {
+    with_default_timeout(|| {
+        let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = ClaudeParser::with_printer(colors, verbosity, test_printer.clone())
+            .with_display_name("ccs/glm")
+            .with_terminal_mode(TerminalMode::None);
+
+        // Simulate 100 text deltas for same block (extreme stress test)
+        let mut stream = String::from(
+            r#"
+{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg1","content":[]}}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+"#,
+        );
+
+        for i in 0..100 {
+            stream.push_str(&format!(
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"word{} "}}}}}}
+"#,
+                i
+            ));
+        }
+
+        stream.push_str(
+            r#"
+{"type":"stream_event","event":{"type":"content_block_stop","index":0}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+"#,
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream(reader, &workspace).unwrap();
+
+        let output = test_printer.borrow().get_output();
+
+        // Count prefix occurrences - should be AT MOST 1 even with 100 deltas
+        let prefix_count = output.matches("[ccs/glm]").count();
+        assert!(
+            prefix_count <= 1,
+            "Expected <= 1 '[ccs/glm]' prefix in None mode for 100 text deltas, found {}.\n\nOutput:\n{}",
+            prefix_count,
+            output
+        );
+
+        // Verify content is present (should contain multiple words)
+        assert!(
+            output.contains("word0") && output.contains("word99"),
+            "Expected accumulated text content (word0...word99) to be present. Output:\n{}",
+            output
+        );
+    });
+}
+
+// ============================================================================
+// Real-World Scenario Tests - Comprehensive Multi-Block Streaming
+// ============================================================================
+
+#[test]
+fn test_ccs_glm_two_text_blocks_both_flushed() {
+    with_default_timeout(|| {
+        let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = ClaudeParser::with_printer(colors, verbosity, test_printer.clone())
+            .with_display_name("ccs/glm")
+            .with_terminal_mode(TerminalMode::None);
+
+        // Simple test: two text blocks with multiple deltas each
+        let stream = r#"
+{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg1","content":[]}}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"first"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" block"}}}
+{"type":"stream_event","event":{"type":"content_block_stop","index":0}}
+{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"second"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" block"}}}
+{"type":"stream_event","event":{"type":"content_block_stop","index":1}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+"#;
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream(reader, &workspace).unwrap();
+
+        let output = test_printer.borrow().get_output();
+        eprintln!("DEBUG OUTPUT:\n{}", output);
+
+        // Should have both blocks
+        assert!(
+            output.contains("first block"),
+            "Expected 'first block' to be present. Output:\n{}",
+            output
+        );
+        assert!(
+            output.contains("second block"),
+            "Expected 'second block' to be present. Output:\n{}",
+            output
+        );
+
+        // Should have at most 2 prefixes (one per block)
+        let prefix_count = output.matches("[ccs/glm]").count();
+        assert!(
+            prefix_count <= 2,
+            "Expected <= 2 '[ccs/glm]' prefixes for 2 text blocks, found {}.\n\nOutput:\n{}",
+            prefix_count,
+            output
+        );
+    });
+}
+
+#[test]
+fn test_ccs_glm_real_world_multi_block_streaming_no_spam_in_none_mode() {
+    with_default_timeout(|| {
+        let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = ClaudeParser::with_printer(colors, verbosity, test_printer.clone())
+            .with_display_name("ccs/glm")
+            .with_terminal_mode(TerminalMode::None);
+
+        // Simulate a real-world scenario with:
+        // - Multiple thinking blocks with many deltas
+        // - Multiple text blocks with many deltas
+        // - Multiple tool blocks with many deltas
+        // This tests the comprehensive fix across all delta types in a single stream
+        let mut stream = String::from(
+            r#"
+{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg1","content":[]}}}
+"#,
+        );
+
+        // First thinking block with 20 deltas
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}
+"#,
+        );
+        for i in 0..20 {
+            stream.push_str(&format!(
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":"think{} "}}}}}}
+"#,
+                i
+            ));
+        }
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}
+"#,
+        );
+
+        // First text block with 30 deltas
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}}
+"#,
+        );
+        for i in 0..30 {
+            stream.push_str(&format!(
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":1,"delta":{{"type":"text_delta","text":"text{} "}}}}}}
+"#,
+                i
+            ));
+        }
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":1}}
+"#,
+        );
+
+        // First tool block with 15 input deltas
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"tool1","name":"bash"}}}
+"#,
+        );
+        for i in 0..15 {
+            stream.push_str(&format!(
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":2,"delta":{{"type":"tool_use_delta","tool_use":{{"input":"cmd{} "}}}}}}}}
+"#,
+                i
+            ));
+        }
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":2}}
+"#,
+        );
+
+        // Second thinking block with 25 deltas
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":3,"content_block":{"type":"thinking","thinking":""}}}
+"#,
+        );
+        for i in 0..25 {
+            stream.push_str(&format!(
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":3,"delta":{{"type":"thinking_delta","thinking":"more{} "}}}}}}
+"#,
+                i
+            ));
+        }
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":3}}
+"#,
+        );
+
+        // Second text block with 20 deltas
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":4,"content_block":{"type":"text","text":""}}}
+"#,
+        );
+        for i in 0..20 {
+            stream.push_str(&format!(
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":4,"delta":{{"type":"text_delta","text":"final{} "}}}}}}
+"#,
+                i
+            ));
+        }
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":4}}
+"#,
+        );
+
+        stream.push_str(
+            r#"{"type":"stream_event","event":{"type":"message_stop"}}
+"#,
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream(reader, &workspace).unwrap();
+
+        let output = test_printer.borrow().get_output();
+
+        // In None mode, we should have:
+        // - At most 2 thinking blocks: ≤2 "[ccs/glm]" prefixes for thinking
+        // - At most 2 text blocks: ≤2 "[ccs/glm]" prefixes for text
+        // - At most 1 tool block: ≤2 "[ccs/glm]" prefixes (start + input)
+        // Total: ≤6 prefixes maximum
+        //
+        // The key test: with 110 total deltas, we should NOT see 110 prefixes!
+        let prefix_count = output.matches("[ccs/glm]").count();
+        assert!(
+            prefix_count <= 6,
+            "Expected <= 6 '[ccs/glm]' prefixes for 110 deltas across 5 blocks, found {}.\n\n\
+             This indicates per-delta spam is still occurring!\n\n\
+             Output:\n{}",
+            prefix_count,
+            output
+        );
+
+        // Verify all content types are present (not lost during suppression)
+        assert!(
+            output.contains("think"),
+            "Expected thinking content to be present. Output:\n{}",
+            output
+        );
+        assert!(
+            output.contains("text"),
+            "Expected text content to be present. Output:\n{}",
+            output
+        );
+    });
+}
+
+#[test]
+fn test_ccs_codex_real_world_multi_turn_streaming_no_spam_in_none_mode() {
+    with_default_timeout(|| {
+        let test_printer = Rc::new(RefCell::new(TestPrinter::new()));
+        let colors = Colors::new();
+        let verbosity = Verbosity::Normal;
+
+        let parser = CodexParser::with_printer_for_test(colors, verbosity, test_printer.clone())
+            .with_display_name_for_test("ccs/codex")
+            .with_terminal_mode(TerminalMode::None);
+
+        // Simulate a real-world multi-turn scenario with:
+        // - First turn: many reasoning deltas + many agent_message deltas
+        // - Second turn: many reasoning deltas + many agent_message deltas
+        let mut stream = String::new();
+
+        // First turn - 30 reasoning deltas
+        for i in 0..30 {
+            stream.push_str(&format!(
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason1_{} "}}}}
+"#,
+                i
+            ));
+        }
+        stream.push_str(
+            r#"{"type":"item.completed","item":{"type":"reasoning"}}
+"#,
+        );
+
+        // First turn - 25 agent_message deltas
+        for i in 0..25 {
+            stream.push_str(&format!(
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg1_{} "}}}}
+"#,
+                i
+            ));
+        }
+        stream.push_str(
+            r#"{"type":"item.completed","item":{"type":"agent_message"}}
+"#,
+        );
+
+        // Second turn - 20 reasoning deltas
+        for i in 0..20 {
+            stream.push_str(&format!(
+                r#"{{"type":"item.started","item":{{"type":"reasoning","text":"reason2_{} "}}}}
+"#,
+                i
+            ));
+        }
+        stream.push_str(
+            r#"{"type":"item.completed","item":{"type":"reasoning"}}
+"#,
+        );
+
+        // Second turn - 15 agent_message deltas
+        for i in 0..15 {
+            stream.push_str(&format!(
+                r#"{{"type":"item.started","item":{{"type":"agent_message","text":"msg2_{} "}}}}
+"#,
+                i
+            ));
+        }
+        stream.push_str(
+            r#"{"type":"item.completed","item":{"type":"agent_message"}}
+"#,
+        );
+
+        let reader = BufReader::new(stream.as_bytes());
+        let workspace = MemoryWorkspace::new_test();
+        parser.parse_stream_for_test(reader, &workspace).unwrap();
+
+        let output = test_printer.borrow().get_output();
+
+        // In None mode, we should have:
+        // - 2 reasoning completions: ≤2 "Thinking:" labels
+        // - 2 agent_message completions: ≤2 "[ccs/codex]" prefixes for messages
+        // Total: ≤4 prefixes maximum
+        //
+        // The key test: with 90 total deltas, we should NOT see 90 prefixes!
+        let prefix_count = output.matches("[ccs/codex]").count();
+        assert!(
+            prefix_count <= 4,
+            "Expected <= 4 '[ccs/codex]' prefixes for 90 deltas across 4 items, found {}.\n\n\
+             This indicates per-delta spam is still occurring!\n\n\
+             Output:\n{}",
+            prefix_count,
+            output
+        );
+
+        // Verify content from both turns is present
+        assert!(
+            output.contains("reason1") || output.contains("Thinking"),
+            "Expected first turn reasoning content to be present. Output:\n{}",
+            output
+        );
+        assert!(
+            output.contains("msg1"),
+            "Expected first turn message content to be present. Output:\n{}",
+            output
+        );
+        assert!(
+            output.contains("reason2") || output.contains("Thinking"),
+            "Expected second turn reasoning content to be present. Output:\n{}",
+            output
+        );
+        assert!(
+            output.contains("msg2"),
+            "Expected second turn message content to be present. Output:\n{}",
+            output
+        );
+    });
+}
